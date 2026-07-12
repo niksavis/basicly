@@ -1,0 +1,30 @@
+# Beads (br) project configuration for basicly.
+#
+# Issue id prefix: "basicly" (set during `br init`; stored in the SQLite db,
+# not here — see `br config get issue_prefix`).
+#
+# Priority scale (0=Critical .. 4=Backlog, per `br schema issue`):
+#   0 Critical — blocks release/dogfooding, drop everything.
+#   1 High     — next up; blocks other planned work.
+#   2 Medium   — normal work item (default; matches br's own built-in default).
+#   3 Low      — nice to have, not urgent.
+#   4 Backlog  — captured but not yet planned.
+#
+# Issue type taxonomy (canonical enum from `br schema issue`; br has no
+# separate "story"/"sub-task" type, so hierarchy is expressed via
+# `br create --parent <id>` rather than a distinct type):
+#   epic     — large initiative; decomposed into feature/task/bug children
+#              via --parent, tracked with `br epic status`.
+#   feature  — scoped, user-visible capability; may itself be an epic's
+#              child and have task/bug children of its own.
+#   task     — default type for general work (engine changes, hooks, docs
+#              wiring, etc.); also used for what would otherwise be a
+#              "story" or "sub-task" one level below task/feature/bug —
+#              distinguish levels via --parent linkage, not a new type.
+#   bug      — defect in existing behavior.
+#   chore    — maintenance/non-feature work (deps, tooling, cleanup).
+#   docs     — documentation-only work.
+#   question — open question/spike that needs an answer before work starts.
+defaults:
+  priority: 2
+  type: task

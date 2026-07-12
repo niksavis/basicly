@@ -1,0 +1,62 @@
+{
+  "version": "1",
+  "generated_at": "2026-07-12T22:49:51.493344+00:00",
+  "outputs": {
+    ".claude/CLAUDE.md": {
+      "hash": "sha256:2bb54f552d2bef22c952068bedfb0ee56186bc120b037f44c4467af7c06e9fd1",
+      "source_fragments": [
+        "require-explicit-confirmation",
+        "knowledge-priming",
+        "project-defaults",
+        "secure-coding",
+        "decision-protocol",
+        "core-rules",
+        "quality-gate",
+        "use",
+        "python-style",
+        "claude-defaults",
+        "session-completion",
+        "non-interactive-shell"
+      ]
+    },
+    "AGENTS.md": {
+      "hash": "sha256:7d4f171cdabaeb2471444542bf5f466cd200373c5f943d63543e32ec10964ba7",
+      "source_fragments": [
+        "require-explicit-confirmation",
+        "knowledge-priming",
+        "project-defaults",
+        "secure-coding",
+        "decision-protocol",
+        "core-rules",
+        "quality-gate",
+        "use",
+        "python-style",
+        "session-completion",
+        "non-interactive-shell"
+      ]
+    },
+    ".github/copilot-instructions.md": {
+      "hash": "sha256:9e68e27e59d921b77e1fbb2aefa18ae5451656faeb0c33be707c79714f0c4ea3",
+      "source_fragments": [
+        "require-explicit-confirmation",
+        "knowledge-priming",
+        "project-defaults",
+        "secure-coding",
+        "decision-protocol",
+        "core-rules",
+        "quality-gate",
+        "use",
+        "python-style",
+        "copilot-defaults",
+        "session-completion",
+        "non-interactive-shell"
+      ]
+    },
+    ".github/instructions/python-style.instructions.md": {
+      "hash": "sha256:35be6847c7170debaf3778bae79b6e479a66bca4ab4da6a398f4df63b324777b",
+      "source_fragments": [
+        "python-style"
+      ]
+    }
+  }
+}
