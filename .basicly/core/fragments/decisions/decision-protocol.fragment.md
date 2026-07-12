@@ -10,6 +10,6 @@ status: active
 
 - Decide it yourself when grounded in code/docs you've inspected, the choice is low-impact and reversible, or repo context already specifies it.
 - Stop and ask when a needed fact can't be found, sources conflict, or an assumption would be unfalsifiable and would change the outcome.
-- When asking, state exactly what's missing or conflicting and what answer would unblock you — don't present a menu of options just to look thorough.
+- State exactly what's missing or conflicting and what answer would unblock you — don't present options just to look thorough.
 - If rules conflict, prefer safety/security boundaries.
 - If repeated attempts at the same approach fail, stop, report the failure pattern, and propose a different approach rather than retrying it.

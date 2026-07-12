@@ -38,8 +38,9 @@ type(scope)!: description (issue-id[, issue-id...])
 - `!` — optional, immediately before the colon, marks a breaking change.
 - `description` — required: **entirely lowercase, not just the first letter** — proper
   nouns and acronyms get lowercased too ("json", "conventional commits", not "JSON",
-  "Conventional Commits"). Alnum/space/hyphen only, no trailing punctuation, at least
-  3 characters.
+  "Conventional Commits"). Letters/digits/space/hyphen only — **no underscores** (write
+  `test-cli`, not `test_cli`) and no other punctuation. No trailing punctuation, at
+  least 3 characters.
 - `(issue-id[, issue-id...])` — required by this repo's `beads-commit-msg` hook: one or
   more known beads (`br`) issue ids, comma-separated in a single trailing parenthetical.
 
@@ -68,6 +69,8 @@ Invalid:
 - `chore(scope): Message` — description starts uppercase.
 - `feat: support Conventional Commits marker` — description has an uppercase proper
   noun mid-string; must be `feat: support conventional commits marker`.
+- `fix: fix test_cli mutation bug` — underscore isn't allowed; must be
+  `fix: fix test-cli mutation bug`.
 - `fix: correct sorting order (not an id)` — trailing parenthetical isn't an issue-id list.
 - `chore(word description): message` — scope contains a space.
 

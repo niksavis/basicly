@@ -15,7 +15,7 @@ not rely on `AGENTS.md` being present.
 
 ## Knowledge Priming
 
-- Before non-trivial work, look for repo-specific context (README, architecture docs, CONTRIBUTING, this file's local overlay) and treat it as ground truth over generic training-data assumptions.
+- Before non-trivial work, look for repo-specific context (README, architecture docs, CONTRIBUTING, local overlay) and treat it as ground truth over generic assumptions.
 - When repo evidence and general best practice conflict, repo evidence wins — flag the conflict instead of silently overriding it.
 - If no repo-specific context exists for a decision, say so explicitly and proceed on stated assumptions; do not block on missing priming material alone.
 
@@ -32,16 +32,16 @@ not rely on `AGENTS.md` being present.
 
 - Validate and sanitize all external input at trust boundaries before it reaches business logic.
 - Parameterize database queries and shell commands; never build them by concatenating untrusted input.
-- Never commit secrets (keys, tokens, passwords, connection strings) — use environment variables or a secret manager, and keep them out of logs.
-- Don't leak internal detail (stack traces, queries, file paths) in user-facing errors; log detail server-side and return a generic message instead.
+- Never commit secrets (keys, tokens, passwords, connection strings); use env vars or a secret manager and keep them out of logs.
+- Don't leak internal detail (stack traces, queries, paths) in user-facing errors; log server-side, return a generic message.
 - Verify authorization at the service layer, not just the UI or controller entry point.
-- Never commit user- or machine-specific paths, usernames, hostnames, or other local identifiers; keep repository defaults generic and portable.
+- Never commit user- or machine-specific paths, usernames, or hostnames; keep repo defaults generic and portable.
 
 ## Decision Protocol
 
 - Decide it yourself when grounded in code/docs you've inspected, the choice is low-impact and reversible, or repo context already specifies it.
 - Stop and ask when a needed fact can't be found, sources conflict, or an assumption would be unfalsifiable and would change the outcome.
-- When asking, state exactly what's missing or conflicting and what answer would unblock you — don't present a menu of options just to look thorough.
+- State exactly what's missing or conflicting and what answer would unblock you — don't present options just to look thorough.
 - If rules conflict, prefer safety/security boundaries.
 - If repeated attempts at the same approach fail, stop, report the failure pattern, and propose a different approach rather than retrying it.
 
@@ -50,14 +50,13 @@ not rely on `AGENTS.md` being present.
 - Prioritize correctness over speed.
 - Keep diffs minimal; avoid unrelated refactors/reformatting.
 - Prefer explicit, readable solutions over clever ones.
-- Solve the stated requirement only — no speculative abstractions, unrequested config, or flexibility beyond what was asked.
+- Solve the stated requirement only — no speculative abstractions or unrequested config.
 - Search for existing helpers, utilities, or patterns in this codebase before writing new code; reuse before reinventing.
 - Fix the root cause, not the symptom: grep other callers before assuming a single-call-site patch is complete.
 - Back claims with evidence from this session (files read, commands run, tests) — do not assert without checking.
 - Keep code clean: no dead code, debug prints, or silent error swallowing.
 - Match existing style and naming conventions in touched files.
 - Use deterministic tests; add regression tests for bug fixes.
-- Keep secrets out of code/logs; validate external input.
 
 ## Quality Gate
 
@@ -87,13 +86,20 @@ not rely on `AGENTS.md` being present.
 - Put hooks in `.github/hooks/*.json`.
 - Keep shared skills in `.claude/skills/` for Claude + Copilot reuse.
 
+## Self Improvement Retro
+
+- If this session hit a real rejection or user-corrected mistake, find the root cause before ending, not just the fix.
+- Propose the exact fragment/skill/hook file and wording change that would have prevented it; skip vague "be careful" notes.
+- Present each proposal for explicit approval; never self-apply a fragment/skill/hook edit from a retro.
+- Skip the retro when nothing concrete surfaced; inventing gaps to look thorough is the anti-pattern this exists to prevent.
+
 ## Session Completion
 
 - A task isn't done until its output has been verified, not just produced — re-run checks after your last edit, not only the first draft.
-- Leave the repo in a state a fresh session could pick up cleanly: no partial edits, no stray debug output, no unexplained uncommitted changes.
+- Leave the repo in a state a fresh session could pick up cleanly: no partial edits, no stray debug output, no unexplained changes.
 - Summarize what changed, what was verified, and what — if anything — remains open before ending the turn.
 
 ## Non Interactive Shell
 
 - Prefer cross-platform implementations over shell-specific behavior when a choice exists.
-- Use non-interactive flags for operations that can hang on a confirmation prompt (`cp -f`, `mv -f`, `rm -f`, package-manager `-y`/`--yes`, `ssh -o BatchMode=yes`) — some environments alias these commands into interactive mode by default.
+- Use non-interactive flags (`cp -f`, `mv -f`, `rm -f`, package-manager `-y`, `ssh -o BatchMode=yes`) for ops that can hang on a prompt — some shells alias these to interactive mode.
