@@ -30,7 +30,8 @@ ALLOWED_TYPES = (
 # type(scope)!: description (optional-issue-id[, issue-id...])
 # Scope is optional and lowercase-kebab-case. An optional "!" before the colon
 # marks a breaking change per the Conventional Commits spec.
-# Description starts with lowercase, allows lowercase alnum/space/hyphen,
+# Description must be entirely lowercase (not just the first letter; proper
+# nouns and acronyms get lowercased too), allows alnum/space/hyphen only,
 # has at least MIN_DESCRIPTION_LENGTH chars, and must not end with punctuation.
 # An optional trailing parenthetical referencing one or more beads (br) issue
 # ids is permitted syntactically here; beads-commit-msg.py validates that the
@@ -49,7 +50,7 @@ Rules:
     - type must be one of the allowed types below
     - scope is optional and must be lowercase-kebab-case
     - an optional "!" before the colon marks a breaking change
-    - description must start with lowercase
+    - description must be entirely lowercase (proper nouns/acronyms included)
     - description must be at least 3 characters
     - description cannot end with punctuation
 
