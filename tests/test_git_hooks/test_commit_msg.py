@@ -69,3 +69,21 @@ def test_validate_rejects_malformed_trailing_parenthetical() -> None:
     """A trailing parenthetical that isn't a valid issue-id list should fail."""
     module = _load_commit_msg_module()
     assert not module.validate("fix: correct sorting order (not an id)")
+
+
+def test_validate_allows_breaking_change_bang_without_scope() -> None:
+    """A '!' before the colon should be allowed to mark a breaking change."""
+    module = _load_commit_msg_module()
+    assert module.validate("feat!: drop support for legacy config")
+
+
+def test_validate_allows_breaking_change_bang_with_scope() -> None:
+    """A '!' after a scope should be allowed to mark a breaking change."""
+    module = _load_commit_msg_module()
+    assert module.validate("feat(basicly)!: remove deprecated config format")
+
+
+def test_validate_allows_breaking_change_bang_with_issue_id() -> None:
+    """A '!' should compose with a trailing beads issue id."""
+    module = _load_commit_msg_module()
+    assert module.validate("feat(basicly)!: remove deprecated config format (basicly-idr)")

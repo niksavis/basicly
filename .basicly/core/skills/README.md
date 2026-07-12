@@ -1,6 +1,6 @@
 # basicly skill collection
 
-This directory is the source-of-truth skill catalog for terminal tooling.
+This directory is the source-of-truth skill catalog for coding-agent enablement.
 
 - Source shape: `.basicly/core/skills/<skill-name>/SKILL.md`
 - Projection command: `PYTHONPATH=src uv run python -m basicly.cli skills-build`
@@ -9,6 +9,8 @@ This directory is the source-of-truth skill catalog for terminal tooling.
 ## Included skills
 
 - `skill-creator`: workflow skill for creating and refining reusable `SKILL.md` files.
+- `conventional-commits`: construct a valid Conventional Commits message (type/scope,
+  breaking-change `!`, beads issue id) before running `git commit`.
 - `tool-br`: primary task/issue tracker (beads_rust); create, claim, and close issues,
   and reference issue ids in commits.
 - `tool-zsh`: shell startup and profile troubleshooting.

@@ -1,0 +1,84 @@
+---
+name: conventional-commits
+description: Construct a valid Conventional Commits message for this repo before running `git commit`, covering type/scope, the "!" breaking-change marker, description rules, and the required trailing beads issue id. Use whenever writing or reviewing a commit message, or when a commit is rejected by the commit-msg/beads-commit-msg hooks.
+---
+
+# Conventional Commits
+
+## Scope
+
+Owns constructing a single-line commit subject that passes this repo's `commit-msg` and
+`beads-commit-msg` git hooks on the first attempt.
+
+It is not for:
+
+- Deciding whether to commit, what to stage, or how to split a diff (see `tool-git`).
+- Creating or managing beads issues (see `tool-br`); this skill only covers referencing
+  an existing id in the message.
+- Body/footer content — the hooks here only validate the subject line.
+
+## Inputs
+
+- The change being committed (already staged, or about to be).
+- An existing (or just-created) beads issue id — see `tool-br` to resolve or create one.
+
+## Outputs
+
+- A single commit subject line that passes `commit-msg.py` and `beads-commit-msg.py` on
+  the first attempt, with no `--no-verify` needed.
+
+## Format
+
+```text
+type(scope)!: description (issue-id[, issue-id...])
+```
+
+- `type` — one of: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert.
+- `(scope)` — optional, lowercase-kebab-case, e.g. `(basicly)`.
+- `!` — optional, immediately before the colon, marks a breaking change.
+- `description` — required: lowercase start, alnum/space/hyphen only, no trailing
+  punctuation, at least 3 characters.
+- `(issue-id[, issue-id...])` — required by this repo's `beads-commit-msg` hook: one or
+  more known beads (`br`) issue ids, comma-separated in a single trailing parenthetical.
+
+## Workflow
+
+1. Pick the type that matches the change's intent (feat/fix/docs/...).
+2. Resolve or create a beads issue first (see `tool-br`) — never invent an id.
+3. Add `!` only when the change is a breaking API/behavior change.
+4. Write the description in the imperative, lowercase, no trailing period.
+5. Append the issue id(s) as a single trailing parenthetical.
+6. Run `git commit -m "..."` — the hooks re-validate; if rejected, read the hook's error
+   output rather than guessing at the fix.
+
+## Examples
+
+Valid:
+
+- `feat(basicly): add fragment loader (basicly-idr)`
+- `fix: correct sorting order in planner (basicly-abc)`
+- `feat(basicly)!: remove deprecated config format (basicly-idr)`
+- `fix: correct sorting order (basicly-idr, basicly-abc)`
+
+Invalid:
+
+- `Fixed the bug` — no type/colon.
+- `chore(scope): Message` — description starts uppercase.
+- `fix: correct sorting order (not an id)` — trailing parenthetical isn't an issue-id list.
+- `chore(word description): message` — scope contains a space.
+
+## Guardrails
+
+- Never bypass the hooks (`--no-verify`) to force a non-conforming message through.
+- Never invent a beads issue id that doesn't exist in `.beads/issues.jsonl`.
+- Merge commits and `Revert "..."` auto-generated subjects are exempt from this format.
+
+## Enforcement
+
+This format is mechanically enforced by:
+
+- `.basicly/core/hooks/commit-msg.py` — type/scope/`!`/description rules.
+- `.basicly/core/hooks/beads-commit-msg.py` — issue id presence and existence.
+
+This skill exists to get the message right on the first attempt; the hooks are the
+actual gate.

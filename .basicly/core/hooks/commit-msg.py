@@ -27,26 +27,28 @@ ALLOWED_TYPES = (
     "revert",
 )
 
-# type(scope): description (optional-issue-id[, issue-id...])
-# Scope is optional and lowercase-kebab-case.
+# type(scope)!: description (optional-issue-id[, issue-id...])
+# Scope is optional and lowercase-kebab-case. An optional "!" before the colon
+# marks a breaking change per the Conventional Commits spec.
 # Description starts with lowercase, allows lowercase alnum/space/hyphen,
 # has at least MIN_DESCRIPTION_LENGTH chars, and must not end with punctuation.
 # An optional trailing parenthetical referencing one or more beads (br) issue
 # ids is permitted syntactically here; beads-commit-msg.py validates that the
 # referenced id(s) actually exist.
 HEADER_PATTERN = re.compile(
-    r"^(" + "|".join(ALLOWED_TYPES) + r")(\([a-z0-9]+(?:-[a-z0-9]+)*\))?: "
+    r"^(" + "|".join(ALLOWED_TYPES) + r")(\([a-z0-9]+(?:-[a-z0-9]+)*\))?(!)?: "
     r"(.+?)(?:\s+\(([a-z][a-z0-9]*-[a-z0-9]+(?:,\s*[a-z][a-z0-9]*-[a-z0-9]+)*)\))?$"
 )
 DESCRIPTION_PATTERN = re.compile(r"^[a-z][a-z0-9 -]*[a-z0-9]$")
 
 ERROR_MESSAGE = """ERROR: Commit message does not follow conventional commit format.
 
-Expected format: type(scope): description
+Expected format: type(scope)!: description
 
 Rules:
     - type must be one of the allowed types below
     - scope is optional and must be lowercase-kebab-case
+    - an optional "!" before the colon marks a breaking change
     - description must start with lowercase
     - description must be at least 3 characters
     - description cannot end with punctuation
@@ -59,6 +61,7 @@ Examples:
   fix: correct sorting order in planner
   docs: update architecture decision record
   feat(basicly): add fragment loader (basicly-idr)
+  feat(basicly)!: remove deprecated config format
 
 Invalid examples:
     chote(word description): message;
@@ -78,7 +81,7 @@ def validate(message: str) -> bool:
     if not header_match:
         return False
 
-    description = header_match.group(3)
+    description = header_match.group(4)
     if len(description) < MIN_DESCRIPTION_LENGTH:
         return False
 
