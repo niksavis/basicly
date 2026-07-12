@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from basicly.loader import load_fragments, load_fragments_from_roots, load_targets
 from basicly.schema import ValidationError
 

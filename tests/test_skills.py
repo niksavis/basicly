@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from basicly.schema import ValidationError
 from basicly.skills import (
     SKILLS_SOURCE_DIR,
