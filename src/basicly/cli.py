@@ -402,10 +402,17 @@ def cmd_hooks_build(_args: argparse.Namespace) -> int:
     """Materialize hook scripts and wire them into the pre-commit config."""
     repo_root = _repo_root()
     paths = load_project_paths(repo_root)
+    config_path = repo_root / ".pre-commit-config.yaml"
+    config_existed = config_path.exists()
     result = sync_hooks(repo_root, _core_hooks_dir(paths))
 
     for path in result.written:
         print(f"Wrote {_format_path(path, repo_root)}")
+    if config_existed and config_path in result.written:
+        print(
+            "Note: .pre-commit-config.yaml was rewritten to update managed hooks; "
+            "comments/formatting outside them may have been normalized."
+        )
     if not result.written:
         print("No hook files changed.")
 

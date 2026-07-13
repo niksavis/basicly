@@ -56,6 +56,9 @@ def load_hook_specs(hooks_dir: Path | None = None) -> list[HookSpec]:
     for entry in entries:
         if not isinstance(entry, dict):
             raise ValueError(f"{manifest}: each hook must be a mapping")
+        missing = [key for key in ("id", "script", "stage") if key not in entry]
+        if missing:
+            raise ValueError(f"{manifest}: hook entry is missing {', '.join(missing)}")
         specs.append(
             HookSpec(
                 id=str(entry["id"]),
@@ -127,6 +130,43 @@ def render_precommit_config(
     return yaml.safe_dump(merged, sort_keys=False, default_flow_style=False)
 
 
+def _parse_config(config_path: Path, existing_text: str) -> dict:
+    parsed = yaml.safe_load(existing_text)
+    if not isinstance(parsed, dict):
+        raise ValueError(f"{config_path}: not a valid pre-commit config (expected a mapping)")
+    return parsed
+
+
+def managed_hook_mismatches(
+    config: dict,
+    specs: list[HookSpec],
+    hooks_relpath: str,
+) -> list[str]:
+    """Compare the managed hooks in a parsed config semantically, not textually.
+
+    A managed hook matches when every key/value basicly renders for it is present
+    with an equal value — regardless of file formatting, comments, or how the
+    consumer groups their ``local`` repos. Extra consumer-added keys are allowed.
+    Returns a reason per missing/out-of-sync managed hook; empty means in sync.
+    """
+    found: dict[str, dict] = {}
+    for repo in config.get("repos") or []:
+        if isinstance(repo, dict) and repo.get("repo") == "local":
+            for hook in repo.get("hooks") or []:
+                if isinstance(hook, dict) and "id" in hook:
+                    found[hook["id"]] = hook
+
+    mismatches: list[str] = []
+    for spec in specs:
+        expected = _hook_entry(spec, hooks_relpath)
+        actual = found.get(spec.id)
+        if actual is None:
+            mismatches.append(f"managed hook '{spec.id}' missing")
+        elif any(actual.get(key) != value for key, value in expected.items()):
+            mismatches.append(f"managed hook '{spec.id}' out of sync")
+    return mismatches
+
+
 def _write_if_changed(path: Path, content: bytes, result: HookSyncResult) -> None:
     if path.exists() and path.read_bytes() == content:
         result.unchanged.append(path)
@@ -163,9 +203,22 @@ def sync_hooks(repo_root: Path, core_hooks_dir: Path) -> HookSyncResult:
     specs = load_hook_specs(src)
     hooks_relpath = core_hooks_dir.as_posix()
     config_path = repo_root / PRECOMMIT_CONFIG
-    existing_text = config_path.read_text(encoding="utf-8") if config_path.exists() else None
-    rendered = render_precommit_config(existing_text, specs, hooks_relpath)
-    _write_if_changed(config_path, rendered.encode("utf-8"), result)
+
+    if not config_path.exists():
+        rendered = render_precommit_config(None, specs, hooks_relpath)
+        _write_if_changed(config_path, rendered.encode("utf-8"), result)
+        return result
+
+    # The config is co-owned with the consumer: leave it untouched when the
+    # managed hooks are already semantically in sync (preserving their comments
+    # and formatting); rewrite only when a managed hook is missing or wrong.
+    existing_text = config_path.read_text(encoding="utf-8")
+    parsed = _parse_config(config_path, existing_text)
+    if managed_hook_mismatches(parsed, specs, hooks_relpath):
+        rendered = render_precommit_config(existing_text, specs, hooks_relpath)
+        _write_if_changed(config_path, rendered.encode("utf-8"), result)
+    else:
+        result.unchanged.append(config_path)
 
     return result
 
@@ -186,11 +239,13 @@ def check_hooks(repo_root: Path, core_hooks_dir: Path) -> list[tuple[Path, str]]
 
     specs = load_hook_specs(src)
     config_path = repo_root / PRECOMMIT_CONFIG
-    existing_text = config_path.read_text(encoding="utf-8") if config_path.exists() else None
-    expected = render_precommit_config(existing_text, specs, core_hooks_dir.as_posix())
-    if existing_text is None:
+    if not config_path.exists():
         mismatches.append((config_path, "missing"))
-    elif existing_text != expected:
-        mismatches.append((config_path, "managed hooks out of sync"))
+        return mismatches
+
+    existing_text = config_path.read_text(encoding="utf-8")
+    parsed = _parse_config(config_path, existing_text)
+    for reason in managed_hook_mismatches(parsed, specs, core_hooks_dir.as_posix()):
+        mismatches.append((config_path, reason))
 
     return mismatches

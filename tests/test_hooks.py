@@ -15,6 +15,7 @@ from basicly.hooks import (
 )
 
 CORE_HOOKS_DIR = Path(".basicly/core/hooks")
+REPO_ROOT = Path(__file__).parent.parent
 
 
 def _local_hook_ids(config: dict) -> set[str]:
@@ -93,4 +94,50 @@ def test_check_detects_wiring_drift(tmp_path: Path) -> None:
     config.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
 
     mismatches = check_hooks(tmp_path, CORE_HOOKS_DIR)
-    assert any(reason == "managed hooks out of sync" for _, reason in mismatches)
+    assert any(reason == "managed hook 'pre-push-script' missing" for _, reason in mismatches)
+
+
+def test_dogfood_config_passes_check() -> None:
+    """This repo's own hand-authored config must satisfy its own gate.
+
+    Regression: check_hooks used to compare full file text against a
+    yaml.safe_dump re-render, so the dogfooded 4-block, hand-formatted config
+    was permanently reported stale.
+    """
+    assert check_hooks(REPO_ROOT, CORE_HOOKS_DIR) == []
+
+
+def test_semantically_synced_config_is_left_untouched(tmp_path: Path) -> None:
+    """Comments and formatting survive when managed hooks are already in sync."""
+    sync_hooks(tmp_path, CORE_HOOKS_DIR)
+    config = tmp_path / ".pre-commit-config.yaml"
+
+    # Reformat by hand: prepend a comment the consumer cares about.
+    commented = "# pinned for CVE-2024-1234\n" + config.read_text(encoding="utf-8")
+    config.write_text(commented, encoding="utf-8")
+
+    result = sync_hooks(tmp_path, CORE_HOOKS_DIR)
+    assert result.written == []
+    assert config.read_text(encoding="utf-8") == commented
+    assert check_hooks(tmp_path, CORE_HOOKS_DIR) == []
+
+
+def test_out_of_sync_managed_hook_triggers_rewrite(tmp_path: Path) -> None:
+    """A tampered managed entry is detected and repaired by a rebuild."""
+    sync_hooks(tmp_path, CORE_HOOKS_DIR)
+    config = tmp_path / ".pre-commit-config.yaml"
+
+    data = yaml.safe_load(config.read_text(encoding="utf-8"))
+    for repo in data["repos"]:
+        if repo.get("repo") == "local":
+            for hook in repo["hooks"]:
+                if hook["id"] == "pre-push-script":
+                    hook["entry"] = "echo tampered"
+    config.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+    mismatches = check_hooks(tmp_path, CORE_HOOKS_DIR)
+    assert any(reason == "managed hook 'pre-push-script' out of sync" for _, reason in mismatches)
+
+    result = sync_hooks(tmp_path, CORE_HOOKS_DIR)
+    assert config in result.written
+    assert check_hooks(tmp_path, CORE_HOOKS_DIR) == []
