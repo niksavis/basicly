@@ -23,6 +23,7 @@ br ready --json                           # Machine-readable for agents
 br show <id>                              # Issue details
 br update <id> --status in_progress --assignee "$(git config user.email)"
 br close <id> --reason "What was done"
+br delete <id> --hard                     # Delete durably (prunes JSONL; plain delete resurrects)
 br dep add <child-id> <parent-id>         # child depends on parent
 br list --status open --priority 0-1
 br sync --flush-only                      # Idempotent JSONL export check before commit
@@ -36,7 +37,7 @@ br sync --flush-only                      # Idempotent JSONL export check before
   SQLite state (mutating commands auto-flush by default, but this is a cheap final
   check).
 - Prefer `br update <id> --status in_progress` before starting work. Close the issue
-  with `br close <id> --reason "..."` *before* making the commit that resolves it, then
+  with `br close <id> --reason "..."` _before_ making the commit that resolves it, then
   stage `.beads/issues.jsonl` together with the code in that same commit — never a
   separate trailing `chore: close <id>` commit with no other content.
 - Use `--json` for any programmatic/agent-driven query (`br ready --json`, `br list
@@ -60,6 +61,25 @@ br sync --flush-only                      # Idempotent JSONL export check before
   the resolving commit isn't pushed yet, `git commit --amend` it instead of adding a
   new one; if it's already pushed, amending needs explicit confirmation (history
   rewrite), so weigh that against just accepting the small trailing commit.
+- **`br delete <id>` alone gets resurrected.** Plain delete writes a DB tombstone but
+  leaves the record in `.beads/issues.jsonl`; the next `br` command auto-imports that
+  stale line and recreates the issue. Delete durably with `br delete <id> --hard` (it
+  prunes the record from the JSONL immediately), then confirm with `br show <id>` (not
+  found) and by grepping `.beads/issues.jsonl`.
+- **Trusting a DB-only change.** `.beads/issues.jsonl` is the sync source of truth and
+  `br` auto-imports it on the next command, so a change made only to the DB can be
+  silently reverted. Make sure the JSONL reflects the change (`br sync --flush-only`,
+  or `--hard` for deletes) before you rely on it or stage it.
+- **Creating ids with `br create --slug ...`.** It produces multi-hyphen ids
+  (`basicly-my-thing-9li`) that the `commit-msg` hook rejects. Let `br` generate the
+  default single-hyphen `basicly-<hash>` id; never pass `--slug`.
+- **Staging br's transient sidecars.** br writes lock/journal/vacuum artifacts in
+  `.beads/` (`beads.db-lock-*`, `.beads.vacuum.<pid>.tmp-*`, `*.fsqlite-*`); they are
+  git-ignored and must never be committed. If any appear as untracked, they are junk —
+  delete them, do not stage them.
+- **Re-`br init` with a different `--prefix`.** The prefix is pinned in
+  `.beads/config.yaml` (authoritative over the local DB); never re-init with another
+  prefix or the team's `basicly-<hash>` ids diverge across machines.
 
 ## Output Interpretation
 
@@ -87,8 +107,11 @@ br sync --flush-only                      # Idempotent JSONL export check before
 - Reference an id as a parenthetical after the conventional commit description, e.g.
   `feat(basicly): add fragment loader (basicly-idr)`.
 - Create an issue (`br create` or `br q`) before referencing it; do not fabricate ids.
-- Issue prefix is `basicly`; default priority is `2` (Medium) and default type is
-  `task` (see `.beads/config.yaml`).
+- Issue prefix is `basicly` (pinned in `.beads/config.yaml`, so every clone/init
+  matches); default priority is `2` (Medium) and default type is `task`.
+- Let `br` generate the id — do NOT pass `--slug`. Ids must stay single-hyphen
+  `basicly-<hash>`; a multi-hyphen slug id (e.g. `basicly-my-thing-9li`) is rejected
+  by the commit-msg hook and breaks the id-parenthetical convention.
 - Priority scale (0=Critical, 4=Backlog): use `0`/`1` sparingly for release-blocking
   or next-up work; `2` for normal work; `3`/`4` for low-urgency/backlog items.
 - Type taxonomy is br's canonical enum (`epic`, `feature`, `task`, `bug`, `chore`,
