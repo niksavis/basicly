@@ -60,6 +60,10 @@ br sync --flush-only                      # Idempotent JSONL export check before
   the resolving commit isn't pushed yet, `git commit --amend` it instead of adding a
   new one; if it's already pushed, amending needs explicit confirmation (history
   rewrite), so weigh that against just accepting the small trailing commit.
+- Bulk-creating issues via a hand-rolled shell loop with conditional flags
+  (`${var:+--flag "$var"}` word-splits and silently breaks `--parent` linkage) — use
+  `br create --file <markdown>` for bulk import, or one explicit `br create` call per
+  issue, and verify hierarchy afterwards with `br epic status`/`br dep tree`.
 
 ## Output Interpretation
 

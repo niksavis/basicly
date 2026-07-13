@@ -36,7 +36,7 @@ br sync --flush-only                      # Idempotent JSONL export check before
   SQLite state (mutating commands auto-flush by default, but this is a cheap final
   check).
 - Prefer `br update <id> --status in_progress` before starting work. Close the issue
-  with `br close <id> --reason "..."` *before* making the commit that resolves it, then
+  with `br close <id> --reason "..."` _before_ making the commit that resolves it, then
   stage `.beads/issues.jsonl` together with the code in that same commit — never a
   separate trailing `chore: close <id>` commit with no other content.
 - Use `--json` for any programmatic/agent-driven query (`br ready --json`, `br list
@@ -60,6 +60,10 @@ br sync --flush-only                      # Idempotent JSONL export check before
   the resolving commit isn't pushed yet, `git commit --amend` it instead of adding a
   new one; if it's already pushed, amending needs explicit confirmation (history
   rewrite), so weigh that against just accepting the small trailing commit.
+- Bulk-creating issues via a hand-rolled shell loop with conditional flags
+  (`${var:+--flag "$var"}` word-splits and silently breaks `--parent` linkage) — use
+  `br create --file <markdown>` for bulk import, or one explicit `br create` call per
+  issue, and verify hierarchy afterwards with `br epic status`/`br dep tree`.
 
 ## Output Interpretation
 
