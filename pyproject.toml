@@ -12,6 +12,10 @@ dependencies = [
   "pyyaml>=6.0",
 ]
 
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [dependency-groups]
 dev = [
   "bandit>=1.9.4",
@@ -42,5 +46,8 @@ basicly = "basicly.cli:main"
 exclude_dirs = ["tests"]
 skips = ["B101"]
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/basicly"]
+
 [tool.uv]
-package = false
+package = true
