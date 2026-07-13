@@ -97,6 +97,19 @@ def test_check_detects_wiring_drift(tmp_path: Path) -> None:
     assert any(reason == "managed hook 'pre-push-script' missing" for _, reason in mismatches)
 
 
+def test_hook_entry_quotes_paths_with_spaces() -> None:
+    """A core path containing a space must survive pre-commit's shell-split."""
+    specs = [HookSpec(id="pre-commit-script", script="pre-commit.py", stage="pre-commit")]
+    merged = merge_precommit_config(None, specs, "agent config/hooks")
+    entry = merged["repos"][0]["hooks"][0]["entry"]
+    assert entry == "uv run python 'agent config/hooks/pre-commit.py'"
+    # A plain path stays unquoted, keeping the dogfooded config stable.
+    plain = merge_precommit_config(None, specs, CORE_HOOKS_DIR.as_posix())
+    assert plain["repos"][0]["hooks"][0]["entry"] == (
+        "uv run python .basicly/core/hooks/pre-commit.py"
+    )
+
+
 def test_dogfood_config_passes_check() -> None:
     """This repo's own hand-authored config must satisfy its own gate.
 

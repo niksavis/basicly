@@ -9,6 +9,7 @@ never clobbered. See docs/architecture.md §4.2, §11.6.
 
 from __future__ import annotations
 
+import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -72,10 +73,12 @@ def load_hook_specs(hooks_dir: Path | None = None) -> list[HookSpec]:
 
 
 def _hook_entry(spec: HookSpec, hooks_relpath: str) -> dict:
+    # pre-commit shell-splits `entry`, so the script path must be quoted to
+    # survive spaces or shell metacharacters in a configured core path.
     entry: dict = {
         "id": spec.id,
         "name": spec.id,
-        "entry": f"uv run python {hooks_relpath}/{spec.script}",
+        "entry": f"uv run python {shlex.quote(f'{hooks_relpath}/{spec.script}')}",
         "language": "system",
         "stages": [spec.stage],
         "pass_filenames": spec.pass_filenames,
