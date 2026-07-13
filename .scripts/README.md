@@ -9,6 +9,15 @@ Cross-platform scripts for this repository.
 - Keep scripts idempotent and non-interactive when intended for CI.
 - Avoid hardcoded absolute paths and shell-specific behavior.
 
+## Available scripts
+
+- [`setup_git_identity.py`](setup_git_identity.py) — scaffold per-remote git identities
+  via conditional includes, so the right name/email is selected by a repo's remote URL
+  without setting a global `user.email`. Carries no identities of its own; pair it with
+  the `identity-guard` hook. Run `uv run python .scripts/setup_git_identity.py --help`.
+- [`generate_release_changelog.py`](generate_release_changelog.py) — release changelog
+  helper (see the release-process skill).
+
 ## Git hooks
 
 Git hook scripts moved to [`.basicly/core/hooks/`](../.basicly/core/hooks/) — they

@@ -196,7 +196,7 @@ and `src/basicly/` never contains catalog data.
   core/
     fragments/{boundaries,commands,decisions,project,security,testing,tools}/*.fragment.md
     skills/<skill-name>/SKILL.md      # source format gap, see below
-    hooks/{pre-commit,commit-msg,beads-commit-msg,pre-push}.py
+    hooks/{pre-commit,identity-guard,commit-msg,beads-commit-msg,pre-push}.py
     targets/{claude,copilot,codex}.yaml
     templates/{claude,copilot,codex}/*.j2
   generated-manifest.json
@@ -223,9 +223,12 @@ skills in Python (or another structured, non-`SKILL.md`-named format) and projec
 to `SKILL.md` only at the designated target roots — not yet executed.
 
 **Hooks — [Implemented as a catalog location, no projection yet]**: `core/hooks/`
-holds the actual git hook scripts (`pre-commit.py`, `commit-msg.py`,
-`beads-commit-msg.py`, `pre-push.py`) as first-class catalog artifacts — the
-deterministic, gating counterpart to fragments/skills. This repo dogfoods them
+holds the actual git hook scripts (`pre-commit.py`, `identity-guard.py`,
+`commit-msg.py`, `beads-commit-msg.py`, `pre-push.py`) as first-class catalog
+artifacts — the deterministic, gating counterpart to fragments/skills.
+(`identity-guard.py` blocks a commit whose git identity is unset or a hostname
+fallback — a generic, no-personal-data gate; the `.scripts/setup_git_identity.py`
+helper and the `tool-git` skill cover the per-host identity setup it guards.) This repo dogfoods them
 directly: [`.pre-commit-config.yaml`](../.pre-commit-config.yaml) points straight at
 `core/hooks/*.py`. There is no `hooks-build`/`hooks-check` projection command yet for
 installing these into a fresh consumer repo's `.git/hooks`/`.pre-commit-config.yaml`

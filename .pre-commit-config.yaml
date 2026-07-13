@@ -1,6 +1,16 @@
 repos:
   - repo: local
     hooks:
+      - id: identity-guard
+        name: identity-guard
+        entry: uv run python .basicly/core/hooks/identity-guard.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+  - repo: local
+    hooks:
       - id: pre-commit-script
         name: pre-commit-script
         entry: uv run python .basicly/core/hooks/pre-commit.py

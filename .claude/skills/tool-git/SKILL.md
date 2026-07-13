@@ -45,6 +45,28 @@ git restore --staged path/to/file
 - Git state determines safe automation and review boundaries.
 - High-signal diff workflows prevent accidental regressions.
 
+## Commit Identity (per remote host)
+
+- Commits must carry the identity that matches the remote; set it **per repo**, not
+  globally. Leaving the global `user.email` unset is deliberate — with no email git
+  silently commits a `…@hostname.local` address, which pollutes and de-anonymizes history.
+- Before committing, verify `git config user.email` is set for this repo; if empty or a
+  `.local`/`(none)` hostname value, set `git config --local user.name/user.email` first.
+- Automate it with git conditional includes so identity follows the remote URL:
+
+  ```gitconfig
+  # ~/.gitconfig  (email is set only inside the includes; global email stays unset)
+  [includeIf "hasconfig:remote.*.url:https://github.com/**"]
+      path = ~/.gitconfig-github
+  [includeIf "hasconfig:remote.*.url:https://git.example.com/**"]
+      path = ~/.gitconfig-work
+  ```
+
+  Scaffold this with `.scripts/setup_git_identity.py add --host <host> --name <n> --email <e>`.
+- Enforcement: the `identity-guard` pre-commit hook blocks a commit whose identity is
+  missing or auto-generated. Optionally require a domain per repo with
+  `git config basicly.identityAllowEmail '@example\.com$'`.
+
 ## Repo Conventions
 
 - Never rewrite history or run destructive git commands without explicit confirmation.
