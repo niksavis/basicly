@@ -337,11 +337,12 @@ inherits that failure.
 | `basicly build [--target NAME]`                                                           | **[Implemented]** | Renders enabled targets (or one), writes only changed bytes, updates the manifest, warns on size-cap overrun                                                                                   |
 | `basicly check`                                                                           | **[Implemented]** | Byte-for-byte staleness check of generated files + manifest; exit `1` on mismatch, no auto-fix                                                                                                 |
 | `basicly skills-list` / `skills-build [--root ...\|--all-default-roots]` / `skills-check` | **[Implemented]** | Same build/check contract, applied to the skill catalog                                                                                                                                        |
+| `basicly init`                                                                            | **[Implemented]** | Materializes the bundled core catalog into `.basicly/core/`, scaffolds `.basicly-local/fragments/user/` + `basicly.toml`; idempotent, never overwrites existing files                          |
+| `basicly hooks-build` / `hooks-check`                                                     | **[Implemented]** | Materializes catalog hook scripts and merges a managed `repo: local` block into `.pre-commit-config.yaml` (foreign hooks preserved, idempotent); `hooks-check` reports drift byte-for-byte     |
 | `basicly verify`                                                                          | **[Planned]**     | Deterministic gate as a standalone command (§6)                                                                                                                                                |
 | `basicly build --verify`                                                                  | **[Planned]**     | Runs verify first; no files written on failure                                                                                                                                                 |
 | `basicly conflicts` / `basicly overrides`                                                 | **[Planned]**     | Reporting views over verify output                                                                                                                                                             |
 | `basicly review`                                                                          | **[Planned]**     | Agent-assisted semantic review (§6)                                                                                                                                                            |
-| `basicly init`                                                                            | **[Planned]**     | Scaffold `.basicly-local/` + `basicly.toml` in a fresh consumer repo; today `update` does this implicitly as a side effect                                                                     |
 
 ---
 
@@ -420,10 +421,11 @@ Ordered roughly by blocking-ness. Each is a candidate beads epic/feature/task.
    until then, §3.1 is a principle without a mechanical check.
 5. **Deterministic `verify` beyond schema/duplicate-id, and `basicly review`, are
    unbuilt** (§6).
-6. **No `hooks-build`/`hooks-check` projection command.** `core/hooks/` (§4.2) is a
-   real catalog location this repo dogfoods directly, but a fresh consumer repo has no
-   way to install these hooks except copying the directory and wiring its own
-   `.pre-commit-config.yaml` by hand.
+6. **`hooks-build`/`hooks-check` projection** — **[Resolved]** (`basicly-lku`,
+   `basicly-t51`): a tool-agnostic `core/hooks/hooks.yaml` manifest drives
+   `basicly hooks-build`, which materializes the scripts and merges a managed
+   `repo: local` block into a consumer's `.pre-commit-config.yaml` (foreign hooks
+   preserved, idempotent); `hooks-check` reports drift.
 7. **Skill source format is still Markdown (`SKILL.md`), not Python.** Decided (§4.2)
    but not executed: converting `core/skills/*/SKILL.md` to a structured Python source
    that projects to `SKILL.md` is a schema + loader + projector change across the
