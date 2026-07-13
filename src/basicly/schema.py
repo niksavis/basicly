@@ -90,6 +90,7 @@ class OutputDef:
     path_template: str | None = None
     applies_to_filter: list[str] = field(default_factory=list)
     has_scope: bool = False
+    exclude_scoped: bool = False
 
 
 @dataclass(frozen=True)

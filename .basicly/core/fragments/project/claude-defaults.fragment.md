@@ -10,5 +10,6 @@ title: Claude-specific notes
 ---
 
 - Put reusable skills in `.claude/skills/`.
+- Put path-scoped rules in `.claude/rules/*.md` (activated by `paths:`).
 - Put Claude-only prompts/commands/runbooks in `.claude/*.md`.
 - Prefer cross-platform commands over shell-specific ones.
