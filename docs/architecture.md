@@ -348,27 +348,30 @@ inherits that failure.
 
 ## 9) Distribution mechanics
 
-**Summary**: `uvx` install now works — the package builds, the `basicly` entry point
-resolves from a fresh install, and the core catalog ships inside the distribution.
-`basicly init` (the one-command consumer entry point) and the `curl` bootstrap are the
-remaining distribution gaps.
+**Summary**: `uvx` install works — the package builds, the `basicly` entry point
+resolves from a fresh install, the core catalog ships inside the distribution, and
+`basicly init` scaffolds a consumer repo (§8). The `curl` bootstrap is the remaining
+distribution gap. Caveat: the full flow is verified from a locally built wheel; the
+live `git+<remote>@<ref>` path is validated structurally (the sdist carries the
+catalog) but has not been exercised against a pushed ref yet.
 
 ### Details
 
 - **[Implemented]** `pyproject.toml` declares a `[build-system]` table (hatchling),
   `tool.uv.package = true`, and a `[project.scripts]` `basicly = "basicly.cli:main"`
-  entry point. `uv build` produces a wheel + sdist, and both `uvx --from
-  <wheel> basicly` and `uvx --from git+https://github.com/<org>/basicly@<ref> basicly`
-  resolve `basicly.cli`. `jinja2` is a `[project.dependencies]` runtime dep (§11.2).
+  entry point. `uv build` produces a wheel + sdist; `uvx --from <wheel> basicly`
+  resolves `basicly.cli` (verified). The equivalent `git+https://...@<ref>` form is
+  expected to work via the sdist but is unverified until the repo is pushed.
+  `jinja2` is a `[project.dependencies]` runtime dep (§11.2).
 - **[Implemented]** The managed core catalog ships inside the distribution: hatchling
   `force-include` projects the dogfooded source `.basicly/core/` to `basicly/catalog/`
   in the wheel, and the sdist carries `.basicly/core/` so `git+` installs resolve it.
-  `basicly.catalog.bundled_catalog_root()` locates the packaged copy (falling back to
-  `.basicly/core/` for source checkouts). Verified end-to-end: from a clean dir, an
-  installed `basicly` materializes the catalog and runs `list`/`build`.
-- **[Planned]** The intended primary surface is `uvx --from
-git+https://github.com/<org>/basicly@<ref> basicly init`, which will materialize the
-  bundled catalog and scaffold `basicly.toml` (§11 init epic). A `curl` bootstrap shim
+  `basicly.catalog.bundled_catalog_root()` prefers a source checkout (marker walk) and
+  falls back to the packaged copy in installed wheels. Verified end-to-end from a
+  clean dir: `init` → `build` → `skills-build` → `hooks-build`, all checks passing.
+- **[Implemented]** The primary consumer surface is `uvx --from
+git+https://github.com/<org>/basicly@<ref> basicly init` (§8): it materializes the
+  bundled catalog and scaffolds `basicly.toml` + the overlay. A `curl` bootstrap shim
   for consumers without `uv`/Python is still **[Planned]** (§11.8).
 - Catalog selection ("install fragments + hooks but not skills") and version/provenance
   tracking (`.basicly/state/install.json`) are **[Planned]**, not built (§11.5, §11.8).
