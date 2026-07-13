@@ -45,3 +45,11 @@ redirect
 # bv (beads viewer) lock file
 .bv.lock
 .write.lock
+
+# Transient SQLite / vacuum lock & journal sidecars (br runtime artifacts).
+# The generic *.lock / *.tmp / *.db-wal globs above miss these hyphen-suffixed
+# names (e.g. beads.db-lock-pending, .beads.vacuum.<pid>.tmp-journal,
+# beads.db.fsqlite-vacuum-1.tmp-lock-shared) — they must never be committed.
+*.tmp-*
+*-lock-*
+*.fsqlite-*

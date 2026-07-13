@@ -12,6 +12,7 @@ not rely on `AGENTS.md` being present.
 - Adding/removing/upgrading dependencies.
 - New network calls outside task scope.
 - Skipping or weakening tests/lint/type checks to force success.
+- Bypassing git hooks (`--no-verify`, `--no-gpg-sign`) — fix the failing gate instead.
 
 ## Knowledge Priming
 
@@ -36,6 +37,12 @@ not rely on `AGENTS.md` being present.
 - Don't leak internal detail (stack traces, queries, paths) in user-facing errors; log server-side, return a generic message.
 - Verify authorization at the service layer, not just the UI or controller entry point.
 - Never commit user- or machine-specific paths, usernames, or hostnames; keep repo defaults generic and portable.
+
+## Git Discipline
+
+- Run `git commit` as its own command; never chain state-dependent follow-ups (issue-tracker updates, tagging, `git push`) after it on one line — a hook rejection leaves the chain half-run.
+- Commits are gated: messages must be Conventional Commits with a trailing beads issue id (`commit-msg` hooks enforce both) — use the `conventional-commits` skill to format one, and the `tool-br` skill to claim the issue first.
+- When a hook rejects a commit, fix the reported cause and re-commit; do not reword to dodge the check.
 
 ## Decision Protocol
 
@@ -74,15 +81,10 @@ not rely on `AGENTS.md` being present.
 - User instructions in the current task override this file.
 - More specific path-scoped instructions override this file for matching files.
 
-## Python Style
-
-- Use type hints for public functions.
-- Prefer `pathlib` over `os.path`.
-- Formatting is enforced by `ruff format` (pre-commit hook).
-
 ## Claude-specific notes
 
 - Put reusable skills in `.claude/skills/`.
+- Put path-scoped rules in `.claude/rules/*.md` (activated by `paths:`).
 - Put Claude-only prompts/commands/runbooks in `.claude/*.md`.
 - Prefer cross-platform commands over shell-specific ones.
 
@@ -95,7 +97,7 @@ not rely on `AGENTS.md` being present.
 
 ## Session Completion
 
-- A task isn't done until its output has been verified, not just produced — re-run checks after your last edit, not only the first draft.
+- Re-run the repo's checks after your final edit, not just the first draft — later changes can break what passed earlier.
 - Leave the repo in a state a fresh session could pick up cleanly: no partial edits, no stray debug output, no unexplained changes.
 - Summarize what changed, what was verified, and what — if anything — remains open before ending the turn.
 
@@ -103,3 +105,8 @@ not rely on `AGENTS.md` being present.
 
 - Prefer cross-platform implementations over shell-specific behavior when a choice exists.
 - Use non-interactive flags (`cp -f`, `mv -f`, `rm -f`, package-manager `-y`, `ssh -o BatchMode=yes`) for ops that can hang on a prompt — some shells alias these to interactive mode.
+
+## Tool Usage
+
+- Retrieval ladder: find files by name, localize with focused search, then read only the ranges you need — expand scope only as required; don't bulk-load unrelated files.
+- Reach for the repo's dedicated tools and skills (search, tracker, hooks) before hand-rolling shell equivalents.

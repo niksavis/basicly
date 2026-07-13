@@ -14,3 +14,4 @@ status: active
 - Adding/removing/upgrading dependencies.
 - New network calls outside task scope.
 - Skipping or weakening tests/lint/type checks to force success.
+- Bypassing git hooks (`--no-verify`, `--no-gpg-sign`) — fix the failing gate instead.

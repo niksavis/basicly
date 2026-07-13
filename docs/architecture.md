@@ -50,16 +50,46 @@ for _why_ a check exists or how to satisfy it up front.
 
 Three roles, one repo can dogfood all of them at once (as this repo does today):
 
-```mermaid
-flowchart LR
-    C["Catalog\n(fragments + skills + hooks,\ncurated & versioned)"] -->|"basicly update\n(core only)"| Core[".basicly/core\n(managed, read-only to users)"]
-    User["User edits"] --> Overlay[".basicly-local\n(user overlay)"]
-    Core --> Planner["Planner\nselect + sort + merge\napply overrides"]
-    Overlay --> Planner
-    Planner --> Verify["Verify\n(deterministic today;\nsemantic planned)"]
-    Verify --> Render["Renderers (per target)"]
-    Render --> Out["AGENTS.md / CLAUDE.md /\ncopilot-instructions.md /\nskill files"]
-    Out --> Agents["Coding agents & humans\n(read-only consumers)"]
+```text
+  SOURCE OF TRUTH — human-edited, git-tracked
+  ┌────────────────────────┐          ┌────────────────────────┐
+  │ Catalog                │          │ User overlay           │
+  │ fragments, skills,     │          │ .basicly-local/        │
+  │ hooks (versioned)      │          │ additions & overrides  │
+  └────────────┬───────────┘          └────────────┬───────────┘
+               │ basicly update                    │ edited directly
+               ▼ (writes core only)                │ by the consumer
+  ┌────────────────────────┐                       │
+  │ .basicly/core/         │                       │
+  │ (managed, read-only)   │                       │
+  └────────────┬───────────┘                       │
+               └─────────────────┬─────────────────┘
+                                 │ merge (add / override)
+               ┌─────────────────┴─────────────────┐
+               │                                   │
+      GUIDANCE — suggestive               GATES — deterministic
+      (fragments + skills)                (hooks)
+               │                                   │
+               ▼                                   ▼
+  ┌────────────────────────┐          ┌────────────────────────┐
+  │ Planner   select/sort  │          │ .pre-commit-config.yaml│
+  │ Verify    (semantic:   │          │   -> .git/hooks        │
+  │            planned)    │          │ consumer install:      │
+  │ Renderers per target   │          │ §11 gap (not built)    │
+  └────────────┬───────────┘          └────────────┬───────────┘
+               ▼                                   ▼
+  ┌────────────────────────┐          at commit / push time,
+  │ AGENTS.md (codex:      │          block a bad change even
+  │   scoped inlined)      │          if the guidance above
+  │ .claude/CLAUDE.md      │          was never followed
+  │ .github/copilot-*.md   │
+  │ + scoped, path-gated:  │
+  │   .claude/rules/*      │
+  │   .github/instructions/│
+  └────────────┬───────────┘
+               ▼
+      Coding agents & humans — read the generated files
+      (read-only); the gates enforce no matter what
 ```
 
 Everything a coding agent or human reads is **generated**. Everything a user edits is
@@ -164,20 +194,21 @@ and `src/basicly/` never contains catalog data.
 ```text
 .basicly/
   core/
-    fragments/{boundaries,code-style,project,security}/*.fragment.md
+    fragments/{boundaries,commands,decisions,project,security,testing,tools}/*.fragment.md
     skills/<skill-name>/SKILL.md      # source format gap, see below
-    hooks/{pre-commit,commit-msg,beads-commit-msg,pre-push}.py
+    hooks/{pre-commit,identity-guard,commit-msg,beads-commit-msg,pre-push}.py
     targets/{claude,copilot,codex}.yaml
     templates/{claude,copilot,codex}/*.j2
   generated-manifest.json
 ```
 
-Confirmed current core catalog fragment categories on disk: `boundaries`, `decisions`,
-`project`, `security`, `tools`. The user overlay (`.basicly-local/fragments/user/`)
-adds a `code-style` fragment as a real, dogfooded example of repo-specific content
-(Python conventions, project scope/tooling facts) that intentionally does not belong
-in the generic core catalog. The schema also recognizes `commands`, `code-style`,
-`design`, `hooks`, `skills`, `testing`, `ci-cd` as valid categories with no core
+Confirmed current core catalog fragment categories on disk: `boundaries`, `commands`
+(git-discipline), `decisions`, `project`, `security`, `testing` (test-discipline, a
+path-scoped example), and `tools` (non-interactive-shell, tool-usage). The user overlay
+(`.basicly-local/fragments/user/`) adds a `code-style` fragment as a real, dogfooded
+example of repo-specific content (Python conventions, project scope/tooling facts) that
+intentionally does not belong in the generic core catalog. The schema also recognizes
+`code-style`, `design`, `hooks`, `skills`, `ci-cd` as valid categories with no core
 fragments in them yet. **Important distinction**: category `hooks` labels a _fragment
 that describes hook usage_ — it is not the mechanism that ships an actual hook script;
 the actual scripts live in `core/hooks/` (below).
@@ -192,9 +223,12 @@ skills in Python (or another structured, non-`SKILL.md`-named format) and projec
 to `SKILL.md` only at the designated target roots — not yet executed.
 
 **Hooks — [Implemented as a catalog location, no projection yet]**: `core/hooks/`
-holds the actual git hook scripts (`pre-commit.py`, `commit-msg.py`,
-`beads-commit-msg.py`, `pre-push.py`) as first-class catalog artifacts — the
-deterministic, gating counterpart to fragments/skills. This repo dogfoods them
+holds the actual git hook scripts (`pre-commit.py`, `identity-guard.py`,
+`commit-msg.py`, `beads-commit-msg.py`, `pre-push.py`) as first-class catalog
+artifacts — the deterministic, gating counterpart to fragments/skills.
+(`identity-guard.py` blocks a commit whose git identity is unset or a hostname
+fallback — a generic, no-personal-data gate; the `.scripts/setup_git_identity.py`
+helper and the `tool-git` skill cover the per-host identity setup it guards.) This repo dogfoods them
 directly: [`.pre-commit-config.yaml`](../.pre-commit-config.yaml) points straight at
 `core/hooks/*.py`. There is no `hooks-build`/`hooks-check` projection command yet for
 installing these into a fresh consumer repo's `.git/hooks`/`.pre-commit-config.yaml`
@@ -225,15 +259,21 @@ manifest = ".basicly/generated-manifest.json"
 #### 4.4 Generated artifacts
 
 ```text
-AGENTS.md                                    # applies_to: [all]
-.claude/CLAUDE.md                            # applies_to: [all] + [claude]
-.github/copilot-instructions.md              # applies_to: [all] + [copilot], inlined (no @-import)
-.github/instructions/*.instructions.md       # path-scoped copilot fragments
+AGENTS.md                                    # applies_to: [all]; inlines scoped fragments (codex can't path-scope)
+.claude/CLAUDE.md                            # applies_to: [all] + [claude]; scoped fragments excluded (exclude_scoped)
+.claude/rules/*.md                           # path-scoped claude fragments, `paths:` frontmatter
+.github/copilot-instructions.md              # applies_to: [all] + [copilot], inlined (no @-import); scoped excluded
+.github/instructions/*.instructions.md       # path-scoped copilot fragments, `applyTo:` frontmatter
 .claude/skills/*/SKILL.md                    # projected via `skills-build`
 ```
 
-Codex gets the shared `AGENTS.md` baseline only; `.codex/rules/*.rules` is
-**[Deferred]** (§11.9).
+Which fragments land where is driven by each output's `filter` in `targets/*.yaml`:
+`applies_to` selects by target, `has_scope: true` restricts an output to scoped
+fragments (the `.claude/rules/` and `.github/instructions/` files), and
+`exclude_scoped: true` drops scoped fragments from a baseline (the `CLAUDE.md` and
+`copilot-instructions.md` wrappers) — see §7 detail 4. Codex gets the shared `AGENTS.md`
+baseline only, with scoped fragments inlined because it has no path-scoping mechanism;
+`.codex/rules/*.rules` is **[Deferred]** (§11.9).
 
 ---
 
@@ -308,8 +348,19 @@ inherits that failure.
 
 ### Details
 
-1. **Size discipline**: soft cap Claude/Codex 8,000 chars, Copilot 6,000 chars. A cap
-   warning means split into a scoped rule, not shrink the prose.
+1. **Size discipline**: a single **unified soft cap of 8,000 chars** across all three
+   targets (`max_size_warning` in every `targets/*.yaml`). One cap, not per-target caps,
+   because all three always-on files project from the same `applies_to: [all]` fragment
+   set — they are ~95% identical, differing only by a small per-target defaults fragment
+   (~180–300 chars each). You cannot shrink one projection without cutting the shared
+   source, so divergent caps are incoherent. The number is a deliberate discipline choice,
+   not a platform limit: Claude Code's own degradation warning is ~40 KB, and GitHub
+   removed its former 4,000-char hard limit on `copilot-instructions.md` (it now only
+   advises shortening files past ~4,000 chars). 8,000 sits comfortably above the shared
+   body and well under the strictest real threshold, leaving room for a few high-value
+   additions while still forcing §3.1 minimalism. A cap warning means split into a scoped
+   rule, not shrink the prose. (Refs: GitHub removed the hard limit — github/docs#42761;
+   Claude ~40 KB — Claude Code memory docs.)
 2. **Enforced vs. judgment split**: enforced rules are one line pointing at the
    command/config; judgment rules are prose, and should be the shorter of the two
    sections.
@@ -317,9 +368,18 @@ inherits that failure.
    `AGENTS.md` and are inlined into `copilot-instructions.md` (Copilot cannot
    `@`-import `AGENTS.md`). Target-specific fragments add only genuinely different
    content.
-4. **Self-contained per target**: each generated file stands alone; an agent should
+4. **Scoped fragments stay out of the always-on baseline** (Claude & Copilot): a
+   fragment with a non-default `scope.paths` is projected only to its path-gated file
+   (`.claude/rules/*.md` via `paths:`, `.github/instructions/*.instructions.md` via
+   `applyTo:`) — both are real, auto-activating features of those tools — and is **not**
+   inlined into `CLAUDE.md`/`copilot-instructions.md`. This keeps the always-on file lean
+   (a Python-only rule shouldn't cost every task its context budget) and is enforced by
+   the `exclude_scoped: true` output filter (§4.4). **Exception — `AGENTS.md` (codex)**:
+   Codex has no path-scoping mechanism, so scoped fragments are inlined there to avoid
+   dropping them; this is why `AGENTS.md` runs larger than the other two baselines.
+5. **Self-contained per target**: each generated file stands alone; an agent should
    never need a second file to understand the baseline.
-5. **Stable ordering**: priority → category → id, so diffs stay minimal.
+6. **Stable ordering**: priority → category → id, so diffs stay minimal.
 
 ---
 

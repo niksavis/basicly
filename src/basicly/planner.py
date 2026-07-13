@@ -74,6 +74,7 @@ def _select_fragments(fragments: list[Fragment], output: OutputDef) -> list[Frag
         for f in fragments
         if _applies_to_matches(f.applies_to, output.applies_to_filter)
         and (not output.has_scope or f.is_scoped)
+        and not (output.exclude_scoped and f.is_scoped)
     ]
     return _sort_fragments(selected)
 

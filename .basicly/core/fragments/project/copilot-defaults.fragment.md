@@ -9,8 +9,7 @@ status: active
 title: Copilot-specific notes
 ---
 
-- Put path-scoped instructions in `.github/instructions/*.instructions.md`.
+- Put path-scoped instructions in `.github/instructions/*.instructions.md` (activated by `applyTo:`).
 - Put prompts in `.github/prompts/*.prompt.md`.
 - Put custom agents in `.github/agents/*.agent.md`.
-- Put hooks in `.github/hooks/*.json`.
 - Keep shared skills in `.claude/skills/` for Claude + Copilot reuse.

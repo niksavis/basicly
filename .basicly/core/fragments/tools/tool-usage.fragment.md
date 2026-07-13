@@ -1,0 +1,13 @@
+---
+id: tool-usage
+description: How to gather context efficiently before acting.
+category: tools
+priority: medium
+applies_to: [all]
+tags: [context, retrieval, tooling]
+status: active
+title: Tool Usage
+---
+
+- Retrieval ladder: find files by name, localize with focused search, then read only the ranges you need — expand scope only as required; don't bulk-load unrelated files.
+- Reach for the repo's dedicated tools and skills (search, tracker, hooks) before hand-rolling shell equivalents.

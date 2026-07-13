@@ -1,32 +1,46 @@
 {
   "version": "1",
-  "generated_at": "2026-07-13T16:55:49.863591+00:00",
+  "generated_at": "2026-07-13T17:34:18.596880+00:00",
   "outputs": {
     ".claude/CLAUDE.md": {
-      "hash": "sha256:9d01c8f4720ccc7deb284c845eaca48d75fbde04baafe9bf398a389910e7fbe3",
+      "hash": "sha256:d199d6c734a2f06102acdeb0a9fb1366975f6502d5e21201d27d1bfeb82a3834",
       "source_fragments": [
         "require-explicit-confirmation",
         "knowledge-priming",
         "project-defaults",
         "secure-coding",
+        "git-discipline",
         "decision-protocol",
         "core-rules",
         "quality-gate",
         "use",
-        "python-style",
         "claude-defaults",
         "self-improvement-retro",
         "session-completion",
-        "non-interactive-shell"
+        "non-interactive-shell",
+        "tool-usage"
+      ]
+    },
+    ".claude/rules/python-style.md": {
+      "hash": "sha256:1603e81fb60e581ebc02e99a2d2e538622008bf282e5f228615a8d5965e69858",
+      "source_fragments": [
+        "python-style"
+      ]
+    },
+    ".claude/rules/test-discipline.md": {
+      "hash": "sha256:1be3775a094c66c8f67ba06e0f3034950014617159bac5348b762186fbb6bf34",
+      "source_fragments": [
+        "test-discipline"
       ]
     },
     "AGENTS.md": {
-      "hash": "sha256:9e950fb1cff3c678fbadcf42e76b704ddaa3ca635114bba9cf612f72a4f5ee87",
+      "hash": "sha256:c41c7c4b099bfd26cc37e3871c560dd4fe78595719de34fdfb8db98b66557d9d",
       "source_fragments": [
         "require-explicit-confirmation",
         "knowledge-priming",
         "project-defaults",
         "secure-coding",
+        "git-discipline",
         "decision-protocol",
         "core-rules",
         "quality-gate",
@@ -34,31 +48,40 @@
         "python-style",
         "self-improvement-retro",
         "session-completion",
-        "non-interactive-shell"
+        "test-discipline",
+        "non-interactive-shell",
+        "tool-usage"
       ]
     },
     ".github/copilot-instructions.md": {
-      "hash": "sha256:5bcc75b97fb60610633962a3d651ddecbf3ec0fab767438a89098234b1cbce88",
+      "hash": "sha256:7a5a41e45d6b9a74a8b62185430a311ea1b479daddd19742140b8db98e68fbd6",
       "source_fragments": [
         "require-explicit-confirmation",
         "knowledge-priming",
         "project-defaults",
         "secure-coding",
+        "git-discipline",
         "decision-protocol",
         "core-rules",
         "quality-gate",
         "use",
-        "python-style",
         "copilot-defaults",
         "self-improvement-retro",
         "session-completion",
-        "non-interactive-shell"
+        "non-interactive-shell",
+        "tool-usage"
       ]
     },
     ".github/instructions/python-style.instructions.md": {
       "hash": "sha256:35be6847c7170debaf3778bae79b6e479a66bca4ab4da6a398f4df63b324777b",
       "source_fragments": [
         "python-style"
+      ]
+    },
+    ".github/instructions/test-discipline.instructions.md": {
+      "hash": "sha256:a896824ebf4da462d6451405693b3e5514a1b11845e536c692bae8b9170d6839",
+      "source_fragments": [
+        "test-discipline"
       ]
     }
   }

@@ -225,6 +225,7 @@ def _load_target(path: Path) -> Target:
                 path_template=output.get("path_template"),
                 applies_to_filter=filter_def.get("applies_to", []),
                 has_scope=filter_def.get("has_scope", False),
+                exclude_scoped=filter_def.get("exclude_scoped", False),
             )
         )
 
