@@ -27,15 +27,25 @@ def _local_hook_ids(config: dict) -> set[str]:
 
 
 def test_manifest_lists_every_catalog_hook() -> None:
-    """The bundled manifest resolves to the four dogfooded hook scripts."""
+    """The bundled manifest resolves to the dogfooded hook scripts."""
     specs = load_hook_specs()
     ids = {spec.id for spec in specs}
     assert ids == {
+        "identity-guard",
         "pre-commit-script",
         "commit-msg-script",
         "beads-commit-msg-script",
         "pre-push-script",
     }
+
+
+def test_manifest_ships_identity_guard_at_pre_commit() -> None:
+    """identity-guard is a distributed pre-commit gate, not just hand-wired here."""
+    specs = load_hook_specs()
+    guard = next(spec for spec in specs if spec.id == "identity-guard")
+    assert guard.script == "identity-guard.py"
+    assert guard.stage == "pre-commit"
+    assert guard.always_run is True
 
 
 def test_merge_preserves_foreign_hooks_and_is_idempotent() -> None:
