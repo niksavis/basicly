@@ -1,0 +1,38 @@
+{
+  "includeCoAuthoredBy": false,
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Edit",
+      "Write",
+      "Read",
+      "Glob",
+      "Grep",
+      "WebSearch",
+      "WebFetch"
+    ],
+    "deny": [
+      "Bash(rm -rf*)",
+      "Bash(rm -fr*)",
+      "Bash(rm -r -f*)",
+      "Bash(rm -f -r*)",
+      "Bash(git push --force*)",
+      "Bash(git push --force-with-lease*)",
+      "Bash(git push -f*)",
+      "Bash(git push*--force*)",
+      "Bash(git push*--no-verify*)",
+      "Bash(git push*--no-gpg-sign*)",
+      "Bash(git commit*--no-verify*)",
+      "Bash(git commit*--no-gpg-sign*)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean*-f*)",
+      "Bash(git filter-branch*)",
+      "Bash(git filter-repo*)",
+      "Read(.env)",
+      "Read(.env.*)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/.env.local)"
+    ]
+  }
+}
