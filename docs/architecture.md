@@ -347,22 +347,28 @@ inherits that failure.
 
 ## 9) Distribution mechanics
 
-**Summary**: `uvx`/`curl` install is the stated goal but is **not functional today** —
-packaging is disabled and the engine isn't on a normal import path from a fresh
-install. This is the most consequential gap in the document.
+**Summary**: `uvx` install now works — the package builds, the `basicly` entry point
+resolves from a fresh install, and the core catalog ships inside the distribution.
+`basicly init` (the one-command consumer entry point) and the `curl` bootstrap are the
+remaining distribution gaps.
 
 ### Details
 
-- `pyproject.toml` has `tool.uv.package = false` and no `build-system` table. The
-  engine now lives at `src/basicly/` (a normal src-layout package), but packaging is
-  still disabled, so `uvx --from git+... basicly` **would not resolve `basicly.cli`
-  today** — the package still isn't built/installable. Fixing this requires §11.1
-  (packaging).
-- Once packaging works, the intended surfaces are: `uvx --from
-git+https://github.com/<org>/basicly@<ref> basicly init` as primary, and a `curl`
-  bootstrap script as a thin shim over the same commands for consumers without
-  `uv`/Python — **[Planned]**, neither exists yet beyond this repo's own dogfooding
-  via `PYTHONPATH=src uv run python -m basicly.cli ...`.
+- **[Implemented]** `pyproject.toml` declares a `[build-system]` table (hatchling),
+  `tool.uv.package = true`, and a `[project.scripts]` `basicly = "basicly.cli:main"`
+  entry point. `uv build` produces a wheel + sdist, and both `uvx --from
+  <wheel> basicly` and `uvx --from git+https://github.com/<org>/basicly@<ref> basicly`
+  resolve `basicly.cli`. `jinja2` is a `[project.dependencies]` runtime dep (§11.2).
+- **[Implemented]** The managed core catalog ships inside the distribution: hatchling
+  `force-include` projects the dogfooded source `.basicly/core/` to `basicly/catalog/`
+  in the wheel, and the sdist carries `.basicly/core/` so `git+` installs resolve it.
+  `basicly.catalog.bundled_catalog_root()` locates the packaged copy (falling back to
+  `.basicly/core/` for source checkouts). Verified end-to-end: from a clean dir, an
+  installed `basicly` materializes the catalog and runs `list`/`build`.
+- **[Planned]** The intended primary surface is `uvx --from
+git+https://github.com/<org>/basicly@<ref> basicly init`, which will materialize the
+  bundled catalog and scaffold `basicly.toml` (§11 init epic). A `curl` bootstrap shim
+  for consumers without `uv`/Python is still **[Planned]** (§11.8).
 - Catalog selection ("install fragments + hooks but not skills") and version/provenance
   tracking (`.basicly/state/install.json`) are **[Planned]**, not built (§11.5, §11.8).
 
@@ -401,13 +407,12 @@ git hook, not just convention.
 
 Ordered roughly by blocking-ness. Each is a candidate beads epic/feature/task.
 
-1. **Packaging disabled** — `tool.uv.package = false`, no `build-system` table, even
-   though the engine now lives at a normal `src/basicly/` layout (moved from
-   `.basicly/basicly/`). This means `uvx` installation **does not work today** despite
-   being a stated goal (§9).
-2. **`jinja2` is a dev-only dependency** but is imported at runtime by
-   [`renderers/common.py`](../src/basicly/renderers/common.py); must move to
-   `[project.dependencies]`.
+1. **Packaging** — **[Resolved]** (`basicly-8a7`, `basicly-juj`): added a
+   `[build-system]` table (hatchling), flipped `tool.uv.package = true`, and bundled the
+   core catalog into the distribution (`force-include` → `basicly/catalog/`). `uvx`
+   installation now resolves `basicly.cli` from a built wheel and from `git+` (§9).
+2. **`jinja2` runtime dependency** — **[Resolved]** (`basicly-8if`): moved from the dev
+   group to `[project.dependencies]` alongside `pyyaml`.
 3. **Override validation is unimplemented**: `replaces` target existence,
    `override: true` requirement, and user-user mutual-replace rejection are not
    enforced — only the removal mechanic works (§5).
