@@ -14,7 +14,14 @@ from typing import Any
 from . import __version__
 from .catalog import bundled_catalog_root, iter_catalog_files
 from .config import CONFIG_FILE, DEFAULT_CONFIG_TOML, ProjectPaths, load_project_paths
-from .hooks import check_hooks, sync_hooks
+from .hooks import (
+    check_hooks,
+    hook_stages,
+    install_hooks,
+    load_hook_specs,
+    missing_hook_installations,
+    sync_hooks,
+)
 from .loader import load_fragments_from_roots, load_targets
 from .planner import plan_outputs
 from .renderers.common import sha256_of_text
@@ -413,10 +420,21 @@ def cmd_hooks_build(_args: argparse.Namespace) -> int:
         f"Hooks projection complete: {len(result.written)} written, "
         f"{len(result.unchanged)} unchanged"
     )
-    print(
-        "Run `pre-commit install --install-hooks -t pre-commit -t commit-msg "
-        "-t pre-push` to activate."
-    )
+
+    stages = hook_stages(load_hook_specs())
+    if getattr(_args, "no_install", False):
+        stage_flags = " ".join(f"-t {stage}" for stage in stages)
+        print(
+            "Skipped activation (--no-install). Run "
+            f"`pre-commit install --install-hooks {stage_flags}`."
+        )
+        return 0
+
+    ok, message = install_hooks(repo_root, stages)
+    if ok:
+        print(f"Activated git hooks for stages: {', '.join(stages)}.")
+    else:
+        print(f"Could not auto-activate git hooks: {message}", file=sys.stderr)
     return 0
 
 
@@ -434,6 +452,20 @@ def cmd_hooks_check(_args: argparse.Namespace) -> int:
         for path, reason in mismatches:
             print(f"  {_format_path(path, repo_root)}: {reason}", file=sys.stderr)
         return 1
+
+    # Advisory (non-fatal): projected files can be in sync yet the gates inert
+    # because pre-commit was never installed — the exact gap behind unguarded
+    # commits. Report it without failing, since CI runs the scripts directly and
+    # does not install git hooks.
+    missing = missing_hook_installations(repo_root, hook_stages(load_hook_specs()))
+    if missing:
+        stage_flags = " ".join(f"-t {stage}" for stage in missing)
+        print(
+            f"Note: git hooks are not installed for stages: {', '.join(missing)}. "
+            f"Run `basicly hooks-build` or `pre-commit install --install-hooks {stage_flags}` "
+            "to activate them locally.",
+            file=sys.stderr,
+        )
 
     print("Projected hooks are up to date.")
     return 0
@@ -550,7 +582,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     _add_skill_root_args(skills_check_parser)
 
-    subparsers.add_parser("hooks-build", help="Project git hooks into .pre-commit-config.yaml")
+    hooks_build_parser = subparsers.add_parser(
+        "hooks-build", help="Project git hooks into .pre-commit-config.yaml"
+    )
+    hooks_build_parser.add_argument(
+        "--no-install",
+        action="store_true",
+        help="Only write wiring; do not run `pre-commit install` to activate the hooks",
+    )
     subparsers.add_parser("hooks-check", help="Check projected hooks are up to date")
 
     args = parser.parse_args(argv)

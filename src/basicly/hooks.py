@@ -10,6 +10,8 @@ never clobbered. See docs/architecture.md §4.2, §11.6.
 from __future__ import annotations
 
 import shlex
+import shutil
+import subprocess  # nosec B404
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -215,6 +217,78 @@ def sync_hooks(repo_root: Path, core_hooks_dir: Path) -> HookSyncResult:
         result.unchanged.append(config_path)
 
     return result
+
+
+def hook_stages(specs: list[HookSpec]) -> list[str]:
+    """Return the distinct git stages used by the given hook specs, in first-seen order."""
+    stages: list[str] = []
+    for spec in specs:
+        if spec.stage not in stages:
+            stages.append(spec.stage)
+    return stages
+
+
+def _git_hooks_dir(repo_root: Path) -> Path:
+    """Resolve the active git hooks directory (worktree- and hooksPath-aware)."""
+    result = subprocess.run(
+        ["git", "rev-parse", "--git-path", "hooks"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )  # nosec B603 B607
+    rel = result.stdout.strip()
+    if not rel:
+        return repo_root / ".git" / "hooks"
+    path = Path(rel)
+    return path if path.is_absolute() else repo_root / path
+
+
+def missing_hook_installations(repo_root: Path, stages: list[str]) -> list[str]:
+    """Return the stages whose git hook is not installed by pre-commit.
+
+    A stage counts as installed when ``<git-hooks-dir>/<stage>`` exists and is a
+    pre-commit-generated dispatcher (contains the ``pre-commit`` marker). This is
+    a local-activation check, distinct from the projected-file drift check.
+    """
+    hooks_dir = _git_hooks_dir(repo_root)
+    missing: list[str] = []
+    for stage in stages:
+        hook_file = hooks_dir / stage
+        installed = False
+        if hook_file.exists():
+            text = hook_file.read_text(encoding="utf-8", errors="ignore")
+            installed = "pre-commit" in text
+        if not installed:
+            missing.append(stage)
+    return missing
+
+
+def install_hooks(repo_root: Path, stages: list[str]) -> tuple[bool, str]:
+    """Activate the gates by running ``pre-commit install`` for the given stages.
+
+    Returns ``(ok, message)``. Degrades gracefully when pre-commit isn't on PATH:
+    tries ``uv run pre-commit`` as a fallback, and otherwise returns actionable
+    guidance instead of raising, so a consumer without pre-commit is told what to do.
+    """
+    stage_args: list[str] = []
+    for stage in stages:
+        stage_args += ["-t", stage]
+    manual = "pre-commit install --install-hooks " + " ".join(stage_args)
+
+    pre_commit = shutil.which("pre-commit")
+    if pre_commit:
+        cmd = [pre_commit, "install", "--install-hooks", *stage_args]
+    elif shutil.which("uv"):
+        cmd = ["uv", "run", "pre-commit", "install", "--install-hooks", *stage_args]
+    else:
+        return False, f"pre-commit is not available; install it, then run: {manual}"
+
+    result = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True, check=False)  # nosec B603
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or "unknown error"
+        return False, f"pre-commit install failed ({detail}); run manually: {manual}"
+    return True, result.stdout.strip() or "hooks installed"
 
 
 def check_hooks(repo_root: Path, core_hooks_dir: Path) -> list[tuple[Path, str]]:

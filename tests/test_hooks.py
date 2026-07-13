@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
 
 from basicly.hooks import (
     HookSpec,
     check_hooks,
+    hook_stages,
+    install_hooks,
     load_hook_specs,
     merge_precommit_config,
+    missing_hook_installations,
     sync_hooks,
 )
 
@@ -164,3 +170,38 @@ def test_out_of_sync_managed_hook_triggers_rewrite(tmp_path: Path) -> None:
     result = sync_hooks(tmp_path, CORE_HOOKS_DIR)
     assert config in result.written
     assert check_hooks(tmp_path, CORE_HOOKS_DIR) == []
+
+
+def test_hook_stages_returns_distinct_stages_in_order() -> None:
+    """hook_stages collapses per-hook stages to distinct values, first-seen order."""
+    specs = [
+        HookSpec(id="a", script="a.py", stage="pre-commit"),
+        HookSpec(id="b", script="b.py", stage="commit-msg"),
+        HookSpec(id="c", script="c.py", stage="commit-msg"),
+        HookSpec(id="d", script="d.py", stage="pre-push"),
+    ]
+    assert hook_stages(specs) == ["pre-commit", "commit-msg", "pre-push"]
+
+
+def test_missing_hook_installations_detects_uninstalled_and_unmanaged(tmp_path: Path) -> None:
+    """A stage is 'installed' only when a pre-commit dispatcher exists for it."""
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)  # nosec B603 B607
+    hooks_dir = tmp_path / ".git" / "hooks"
+    # pre-commit: a real pre-commit dispatcher (has the marker) -> installed.
+    (hooks_dir / "pre-commit").write_text("#!/usr/bin/env bash\n# pre-commit\n", encoding="utf-8")
+    # pre-push: some foreign hook without the marker -> not installed.
+    (hooks_dir / "pre-push").write_text("#!/bin/sh\necho hi\n", encoding="utf-8")
+    # commit-msg: absent -> not installed.
+
+    missing = missing_hook_installations(tmp_path, ["pre-commit", "commit-msg", "pre-push"])
+    assert missing == ["commit-msg", "pre-push"]
+
+
+def test_install_hooks_returns_guidance_when_precommit_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When neither pre-commit nor uv is on PATH, install_hooks guides rather than raises."""
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+    ok, message = install_hooks(tmp_path, ["pre-commit", "commit-msg", "pre-push"])
+    assert ok is False
+    assert "pre-commit install --install-hooks -t pre-commit -t commit-msg -t pre-push" in message

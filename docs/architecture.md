@@ -222,17 +222,19 @@ copy and the projected copy and loading a skill twice. The decided fix is to aut
 skills in Python (or another structured, non-`SKILL.md`-named format) and project them
 to `SKILL.md` only at the designated target roots — not yet executed.
 
-**Hooks — [Implemented as a catalog location, no projection yet]**: `core/hooks/`
-holds the actual git hook scripts (`pre-commit.py`, `identity-guard.py`,
-`commit-msg.py`, `beads-commit-msg.py`, `pre-push.py`) as first-class catalog
-artifacts — the deterministic, gating counterpart to fragments/skills.
+**Hooks — [Implemented as a catalog location, projected and installed by
+`hooks-build`]**: `core/hooks/` holds the actual git hook scripts (`pre-commit.py`,
+`identity-guard.py`, `commit-msg.py`, `beads-commit-msg.py`, `pre-push.py`) as
+first-class catalog artifacts — the deterministic, gating counterpart to
+fragments/skills — described tool-agnostically in `core/hooks/hooks.yaml`.
 (`identity-guard.py` blocks a commit whose git identity is unset or a hostname
 fallback — a generic, no-personal-data gate; the `.scripts/setup_git_identity.py`
-helper and the `tool-git` skill cover the per-host identity setup it guards.) This repo dogfoods them
-directly: [`.pre-commit-config.yaml`](../.pre-commit-config.yaml) points straight at
-`core/hooks/*.py`. There is no `hooks-build`/`hooks-check` projection command yet for
-installing these into a fresh consumer repo's `.git/hooks`/`.pre-commit-config.yaml`
-(§11).
+helper and the `tool-git` skill cover the per-host identity setup it guards.) This
+repo dogfoods them directly: [`.pre-commit-config.yaml`](../.pre-commit-config.yaml)
+points straight at `core/hooks/*.py`. `basicly hooks-build` projects the manifest
+into a consumer's `.pre-commit-config.yaml` and then runs `pre-commit install` so the
+gates are active — not merely written; a gate that is shipped but never installed is
+inert, the exact gap that once let unguarded commits through (§8, §11.6).
 
 #### 4.3 User overlay
 
@@ -399,7 +401,7 @@ inherits that failure.
 | `basicly check`                                                                           | **[Implemented]** | Byte-for-byte staleness check of generated files + manifest; exit `1` on mismatch, no auto-fix                                                                                                 |
 | `basicly skills-list` / `skills-build [--root ...\|--all-default-roots]` / `skills-check` | **[Implemented]** | Same build/check contract, applied to the skill catalog                                                                                                                                        |
 | `basicly init`                                                                            | **[Implemented]** | Materializes the bundled core catalog into `.basicly/core/`, scaffolds `.basicly-local/fragments/user/` + `basicly.toml`; idempotent, never overwrites existing files                          |
-| `basicly hooks-build` / `hooks-check`                                                     | **[Implemented]** | Materializes catalog hook scripts and merges a managed `repo: local` block into `.pre-commit-config.yaml` (foreign hooks preserved, idempotent); `hooks-check` reports drift byte-for-byte     |
+| `basicly hooks-build [--no-install]` / `hooks-check`                                       | **[Implemented]** | Materializes catalog hook scripts, merges a managed `repo: local` block into `.pre-commit-config.yaml` (foreign hooks preserved, idempotent), and then runs `pre-commit install` for every managed stage so the gates are actually active (`--no-install` skips activation; graceful when pre-commit is absent). `hooks-check` reports projection drift and warns (non-fatal) when the git hooks are not installed |
 | `basicly verify`                                                                          | **[Planned]**     | Deterministic gate as a standalone command (§6)                                                                                                                                                |
 | `basicly build --verify`                                                                  | **[Planned]**     | Runs verify first; no files written on failure                                                                                                                                                 |
 | `basicly conflicts` / `basicly overrides`                                                 | **[Planned]**     | Reporting views over verify output                                                                                                                                                             |
