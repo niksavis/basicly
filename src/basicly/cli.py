@@ -14,6 +14,7 @@ from typing import Any
 from . import __version__
 from .catalog import bundled_catalog_root
 from .config import CONFIG_FILE, ProjectPaths, load_project_paths
+from .hooks import check_hooks, sync_hooks
 from .loader import load_fragments_from_roots, load_targets
 from .planner import plan_outputs
 from .renderers.common import sha256_of_text
@@ -388,6 +389,53 @@ def cmd_init(_args: argparse.Namespace) -> int:
     print("\nNext steps:")
     print("  basicly build        # generate AGENTS.md / CLAUDE.md / copilot-instructions.md")
     print("  basicly skills-build --all-default-roots   # project skills")
+    print("  basicly hooks-build  # wire the git-hook gates into .pre-commit-config.yaml")
+    return 0
+
+
+def _core_hooks_dir(paths: ProjectPaths) -> Path:
+    """Location of the on-disk core hooks dir, derived from the core layout."""
+    return paths.core_fragments_dir.parent / "hooks"
+
+
+def cmd_hooks_build(_args: argparse.Namespace) -> int:
+    """Materialize hook scripts and wire them into the pre-commit config."""
+    repo_root = _repo_root()
+    paths = load_project_paths(repo_root)
+    result = sync_hooks(repo_root, _core_hooks_dir(paths))
+
+    for path in result.written:
+        print(f"Wrote {_format_path(path, repo_root)}")
+    if not result.written:
+        print("No hook files changed.")
+
+    print(
+        f"Hooks projection complete: {len(result.written)} written, "
+        f"{len(result.unchanged)} unchanged"
+    )
+    print(
+        "Run `pre-commit install --install-hooks -t pre-commit -t commit-msg "
+        "-t pre-push` to activate."
+    )
+    return 0
+
+
+def cmd_hooks_check(_args: argparse.Namespace) -> int:
+    """Check that projected hooks and their wiring are up to date."""
+    repo_root = _repo_root()
+    paths = load_project_paths(repo_root)
+    mismatches = check_hooks(repo_root, _core_hooks_dir(paths))
+
+    if mismatches:
+        print(
+            "Stale hook projection detected. Run `basicly hooks-build` to sync hooks.",
+            file=sys.stderr,
+        )
+        for path, reason in mismatches:
+            print(f"  {_format_path(path, repo_root)}: {reason}", file=sys.stderr)
+        return 1
+
+    print("Projected hooks are up to date.")
     return 0
 
 
@@ -502,6 +550,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     _add_skill_root_args(skills_check_parser)
 
+    subparsers.add_parser("hooks-build", help="Project git hooks into .pre-commit-config.yaml")
+    subparsers.add_parser("hooks-check", help="Check projected hooks are up to date")
+
     args = parser.parse_args(argv)
     handlers = {
         "list": cmd_list,
@@ -512,6 +563,8 @@ def main(argv: list[str] | None = None) -> int:
         "skills-list": cmd_skills_list,
         "skills-build": cmd_skills_build,
         "skills-check": cmd_skills_check,
+        "hooks-build": cmd_hooks_build,
+        "hooks-check": cmd_hooks_check,
     }
 
     try:
