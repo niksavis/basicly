@@ -25,8 +25,45 @@ br update <id> --status in_progress --assignee "$(git config user.email)"
 br close <id> --reason "What was done"
 br delete <id> --hard                     # Delete durably (prunes JSONL; plain delete resurrects)
 br dep add <child-id> <parent-id>         # child depends on parent
+br dep tree <id>                          # dependency tree rooted at an issue
+br dep cycles                             # detect dependency cycles
 br list --status open --priority 0-1
 br sync --flush-only                      # Idempotent JSONL export check before commit
+```
+
+### Harness primitives (what the basicly loop relies on — §12)
+
+```bash
+# Decomposition & readiness
+br ready --json                           # unblocked, actionable work (scheduler input)
+br blocked                                # issues waiting on dependencies
+br scheduler --json                       # rank ready work; explainable additive score
+                                          #   (priority + dependents + stale + fairness + domain)
+br scheduler --stale-claim-hours 2        # surface stale/abandoned claims
+
+# Structured fields (Definition-of-Ready / Validate)
+br update <id> --acceptance-criteria "Given/When/Then ..."   # alias: --acceptance
+br update <id> --design "How it will be built"
+br update <id> --notes "Extra context"
+br lint                                   # flag issues missing required template sections (DoR)
+br lint -t feature -s open                # lint a subset
+
+# Gate ledger (deterministic = required, AI-semantic = advisory)
+br gate report <id> --gate ci --provider pytest --status pass   # or: fail, --note "..."
+br gate list <id>                         # recorded gate results + required-gate status
+
+# Loop state carried on the issue (no external state file)
+br update <id> --external-ref "harness/<name>@<repo>.worktrees/<name>"  # worktree/branch binding
+br update <id> --agent-context @design.json   # governing constraints; inherited by child issues
+br update <id> --status in_progress --assignee "$(git config user.email)"  # claim
+
+# Retro & multi-agent coordination
+br comments add <id> "Retro finding: ..."
+br comments list <id>
+br coordination                           # diagnose swarm claims (stale-worktree recovery)
+
+# Parallel-branch tracker-state reconciliation (br has NO git merge-driver, unlike bd)
+br sync --merge                           # 3-way merge of .beads/issues.jsonl after a branch merge
 ```
 
 ## Safe Defaults
@@ -87,6 +124,9 @@ br sync --flush-only                      # Idempotent JSONL export check before
 
 ## Output Interpretation
 
+- Statuses are `open`, `in_progress`, `blocked`, `deferred`, `closed` — there is **no**
+  `rework` status. A rework cycle stays `in_progress` and is tracked via a failing
+  `br gate report` result plus a `br comments` note, not a status change.
 - `br ready` lists only issues that are `open` (or configured ready statuses),
   unblocked, and not deferred.
 - `br list --json` returns `{"issues": [...], "total": N, "limit": N, "offset": N,

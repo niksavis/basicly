@@ -500,8 +500,107 @@ Ordered roughly by blocking-ness. Each is a candidate beads epic/feature/task.
    provenance tracking, and `.codex/rules/*.rules` scoped rules** are all
    **[Planned]**/**[Deferred]** with no code yet.
 9. **Cursor as a target** is **[Deferred]**; no renderer, no templates.
+10. **The basicly harness** — **[Planned]** (§12): the agent-agnostic development loop
+    (work isolation + workflow + hard verify/validate gates) built thin over `br`. This is
+    the project's forward direction, broken down into its own beads epic + dependency tree.
 
-## 12) References
+## 12) The basicly harness — agent-agnostic development loop
+
+**Summary**: **[Planned]** The harness is basicly's forward direction — an always-delivered
+_core_ that binds work isolation, a workflow loop, and hard verify/validate gates into a
+predictable machine, driven identically by any coding agent (Claude, Codex, Copilot). Its
+thesis is _lean-over-substrate_: it wraps the `br` (beads-rust) tracker's existing primitives
+(gate ledger, scheduler, dependency graph, lint) and builds only the missing mechanics
+(worktree lifecycle, merge queue, verify runner, loop state machine). Guidance is projected
+per target like every other fragment/skill; enforcement is deterministic gates.
+
+### Details
+
+**12.1 Work model.** A unit of work is classified into a **Work Class** that is exactly a
+`br` issue type — `bug`, `chore`, `task`, `feature`, `epic`. (`br`'s statuses are
+`open · in_progress · blocked · deferred · closed`; there is **no** `rework` status, so the
+rework loop below is modeled with gate results + comments, not a status.) The class selects a
+**track**, and tracks nest fractally: an Epic track runs Feature tracks, which run Task
+tracks; `bug`/`chore` are leaf tracks. There is no separate "node" concept — a decomposed
+leaf is a child `br` issue linked with `br dep add`.
+
+**12.2 The loop.** Intake (any input) → **Classify** (agent proposes, engine records the `br`
+type) → _[human checkpoint]_ → **Decompose** into child issues + a `br dep` graph, gated by a
+**Definition-of-Ready** (`br lint` required template sections; acceptance criteria present)
+→ _[human checkpoint]_ → **fan-out build** (one worktree per dependency-unblocked node, ranked
+by `br scheduler`, concurrency-capped) with a **serial merge queue** on the way back →
+**Verify** (deterministic, blocking) + **Validate** (acceptance/traceability) → _[human
+checkpoint]_ → **Ship** + **Teardown** → **epic retro**. A failed node enters a bounded
+**rework loop (n=2)** then escalates to a human; any track can **escalate a tier** (carry work
+forward, re-hit only the Decomposition checkpoint) without restarting. Default is
+task-by-task; one-shot mode collapses the middle checkpoint. Concurrency cap is configurable
+(default 4). The retro emits a findings list; per finding the user picks ignore / fix-now /
+fix-later, and a bead is created for everything not ignored.
+
+**12.3 Components — build vs reuse.** The engine we build is thin: worktree lifecycle; merge
+orchestrator + serial merge queue + conflict-resolver; a **verify runner** (runs the
+consumer's configured checks — adapted from beads-blueprint's `validate.py`, made
+config-driven rather than Python-specific); the loop state machine + checkpoints; the
+classifier; the concurrency cap. Everything else is delegated to `br`: **gate ledger**
+(`br gate report`/`br gate list`, with required-gate status), **scheduling** (`br scheduler`,
+explainable additive scoring), **dependency graph + readiness** (`br dep`/`br ready`/
+`br blocked`), **Definition-of-Ready** (`br lint`), **retro capture** (`br comments`), and
+**swarm/stale-claim diagnosis** (`br coordination`). basicly reimplements none of these.
+
+**12.4 Gates — deterministic blocks, semantic advises.** Deterministic checks (tests, lint,
+type, build; the existing commit-msg/identity/beads hooks) report a **required** gate via
+`br gate report --status pass|fail`; a failed required gate blocks loop advancement.
+AI-semantic verification reports a **non-required** gate — advisory, never blocking (§3.3
+deterministic-first, semantic-second, applied to the loop). The block-vs-advise policy and
+the n=2 rework rule live in the harness engine; `br gate` only stores the verdicts.
+
+**12.5 Work isolation.** Non-trivial work runs in a **sibling** git worktree
+`<repo>.worktrees/<name>` on branch `harness/<name>` (never in-repo `.claude/worktrees/`,
+which pollutes basicly's own tree-walk and provisions no deps). Creating a worktree provisions
+its toolchain (`uv sync`, `npm install`) and installs the gates (`pre-commit install`) — a
+worktree without the toolchain runs _no_ gates, the exact failure that once let unguarded
+commits through. Trivial mechanical work goes straight to the source branch. Cleanup
+(`git worktree remove` + delete the merged branch) runs immediately after a node lands;
+copy-mode deps make removal safe.
+
+**12.6 Merge model.** Parallelism is **parallel-build, serial-merge**: nodes build
+concurrently in their worktrees but land one at a time through a **merge queue** in dependency
+(topological) order, owned by a **merge orchestrator**, re-verifying after each merge. The
+**decomposer** marks nodes parallel-safe only when it can predict **file-disjoint** scopes;
+when it cannot, it emits a fixed serial order. A **conflict-resolver** (agent + scripts +
+skills) handles residual conflicts under the same n=2→human rule. Tracker state
+(`.beads/issues.jsonl`) is reconciled with **`br sync --merge`** (a 3-way merge; `br` has no
+git merge-driver, unlike `bd`), never by hand-editing JSONL conflict markers.
+
+**12.7 State & resumability.** `br` is the single source of truth — the harness keeps no
+durable side-state. In-flight worktree/branch bindings are stashed on the issue via
+`br update --external-ref`; design/architecture constraints ride _down_ a dependency tree via
+`br`'s inheritable `--agent-context`. Resume (after a crash, or when switching agents because
+one is rate-limited) is re-reading `br`: in-progress issues + their external-ref + recorded
+gate results + the ready set, reconciled against live worktrees. This is what makes the loop
+cross-agent — start on Claude, resume on Codex or Copilot.
+
+**12.8 Agent-agnostic runner.** Each agent drives the _same_ loop through a thin **runner**
+adapter (invocation command, headless flags, prompt injection, output capture), selected by
+capability detection or an explicit flag. The loop logic is agent-neutral; only the runner
+differs per agent.
+
+**12.9 Ship.** Ship is parameterized by the entry branch recorded at Intake: default → merge
+to `main` + push `main` (no feature branches on the remote); if the entry branch is a feature
+branch → merge to it, push, open a PR to `main`. Delivery is incremental per feature; teardown
+follows each feature's merge.
+
+**12.10 Reuse & positioning.** basicly's harness is a lean, clean-room, `br`-substrate-native,
+agent-agnostic re-founding of the same goal as the sibling `agent-harness` (basicly's first,
+company-owned, lefthook/pinned-pack, tracker-abstracted attempt): borrow its battle-tested
+worktree/merge know-how (copy-mode deps, `git merge-tree` pre-flight probe, mode-aware
+cleanup) as a reference, while keeping the **`br`-wrapping engine + agent-agnostic projection
++ installable composable distribution** as the differentiators. From beads-blueprint, adapt
+the `validate.py` gate-runner structure into the verify runner. `bv` (beads-viewer) is an
+**optional human viewer only** — redundant with `br scheduler` at runtime, never a harness
+dependency.
+
+## 13) References
 
 - pre-commit: <https://pre-commit.com/>
 - Trunk Code Quality: <https://docs.trunk.io/code-quality/overview>
