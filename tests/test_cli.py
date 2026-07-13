@@ -66,6 +66,40 @@ def test_cli_init_scaffolds_fresh_consumer(tmp_path: Path) -> None:
     assert (consumer / ".claude" / "CLAUDE.md").is_file()
 
 
+def test_cli_init_honors_custom_core_paths(tmp_path: Path) -> None:
+    """Init must materialize into the basicly.toml core root, not a hardcoded one.
+
+    Regression: init hardcoded .basicly/core while build read the configured
+    paths, so a custom-path consumer got a successful init followed by a build
+    that silently generated nothing.
+    """
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    (consumer / "basicly.toml").write_text(
+        "[paths]\n"
+        'core_fragments = "conf/basicly/core/fragments"\n'
+        'overlay_fragments = ["conf/basicly-local/fragments"]\n'
+        'targets = "conf/basicly/core/targets"\n'
+        'templates = "conf/basicly/core/templates"\n'
+        'manifest = "conf/basicly/generated-manifest.json"\n',
+        encoding="utf-8",
+    )
+
+    result = run_basicly_consumer(consumer, "init")
+    assert result.returncode == 0, result.stderr
+    assert (consumer / "conf" / "basicly" / "core" / "targets" / "claude.yaml").is_file()
+    assert not (consumer / ".basicly").exists()
+
+    build = run_basicly_consumer(consumer, "build")
+    assert build.returncode == 0, build.stderr
+    assert (consumer / "AGENTS.md").is_file()
+
+    hooks = run_basicly_consumer(consumer, "hooks-build")
+    assert hooks.returncode == 0, hooks.stderr
+    config_text = (consumer / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+    assert "conf/basicly/core/hooks/pre-commit.py" in config_text
+
+
 def test_cli_init_is_idempotent_and_preserves_edits(tmp_path: Path) -> None:
     """A second init overwrites nothing and never clobbers user content."""
     consumer = tmp_path / "consumer"
