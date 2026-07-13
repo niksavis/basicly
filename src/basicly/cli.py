@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
-from .catalog import bundled_catalog_root
+from .catalog import bundled_catalog_root, iter_catalog_files
 from .config import CONFIG_FILE, DEFAULT_CONFIG_TOML, ProjectPaths, load_project_paths
 from .hooks import check_hooks, sync_hooks
 from .loader import load_fragments_from_roots, load_targets
@@ -324,16 +324,11 @@ def cmd_update(_args: argparse.Namespace) -> int:
 def _materialize_catalog(src: Path, dst: Path) -> tuple[int, int]:
     """Copy catalog files from ``src`` to ``dst`` without overwriting existing ones.
 
-    Returns ``(written, skipped)``. Skips Python bytecode caches so a source-tree
-    materialization never carries ``__pycache__`` artifacts into a consumer repo.
+    Returns ``(written, skipped)``.
     """
     written = 0
     skipped = 0
-    for path in sorted(src.rglob("*")):
-        if path.is_dir():
-            continue
-        if "__pycache__" in path.parts or path.suffix == ".pyc":
-            continue
+    for path in iter_catalog_files(src):
         target = dst / path.relative_to(src)
         if target.exists():
             skipped += 1

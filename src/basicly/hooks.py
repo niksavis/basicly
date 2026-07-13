@@ -15,7 +15,7 @@ from pathlib import Path
 
 import yaml
 
-from .catalog import bundled_catalog_root
+from .catalog import bundled_catalog_root, iter_catalog_files
 
 HOOKS_MANIFEST = "hooks.yaml"
 PRECOMMIT_CONFIG = ".pre-commit-config.yaml"
@@ -179,15 +179,6 @@ def _write_if_changed(path: Path, content: bytes, result: HookSyncResult) -> Non
     result.written.append(path)
 
 
-def _iter_catalog_files(src: Path):
-    for path in sorted(src.rglob("*")):
-        if path.is_dir():
-            continue
-        if "__pycache__" in path.parts or path.suffix == ".pyc":
-            continue
-        yield path
-
-
 def sync_hooks(repo_root: Path, core_hooks_dir: Path) -> HookSyncResult:
     """Materialize hook scripts and merge the pre-commit wiring.
 
@@ -200,7 +191,7 @@ def sync_hooks(repo_root: Path, core_hooks_dir: Path) -> HookSyncResult:
     dst = repo_root / core_hooks_dir
 
     if src.resolve() != dst.resolve():
-        for path in _iter_catalog_files(src):
+        for path in iter_catalog_files(src):
             _write_if_changed(dst / path.relative_to(src), path.read_bytes(), result)
 
     specs = load_hook_specs(src)
@@ -233,7 +224,7 @@ def check_hooks(repo_root: Path, core_hooks_dir: Path) -> list[tuple[Path, str]]
     dst = repo_root / core_hooks_dir
 
     if src.resolve() != dst.resolve():
-        for path in _iter_catalog_files(src):
+        for path in iter_catalog_files(src):
             target = dst / path.relative_to(src)
             if not target.exists():
                 mismatches.append((target, "missing"))
