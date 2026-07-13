@@ -43,6 +43,9 @@ type(scope)!: description (issue-id[, issue-id...])
   least 3 characters.
 - `(issue-id[, issue-id...])` — required by this repo's `beads-commit-msg` hook: one or
   more known beads (`br`) issue ids, comma-separated in a single trailing parenthetical.
+  An id is `<prefix>-<base>` with optional dotted hierarchy levels — e.g. `basicly-q49`,
+  `basicly-zrj.8`, `basicly-zrj.4.1` — where `<prefix>` is your repo's configured beads
+  prefix. The dotted forms are how `br` names child issues and are accepted here.
 
 ## Workflow
 
@@ -62,6 +65,7 @@ Valid:
 - `fix: correct sorting order in planner (basicly-abc)`
 - `feat(basicly)!: remove deprecated config format (basicly-idr)`
 - `fix: correct sorting order (basicly-idr, basicly-abc)`
+- `docs: document the update flow (basicly-zrj.8)` — dotted child id is allowed.
 
 Invalid:
 
@@ -76,6 +80,13 @@ Invalid:
 
 ## Guardrails
 
+- This is a stricter-than-spec profile: it enforces the Conventional Commits v1.0.0
+  header structure **plus** the house description rules above (lowercase, restricted
+  charset, no trailing punctuation). Passing plain CC is necessary but not sufficient.
+- The same `commit-msg.py` and `beads-commit-msg.py` run as your local git hook **and**
+  in CI, so a subject that passes locally passes CI — but only if the hooks are actually
+  installed. Run `pre-commit install -t pre-commit -t commit-msg -t pre-push` once per
+  clone/worktree; an uninstalled hook silently lets a bad message through to CI.
 - Never bypass the hooks (`--no-verify`) to force a non-conforming message through.
 - Never invent a beads issue id that doesn't exist in `.beads/issues.jsonl`.
 - Merge commits and `Revert "..."` auto-generated subjects are exempt from this format.

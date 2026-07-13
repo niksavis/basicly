@@ -65,6 +65,14 @@ def test_validate_allows_multiple_trailing_beads_issue_ids() -> None:
     assert module.validate("fix: correct sorting order (basicly-idr, basicly-abc)")
 
 
+def test_validate_allows_dotted_hierarchical_beads_issue_id() -> None:
+    """Dotted hierarchical beads ids (e.g. basicly-zrj.8, -zrj.4.1) should be allowed."""
+    module = _load_commit_msg_module()
+    assert module.validate("fix: resolve one core root from config (basicly-zrj.8)")
+    assert module.validate("chore: close packaging epic after children complete (basicly-zrj.4.1)")
+    assert module.validate("feat: add gate (basicly-ed2, basicly-zrj.8)")
+
+
 def test_validate_rejects_malformed_trailing_parenthetical() -> None:
     """A trailing parenthetical that isn't a valid issue-id list should fail."""
     module = _load_commit_msg_module()
