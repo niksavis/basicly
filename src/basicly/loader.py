@@ -54,7 +54,46 @@ def load_fragments_from_roots(
             seen_ids[fragment.id] = path
             fragments.append(fragment)
 
+    _validate_replacements(fragments)
     return fragments
+
+
+def _validate_replacements(fragments: list[Fragment]) -> None:
+    """Enforce replaces/override integrity across the merged fragment set.
+
+    A fragment that lists ids in ``replaces`` must set ``override: true``, every
+    replaced id must exist, and two user fragments may not replace each other.
+    """
+    by_id = {fragment.id: fragment for fragment in fragments}
+
+    for fragment in fragments:
+        if not fragment.replaces:
+            continue
+
+        if not fragment.override:
+            raise ValidationError(
+                f"fragment '{fragment.id}' declares 'replaces' but is missing "
+                "'override: true'; a replacement is only honored with override enabled",
+                fragment.source_path,
+            )
+
+        for replaced_id in fragment.replaces:
+            replaced = by_id.get(replaced_id)
+            if replaced is None:
+                raise ValidationError(
+                    f"fragment '{fragment.id}' replaces unknown fragment id '{replaced_id}'",
+                    fragment.source_path,
+                )
+            if (
+                fragment.source == "user"
+                and replaced.source == "user"
+                and fragment.id in replaced.replaces
+            ):
+                raise ValidationError(
+                    f"mutual replace between user fragments '{fragment.id}' and "
+                    f"'{replaced_id}'; only one may replace the other",
+                    fragment.source_path,
+                )
 
 
 def _load_fragment(path: Path, source_hint: str | None = None) -> Fragment:

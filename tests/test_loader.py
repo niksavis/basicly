@@ -84,8 +84,17 @@ def test_extension_fields_default_to_safe_values() -> None:
 
 def test_extension_fields_are_parsed(tmp_path: Path) -> None:
     """Extension fields are loaded when present."""
-    fragment = tmp_path / "user.fragment.md"
-    fragment.write_text(
+    (tmp_path / "core.fragment.md").write_text(
+        "---\n"
+        "id: python-style\n"
+        "description: Core style\n"
+        "category: code-style\n"
+        "applies_to: [all]\n"
+        "---\n\n"
+        "core\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "user.fragment.md").write_text(
         "---\n"
         "id: user-style\n"
         "description: User style\n"
@@ -100,8 +109,8 @@ def test_extension_fields_are_parsed(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     fragments = load_fragments(tmp_path, {"claude"})
-    assert len(fragments) == 1
-    f = fragments[0]
+    by_id = {f.id: f for f in fragments}
+    f = by_id["user-style"]
     assert f.source == "user"
     assert f.override is True
     assert f.replaces == ["python-style"]
@@ -178,3 +187,64 @@ def test_load_from_core_and_overlay_roots(tmp_path: Path) -> None:
 
     assert by_id["core-rule"].source == "core"
     assert by_id["user-rule"].source == "user"
+
+
+def _write_fragment(path: Path, front: str, body: str = "body") -> None:
+    path.write_text(f"---\n{front}\n---\n\n{body}\n", encoding="utf-8")
+
+
+def test_replaces_missing_override_is_rejected(tmp_path: Path) -> None:
+    """A fragment that lists replaces without override: true is a hard error."""
+    _write_fragment(
+        tmp_path / "core.fragment.md",
+        "id: base\ndescription: x\ncategory: project\napplies_to: [all]",
+    )
+    _write_fragment(
+        tmp_path / "user.fragment.md",
+        "id: repl\ndescription: x\ncategory: project\napplies_to: [all]\n"
+        "source: user\nreplaces: [base]",
+    )
+    with pytest.raises(ValidationError, match="override: true"):
+        load_fragments(tmp_path, {"claude"})
+
+
+def test_replaces_unknown_target_is_rejected(tmp_path: Path) -> None:
+    """A replaces id that no loaded fragment defines is a hard error."""
+    _write_fragment(
+        tmp_path / "user.fragment.md",
+        "id: repl\ndescription: x\ncategory: project\napplies_to: [all]\n"
+        "source: user\noverride: true\nreplaces: [does-not-exist]",
+    )
+    with pytest.raises(ValidationError, match="unknown fragment id 'does-not-exist'"):
+        load_fragments(tmp_path, {"claude"})
+
+
+def test_mutual_user_replace_is_rejected(tmp_path: Path) -> None:
+    """Two user fragments replacing each other is a hard error."""
+    _write_fragment(
+        tmp_path / "a.fragment.md",
+        "id: frag-a\ndescription: x\ncategory: project\napplies_to: [all]\n"
+        "source: user\noverride: true\nreplaces: [frag-b]",
+    )
+    _write_fragment(
+        tmp_path / "b.fragment.md",
+        "id: frag-b\ndescription: x\ncategory: project\napplies_to: [all]\n"
+        "source: user\noverride: true\nreplaces: [frag-a]",
+    )
+    with pytest.raises(ValidationError, match="mutual replace"):
+        load_fragments(tmp_path, {"claude"})
+
+
+def test_valid_user_replace_of_core_is_accepted(tmp_path: Path) -> None:
+    """A well-formed user replacement of an existing core fragment loads cleanly."""
+    _write_fragment(
+        tmp_path / "core.fragment.md",
+        "id: base\ndescription: x\ncategory: project\napplies_to: [all]",
+    )
+    _write_fragment(
+        tmp_path / "user.fragment.md",
+        "id: repl\ndescription: x\ncategory: project\napplies_to: [all]\n"
+        "source: user\noverride: true\nreplaces: [base]",
+    )
+    fragments = load_fragments(tmp_path, {"claude"})
+    assert {f.id for f in fragments} == {"base", "repl"}

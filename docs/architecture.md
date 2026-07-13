@@ -262,11 +262,12 @@ Confirmed current schema ([`schema.py`](../src/basicly/schema.py)):
 | `replaces`    | no       | list of fragment ids                                                                                                                 | core fragments removed when this fragment is active   |
 | `extends`     | no       | list of fragment ids                                                                                                                 | documentation only, narrows future conflict detection |
 
-**Extension mechanism — [Partial]**: the planner
+**Extension mechanism — [Implemented]**: the planner
 (`planner._apply_user_replacements`) removes core fragments listed in an active user
-fragment's `replaces`. **Not yet implemented**: validating that `replaces` targets
-exist, requiring `override: true` before a replacement is honored, or rejecting two
-user fragments that both try to replace each other (§11.4).
+fragment's `replaces`, and the loader (`loader._validate_replacements`, run on every
+`list`/`build`/`check`) enforces the integrity rules as hard errors: a fragment
+declaring `replaces` must set `override: true`, every replaced id must exist in the
+merged fragment set, and two user fragments may not replace each other.
 
 Sorting is deterministic: priority (desc) → category (asc) → id (asc). Two `build`
 runs on identical source produce byte-identical output.
@@ -285,7 +286,7 @@ agent-assisted semantic review are designed but not built.
 | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
 | Required fields, known category/priority/status/target, extension-field types              | **[Implemented]** — `loader._validate_fragment`, runs on every `list`/`build`/`check` |
 | Duplicate fragment `id` across core + overlay roots                                        | **[Implemented]** — `loader.load_fragments_from_roots`                                |
-| `replaces` target exists / `override: true` required / no mutual user-user replaces        | **[Planned]**                                                                         |
+| `replaces` target exists / `override: true` required / no mutual user-user replaces        | **[Implemented]** — `loader._validate_replacements`, runs on every `list`/`build`/`check` |
 | Duplicate/near-duplicate fragment bodies                                                   | **[Planned]**                                                                         |
 | Contradiction detection (static dictionary: tabs/spaces, pathlib/os.path, etc.)            | **[Planned]**                                                                         |
 | Ambiguity detection (deny-list of vague phrases)                                           | **[Planned]**                                                                         |
@@ -417,9 +418,9 @@ Ordered roughly by blocking-ness. Each is a candidate beads epic/feature/task.
    installation now resolves `basicly.cli` from a built wheel and from `git+` (§9).
 2. **`jinja2` runtime dependency** — **[Resolved]** (`basicly-8if`): moved from the dev
    group to `[project.dependencies]` alongside `pyyaml`.
-3. **Override validation is unimplemented**: `replaces` target existence,
-   `override: true` requirement, and user-user mutual-replace rejection are not
-   enforced — only the removal mechanic works (§5).
+3. **Override validation** — **[Resolved]** (`basicly-q49`): `loader._validate_replacements`
+   enforces `replaces` target existence, the `override: true` requirement, and
+   user-user mutual-replace rejection as hard errors on every load (§5, §6).
 4. **`enforced_by` schema field and the enforcement-pointer check don't exist yet**;
    until then, §3.1 is a principle without a mechanical check.
 5. **Deterministic `verify` beyond schema/duplicate-id, and `basicly review`, are
