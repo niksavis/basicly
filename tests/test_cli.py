@@ -33,6 +33,57 @@ def run_basicly(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def run_basicly_consumer(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    """Run the CLI in a consumer dir, importing basicly from the real repo's src."""
+    env = {"PYTHONPATH": str(REPO_ROOT / "src")}
+    return subprocess.run(
+        [sys.executable, "-m", "basicly.cli", *args],
+        cwd=cwd,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_cli_init_scaffolds_fresh_consumer(tmp_path: Path) -> None:
+    """Init materializes the catalog, overlay, and config in an empty repo."""
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+
+    result = run_basicly_consumer(consumer, "init")
+    assert result.returncode == 0, result.stderr
+
+    assert (consumer / "basicly.toml").is_file()
+    assert (consumer / ".basicly-local" / "fragments" / "user").is_dir()
+    assert list((consumer / ".basicly" / "core" / "fragments").rglob("*.fragment.md"))
+    assert (consumer / ".basicly" / "core" / "targets" / "claude.yaml").is_file()
+
+    # The materialized catalog is immediately buildable.
+    build = run_basicly_consumer(consumer, "build")
+    assert build.returncode == 0, build.stderr
+    assert (consumer / "AGENTS.md").is_file()
+    assert (consumer / ".claude" / "CLAUDE.md").is_file()
+
+
+def test_cli_init_is_idempotent_and_preserves_edits(tmp_path: Path) -> None:
+    """A second init overwrites nothing and never clobbers user content."""
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    run_basicly_consumer(consumer, "init")
+
+    # A user edit to the config must survive re-running init.
+    config = consumer / "basicly.toml"
+    marker = config.read_text(encoding="utf-8") + "\n# user note\n"
+    config.write_text(marker, encoding="utf-8")
+
+    result = run_basicly_consumer(consumer, "init")
+    assert result.returncode == 0, result.stderr
+    assert "already exists; left unchanged" in result.stdout
+    assert "0 file(s) written" in result.stdout
+    assert config.read_text(encoding="utf-8") == marker
+
+
 def test_cli_build_idempotent(work_repo: Path) -> None:
     """Two build runs with no source changes should produce no diff."""
     result1 = run_basicly(work_repo, "build")

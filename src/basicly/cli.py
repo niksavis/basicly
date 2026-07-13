@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
-from .config import ProjectPaths, load_project_paths
+from .catalog import bundled_catalog_root
+from .config import CONFIG_FILE, ProjectPaths, load_project_paths
 from .loader import load_fragments_from_roots, load_targets
 from .planner import plan_outputs
 from .renderers.common import sha256_of_text
@@ -319,6 +320,77 @@ def cmd_update(_args: argparse.Namespace) -> int:
     return 0
 
 
+_DEFAULT_CONFIG = """\
+# basicly path wiring. Managed core catalog is materialized by `basicly init`
+# and refreshed by `basicly update`; the overlay is always yours to edit.
+[paths]
+core_fragments = ".basicly/core/fragments"
+overlay_fragments = [".basicly-local/fragments"]
+targets = ".basicly/core/targets"
+templates = ".basicly/core/templates"
+manifest = ".basicly/generated-manifest.json"
+"""
+
+
+def _materialize_catalog(src: Path, dst: Path) -> tuple[int, int]:
+    """Copy catalog files from ``src`` to ``dst`` without overwriting existing ones.
+
+    Returns ``(written, skipped)``. Skips Python bytecode caches so a source-tree
+    materialization never carries ``__pycache__`` artifacts into a consumer repo.
+    """
+    written = 0
+    skipped = 0
+    for path in sorted(src.rglob("*")):
+        if path.is_dir():
+            continue
+        if "__pycache__" in path.parts or path.suffix == ".pyc":
+            continue
+        target = dst / path.relative_to(src)
+        if target.exists():
+            skipped += 1
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, target)
+        written += 1
+    return written, skipped
+
+
+def cmd_init(_args: argparse.Namespace) -> int:
+    """Scaffold a consumer repo: materialize the core catalog, overlay, and config."""
+    repo_root = _repo_root()
+    paths = load_project_paths(repo_root)
+
+    core_src = bundled_catalog_root()
+    core_dst = repo_root / ".basicly" / "core"
+    if core_src.resolve() == core_dst.resolve():
+        print("Core catalog is its own authoring source here; left in place.")
+    else:
+        written, skipped = _materialize_catalog(core_src, core_dst)
+        print(
+            f"Materialized core catalog into {_format_path(core_dst, repo_root)}: "
+            f"{written} file(s) written, {skipped} existing left unchanged"
+        )
+
+    for overlay in paths.overlay_fragments_dirs:
+        user_dir = repo_root / overlay / "user"
+        existed = user_dir.exists()
+        user_dir.mkdir(parents=True, exist_ok=True)
+        verb = "exists" if existed else "created"
+        print(f"Overlay {verb}: {_format_path(user_dir, repo_root)}")
+
+    config_path = repo_root / CONFIG_FILE
+    if config_path.exists():
+        print(f"{CONFIG_FILE} already exists; left unchanged")
+    else:
+        config_path.write_text(_DEFAULT_CONFIG, encoding="utf-8")
+        print(f"Wrote {CONFIG_FILE}")
+
+    print("\nNext steps:")
+    print("  basicly build        # generate AGENTS.md / CLAUDE.md / copilot-instructions.md")
+    print("  basicly skills-build --all-default-roots   # project skills")
+    return 0
+
+
 def _resolve_skill_output_roots(args: argparse.Namespace, repo_root: Path) -> list[Path]:
     roots_arg = getattr(args, "roots", None)
     use_default_roots = bool(getattr(args, "all_default_roots", False))
@@ -404,6 +476,11 @@ def main(argv: list[str] | None = None) -> int:
 
     subparsers.add_parser("list", help="List active fragments")
 
+    subparsers.add_parser(
+        "init",
+        help="Scaffold a consumer repo (materialize core catalog + overlay + basicly.toml)",
+    )
+
     subparsers.add_parser("update", help="Refresh managed core layout")
 
     build_parser = subparsers.add_parser("build", help="Build generated files")
@@ -428,6 +505,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     handlers = {
         "list": cmd_list,
+        "init": cmd_init,
         "update": cmd_update,
         "build": cmd_build,
         "check": cmd_check,
