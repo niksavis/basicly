@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from basicly.config import (
     CONFIG_FILE,
     DEFAULT_CONFIG_TOML,
     WorktreeConfig,
     load_project_paths,
+    load_verify_config,
     load_worktree_config,
 )
 
@@ -61,3 +64,45 @@ def test_worktree_config_custom_values(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert load_worktree_config(tmp_path).concurrency == 4
+
+
+def test_verify_config_empty_without_section(tmp_path: Path) -> None:
+    """No file or no [verify] section yields no checks."""
+    assert load_verify_config(tmp_path).checks == ()
+    (tmp_path / CONFIG_FILE).write_text("[worktree]\nconcurrency = 2\n", encoding="utf-8")
+    assert load_verify_config(tmp_path).checks == ()
+
+
+def test_default_config_toml_verify_checks(tmp_path: Path) -> None:
+    """The scaffolded [verify] section parses into the expected mode routing."""
+    (tmp_path / CONFIG_FILE).write_text(DEFAULT_CONFIG_TOML, encoding="utf-8")
+    config = load_verify_config(tmp_path)
+
+    assert [c.name for c in config.checks] == ["ruff", "ruff-format", "pyright", "pytest"]
+    assert [c.name for c in config.for_mode("full")] == ["ruff", "ruff-format", "pyright", "pytest"]
+    assert [c.name for c in config.for_mode("fast")] == ["ruff", "ruff-format", "pyright"]
+    assert [(c.name, c.staged_suffix) for c in config.for_mode("staged")] == [
+        ("ruff", ".py"),
+        ("ruff-format", ".py"),
+        ("pyright", ".py"),
+    ]
+    assert config.checks[0].command == ("ruff", "check")
+
+
+def test_verify_config_rejects_malformed_check(tmp_path: Path) -> None:
+    """A check missing its command is a loud error, not a silently dropped gate."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[verify.checks]]\nname = "ruff"\nmodes = ["fast"]\n', encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="non-empty 'command'"):
+        load_verify_config(tmp_path)
+
+
+def test_verify_config_rejects_unknown_mode(tmp_path: Path) -> None:
+    """An unknown mode is rejected so a typo never quietly disables a check."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[verify.checks]]\nname = "x"\ncommand = ["true"]\nmodes = ["quick"]\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="unknown mode"):
+        load_verify_config(tmp_path)

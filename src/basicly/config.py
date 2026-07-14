@@ -27,10 +27,38 @@ manifest = ".basicly/generated-manifest.json"
 base_branch = ""
 # Cap on how many worktrees may exist at once.
 concurrency = 4
+
+# Deterministic verify gate. Each check runs in the listed modes; a "staged"
+# check with staged_suffix runs only against staged files of that suffix.
+[[verify.checks]]
+name = "ruff"
+command = ["ruff", "check"]
+modes = ["fast", "full", "staged"]
+staged_suffix = ".py"
+
+[[verify.checks]]
+name = "ruff-format"
+command = ["ruff", "format", "--check"]
+modes = ["fast", "full", "staged"]
+staged_suffix = ".py"
+
+[[verify.checks]]
+name = "pyright"
+command = ["pyright"]
+modes = ["fast", "full", "staged"]
+staged_suffix = ".py"
+
+[[verify.checks]]
+name = "pytest"
+command = ["pytest", "-q"]
+modes = ["full"]
 """
 
 # Default concurrency cap when no basicly.toml (or no [worktree]) is present.
 DEFAULT_WORKTREE_CONCURRENCY = 4
+
+# Modes the verify runner understands.
+VERIFY_MODES = ("fast", "full", "staged")
 
 
 @dataclass(frozen=True)
@@ -85,6 +113,85 @@ def load_worktree_config(repo_root: Path) -> WorktreeConfig:
         concurrency = defaults.concurrency
 
     return WorktreeConfig(base_branch=base_branch, concurrency=concurrency)
+
+
+@dataclass(frozen=True)
+class VerifyCheck:
+    """A single configured verify check."""
+
+    name: str
+    command: tuple[str, ...]
+    modes: frozenset[str]
+    # When set and running in "staged" mode, run only against staged files with
+    # this suffix (and skip when none are staged).
+    staged_suffix: str | None = None
+
+
+@dataclass(frozen=True)
+class VerifyConfig:
+    """The consumer's configured verify checks."""
+
+    checks: tuple[VerifyCheck, ...]
+
+    def for_mode(self, mode: str) -> tuple[VerifyCheck, ...]:
+        """Return the checks that participate in *mode*, in configured order."""
+        return tuple(check for check in self.checks if mode in check.modes)
+
+
+def load_verify_config(repo_root: Path) -> VerifyConfig:
+    """Load ``[verify].checks`` from basicly.toml.
+
+    Returns an empty config when the file or section is absent. Raises
+    ``ValueError`` on a malformed check entry rather than silently dropping it —
+    a lost gate must never pass unnoticed.
+    """
+    config_path = repo_root / CONFIG_FILE
+    if not config_path.exists():
+        return VerifyConfig(())
+
+    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    section = data.get("verify", {})
+    raw_checks = section.get("checks") if isinstance(section, dict) else None
+    if not isinstance(raw_checks, list):
+        return VerifyConfig(())
+
+    checks: list[VerifyCheck] = []
+    for entry in raw_checks:
+        checks.append(_parse_verify_check(entry))
+    return VerifyConfig(tuple(checks))
+
+
+def _parse_verify_check(entry: object) -> VerifyCheck:
+    if not isinstance(entry, dict):
+        raise ValueError(f"[verify.checks] entry must be a table, got {type(entry).__name__}")
+
+    name = entry.get("name")
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("[verify.checks] entry is missing a non-empty 'name'")
+
+    command = entry.get("command")
+    if not (isinstance(command, list) and command and all(isinstance(a, str) for a in command)):
+        raise ValueError(f"verify check {name!r} needs a non-empty 'command' list of strings")
+
+    modes = entry.get("modes")
+    if not (isinstance(modes, list) and modes and all(isinstance(m, str) for m in modes)):
+        raise ValueError(f"verify check {name!r} needs a non-empty 'modes' list of strings")
+    unknown = [m for m in modes if m not in VERIFY_MODES]
+    if unknown:
+        raise ValueError(
+            f"verify check {name!r} has unknown mode(s) {unknown}; allowed: {list(VERIFY_MODES)}"
+        )
+
+    staged_suffix = entry.get("staged_suffix")
+    if staged_suffix is not None and not isinstance(staged_suffix, str):
+        raise ValueError(f"verify check {name!r} 'staged_suffix' must be a string")
+
+    return VerifyCheck(
+        name=name.strip(),
+        command=tuple(command),
+        modes=frozenset(modes),
+        staged_suffix=staged_suffix or None,
+    )
 
 
 def load_project_paths(repo_root: Path) -> ProjectPaths:

@@ -11,13 +11,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from . import __version__, claude_settings, worktree
+from . import __version__, claude_settings, verify, worktree
 from .catalog import bundled_catalog_root, iter_catalog_files
 from .config import (
     CONFIG_FILE,
     DEFAULT_CONFIG_TOML,
+    VERIFY_MODES,
     ProjectPaths,
     load_project_paths,
+    load_verify_config,
     load_worktree_config,
 )
 from .hooks import (
@@ -540,6 +542,30 @@ def cmd_skills_check(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_verify(args: argparse.Namespace) -> int:
+    """Run the configured verify checks for a mode and optionally record a gate."""
+    repo_root = _repo_root()
+    config = load_verify_config(repo_root)
+    if not config.for_mode(args.mode):
+        print(f"No verify checks configured for mode '{args.mode}' in {CONFIG_FILE}.")
+
+    report = verify.run_verify(repo_root, args.mode, config)
+
+    print("\n" + "=" * 60)
+    for result in report.results:
+        print(f"  {result.name}: {result.status.upper()}")
+
+    if args.issue:
+        ok, message = verify.report_gate(repo_root, args.issue, report, gate=args.gate)
+        print(message if ok else f"Warning: {message}", file=sys.stderr if not ok else sys.stdout)
+
+    if report.passed:
+        print(f"[verify] PASS (mode: {args.mode})")
+        return 0
+    print(f"[verify] FAIL: {', '.join(report.failures)}", file=sys.stderr)
+    return 1
+
+
 def cmd_worktree(args: argparse.Namespace) -> int:
     """Dispatch the ``worktree`` subcommands (create / cleanup / list / bg-isolation)."""
     handlers = {
@@ -703,6 +729,22 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Delete the branch even if it is not fully merged",
     )
+    verify_parser = subparsers.add_parser(
+        "verify", help="Run the configured verify checks and optionally record a br gate"
+    )
+    verify_parser.add_argument(
+        "--mode",
+        choices=VERIFY_MODES,
+        default="full",
+        help="Which configured check set to run (default: full)",
+    )
+    verify_parser.add_argument("--issue", help="Record the verdict as a br gate on this issue id")
+    verify_parser.add_argument(
+        "--gate",
+        default=verify.DEFAULT_GATE,
+        help=f"Gate name to record (default: {verify.DEFAULT_GATE})",
+    )
+
     worktree_sub.add_parser("list", help="List worktree sessions (marks stale ones)")
     wt_bg = worktree_sub.add_parser(
         "bg-isolation",
@@ -727,6 +769,7 @@ def main(argv: list[str] | None = None) -> int:
         "hooks-build": cmd_hooks_build,
         "hooks-check": cmd_hooks_check,
         "worktree": cmd_worktree,
+        "verify": cmd_verify,
     }
 
     try:

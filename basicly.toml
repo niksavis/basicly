@@ -16,3 +16,28 @@ manifest = ".basicly/generated-manifest.json"
 base_branch = ""
 # Cap on how many worktrees may exist at once.
 concurrency = 4
+
+# Deterministic verify gate. Each check runs in the listed modes; a "staged"
+# check with staged_suffix runs only against staged files of that suffix.
+[[verify.checks]]
+name = "ruff"
+command = ["ruff", "check"]
+modes = ["fast", "full", "staged"]
+staged_suffix = ".py"
+
+[[verify.checks]]
+name = "ruff-format"
+command = ["ruff", "format", "--check"]
+modes = ["fast", "full", "staged"]
+staged_suffix = ".py"
+
+[[verify.checks]]
+name = "pyright"
+command = ["pyright"]
+modes = ["fast", "full", "staged"]
+staged_suffix = ".py"
+
+[[verify.checks]]
+name = "pytest"
+command = ["pytest", "-q"]
+modes = ["full"]
