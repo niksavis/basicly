@@ -48,8 +48,9 @@ from .hooks import (
 from .loader import load_fragments_from_roots, load_targets
 from .planner import plan_outputs
 from .renderers.common import sha256_of_text
-from .schema import PlannedOutput, ValidationError
+from .schema import CATEGORIES, PlannedOutput, ValidationError
 from .skills import (
+    SKILLS_SOURCE_DIR,
     check_synced_skills,
     discover_skills,
     resolve_skill_roots,
@@ -554,6 +555,72 @@ def cmd_skills_check(args: argparse.Namespace) -> int:
         return 1
 
     print("Projected skills are up to date.")
+    return 0
+
+
+_SKILL_TEMPLATE = """\
+# yaml-language-server: $schema=../../schemas/skill.schema.json
+schema_version: 1
+name: {slug}
+description: {description}
+instructions: |
+  # {title}
+
+  TODO: the skill runbook (markdown, indented two spaces).
+"""
+
+_FRAGMENT_TEMPLATE = """\
+# yaml-language-server: $schema=../../schemas/fragment.schema.json
+schema_version: 1
+id: {id}
+description: {description}
+category: {category}
+priority: medium
+applies_to: [all]
+tags: []
+status: active
+body: |
+  - TODO: the guidance.
+"""
+
+
+def cmd_skills_new(args: argparse.Namespace) -> int:
+    """Scaffold a new skill.yaml source under .basicly/core/skills/<slug>."""
+    repo_root = _repo_root()
+    path = repo_root / SKILLS_SOURCE_DIR / args.slug / "skill.yaml"
+    if path.exists():
+        print(f"Error: {_format_path(path, repo_root)} already exists.", file=sys.stderr)
+        return 1
+    path.parent.mkdir(parents=True, exist_ok=True)
+    title = args.slug.replace("-", " ").title()
+    path.write_text(
+        _SKILL_TEMPLATE.format(
+            slug=args.slug, title=title, description=args.description or "TODO: one-line trigger."
+        ),
+        encoding="utf-8",
+    )
+    print(f"Wrote {_format_path(path, repo_root)}")
+    return 0
+
+
+def cmd_fragment_new(args: argparse.Namespace) -> int:
+    """Scaffold a new <id>.fragment.yaml source under the core fragments tree."""
+    repo_root = _repo_root()
+    paths = load_project_paths(repo_root)
+    path = repo_root / paths.core_fragments_dir / args.category / f"{args.id}.fragment.yaml"
+    if path.exists():
+        print(f"Error: {_format_path(path, repo_root)} already exists.", file=sys.stderr)
+        return 1
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        _FRAGMENT_TEMPLATE.format(
+            id=args.id,
+            category=args.category,
+            description=args.description or "TODO: one-line description.",
+        ),
+        encoding="utf-8",
+    )
+    print(f"Wrote {_format_path(path, repo_root)}")
     return 0
 
 
@@ -1150,6 +1217,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     _add_skill_root_args(skills_check_parser)
 
+    skills_new_parser = subparsers.add_parser("skills-new", help="Scaffold a new skill.yaml source")
+    skills_new_parser.add_argument("slug", help="Skill slug (directory + name)")
+    skills_new_parser.add_argument("--description", help="One-line trigger description")
+
+    fragment_new_parser = subparsers.add_parser(
+        "fragment-new", help="Scaffold a new <id>.fragment.yaml source"
+    )
+    fragment_new_parser.add_argument("id", help="Fragment id")
+    fragment_new_parser.add_argument(
+        "--category", default="project", choices=sorted(CATEGORIES), help="Fragment category"
+    )
+    fragment_new_parser.add_argument("--description", help="One-line description")
+
     hooks_build_parser = subparsers.add_parser(
         "hooks-build", help="Project git hooks into .pre-commit-config.yaml"
     )
@@ -1177,6 +1257,8 @@ def main(argv: list[str] | None = None) -> int:
         "skills-list": cmd_skills_list,
         "skills-build": cmd_skills_build,
         "skills-check": cmd_skills_check,
+        "skills-new": cmd_skills_new,
+        "fragment-new": cmd_fragment_new,
         "hooks-build": cmd_hooks_build,
         "hooks-check": cmd_hooks_check,
         "worktree": cmd_worktree,

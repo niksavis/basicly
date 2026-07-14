@@ -93,6 +93,10 @@ not rely on other agent config files being present.
 - Prefer `pathlib` over `os.path`.
 - Formatting is enforced by `ruff format` (pre-commit hook).
 
+## Catalog Authoring
+
+- Author catalog content as YAML sources (`skill.yaml`, `<id>.fragment.yaml`), never a discoverable `.md`; scaffold with `basicly skills-new` / `basicly fragment-new`, follow the `catalog-authoring` skill, and let `basicly catalog-lint` enforce the format.
+
 ## Self Improvement Retro
 
 - If this session hit a real rejection or user-corrected mistake, find the root cause before ending, not just the fix.

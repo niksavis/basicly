@@ -87,6 +87,10 @@ not rely on `AGENTS.md` being present.
 - User instructions in the current task override this file.
 - More specific path-scoped instructions override this file for matching files.
 
+## Catalog Authoring
+
+- Author catalog content as YAML sources (`skill.yaml`, `<id>.fragment.yaml`), never a discoverable `.md`; scaffold with `basicly skills-new` / `basicly fragment-new`, follow the `catalog-authoring` skill, and let `basicly catalog-lint` enforce the format.
+
 ## Copilot-specific notes
 
 - Put path-scoped instructions in `.github/instructions/*.instructions.md` (activated by `applyTo:`).
