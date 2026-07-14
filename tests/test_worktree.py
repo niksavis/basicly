@@ -10,6 +10,10 @@ import pytest
 
 from basicly import cli, worktree
 
+# Bound at import to the real function, so it stays reachable past the autouse
+# stub below (which rebinds ``worktree.provision_deps`` for the other tests).
+real_provision_deps = worktree.provision_deps
+
 
 def _git(cwd: Path, *args: str) -> None:
     subprocess.run(
@@ -164,6 +168,56 @@ def test_cleanup_keeps_unmerged_branch_without_force(
 
     worktree.cleanup("wip", force=True)  # reclaim: branch gone
     assert "harness/wip" not in _branches(git_repo)
+
+
+def test_provision_deps_selects_commands_by_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """provision_deps runs uv sync / npm install only for manifests present."""
+    calls: list[list[str]] = []
+    monkeypatch.setattr(worktree, "run", lambda args, **_kw: calls.append(args))
+
+    # Both ecosystems present -> both commands, in order.
+    both = tmp_path / "both"
+    both.mkdir()
+    (both / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+    (both / "package.json").write_text("{}\n", encoding="utf-8")
+    notes = real_provision_deps(both)
+    assert calls == [["uv", "sync"], ["npm", "install"]]
+    assert notes == [".venv: uv sync", "node_modules: npm install"]
+
+    # Neither manifest -> no commands, no notes.
+    calls.clear()
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert real_provision_deps(empty) == []
+    assert calls == []
+
+    # uv.lock alone still triggers uv sync (no pyproject needed).
+    calls.clear()
+    lock_only = tmp_path / "lock"
+    lock_only.mkdir()
+    (lock_only / "uv.lock").write_text("", encoding="utf-8")
+    assert real_provision_deps(lock_only) == [".venv: uv sync"]
+    assert calls == [["uv", "sync"]]
+
+
+def test_create_and_cleanup_leave_base_head_untouched(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A full create->cleanup cycle never moves the base branch's HEAD."""
+    monkeypatch.chdir(git_repo)
+    before = subprocess.run(
+        ["git", "rev-parse", "main"], cwd=git_repo, capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+    worktree.create("cycle")
+    worktree.cleanup("cycle")
+
+    after = subprocess.run(
+        ["git", "rev-parse", "main"], cwd=git_repo, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    assert after == before
 
 
 def test_cleanup_rejects_unknown_name(git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
