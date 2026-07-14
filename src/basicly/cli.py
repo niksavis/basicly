@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from . import __version__, claude_settings, merge, policy, verify, worktree
+from . import __version__, claude_settings, decompose, merge, policy, verify, worktree
 from .catalog import bundled_catalog_root, iter_catalog_files
 from .config import (
     CHECKPOINTS,
@@ -635,6 +635,43 @@ def cmd_verify(args: argparse.Namespace) -> int:
     return 1
 
 
+def _load_decompose_children(args: argparse.Namespace) -> tuple[Any, ...]:
+    """Load child specs from --plan (suffix-detected) or JSON on stdin."""
+    if args.plan:
+        return decompose.load_plan_file(Path(args.plan))
+    return decompose.load_plan_text(sys.stdin.read(), "json")
+
+
+def _print_planned(planned: tuple[Any, ...]) -> None:
+    for index, child in enumerate(planned):
+        pred = "" if child.predecessor is None else f" (after child #{child.predecessor})"
+        print(f"  [group {child.group}] #{index} {child.spec.title}{pred}")
+        print(f"      scope: {', '.join(child.spec.scope)}")
+
+
+def cmd_decompose(args: argparse.Namespace) -> int:
+    """Decompose a feature into child issues + a computed dependency graph."""
+    repo_root = _repo_root()
+    children = _load_decompose_children(args)
+
+    if args.dry_run:
+        planned = decompose.preview(children)
+        groups = 1 + max((c.group for c in planned), default=-1)
+        print(f"decompose (dry-run): {len(planned)} children in {groups} parallel group(s)")
+        _print_planned(planned)
+        return 0
+
+    result = decompose.decompose(repo_root, args.feature, children)
+    print(
+        f"decompose: created {len(result.children)} children under {result.feature_id} "
+        f"in {result.parallel_groups} parallel group(s)"
+    )
+    for group_index, group in enumerate(result.groups):
+        print(f"  group {group_index}: {' -> '.join(group)}")
+    print(f"serial order: {' '.join(result.serial_order)}")
+    return 0
+
+
 def cmd_worktree(args: argparse.Namespace) -> int:
     """Dispatch the ``worktree`` subcommands (create / cleanup / list / bg-isolation)."""
     handlers = {
@@ -830,6 +867,23 @@ def _add_verify_parser(subparsers: argparse._SubParsersAction) -> None:
     )
 
 
+def _add_decompose_parser(subparsers: argparse._SubParsersAction) -> None:
+    decompose_parser = subparsers.add_parser(
+        "decompose",
+        help="Turn a feature into child br issues + a computed dependency graph",
+    )
+    decompose_parser.add_argument("feature", help="Parent feature issue id")
+    decompose_parser.add_argument(
+        "--plan",
+        help="Plan file with a 'children' list (.toml or .json); reads JSON on stdin if omitted",
+    )
+    decompose_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Compute grouping/serial chains without creating any issues",
+    )
+
+
 def _add_policy_parser(subparsers: argparse._SubParsersAction) -> None:
     policy_parser = subparsers.add_parser(
         "policy", help="Loop gate/checkpoint policy checks (DoR, gates, rework, checkpoints)"
@@ -898,6 +952,7 @@ def main(argv: list[str] | None = None) -> int:
     _add_worktree_parser(subparsers)
     _add_verify_parser(subparsers)
     _add_policy_parser(subparsers)
+    _add_decompose_parser(subparsers)
 
     args = parser.parse_args(argv)
     handlers = {
@@ -914,6 +969,7 @@ def main(argv: list[str] | None = None) -> int:
         "worktree": cmd_worktree,
         "verify": cmd_verify,
         "policy": cmd_policy,
+        "decompose": cmd_decompose,
     }
 
     try:
