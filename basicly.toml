@@ -9,3 +9,10 @@ overlay_fragments = [".basicly-local/fragments"]
 targets = ".basicly/core/targets"
 templates = ".basicly/core/templates"
 manifest = ".basicly/generated-manifest.json"
+
+# Sibling git-worktree isolation for harness tracks.
+[worktree]
+# Branch new harness/<name> worktrees fork from. Empty = the current branch.
+base_branch = ""
+# Cap on how many worktrees may exist at once.
+concurrency = 4

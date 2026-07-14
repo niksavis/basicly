@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import worktree
+from basicly import cli, worktree
 
 
 def _git(cwd: Path, *args: str) -> None:
@@ -171,3 +171,45 @@ def test_cleanup_rejects_unknown_name(git_repo: Path, monkeypatch: pytest.Monkey
     monkeypatch.chdir(git_repo)
     with pytest.raises(SystemExit, match="no worktree named"):
         worktree.cleanup("nope")
+
+
+def test_cli_worktree_create_list_cleanup(git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The worktree subcommands create, list, and clean up a session."""
+    monkeypatch.chdir(git_repo)
+
+    assert cli.main(["worktree", "create", "cli-a"]) == 0
+    assert (git_repo.parent / "repo.worktrees" / "cli-a").is_dir()
+    assert cli.main(["worktree", "list"]) == 0
+
+    assert cli.main(["worktree", "cleanup", "cli-a"]) == 0
+    assert worktree.load_session("cli-a", git_repo) is None
+
+
+def test_cli_worktree_enforces_concurrency_cap(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Creating past [worktree].concurrency is refused with a non-zero exit."""
+    (git_repo / "basicly.toml").write_text("[worktree]\nconcurrency = 1\n", encoding="utf-8")
+    monkeypatch.chdir(git_repo)
+
+    assert cli.main(["worktree", "create", "first"]) == 0
+    assert cli.main(["worktree", "create", "second"]) == 1
+    assert worktree.load_session("second", git_repo) is None
+
+
+def test_cli_worktree_uses_configured_base_branch(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A create with no --base forks from [worktree].base_branch."""
+    subprocess.run(
+        ["git", "branch", "develop"], cwd=git_repo, capture_output=True, text=True, check=True
+    )
+    (git_repo / "basicly.toml").write_text(
+        '[worktree]\nbase_branch = "develop"\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(git_repo)
+
+    assert cli.main(["worktree", "create", "on-develop"]) == 0
+    session = worktree.load_session("on-develop", git_repo)
+    assert session is not None
+    assert session.base == "develop"

@@ -11,9 +11,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from . import __version__
+from . import __version__, worktree
 from .catalog import bundled_catalog_root, iter_catalog_files
-from .config import CONFIG_FILE, DEFAULT_CONFIG_TOML, ProjectPaths, load_project_paths
+from .config import (
+    CONFIG_FILE,
+    DEFAULT_CONFIG_TOML,
+    ProjectPaths,
+    load_project_paths,
+    load_worktree_config,
+)
 from .hooks import (
     check_hooks,
     hook_stages,
@@ -534,6 +540,37 @@ def cmd_skills_check(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_worktree(args: argparse.Namespace) -> int:
+    """Dispatch the ``worktree`` subcommands (create / cleanup / list)."""
+    command = args.worktree_command
+    if command == "create":
+        config = load_worktree_config(_repo_root())
+        active = len(worktree.list_sessions())
+        if active >= config.concurrency:
+            print(
+                f"Error: worktree concurrency cap reached ({active}/{config.concurrency}). "
+                "Clean up a worktree or raise [worktree].concurrency in basicly.toml.",
+                file=sys.stderr,
+            )
+            return 1
+        worktree.create(args.name, base=args.base or config.base_branch)
+        return 0
+    if command == "cleanup":
+        worktree.cleanup(args.name, force=args.force)
+        return 0
+    if command == "list":
+        sessions = worktree.list_sessions()
+        if not sessions:
+            print("No worktree sessions.")
+            return 0
+        for session in sessions:
+            marker = "" if session.path.exists() else "  (stale: dir missing)"
+            print(f"- {session.name}: {session.branch} (base {session.base}){marker}")
+            print(f"    {session.worktree_path}")
+        return 0
+    return 0
+
+
 def _add_skill_root_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--root",
@@ -592,6 +629,30 @@ def main(argv: list[str] | None = None) -> int:
     )
     subparsers.add_parser("hooks-check", help="Check projected hooks are up to date")
 
+    worktree_parser = subparsers.add_parser(
+        "worktree", help="Manage isolated sibling git worktrees"
+    )
+    worktree_sub = worktree_parser.add_subparsers(dest="worktree_command", required=True)
+    wt_create = worktree_sub.add_parser(
+        "create", help="Create + provision a sibling worktree on harness/<name>"
+    )
+    wt_create.add_argument("name")
+    wt_create.add_argument(
+        "--base",
+        default=None,
+        help="Base branch to fork from (default: [worktree].base_branch or current)",
+    )
+    wt_cleanup = worktree_sub.add_parser(
+        "cleanup", help="Remove a worktree and delete its merged branch"
+    )
+    wt_cleanup.add_argument("name")
+    wt_cleanup.add_argument(
+        "--force",
+        action="store_true",
+        help="Delete the branch even if it is not fully merged",
+    )
+    worktree_sub.add_parser("list", help="List worktree sessions (marks stale ones)")
+
     args = parser.parse_args(argv)
     handlers = {
         "list": cmd_list,
@@ -604,6 +665,7 @@ def main(argv: list[str] | None = None) -> int:
         "skills-check": cmd_skills_check,
         "hooks-build": cmd_hooks_build,
         "hooks-check": cmd_hooks_check,
+        "worktree": cmd_worktree,
     }
 
     try:

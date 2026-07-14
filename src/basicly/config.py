@@ -20,7 +20,17 @@ overlay_fragments = [".basicly-local/fragments"]
 targets = ".basicly/core/targets"
 templates = ".basicly/core/templates"
 manifest = ".basicly/generated-manifest.json"
+
+# Sibling git-worktree isolation for harness tracks.
+[worktree]
+# Branch new harness/<name> worktrees fork from. Empty = the current branch.
+base_branch = ""
+# Cap on how many worktrees may exist at once.
+concurrency = 4
 """
+
+# Default concurrency cap when no basicly.toml (or no [worktree]) is present.
+DEFAULT_WORKTREE_CONCURRENCY = 4
 
 
 @dataclass(frozen=True)
@@ -43,6 +53,38 @@ class ProjectPaths:
         in basicly.toml relocates the whole catalog consistently.
         """
         return self.core_fragments_dir.parent
+
+
+@dataclass(frozen=True)
+class WorktreeConfig:
+    """Settings for sibling git-worktree isolation."""
+
+    # None means "fork from the branch currently checked out".
+    base_branch: str | None
+    concurrency: int
+
+
+def load_worktree_config(repo_root: Path) -> WorktreeConfig:
+    """Load ``[worktree]`` settings from basicly.toml, falling back to defaults."""
+    defaults = WorktreeConfig(base_branch=None, concurrency=DEFAULT_WORKTREE_CONCURRENCY)
+
+    config_path = repo_root / CONFIG_FILE
+    if not config_path.exists():
+        return defaults
+
+    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    section = data.get("worktree", {})
+    if not isinstance(section, dict):
+        return defaults
+
+    base = section.get("base_branch")
+    base_branch = base.strip() if isinstance(base, str) and base.strip() else None
+
+    concurrency = section.get("concurrency")
+    if not (isinstance(concurrency, int) and not isinstance(concurrency, bool) and concurrency > 0):
+        concurrency = defaults.concurrency
+
+    return WorktreeConfig(base_branch=base_branch, concurrency=concurrency)
 
 
 def load_project_paths(repo_root: Path) -> ProjectPaths:
