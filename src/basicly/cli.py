@@ -14,6 +14,7 @@ from typing import Any
 
 from . import (
     __version__,
+    catalog_lint,
     claude_settings,
     decompose,
     loop,
@@ -621,6 +622,19 @@ def cmd_fragment_new(args: argparse.Namespace) -> int:
         encoding="utf-8",
     )
     print(f"Wrote {_format_path(path, repo_root)}")
+    return 0
+
+
+def cmd_catalog_lint(_args: argparse.Namespace) -> int:
+    """Lint catalog sources: schema-valid, no .md-named sources, single YAML extension."""
+    repo_root = _repo_root()
+    violations = catalog_lint.lint_catalog(repo_root)
+    if violations:
+        print("catalog-lint: FAILED", file=sys.stderr)
+        for violation in violations:
+            print(f"  {violation}", file=sys.stderr)
+        return 1
+    print("catalog-lint: OK")
     return 0
 
 
@@ -1240,6 +1254,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     subparsers.add_parser("hooks-check", help="Check projected hooks are up to date")
 
+    subparsers.add_parser(
+        "catalog-lint",
+        help="Validate catalog YAML sources (schema, no .md sources, single extension)",
+    )
+
     _add_worktree_parser(subparsers)
     _add_verify_parser(subparsers)
     _add_policy_parser(subparsers)
@@ -1261,6 +1280,7 @@ def main(argv: list[str] | None = None) -> int:
         "fragment-new": cmd_fragment_new,
         "hooks-build": cmd_hooks_build,
         "hooks-check": cmd_hooks_check,
+        "catalog-lint": cmd_catalog_lint,
         "worktree": cmd_worktree,
         "verify": cmd_verify,
         "policy": cmd_policy,

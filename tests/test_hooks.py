@@ -39,6 +39,7 @@ def test_manifest_lists_every_catalog_hook() -> None:
     assert ids == {
         "identity-guard",
         "pre-commit-script",
+        "catalog-lint",
         "commit-msg-script",
         "beads-commit-msg-script",
         "pre-push-script",

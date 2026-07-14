@@ -86,6 +86,8 @@ jobs:
         run: uv sync
       - name: Install Node dependencies
         run: npm install --no-fund --no-audit
+      - name: Lint catalog sources
+        run: uv run python -m basicly.cli catalog-lint
       - name: Run pre-commit checks
         run: uv run python .basicly/core/hooks/pre-commit.py
       - name: Run pre-push checks
