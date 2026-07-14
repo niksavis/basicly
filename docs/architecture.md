@@ -213,14 +213,17 @@ fragments in them yet. **Important distinction**: category `hooks` labels a _fra
 that describes hook usage_ — it is not the mechanism that ships an actual hook script;
 the actual scripts live in `core/hooks/` (below).
 
-**Skills — [Implemented, with a known format gap]**: `core/skills/` is the catalog
-location (moved from a sibling `.basicly/skills/`). The source format is still
-Markdown+YAML-frontmatter (`SKILL.md`) — this is a known gap (§11): because some
-coding agents auto-discover skills by scanning broadly for `SKILL.md` files, keeping
-the catalog _source_ in that exact filename risks an agent finding both the catalog
-copy and the projected copy and loading a skill twice. The decided fix is to author
-skills in Python (or another structured, non-`SKILL.md`-named format) and project them
-to `SKILL.md` only at the designated target roots — not yet executed.
+**Skills — [Implemented]**: `core/skills/` is the catalog location (moved from a sibling
+`.basicly/skills/`). Sources are authored as `skill.yaml` (name, description, and an
+`instructions` block scalar), **not** the discoverable `SKILL.md` name: because some coding
+agents auto-discover skills by scanning broadly for `SKILL.md`, a `SKILL.md` _source_ would
+risk an agent loading both the catalog copy and the projected copy twice. `skills-build`
+renders the discoverable `SKILL.md` at the target roots only, with a generated marker.
+Fragments follow the same rule (`<id>.fragment.yaml` → projected `.md`), YAML is the single
+catalog source format (targets and hooks were already YAML), and `basicly catalog-lint`
+enforces all of this (schema validity, no `.md`-named sources, no `.yml`). The chosen format
+is YAML rather than Python — it needs no code execution, keeps prose lossless via block
+scalars, and matches the existing catalog conventions.
 
 **Hooks — [Implemented as a catalog location, projected and installed by
 `hooks-build`]**: `core/hooks/` holds the actual git hook scripts (`pre-commit.py`,
@@ -492,10 +495,12 @@ Ordered roughly by blocking-ness. Each is a candidate beads epic/feature/task.
    `basicly hooks-build`, which materializes the scripts and merges a managed
    `repo: local` block into a consumer's `.pre-commit-config.yaml` (foreign hooks
    preserved, idempotent); `hooks-check` reports drift.
-7. **Skill source format is still Markdown (`SKILL.md`), not Python.** Decided (§4.2)
-   but not executed: converting `core/skills/*/SKILL.md` to a structured Python source
-   that projects to `SKILL.md` is a schema + loader + projector change across the
-   skills subsystem, not yet started.
+7. **Skill/fragment source format — [Done].** Catalog content is authored as YAML
+   (`skill.yaml`, `<id>.fragment.yaml`) and projected to the discoverable `.md` at target
+   roots only; JSON Schemas, the `catalog-authoring` skill, `skills-new`/`fragment-new`
+   scaffolds, and the `catalog-lint` gate (pre-commit + CI) support and enforce it. Remaining
+   follow-up: pruning orphaned legacy `.md` sources on catalog refresh for any pre-migration
+   consumer (deferred; no consumers today).
 8. **`curl` bootstrap script, catalog selection/flavors, `.basicly/state/`
    provenance tracking, and `.codex/rules/*.rules` scoped rules** are all
    **[Planned]**/**[Deferred]** with no code yet.
