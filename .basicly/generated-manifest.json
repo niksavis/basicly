@@ -1,9 +1,9 @@
 {
   "version": "1",
-  "generated_at": "2026-07-13T17:34:18.596880+00:00",
+  "generated_at": "2026-07-14T20:00:57.078533+00:00",
   "outputs": {
     ".claude/CLAUDE.md": {
-      "hash": "sha256:d199d6c734a2f06102acdeb0a9fb1366975f6502d5e21201d27d1bfeb82a3834",
+      "hash": "sha256:21f3ee2d0c61ab44cca97423360e790677a649bc66d99e0fa9ec46d72ff5c747",
       "source_fragments": [
         "require-explicit-confirmation",
         "knowledge-priming",
@@ -12,6 +12,7 @@
         "git-discipline",
         "decision-protocol",
         "core-rules",
+        "harness-loop",
         "quality-gate",
         "use",
         "claude-defaults",
@@ -34,7 +35,7 @@
       ]
     },
     "AGENTS.md": {
-      "hash": "sha256:c41c7c4b099bfd26cc37e3871c560dd4fe78595719de34fdfb8db98b66557d9d",
+      "hash": "sha256:b9af34b75d632ca1d723ff9425da4cf3b243c0549c1dab93cf19c5d4c6cd535c",
       "source_fragments": [
         "require-explicit-confirmation",
         "knowledge-priming",
@@ -43,6 +44,7 @@
         "git-discipline",
         "decision-protocol",
         "core-rules",
+        "harness-loop",
         "quality-gate",
         "use",
         "python-style",
@@ -54,7 +56,7 @@
       ]
     },
     ".github/copilot-instructions.md": {
-      "hash": "sha256:7a5a41e45d6b9a74a8b62185430a311ea1b479daddd19742140b8db98e68fbd6",
+      "hash": "sha256:f993af38632ea912427623cf73661b20e7c2c2008c7fe085d7651d1beb60e534",
       "source_fragments": [
         "require-explicit-confirmation",
         "knowledge-priming",
@@ -63,6 +65,7 @@
         "git-discipline",
         "decision-protocol",
         "core-rules",
+        "harness-loop",
         "quality-gate",
         "use",
         "copilot-defaults",

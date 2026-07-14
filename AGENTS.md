@@ -65,6 +65,12 @@ not rely on other agent config files being present.
 - Match existing style and naming conventions in touched files.
 - Use deterministic tests; add regression tests for bug fixes.
 
+## Harness Loop
+
+- Drive non-trivial work through the harness loop, not ad hoc: intake → classify → decompose → build → verify → ship → teardown → retro. `br` is the single source of truth and the loop keeps no side-state, so it is resumable and agent-agnostic. The `harness-loop` skill is the runbook.
+- Start by reconstructing a track with `basicly loop status <issue>`, then step it with `basicly loop advance <issue>` / `basicly loop run <issue>`; a blocked step exits non-zero and names the input it needs.
+- The three human checkpoints (classify, decompose, ship) and the bounded rework loop are engine-enforced — approve with `basicly policy checkpoint <issue> <name> --approve`; never route around a gate.
+
 ## Quality Gate
 
 - Review the diff before finishing; do not mark complete with "should work" — verify.
