@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from . import __version__, claude_settings, policy, verify, worktree
+from . import __version__, claude_settings, merge, policy, verify, worktree
 from .catalog import bundled_catalog_root, iter_catalog_files
 from .config import (
     CHECKPOINTS,
@@ -642,9 +642,41 @@ def cmd_worktree(args: argparse.Namespace) -> int:
         "cleanup": _cmd_worktree_cleanup,
         "list": _cmd_worktree_list,
         "bg-isolation": _cmd_worktree_bg_isolation,
+        "merge": _cmd_worktree_merge,
+        "merge-queue": _cmd_worktree_merge_queue,
     }
     handler = handlers.get(args.worktree_command)
     return handler(args) if handler else 0
+
+
+def _cmd_worktree_merge(args: argparse.Namespace) -> int:
+    """Merge one finished worktree back to its base; exit 1 when it does not land."""
+    result = merge.merge_worktree(_repo_root(), args.name, bead=args.bead, verify_mode=args.mode)
+    print(f"  {result.name}: {result.status.upper()} — {result.detail}")
+    return 0 if result.merged else 1
+
+
+def _cmd_worktree_merge_queue(args: argparse.Namespace) -> int:
+    """Merge NAME:BEAD worktrees serially; exit 1 if any node fails to land."""
+    items: list[tuple[str, str]] = []
+    for raw in args.items:
+        name, sep, bead = raw.partition(":")
+        if not sep or not name or not bead:
+            print(f"Error: expected NAME:BEAD, got {raw!r}", file=sys.stderr)
+            return 1
+        items.append((name, bead))
+
+    results = merge.merge_queue(_repo_root(), items, verify_mode=args.mode)
+    for queued in results:
+        outcome = queued.result
+        line = f"  {outcome.name}: {outcome.status.upper()} — {outcome.detail}"
+        if not outcome.merged:
+            line += f"  [rework {queued.attempts}: {'ESCALATE' if queued.escalate else 'retry'}]"
+        print(line)
+
+    merged = sum(1 for queued in results if queued.result.merged)
+    print(f"merge-queue: {merged}/{len(items)} merged")
+    return 0 if merged == len(items) else 1
 
 
 def _cmd_worktree_create(args: argparse.Namespace) -> int:
@@ -765,6 +797,19 @@ def _add_worktree_parser(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help="Consent to writing the change to the committed .claude/settings.json",
     )
+    wt_merge = worktree_sub.add_parser(
+        "merge", help="Merge a finished worktree back to its base (rebase, re-verify, --no-ff)"
+    )
+    wt_merge.add_argument("name")
+    wt_merge.add_argument("--bead", required=True, help="Bead id for the merge commit message")
+    wt_merge.add_argument(
+        "--mode", choices=VERIFY_MODES, default="full", help="Verify mode to re-run before merge"
+    )
+    wt_queue = worktree_sub.add_parser(
+        "merge-queue", help="Merge several worktrees serially in the given (topological) order"
+    )
+    wt_queue.add_argument("items", nargs="+", metavar="NAME:BEAD", help="e.g. feat-x:basicly-onb.5")
+    wt_queue.add_argument("--mode", choices=VERIFY_MODES, default="full")
 
 
 def _add_verify_parser(subparsers: argparse._SubParsersAction) -> None:
