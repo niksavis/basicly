@@ -12,6 +12,12 @@ from basicly.schema import ValidationError
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
+def _wf(path: Path, front: str, body: str = "body") -> None:
+    """Write a fragment YAML source: front matter fields + a body block scalar."""
+    block = "\n".join(["body: |"] + [f"  {ln}" if ln else "" for ln in body.split("\n")])
+    path.write_text(front.rstrip("\n") + "\n" + block + "\n", encoding="utf-8")
+
+
 def test_load_fragments() -> None:
     """All fixture fragments are loaded with correct ids."""
     fragments = load_fragments(FIXTURES, {"claude", "copilot"})
@@ -35,19 +41,17 @@ def test_fragment_fields() -> None:
 
 
 def test_missing_required_field(tmp_path: Path) -> None:
-    """A fragment missing required front matter fields raises ValidationError."""
-    fragment = tmp_path / "bad.fragment.md"
-    fragment.write_text("---\nid: bad\n---\n\nbody\n", encoding="utf-8")
+    """A fragment missing required fields raises ValidationError."""
+    _wf(tmp_path / "bad.fragment.yaml", "id: bad")
     with pytest.raises(ValidationError):
         load_fragments(tmp_path, {"claude"})
 
 
 def test_unknown_category(tmp_path: Path) -> None:
     """An unknown category value raises ValidationError."""
-    fragment = tmp_path / "bad.fragment.md"
-    fragment.write_text(
-        "---\nid: bad\ndescription: x\ncategory: not-a-category\napplies_to: [all]\n---\n\nbody\n",
-        encoding="utf-8",
+    _wf(
+        tmp_path / "bad.fragment.yaml",
+        "id: bad\ndescription: x\ncategory: not-a-category\napplies_to: [all]",
     )
     with pytest.raises(ValidationError):
         load_fragments(tmp_path, {"claude"})
@@ -55,10 +59,9 @@ def test_unknown_category(tmp_path: Path) -> None:
 
 def test_unknown_target_in_applies_to(tmp_path: Path) -> None:
     """An applies_to value that is not a registered target raises ValidationError."""
-    fragment = tmp_path / "bad.fragment.md"
-    fragment.write_text(
-        "---\nid: bad\ndescription: x\ncategory: project\napplies_to: [unknown]\n---\n\nbody\n",
-        encoding="utf-8",
+    _wf(
+        tmp_path / "bad.fragment.yaml",
+        "id: bad\ndescription: x\ncategory: project\napplies_to: [unknown]",
     )
     with pytest.raises(ValidationError):
         load_fragments(tmp_path, {"claude"})
@@ -72,7 +75,7 @@ def test_load_targets() -> None:
 
 
 def test_extension_fields_default_to_safe_values() -> None:
-    """Fragments without extension fields get phase-1-safe defaults."""
+    """Fragments without extension fields get safe defaults."""
     fragments = load_fragments(FIXTURES, {"claude", "copilot"})
     by_id = {f.id: f for f in fragments}
     fragment = by_id["python-style"]
@@ -84,29 +87,15 @@ def test_extension_fields_default_to_safe_values() -> None:
 
 def test_extension_fields_are_parsed(tmp_path: Path) -> None:
     """Extension fields are loaded when present."""
-    (tmp_path / "core.fragment.md").write_text(
-        "---\n"
-        "id: python-style\n"
-        "description: Core style\n"
-        "category: code-style\n"
-        "applies_to: [all]\n"
-        "---\n\n"
-        "core\n",
-        encoding="utf-8",
+    _wf(
+        tmp_path / "core.fragment.yaml",
+        "id: python-style\ndescription: Core style\ncategory: code-style\napplies_to: [all]",
+        "core",
     )
-    (tmp_path / "user.fragment.md").write_text(
-        "---\n"
-        "id: user-style\n"
-        "description: User style\n"
-        "category: code-style\n"
-        "applies_to: [all]\n"
-        "source: user\n"
-        "override: true\n"
-        "replaces: [python-style]\n"
-        "extends: [project-defaults]\n"
-        "---\n\n"
-        "body\n",
-        encoding="utf-8",
+    _wf(
+        tmp_path / "user.fragment.yaml",
+        "id: user-style\ndescription: User style\ncategory: code-style\napplies_to: [all]\n"
+        "source: user\noverride: true\nreplaces: [python-style]\nextends: [project-defaults]",
     )
     fragments = load_fragments(tmp_path, {"claude"})
     by_id = {f.id: f for f in fragments}
@@ -119,16 +108,9 @@ def test_extension_fields_are_parsed(tmp_path: Path) -> None:
 
 def test_invalid_source_value(tmp_path: Path) -> None:
     """An invalid source value raises ValidationError."""
-    fragment = tmp_path / "bad.fragment.md"
-    fragment.write_text(
-        "---\n"
-        "id: bad\n"
-        "description: x\n"
-        "category: project\n"
-        "applies_to: [all]\n"
-        "source: invalid\n"
-        "---\n\nbody\n",
-        encoding="utf-8",
+    _wf(
+        tmp_path / "bad.fragment.yaml",
+        "id: bad\ndescription: x\ncategory: project\napplies_to: [all]\nsource: invalid",
     )
     with pytest.raises(ValidationError):
         load_fragments(tmp_path, {"claude"})
@@ -136,16 +118,9 @@ def test_invalid_source_value(tmp_path: Path) -> None:
 
 def test_replaces_must_be_string_list(tmp_path: Path) -> None:
     """A non-list replaces value raises ValidationError."""
-    fragment = tmp_path / "bad.fragment.md"
-    fragment.write_text(
-        "---\n"
-        "id: bad\n"
-        "description: x\n"
-        "category: project\n"
-        "applies_to: [all]\n"
-        "replaces: not-a-list\n"
-        "---\n\nbody\n",
-        encoding="utf-8",
+    _wf(
+        tmp_path / "bad.fragment.yaml",
+        "id: bad\ndescription: x\ncategory: project\napplies_to: [all]\nreplaces: not-a-list",
     )
     with pytest.raises(ValidationError):
         load_fragments(tmp_path, {"claude"})
@@ -158,25 +133,15 @@ def test_load_from_core_and_overlay_roots(tmp_path: Path) -> None:
     core_root.mkdir(parents=True)
     overlay_root.mkdir(parents=True)
 
-    (core_root / "core.fragment.md").write_text(
-        "---\n"
-        "id: core-rule\n"
-        "description: Core\n"
-        "category: project\n"
-        "applies_to: [all]\n"
-        "---\n\n"
-        "core\n",
-        encoding="utf-8",
+    _wf(
+        core_root / "core.fragment.yaml",
+        "id: core-rule\ndescription: Core\ncategory: project\napplies_to: [all]",
+        "core",
     )
-    (overlay_root / "user.fragment.md").write_text(
-        "---\n"
-        "id: user-rule\n"
-        "description: User\n"
-        "category: project\n"
-        "applies_to: [all]\n"
-        "---\n\n"
-        "user\n",
-        encoding="utf-8",
+    _wf(
+        overlay_root / "user.fragment.yaml",
+        "id: user-rule\ndescription: User\ncategory: project\napplies_to: [all]",
+        "user",
     )
 
     fragments = load_fragments_from_roots(
@@ -189,18 +154,14 @@ def test_load_from_core_and_overlay_roots(tmp_path: Path) -> None:
     assert by_id["user-rule"].source == "user"
 
 
-def _write_fragment(path: Path, front: str, body: str = "body") -> None:
-    path.write_text(f"---\n{front}\n---\n\n{body}\n", encoding="utf-8")
-
-
 def test_replaces_missing_override_is_rejected(tmp_path: Path) -> None:
     """A fragment that lists replaces without override: true is a hard error."""
-    _write_fragment(
-        tmp_path / "core.fragment.md",
+    _wf(
+        tmp_path / "core.fragment.yaml",
         "id: base\ndescription: x\ncategory: project\napplies_to: [all]",
     )
-    _write_fragment(
-        tmp_path / "user.fragment.md",
+    _wf(
+        tmp_path / "user.fragment.yaml",
         "id: repl\ndescription: x\ncategory: project\napplies_to: [all]\n"
         "source: user\nreplaces: [base]",
     )
@@ -210,8 +171,8 @@ def test_replaces_missing_override_is_rejected(tmp_path: Path) -> None:
 
 def test_replaces_unknown_target_is_rejected(tmp_path: Path) -> None:
     """A replaces id that no loaded fragment defines is a hard error."""
-    _write_fragment(
-        tmp_path / "user.fragment.md",
+    _wf(
+        tmp_path / "user.fragment.yaml",
         "id: repl\ndescription: x\ncategory: project\napplies_to: [all]\n"
         "source: user\noverride: true\nreplaces: [does-not-exist]",
     )
@@ -221,13 +182,13 @@ def test_replaces_unknown_target_is_rejected(tmp_path: Path) -> None:
 
 def test_mutual_user_replace_is_rejected(tmp_path: Path) -> None:
     """Two user fragments replacing each other is a hard error."""
-    _write_fragment(
-        tmp_path / "a.fragment.md",
+    _wf(
+        tmp_path / "a.fragment.yaml",
         "id: frag-a\ndescription: x\ncategory: project\napplies_to: [all]\n"
         "source: user\noverride: true\nreplaces: [frag-b]",
     )
-    _write_fragment(
-        tmp_path / "b.fragment.md",
+    _wf(
+        tmp_path / "b.fragment.yaml",
         "id: frag-b\ndescription: x\ncategory: project\napplies_to: [all]\n"
         "source: user\noverride: true\nreplaces: [frag-a]",
     )
@@ -237,12 +198,12 @@ def test_mutual_user_replace_is_rejected(tmp_path: Path) -> None:
 
 def test_valid_user_replace_of_core_is_accepted(tmp_path: Path) -> None:
     """A well-formed user replacement of an existing core fragment loads cleanly."""
-    _write_fragment(
-        tmp_path / "core.fragment.md",
+    _wf(
+        tmp_path / "core.fragment.yaml",
         "id: base\ndescription: x\ncategory: project\napplies_to: [all]",
     )
-    _write_fragment(
-        tmp_path / "user.fragment.md",
+    _wf(
+        tmp_path / "user.fragment.yaml",
         "id: repl\ndescription: x\ncategory: project\napplies_to: [all]\n"
         "source: user\noverride: true\nreplaces: [base]",
     )

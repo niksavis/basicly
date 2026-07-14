@@ -56,7 +56,7 @@ def test_cli_init_scaffolds_fresh_consumer(tmp_path: Path) -> None:
 
     assert (consumer / "basicly.toml").is_file()
     assert (consumer / ".basicly-local" / "fragments" / "user").is_dir()
-    assert list((consumer / ".basicly" / "core" / "fragments").rglob("*.fragment.md"))
+    assert list((consumer / ".basicly" / "core" / "fragments").rglob("*.fragment.yaml"))
     assert (consumer / ".basicly" / "core" / "targets" / "claude.yaml").is_file()
 
     # The materialized catalog is immediately buildable.

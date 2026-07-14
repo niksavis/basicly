@@ -1,9 +1,9 @@
----
+schema_version: 1
 id: claude-defaults
 description: Claude defaults.
 category: project
 priority: medium
-applies_to: [claude]
----
-
-- Claude note.
+applies_to:
+- claude
+body: |
+  - Claude note.

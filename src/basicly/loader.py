@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import yaml
@@ -18,10 +17,7 @@ from .schema import (
     ValidationError,
 )
 
-FRONT_MATTER_RE = re.compile(
-    r"^---\s*\n(.*?)\n---\s*\n(.*)$",
-    re.DOTALL,
-)
+FRAGMENT_SOURCE_GLOB = "*.fragment.yaml"
 
 REQUIRED_FRAGMENT_FIELDS = {"id", "description", "category", "applies_to"}
 
@@ -42,7 +38,7 @@ def load_fragments_from_roots(
     for root, source_hint in fragment_roots:
         if not root.exists():
             continue
-        for path in sorted(root.rglob("*.fragment.md")):
+        for path in sorted(root.rglob(FRAGMENT_SOURCE_GLOB)):
             fragment = _load_fragment(path, source_hint)
             _validate_fragment(fragment, path, target_names)
             if fragment.id in seen_ids:
@@ -97,20 +93,15 @@ def _validate_replacements(fragments: list[Fragment]) -> None:
 
 
 def _load_fragment(path: Path, source_hint: str | None = None) -> Fragment:
-    text = path.read_text(encoding="utf-8")
-    match = FRONT_MATTER_RE.match(text)
-    if not match:
-        raise ValidationError("missing or invalid YAML front matter", path)
-
     try:
-        front = yaml.safe_load(match.group(1)) or {}
+        front = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError as exc:
-        raise ValidationError(f"invalid YAML front matter: {exc}", path) from exc
+        raise ValidationError(f"invalid YAML: {exc}", path) from exc
 
     if not isinstance(front, dict):
-        raise ValidationError("front matter must be a YAML mapping", path)
+        raise ValidationError("fragment source must be a YAML mapping", path)
 
-    body = match.group(2).strip("\n")
+    body = (front.get("body") or "").strip("\n")
     scope = front.get("scope", {})
     scope_paths = scope.get("paths", list(DEFAULT_SCOPE)) if scope else list(DEFAULT_SCOPE)
     inferred_source = source_hint or _infer_source_from_path(path)
