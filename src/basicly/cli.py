@@ -11,7 +11,17 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from . import __version__, claude_settings, decompose, merge, policy, verify, worktree
+from . import (
+    __version__,
+    claude_settings,
+    decompose,
+    loop,
+    loop_state,
+    merge,
+    policy,
+    verify,
+    worktree,
+)
 from .catalog import bundled_catalog_root, iter_catalog_files
 from .config import (
     CHECKPOINTS,
@@ -672,6 +682,76 @@ def cmd_decompose(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_loop(args: argparse.Namespace) -> int:
+    """Dispatch the ``loop`` subcommands (status / advance / run)."""
+    handlers = {
+        "status": _cmd_loop_status,
+        "advance": _cmd_loop_advance,
+        "run": _cmd_loop_run,
+    }
+    handler = handlers.get(args.loop_command)
+    return handler(args) if handler else 0
+
+
+def _loop_inputs(args: argparse.Namespace) -> loop.Inputs:
+    """Map the shared agent-input flags onto a :class:`loop.Inputs`."""
+    children = decompose.load_plan_file(Path(args.children)) if args.children else None
+    return loop.Inputs(work_type=args.work_type, children=children, verify_mode=args.mode)
+
+
+def _format_advance(result: loop.AdvanceResult) -> str:
+    """Render one :class:`loop.AdvanceResult` as a single status line."""
+    line = f"[{result.action}] {result.from_phase} -> {result.to_phase}"
+    if result.detail:
+        line += f": {result.detail}"
+    if result.needs_input:
+        line += f" (needs input: {result.needs_input})"
+    return line
+
+
+def _cmd_loop_status(args: argparse.Namespace) -> int:
+    """Print an issue's reconstructed loop state, re-read from ``br`` on every call."""
+    repo_root = _repo_root()
+    state = loop_state.read_node_state(repo_root, args.issue)
+    print(f"issue:       {state.issue_id} ({state.issue_type}, {state.status})")
+    print(f"phase:       {state.phase}")
+    if state.worktree is not None:
+        print(f"worktree:    {state.worktree.name} on {state.worktree.branch}")
+    else:
+        print("worktree:    (none)")
+    gates = state.gates
+    print(f"gates:       advance {'ALLOWED' if gates.can_advance else 'BLOCKED'}")
+    if gates.required_passed:
+        print(f"  passed:    {', '.join(gates.required_passed)}")
+    if gates.required_failed:
+        print(f"  failed:    {', '.join(gates.required_failed)}")
+    if gates.required_missing:
+        print(f"  missing:   {', '.join(gates.required_missing)}")
+    print(f"checkpoints: {', '.join(state.checkpoints) or '(none)'}")
+    rework = ", ".join(f"{gate}={n}" for gate, n in state.rework.items()) or "(none)"
+    print(f"rework:      {rework}")
+    ready = loop_state.ready_ranked(repo_root)
+    blocked = loop_state.blocked_ids(repo_root)
+    print(f"ready set:   {', '.join(node.issue_id for node in ready) or '(none)'}")
+    print(f"blocked:     {', '.join(blocked) or '(none)'}")
+    return 0
+
+
+def _cmd_loop_advance(args: argparse.Namespace) -> int:
+    """Advance one loop step; exit non-zero when the track blocks so CI can tell."""
+    result = loop.advance(_repo_root(), args.issue, inputs=_loop_inputs(args))
+    print(_format_advance(result))
+    return 1 if result.blocked else 0
+
+
+def _cmd_loop_run(args: argparse.Namespace) -> int:
+    """Advance until the track blocks or finishes; exit non-zero if it ended blocked."""
+    results = loop.run_until_blocked(_repo_root(), args.issue, inputs=_loop_inputs(args))
+    for result in results:
+        print(_format_advance(result))
+    return 1 if results and results[-1].blocked else 0
+
+
 def cmd_worktree(args: argparse.Namespace) -> int:
     """Dispatch the ``worktree`` subcommands (create / cleanup / list / bg-isolation)."""
     handlers = {
@@ -905,6 +985,44 @@ def _add_policy_parser(subparsers: argparse._SubParsersAction) -> None:
     p_rw.add_argument("--record", action="store_true", help="Record a new rework attempt")
 
 
+def _add_loop_input_args(parser: argparse.ArgumentParser) -> None:
+    """Add the shared agent-input flags that map onto a ``loop.Inputs``."""
+    parser.add_argument(
+        "--work-type",
+        choices=("bug", "chore", "task", "feature", "epic"),
+        help="Agent-proposed br work type, consumed by the classify phase",
+    )
+    parser.add_argument(
+        "--children",
+        help="Child plan file (.toml or .json) with a 'children' list, for decompose",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=VERIFY_MODES,
+        default="full",
+        help="Verify mode used when a phase re-runs the checks (default: full)",
+    )
+
+
+def _add_loop_parser(subparsers: argparse._SubParsersAction) -> None:
+    loop_parser = subparsers.add_parser(
+        "loop", help="Drive an issue through the harness loop (status / advance / run)"
+    )
+    loop_sub = loop_parser.add_subparsers(dest="loop_command", required=True)
+    l_status = loop_sub.add_parser(
+        "status", help="Show an issue's reconstructed loop state (read-only)"
+    )
+    l_status.add_argument("issue")
+    l_advance = loop_sub.add_parser(
+        "advance", help="Advance one loop step (exit non-zero when blocked)"
+    )
+    l_advance.add_argument("issue")
+    _add_loop_input_args(l_advance)
+    l_run = loop_sub.add_parser("run", help="Advance until the track blocks or finishes")
+    l_run.add_argument("issue")
+    _add_loop_input_args(l_run)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Parse arguments and dispatch to the requested command."""
     parser = argparse.ArgumentParser(prog="basicly")
@@ -953,6 +1071,7 @@ def main(argv: list[str] | None = None) -> int:
     _add_verify_parser(subparsers)
     _add_policy_parser(subparsers)
     _add_decompose_parser(subparsers)
+    _add_loop_parser(subparsers)
 
     args = parser.parse_args(argv)
     handlers = {
@@ -970,6 +1089,7 @@ def main(argv: list[str] | None = None) -> int:
         "verify": cmd_verify,
         "policy": cmd_policy,
         "decompose": cmd_decompose,
+        "loop": cmd_loop,
     }
 
     try:
