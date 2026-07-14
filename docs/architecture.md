@@ -498,9 +498,9 @@ Ordered roughly by blocking-ness. Each is a candidate beads epic/feature/task.
 7. **Skill/fragment source format — [Done].** Catalog content is authored as YAML
    (`skill.yaml`, `<id>.fragment.yaml`) and projected to the discoverable `.md` at target
    roots only; JSON Schemas, the `catalog-authoring` skill, `skills-new`/`fragment-new`
-   scaffolds, and the `catalog-lint` gate (pre-commit + CI) support and enforce it. Remaining
-   follow-up: pruning orphaned legacy `.md` sources on catalog refresh for any pre-migration
-   consumer (deferred; no consumers today).
+   scaffolds, and the `catalog-lint` gate (pre-commit + CI) support and enforce it.
+   `basicly update` prunes any leftover legacy `SKILL.md`/`*.fragment.md` sources from the
+   managed core, so installing over a pre-migration hand-copied catalog self-cleans.
 8. **`curl` bootstrap script, catalog selection/flavors, `.basicly/state/`
    provenance tracking, and `.codex/rules/*.rules` scoped rules** are all
    **[Planned]**/**[Deferred]** with no code yet.

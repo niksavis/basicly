@@ -311,8 +311,30 @@ def _merge_directories(src: Path, dst: Path) -> tuple[int, int]:
     return moved, skipped
 
 
+def _prune_legacy_catalog_sources(repo_root: Path, paths: ProjectPaths) -> list[Path]:
+    """Remove discoverable-name legacy sources from the managed core.
+
+    Skills and fragments are now authored as YAML (``skill.yaml`` /
+    ``*.fragment.yaml``); a leftover ``SKILL.md`` or ``*.fragment.md`` in the
+    managed core is a pre-migration source that would let an agent double-load a
+    skill (architecture §4.2). This prunes exactly those, scoped to the managed
+    core so a consumer's overlay content is never touched.
+    """
+    core_root = repo_root / paths.core_root
+    skills_dir = core_root / "skills"
+    fragments_dir = repo_root / paths.core_fragments_dir
+    removed: list[Path] = []
+    for legacy in sorted(skills_dir.rglob("SKILL.md")):
+        legacy.unlink()
+        removed.append(legacy)
+    for legacy in sorted(fragments_dir.rglob("*.fragment.md")):
+        legacy.unlink()
+        removed.append(legacy)
+    return removed
+
+
 def cmd_update(_args: argparse.Namespace) -> int:
-    """Refresh managed core layout and preserve user overlay files."""
+    """Refresh managed core layout, prune legacy sources, and preserve the overlay."""
     repo_root = _repo_root()
     paths = load_project_paths(repo_root)
 
@@ -322,9 +344,14 @@ def cmd_update(_args: argparse.Namespace) -> int:
     for overlay in paths.overlay_fragments_dirs:
         (repo_root / overlay / "user").mkdir(parents=True, exist_ok=True)
 
+    pruned = _prune_legacy_catalog_sources(repo_root, paths)
+    for legacy in pruned:
+        print(f"Pruned legacy source {_format_path(legacy, repo_root)}")
+
     legacy_dir = repo_root / paths.legacy_fragments_dir
     if not legacy_dir.exists():
-        print("basicly update: core and overlay layout is up to date.")
+        tail = f"{len(pruned)} legacy source(s) pruned" if pruned else "nothing to do"
+        print(f"basicly update: core and overlay layout is up to date ({tail}).")
         return 0
 
     moved = 0
@@ -348,7 +375,8 @@ def cmd_update(_args: argparse.Namespace) -> int:
 
     print(
         "basicly update complete: "
-        f"{moved} item(s) migrated, {skipped} existing item(s) left unchanged"
+        f"{moved} item(s) migrated, {skipped} existing item(s) left unchanged, "
+        f"{len(pruned)} legacy source(s) pruned"
     )
     return 0
 

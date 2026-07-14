@@ -204,6 +204,42 @@ def test_cli_update_migrates_legacy_fragments(work_repo: Path) -> None:
     ).exists()
 
 
+def test_cli_update_prunes_legacy_catalog_sources(tmp_path: Path) -> None:
+    """Update removes pre-migration SKILL.md/*.fragment.md sources from the managed core."""
+    consumer = tmp_path / "consumer"
+    skill_dir = consumer / ".basicly" / "core" / "skills" / "tool-x"
+    frag_dir = consumer / ".basicly" / "core" / "fragments" / "project"
+    skill_dir.mkdir(parents=True)
+    frag_dir.mkdir(parents=True)
+
+    # Pre-migration hand-copied sources (must be pruned).
+    legacy_skill = skill_dir / "SKILL.md"
+    legacy_skill.write_text("---\nname: tool-x\ndescription: d\n---\n\nbody\n", encoding="utf-8")
+    legacy_frag = frag_dir / "y.fragment.md"
+    legacy_frag.write_text("---\nid: y\n---\n\nbody\n", encoding="utf-8")
+
+    # New YAML sources (must survive).
+    kept_skill = skill_dir / "skill.yaml"
+    kept_skill.write_text(
+        "schema_version: 1\nname: tool-x\ndescription: d\ninstructions: |\n  body\n",
+        encoding="utf-8",
+    )
+
+    # Overlay content — even a legacy-named .md here must be left untouched.
+    overlay = consumer / ".basicly-local" / "fragments" / "user"
+    overlay.mkdir(parents=True)
+    kept_overlay = overlay / "keep.fragment.md"
+    kept_overlay.write_text("mine\n", encoding="utf-8")
+
+    result = run_basicly_consumer(consumer, "update")
+
+    assert result.returncode == 0, result.stderr
+    assert not legacy_skill.exists()
+    assert not legacy_frag.exists()
+    assert kept_skill.exists()
+    assert kept_overlay.exists()
+
+
 def test_cli_skills_build_idempotent(work_repo: Path) -> None:
     """Two skills-build runs with no source changes should produce no diff."""
     result1 = run_basicly(work_repo, "skills-build")

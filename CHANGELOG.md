@@ -29,6 +29,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Migration
 
-- No consumer back-migration is shipped (there are no pre-migration consumers).
-  When catalog refresh/prune lands, `basicly update` must remove orphaned legacy
-  `SKILL.md`/`*.fragment.md` sources so the double-load cannot reappear.
+- `basicly update` now prunes legacy discoverable-name sources (`SKILL.md`,
+  `*.fragment.md`) from the managed core, so installing basicly over a
+  pre-migration hand-copied catalog cleans up the old sources automatically. The
+  user overlay (`.basicly-local/`) is never touched.
