@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from . import __version__, worktree
+from . import __version__, claude_settings, worktree
 from .catalog import bundled_catalog_root, iter_catalog_files
 from .config import (
     CONFIG_FILE,
@@ -541,33 +541,85 @@ def cmd_skills_check(args: argparse.Namespace) -> int:
 
 
 def cmd_worktree(args: argparse.Namespace) -> int:
-    """Dispatch the ``worktree`` subcommands (create / cleanup / list)."""
-    command = args.worktree_command
-    if command == "create":
-        config = load_worktree_config(_repo_root())
-        active = len(worktree.list_sessions())
-        if active >= config.concurrency:
-            print(
-                f"Error: worktree concurrency cap reached ({active}/{config.concurrency}). "
-                "Clean up a worktree or raise [worktree].concurrency in basicly.toml.",
-                file=sys.stderr,
-            )
-            return 1
-        worktree.create(args.name, base=args.base or config.base_branch)
+    """Dispatch the ``worktree`` subcommands (create / cleanup / list / bg-isolation)."""
+    handlers = {
+        "create": _cmd_worktree_create,
+        "cleanup": _cmd_worktree_cleanup,
+        "list": _cmd_worktree_list,
+        "bg-isolation": _cmd_worktree_bg_isolation,
+    }
+    handler = handlers.get(args.worktree_command)
+    return handler(args) if handler else 0
+
+
+def _cmd_worktree_create(args: argparse.Namespace) -> int:
+    """Create + provision a worktree, honoring the configured base and cap."""
+    config = load_worktree_config(_repo_root())
+    active = len(worktree.list_sessions())
+    if active >= config.concurrency:
+        print(
+            f"Error: worktree concurrency cap reached ({active}/{config.concurrency}). "
+            "Clean up a worktree or raise [worktree].concurrency in basicly.toml.",
+            file=sys.stderr,
+        )
+        return 1
+    worktree.create(args.name, base=args.base or config.base_branch)
+    return 0
+
+
+def _cmd_worktree_cleanup(args: argparse.Namespace) -> int:
+    """Remove a worktree and delete its merged branch."""
+    worktree.cleanup(args.name, force=args.force)
+    return 0
+
+
+def _cmd_worktree_list(_args: argparse.Namespace) -> int:
+    """List worktree sessions, marking any whose directory has vanished."""
+    sessions = worktree.list_sessions()
+    if not sessions:
+        print("No worktree sessions.")
         return 0
-    if command == "cleanup":
-        worktree.cleanup(args.name, force=args.force)
+    for session in sessions:
+        marker = "" if session.path.exists() else "  (stale: dir missing)"
+        print(f"- {session.name}: {session.branch} (base {session.base}){marker}")
+        print(f"    {session.worktree_path}")
+    return 0
+
+
+def _cmd_worktree_bg_isolation(args: argparse.Namespace) -> int:
+    """Consent-gated write of Claude's ``worktree.bgIsolation=none`` (Claude only)."""
+    repo_root = _repo_root()
+    current = claude_settings.current_bg_isolation(repo_root)
+    if current == claude_settings.BG_ISOLATION_NONE:
+        print("worktree.bgIsolation is already 'none' in .claude/settings.json; nothing to do.")
         return 0
-    if command == "list":
-        sessions = worktree.list_sessions()
-        if not sessions:
-            print("No worktree sessions.")
-            return 0
-        for session in sessions:
-            marker = "" if session.path.exists() else "  (stale: dir missing)"
-            print(f"- {session.name}: {session.branch} (base {session.base}){marker}")
-            print(f"    {session.worktree_path}")
+
+    shown = current if current is not None else "unset (Claude default: enabled)"
+    print(
+        "Claude Code's worktree.bgIsolation guard forces background agents into "
+        ".claude/worktrees/ before editing, which conflicts with basicly's sibling "
+        "<repo>.worktrees/ isolation (EnterWorktree cannot target a sibling path).\n"
+        "To run the harness under Claude Code it must be 'none' — the harness isolates "
+        "itself.\n"
+        f"  current: {shown}\n"
+        "  proposed: set worktree.bgIsolation='none' in the COMMITTED .claude/settings.json\n"
+        "            (team-wide default; any user may override in the gitignored "
+        ".claude/settings.local.json).\n"
+        "This affects the Claude target only; Codex and Copilot have no such setting."
+    )
+    if not args.yes:
+        print(
+            "\nNo change made. Re-run `basicly worktree bg-isolation --yes` to consent to "
+            "writing it."
+        )
         return 0
+
+    changed = claude_settings.set_bg_isolation_none(repo_root)
+    if changed:
+        print(
+            "\nSet worktree.bgIsolation='none' in .claude/settings.json (committed, team-wide "
+            "default). Override locally in the gitignored .claude/settings.local.json if needed."
+        )
     return 0
 
 
@@ -652,6 +704,15 @@ def main(argv: list[str] | None = None) -> int:
         help="Delete the branch even if it is not fully merged",
     )
     worktree_sub.add_parser("list", help="List worktree sessions (marks stale ones)")
+    wt_bg = worktree_sub.add_parser(
+        "bg-isolation",
+        help="Set Claude's worktree.bgIsolation=none so the harness isolates itself",
+    )
+    wt_bg.add_argument(
+        "--yes",
+        action="store_true",
+        help="Consent to writing the change to the committed .claude/settings.json",
+    )
 
     args = parser.parse_args(argv)
     handlers = {

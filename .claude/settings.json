@@ -34,5 +34,8 @@
       "Read(**/.env.*)",
       "Read(**/.env.local)"
     ]
+  },
+  "worktree": {
+    "bgIsolation": "none"
   }
 }
