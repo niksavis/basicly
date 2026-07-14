@@ -75,6 +75,7 @@ not rely on other agent config files being present.
 
 - Review the diff before finishing; do not mark complete with "should work" — verify.
 - Run the checks this repo already enforces (tests, lint, type check, hooks/CI config) for anything the change touches — point at existing gates, don't restate what they check.
+- Confirm a check passed from its explicit pass/fail summary line; never infer success from truncated or partial output (a cut-off `tail` can hide a failure).
 - Before declaring a change done, exercise it the way it will actually be used (run the command, read the generated output, call the changed function/endpoint) — passing tests is not the same as having used the feature.
 - Run any new or changed check/build command against this repo itself (the dogfood consumer) before calling it done — a green greenfield test does not cover the primary existing consumer.
 - Docs must state the verification scope actually exercised; never upgrade "expected to work" to "works".
