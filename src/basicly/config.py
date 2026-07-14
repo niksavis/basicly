@@ -75,6 +75,10 @@ DEFAULT_MAX_REWORK = 2
 # The three human checkpoints the loop enforces (architecture §12.2).
 CHECKPOINTS = ("classify", "decompose", "ship")
 
+# The fixed br work classes the classifier may assign (architecture §12.1).
+# bug/chore are leaf tracks; task/feature/epic nest fractally.
+WORK_TYPES = ("bug", "chore", "task", "feature", "epic")
+
 
 @dataclass(frozen=True)
 class ProjectPaths:
