@@ -1,7 +1,8 @@
-"""Tests for sibling git-worktree isolation (create + provision)."""
+"""Tests for sibling git-worktree isolation (create, provision, cleanup)."""
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -105,3 +106,68 @@ def test_create_rejects_duplicate_name(git_repo: Path, monkeypatch: pytest.Monke
     worktree.create("dup")
     with pytest.raises(SystemExit, match="already exists"):
         worktree.create("dup")
+
+
+def _branches(repo: Path) -> set[str]:
+    out = subprocess.run(
+        ["git", "branch", "--format=%(refname:short)"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return {line.strip() for line in out.splitlines() if line.strip()}
+
+
+def test_cleanup_removes_worktree_branch_and_metadata(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cleanup removes the dir, deletes the harness branch, and drops the record."""
+    monkeypatch.chdir(git_repo)
+    session = worktree.create("gone")
+    assert session.path.is_dir()
+
+    worktree.cleanup("gone")
+
+    assert not session.path.exists()
+    assert "harness/gone" not in _branches(git_repo)
+    assert "main" in _branches(git_repo)  # base untouched
+    assert worktree.load_session("gone", git_repo) is None
+
+
+def test_cleanup_reclaims_stale_session(git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A record whose worktree dir vanished out-of-band is still reclaimable."""
+    monkeypatch.chdir(git_repo)
+    session = worktree.create("stale")
+    # Remove the worktree behind git's back, leaving a dangling session record.
+    shutil.rmtree(session.path)
+
+    assert [s.name for s in worktree.stale_sessions(git_repo)] == ["stale"]
+    worktree.cleanup("stale")
+    assert worktree.load_session("stale", git_repo) is None
+    assert "harness/stale" not in _branches(git_repo)
+
+
+def test_cleanup_keeps_unmerged_branch_without_force(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unmerged branch survives a plain cleanup and is removed with force."""
+    monkeypatch.chdir(git_repo)
+    session = worktree.create("wip")
+    (session.path / "extra.txt").write_text("work\n", encoding="utf-8")
+    for args in (["add", "extra.txt"], ["commit", "-m", "feat: wip (basicly-x)"]):
+        subprocess.run(["git", *args], cwd=session.path, capture_output=True, text=True, check=True)
+
+    worktree.cleanup("wip")  # unmerged: dir gone, branch kept
+    assert not session.path.exists()
+    assert "harness/wip" in _branches(git_repo)
+
+    worktree.cleanup("wip", force=True)  # reclaim: branch gone
+    assert "harness/wip" not in _branches(git_repo)
+
+
+def test_cleanup_rejects_unknown_name(git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cleanup of a name with no record and no worktree is rejected."""
+    monkeypatch.chdir(git_repo)
+    with pytest.raises(SystemExit, match="no worktree named"):
+        worktree.cleanup("nope")

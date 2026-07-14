@@ -217,3 +217,91 @@ def create(name: str, base: str | None = None) -> Session:
     for note in notes:
         print(f"  {note}")
     return session
+
+
+def registered_worktrees(cwd: Path | str | None = None) -> dict[Path, str | None]:
+    """Return ``{path: branch}`` for every worktree git currently tracks.
+
+    Branch is ``None`` for a detached-HEAD worktree. Used to resolve and to
+    reconcile against session records.
+    """
+    out: dict[Path, str | None] = {}
+    porcelain = git(["worktree", "list", "--porcelain"], cwd=cwd).stdout
+    path: Path | None = None
+    for line in porcelain.splitlines():
+        if line.startswith("worktree "):
+            path = Path(line[len("worktree ") :].strip())
+            out[path] = None
+        elif line.startswith("branch ") and path is not None:
+            out[path] = line[len("branch ") :].strip().removeprefix("refs/heads/")
+    return out
+
+
+def _resolve_worktree(name: str, main: Path) -> tuple[Path, str | None]:
+    """Return ``(worktree_path, branch)`` for *name*.
+
+    Prefers the session record; falls back to ``git worktree list`` so a
+    worktree with no session (e.g. one made by raw ``git worktree add``) can
+    still be cleaned up safely. *name* matches a registered path or its
+    directory basename.
+    """
+    session = load_session(name)
+    if session is not None:
+        return session.path, session.branch
+
+    target = Path(name)
+    for path, branch in registered_worktrees(main).items():
+        if path == target or path.name == name:
+            return path, branch
+    raise SystemExit(
+        f"no worktree named {name!r}: no session record and no registered worktree "
+        f"matches it. Run `git worktree list` to see them."
+    )
+
+
+def stale_sessions(cwd: Path | str | None = None) -> list[Session]:
+    """Return sessions whose worktree directory no longer exists on disk.
+
+    A stale record is left when a worktree is removed out-of-band; ``cleanup``
+    still reclaims its branch and metadata.
+    """
+    return [s for s in list_sessions(cwd) if not s.path.exists()]
+
+
+def cleanup(name: str, *, force: bool = False) -> None:
+    """Remove worktree *name* and delete its merged branch.
+
+    Removes the worktree directory (``git worktree remove --force`` — the
+    provisioned deps are untracked, so a plain remove would refuse), prunes the
+    registry, deletes the ``harness/<name>`` branch, and drops the session
+    record. The base branch is never touched. ``force`` deletes the branch even
+    if unmerged (``git branch -D``); by default an unmerged branch is left with
+    a note instead of being lost. Reclaims a stale record whose worktree dir is
+    already gone.
+    """
+    main = main_checkout()
+    worktree, branch = _resolve_worktree(name, main)
+
+    if worktree.exists():
+        git(["worktree", "remove", "--force", str(worktree)], cwd=main)
+    git(["worktree", "prune"], cwd=main, check=False)
+
+    branch_removed = True
+    if branch:
+        delete_flag = "-D" if force else "-d"
+        deleted = git(["branch", delete_flag, branch], cwd=main, check=False)
+        branch_removed = deleted.returncode == 0
+        if not branch_removed:
+            detail = (deleted.stderr or deleted.stdout).strip()
+            print(f"  note: branch {branch} not deleted ({detail})")
+
+    # Keep the record when an unmerged branch survives, so `cleanup --force`
+    # can still find and reclaim it once the worktree dir is already gone.
+    if branch_removed:
+        session_file(name).unlink(missing_ok=True)
+        print(f"Cleaned up worktree {name!r} (worktree + branch + metadata).")
+    else:
+        print(
+            f"Removed worktree {name!r}; kept branch {branch} and its record "
+            "(unmerged — re-run with force to reclaim)."
+        )
