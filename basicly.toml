@@ -41,3 +41,11 @@ staged_suffix = ".py"
 name = "pytest"
 command = ["pytest", "-q"]
 modes = ["full"]
+
+# Loop gate/checkpoint policy: which gates block advancement and the rework cap.
+[policy]
+# Gate names (from [verify] / br gate report) that MUST pass to advance. Any
+# recorded gate not listed here is advisory (never blocks).
+required_gates = ["verify"]
+# Rework retries allowed before a node escalates to a human.
+max_rework = 2

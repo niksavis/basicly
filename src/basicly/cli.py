@@ -11,13 +11,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from . import __version__, claude_settings, verify, worktree
+from . import __version__, claude_settings, policy, verify, worktree
 from .catalog import bundled_catalog_root, iter_catalog_files
 from .config import (
+    CHECKPOINTS,
     CONFIG_FILE,
     DEFAULT_CONFIG_TOML,
     VERIFY_MODES,
     ProjectPaths,
+    load_policy_config,
     load_project_paths,
     load_verify_config,
     load_worktree_config,
@@ -542,6 +544,73 @@ def cmd_skills_check(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_policy(args: argparse.Namespace) -> int:
+    """Dispatch the ``policy`` subcommands (dor / gate / checkpoint / rework)."""
+    handlers = {
+        "dor": _cmd_policy_dor,
+        "gate": _cmd_policy_gate,
+        "checkpoint": _cmd_policy_checkpoint,
+        "rework": _cmd_policy_rework,
+    }
+    handler = handlers.get(args.policy_command)
+    return handler(args) if handler else 0
+
+
+def _cmd_policy_dor(args: argparse.Namespace) -> int:
+    """Report Definition-of-Ready; exit 1 (blocking) when sections are missing."""
+    result = policy.definition_of_ready(_repo_root(), args.issue)
+    if result.ready:
+        print(f"DoR: READY ({args.issue})")
+        return 0
+    print(f"DoR: NOT READY ({args.issue}) — missing: {', '.join(result.missing)}", file=sys.stderr)
+    return 1
+
+
+def _cmd_policy_gate(args: argparse.Namespace) -> int:
+    """Show gate status and exit 1 (blocking) when a required gate is not green."""
+    repo_root = _repo_root()
+    status = policy.gate_status(repo_root, args.issue, load_policy_config(repo_root))
+    print(f"required passed:  {list(status.required_passed)}")
+    if status.required_failed:
+        print(f"required FAILED:  {list(status.required_failed)}")
+    if status.required_missing:
+        print(f"required MISSING: {list(status.required_missing)}")
+    for verdict in status.advisory:
+        state = "pass" if verdict.passed else "fail"
+        print(f"advisory: {verdict.gate} [{verdict.provider}] = {state}")
+    if status.can_advance:
+        print("advance: ALLOWED")
+        return 0
+    print("advance: BLOCKED", file=sys.stderr)
+    return 1
+
+
+def _cmd_policy_checkpoint(args: argparse.Namespace) -> int:
+    """Show or record approval of a human checkpoint."""
+    repo_root = _repo_root()
+    if args.approve:
+        policy.approve_checkpoint(repo_root, args.issue, args.name)
+        print(f"checkpoint {args.name}: APPROVED ({args.issue})")
+        return 0
+    approved = policy.checkpoint_approved(repo_root, args.issue, args.name)
+    print(f"checkpoint {args.name}: {'APPROVED' if approved else 'PENDING'} ({args.issue})")
+    return 0 if approved else 1
+
+
+def _cmd_policy_rework(args: argparse.Namespace) -> int:
+    """Show or record a rework attempt, reporting whether the cap forces escalation."""
+    repo_root = _repo_root()
+    config = load_policy_config(repo_root)
+    if args.record:
+        attempts = policy.record_rework(repo_root, args.issue, args.gate)
+        print(f"Recorded rework for gate '{args.gate}'.")
+    else:
+        attempts = policy.rework_attempts(repo_root, args.issue, args.gate)
+    verdict = "ESCALATE (cap reached)" if attempts >= config.max_rework else "may retry"
+    print(f"rework: {attempts}/{config.max_rework} attempts for gate '{args.gate}' — {verdict}")
+    return 0
+
+
 def cmd_verify(args: argparse.Namespace) -> int:
     """Run the configured verify checks for a mode and optionally record a gate."""
     repo_root = _repo_root()
@@ -663,6 +732,80 @@ def _add_skill_root_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_worktree_parser(subparsers: argparse._SubParsersAction) -> None:
+    worktree_parser = subparsers.add_parser(
+        "worktree", help="Manage isolated sibling git worktrees"
+    )
+    worktree_sub = worktree_parser.add_subparsers(dest="worktree_command", required=True)
+    wt_create = worktree_sub.add_parser(
+        "create", help="Create + provision a sibling worktree on harness/<name>"
+    )
+    wt_create.add_argument("name")
+    wt_create.add_argument(
+        "--base",
+        default=None,
+        help="Base branch to fork from (default: [worktree].base_branch or current)",
+    )
+    wt_cleanup = worktree_sub.add_parser(
+        "cleanup", help="Remove a worktree and delete its merged branch"
+    )
+    wt_cleanup.add_argument("name")
+    wt_cleanup.add_argument(
+        "--force",
+        action="store_true",
+        help="Delete the branch even if it is not fully merged",
+    )
+    worktree_sub.add_parser("list", help="List worktree sessions (marks stale ones)")
+    wt_bg = worktree_sub.add_parser(
+        "bg-isolation",
+        help="Set Claude's worktree.bgIsolation=none so the harness isolates itself",
+    )
+    wt_bg.add_argument(
+        "--yes",
+        action="store_true",
+        help="Consent to writing the change to the committed .claude/settings.json",
+    )
+
+
+def _add_verify_parser(subparsers: argparse._SubParsersAction) -> None:
+    verify_parser = subparsers.add_parser(
+        "verify", help="Run the configured verify checks and optionally record a br gate"
+    )
+    verify_parser.add_argument(
+        "--mode",
+        choices=VERIFY_MODES,
+        default="full",
+        help="Which configured check set to run (default: full)",
+    )
+    verify_parser.add_argument("--issue", help="Record the verdict as a br gate on this issue id")
+    verify_parser.add_argument(
+        "--gate",
+        default=verify.DEFAULT_GATE,
+        help=f"Gate name to record (default: {verify.DEFAULT_GATE})",
+    )
+
+
+def _add_policy_parser(subparsers: argparse._SubParsersAction) -> None:
+    policy_parser = subparsers.add_parser(
+        "policy", help="Loop gate/checkpoint policy checks (DoR, gates, rework, checkpoints)"
+    )
+    policy_sub = policy_parser.add_subparsers(dest="policy_command", required=True)
+    p_dor = policy_sub.add_parser("dor", help="Check Definition-of-Ready via br lint")
+    p_dor.add_argument("issue")
+    p_gate = policy_sub.add_parser(
+        "gate", help="Show required/advisory gate status and the advance decision"
+    )
+    p_gate.add_argument("issue")
+    p_ck = policy_sub.add_parser("checkpoint", help="Show or approve a human checkpoint")
+    p_ck.add_argument("issue")
+    p_ck.add_argument("name", choices=CHECKPOINTS)
+    p_ck.add_argument("--approve", action="store_true", help="Record human approval")
+    p_rw = policy_sub.add_parser("rework", help="Show or record a rework attempt")
+    p_rw.add_argument("issue")
+    p_rw.add_argument("--gate", default=verify.DEFAULT_GATE, help="Gate the rework is for")
+    p_rw.add_argument("--record", action="store_true", help="Record a new rework attempt")
+
+
 def main(argv: list[str] | None = None) -> int:
     """Parse arguments and dispatch to the requested command."""
     parser = argparse.ArgumentParser(prog="basicly")
@@ -707,54 +850,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     subparsers.add_parser("hooks-check", help="Check projected hooks are up to date")
 
-    worktree_parser = subparsers.add_parser(
-        "worktree", help="Manage isolated sibling git worktrees"
-    )
-    worktree_sub = worktree_parser.add_subparsers(dest="worktree_command", required=True)
-    wt_create = worktree_sub.add_parser(
-        "create", help="Create + provision a sibling worktree on harness/<name>"
-    )
-    wt_create.add_argument("name")
-    wt_create.add_argument(
-        "--base",
-        default=None,
-        help="Base branch to fork from (default: [worktree].base_branch or current)",
-    )
-    wt_cleanup = worktree_sub.add_parser(
-        "cleanup", help="Remove a worktree and delete its merged branch"
-    )
-    wt_cleanup.add_argument("name")
-    wt_cleanup.add_argument(
-        "--force",
-        action="store_true",
-        help="Delete the branch even if it is not fully merged",
-    )
-    verify_parser = subparsers.add_parser(
-        "verify", help="Run the configured verify checks and optionally record a br gate"
-    )
-    verify_parser.add_argument(
-        "--mode",
-        choices=VERIFY_MODES,
-        default="full",
-        help="Which configured check set to run (default: full)",
-    )
-    verify_parser.add_argument("--issue", help="Record the verdict as a br gate on this issue id")
-    verify_parser.add_argument(
-        "--gate",
-        default=verify.DEFAULT_GATE,
-        help=f"Gate name to record (default: {verify.DEFAULT_GATE})",
-    )
-
-    worktree_sub.add_parser("list", help="List worktree sessions (marks stale ones)")
-    wt_bg = worktree_sub.add_parser(
-        "bg-isolation",
-        help="Set Claude's worktree.bgIsolation=none so the harness isolates itself",
-    )
-    wt_bg.add_argument(
-        "--yes",
-        action="store_true",
-        help="Consent to writing the change to the committed .claude/settings.json",
-    )
+    _add_worktree_parser(subparsers)
+    _add_verify_parser(subparsers)
+    _add_policy_parser(subparsers)
 
     args = parser.parse_args(argv)
     handlers = {
@@ -770,6 +868,7 @@ def main(argv: list[str] | None = None) -> int:
         "hooks-check": cmd_hooks_check,
         "worktree": cmd_worktree,
         "verify": cmd_verify,
+        "policy": cmd_policy,
     }
 
     try:

@@ -52,6 +52,14 @@ staged_suffix = ".py"
 name = "pytest"
 command = ["pytest", "-q"]
 modes = ["full"]
+
+# Loop gate/checkpoint policy: which gates block advancement and the rework cap.
+[policy]
+# Gate names (from [verify] / br gate report) that MUST pass to advance. Any
+# recorded gate not listed here is advisory (never blocks).
+required_gates = ["verify"]
+# Rework retries allowed before a node escalates to a human.
+max_rework = 2
 """
 
 # Default concurrency cap when no basicly.toml (or no [worktree]) is present.
@@ -59,6 +67,13 @@ DEFAULT_WORKTREE_CONCURRENCY = 4
 
 # Modes the verify runner understands.
 VERIFY_MODES = ("fast", "full", "staged")
+
+# Policy defaults when no basicly.toml (or no [policy]) is present.
+DEFAULT_REQUIRED_GATES = ("verify",)
+DEFAULT_MAX_REWORK = 2
+
+# The three human checkpoints the loop enforces (architecture §12.2).
+CHECKPOINTS = ("classify", "decompose", "ship")
 
 
 @dataclass(frozen=True)
@@ -192,6 +207,40 @@ def _parse_verify_check(entry: object) -> VerifyCheck:
         modes=frozenset(modes),
         staged_suffix=staged_suffix or None,
     )
+
+
+@dataclass(frozen=True)
+class PolicyConfig:
+    """Loop gate/checkpoint policy settings."""
+
+    required_gates: tuple[str, ...]
+    max_rework: int
+
+
+def load_policy_config(repo_root: Path) -> PolicyConfig:
+    """Load ``[policy]`` settings from basicly.toml, falling back to defaults."""
+    defaults = PolicyConfig(required_gates=DEFAULT_REQUIRED_GATES, max_rework=DEFAULT_MAX_REWORK)
+
+    config_path = repo_root / CONFIG_FILE
+    if not config_path.exists():
+        return defaults
+
+    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    section = data.get("policy", {})
+    if not isinstance(section, dict):
+        return defaults
+
+    raw_gates = section.get("required_gates")
+    if isinstance(raw_gates, list) and all(isinstance(g, str) for g in raw_gates):
+        required_gates = tuple(g.strip() for g in raw_gates if g.strip())
+    else:
+        required_gates = defaults.required_gates
+
+    max_rework = section.get("max_rework")
+    if not (isinstance(max_rework, int) and not isinstance(max_rework, bool) and max_rework >= 0):
+        max_rework = defaults.max_rework
+
+    return PolicyConfig(required_gates=required_gates, max_rework=max_rework)
 
 
 def load_project_paths(repo_root: Path) -> ProjectPaths:

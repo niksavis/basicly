@@ -9,7 +9,9 @@ import pytest
 from basicly.config import (
     CONFIG_FILE,
     DEFAULT_CONFIG_TOML,
+    PolicyConfig,
     WorktreeConfig,
+    load_policy_config,
     load_project_paths,
     load_verify_config,
     load_worktree_config,
@@ -106,3 +108,28 @@ def test_verify_config_rejects_unknown_mode(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="unknown mode"):
         load_verify_config(tmp_path)
+
+
+def test_policy_config_defaults_without_file(tmp_path: Path) -> None:
+    """With no basicly.toml the policy is (required verify, cap 2)."""
+    assert load_policy_config(tmp_path) == PolicyConfig(required_gates=("verify",), max_rework=2)
+
+
+def test_default_config_toml_policy_matches_defaults(tmp_path: Path) -> None:
+    """The scaffolded [policy] section resolves to the built-in defaults."""
+    (tmp_path / CONFIG_FILE).write_text(DEFAULT_CONFIG_TOML, encoding="utf-8")
+    assert load_policy_config(tmp_path) == PolicyConfig(required_gates=("verify",), max_rework=2)
+
+
+def test_policy_config_custom_values(tmp_path: Path) -> None:
+    """Custom required_gates and max_rework parse; a negative cap falls back."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[policy]\nrequired_gates = ["verify", "security"]\nmax_rework = 3\n',
+        encoding="utf-8",
+    )
+    config = load_policy_config(tmp_path)
+    assert config.required_gates == ("verify", "security")
+    assert config.max_rework == 3
+
+    (tmp_path / CONFIG_FILE).write_text("[policy]\nmax_rework = -1\n", encoding="utf-8")
+    assert load_policy_config(tmp_path).max_rework == 2
