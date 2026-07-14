@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+import shlex
 import shutil
 import sys
 from datetime import UTC, datetime
@@ -19,6 +20,7 @@ from . import (
     loop_state,
     merge,
     policy,
+    runner,
     verify,
     worktree,
 )
@@ -31,6 +33,7 @@ from .config import (
     ProjectPaths,
     load_policy_config,
     load_project_paths,
+    load_runner_config,
     load_verify_config,
     load_worktree_config,
 )
@@ -752,6 +755,71 @@ def _cmd_loop_run(args: argparse.Namespace) -> int:
     return 1 if results and results[-1].blocked else 0
 
 
+def cmd_runner(args: argparse.Namespace) -> int:
+    """Dispatch the ``runner`` subcommands (list / dry-run / run)."""
+    handlers = {
+        "list": _cmd_runner_list,
+        "dry-run": _cmd_runner_dry_run,
+        "run": _cmd_runner_run,
+    }
+    handler = handlers.get(args.runner_command)
+    return handler(args) if handler else 0
+
+
+def _resolve_runner(args: argparse.Namespace) -> runner.RunnerSpec:
+    """Resolve the runner from --runner (or the configured [runner].default)."""
+    config = load_runner_config(_repo_root())
+    return runner.select_runner(config.specs, args.runner or config.default)
+
+
+def _cmd_runner_list(_args: argparse.Namespace) -> int:
+    """List the configured runner adapters, their availability, and the auto-selection."""
+    config = load_runner_config(_repo_root())
+    print(f"default: {config.default}")
+    for spec in config.specs:
+        if spec.kind == runner.HANDOFF:
+            print(f"- {spec.name} [{spec.kind}] — always available (work handed off)")
+            continue
+        avail = "available" if runner.is_available(spec) else "not on PATH"
+        print(f"- {spec.name} [{spec.kind}] — {avail}: {shlex.join(spec.command)}")
+    resolved = runner.select_runner(config.specs, config.default)
+    print(f"selected ({config.default}): {resolved.name}")
+    return 0
+
+
+def _cmd_runner_dry_run(args: argparse.Namespace) -> int:
+    """Print the exact command the selected runner would execute (no invocation)."""
+    spec = _resolve_runner(args)
+    result = runner.run(spec, args.prompt, _repo_root(), dry_run=True)
+    if result.handoff:
+        print(
+            f"runner '{spec.name}' [handoff]: no headless command — the work is handed off to the "
+            "driving agent/human; nothing is executed."
+        )
+        return 0
+    print(f"runner '{spec.name}':")
+    print(f"  {shlex.join(result.command)}")
+    return 0
+
+
+def _cmd_runner_run(args: argparse.Namespace) -> int:
+    """Invoke the selected runner headless in --cwd, streaming its captured output."""
+    spec = _resolve_runner(args)
+    cwd = Path(args.cwd) if args.cwd else _repo_root()
+    result = runner.run(spec, args.prompt, cwd)
+    if result.handoff:
+        print(
+            f"runner '{spec.name}' [handoff]: no agent CLI available — do the work described in "
+            f"the prompt in {cwd}, then re-invoke the loop."
+        )
+        return 0
+    if result.stdout:
+        print(result.stdout, end="")
+    if result.stderr:
+        print(result.stderr, end="", file=sys.stderr)
+    return result.returncode if result.returncode is not None else 0
+
+
 def cmd_worktree(args: argparse.Namespace) -> int:
     """Dispatch the ``worktree`` subcommands (create / cleanup / list / bg-isolation)."""
     handlers = {
@@ -1004,6 +1072,31 @@ def _add_loop_input_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_runner_parser(subparsers: argparse._SubParsersAction) -> None:
+    runner_parser = subparsers.add_parser(
+        "runner", help="Agent-agnostic headless runner adapters (claude/codex/copilot)"
+    )
+    runner_sub = runner_parser.add_subparsers(dest="runner_command", required=True)
+    runner_sub.add_parser(
+        "list", help="List runner adapters, their availability, and the auto-selection"
+    )
+    r_dry = runner_sub.add_parser(
+        "dry-run", help="Print the exact command a runner would execute (no invocation)"
+    )
+    r_dry.add_argument(
+        "--runner", help="Runner name or 'auto' (default: the configured [runner].default)"
+    )
+    r_dry.add_argument("--prompt", required=True, help="Prompt the runner would send to the agent")
+    r_run = runner_sub.add_parser(
+        "run", help="Invoke a runner headless and stream its captured output"
+    )
+    r_run.add_argument(
+        "--runner", help="Runner name or 'auto' (default: the configured [runner].default)"
+    )
+    r_run.add_argument("--prompt", required=True, help="Prompt to send to the agent")
+    r_run.add_argument("--cwd", help="Working directory to run in (default: repo root)")
+
+
 def _add_loop_parser(subparsers: argparse._SubParsersAction) -> None:
     loop_parser = subparsers.add_parser(
         "loop", help="Drive an issue through the harness loop (status / advance / run)"
@@ -1072,6 +1165,7 @@ def main(argv: list[str] | None = None) -> int:
     _add_policy_parser(subparsers)
     _add_decompose_parser(subparsers)
     _add_loop_parser(subparsers)
+    _add_runner_parser(subparsers)
 
     args = parser.parse_args(argv)
     handlers = {
@@ -1090,6 +1184,7 @@ def main(argv: list[str] | None = None) -> int:
         "policy": cmd_policy,
         "decompose": cmd_decompose,
         "loop": cmd_loop,
+        "runner": cmd_runner,
     }
 
     try:

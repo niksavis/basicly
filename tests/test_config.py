@@ -13,9 +13,11 @@ from basicly.config import (
     WorktreeConfig,
     load_policy_config,
     load_project_paths,
+    load_runner_config,
     load_verify_config,
     load_worktree_config,
 )
+from basicly.runner import BUILTIN_RUNNERS
 
 
 def test_default_config_toml_matches_builtin_defaults(tmp_path: Path) -> None:
@@ -133,3 +135,60 @@ def test_policy_config_custom_values(tmp_path: Path) -> None:
 
     (tmp_path / CONFIG_FILE).write_text("[policy]\nmax_rework = -1\n", encoding="utf-8")
     assert load_policy_config(tmp_path).max_rework == 2
+
+
+def test_runner_config_defaults_without_file(tmp_path: Path) -> None:
+    """With no basicly.toml the runner config is the built-in adapters, default 'auto'."""
+    config = load_runner_config(tmp_path)
+    assert config.specs == BUILTIN_RUNNERS
+    assert config.default == "auto"
+
+
+def test_default_config_toml_runner_matches_defaults(tmp_path: Path) -> None:
+    """The scaffolded [runner] section resolves to the built-in adapters and 'auto'."""
+    (tmp_path / CONFIG_FILE).write_text(DEFAULT_CONFIG_TOML, encoding="utf-8")
+    config = load_runner_config(tmp_path)
+    assert config.specs == BUILTIN_RUNNERS
+    assert config.default == "auto"
+
+
+def test_runner_config_adds_custom_agent(tmp_path: Path) -> None:
+    """An [[runner.agents]] entry adds a new adapter alongside the built-ins."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[runner]\ndefault = "opencode"\n'
+        '[[runner.agents]]\nname = "opencode"\n'
+        'command = ["opencode", "run", "{prompt}"]\nprompt_via = "stdin"\n',
+        encoding="utf-8",
+    )
+    config = load_runner_config(tmp_path)
+    assert config.default == "opencode"
+    by_name = {spec.name: spec for spec in config.specs}
+    assert by_name["opencode"].command == ("opencode", "run", "{prompt}")
+    assert by_name["opencode"].prompt_via == "stdin"
+    assert "claude" in by_name  # built-ins are preserved
+
+
+def test_runner_config_overrides_builtin_command(tmp_path: Path) -> None:
+    """An agent entry matching a built-in name overrides its command template."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[runner.agents]]\nname = "claude"\ncommand = ["claude", "--print", "{prompt}"]\n',
+        encoding="utf-8",
+    )
+    by_name = {spec.name: spec for spec in load_runner_config(tmp_path).specs}
+    assert by_name["claude"].command == ("claude", "--print", "{prompt}")
+
+
+def test_runner_config_rejects_malformed_agent(tmp_path: Path) -> None:
+    """A malformed agent entry raises rather than silently dropping the adapter."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[runner.agents]]\nname = "x"\ncommand = []\n', encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="non-empty 'command'"):
+        load_runner_config(tmp_path)
+
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[runner.agents]]\nname = "x"\ncommand = ["x"]\nprompt_via = "telepathy"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="unknown prompt_via"):
+        load_runner_config(tmp_path)

@@ -583,7 +583,14 @@ cross-agent — start on Claude, resume on Codex or Copilot.
 **12.8 Agent-agnostic runner.** Each agent drives the _same_ loop through a thin **runner**
 adapter (invocation command, headless flags, prompt injection, output capture), selected by
 capability detection or an explicit flag. The loop logic is agent-neutral; only the runner
-differs per agent.
+differs per agent. Detection (`auto`) probes the big 3 on `PATH` (claude → codex → copilot);
+any other agent is supported by an explicit `[[runner.agents]]` command template in
+`basicly.toml`. There is no cross-agent CLI invocation standard, so an unknown agent's command
+is **never guessed** — when nothing matches, selection falls back to a **`manual` handoff
+runner** that shells out to nothing and instead surfaces the exact prompt + worktree path,
+deferring to the loop's block-and-resume contract and the one thing that _is_ standardized
+across agents: the projected `AGENTS.md` guidance. `basicly runner dry-run` prints the exact
+command an adapter would execute so it can be verified before any live invocation.
 
 **12.9 Ship.** Ship is parameterized by the entry branch recorded at Intake: default → merge
 to `main` + push `main` (no feature branches on the remote); if the entry branch is a feature

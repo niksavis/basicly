@@ -49,3 +49,11 @@ modes = ["full"]
 required_gates = ["verify"]
 # Rework retries allowed before a node escalates to a human.
 max_rework = 2
+
+# Agent-agnostic runner: how the harness invokes a coding agent headless to do a
+# node's work in its worktree. "auto" detects claude -> codex -> copilot on PATH,
+# else falls back to the "manual" handoff (no command is guessed for an unknown
+# agent). Add or override an agent with [[runner.agents]]; verify any command
+# with `basicly runner dry-run` before a live run.
+[runner]
+default = "auto"

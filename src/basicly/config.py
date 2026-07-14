@@ -6,6 +6,8 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+from .runner import AUTO, BUILTIN_RUNNERS, HEADLESS, PROMPT_VIA, RunnerSpec
+
 CONFIG_FILE = "basicly.toml"
 
 # Scaffolded into a consumer repo by `basicly init`. Kept next to the defaults
@@ -60,6 +62,18 @@ modes = ["full"]
 required_gates = ["verify"]
 # Rework retries allowed before a node escalates to a human.
 max_rework = 2
+
+# Agent-agnostic runner: how the harness invokes a coding agent headless to do a
+# node's work in its worktree. "auto" detects claude -> codex -> copilot on PATH,
+# else falls back to the "manual" handoff (no command is guessed for an unknown
+# agent). Add or override an agent with [[runner.agents]]; verify any command
+# with `basicly runner dry-run` before a live run.
+[runner]
+default = "auto"
+# [[runner.agents]]
+# name = "opencode"
+# command = ["opencode", "run", "{prompt}"]
+# prompt_via = "arg"   # or "stdin"
 """
 
 # Default concurrency cap when no basicly.toml (or no [worktree]) is present.
@@ -245,6 +259,70 @@ def load_policy_config(repo_root: Path) -> PolicyConfig:
         max_rework = defaults.max_rework
 
     return PolicyConfig(required_gates=required_gates, max_rework=max_rework)
+
+
+@dataclass(frozen=True)
+class RunnerConfig:
+    """Agent runner settings: the available adapters and the default selection."""
+
+    specs: tuple[RunnerSpec, ...]
+    default: str
+
+
+def load_runner_config(repo_root: Path) -> RunnerConfig:
+    """Load ``[runner]`` settings, merging config overrides onto the built-in adapters.
+
+    Returns the built-in adapters with ``default = "auto"`` when the file or
+    section is absent. Each ``[[runner.agents]]`` entry overrides a built-in by
+    name or adds a new agent. Raises ``ValueError`` on a malformed entry rather
+    than silently dropping it — a lost adapter must never pass unnoticed.
+    """
+    defaults = RunnerConfig(specs=BUILTIN_RUNNERS, default=AUTO)
+
+    config_path = repo_root / CONFIG_FILE
+    if not config_path.exists():
+        return defaults
+
+    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    section = data.get("runner", {})
+    if not isinstance(section, dict):
+        return defaults
+
+    specs = {spec.name: spec for spec in BUILTIN_RUNNERS}
+    raw_agents = section.get("agents")
+    if isinstance(raw_agents, list):
+        for entry in raw_agents:
+            spec = _parse_runner_agent(entry)
+            specs[spec.name] = spec
+
+    default = section.get("default")
+    default = default.strip() if isinstance(default, str) and default.strip() else AUTO
+
+    return RunnerConfig(specs=tuple(specs.values()), default=default)
+
+
+def _parse_runner_agent(entry: object) -> RunnerSpec:
+    if not isinstance(entry, dict):
+        raise ValueError(f"[[runner.agents]] entry must be a table, got {type(entry).__name__}")
+
+    name = entry.get("name")
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("[[runner.agents]] entry is missing a non-empty 'name'")
+
+    command = entry.get("command")
+    if not (isinstance(command, list) and command and all(isinstance(a, str) for a in command)):
+        raise ValueError(f"runner agent {name!r} needs a non-empty 'command' list of strings")
+
+    prompt_via = entry.get("prompt_via", "arg")
+    if prompt_via not in PROMPT_VIA:
+        raise ValueError(
+            f"runner agent {name!r} has unknown prompt_via {prompt_via!r}; "
+            f"allowed: {list(PROMPT_VIA)}"
+        )
+
+    return RunnerSpec(
+        name=name.strip(), kind=HEADLESS, command=tuple(command), prompt_via=prompt_via
+    )
 
 
 def load_project_paths(repo_root: Path) -> ProjectPaths:
