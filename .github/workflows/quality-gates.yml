@@ -40,14 +40,19 @@ jobs:
 
           failed=0
           count=0
-          while IFS=$'\t' read -r commit_sha subject; do
+          while IFS= read -r commit_sha; do
             if [ -z "${commit_sha}" ]; then
               continue
             fi
 
             count=$((count + 1))
+            subject="$(git log -1 --format='%s' "${commit_sha}")"
+            # Validate the FULL message (subject + body), matching the local
+            # commit-msg hooks: the beads issue id is a trailing body line by
+            # convention (and dotted child ids can't live in the subject), so a
+            # subject-only check would spuriously fail it.
             msg_file="$(mktemp)"
-            printf "%s\n" "${subject}" > "${msg_file}"
+            git log -1 --format='%B' "${commit_sha}" > "${msg_file}"
 
             if ! uv run python .basicly/core/hooks/commit-msg.py "${msg_file}"; then
               echo "Invalid commit message in ${commit_sha}: ${subject}" >&2
@@ -60,7 +65,7 @@ jobs:
             fi
 
             rm -f "${msg_file}"
-          done < <(git log --format='%H%x09%s' "${range}")
+          done < <(git log --format='%H' "${range}")
 
           if [ "${count}" -eq 0 ]; then
             echo "No commits to validate."
