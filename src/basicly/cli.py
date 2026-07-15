@@ -5,8 +5,10 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+import re
 import shlex
 import shutil
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -535,6 +537,57 @@ def _report_catalog_sync(report: _CatalogSyncReport, core_dst: Path, repo_root: 
             print(f"  {rel_path}", file=sys.stderr)
 
 
+def _beads_prefix(repo_root: Path) -> str:
+    """Derive a beads issue-id prefix from the repo directory name.
+
+    The commit-msg hook only accepts single-hyphen ``<prefix>-<code>`` ids with
+    a lowercase alphanumeric prefix starting with a letter, so the name is
+    sanitized to that shape.
+    """
+    prefix = re.sub(r"[^a-z0-9]", "", repo_root.name.lower())
+    if not prefix or not prefix[0].isalpha():
+        prefix = f"repo{prefix}"
+    return prefix
+
+
+def _setup_beads(repo_root: Path) -> None:
+    """Initialize a beads (br) workspace when none exists (idempotent).
+
+    Degrades gracefully: a repo without ``br`` on PATH gets actionable guidance
+    instead of a failed install — the tracker is required for the harness loop
+    but not for the projections themselves.
+    """
+    beads_dir = repo_root / ".beads"
+    if (beads_dir / "config.yaml").exists() or (beads_dir / "issues.jsonl").exists():
+        print("Beads workspace exists; left unchanged.")
+        return
+
+    br = shutil.which("br")
+    if not br:
+        print(
+            "br not on PATH; skipped beads init. Enable the harness tracker later "
+            "with `br init --prefix <prefix>` (see the tool-br skill)."
+        )
+        return
+
+    prefix = _beads_prefix(repo_root)
+    result = subprocess.run(  # nosec B603
+        [br, "init", "--prefix", prefix, "--quiet"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip() or "unknown error"
+        print(
+            f"br init failed ({detail}); continuing without a beads workspace.",
+            file=sys.stderr,
+        )
+        return
+    print(f"Initialized beads workspace (issue prefix: {prefix}).")
+
+
 def cmd_install(args: argparse.Namespace) -> int:
     """Converge a consumer repo: sync core, scaffold, and project everything.
 
@@ -599,6 +652,8 @@ def cmd_install(args: argparse.Namespace) -> int:
     else:
         config_path.write_text(DEFAULT_CONFIG_TOML, encoding="utf-8")
         print(f"Wrote {CONFIG_FILE}")
+
+    _setup_beads(repo_root)
 
     steps: list[tuple[str, Any, argparse.Namespace]] = [
         ("build", cmd_build, argparse.Namespace(target=None, verify=False)),

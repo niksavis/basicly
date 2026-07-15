@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 
+from basicly import cli
+
 REPO_ROOT = Path(__file__).parent.parent
 
 
@@ -115,6 +117,64 @@ def test_cli_install_is_idempotent_and_preserves_edits(tmp_path: Path) -> None:
     assert "No files changed" in result.stdout
     assert "No skill files changed" in result.stdout
     assert config.read_text(encoding="utf-8") == marker
+
+
+def test_setup_beads_initializes_with_derived_prefix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A fresh repo gets `br init` with a prefix sanitized from its dir name."""
+    repo = tmp_path / "My-Terminal.2"
+    repo.mkdir()
+    calls: list[tuple[list[str], Path]] = []
+
+    monkeypatch.setattr(cli.shutil, "which", lambda _name: "/usr/bin/br")
+    monkeypatch.setattr(
+        cli.subprocess,
+        "run",
+        lambda cmd, **kw: (
+            calls.append((cmd, kw["cwd"])) or subprocess.CompletedProcess(cmd, 0, "", "")
+        ),
+    )
+
+    cli._setup_beads(repo)
+
+    assert calls == [(["/usr/bin/br", "init", "--prefix", "myterminal2", "--quiet"], repo)]
+    assert "issue prefix: myterminal2" in capsys.readouterr().out
+
+
+def test_setup_beads_skips_existing_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An existing .beads workspace is never re-initialized."""
+    (tmp_path / ".beads").mkdir()
+    (tmp_path / ".beads" / "config.yaml").write_text("issue_prefix: kept\n", encoding="utf-8")
+    monkeypatch.setattr(
+        cli.subprocess, "run", lambda *_a, **_kw: pytest.fail("must not call br init")
+    )
+
+    cli._setup_beads(tmp_path)
+
+    assert "left unchanged" in capsys.readouterr().out
+
+
+def test_setup_beads_degrades_without_br(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """No br on PATH: actionable guidance, no failure, no subprocess call."""
+    monkeypatch.setattr(cli.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(
+        cli.subprocess, "run", lambda *_a, **_kw: pytest.fail("must not call br init")
+    )
+
+    cli._setup_beads(tmp_path)
+
+    assert "br init --prefix" in capsys.readouterr().out
+
+
+def test_beads_prefix_enforces_leading_letter(tmp_path: Path) -> None:
+    """A digit-leading or empty name is padded to a letter-leading prefix."""
+    assert cli._beads_prefix(tmp_path / "42tools") == "repo42tools"
+    assert cli._beads_prefix(tmp_path / "---") == "repo"
 
 
 def _record_in_state(consumer: Path, rel_path: str) -> None:
