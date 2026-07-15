@@ -455,11 +455,15 @@ uvx --from git+https://github.com/niksavis/basicly@<ref> basicly install    # fi
 uvx --from git+https://github.com/niksavis/basicly@<ref> basicly uninstall  # removal
 ```
 
-Packaging and the bundled catalog are **[Implemented]** (verified from a locally
-built wheel); the unified `install`/`uninstall` commands, core upgrade sync, and
-provenance tracking are **[Planned]** (`basicly-zrj.12`). Caveat: the live
-`git+<remote>@<ref>` path is validated structurally (the sdist carries the catalog)
-but has not been exercised against a pushed ref yet (`basicly-zrj.14`).
+Packaging, the bundled catalog, the unified `install`/`uninstall` commands, core
+upgrade sync, and provenance tracking are all **[Implemented]** (`basicly-zrj.12`).
+The live `git+<remote>@<ref>` path is **verified against a pushed ref**
+(`basicly-zrj.14`, 2026-07-15): from a clean git repo, `uvx --from
+git+https://github.com/niksavis/basicly@main basicly install` (main @ `1f5ce62`)
+converged the repo (core catalog synced, instruction/skill/hook projections
+written), `basicly check` reported everything up to date, and an immediate re-run
+was a no-op (0 written) — the commit-pinned `@<sha>` form was verified the same
+way. The GitHub repo is public, so the command needs no authentication.
 
 ### Details
 
@@ -467,8 +471,8 @@ but has not been exercised against a pushed ref yet (`basicly-zrj.14`).
   `tool.uv.package = true`, and a `[project.scripts]` `basicly = "basicly.cli:main"`
   entry point. `uv build` produces a wheel + sdist; `uvx --from <wheel> basicly`
   resolves `basicly.cli` (verified). The equivalent `git+https://...@<ref>` form is
-  expected to work via the sdist but is unverified until exercised against a pushed
-  ref (`basicly-zrj.14`). `jinja2` is a `[project.dependencies]` runtime dep (§11.2).
+  verified against a pushed ref for both `@main` and `@<sha>` (`basicly-zrj.14`).
+  `jinja2` is a `[project.dependencies]` runtime dep (§11.2).
 - **[Implemented]** The managed core catalog ships inside the distribution: hatchling
   `force-include` projects the dogfooded source `.basicly/core/` to `basicly/catalog/`
   in the wheel, and the sdist carries `.basicly/core/` so `git+` installs resolve it.
@@ -592,9 +596,9 @@ Ordered roughly by blocking-ness. Each is a candidate beads epic/feature/task.
    (`basicly-zrj.13.1`), and the verify runner must fail cleanly — not traceback —
    on a missing check command, with scaffolded defaults that don't assume Python
    tooling (`basicly-zrj.13.2`). Release-blocking (the first consumer hits both).
-10. **v0.1.0 acceptance & release** — **[Planned]**: exercise the pushed-ref
-    `git+` install (`basicly-zrj.14`), run the end-to-end acceptance in the
-    `terminal` repo — install → customize → upgrade → harness loop → ship
+10. **v0.1.0 acceptance & release** — **[Partial]**: the pushed-ref `git+` install
+    is verified (`basicly-zrj.14`, see §9); still open: the end-to-end acceptance
+    in the `terminal` repo — install → customize → upgrade → harness loop → ship
     (`basicly-zrj.15`) — then cut the tag (`basicly-zrj.16`, gated also on the
     `copilot-instructions.md` size-cap split `basicly-4ce`).
 11. **`curl` bootstrap script, catalog selection/flavors, and `.codex/rules/*.rules`
