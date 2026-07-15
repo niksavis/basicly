@@ -117,6 +117,77 @@ VSCODE_TASKS_JSON = """\
 }
 """.replace("@UVX@", "uvx --from git+https://github.com/niksavis/basicly@main basicly")
 
+# Scaffolded into .github/workflows/basicly-gates.yml by `basicly install` when
+# absent — the consumer CI floor mirroring the local git-hook gates. Assumes no
+# consumer stack beyond git + uv on the runner: the commit-message hooks are
+# stdlib-only (plain python3), drift/verify run through the uvx git+ channel,
+# and `basicly verify` executes only the checks the consumer configured (an
+# empty config passes). Same contract as the other scaffolds: written once,
+# then the user's; uninstall --purge removes it only while byte-identical.
+CONSUMER_CI_WORKFLOW = """\
+# Scaffolded by `basicly install`; yours to edit — install never overwrites it.
+name: basicly-gates
+
+"on":
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  commit-messages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate commit messages
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base_sha="${{ github.event.pull_request.base.sha }}"
+            head_sha="${{ github.event.pull_request.head.sha }}"
+            range="${base_sha}..${head_sha}"
+          else
+            before_sha="${{ github.event.before }}"
+            zeros="0000000000000000000000000000000000000000"
+            if [ -z "${before_sha}" ] || [ "${before_sha}" = "${zeros}" ]; then
+              range="${{ github.sha }}"
+            else
+              range="${before_sha}..${{ github.sha }}"
+            fi
+          fi
+          echo "Checking commit messages in range: ${range}"
+          failed=0
+          while IFS= read -r sha; do
+            [ -z "${sha}" ] && continue
+            msg_file="$(mktemp)"
+            git log -1 --format='%B' "${sha}" > "${msg_file}"
+            python3 .basicly/core/hooks/commit-msg.py "${msg_file}" || failed=1
+            python3 .basicly/core/hooks/beads-commit-msg.py "${msg_file}" || failed=1
+            rm -f "${msg_file}"
+          done < <(git log --format='%H' "${range}")
+          exit "${failed}"
+
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Projection drift check
+        run: @UVX@ check
+      - name: Skill projection drift check
+        run: @UVX@ skills-check --all-default-roots
+      - name: Hook wiring drift check
+        run: @UVX@ hooks-check
+      - name: Configured verify checks
+        run: @UVX@ verify --mode full
+""".replace("@UVX@", "uvx --from git+https://github.com/niksavis/basicly@main basicly")
+
 # Default concurrency cap when no basicly.toml (or no [worktree]) is present.
 DEFAULT_WORKTREE_CONCURRENCY = 4
 

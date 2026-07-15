@@ -10,9 +10,10 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 from basicly import cli
-from basicly.config import VSCODE_TASKS_JSON, load_project_paths
+from basicly.config import CONSUMER_CI_WORKFLOW, VSCODE_TASKS_JSON, load_project_paths
 
 REPO_ROOT = Path(__file__).parent.parent
 
@@ -209,6 +210,37 @@ def test_purge_removes_only_pristine_vscode_tasks(tmp_path: Path) -> None:
     tasks_path.write_text(VSCODE_TASKS_JSON + "// edited\n", encoding="utf-8")
     cli._purge_user_content(tmp_path, paths)
     assert tasks_path.exists()  # user-modified file survives purge
+
+
+def test_scaffold_ci_workflow_writes_once_and_parses(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The CI workflow scaffold is valid YAML, written once, then the user's."""
+    cli._scaffold_ci_workflow(tmp_path)
+    workflow_path = tmp_path / ".github" / "workflows" / "basicly-gates.yml"
+    data = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+    assert set(data["jobs"]) == {"commit-messages", "gates"}
+
+    workflow_path.write_text("name: mine\n", encoding="utf-8")
+    cli._scaffold_ci_workflow(tmp_path)
+    assert workflow_path.read_text(encoding="utf-8") == "name: mine\n"
+    assert "left unchanged" in capsys.readouterr().out
+
+
+def test_purge_removes_only_pristine_ci_workflow(tmp_path: Path) -> None:
+    """--purge deletes the workflow only while byte-identical to the scaffold."""
+    paths = load_project_paths(tmp_path)
+    workflow_path = tmp_path / ".github" / "workflows" / "basicly-gates.yml"
+
+    workflow_path.parent.mkdir(parents=True)
+    workflow_path.write_text(CONSUMER_CI_WORKFLOW, encoding="utf-8")
+    cli._purge_user_content(tmp_path, paths)
+    assert not workflow_path.exists()
+
+    workflow_path.parent.mkdir(parents=True, exist_ok=True)
+    workflow_path.write_text(CONSUMER_CI_WORKFLOW + "# edited\n", encoding="utf-8")
+    cli._purge_user_content(tmp_path, paths)
+    assert workflow_path.exists()  # user-modified file survives purge
 
 
 def _record_in_state(consumer: Path, rel_path: str) -> None:
