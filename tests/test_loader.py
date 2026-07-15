@@ -238,3 +238,27 @@ def test_valid_user_replace_of_core_is_accepted(tmp_path: Path) -> None:
     )
     fragments = load_fragments(tmp_path, {"claude"})
     assert {f.id for f in fragments} == {"base", "repl"}
+
+
+def test_legacy_md_fragment_warns_but_loads_yaml(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A leftover .fragment.md is surfaced loudly, never silently ignored.
+
+    Regression (basicly-v1y): consumer overlays written before the YAML source
+    migration were silently inert — on disk, absent from every projection.
+    """
+    _wf(
+        tmp_path / "kept.fragment.yaml",
+        "id: kept\ndescription: x\ncategory: project\napplies_to: [all]",
+    )
+    (tmp_path / "old.fragment.md").write_text(
+        "---\nid: old\ndescription: legacy\n---\n\nbody\n", encoding="utf-8"
+    )
+
+    fragments = load_fragments(tmp_path, {"claude"})
+
+    assert {f.id for f in fragments} == {"kept"}  # md is not loaded...
+    err = capsys.readouterr().err
+    assert "old.fragment.md" in err  # ...but its presence is called out
+    assert "fragment-new" in err
