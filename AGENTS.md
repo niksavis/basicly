@@ -16,8 +16,7 @@ not rely on other agent config files being present.
 
 ## Knowledge Priming
 
-- Before non-trivial work, look for repo-specific context (README, architecture docs, CONTRIBUTING, local overlay) and treat it as ground truth over generic assumptions.
-- When repo evidence and general best practice conflict, repo evidence wins — flag the conflict instead of silently overriding it.
+- Before non-trivial work, load repo-specific context (README, architecture/CONTRIBUTING docs, local overlay) and treat it as ground truth; when it conflicts with general best practice, repo evidence wins — flag the conflict, don't silently override.
 - If no repo-specific context exists for a decision, say so explicitly and proceed on stated assumptions; do not block on missing priming material alone.
 
 ## Project Defaults
@@ -32,16 +31,15 @@ not rely on other agent config files being present.
 ## Secure Coding
 
 - Validate and sanitize all external input at trust boundaries before it reaches business logic.
-- Parameterize database queries and shell commands; never build them by concatenating untrusted input.
+- Parameterize shell commands and any queries; never build them by concatenating untrusted input.
 - Never commit secrets (keys, tokens, passwords, connection strings); use env vars or a secret manager and keep them out of logs.
-- Don't leak internal detail (stack traces, queries, paths) in user-facing errors; log server-side, return a generic message.
-- Verify authorization at the service layer, not just the UI or controller entry point.
+- Don't leak internal detail (stack traces, paths) in user-facing errors; log the detail, return a generic message.
 - Never commit user- or machine-specific paths, usernames, or hostnames; keep repo defaults generic and portable.
 
 ## Git Discipline
 
 - Run `git commit` as its own command; never chain state-dependent follow-ups (issue-tracker updates, tagging, `git push`) after it on one line — a hook rejection leaves the chain half-run.
-- Commits are gated: messages must be Conventional Commits with a trailing beads issue id (`commit-msg` hooks enforce both) — use the `conventional-commits` skill to format one, and the `tool-br` skill to claim the issue first.
+- Commits are gated by `commit-msg` hooks (Conventional Commits + a trailing beads issue id) — use the `conventional-commits` skill to format one, and the `tool-br` skill to claim the issue first.
 - When a hook rejects a commit, fix the reported cause and re-commit; do not reword to dodge the check.
 
 ## Decision Protocol
@@ -55,29 +53,28 @@ not rely on other agent config files being present.
 ## Core Rules
 
 - Prioritize correctness over speed.
-- Keep diffs minimal; avoid unrelated refactors/reformatting.
+- Keep diffs minimal; avoid unrelated refactors.
 - Prefer explicit, readable solutions over clever ones.
 - Solve the stated requirement only — no speculative abstractions or unrequested config.
 - Search for existing helpers, utilities, or patterns in this codebase before writing new code; reuse before reinventing.
-- Fix the root cause, not the symptom: grep other callers before assuming a single-call-site patch is complete.
-- Back claims with evidence from this session (files read, commands run, tests) — do not assert without checking.
+- Fix the root cause, not the symptom: check other call sites before assuming a single-site patch is complete.
+- Back claims with evidence (files read, commands run, tests); don't assert without checking.
 - Keep code clean: no dead code, debug prints, or silent error swallowing.
 - Match existing style and naming conventions in touched files.
 - Use deterministic tests; add regression tests for bug fixes.
 
 ## Harness Loop
 
-- Drive non-trivial work through the harness loop, not ad hoc: intake → classify → decompose → build → verify → ship → teardown → retro. `br` is the single source of truth and the loop keeps no side-state, so it is resumable and agent-agnostic. The `harness-loop` skill is the runbook.
+- Drive non-trivial work through the harness loop, not ad hoc: intake → classify → decompose → build → verify → ship → teardown → retro. `br` is the single source of truth (the loop keeps no side-state, so it is resumable); the `harness-loop` skill is the runbook.
 - Start by reconstructing a track with `basicly loop status <issue>`, then step it with `basicly loop advance <issue>` / `basicly loop run <issue>`; a blocked step exits non-zero and names the input it needs.
 - The three human checkpoints (classify, decompose, ship) and the bounded rework loop are engine-enforced — approve with `basicly policy checkpoint <issue> <name> --approve`; never route around a gate.
 
 ## Quality Gate
 
 - Review the diff before finishing; do not mark complete with "should work" — verify.
-- Run the checks this repo already enforces (tests, lint, type check, hooks/CI config) for anything the change touches — point at existing gates, don't restate what they check.
+- Run the checks this repo already enforces (tests, lint, type check, hooks/CI config) for anything the change touches, and re-run them after your final edit — a later change can break what passed earlier. Point at existing gates; don't restate what they check.
 - Confirm a check passed from its explicit pass/fail summary line; never infer success from truncated or partial output (a cut-off `tail` can hide a failure).
-- Before declaring a change done, exercise it the way it will actually be used (run the command, read the generated output, call the changed function/endpoint) — passing tests is not the same as having used the feature.
-- Run any new or changed check/build command against this repo itself (the dogfood consumer) before calling it done — a green greenfield test does not cover the primary existing consumer.
+- Before calling a change done, exercise it as it will really be used — run the command, read the output, and run any new or changed check against this repo itself (the dogfood consumer); passing tests is not the same as having used the feature.
 - Docs must state the verification scope actually exercised; never upgrade "expected to work" to "works".
 - If a gate can't be run, say so explicitly instead of skipping it silently.
 
@@ -107,7 +104,6 @@ not rely on other agent config files being present.
 
 ## Session Completion
 
-- Re-run the repo's checks after your final edit, not just the first draft — later changes can break what passed earlier.
 - Leave the repo in a state a fresh session could pick up cleanly: no partial edits, no stray debug output, no unexplained changes.
 - Summarize what changed, what was verified, and what — if anything — remains open before ending the turn.
 
