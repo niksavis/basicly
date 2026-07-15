@@ -86,6 +86,8 @@ jobs:
         run: uv sync
       - name: Install Node dependencies
         run: npm install --no-fund --no-audit
+      - name: Lint markdown
+        run: npx --no-install markdownlint-cli2
       - name: Lint catalog sources
         run: uv run python -m basicly.cli catalog-lint
       - name: Run pre-commit checks

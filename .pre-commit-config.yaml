@@ -47,3 +47,14 @@ repos:
     - pre-push
     pass_filenames: false
     always_run: true
+  - id: markdownlint
+    name: markdownlint
+    # Repo-wide run through .markdownlint-cli2.yaml (globs + generated-file
+    # ignores) instead of staged filenames, so explicit paths can't bypass the
+    # config's ignore list. npx resolves the local devDependency.
+    entry: npx --no-install markdownlint-cli2
+    language: system
+    stages:
+    - pre-commit
+    pass_filenames: false
+    files: \.md$
