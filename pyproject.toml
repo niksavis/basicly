@@ -51,7 +51,7 @@ skips = ["B101"]
 packages = ["src/basicly"]
 exclude = ["**/__pycache__", "**/*.pyc"]
 
-# Ship the managed core catalog inside the wheel so `basicly init`/`update` can
+# Ship the managed core catalog inside the wheel so `basicly install` can
 # materialize it into a fresh consumer repo. The authoring source stays at
 # `.basicly/core/` (dogfooded here); it is projected to `basicly/catalog/` in
 # the built distribution only. See src/basicly/catalog.py for the locator.

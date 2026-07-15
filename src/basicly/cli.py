@@ -368,27 +368,18 @@ def _prune_legacy_catalog_sources(repo_root: Path, paths: ProjectPaths) -> list[
     return removed
 
 
-def cmd_update(_args: argparse.Namespace) -> int:
-    """Refresh managed core layout, prune legacy sources, and preserve the overlay."""
-    repo_root = _repo_root()
-    paths = load_project_paths(repo_root)
-
-    core_dir = repo_root / paths.core_fragments_dir
-    core_dir.mkdir(parents=True, exist_ok=True)
-
-    for overlay in paths.overlay_fragments_dirs:
-        (repo_root / overlay / "user").mkdir(parents=True, exist_ok=True)
-
+def _migrate_legacy_layout(repo_root: Path, paths: ProjectPaths) -> None:
+    """Migrate a pre-core legacy fragment layout and prune legacy-named sources."""
     pruned = _prune_legacy_catalog_sources(repo_root, paths)
     for legacy in pruned:
         print(f"Pruned legacy source {_format_path(legacy, repo_root)}")
 
     legacy_dir = repo_root / paths.legacy_fragments_dir
     if not legacy_dir.exists():
-        tail = f"{len(pruned)} legacy source(s) pruned" if pruned else "nothing to do"
-        print(f"basicly update: core and overlay layout is up to date ({tail}).")
-        return 0
+        return
 
+    core_dir = repo_root / paths.core_fragments_dir
+    core_dir.mkdir(parents=True, exist_ok=True)
     moved = 0
     skipped = 0
 
@@ -408,12 +399,7 @@ def cmd_update(_args: argparse.Namespace) -> int:
     if legacy_dir.exists() and not any(legacy_dir.iterdir()):
         legacy_dir.rmdir()
 
-    print(
-        "basicly update complete: "
-        f"{moved} item(s) migrated, {skipped} existing item(s) left unchanged, "
-        f"{len(pruned)} legacy source(s) pruned"
-    )
-    return 0
+    print(f"Migrated legacy fragment layout: {moved} item(s) moved, {skipped} left unchanged")
 
 
 def _materialize_catalog(src: Path, dst: Path) -> tuple[int, int]:
@@ -434,8 +420,15 @@ def _materialize_catalog(src: Path, dst: Path) -> tuple[int, int]:
     return written, skipped
 
 
-def cmd_init(_args: argparse.Namespace) -> int:
-    """Scaffold a consumer repo: materialize the core catalog, overlay, and config."""
+def cmd_install(_args: argparse.Namespace) -> int:
+    """Converge a consumer repo: materialize core, scaffold, and project everything.
+
+    One idempotent command covers first install and every upgrade (architecture
+    §9): materialize the bundled catalog, migrate/prune legacy layouts, scaffold
+    the overlay + config (never overwriting user content), then project
+    fragments, skills, and hooks. Re-running from a newer pinned ref is the
+    upgrade path.
+    """
     repo_root = _repo_root()
     paths = load_project_paths(repo_root)
 
@@ -449,6 +442,8 @@ def cmd_init(_args: argparse.Namespace) -> int:
             f"Materialized core catalog into {_format_path(core_dst, repo_root)}: "
             f"{written} file(s) written, {skipped} existing left unchanged"
         )
+
+    _migrate_legacy_layout(repo_root, paths)
 
     for overlay in paths.overlay_fragments_dirs:
         user_dir = repo_root / overlay / "user"
@@ -464,10 +459,23 @@ def cmd_init(_args: argparse.Namespace) -> int:
         config_path.write_text(DEFAULT_CONFIG_TOML, encoding="utf-8")
         print(f"Wrote {CONFIG_FILE}")
 
-    print("\nNext steps:")
-    print("  basicly build        # generate AGENTS.md / CLAUDE.md / copilot-instructions.md")
-    print("  basicly skills-build --all-default-roots   # project skills")
-    print("  basicly hooks-build  # wire the git-hook gates into .pre-commit-config.yaml")
+    steps: list[tuple[str, Any, argparse.Namespace]] = [
+        ("build", cmd_build, argparse.Namespace(target=None, verify=False)),
+        (
+            "skills-build",
+            cmd_skills_build,
+            argparse.Namespace(roots=None, all_default_roots=True),
+        ),
+        ("hooks-build", cmd_hooks_build, argparse.Namespace(no_install=False)),
+    ]
+    for step, handler, namespace in steps:
+        print(f"\n== basicly {step} ==")
+        rc = handler(namespace)
+        if rc != 0:
+            print(f"basicly install: {step} failed (exit {rc})", file=sys.stderr)
+            return rc
+
+    print("\nbasicly install complete: repo converged. Re-run the same command to upgrade.")
     return 0
 
 
@@ -1320,11 +1328,12 @@ def main(argv: list[str] | None = None) -> int:
     subparsers.add_parser("list", help="List active fragments")
 
     subparsers.add_parser(
-        "init",
-        help="Scaffold a consumer repo (materialize core catalog + overlay + basicly.toml)",
+        "install",
+        help=(
+            "Install or upgrade basicly in this repo "
+            "(materialize catalog + scaffold + build + skills + hooks)"
+        ),
     )
-
-    subparsers.add_parser("update", help="Refresh managed core layout")
 
     build_parser = subparsers.add_parser("build", help="Build generated files")
     build_parser.add_argument("--target", help="Build only the specified target")
@@ -1406,8 +1415,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     handlers = {
         "list": cmd_list,
-        "init": cmd_init,
-        "update": cmd_update,
+        "install": cmd_install,
         "build": cmd_build,
         "check": cmd_check,
         "skills-list": cmd_skills_list,

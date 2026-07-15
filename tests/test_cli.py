@@ -46,12 +46,12 @@ def run_basicly_consumer(cwd: Path, *args: str) -> subprocess.CompletedProcess[s
     )
 
 
-def test_cli_init_scaffolds_fresh_consumer(tmp_path: Path) -> None:
-    """Init materializes the catalog, overlay, and config in an empty repo."""
+def test_cli_install_converges_fresh_consumer(tmp_path: Path) -> None:
+    """One install produces catalog, overlay, config, and every projected artifact."""
     consumer = tmp_path / "consumer"
     consumer.mkdir()
 
-    result = run_basicly_consumer(consumer, "init")
+    result = run_basicly_consumer(consumer, "install")
     assert result.returncode == 0, result.stderr
 
     assert (consumer / "basicly.toml").is_file()
@@ -59,19 +59,20 @@ def test_cli_init_scaffolds_fresh_consumer(tmp_path: Path) -> None:
     assert list((consumer / ".basicly" / "core" / "fragments").rglob("*.fragment.yaml"))
     assert (consumer / ".basicly" / "core" / "targets" / "claude.yaml").is_file()
 
-    # The materialized catalog is immediately buildable.
-    build = run_basicly_consumer(consumer, "build")
-    assert build.returncode == 0, build.stderr
+    # A single command projects everything — no separate build/skills/hooks runs.
     assert (consumer / "AGENTS.md").is_file()
     assert (consumer / ".claude" / "CLAUDE.md").is_file()
+    assert (consumer / ".github" / "copilot-instructions.md").is_file()
+    assert list((consumer / ".claude" / "skills").rglob("SKILL.md"))
+    assert (consumer / ".pre-commit-config.yaml").is_file()
 
 
-def test_cli_init_honors_custom_core_paths(tmp_path: Path) -> None:
-    """Init must materialize into the basicly.toml core root, not a hardcoded one.
+def test_cli_install_honors_custom_core_paths(tmp_path: Path) -> None:
+    """Install must materialize into the basicly.toml core root, not a hardcoded one.
 
     Regression: init hardcoded .basicly/core while build read the configured
-    paths, so a custom-path consumer got a successful init followed by a build
-    that silently generated nothing.
+    paths, so a custom-path consumer got a successful scaffold followed by a
+    build that silently generated nothing.
     """
     consumer = tmp_path / "consumer"
     consumer.mkdir()
@@ -85,36 +86,32 @@ def test_cli_init_honors_custom_core_paths(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    result = run_basicly_consumer(consumer, "init")
+    result = run_basicly_consumer(consumer, "install")
     assert result.returncode == 0, result.stderr
     assert (consumer / "conf" / "basicly" / "core" / "targets" / "claude.yaml").is_file()
     assert not (consumer / ".basicly").exists()
-
-    build = run_basicly_consumer(consumer, "build")
-    assert build.returncode == 0, build.stderr
     assert (consumer / "AGENTS.md").is_file()
-
-    hooks = run_basicly_consumer(consumer, "hooks-build")
-    assert hooks.returncode == 0, hooks.stderr
     config_text = (consumer / ".pre-commit-config.yaml").read_text(encoding="utf-8")
     assert "conf/basicly/core/hooks/pre-commit.py" in config_text
 
 
-def test_cli_init_is_idempotent_and_preserves_edits(tmp_path: Path) -> None:
-    """A second init overwrites nothing and never clobbers user content."""
+def test_cli_install_is_idempotent_and_preserves_edits(tmp_path: Path) -> None:
+    """A second install converges with no changes and never clobbers user content."""
     consumer = tmp_path / "consumer"
     consumer.mkdir()
-    run_basicly_consumer(consumer, "init")
+    run_basicly_consumer(consumer, "install")
 
-    # A user edit to the config must survive re-running init.
+    # A user edit to the config must survive re-running install.
     config = consumer / "basicly.toml"
     marker = config.read_text(encoding="utf-8") + "\n# user note\n"
     config.write_text(marker, encoding="utf-8")
 
-    result = run_basicly_consumer(consumer, "init")
+    result = run_basicly_consumer(consumer, "install")
     assert result.returncode == 0, result.stderr
     assert "already exists; left unchanged" in result.stdout
     assert "0 file(s) written" in result.stdout
+    assert "No files changed" in result.stdout
+    assert "No skill files changed" in result.stdout
     assert config.read_text(encoding="utf-8") == marker
 
 
@@ -224,8 +221,8 @@ def test_cli_review_handoff_is_advisory(work_repo: Path) -> None:
     assert "Advisory only" in result.stdout
 
 
-def test_cli_update_migrates_legacy_fragments(work_repo: Path) -> None:
-    """Update migrates legacy .basicly/fragments into core and overlay roots."""
+def test_cli_install_migrates_legacy_fragments(work_repo: Path) -> None:
+    """Install migrates legacy .basicly/fragments into core and overlay roots."""
     legacy_core = work_repo / ".basicly" / "fragments" / "project"
     legacy_core.mkdir(parents=True, exist_ok=True)
     legacy_overlay = work_repo / ".basicly" / "fragments" / "user"
@@ -254,7 +251,7 @@ def test_cli_update_migrates_legacy_fragments(work_repo: Path) -> None:
         encoding="utf-8",
     )
 
-    result = run_basicly(work_repo, "update")
+    result = run_basicly(work_repo, "install")
 
     assert result.returncode == 0
     assert (
@@ -265,8 +262,8 @@ def test_cli_update_migrates_legacy_fragments(work_repo: Path) -> None:
     ).exists()
 
 
-def test_cli_update_prunes_legacy_catalog_sources(tmp_path: Path) -> None:
-    """Update removes pre-migration SKILL.md/*.fragment.md sources from the managed core."""
+def test_cli_install_prunes_legacy_catalog_sources(tmp_path: Path) -> None:
+    """Install removes pre-migration SKILL.md/*.fragment.md sources from the managed core."""
     consumer = tmp_path / "consumer"
     skill_dir = consumer / ".basicly" / "core" / "skills" / "tool-x"
     frag_dir = consumer / ".basicly" / "core" / "fragments" / "project"
@@ -292,7 +289,7 @@ def test_cli_update_prunes_legacy_catalog_sources(tmp_path: Path) -> None:
     kept_overlay = overlay / "keep.fragment.md"
     kept_overlay.write_text("mine\n", encoding="utf-8")
 
-    result = run_basicly_consumer(consumer, "update")
+    result = run_basicly_consumer(consumer, "install")
 
     assert result.returncode == 0, result.stderr
     assert not legacy_skill.exists()

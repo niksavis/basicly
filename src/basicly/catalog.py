@@ -5,7 +5,7 @@ The catalog (fragments, skills, hooks, targets, templates) is authored at
 the distribution at ``basicly/catalog/`` (see ``pyproject.toml``
 ``force-include``), so an installed wheel carries the catalog as package data.
 
-``basicly init``/``update`` copy from :func:`bundled_catalog_root` onto a
+``basicly install`` copies from :func:`bundled_catalog_root` onto a
 consumer repo's disk; the rest of the engine then reads the on-disk copy via
 :mod:`basicly.config`.
 """
