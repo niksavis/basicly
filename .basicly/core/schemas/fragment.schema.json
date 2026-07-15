@@ -43,6 +43,11 @@
     "override": {"type": "boolean"},
     "replaces": {"type": "array", "items": {"type": "string"}},
     "extends": {"type": "array", "items": {"type": "string"}},
+    "enforced_by": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "description": "Commands/tools that mechanically enforce this rule (§3.1); each must be cited in the body."
+    },
     "body": {"type": "string", "minLength": 1}
   }
 }

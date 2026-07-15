@@ -114,9 +114,10 @@ measurably hurt agent task success and inflate cost._ If a rule is mechanically
 enforced (ruff, pyright, bandit, markdownlint, a commit-msg hook, pre-push tests), the
 always-on file must reference the command that enforces it, not restate the rule in
 prose. Prose is reserved for what a linter cannot check: judgment calls, escalation
-policy, when to ask instead of guess. There is no mechanical check for this yet — an
-`enforced_by` schema field and lint rule are tracked as a gap (§11.4); today it's
-enforced by review discipline only.
+policy, when to ask instead of guess. **[Implemented]** (`basicly-a8e`): the
+`enforced_by` schema field lists the commands that enforce a rule, and
+`catalog_lint` requires each listed command to be cited in the fragment body —
+a fragment that claims enforcement must point at the command, not restate the rule.
 
 **3.2 Composability over templates.** Generated files are never hand-templated blobs;
 they are assembled from fragments — one fragment per policy/practice/decision —
@@ -336,7 +337,7 @@ agent-assisted semantic review are designed but not built.
 | Contradiction detection (static dictionary: tabs/spaces, pathlib/os.path, etc.)            | **[Planned]**                                                                         |
 | Ambiguity detection (deny-list of vague phrases)                                           | **[Planned]**                                                                         |
 | Scope-overlap detection                                                                    | **[Planned]**                                                                         |
-| Enforcement-pointer check (`enforced_by` field, §3.1)                                      | **[Planned]** — field doesn't exist in the schema yet                                 |
+| Enforcement-pointer check (`enforced_by` field, §3.1)                                      | **[Implemented]** (`basicly-a8e`) — `catalog_lint` requires each `enforced_by` command to be cited in the body |
 | Standalone `basicly verify` / `basicly build --verify` commands                            | **[Planned]**                                                                         |
 | Semantic review (`basicly review`, agent reads rendered diff for contradictions/ambiguity) | **[Planned]** — advisory, not a merge gate, once built                                |
 
@@ -486,8 +487,10 @@ Ordered roughly by blocking-ness. Each is a candidate beads epic/feature/task.
 3. **Override validation** — **[Resolved]** (`basicly-q49`): `loader._validate_replacements`
    enforces `replaces` target existence, the `override: true` requirement, and
    user-user mutual-replace rejection as hard errors on every load (§5, §6).
-4. **`enforced_by` schema field and the enforcement-pointer check don't exist yet**;
-   until then, §3.1 is a principle without a mechanical check.
+4. **`enforced_by` schema field and the enforcement-pointer check** — **[Resolved]**
+   (`basicly-a8e`): the field is in the fragment schema and `catalog_lint` fails any
+   fragment whose `enforced_by` command is not cited in its body, so §3.1 is now
+   mechanically checked, not review-only.
 5. **Deterministic `verify` beyond schema/duplicate-id, and `basicly review`, are
    unbuilt** (§6).
 6. **`hooks-build`/`hooks-check` projection** — **[Resolved]** (`basicly-lku`,

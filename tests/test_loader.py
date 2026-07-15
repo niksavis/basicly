@@ -106,6 +106,35 @@ def test_extension_fields_are_parsed(tmp_path: Path) -> None:
     assert f.extends == ["project-defaults"]
 
 
+def test_enforced_by_defaults_to_empty() -> None:
+    """Fragments without enforced_by get an empty list."""
+    fragments = load_fragments(FIXTURES, {"claude", "copilot"})
+    by_id = {f.id: f for f in fragments}
+    assert by_id["python-style"].enforced_by == []
+
+
+def test_enforced_by_is_parsed(tmp_path: Path) -> None:
+    """The enforced_by field is loaded when present."""
+    _wf(
+        tmp_path / "styled.fragment.yaml",
+        "id: styled\ndescription: x\ncategory: code-style\napplies_to: [all]\n"
+        "enforced_by: [ruff format]",
+    )
+    fragments = load_fragments(tmp_path, {"claude"})
+    by_id = {f.id: f for f in fragments}
+    assert by_id["styled"].enforced_by == ["ruff format"]
+
+
+def test_enforced_by_must_be_string_list(tmp_path: Path) -> None:
+    """A non-list enforced_by value raises ValidationError."""
+    _wf(
+        tmp_path / "bad.fragment.yaml",
+        "id: bad\ndescription: x\ncategory: project\napplies_to: [all]\nenforced_by: ruff",
+    )
+    with pytest.raises(ValidationError):
+        load_fragments(tmp_path, {"claude"})
+
+
 def test_invalid_source_value(tmp_path: Path) -> None:
     """An invalid source value raises ValidationError."""
     _wf(

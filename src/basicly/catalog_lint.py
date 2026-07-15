@@ -1,12 +1,14 @@
 """Catalog source lint — the deterministic gate that keeps the YAML contract.
 
-Enforces three invariants across the managed core catalog so the double-load fix
+Enforces four invariants across the managed core catalog so the double-load fix
 and the single-extension decision cannot regress (architecture §4.2):
 
 1. No discoverable-name *sources*: no ``SKILL.md`` under ``core/skills`` and no
    ``*.fragment.md`` under ``core/fragments`` (they belong at target roots only).
 2. One YAML extension: no ``*.yml`` under ``core`` (the catalog uses ``.yaml``).
 3. Every source validates against its JSON Schema in ``core/schemas``.
+4. Enforcement pointer (§3.1): a fragment that declares ``enforced_by`` must cite
+   each listed command in its body — point at enforcement, don't restate it.
 
 ``README.md`` and other documentation files are not sources and are left alone.
 """
@@ -46,6 +48,25 @@ def _validate(path: Path, validator: Draft202012Validator, repo_root: Path) -> l
     return [f"{_rel(path, repo_root)}: {err.message}" for err in errors]
 
 
+def _check_enforcement_pointer(path: Path, repo_root: Path) -> list[str]:
+    """Flag enforced_by commands (§3.1) that the fragment body does not cite."""
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError:
+        return []  # schema validation already reports malformed YAML
+    if not isinstance(data, dict):
+        return []
+    commands = data.get("enforced_by") or []
+    body = data.get("body") or ""
+    if not isinstance(commands, list) or not isinstance(body, str):
+        return []  # schema validation already reports the type error
+    return [
+        f"{_rel(path, repo_root)}: enforced_by command '{command}' is not cited in the body"
+        for command in commands
+        if isinstance(command, str) and command not in body
+    ]
+
+
 def lint_catalog(repo_root: Path) -> list[str]:
     """Return a list of catalog-lint violations (empty when the catalog is clean)."""
     violations: list[str] = []
@@ -74,5 +95,9 @@ def lint_catalog(repo_root: Path) -> list[str]:
         violations.extend(_validate(path, skill_validator, repo_root))
     for path in sorted((repo_root / FRAGMENTS_DIR).rglob("*.fragment.yaml")):
         violations.extend(_validate(path, fragment_validator, repo_root))
+
+    # 4. enforcement-pointer check (§3.1)
+    for path in sorted((repo_root / FRAGMENTS_DIR).rglob("*.fragment.yaml")):
+        violations.extend(_check_enforcement_pointer(path, repo_root))
 
     return violations

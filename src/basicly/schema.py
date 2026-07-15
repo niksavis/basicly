@@ -52,6 +52,7 @@ class Fragment:
     override: bool = False
     replaces: list[str] = field(default_factory=list)
     extends: list[str] = field(default_factory=list)
+    enforced_by: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Derive the title from the id if no title was provided."""

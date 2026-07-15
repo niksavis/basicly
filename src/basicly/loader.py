@@ -123,6 +123,7 @@ def _load_fragment(path: Path, source_hint: str | None = None) -> Fragment:
         override=bool(front.get("override", False)),
         replaces=front.get("replaces", []),
         extends=front.get("extends", []),
+        enforced_by=front.get("enforced_by", []),
     )
 
 
@@ -186,6 +187,11 @@ def _validate_fragment(
         isinstance(x, str) for x in fragment.extends
     ):
         raise ValidationError("extends must be a list of strings", path)
+
+    if not isinstance(fragment.enforced_by, list) or not all(
+        isinstance(x, str) for x in fragment.enforced_by
+    ):
+        raise ValidationError("enforced_by must be a list of strings", path)
 
 
 def load_targets(targets_dir: Path) -> list[Target]:

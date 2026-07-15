@@ -69,3 +69,34 @@ def test_flags_schema_violation(tmp_path: Path) -> None:
     )
     violations = lint_catalog(root)
     assert any("skill.yaml" in v for v in violations)
+
+
+def test_enforced_by_cited_in_body_passes(tmp_path: Path) -> None:
+    """A fragment that cites its enforced_by command in the body is clean."""
+    root = _catalog(tmp_path)
+    (root / ".basicly/core/fragments/project/f.fragment.yaml").write_text(
+        "schema_version: 1\nid: f\ndescription: d\ncategory: code-style\n"
+        "applies_to: [all]\nenforced_by: [ruff format]\n"
+        "body: |\n  Formatting is enforced by `ruff format`.\n",
+        encoding="utf-8",
+    )
+    assert lint_catalog(root) == []
+
+
+def test_enforced_by_not_cited_is_flagged(tmp_path: Path) -> None:
+    """A fragment declaring enforced_by without citing it in the body is a violation."""
+    root = _catalog(tmp_path)
+    (root / ".basicly/core/fragments/project/f.fragment.yaml").write_text(
+        "schema_version: 1\nid: f\ndescription: d\ncategory: code-style\n"
+        "applies_to: [all]\nenforced_by: [ruff format]\n"
+        "body: |\n  Always indent with four spaces.\n",
+        encoding="utf-8",
+    )
+    violations = lint_catalog(root)
+    assert any("enforced_by command 'ruff format' is not cited" in v for v in violations)
+
+
+def test_no_enforced_by_is_a_noop(tmp_path: Path) -> None:
+    """A fragment without enforced_by triggers no enforcement-pointer violation."""
+    root = _catalog(tmp_path)
+    assert not any("enforced_by" in v for v in lint_catalog(root))
