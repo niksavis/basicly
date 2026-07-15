@@ -20,7 +20,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .hooks import hook_stages, install_hooks, load_hook_specs
+from .hooks import PRECOMMIT_CONFIG, hook_stages, install_hooks, load_hook_specs
 
 BRANCH_PREFIX = "harness/"
 
@@ -278,6 +278,11 @@ def cleanup(name: str, *, force: bool = False) -> None:
     if unmerged (``git branch -D``); by default an unmerged branch is left with
     a note instead of being lost. Reclaims a stale record whose worktree dir is
     already gone.
+
+    Finishes by reinstalling the base checkout's hooks: worktrees share the
+    common ``.git/hooks`` dir, so the shims installed during provisioning can
+    embed the worktree venv's pre-commit path, which dangles once that venv is
+    deleted (every base-checkout commit would fail until hooks are reinstalled).
     """
     main = main_checkout()
     worktree, branch = _resolve_worktree(name, main)
@@ -285,6 +290,9 @@ def cleanup(name: str, *, force: bool = False) -> None:
     if worktree.exists():
         git(["worktree", "remove", "--force", str(worktree)], cwd=main)
     git(["worktree", "prune"], cwd=main, check=False)
+
+    if (main / PRECOMMIT_CONFIG).exists():
+        print(f"  {install_worktree_hooks(main)}")
 
     branch_removed = True
     if branch:

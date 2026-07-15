@@ -139,6 +139,51 @@ def test_cleanup_removes_worktree_branch_and_metadata(
     assert worktree.load_session("gone", git_repo) is None
 
 
+def test_cleanup_reinstalls_base_checkout_hooks(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Create -> teardown reinstalls hooks against the base checkout.
+
+    Worktrees share the common ``.git/hooks`` dir, so provisioning can leave
+    shims embedding the worktree venv's pre-commit path; cleanup must re-run
+    the hook install from the base checkout so a commit there succeeds
+    immediately after teardown (regression: basicly-zrj.13.3).
+    """
+    reinstalls: list[Path] = []
+    monkeypatch.setattr(
+        worktree,
+        "install_worktree_hooks",
+        lambda target: (reinstalls.append(Path(target)), "hooks: recorded")[1],
+    )
+    (git_repo / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
+    monkeypatch.chdir(git_repo)
+    worktree.create("hooked")
+    reinstalls.clear()  # drop the provisioning-time install; assert on teardown only
+
+    worktree.cleanup("hooked")
+
+    assert reinstalls == [git_repo]
+
+
+def test_cleanup_skips_hook_reinstall_without_precommit_config(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A repo with no pre-commit wiring never gains hooks from a teardown."""
+    reinstalls: list[Path] = []
+    monkeypatch.setattr(
+        worktree,
+        "install_worktree_hooks",
+        lambda target: (reinstalls.append(Path(target)), "hooks: recorded")[1],
+    )
+    monkeypatch.chdir(git_repo)
+    worktree.create("plain")
+    reinstalls.clear()
+
+    worktree.cleanup("plain")
+
+    assert reinstalls == []
+
+
 def test_cleanup_reclaims_stale_session(git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A record whose worktree dir vanished out-of-band is still reclaimable."""
     monkeypatch.chdir(git_repo)
