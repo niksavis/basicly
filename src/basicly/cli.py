@@ -38,6 +38,7 @@ from .config import (
     CONFIG_FILE,
     DEFAULT_CONFIG_TOML,
     VERIFY_MODES,
+    VSCODE_TASKS_JSON,
     ProjectPaths,
     load_policy_config,
     load_project_paths,
@@ -588,6 +589,21 @@ def _setup_beads(repo_root: Path) -> None:
     print(f"Initialized beads workspace (issue prefix: {prefix}).")
 
 
+def _scaffold_vscode_tasks(repo_root: Path) -> None:
+    """Write .vscode/tasks.json with the harness tasks when absent.
+
+    Same contract as the basicly.toml scaffold: written once, then the file is
+    the user's — install never overwrites it.
+    """
+    tasks_path = repo_root / ".vscode" / "tasks.json"
+    if tasks_path.exists():
+        print(".vscode/tasks.json already exists; left unchanged")
+        return
+    tasks_path.parent.mkdir(parents=True, exist_ok=True)
+    tasks_path.write_text(VSCODE_TASKS_JSON, encoding="utf-8")
+    print("Wrote .vscode/tasks.json (basicly build/skills-build/hooks-build/update/uninstall)")
+
+
 def cmd_install(args: argparse.Namespace) -> int:
     """Converge a consumer repo: sync core, scaffold, and project everything.
 
@@ -654,6 +670,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         print(f"Wrote {CONFIG_FILE}")
 
     _setup_beads(repo_root)
+    _scaffold_vscode_tasks(repo_root)
 
     steps: list[tuple[str, Any, argparse.Namespace]] = [
         ("build", cmd_build, argparse.Namespace(target=None, verify=False)),
@@ -748,6 +765,15 @@ def _purge_user_content(repo_root: Path, paths: ProjectPaths) -> int:
         config_path.unlink()
         removed += 1
         print(f"Removed {CONFIG_FILE} (--purge)")
+    tasks_path = repo_root / ".vscode" / "tasks.json"
+    if tasks_path.exists():
+        if tasks_path.read_text(encoding="utf-8") == VSCODE_TASKS_JSON:
+            tasks_path.unlink()
+            removed += 1
+            print("Removed .vscode/tasks.json (--purge)")
+            _remove_empty_parents(tasks_path.parent, repo_root)
+        else:
+            print("Kept .vscode/tasks.json (user-modified).")
     return removed
 
 

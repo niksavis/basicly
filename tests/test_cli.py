@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from basicly import cli
+from basicly.config import VSCODE_TASKS_JSON, load_project_paths
 
 REPO_ROOT = Path(__file__).parent.parent
 
@@ -69,6 +70,9 @@ def test_cli_install_converges_fresh_consumer(tmp_path: Path) -> None:
     assert (consumer / ".github" / "copilot-instructions.md").is_file()
     assert list((consumer / ".claude" / "skills").rglob("SKILL.md"))
     assert (consumer / ".pre-commit-config.yaml").is_file()
+    assert '"label": "basicly: build"' in (consumer / ".vscode" / "tasks.json").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_cli_install_honors_custom_core_paths(tmp_path: Path) -> None:
@@ -175,6 +179,36 @@ def test_beads_prefix_enforces_leading_letter(tmp_path: Path) -> None:
     """A digit-leading or empty name is padded to a letter-leading prefix."""
     assert cli._beads_prefix(tmp_path / "42tools") == "repo42tools"
     assert cli._beads_prefix(tmp_path / "---") == "repo"
+
+
+def test_scaffold_vscode_tasks_never_overwrites(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The tasks scaffold is written once; an existing file is the user's."""
+    cli._scaffold_vscode_tasks(tmp_path)
+    tasks_path = tmp_path / ".vscode" / "tasks.json"
+    assert tasks_path.read_text(encoding="utf-8") == VSCODE_TASKS_JSON
+
+    tasks_path.write_text("{ /* mine */ }", encoding="utf-8")
+    cli._scaffold_vscode_tasks(tmp_path)
+    assert tasks_path.read_text(encoding="utf-8") == "{ /* mine */ }"
+    assert "left unchanged" in capsys.readouterr().out
+
+
+def test_purge_removes_only_pristine_vscode_tasks(tmp_path: Path) -> None:
+    """--purge deletes tasks.json only while byte-identical to the scaffold."""
+    paths = load_project_paths(tmp_path)
+    tasks_path = tmp_path / ".vscode" / "tasks.json"
+
+    tasks_path.parent.mkdir(parents=True)
+    tasks_path.write_text(VSCODE_TASKS_JSON, encoding="utf-8")
+    cli._purge_user_content(tmp_path, paths)
+    assert not tasks_path.exists()
+
+    tasks_path.parent.mkdir(parents=True, exist_ok=True)
+    tasks_path.write_text(VSCODE_TASKS_JSON + "// edited\n", encoding="utf-8")
+    cli._purge_user_content(tmp_path, paths)
+    assert tasks_path.exists()  # user-modified file survives purge
 
 
 def _record_in_state(consumer: Path, rel_path: str) -> None:
