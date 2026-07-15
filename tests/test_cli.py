@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import subprocess
@@ -110,10 +111,124 @@ def test_cli_install_is_idempotent_and_preserves_edits(tmp_path: Path) -> None:
     result = run_basicly_consumer(consumer, "install")
     assert result.returncode == 0, result.stderr
     assert "already exists; left unchanged" in result.stdout
-    assert "0 file(s) written" in result.stdout
+    assert "0 new, 0 updated, 0 removed" in result.stdout
     assert "No files changed" in result.stdout
     assert "No skill files changed" in result.stdout
     assert config.read_text(encoding="utf-8") == marker
+
+
+def _record_in_state(consumer: Path, rel_path: str) -> None:
+    """Rewrite install.json so the on-disk core file at rel_path reads as installed."""
+    state_path = consumer / ".basicly" / "state" / "install.json"
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    digest = hashlib.sha256((consumer / ".basicly" / "core" / rel_path).read_bytes()).hexdigest()
+    payload["core"][rel_path] = f"sha256:{digest}"
+    state_path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def test_cli_install_upgrade_overwrites_upstream_changed_core_file(tmp_path: Path) -> None:
+    """A core file whose on-disk state matches the snapshot is synced to the bundle."""
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    run_basicly_consumer(consumer, "install")
+
+    # Simulate an older installed version: rewrite a core file AND record that
+    # content as installed, so the bundled catalog now differs from both.
+    target = consumer / ".basicly" / "core" / "hooks" / "pre-commit.py"
+    bundled_content = target.read_text(encoding="utf-8")
+    target.write_text("# older shipped version\n", encoding="utf-8")
+    _record_in_state(consumer, "hooks/pre-commit.py")
+
+    result = run_basicly_consumer(consumer, "install")
+    assert result.returncode == 0, result.stderr
+    assert "1 updated" in result.stdout
+    assert target.read_text(encoding="utf-8") == bundled_content
+
+
+def test_cli_install_upgrade_deletes_upstream_removed_core_file(tmp_path: Path) -> None:
+    """A snapshot-tracked core file the bundle no longer ships is deleted."""
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    run_basicly_consumer(consumer, "install")
+
+    ghost = consumer / ".basicly" / "core" / "fragments" / "project" / "ghost.fragment.yaml"
+    ghost.parent.mkdir(parents=True, exist_ok=True)
+    ghost.write_text("retired: true\n", encoding="utf-8")
+    _record_in_state(consumer, "fragments/project/ghost.fragment.yaml")
+
+    result = run_basicly_consumer(consumer, "install")
+    assert result.returncode == 0, result.stderr
+    assert "1 removed" in result.stdout
+    assert not ghost.exists()
+
+
+def test_cli_install_keeps_hand_edited_core_file_unless_forced(tmp_path: Path) -> None:
+    """A hand-edited core file is warned about and kept; --force overwrites it."""
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    run_basicly_consumer(consumer, "install")
+
+    target = consumer / ".basicly" / "core" / "hooks" / "pre-commit.py"
+    bundled_content = target.read_text(encoding="utf-8")
+    edited = bundled_content + "\n# my local tweak\n"
+    target.write_text(edited, encoding="utf-8")
+
+    result = run_basicly_consumer(consumer, "install")
+    assert result.returncode == 0, result.stderr
+    assert "hand-edited managed core files" in result.stderr
+    assert target.read_text(encoding="utf-8") == edited
+
+    forced = run_basicly_consumer(consumer, "install", "--force")
+    assert forced.returncode == 0, forced.stderr
+    assert target.read_text(encoding="utf-8") == bundled_content
+
+
+def test_cli_install_keeps_unknown_core_file_with_warning(tmp_path: Path) -> None:
+    """A file of unknown origin in the managed core is never deleted."""
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    run_basicly_consumer(consumer, "install")
+
+    stray = consumer / ".basicly" / "core" / "notes.txt"
+    stray.write_text("mine\n", encoding="utf-8")
+
+    result = run_basicly_consumer(consumer, "install")
+    assert result.returncode == 0, result.stderr
+    assert "unknown origin" in result.stderr
+    assert stray.exists()
+
+
+def test_cli_install_upgrade_preserves_overlay_and_config(tmp_path: Path) -> None:
+    """An upgrade sync never touches the overlay or basicly.toml."""
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    run_basicly_consumer(consumer, "install")
+
+    overlay_fragment = consumer / ".basicly-local" / "fragments" / "user" / "mine.fragment.yaml"
+    overlay_fragment.write_text(
+        "schema_version: 1\n"
+        "id: mine\n"
+        "description: my rule\n"
+        "category: project\n"
+        "applies_to: [all]\n"
+        "body: |\n"
+        "  - My rule.\n",
+        encoding="utf-8",
+    )
+    config = consumer / "basicly.toml"
+    config_content = config.read_text(encoding="utf-8") + "\n# my note\n"
+    config.write_text(config_content, encoding="utf-8")
+
+    # Simulate an upstream change so the sync actually rewrites a core file.
+    target = consumer / ".basicly" / "core" / "hooks" / "pre-commit.py"
+    target.write_text("# older shipped version\n", encoding="utf-8")
+    _record_in_state(consumer, "hooks/pre-commit.py")
+
+    result = run_basicly_consumer(consumer, "install")
+    assert result.returncode == 0, result.stderr
+    assert "1 updated" in result.stdout
+    assert overlay_fragment.read_text(encoding="utf-8").startswith("schema_version: 1")
+    assert config.read_text(encoding="utf-8") == config_content
 
 
 def test_cli_install_writes_provenance_state(tmp_path: Path) -> None:

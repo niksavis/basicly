@@ -19,9 +19,15 @@ from basicly.hooks import (
     missing_hook_installations,
     sync_hooks,
 )
+from basicly.schema import ValidationError
 
 CORE_HOOKS_DIR = Path(".basicly/core/hooks")
 REPO_ROOT = Path(__file__).parent.parent
+
+
+def _materialize_hooks(tmp_path: Path) -> None:
+    """Copy the catalog hook scripts the way `basicly install` would."""
+    shutil.copytree(REPO_ROOT / CORE_HOOKS_DIR, tmp_path / CORE_HOOKS_DIR)
 
 
 def _local_hook_ids(config: dict) -> set[str]:
@@ -80,7 +86,8 @@ def test_merge_preserves_foreign_hooks_and_is_idempotent() -> None:
 
 
 def test_sync_hooks_scaffolds_and_check_round_trips(tmp_path: Path) -> None:
-    """hooks-build materializes scripts + wiring; hooks-check then passes."""
+    """With a materialized core, hooks-build writes wiring; hooks-check passes."""
+    _materialize_hooks(tmp_path)
     result = sync_hooks(tmp_path, CORE_HOOKS_DIR)
     assert result.written
 
@@ -99,8 +106,15 @@ def test_sync_hooks_scaffolds_and_check_round_trips(tmp_path: Path) -> None:
     assert again.written == []
 
 
+def test_sync_hooks_requires_materialized_core(tmp_path: Path) -> None:
+    """Without a materialized core, hooks-build refuses and points at install."""
+    with pytest.raises(ValidationError, match="basicly install"):
+        sync_hooks(tmp_path, CORE_HOOKS_DIR)
+
+
 def test_check_detects_wiring_drift(tmp_path: Path) -> None:
     """Removing a managed hook from the config is reported as stale."""
+    _materialize_hooks(tmp_path)
     sync_hooks(tmp_path, CORE_HOOKS_DIR)
     config = tmp_path / ".pre-commit-config.yaml"
 
@@ -139,6 +153,7 @@ def test_dogfood_config_passes_check() -> None:
 
 def test_semantically_synced_config_is_left_untouched(tmp_path: Path) -> None:
     """Comments and formatting survive when managed hooks are already in sync."""
+    _materialize_hooks(tmp_path)
     sync_hooks(tmp_path, CORE_HOOKS_DIR)
     config = tmp_path / ".pre-commit-config.yaml"
 
@@ -154,6 +169,7 @@ def test_semantically_synced_config_is_left_untouched(tmp_path: Path) -> None:
 
 def test_out_of_sync_managed_hook_triggers_rewrite(tmp_path: Path) -> None:
     """A tampered managed entry is detected and repaired by a rebuild."""
+    _materialize_hooks(tmp_path)
     sync_hooks(tmp_path, CORE_HOOKS_DIR)
     config = tmp_path / ".pre-commit-config.yaml"
 

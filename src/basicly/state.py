@@ -32,24 +32,32 @@ class InstallState:
     core_hashes: dict[str, str]
 
 
-def _sha256_of_file(path: Path) -> str:
+def sha256_of_file(path: Path) -> str:
+    """Prefixed sha256 of a file's bytes, the hash format used across basicly."""
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def snapshot_core(core_root: Path) -> dict[str, str]:
     """Hash every managed core file, keyed by core-relative posix path."""
     return {
-        path.relative_to(core_root).as_posix(): _sha256_of_file(path)
+        path.relative_to(core_root).as_posix(): sha256_of_file(path)
         for path in iter_catalog_files(core_root)
     }
 
 
-def write_install_state(state_path: Path, version: str, core_root: Path) -> InstallState:
-    """Snapshot the on-disk core and write the provenance file."""
+def write_install_state(
+    state_path: Path, version: str, core_hashes: dict[str, str]
+) -> InstallState:
+    """Write the provenance file for the given vouched-for core hashes.
+
+    Callers pass only the hashes install actually vouches for (files whose
+    on-disk content is what install wrote) — a kept hand-edit or unknown file
+    must NOT be recorded, or the next sync would treat it as upstream content.
+    """
     state = InstallState(
         basicly_version=version,
         installed_at=datetime.now(UTC).isoformat(),
-        core_hashes=snapshot_core(core_root),
+        core_hashes=dict(core_hashes),
     )
     payload = {
         "schema_version": STATE_SCHEMA_VERSION,
@@ -102,6 +110,6 @@ def core_drift(state: InstallState, core_root: Path) -> list[tuple[str, str]]:
         on_disk = core_root / rel_path
         if not on_disk.exists():
             drift.append((rel_path, "removed"))
-        elif _sha256_of_file(on_disk) != recorded:
+        elif sha256_of_file(on_disk) != recorded:
             drift.append((rel_path, "modified"))
     return drift

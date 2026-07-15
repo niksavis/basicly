@@ -30,7 +30,7 @@ def test_write_and_read_round_trip(tmp_path: Path) -> None:
     core = _make_core(tmp_path)
     state_path = tmp_path / "state" / "install.json"
 
-    written = write_install_state(state_path, "1.2.3", core)
+    written = write_install_state(state_path, "1.2.3", snapshot_core(core))
     loaded = read_install_state(state_path)
 
     assert loaded is not None
@@ -64,7 +64,7 @@ def test_read_state_with_missing_keys_raises(tmp_path: Path) -> None:
 def test_core_drift_reports_modified_and_removed(tmp_path: Path) -> None:
     """Drift lists hand-edited and deleted core files with reasons."""
     core = _make_core(tmp_path)
-    written = write_install_state(tmp_path / "state" / "install.json", "1.2.3", core)
+    written = write_install_state(tmp_path / "state" / "install.json", "1.2.3", snapshot_core(core))
 
     (core / "fragments" / "a.fragment.yaml").write_text("id: a\nedited: yes\n", encoding="utf-8")
     (core / "hooks" / "pre-commit.py").unlink()
@@ -77,7 +77,7 @@ def test_core_drift_reports_modified_and_removed(tmp_path: Path) -> None:
 def test_core_drift_empty_when_untouched(tmp_path: Path) -> None:
     """An untouched core reports no drift."""
     core = _make_core(tmp_path)
-    written = write_install_state(tmp_path / "install.json", "1.2.3", core)
+    written = write_install_state(tmp_path / "install.json", "1.2.3", snapshot_core(core))
     assert core_drift(written, core) == []
 
 
