@@ -15,4 +15,4 @@ body: |
   - Python: managed with `uv`.
   - Script harness and CI helpers: `.scripts/`.
   - Shared skills: `.claude/skills/`.
-  - No global build/test command yet; run only commands configured by task/subproject.
+  - No global build/test command yet; the Quality Gate's "checks this repo enforces" means the ones configured per task/subproject.

@@ -25,7 +25,7 @@ not rely on other agent config files being present.
 - Python: managed with `uv`.
 - Script harness and CI helpers: `.scripts/`.
 - Shared skills: `.claude/skills/`.
-- No global build/test command yet; run only commands configured by task/subproject.
+- No global build/test command yet; the Quality Gate's "checks this repo enforces" means the ones configured per task/subproject.
 
 ## Secure Coding
 
@@ -43,7 +43,7 @@ not rely on other agent config files being present.
 
 ## Decision Protocol
 
-- Decide it yourself when grounded in code/docs you've inspected, the choice is low-impact and reversible, or repo context already specifies it.
+- Decide it yourself when grounded in inspected code/docs, the choice is low-impact and reversible and not on the Require Explicit Confirmation list, or repo context already specifies it.
 - Stop and ask when a needed fact can't be found, sources conflict, or an assumption would be unfalsifiable and would change the outcome.
 - State exactly what's missing or conflicting and what answer would unblock you — don't present options just to look thorough.
 - If rules conflict, prefer safety/security boundaries.
