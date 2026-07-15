@@ -31,6 +31,9 @@ class CheckResult:
     name: str
     status: str  # "pass" | "fail" | "skip"
     returncode: int
+    # One-line human-readable context for a failure the tool itself could not
+    # report (e.g. the command was not found on PATH).
+    detail: str = ""
 
 
 @dataclass(frozen=True)
@@ -73,7 +76,27 @@ def run_check(check: VerifyCheck, repo_root: Path, mode: str) -> CheckResult:
         if not files:
             return CheckResult(check.name, "skip", 0)
         command += files
-    proc = subprocess.run(command, cwd=repo_root, check=False)  # nosec B603
+    try:
+        proc = subprocess.run(command, cwd=repo_root, check=False)  # nosec B603
+    except FileNotFoundError:
+        return CheckResult(
+            check.name,
+            "fail",
+            127,
+            f"command not found: {command[0]} — install it or edit "
+            f"[[verify.checks]] in basicly.toml",
+        )
+    except OSError as exc:
+        # e.g. PermissionError: a PATH candidate exists but is not executable
+        # (common on WSL with Windows mounts on PATH). Same contract: a failed
+        # check with a one-line reason, never a traceback.
+        return CheckResult(
+            check.name,
+            "fail",
+            126,
+            f"cannot run {command[0]} ({exc.strerror or exc}) — check "
+            f"[[verify.checks]] in basicly.toml",
+        )
     return CheckResult(check.name, "pass" if proc.returncode == 0 else "fail", proc.returncode)
 
 

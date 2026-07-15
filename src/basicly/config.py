@@ -32,28 +32,20 @@ concurrency = 4
 
 # Deterministic verify gate. Each check runs in the listed modes; a "staged"
 # check with staged_suffix runs only against staged files of that suffix.
-[[verify.checks]]
-name = "ruff"
-command = ["ruff", "check"]
-modes = ["fast", "full", "staged"]
-staged_suffix = ".py"
-
-[[verify.checks]]
-name = "ruff-format"
-command = ["ruff", "format", "--check"]
-modes = ["fast", "full", "staged"]
-staged_suffix = ".py"
-
-[[verify.checks]]
-name = "pyright"
-command = ["pyright"]
-modes = ["fast", "full", "staged"]
-staged_suffix = ".py"
-
-[[verify.checks]]
-name = "pytest"
-command = ["pytest", "-q"]
-modes = ["full"]
+# No checks are enabled by default — declare the ones your stack actually has
+# (an empty config passes vacuously; a configured command missing from PATH
+# fails the run with a one-line message). Python examples:
+#
+# [[verify.checks]]
+# name = "ruff"
+# command = ["ruff", "check"]
+# modes = ["fast", "full", "staged"]
+# staged_suffix = ".py"
+#
+# [[verify.checks]]
+# name = "pytest"
+# command = ["pytest", "-q"]
+# modes = ["full"]
 
 # Loop gate/checkpoint policy: which gates block advancement and the rework cap.
 [policy]
