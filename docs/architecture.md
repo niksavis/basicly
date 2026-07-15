@@ -134,7 +134,8 @@ validation is implemented inside the normal load path
 (`loader._validate_fragment`); duplicate-body, contradiction, ambiguity, and
 scope-overlap checks, plus the standalone `basicly catalog-verify` command, are
 **[Implemented]** (`basicly-ihs`, `catalog_verify.py`). Agent-assisted semantic
-review (`basicly review`) is still **[Planned]** (§6, §11).
+review (`basicly review`) is **[Implemented]** (`basicly-qps`, `review.py`):
+advisory, never a merge gate (§6, §11).
 
 **3.4 Source of truth and generated files are each a one-way street.** Users edit
 fragments (core or overlay) and never the generated files; `basicly build` regenerates,
@@ -327,7 +328,7 @@ runs on identical source produce byte-identical output.
 **Summary**: schema/duplicate-id validation runs on every load; the deterministic
 content checks (duplicate-body, contradiction, ambiguity, scope-overlap) and the
 standalone `basicly catalog-verify` command (also wired as `basicly build --verify`)
-are built. Only agent-assisted semantic review remains designed but not built.
+are built, as is the advisory agent-assisted semantic review (`basicly review`).
 
 ### Details
 
@@ -342,7 +343,7 @@ are built. Only agent-assisted semantic review remains designed but not built.
 | Scope-overlap detection                                                                    | **[Implemented]** (`basicly-ihs`) — `catalog_verify._scope_overlaps`, scoped pairs    |
 | Enforcement-pointer check (`enforced_by` field, §3.1)                                      | **[Implemented]** (`basicly-a8e`) — `catalog_lint` requires each `enforced_by` command to be cited in the body |
 | Standalone `basicly catalog-verify` / `basicly build --verify` commands                    | **[Implemented]** (`basicly-ihs`) — named `catalog-verify` because `basicly verify` is the loop CI-check runner; `build --verify` gates the write |
-| Semantic review (`basicly review`, agent reads rendered diff for contradictions/ambiguity) | **[Planned]** — advisory, not a merge gate, once built                                |
+| Semantic review (`basicly review`, agent reads rendered files for contradictions/ambiguity) | **[Implemented]** (`basicly-qps`) — `review.py` builds the prompt, dispatches via the agent-agnostic runner, always exits 0 (advisory, not a merge gate) |
 
 When built, both layers run in this order — deterministic gate first, always; semantic
 review second, advisory, on demand or in CI as a report (not a blocker).
@@ -395,8 +396,8 @@ inherits that failure.
 ## 8) CLI surface
 
 **Summary**: `list`, `update`, `build` (+ `--target`), `check`, `skills-list`,
-`skills-build`, `skills-check` exist today. `verify`, `conflicts`, `overrides`,
-`review`, `init` are designed, not built.
+`skills-build`, `skills-check`, and `review` exist today. `verify`, `conflicts`,
+`overrides` are designed, not built.
 
 ### Details
 
@@ -412,7 +413,7 @@ inherits that failure.
 | `basicly verify`                                                                          | **[Planned]**     | Deterministic gate as a standalone command (§6)                                                                                                                                                |
 | `basicly build --verify`                                                                  | **[Planned]**     | Runs verify first; no files written on failure                                                                                                                                                 |
 | `basicly conflicts` / `basicly overrides`                                                 | **[Planned]**     | Reporting views over verify output                                                                                                                                                             |
-| `basicly review`                                                                          | **[Planned]**     | Agent-assisted semantic review (§6)                                                                                                                                                            |
+| `basicly review [--runner NAME] [--dry-run]`                                              | **[Implemented]** (`basicly-qps`) | Advisory agent-assisted semantic review: renders the always-on files, dispatches a review prompt via the agent-agnostic runner (handoff when no CLI is on PATH), always exits 0. `--dry-run` prints the prompt without invoking an agent (§6) |
 
 ---
 
@@ -498,7 +499,9 @@ Ordered roughly by blocking-ness. Each is a candidate beads epic/feature/task.
    `catalog_verify` adds duplicate-body, contradiction, ambiguity, and scope-overlap
    checks behind `basicly catalog-verify` and `basicly build --verify` (named
    `catalog-verify` because `basicly verify` is the loop CI-check runner).
-   **`basicly review`** (agent-assisted semantic review) is still unbuilt (§6).
+   **`basicly review`** (agent-assisted semantic review) is now **[Resolved]**
+   (`basicly-qps`, `review.py`): advisory, dispatched via the agent-agnostic
+   runner, always exits 0 — a report, never a merge gate (§6).
 6. **`hooks-build`/`hooks-check` projection** — **[Resolved]** (`basicly-lku`,
    `basicly-t51`): a tool-agnostic `core/hooks/hooks.yaml` manifest drives
    `basicly hooks-build`, which materializes the scripts and merges a managed

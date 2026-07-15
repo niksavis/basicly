@@ -207,6 +207,23 @@ def test_cli_build_verify_passes_on_clean_catalog(work_repo: Path) -> None:
     assert result.returncode == 0, result.stderr
 
 
+def test_cli_review_dry_run_prints_prompt_without_agent(work_repo: Path) -> None:
+    """Review --dry-run assembles the prompt from the rendered files, no agent invoked."""
+    result = run_basicly(work_repo, "review", "--dry-run")
+    assert result.returncode == 0, result.stderr
+    assert "advisory semantic review" in result.stdout
+    assert "===== FILE: AGENTS.md =====" in result.stdout
+    assert "under review" in result.stdout
+
+
+def test_cli_review_handoff_is_advisory(work_repo: Path) -> None:
+    """With the manual handoff runner, review reports the handoff and still exits 0."""
+    result = run_basicly(work_repo, "review", "--runner", "manual")
+    assert result.returncode == 0, result.stderr
+    assert "handoff" in result.stdout
+    assert "Advisory only" in result.stdout
+
+
 def test_cli_update_migrates_legacy_fragments(work_repo: Path) -> None:
     """Update migrates legacy .basicly/fragments into core and overlay roots."""
     legacy_core = work_repo / ".basicly" / "fragments" / "project"

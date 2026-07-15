@@ -23,6 +23,7 @@ from . import (
     merge,
     policy,
     projection,
+    review,
     runner,
     verify,
     worktree,
@@ -700,6 +701,57 @@ def cmd_catalog_verify(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _review_materials(repo_root: Path, paths: ProjectPaths) -> list[review.ReviewMaterial]:
+    """Render every planned output as review material (the same content build writes)."""
+    fragments, targets = _load_context(repo_root, paths)
+    return [
+        review.ReviewMaterial(
+            _format_path(item.output_path, repo_root),
+            _render_planned(repo_root, paths, item),
+        )
+        for item in plan_outputs(fragments, targets, repo_root)
+    ]
+
+
+def cmd_review(args: argparse.Namespace) -> int:
+    """Advisory semantic review: an agent reads the rendered files for issues.
+
+    The second, advisory layer of the pipeline (§6/§11.5) — always exits 0, never
+    a merge gate. Renders the always-on files, assembles a review prompt, and
+    dispatches it to the selected runner, handing off when no agent CLI is on PATH.
+    """
+    repo_root = _repo_root()
+    paths = load_project_paths(repo_root)
+    prompt = review.build_review_prompt(_review_materials(repo_root, paths))
+
+    if args.dry_run:
+        print(prompt)
+        return 0
+
+    config = load_runner_config(repo_root)
+    spec = runner.select_runner(config.specs, args.runner or config.default)
+    result = runner.run(spec, prompt, repo_root)
+    if result.handoff:
+        print(
+            f"review [handoff]: no agent CLI available via runner '{spec.name}' — run the "
+            "semantic review yourself (see the prompt with --dry-run) and act on the findings. "
+            "Advisory only; nothing blocks."
+        )
+        return 0
+    if result.stdout:
+        print(result.stdout, end="")
+    if result.stderr:
+        print(result.stderr, end="", file=sys.stderr)
+    if result.returncode:
+        print(
+            f"Warning: review runner '{spec.name}' exited {result.returncode}; "
+            "the advisory review may be incomplete (non-blocking).",
+            file=sys.stderr,
+        )
+    print("[review] advisory pass complete (non-blocking)")
+    return 0
+
+
 def cmd_policy(args: argparse.Namespace) -> int:
     """Dispatch the ``policy`` subcommands (dor / gate / checkpoint / rework)."""
     handlers = {
@@ -1331,6 +1383,19 @@ def main(argv: list[str] | None = None) -> int:
         help="Verify catalog content (lint + duplicate/contradiction/ambiguity/scope checks)",
     )
 
+    review_parser = subparsers.add_parser(
+        "review",
+        help="Advisory agent-assisted semantic review of the rendered files (never blocks)",
+    )
+    review_parser.add_argument(
+        "--runner", help="Runner name or 'auto' (default: the configured [runner].default)"
+    )
+    review_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the assembled review prompt without invoking any agent",
+    )
+
     _add_worktree_parser(subparsers)
     _add_verify_parser(subparsers)
     _add_policy_parser(subparsers)
@@ -1354,6 +1419,7 @@ def main(argv: list[str] | None = None) -> int:
         "hooks-check": cmd_hooks_check,
         "catalog-lint": cmd_catalog_lint,
         "catalog-verify": cmd_catalog_verify,
+        "review": cmd_review,
         "worktree": cmd_worktree,
         "verify": cmd_verify,
         "policy": cmd_policy,
