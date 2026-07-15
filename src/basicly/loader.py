@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import yaml
@@ -18,6 +19,10 @@ from .schema import (
 )
 
 FRAGMENT_SOURCE_GLOB = "*.fragment.yaml"
+
+# The pre-migration source format. No longer loaded — but its presence in a
+# fragment root means user content is silently inert, which must be surfaced.
+LEGACY_FRAGMENT_GLOB = "*.fragment.md"
 
 REQUIRED_FRAGMENT_FIELDS = {"id", "description", "category", "applies_to"}
 
@@ -38,6 +43,7 @@ def load_fragments_from_roots(
     for root, source_hint in fragment_roots:
         if not root.exists():
             continue
+        _warn_legacy_sources(root)
         for path in sorted(root.rglob(FRAGMENT_SOURCE_GLOB)):
             fragment = _load_fragment(path, source_hint)
             _validate_fragment(fragment, path, target_names)
@@ -52,6 +58,26 @@ def load_fragments_from_roots(
 
     _validate_replacements(fragments)
     return fragments
+
+
+def _warn_legacy_sources(root: Path) -> None:
+    """Warn loudly when a fragment root still holds legacy ``*.fragment.md`` files.
+
+    Only YAML sources load since the format migration; a legacy file is user
+    content that has silently stopped affecting builds. Advisory (never fails
+    the load) — the fix is the user's: migrate each file to
+    ``<id>.fragment.yaml`` (``basicly fragment-new`` scaffolds one).
+    """
+    legacy = sorted(root.rglob(LEGACY_FRAGMENT_GLOB))
+    if not legacy:
+        return
+    names = ", ".join(str(path.relative_to(root)) for path in legacy)
+    print(
+        f"Warning: {len(legacy)} legacy .fragment.md file(s) under {root} are ignored "
+        f"(only .fragment.yaml sources load since the format migration): {names}. "
+        "Migrate each to <id>.fragment.yaml — `basicly fragment-new` scaffolds one.",
+        file=sys.stderr,
+    )
 
 
 def _validate_replacements(fragments: list[Fragment]) -> None:
