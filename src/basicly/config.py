@@ -10,12 +10,12 @@ from .runner import AUTO, BUILTIN_RUNNERS, HEADLESS, PROMPT_VIA, RunnerSpec
 
 CONFIG_FILE = "basicly.toml"
 
-# Scaffolded into a consumer repo by `basicly init`. Kept next to the defaults
-# below; test_config asserts parsing this yields exactly the built-in defaults,
-# so the two can never drift apart.
+# Scaffolded into a consumer repo by `basicly install`. Kept next to the
+# defaults below; test_config asserts parsing this yields exactly the built-in
+# defaults, so the two can never drift apart.
 DEFAULT_CONFIG_TOML = """\
-# basicly path wiring. Managed core catalog is materialized by `basicly init`
-# and refreshed by `basicly update`; the overlay is always yours to edit.
+# basicly path wiring. Managed core catalog is materialized and upgraded by
+# `basicly install`; the overlay is always yours to edit.
 [paths]
 core_fragments = ".basicly/core/fragments"
 overlay_fragments = [".basicly-local/fragments"]

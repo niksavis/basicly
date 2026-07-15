@@ -9,7 +9,7 @@ Keep agent instructions (Claude Code, GitHub Copilot, Codex, etc.) in one place.
 ## Layout
 
 This directory looks the same as it would in any consumer repo after running
-`basicly init`/`update` — it contains only catalog data, never engine code. The
+`basicly install` — it contains only catalog data, never engine code. The
 engine lives at [`src/basicly/`](../src/basicly/) in this repo's own root, the same
 place it would live in `basicly`'s own source distribution, not something `basicly`
 ever writes into a consumer repo.

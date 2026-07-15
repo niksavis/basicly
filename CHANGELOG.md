@@ -8,6 +8,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **BREAKING (CLI):** `basicly install` replaces `init` and `update` — one
+  idempotent converge command performs first install *and* every upgrade
+  (materialize the bundled catalog, scaffold overlay + `basicly.toml` without
+  overwriting user content, then `build` + `skills-build` + `hooks-build` with
+  hook activation). The legacy-layout migration and legacy-source pruning that
+  `update` performed now run inside `install`.
 - **BREAKING (catalog source format):** catalog content is now authored as YAML
   sources — skills as `core/skills/<slug>/skill.yaml` and fragments as
   `core/fragments/**/<id>.fragment.yaml` — instead of the discoverable `SKILL.md`
@@ -29,7 +35,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Migration
 
-- `basicly update` now prunes legacy discoverable-name sources (`SKILL.md`,
+- `basicly install` prunes legacy discoverable-name sources (`SKILL.md`,
   `*.fragment.md`) from the managed core, so installing basicly over a
   pre-migration hand-copied catalog cleans up the old sources automatically. The
   user overlay (`.basicly-local/`) is never touched.
