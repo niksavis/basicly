@@ -25,6 +25,7 @@ from . import (
     projection,
     review,
     runner,
+    state,
     verify,
     worktree,
 )
@@ -301,6 +302,8 @@ def cmd_check(_args: argparse.Namespace) -> int:
     if existing_manifest.get("outputs") != expected_manifest_outputs:
         mismatches.append((manifest_path, "manifest mismatch", "manifest mismatch"))
 
+    _report_provenance_notes(repo_root, paths)
+
     if mismatches:
         print("Stale generated files detected. Run `basicly build` to fix.", file=sys.stderr)
         for path, expected, actual in mismatches:
@@ -312,6 +315,41 @@ def cmd_check(_args: argparse.Namespace) -> int:
 
     print("All generated files and manifest are up to date.")
     return 0
+
+
+def _report_provenance_notes(repo_root: Path, paths: ProjectPaths) -> None:
+    """Advisory (non-fatal) install-provenance notes for `basicly check` (§9).
+
+    Absent state (authoring repo, or an install predating provenance) reports
+    nothing; a corrupt state file and core drift are surfaced but never change
+    the exit code — the hard staleness contract stays byte-for-byte generated
+    files only.
+    """
+    state_path = repo_root / paths.state_path
+    try:
+        install_state = state.read_install_state(state_path)
+    except ValidationError as exc:
+        print(f"Note: {exc}; re-run `basicly install` to rewrite it.", file=sys.stderr)
+        return
+    if install_state is None:
+        return
+
+    if install_state.basicly_version != __version__:
+        print(
+            f"Note: core catalog was installed by basicly {install_state.basicly_version}; "
+            f"this is basicly {__version__}. Run `basicly install` to upgrade.",
+            file=sys.stderr,
+        )
+
+    drift = state.core_drift(install_state, repo_root / paths.core_root)
+    if drift:
+        print(
+            "Note: managed core differs from the installed snapshot "
+            "(hand-edits belong in the overlay, not the managed core):",
+            file=sys.stderr,
+        )
+        for rel_path, reason in drift:
+            print(f"  {rel_path}: {reason}", file=sys.stderr)
 
 
 def _merge_directories(src: Path, dst: Path) -> tuple[int, int]:
@@ -434,7 +472,8 @@ def cmd_install(_args: argparse.Namespace) -> int:
 
     core_src = bundled_catalog_root()
     core_dst = repo_root / paths.core_root
-    if core_src.resolve() == core_dst.resolve():
+    authoring_source = core_src.resolve() == core_dst.resolve()
+    if authoring_source:
         print("Core catalog is its own authoring source here; left in place.")
     else:
         written, skipped = _materialize_catalog(core_src, core_dst)
@@ -444,6 +483,13 @@ def cmd_install(_args: argparse.Namespace) -> int:
         )
 
     _migrate_legacy_layout(repo_root, paths)
+
+    if not authoring_source:
+        # Snapshot the core as materialized (post-migration/prune) so a later
+        # hash mismatch means a hand-edit of managed content (§9).
+        state_path = repo_root / paths.state_path
+        state.write_install_state(state_path, __version__, core_dst)
+        print(f"Recorded install state in {_format_path(state_path, repo_root)}")
 
     for overlay in paths.overlay_fragments_dirs:
         user_dir = repo_root / overlay / "user"

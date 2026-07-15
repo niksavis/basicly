@@ -115,6 +115,15 @@ class ProjectPaths:
         """
         return self.core_fragments_dir.parent
 
+    @property
+    def state_path(self) -> Path:
+        """Install provenance file, sibling of the core root (§9).
+
+        `.basicly/core` -> `.basicly/state/install.json`; follows a custom
+        core location the same way the core root itself does.
+        """
+        return self.core_root.parent / "state" / "install.json"
+
 
 @dataclass(frozen=True)
 class WorktreeConfig:

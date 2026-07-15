@@ -176,7 +176,7 @@ generated/core paths; only the user writes to the overlay.
 | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------- | ------------------------------------------------------------------------------- |
 | `src/basicly/` — engine (loader, planner, CLI, renderers)                                                          | `basicly` maintainers, ships with the tool    | **[Implemented]** — moved from `.basicly/basicly/` to a normal `src` layout     |
 | `.basicly/core/` — managed fragment + skill + hook + target + template catalog                                     | `basicly install` only                        | **[Implemented]** (`fragments/`, `skills/`, `hooks/`, `targets/`, `templates/`) |
-| `.basicly/state/install.json` — install provenance (version, source ref, catalog hashes)                          | `basicly install` only                        | **[Planned]** (`basicly-8fg`)                                                   |
+| `.basicly/state/install.json` — install provenance (version, timestamp, catalog hashes)                           | `basicly install` only                        | **[Implemented]** (`basicly-8fg`)                                               |
 | `.basicly-local/` — user overlay (path-configurable via `basicly.toml`)                                            | the consumer repo's users                     | **[Implemented]**                                                               |
 | `basicly.toml` — path wiring                                                                                       | the consumer repo                             | **[Implemented]**                                                               |
 | Generated artifacts (`AGENTS.md`, `.claude/CLAUDE.md`, `.github/copilot-instructions.md`, skill/scoped-rule files) | `basicly build` / `basicly skills-build` only | **[Implemented]**                                                               |
@@ -485,15 +485,20 @@ but has not been exercised against a pushed ref yet (`basicly-zrj.14`).
   `basicly.toml` only if missing, keep the authoring-repo guard (bundled source
   == destination → leave in place), then rebuild all artifacts and install the
   hooks.
-- **[Planned]** (`basicly-zrj.12.2`, `basicly-8fg`) **Core upgrade sync +
-  provenance.** On a repeat `install` from a newer ref, the managed core is synced to
-  the bundled catalog: changed files overwritten, upstream-removed files deleted, the
-  overlay and `basicly.toml` never touched. `.basicly/state/install.json` records the
-  installed version, source ref, timestamp, and per-file catalog hashes so `install`
-  can distinguish upstream changes from user hand-edits of core files (warn + skip by
-  default, `--force` to overwrite) and `check` can report drift. Upgrading is
-  therefore literally re-running the same pinned `uvx ... basicly install` command
-  with a newer `@<ref>` (§3.6).
+- **Provenance — [Implemented]** (`basicly-8fg`, `state.py`): `install` writes
+  `.basicly/state/install.json` (sibling of the configured core root) recording the
+  basicly version, timestamp, and a per-file sha256 snapshot of the core as
+  materialized — so a later hash mismatch means a hand-edit of managed content.
+  `basicly check` surfaces drift (modified/removed core files) and an
+  installed-vs-current version mismatch as advisory notes that never change its
+  exit code. The authoring repo writes no state file.
+- **Core upgrade sync — [Planned]** (`basicly-zrj.12.2`): on a repeat `install` from
+  a newer ref, sync the managed core to the bundled catalog: changed files
+  overwritten, upstream-removed files deleted, the overlay and `basicly.toml` never
+  touched; the provenance snapshot distinguishes upstream changes from user
+  hand-edits of core files (warn + skip by default, `--force` to overwrite).
+  Upgrading is therefore literally re-running the same pinned
+  `uvx ... basicly install` command with a newer `@<ref>` (§3.6).
 - **[Planned]** (`basicly-zrj.12.3`) **`basicly uninstall`** removes everything
   managed — core, state, manifest-listed generated files, projected skills, the
   managed hook block — and preserves the user's overlay + `basicly.toml` unless
@@ -572,9 +577,10 @@ Ordered roughly by blocking-ness. Each is a candidate beads epic/feature/task.
 8. **One-command lifecycle** — **[Partial]** (`basicly-zrj.12` + children, §9):
    `basicly install` is **[Implemented]** (`basicly-zrj.12.1` — init + build +
    skills + hooks + upgrade in one idempotent converge command, replacing
-   `init`/`update`). Still open: real core upgrade sync (`basicly-zrj.12.2` —
-   install still materialize-missing, the largest pre-release gap), provenance
-   tracking (`basicly-8fg`), and `basicly uninstall` (`basicly-zrj.12.3`).
+   `init`/`update`), as is provenance tracking (`basicly-8fg`,
+   `.basicly/state/install.json`). Still open: real core upgrade sync
+   (`basicly-zrj.12.2` — install still materialize-missing, the largest
+   pre-release gap) and `basicly uninstall` (`basicly-zrj.12.3`).
    Release-blocking.
 9. **Consumer-repo robustness** — **[Planned]** (`basicly-zrj.13`): the
    `beads-commit-msg` hook must skip cleanly in a repo with no `.beads` workspace
