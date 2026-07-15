@@ -19,6 +19,7 @@ import yaml
 
 from .catalog import bundled_catalog_root, iter_catalog_files
 from .projection import SyncResult, sync_file
+from .schema import ValidationError
 
 HOOKS_MANIFEST = "hooks.yaml"
 PRECOMMIT_CONFIG = ".pre-commit-config.yaml"
@@ -166,19 +167,20 @@ def managed_hook_mismatches(
 
 
 def sync_hooks(repo_root: Path, core_hooks_dir: Path) -> SyncResult:
-    """Materialize hook scripts and merge the pre-commit wiring.
+    """Merge the pre-commit wiring for the materialized hook scripts.
 
-    ``core_hooks_dir`` is the on-disk destination (e.g. ``.basicly/core/hooks``).
-    Scripts are copied from the bundled catalog (write-if-changed); when the
-    catalog is its own source (dogfood repo) the copy is skipped.
+    ``core_hooks_dir`` is the on-disk hooks location (e.g.
+    ``.basicly/core/hooks``). The scripts themselves are core content owned by
+    ``basicly install`` (provenance-guarded sync, §9) — copying them here too
+    would silently clobber a hand-edit install deliberately kept, so this only
+    wires the config and requires the core to be materialized first.
     """
     result = SyncResult()
     src = _catalog_hooks_dir()
     dst = repo_root / core_hooks_dir
 
-    if src.resolve() != dst.resolve():
-        for path in iter_catalog_files(src):
-            sync_file(dst / path.relative_to(src), path.read_bytes(), result)
+    if src.resolve() != dst.resolve() and not dst.is_dir():
+        raise ValidationError("core hooks are not materialized; run `basicly install` first", dst)
 
     specs = load_hook_specs(src)
     hooks_relpath = core_hooks_dir.as_posix()

@@ -8,6 +8,7 @@ import json
 import shlex
 import shutil
 import sys
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -440,55 +441,145 @@ def _migrate_legacy_layout(repo_root: Path, paths: ProjectPaths) -> None:
     print(f"Migrated legacy fragment layout: {moved} item(s) moved, {skipped} left unchanged")
 
 
-def _materialize_catalog(src: Path, dst: Path) -> tuple[int, int]:
-    """Copy catalog files from ``src`` to ``dst`` without overwriting existing ones.
+@dataclass
+class _CatalogSyncReport:
+    """What one core sync did, for the install report and its tests."""
 
-    Returns ``(written, skipped)``.
+    new: list[str] = field(default_factory=list)
+    updated: list[str] = field(default_factory=list)
+    deleted: list[str] = field(default_factory=list)
+    skipped_edits: list[str] = field(default_factory=list)
+    kept_unknown: list[str] = field(default_factory=list)
+    unchanged: int = 0
+
+
+def _sync_catalog(
+    src: Path,
+    dst: Path,
+    previous: state.InstallState | None,
+    force: bool,
+) -> _CatalogSyncReport:
+    """Sync the managed core at ``dst`` to the bundled catalog at ``src`` (§9).
+
+    Core is managed, so upstream wins — but only where the provenance snapshot
+    proves the on-disk file is what install wrote. A file that differs from the
+    snapshot (or predates it) is a hand-edit: warn and keep unless ``force``.
+    Files on disk that the bundle no longer ships are deleted only when they
+    match the snapshot; anything of unknown origin is kept with a warning.
     """
-    written = 0
-    skipped = 0
-    for path in iter_catalog_files(src):
-        target = dst / path.relative_to(src)
-        if target.exists():
-            skipped += 1
+    report = _CatalogSyncReport()
+    recorded = previous.core_hashes if previous else {}
+    bundled = {path.relative_to(src).as_posix(): path for path in iter_catalog_files(src)}
+
+    for rel_path, src_path in bundled.items():
+        target = dst / rel_path
+        src_bytes = src_path.read_bytes()
+        if not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src_path, target)
+            report.new.append(rel_path)
             continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(path, target)
-        written += 1
-    return written, skipped
+        if target.read_bytes() == src_bytes:
+            report.unchanged += 1
+            continue
+        if force or state.sha256_of_file(target) == recorded.get(rel_path):
+            shutil.copy2(src_path, target)
+            report.updated.append(rel_path)
+        else:
+            report.skipped_edits.append(rel_path)
+
+    if dst.exists():
+        for target in iter_catalog_files(dst):
+            rel_path = target.relative_to(dst).as_posix()
+            if rel_path in bundled:
+                continue
+            if state.sha256_of_file(target) == recorded.get(rel_path):
+                target.unlink()
+                report.deleted.append(rel_path)
+                parent = target.parent
+                while parent != dst and not any(parent.iterdir()):
+                    parent.rmdir()
+                    parent = parent.parent
+            else:
+                report.kept_unknown.append(rel_path)
+
+    return report
 
 
-def cmd_install(_args: argparse.Namespace) -> int:
-    """Converge a consumer repo: materialize core, scaffold, and project everything.
+def _report_catalog_sync(report: _CatalogSyncReport, core_dst: Path, repo_root: Path) -> None:
+    """Print the core-sync summary and its hand-edit/unknown-file warnings."""
+    print(
+        f"Synced core catalog at {_format_path(core_dst, repo_root)}: "
+        f"{len(report.new)} new, {len(report.updated)} updated, "
+        f"{len(report.deleted)} removed, {report.unchanged} unchanged"
+    )
+    if report.skipped_edits:
+        print(
+            "Warning: hand-edited managed core files were left as-is "
+            "(re-run with --force to overwrite; hand-edits belong in the overlay):",
+            file=sys.stderr,
+        )
+        for rel_path in report.skipped_edits:
+            print(f"  {rel_path}", file=sys.stderr)
+    if report.kept_unknown:
+        print(
+            "Warning: files of unknown origin in the managed core were kept "
+            "(move yours to the overlay; core is managed by basicly install):",
+            file=sys.stderr,
+        )
+        for rel_path in report.kept_unknown:
+            print(f"  {rel_path}", file=sys.stderr)
+
+
+def cmd_install(args: argparse.Namespace) -> int:
+    """Converge a consumer repo: sync core, scaffold, and project everything.
 
     One idempotent command covers first install and every upgrade (architecture
-    §9): materialize the bundled catalog, migrate/prune legacy layouts, scaffold
-    the overlay + config (never overwriting user content), then project
-    fragments, skills, and hooks. Re-running from a newer pinned ref is the
-    upgrade path.
+    §9): sync the managed core to the bundled catalog (provenance-guarded, so
+    hand-edits are never silently clobbered), migrate/prune legacy layouts,
+    scaffold the overlay + config (never overwriting user content), then
+    project fragments, skills, and hooks. Re-running from a newer pinned ref is
+    the upgrade path.
     """
     repo_root = _repo_root()
     paths = load_project_paths(repo_root)
 
     core_src = bundled_catalog_root()
     core_dst = repo_root / paths.core_root
+    state_path = repo_root / paths.state_path
     authoring_source = core_src.resolve() == core_dst.resolve()
     if authoring_source:
         print("Core catalog is its own authoring source here; left in place.")
     else:
-        written, skipped = _materialize_catalog(core_src, core_dst)
-        print(
-            f"Materialized core catalog into {_format_path(core_dst, repo_root)}: "
-            f"{written} file(s) written, {skipped} existing left unchanged"
+        try:
+            previous_state = state.read_install_state(state_path)
+        except ValidationError as exc:
+            print(
+                f"Note: {exc}; treating existing core files as unverified "
+                "(diffs are kept unless --force).",
+                file=sys.stderr,
+            )
+            previous_state = None
+        report = _sync_catalog(
+            core_src, core_dst, previous_state, force=bool(getattr(args, "force", False))
         )
+        _report_catalog_sync(report, core_dst, repo_root)
 
     _migrate_legacy_layout(repo_root, paths)
 
     if not authoring_source:
-        # Snapshot the core as materialized (post-migration/prune) so a later
-        # hash mismatch means a hand-edit of managed content (§9).
-        state_path = repo_root / paths.state_path
-        state.write_install_state(state_path, __version__, core_dst)
+        # Snapshot only what this install vouches for: files whose on-disk
+        # content equals the bundle (post-migration/prune). Kept hand-edits and
+        # unknown-origin files stay out of the snapshot, so the next sync still
+        # treats them as user content instead of upstream state (§9).
+        bundled_hashes = state.snapshot_core(core_src)
+        disk_hashes = state.snapshot_core(core_dst)
+        vouched = {
+            rel_path: digest
+            for rel_path, digest in disk_hashes.items()
+            if bundled_hashes.get(rel_path) == digest
+        }
+        state.write_install_state(state_path, __version__, vouched)
         print(f"Recorded install state in {_format_path(state_path, repo_root)}")
 
     for overlay in paths.overlay_fragments_dirs:
@@ -1373,12 +1464,17 @@ def main(argv: list[str] | None = None) -> int:
 
     subparsers.add_parser("list", help="List active fragments")
 
-    subparsers.add_parser(
+    install_parser = subparsers.add_parser(
         "install",
         help=(
             "Install or upgrade basicly in this repo "
-            "(materialize catalog + scaffold + build + skills + hooks)"
+            "(sync catalog + scaffold + build + skills + hooks)"
         ),
+    )
+    install_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite hand-edited managed core files instead of keeping them",
     )
 
     build_parser = subparsers.add_parser("build", help="Build generated files")

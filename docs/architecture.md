@@ -412,7 +412,7 @@ upgrade sync inside `install` are the remaining planned lifecycle pieces
 
 | Command                                       | Status                            | Behavior                                                                                                                                                                                                                                                        |
 | --------------------------------------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `basicly install`                             | **[Implemented]** (`basicly-zrj.12.1`) | Idempotent converge: materialize the bundled core catalog, migrate/prune legacy layouts, scaffold overlay + `basicly.toml` (never overwriting existing user content), then `build` + `skills-build` (all default roots) + `hooks-build` (with hook activation). The same command performs first install and every upgrade. Replaced the former `init`/`update` staging pair. Upgrade caveat: core sync is still materialize-missing until `basicly-zrj.12.2` lands (§9 upgrade semantics) |
+| `basicly install`                             | **[Implemented]** (`basicly-zrj.12.1`) | Idempotent converge: materialize the bundled core catalog, migrate/prune legacy layouts, scaffold overlay + `basicly.toml` (never overwriting existing user content), then `build` + `skills-build` (all default roots) + `hooks-build` (with hook activation). The same command performs first install and every upgrade (provenance-guarded core sync, §9; `--force` overwrites kept hand-edits). Replaced the former `init`/`update` staging pair |
 | `basicly uninstall [--purge]`                 | **[Planned]** (`basicly-zrj.12.3`) | Removes managed core, state, generated artifacts, projected skills, and the managed hook block; preserves the overlay + `basicly.toml` unless `--purge`                                                                                                          |
 
 **Catalog**:
@@ -492,13 +492,18 @@ but has not been exercised against a pushed ref yet (`basicly-zrj.14`).
   `basicly check` surfaces drift (modified/removed core files) and an
   installed-vs-current version mismatch as advisory notes that never change its
   exit code. The authoring repo writes no state file.
-- **Core upgrade sync — [Planned]** (`basicly-zrj.12.2`): on a repeat `install` from
-  a newer ref, sync the managed core to the bundled catalog: changed files
-  overwritten, upstream-removed files deleted, the overlay and `basicly.toml` never
-  touched; the provenance snapshot distinguishes upstream changes from user
-  hand-edits of core files (warn + skip by default, `--force` to overwrite).
-  Upgrading is therefore literally re-running the same pinned
-  `uvx ... basicly install` command with a newer `@<ref>` (§3.6).
+- **Core upgrade sync — [Implemented]** (`basicly-zrj.12.2`, `cli._sync_catalog`):
+  on a repeat `install` from a newer ref, the managed core is synced to the bundled
+  catalog: changed files overwritten, upstream-removed files deleted, the overlay
+  and `basicly.toml` never touched. The provenance snapshot distinguishes upstream
+  changes from user hand-edits of core files: a file matching the snapshot is
+  upstream-owned (overwritten/deleted); one that differs is a hand-edit — warned
+  and kept unless `--force`; files unknown to both bundle and snapshot are always
+  kept. The post-sync snapshot records only bundle-matching files, so kept edits
+  stay protected on the next run. `hooks-build` no longer copies scripts (install
+  owns core content); it errors when the core was never materialized. Upgrading is
+  therefore literally re-running the same pinned `uvx ... basicly install` command
+  with a newer `@<ref>` (§3.6).
 - **[Planned]** (`basicly-zrj.12.3`) **`basicly uninstall`** removes everything
   managed — core, state, manifest-listed generated files, projected skills, the
   managed hook block — and preserves the user's overlay + `basicly.toml` unless
@@ -575,13 +580,11 @@ Ordered roughly by blocking-ness. Each is a candidate beads epic/feature/task.
    `SKILL.md`/`*.fragment.md` sources from the managed core, so installing over a
    pre-migration hand-copied catalog self-cleans.
 8. **One-command lifecycle** — **[Partial]** (`basicly-zrj.12` + children, §9):
-   `basicly install` is **[Implemented]** (`basicly-zrj.12.1` — init + build +
-   skills + hooks + upgrade in one idempotent converge command, replacing
-   `init`/`update`), as is provenance tracking (`basicly-8fg`,
-   `.basicly/state/install.json`). Still open: real core upgrade sync
-   (`basicly-zrj.12.2` — install still materialize-missing, the largest
-   pre-release gap) and `basicly uninstall` (`basicly-zrj.12.3`).
-   Release-blocking.
+   `basicly install` (`basicly-zrj.12.1`), provenance tracking (`basicly-8fg`),
+   and the provenance-guarded core upgrade sync (`basicly-zrj.12.2`) are
+   **[Implemented]** — one idempotent converge command covers first install and
+   every upgrade without clobbering hand-edits. Still open: `basicly uninstall`
+   (`basicly-zrj.12.3`). Release-blocking.
 9. **Consumer-repo robustness** — **[Planned]** (`basicly-zrj.13`): the
    `beads-commit-msg` hook must skip cleanly in a repo with no `.beads` workspace
    (`basicly-zrj.13.1`), and the verify runner must fail cleanly — not traceback —

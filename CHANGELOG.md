@@ -14,6 +14,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   overwriting user content, then `build` + `skills-build` + `hooks-build` with
   hook activation). The legacy-layout migration and legacy-source pruning that
   `update` performed now run inside `install`.
+- Upgrades really sync the managed core now: a repeat `install` overwrites core
+  files changed upstream, deletes files the bundle no longer ships, and — using
+  the provenance snapshot — keeps hand-edited core files with a warning
+  (`--force` overwrites them); files of unknown origin are never deleted. The
+  overlay and `basicly.toml` are untouched. `hooks-build` no longer copies hook
+  scripts (core content is owned by `install`) and errors when the core was
+  never materialized.
 - **BREAKING (catalog source format):** catalog content is now authored as YAML
   sources — skills as `core/skills/<slug>/skill.yaml` and fragments as
   `core/fragments/**/<id>.fragment.yaml` — instead of the discoverable `SKILL.md`
