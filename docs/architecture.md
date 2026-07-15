@@ -361,19 +361,20 @@ inherits that failure.
 
 ### Details
 
-1. **Size discipline**: a single **unified soft cap of 8,000 chars** across all three
-   targets (`max_size_warning` in every `targets/*.yaml`). One cap, not per-target caps,
-   because all three always-on files project from the same `applies_to: [all]` fragment
-   set — they are ~95% identical, differing only by a small per-target defaults fragment
-   (~180–300 chars each). You cannot shrink one projection without cutting the shared
-   source, so divergent caps are incoherent. The number is a deliberate discipline choice,
-   not a platform limit: Claude Code's own degradation warning is ~40 KB, and GitHub
-   removed its former 4,000-char hard limit on `copilot-instructions.md` (it now only
-   advises shortening files past ~4,000 chars). 8,000 sits comfortably above the shared
-   body and well under the strictest real threshold, leaving room for a few high-value
-   additions while still forcing §3.1 minimalism. A cap warning means split into a scoped
-   rule, not shrink the prose. (Refs: GitHub removed the hard limit — github/docs#42761;
-   Claude ~40 KB — Claude Code memory docs.)
+1. **Size discipline**: a **shared soft cap of 8,000 chars** for the `claude` and
+   `copilot` targets, and **12,000 for `codex`** (`max_size_warning` per
+   `targets/*.yaml`). The shared-baseline reasoning still holds — all three always-on
+   files project from the same `applies_to: [all]` fragment set and differ only by a
+   small per-target defaults fragment — but the codex projection legitimately carries
+   more: scoped fragments are inlined there for glob fidelity (detail 4), so its cap
+   gets a documented allowance rather than a pretense of identical content. The numbers
+   are a deliberate discipline choice, not platform limits: Claude Code's own
+   degradation warning is ~40 KB, GitHub removed its former 4,000-char hard limit on
+   `copilot-instructions.md` (it now only advises shortening past ~4,000 chars), and
+   Codex reads AGENTS.md up to `project_doc_max_bytes` (32 KiB default, verified
+   2026-07-15). A cap warning means split into a scoped rule, not shrink the prose.
+   (Refs: GitHub removed the hard limit — github/docs#42761; Claude ~40 KB — Claude
+   Code memory docs; Codex 32 KiB — learn.chatgpt.com/docs/agent-configuration/agents-md.)
 2. **Enforced vs. judgment split**: enforced rules are one line pointing at the
    command/config; judgment rules are prose, and should be the shorter of the two
    sections.
@@ -388,8 +389,19 @@ inherits that failure.
    inlined into `CLAUDE.md`/`copilot-instructions.md`. This keeps the always-on file lean
    (a Python-only rule shouldn't cost every task its context budget) and is enforced by
    the `exclude_scoped: true` output filter (§4.4). **Exception — `AGENTS.md` (codex)**:
-   Codex has no path-scoping mechanism, so scoped fragments are inlined there to avoid
-   dropping them; this is why `AGENTS.md` runs larger than the other two baselines.
+   scoped fragments are still inlined there, but the reason has changed (verified
+   2026-07-15 against OpenAI's docs). Codex **does** now support both Agent Skills
+   (SKILL.md open standard, discovered from `.agents/skills` at repo root/cwd with
+   progressive disclosure — basicly's skill projection already targets this) and
+   nested/path-scoped `AGENTS.md` (root→leaf concatenation, nearest file wins,
+   `AGENTS.override.md` precedence). However, nested `AGENTS.md` scoping is
+   **directory-based**, while basicly scoped fragments are **glob-based**
+   (`**/*.py`) — a per-directory offload cannot faithfully express a glob scope, so
+   inlining remains the correctness-preserving choice. This is why `AGENTS.md` runs
+   larger than the other two baselines and why the codex cap carries an allowance
+   (detail 1). Offloading via nested `AGENTS.md`/skills for directory-shaped scopes
+   is **[Deferred]**. (Refs: learn.chatgpt.com/docs/build-skills;
+   learn.chatgpt.com/docs/agent-configuration/agents-md; agentskills.io.)
 5. **Self-contained per target**: each generated file stands alone; an agent should
    never need a second file to understand the baseline.
 6. **Stable ordering**: priority → category → id, so diffs stay minimal.
