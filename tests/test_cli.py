@@ -718,6 +718,26 @@ def test_cli_install_prunes_legacy_catalog_sources(tmp_path: Path) -> None:
     assert kept_overlay.exists()
 
 
+def test_cli_install_removes_legacy_vendored_engine(tmp_path: Path) -> None:
+    """A pre-src-layout vendored engine tree in the core root is removed.
+
+    Regression (basicly-u9o): hand installs vendored the engine into
+    .basicly/basicly/; install migrated fragment/skill sources but left the
+    stale engine copy behind (observed in the terminal repo).
+    """
+    consumer = tmp_path / "consumer"
+    engine_dir = consumer / ".basicly" / "basicly"
+    engine_dir.mkdir(parents=True)
+    (engine_dir / "cli.py").write_text("# legacy vendored engine\n", encoding="utf-8")
+    (engine_dir / "loader.py").write_text("# legacy\n", encoding="utf-8")
+
+    result = run_basicly_consumer(consumer, "install")
+
+    assert result.returncode == 0, result.stderr
+    assert not engine_dir.exists()
+    assert "Removed legacy vendored engine" in result.stdout
+
+
 def test_cli_skills_build_idempotent(work_repo: Path) -> None:
     """Two skills-build runs with no source changes should produce no diff."""
     result1 = run_basicly(work_repo, "skills-build")
