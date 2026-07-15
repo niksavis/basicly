@@ -68,6 +68,55 @@ default = "auto"
 # prompt_via = "arg"   # or "stdin"
 """
 
+# Scaffolded into .vscode/tasks.json by `basicly install` when absent — one
+# single-command task per harness operation (no shell && chaining, so the
+# commands work in PowerShell 5, cmd, and POSIX shells alike). The file is the
+# user's after scaffolding: install never overwrites it, and uninstall --purge
+# deletes it only when still byte-identical to this scaffold.
+VSCODE_TASKS_JSON = """\
+{
+  // Scaffolded by `basicly install`; yours to edit — install never overwrites it.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "basicly: build",
+      "detail": "Regenerate agent instruction files after editing overlay fragments",
+      "type": "shell",
+      "command": "@UVX@ build",
+      "problemMatcher": []
+    },
+    {
+      "label": "basicly: skills-build",
+      "detail": "Re-project skills into every agent root",
+      "type": "shell",
+      "command": "@UVX@ skills-build --all-default-roots",
+      "problemMatcher": []
+    },
+    {
+      "label": "basicly: hooks-build",
+      "detail": "Re-project and activate the git hooks",
+      "type": "shell",
+      "command": "@UVX@ hooks-build",
+      "problemMatcher": []
+    },
+    {
+      "label": "basicly: update",
+      "detail": "Install or upgrade: converge core, projections, skills, and hooks",
+      "type": "shell",
+      "command": "@UVX@ install",
+      "problemMatcher": []
+    },
+    {
+      "label": "basicly: uninstall",
+      "detail": "Remove everything basicly manages (overlay and config survive)",
+      "type": "shell",
+      "command": "@UVX@ uninstall",
+      "problemMatcher": []
+    }
+  ]
+}
+""".replace("@UVX@", "uvx --from git+https://github.com/niksavis/basicly@main basicly")
+
 # Default concurrency cap when no basicly.toml (or no [worktree]) is present.
 DEFAULT_WORKTREE_CONCURRENCY = 4
 
