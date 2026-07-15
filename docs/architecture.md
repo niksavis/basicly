@@ -710,8 +710,8 @@ follows each feature's merge.
 agent-agnostic re-founding of the same goal as the sibling `agent-harness` (basicly's first,
 company-owned, lefthook/pinned-pack, tracker-abstracted attempt): borrow its battle-tested
 worktree/merge know-how (copy-mode deps, `git merge-tree` pre-flight probe, mode-aware
-cleanup) as a reference, while keeping the **`br`-wrapping engine + agent-agnostic projection
-+ installable composable distribution** as the differentiators. From beads-blueprint, adapt
+cleanup) as a reference, while keeping the **`br`-wrapping engine + agent-agnostic projection +
+installable composable distribution** as the differentiators. From beads-blueprint, adapt
 the `validate.py` gate-runner structure into the verify runner. `bv` (beads-viewer) is an
 **optional human viewer only** — redundant with `br scheduler` at runtime, never a harness
 dependency.
