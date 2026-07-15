@@ -20,11 +20,18 @@ from .schema import ValidationError
 SKILLS_SOURCE_DIR = Path(".basicly/core/skills")
 SKILL_SOURCE_FILE = "skill.yaml"
 SKILL_FILE_NAME = "SKILL.md"
+# .claude/skills is Claude Code's only project root; .agents/skills is the
+# Agent Skills open-standard root Codex reads. Copilot/VS Code reads BOTH (plus
+# .github/skills), so a .github copy would only triple its discovery — it was
+# dropped from the defaults (basicly-sqn) and is pruned as a retired root.
 DEFAULT_SKILL_ROOTS = (
     Path(".claude/skills"),
-    Path(".github/skills"),
     Path(".agents/skills"),
 )
+
+# Roots basicly used to project into; generated-marker files here are pruned on
+# skills-build/install and removed by uninstall.
+RETIRED_SKILL_ROOTS = (Path(".github/skills"),)
 
 # Marker injected into every rendered SKILL.md so a hand-edit of the projected
 # (generated) copy is obviously wrong — the YAML source is the thing to edit.

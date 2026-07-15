@@ -63,6 +63,7 @@ from .schema import CATEGORIES, PlannedOutput, ValidationError
 from .skills import (
     DEFAULT_SKILL_ROOTS,
     GENERATED_MARKER,
+    RETIRED_SKILL_ROOTS,
     SKILL_FILE_NAME,
     SKILLS_SOURCE_DIR,
     check_synced_skills,
@@ -429,6 +430,11 @@ def _migrate_legacy_layout(repo_root: Path, paths: ProjectPaths) -> None:
         shutil.rmtree(legacy_engine)
         print(f"Removed legacy vendored engine {_format_path(legacy_engine, repo_root)}/")
 
+    # Skills are no longer projected into retired roots (e.g. .github/skills —
+    # Copilot reads .claude/.agents too, so a third copy only tripled its
+    # discovery); prune previously generated copies there.
+    _remove_generated_skills(repo_root, RETIRED_SKILL_ROOTS)
+
     legacy_dir = repo_root / paths.legacy_fragments_dir
     if not legacy_dir.exists():
         return
@@ -758,10 +764,10 @@ def _remove_generated_outputs(repo_root: Path, paths: ProjectPaths) -> int:
     return removed + 1
 
 
-def _remove_projected_skills(repo_root: Path) -> int:
-    """Delete projected SKILL.md files (generated marker only; user skills stay)."""
+def _remove_generated_skills(repo_root: Path, roots: tuple[Path, ...]) -> int:
+    """Delete projected SKILL.md files under *roots* (generated marker only)."""
     removed = 0
-    for root in DEFAULT_SKILL_ROOTS:
+    for root in roots:
         base = repo_root / root
         if not base.is_dir():
             continue
@@ -773,6 +779,11 @@ def _remove_projected_skills(repo_root: Path) -> int:
             print(f"Removed {_format_path(skill_md, repo_root)}")
             _remove_empty_parents(skill_md.parent, repo_root)
     return removed
+
+
+def _remove_projected_skills(repo_root: Path) -> int:
+    """Delete projected SKILL.md files (generated marker only; user skills stay)."""
+    return _remove_generated_skills(repo_root, (*DEFAULT_SKILL_ROOTS, *RETIRED_SKILL_ROOTS))
 
 
 def _purge_user_content(repo_root: Path, paths: ProjectPaths) -> int:
@@ -1532,7 +1543,7 @@ def _add_skill_root_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--all-default-roots",
         action="store_true",
-        help="Use .claude/skills, .github/skills, and .agents/skills.",
+        help="Use .claude/skills and .agents/skills.",
     )
 
 
