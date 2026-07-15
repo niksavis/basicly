@@ -421,6 +421,14 @@ def _migrate_legacy_layout(repo_root: Path, paths: ProjectPaths) -> None:
     for legacy in pruned:
         print(f"Pruned legacy source {_format_path(legacy, repo_root)}")
 
+    # Pre-src-layout installs vendored the engine itself next to the core
+    # (.basicly/basicly); the packaged engine replaced it, so a leftover copy
+    # is stale dead weight.
+    legacy_engine = repo_root / paths.core_root.parent / "basicly"
+    if legacy_engine.is_dir() and (legacy_engine / "cli.py").exists():
+        shutil.rmtree(legacy_engine)
+        print(f"Removed legacy vendored engine {_format_path(legacy_engine, repo_root)}/")
+
     legacy_dir = repo_root / paths.legacy_fragments_dir
     if not legacy_dir.exists():
         return
