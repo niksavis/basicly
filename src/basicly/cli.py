@@ -49,6 +49,7 @@ from .hooks import (
     install_hooks,
     load_hook_specs,
     missing_hook_installations,
+    remove_managed_hooks,
     sync_hooks,
 )
 from .loader import load_fragments_from_roots, load_targets
@@ -56,6 +57,9 @@ from .planner import plan_outputs
 from .renderers.common import sha256_of_text
 from .schema import CATEGORIES, PlannedOutput, ValidationError
 from .skills import (
+    DEFAULT_SKILL_ROOTS,
+    GENERATED_MARKER,
+    SKILL_FILE_NAME,
     SKILLS_SOURCE_DIR,
     check_synced_skills,
     discover_skills,
@@ -613,6 +617,128 @@ def cmd_install(args: argparse.Namespace) -> int:
             return rc
 
     print("\nbasicly install complete: repo converged. Re-run the same command to upgrade.")
+    return 0
+
+
+def _remove_empty_parents(directory: Path, stop: Path) -> None:
+    """Remove now-empty directories left behind by a deletion, up to ``stop``."""
+    current = directory
+    while current != stop and current.is_dir() and not any(current.iterdir()):
+        current.rmdir()
+        current = current.parent
+
+
+def _remove_generated_outputs(repo_root: Path, paths: ProjectPaths) -> int:
+    """Delete the files the generated manifest lists, then the manifest itself."""
+    manifest_path = repo_root / paths.manifest_path
+    if not manifest_path.exists():
+        return 0
+
+    rel_paths: list[str] = []
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        outputs = manifest.get("outputs")
+        if isinstance(outputs, dict):
+            rel_paths = sorted(outputs)
+    except json.JSONDecodeError:
+        print("Note: generated manifest was unreadable; removing it anyway.", file=sys.stderr)
+
+    removed = 0
+    resolved_root = repo_root.resolve()
+    for rel in rel_paths:
+        target = (repo_root / rel).resolve()
+        if not target.is_relative_to(resolved_root):
+            print(f"Note: skipping manifest entry outside the repo: {rel}", file=sys.stderr)
+            continue
+        if target.is_file():
+            target.unlink()
+            removed += 1
+            print(f"Removed {rel}")
+            _remove_empty_parents(target.parent, resolved_root)
+
+    manifest_path.unlink()
+    print(f"Removed {_format_path(manifest_path, repo_root)}")
+    return removed + 1
+
+
+def _remove_projected_skills(repo_root: Path) -> int:
+    """Delete projected SKILL.md files (generated marker only; user skills stay)."""
+    removed = 0
+    for root in DEFAULT_SKILL_ROOTS:
+        base = repo_root / root
+        if not base.is_dir():
+            continue
+        for skill_md in sorted(base.rglob(SKILL_FILE_NAME)):
+            if GENERATED_MARKER not in skill_md.read_text(encoding="utf-8"):
+                continue
+            skill_md.unlink()
+            removed += 1
+            print(f"Removed {_format_path(skill_md, repo_root)}")
+            _remove_empty_parents(skill_md.parent, repo_root)
+    return removed
+
+
+def _purge_user_content(repo_root: Path, paths: ProjectPaths) -> int:
+    """Delete the overlay roots and basicly.toml (the --purge extras)."""
+    removed = 0
+    for overlay in paths.overlay_fragments_dirs:
+        overlay_dir = repo_root / overlay
+        if overlay_dir.is_dir():
+            shutil.rmtree(overlay_dir)
+            removed += 1
+            print(f"Removed {_format_path(overlay_dir, repo_root)}/ (--purge)")
+            _remove_empty_parents(overlay_dir.parent, repo_root)
+    config_path = repo_root / CONFIG_FILE
+    if config_path.exists():
+        config_path.unlink()
+        removed += 1
+        print(f"Removed {CONFIG_FILE} (--purge)")
+    return removed
+
+
+def cmd_uninstall(args: argparse.Namespace) -> int:
+    """Remove everything basicly manages; keep user content unless --purge.
+
+    The inverse of ``install`` (§9): deletes the managed core, state, the
+    generated files the manifest lists, projected skills (generated-marker
+    files only), and the managed pre-commit block. The overlay and
+    ``basicly.toml`` are the user's and survive unless ``--purge``.
+    """
+    repo_root = _repo_root()
+    paths = load_project_paths(repo_root)
+
+    core_dst = repo_root / paths.core_root
+    if bundled_catalog_root().resolve() == core_dst.resolve():
+        print(
+            "This repo is the catalog authoring source; refusing to uninstall.",
+            file=sys.stderr,
+        )
+        return 1
+
+    removed = _remove_generated_outputs(repo_root, paths)
+    removed += _remove_projected_skills(repo_root)
+
+    note = remove_managed_hooks(repo_root)
+    if note:
+        removed += 1
+        print(note)
+
+    for tree in (core_dst, (repo_root / paths.state_path).parent):
+        if tree.is_dir():
+            shutil.rmtree(tree)
+            removed += 1
+            print(f"Removed {_format_path(tree, repo_root)}/")
+    _remove_empty_parents(core_dst.parent, repo_root)
+
+    if getattr(args, "purge", False):
+        removed += _purge_user_content(repo_root, paths)
+    else:
+        print(f"Kept the overlay and {CONFIG_FILE} (use --purge to remove them too).")
+
+    if removed == 0:
+        print("Nothing to remove; basicly is not installed here.")
+    else:
+        print("basicly uninstall complete.")
     return 0
 
 
@@ -1477,6 +1603,19 @@ def main(argv: list[str] | None = None) -> int:
         help="Overwrite hand-edited managed core files instead of keeping them",
     )
 
+    uninstall_parser = subparsers.add_parser(
+        "uninstall",
+        help=(
+            "Remove everything basicly manages (core, state, generated files, "
+            "projected skills, managed hooks); user content survives"
+        ),
+    )
+    uninstall_parser.add_argument(
+        "--purge",
+        action="store_true",
+        help="Also remove the user overlay and basicly.toml",
+    )
+
     build_parser = subparsers.add_parser("build", help="Build generated files")
     build_parser.add_argument("--target", help="Build only the specified target")
     build_parser.add_argument(
@@ -1558,6 +1697,7 @@ def main(argv: list[str] | None = None) -> int:
     handlers = {
         "list": cmd_list,
         "install": cmd_install,
+        "uninstall": cmd_uninstall,
         "build": cmd_build,
         "check": cmd_check,
         "skills-list": cmd_skills_list,

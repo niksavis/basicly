@@ -32,6 +32,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `basicly uninstall [--purge]`: removes everything basicly manages (core,
+  state, manifest-listed generated files, projected skills carrying the
+  generated marker, and the managed pre-commit block — deleting the config and
+  uninstalling the git hooks when nothing else remains). The overlay and
+  `basicly.toml` survive unless `--purge`; the authoring repo refuses.
 - Install provenance: `basicly install` writes `.basicly/state/install.json`
   (basicly version, timestamp, per-file sha256 snapshot of the managed core as
   materialized), and `basicly check` reports hand-edited/removed core files and
