@@ -38,6 +38,11 @@ modes = ["fast", "full", "staged"]
 staged_suffix = ".py"
 
 [[verify.checks]]
+name = "bandit"
+command = ["bandit", "-q", "-c", "pyproject.toml", "-r", ".scripts", ".basicly/core/hooks"]
+modes = ["fast", "full"]
+
+[[verify.checks]]
 name = "pytest"
 command = ["pytest", "-q"]
 modes = ["full"]
