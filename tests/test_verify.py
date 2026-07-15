@@ -42,6 +42,51 @@ def test_run_check_maps_returncode_to_status(
     assert seen == [["ok"], ["bad"]]
 
 
+def test_run_check_fails_cleanly_on_missing_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A command not on PATH is a failed check with a one-line message.
+
+    Regression (basicly-zrj.13.2): the FileNotFoundError used to escape as a
+    traceback from the loop verify gate on consumers without the tool.
+    """
+    empty_bin = tmp_path / "bin"
+    empty_bin.mkdir()
+    monkeypatch.setenv("PATH", str(empty_bin))  # deterministic: nothing resolvable
+    check = VerifyCheck(name="ghost", command=("ghost-tool",), modes=frozenset({"full"}))
+
+    result = verify.run_check(check, tmp_path, "full")
+
+    assert result.status == "fail"
+    assert result.returncode == 127
+    assert "command not found: ghost-tool" in result.detail
+    assert "\n" not in result.detail  # readable one-liner, not a traceback
+
+
+def test_run_check_fails_cleanly_on_unrunnable_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A PATH candidate that exists but cannot be executed also fails cleanly.
+
+    On WSL, Windows mounts on PATH surface a missing tool as PermissionError
+    rather than FileNotFoundError; both must yield a one-line failure.
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    tool = bin_dir / "ghost-tool"
+    tool.write_text("#!/bin/sh\n", encoding="utf-8")
+    tool.chmod(0o644)  # present but not executable
+    monkeypatch.setenv("PATH", str(bin_dir))
+    check = VerifyCheck(name="ghost", command=("ghost-tool",), modes=frozenset({"full"}))
+
+    result = verify.run_check(check, tmp_path, "full")
+
+    assert result.status == "fail"
+    assert result.returncode == 126
+    assert "cannot run ghost-tool" in result.detail
+    assert "\n" not in result.detail
+
+
 def test_run_check_staged_skips_when_no_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

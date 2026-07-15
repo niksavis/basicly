@@ -78,19 +78,17 @@ def test_verify_config_empty_without_section(tmp_path: Path) -> None:
 
 
 def test_default_config_toml_verify_checks(tmp_path: Path) -> None:
-    """The scaffolded [verify] section parses into the expected mode routing."""
+    """The scaffold enables no checks (consumer stacks vary) but keeps examples.
+
+    A scaffolded consumer must never be blocked by tooling it lacks
+    (basicly-zrj.13.2): an empty verify config passes vacuously, and the
+    commented-out examples document how to declare stack-appropriate checks.
+    """
     (tmp_path / CONFIG_FILE).write_text(DEFAULT_CONFIG_TOML, encoding="utf-8")
     config = load_verify_config(tmp_path)
 
-    assert [c.name for c in config.checks] == ["ruff", "ruff-format", "pyright", "pytest"]
-    assert [c.name for c in config.for_mode("full")] == ["ruff", "ruff-format", "pyright", "pytest"]
-    assert [c.name for c in config.for_mode("fast")] == ["ruff", "ruff-format", "pyright"]
-    assert [(c.name, c.staged_suffix) for c in config.for_mode("staged")] == [
-        ("ruff", ".py"),
-        ("ruff-format", ".py"),
-        ("pyright", ".py"),
-    ]
-    assert config.checks[0].command == ("ruff", "check")
+    assert config.checks == ()
+    assert "# [[verify.checks]]" in DEFAULT_CONFIG_TOML  # examples stay documented
 
 
 def test_verify_config_rejects_malformed_check(tmp_path: Path) -> None:

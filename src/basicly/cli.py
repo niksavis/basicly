@@ -1106,7 +1106,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
     print("\n" + "=" * 60)
     for result in report.results:
-        print(f"  {result.name}: {result.status.upper()}")
+        suffix = f" — {result.detail}" if result.detail else ""
+        print(f"  {result.name}: {result.status.upper()}{suffix}")
 
     if args.issue:
         ok, message = verify.report_gate(repo_root, args.issue, report, gate=args.gate)
