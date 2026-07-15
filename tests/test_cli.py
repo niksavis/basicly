@@ -14,6 +14,7 @@ import yaml
 
 from basicly import cli
 from basicly.config import CONSUMER_CI_WORKFLOW, VSCODE_TASKS_JSON, load_project_paths
+from basicly.skills import GENERATED_MARKER
 
 REPO_ROOT = Path(__file__).parent.parent
 
@@ -768,3 +769,29 @@ def test_cli_skills_check_fails_after_manual_edit(work_repo: Path) -> None:
     result = run_basicly(work_repo, "skills-check")
     assert result.returncode == 1
     assert "Stale skill projection detected" in result.stderr
+
+
+def test_cli_install_prunes_retired_github_skills_root(tmp_path: Path) -> None:
+    """Generated skills in the retired .github/skills root are pruned on install.
+
+    Copilot reads .claude/skills and .agents/skills too, so the .github copy
+    only tripled its discovery (basicly-sqn); user-authored skills there stay.
+    """
+    consumer = tmp_path / "consumer"
+    generated = consumer / ".github" / "skills" / "tool-x"
+    generated.mkdir(parents=True)
+    (generated / "SKILL.md").write_text(f"{GENERATED_MARKER}\n\n# x\n", encoding="utf-8")
+    user_skill = consumer / ".github" / "skills" / "mine"
+    user_skill.mkdir(parents=True)
+    (user_skill / "SKILL.md").write_text("# hand-authored\n", encoding="utf-8")
+
+    result = run_basicly_consumer(consumer, "install")
+
+    assert result.returncode == 0, result.stderr
+    assert not (generated / "SKILL.md").exists()
+    assert (user_skill / "SKILL.md").exists()
+    assert not (consumer / ".github" / "skills" / "tool-x").exists()
+    # New projections land only in the two live roots.
+    assert list((consumer / ".claude" / "skills").rglob("SKILL.md"))
+    assert list((consumer / ".agents" / "skills").rglob("SKILL.md"))
+    assert not list((consumer / ".github" / "skills").rglob("SKILL.md"))[1:]
