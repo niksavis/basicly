@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
@@ -113,6 +114,86 @@ def test_cli_install_is_idempotent_and_preserves_edits(tmp_path: Path) -> None:
     assert "No files changed" in result.stdout
     assert "No skill files changed" in result.stdout
     assert config.read_text(encoding="utf-8") == marker
+
+
+def test_cli_install_writes_provenance_state(tmp_path: Path) -> None:
+    """Install snapshots the materialized core into .basicly/state/install.json."""
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+
+    result = run_basicly_consumer(consumer, "install")
+    assert result.returncode == 0, result.stderr
+    assert "Recorded install state" in result.stdout
+
+    state_path = consumer / ".basicly" / "state" / "install.json"
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == 1
+    assert payload["basicly_version"]
+    assert payload["installed_at"]
+    core_files = [
+        path
+        for path in (consumer / ".basicly" / "core").rglob("*")
+        if path.is_file() and "__pycache__" not in path.parts
+    ]
+    assert len(payload["core"]) == len(core_files)
+
+
+def test_cli_install_refreshes_provenance_state(tmp_path: Path) -> None:
+    """A second install re-snapshots the state file."""
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    run_basicly_consumer(consumer, "install")
+
+    state_path = consumer / ".basicly" / "state" / "install.json"
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    payload["installed_at"] = "1999-01-01T00:00:00+00:00"
+    state_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = run_basicly_consumer(consumer, "install")
+    assert result.returncode == 0, result.stderr
+    refreshed = json.loads(state_path.read_text(encoding="utf-8"))
+    assert refreshed["installed_at"] != "1999-01-01T00:00:00+00:00"
+
+
+def test_cli_install_authoring_repo_writes_no_state(work_repo: Path) -> None:
+    """The authoring repo (core == bundled source) records no provenance."""
+    result = run_basicly(work_repo, "install")
+    assert result.returncode == 0, result.stderr
+    assert "its own authoring source" in result.stdout
+    assert not (work_repo / ".basicly" / "state").exists()
+
+
+def test_cli_check_reports_core_drift_note(tmp_path: Path) -> None:
+    """A hand-edited managed core file surfaces as an advisory note, exit 0."""
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    run_basicly_consumer(consumer, "install")
+
+    # Edit a managed file that does not feed the generated outputs, so the
+    # byte-for-byte staleness contract stays green while provenance drifts.
+    hook = consumer / ".basicly" / "core" / "hooks" / "pre-commit.py"
+    hook.write_text(hook.read_text(encoding="utf-8") + "\n# hand edit\n", encoding="utf-8")
+
+    result = run_basicly_consumer(consumer, "check")
+    assert result.returncode == 0, result.stderr
+    assert "differs from the installed snapshot" in result.stderr
+    assert "hooks/pre-commit.py: modified" in result.stderr
+
+
+def test_cli_check_reports_version_mismatch_note(tmp_path: Path) -> None:
+    """An install recorded by another basicly version surfaces as a note, exit 0."""
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    run_basicly_consumer(consumer, "install")
+
+    state_path = consumer / ".basicly" / "state" / "install.json"
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    payload["basicly_version"] = "0.0.0"
+    state_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = run_basicly_consumer(consumer, "check")
+    assert result.returncode == 0, result.stderr
+    assert "installed by basicly 0.0.0" in result.stderr
 
 
 def test_cli_build_idempotent(work_repo: Path) -> None:

@@ -25,6 +25,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Install provenance: `basicly install` writes `.basicly/state/install.json`
+  (basicly version, timestamp, per-file sha256 snapshot of the managed core as
+  materialized), and `basicly check` reports hand-edited/removed core files and
+  an installed-vs-current version mismatch as advisory notes. The authoring
+  repo records no state.
 - JSON Schemas for skill and fragment sources (`core/schemas/`), referenced from
   each source via a `# yaml-language-server` header for editor/agent validation.
 - `catalog-authoring` skill and an always-on authoring fragment covering how to
