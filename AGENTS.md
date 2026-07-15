@@ -11,8 +11,7 @@ not rely on other agent config files being present.
 - Editing CI/CD, deployment, infra-as-code, ignore/secrets files, or `.env*`.
 - Adding/removing/upgrading dependencies.
 - New network calls outside task scope.
-- Skipping or weakening tests/lint/type checks to force success.
-- Bypassing git hooks (`--no-verify`, `--no-gpg-sign`) — fix the failing gate instead.
+- Defeating a gate to force success — skipping or weakening tests, lint, or type checks, or bypassing hooks (`--no-verify`, `--no-gpg-sign`). Fix the failing gate instead.
 
 ## Knowledge Priming
 
@@ -40,7 +39,7 @@ not rely on other agent config files being present.
 
 - Run `git commit` as its own command; never chain state-dependent follow-ups (issue-tracker updates, tagging, `git push`) after it on one line — a hook rejection leaves the chain half-run.
 - Commits are gated by `commit-msg` hooks (Conventional Commits + a trailing beads issue id) — use the `conventional-commits` skill to format one, and the `tool-br` skill to claim the issue first.
-- When a hook rejects a commit, fix the reported cause and re-commit; do not reword to dodge the check.
+- When a hook rejects a commit, fix the reported cause and re-commit.
 
 ## Decision Protocol
 
@@ -56,7 +55,7 @@ not rely on other agent config files being present.
 - Keep diffs minimal; avoid unrelated refactors.
 - Prefer explicit, readable solutions over clever ones.
 - Solve the stated requirement only — no speculative abstractions or unrequested config.
-- Search for existing helpers, utilities, or patterns in this codebase before writing new code; reuse before reinventing.
+- Reuse before reinventing: prefer an existing helper, utility, tool, or skill (including the repo's search, tracker, and hooks) over new code or a hand-rolled equivalent.
 - Fix the root cause, not the symptom: check other call sites before assuming a single-site patch is complete.
 - Back claims with evidence (files read, commands run, tests); don't assert without checking.
 - Keep code clean: no dead code, debug prints, or silent error swallowing.
@@ -67,7 +66,7 @@ not rely on other agent config files being present.
 
 - Drive non-trivial work through the harness loop, not ad hoc: intake → classify → decompose → build → verify → ship → teardown → retro. `br` is the single source of truth (the loop keeps no side-state, so it is resumable); the `harness-loop` skill is the runbook.
 - Start by reconstructing a track with `basicly loop status <issue>`, then step it with `basicly loop advance <issue>` / `basicly loop run <issue>`; a blocked step exits non-zero and names the input it needs.
-- The three human checkpoints (classify, decompose, ship) and the bounded rework loop are engine-enforced — approve with `basicly policy checkpoint <issue> <name> --approve`; never route around a gate.
+- The three human checkpoints (classify, decompose, ship) and the bounded rework loop are engine-enforced — approve with `basicly policy checkpoint <issue> <name> --approve`.
 
 ## Quality Gate
 
@@ -121,4 +120,3 @@ not rely on other agent config files being present.
 ## Tool Usage
 
 - Retrieval ladder: find files by name, localize with focused search, then read only the ranges you need — expand scope only as required; don't bulk-load unrelated files.
-- Reach for the repo's dedicated tools and skills (search, tracker, hooks) before hand-rolling shell equivalents.

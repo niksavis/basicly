@@ -15,7 +15,7 @@ body: |
   - Keep diffs minimal; avoid unrelated refactors.
   - Prefer explicit, readable solutions over clever ones.
   - Solve the stated requirement only — no speculative abstractions or unrequested config.
-  - Search for existing helpers, utilities, or patterns in this codebase before writing new code; reuse before reinventing.
+  - Reuse before reinventing: prefer an existing helper, utility, tool, or skill (including the repo's search, tracker, and hooks) over new code or a hand-rolled equivalent.
   - Fix the root cause, not the symptom: check other call sites before assuming a single-site patch is complete.
   - Back claims with evidence (files read, commands run, tests); don't assert without checking.
   - Keep code clean: no dead code, debug prints, or silent error swallowing.

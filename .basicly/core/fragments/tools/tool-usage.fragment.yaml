@@ -14,4 +14,3 @@ status: active
 title: Tool Usage
 body: |
   - Retrieval ladder: find files by name, localize with focused search, then read only the ranges you need — expand scope only as required; don't bulk-load unrelated files.
-  - Reach for the repo's dedicated tools and skills (search, tracker, hooks) before hand-rolling shell equivalents.
