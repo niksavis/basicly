@@ -311,6 +311,104 @@ def test_cli_check_reports_version_mismatch_note(tmp_path: Path) -> None:
     assert "installed by basicly 0.0.0" in result.stderr
 
 
+def test_cli_uninstall_removes_everything_managed(tmp_path: Path) -> None:
+    """After install then uninstall, no basicly-managed file remains."""
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    run_basicly_consumer(consumer, "install")
+
+    result = run_basicly_consumer(consumer, "uninstall")
+    assert result.returncode == 0, result.stderr
+
+    assert not (consumer / ".basicly").exists()
+    assert not (consumer / "AGENTS.md").exists()
+    assert not (consumer / ".claude" / "CLAUDE.md").exists()
+    assert not (consumer / ".github" / "copilot-instructions.md").exists()
+    for root in (".claude", ".github", ".agents"):
+        base = consumer / root
+        assert not (list(base.rglob("SKILL.md")) if base.exists() else [])
+    assert not (consumer / ".pre-commit-config.yaml").exists()
+
+    # User content survives.
+    assert (consumer / "basicly.toml").is_file()
+    assert (consumer / ".basicly-local" / "fragments" / "user").is_dir()
+
+
+def test_cli_uninstall_preserves_foreign_hooks(tmp_path: Path) -> None:
+    """Only the managed pre-commit block is removed; foreign hooks stay."""
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    run_basicly_consumer(consumer, "install")
+
+    config = consumer / ".pre-commit-config.yaml"
+    data = config.read_text(encoding="utf-8")
+    foreign = (
+        "repos:\n"
+        "- repo: local\n"
+        "  hooks:\n"
+        "  - id: my-own-hook\n"
+        "    name: my-own-hook\n"
+        "    entry: echo mine\n"
+        "    language: system\n" + data.removeprefix("repos:\n")
+    )
+    config.write_text(foreign, encoding="utf-8")
+
+    result = run_basicly_consumer(consumer, "uninstall")
+    assert result.returncode == 0, result.stderr
+    assert config.exists()
+    remaining = config.read_text(encoding="utf-8")
+    assert "my-own-hook" in remaining
+    assert "pre-commit-script" not in remaining
+
+
+def test_cli_uninstall_purge_removes_user_content_too(tmp_path: Path) -> None:
+    """--purge also removes the overlay and basicly.toml."""
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    run_basicly_consumer(consumer, "install")
+
+    result = run_basicly_consumer(consumer, "uninstall", "--purge")
+    assert result.returncode == 0, result.stderr
+    assert not (consumer / ".basicly-local").exists()
+    assert not (consumer / "basicly.toml").exists()
+
+
+def test_cli_uninstall_keeps_hand_written_skill(tmp_path: Path) -> None:
+    """A SKILL.md without the generated marker is user content and survives."""
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    run_basicly_consumer(consumer, "install")
+
+    mine = consumer / ".claude" / "skills" / "my-skill" / "SKILL.md"
+    mine.parent.mkdir(parents=True, exist_ok=True)
+    mine.write_text("---\nname: my-skill\ndescription: mine\n---\n\nMine.\n", encoding="utf-8")
+
+    result = run_basicly_consumer(consumer, "uninstall")
+    assert result.returncode == 0, result.stderr
+    assert mine.exists()
+    assert not (consumer / ".claude" / "skills" / "tool-git").exists()
+
+
+def test_cli_uninstall_twice_is_a_noop(tmp_path: Path) -> None:
+    """A second uninstall reports nothing to remove and exits 0."""
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    run_basicly_consumer(consumer, "install")
+    run_basicly_consumer(consumer, "uninstall")
+
+    result = run_basicly_consumer(consumer, "uninstall")
+    assert result.returncode == 0, result.stderr
+    assert "Nothing to remove" in result.stdout
+
+
+def test_cli_uninstall_refuses_in_authoring_repo(work_repo: Path) -> None:
+    """The dogfood repo's catalog source must never be deletable by uninstall."""
+    result = run_basicly(work_repo, "uninstall")
+    assert result.returncode == 1
+    assert "authoring source" in result.stderr
+    assert (work_repo / ".basicly" / "core").is_dir()
+
+
 def test_cli_build_idempotent(work_repo: Path) -> None:
     """Two build runs with no source changes should produce no diff."""
     result1 = run_basicly(work_repo, "build")

@@ -277,6 +277,82 @@ def install_hooks(repo_root: Path, stages: list[str]) -> tuple[bool, str]:
     return True, result.stdout.strip() or "hooks installed"
 
 
+def uninstall_hooks(repo_root: Path, stages: list[str]) -> tuple[bool, str]:
+    """Deactivate the gates via ``pre-commit uninstall`` for the given stages.
+
+    Mirrors :func:`install_hooks`: returns ``(ok, message)`` and degrades
+    gracefully when pre-commit isn't on PATH.
+    """
+    stage_args: list[str] = []
+    for stage in stages:
+        stage_args += ["-t", stage]
+    manual = "pre-commit uninstall " + " ".join(stage_args)
+
+    pre_commit = shutil.which("pre-commit")
+    if pre_commit:
+        cmd = [pre_commit, "uninstall", *stage_args]
+    elif shutil.which("uv"):
+        cmd = ["uv", "run", "pre-commit", "uninstall", *stage_args]
+    else:
+        return False, f"pre-commit is not available; run manually: {manual}"
+
+    result = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True, check=False)  # nosec B603
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or "unknown error"
+        return False, f"pre-commit uninstall failed ({detail}); run manually: {manual}"
+    return True, result.stdout.strip() or "hooks uninstalled"
+
+
+def remove_managed_hooks(repo_root: Path) -> str | None:
+    """Strip basicly's managed hooks from the pre-commit config (uninstall path).
+
+    Removes the managed hook entries from every ``local`` repo; when nothing
+    else remains, the file is deleted and the git hooks are uninstalled.
+    Returns a human-readable summary, or None when there was nothing to do.
+    Uses the bundled manifest for the managed ids, so it works after the core
+    tree itself is gone.
+    """
+    config_path = repo_root / PRECOMMIT_CONFIG
+    if not config_path.exists():
+        return None
+
+    parsed = _parse_config(config_path, config_path.read_text(encoding="utf-8"))
+    specs = load_hook_specs()
+    managed_ids = {spec.id for spec in specs}
+
+    kept: list = []
+    changed = False
+    for repo in parsed.get("repos") or []:
+        if isinstance(repo, dict) and repo.get("repo") == "local":
+            hooks = [
+                hook
+                for hook in (repo.get("hooks") or [])
+                if not (isinstance(hook, dict) and hook.get("id") in managed_ids)
+            ]
+            if len(hooks) != len(repo.get("hooks") or []):
+                changed = True
+            if hooks:
+                kept.append({**repo, "hooks": hooks})
+        else:
+            kept.append(repo)
+
+    if not changed:
+        return None
+
+    if kept:
+        parsed["repos"] = kept
+        config_path.write_text(
+            yaml.safe_dump(parsed, sort_keys=False, default_flow_style=False),
+            encoding="utf-8",
+        )
+        return f"Removed managed hooks from {PRECOMMIT_CONFIG} (foreign hooks preserved)"
+
+    config_path.unlink()
+    ok, message = uninstall_hooks(repo_root, hook_stages(specs))
+    note = f"Deleted {PRECOMMIT_CONFIG} (only managed hooks remained)"
+    return note if ok else f"{note}; {message}"
+
+
 def check_hooks(repo_root: Path, core_hooks_dir: Path) -> list[tuple[Path, str]]:
     """Return (path, reason) for any hook script or wiring that is out of sync."""
     mismatches: list[tuple[Path, str]] = []
