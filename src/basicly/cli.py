@@ -36,6 +36,7 @@ from .catalog import bundled_catalog_root, iter_catalog_files
 from .config import (
     CHECKPOINTS,
     CONFIG_FILE,
+    CONSUMER_CI_WORKFLOW,
     DEFAULT_CONFIG_TOML,
     VERIFY_MODES,
     VSCODE_TASKS_JSON,
@@ -604,6 +605,21 @@ def _scaffold_vscode_tasks(repo_root: Path) -> None:
     print("Wrote .vscode/tasks.json (basicly build/skills-build/hooks-build/update/uninstall)")
 
 
+def _scaffold_ci_workflow(repo_root: Path) -> None:
+    """Write the consumer CI gates workflow when absent.
+
+    Same contract as the other scaffolds: written once, then the file is the
+    user's — install never overwrites it.
+    """
+    workflow_path = repo_root / ".github" / "workflows" / "basicly-gates.yml"
+    if workflow_path.exists():
+        print(".github/workflows/basicly-gates.yml already exists; left unchanged")
+        return
+    workflow_path.parent.mkdir(parents=True, exist_ok=True)
+    workflow_path.write_text(CONSUMER_CI_WORKFLOW, encoding="utf-8")
+    print("Wrote .github/workflows/basicly-gates.yml (commit messages, drift, verify)")
+
+
 def cmd_install(args: argparse.Namespace) -> int:
     """Converge a consumer repo: sync core, scaffold, and project everything.
 
@@ -671,6 +687,7 @@ def cmd_install(args: argparse.Namespace) -> int:
 
     _setup_beads(repo_root)
     _scaffold_vscode_tasks(repo_root)
+    _scaffold_ci_workflow(repo_root)
 
     steps: list[tuple[str, Any, argparse.Namespace]] = [
         ("build", cmd_build, argparse.Namespace(target=None, verify=False)),
@@ -774,6 +791,15 @@ def _purge_user_content(repo_root: Path, paths: ProjectPaths) -> int:
             _remove_empty_parents(tasks_path.parent, repo_root)
         else:
             print("Kept .vscode/tasks.json (user-modified).")
+    workflow_path = repo_root / ".github" / "workflows" / "basicly-gates.yml"
+    if workflow_path.exists():
+        if workflow_path.read_text(encoding="utf-8") == CONSUMER_CI_WORKFLOW:
+            workflow_path.unlink()
+            removed += 1
+            print("Removed .github/workflows/basicly-gates.yml (--purge)")
+            _remove_empty_parents(workflow_path.parent, repo_root)
+        else:
+            print("Kept .github/workflows/basicly-gates.yml (user-modified).")
     return removed
 
 
