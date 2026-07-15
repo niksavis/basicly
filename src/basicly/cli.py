@@ -15,6 +15,7 @@ from typing import Any
 from . import (
     __version__,
     catalog_lint,
+    catalog_verify,
     claude_settings,
     decompose,
     loop,
@@ -169,6 +170,11 @@ def cmd_build(args: argparse.Namespace) -> int:
     repo_root = _repo_root()
     paths = load_project_paths(repo_root)
     fragments, targets = _load_context(repo_root, paths)
+
+    if getattr(args, "verify", False) and _report_gate_failures(
+        "build: verification failed, nothing written", _deterministic_gate(repo_root, fragments)
+    ):
+        return 1
 
     if args.target:
         target_names = {t.name for t in targets}
@@ -663,6 +669,32 @@ def cmd_catalog_lint(_args: argparse.Namespace) -> int:
             print(f"  {violation}", file=sys.stderr)
         return 1
     print("catalog-lint: OK")
+    return 0
+
+
+def _deterministic_gate(repo_root: Path, fragments: list[Any]) -> list[str]:
+    """Run the full deterministic gate: structural lint plus resolved-content checks."""
+    return catalog_lint.lint_catalog(repo_root) + catalog_verify.verify_catalog(fragments)
+
+
+def _report_gate_failures(header: str, violations: list[str]) -> bool:
+    """Print violations under a header when any exist; return True if the gate failed."""
+    if not violations:
+        return False
+    print(header, file=sys.stderr)
+    for violation in violations:
+        print(f"  {violation}", file=sys.stderr)
+    return True
+
+
+def cmd_catalog_verify(_args: argparse.Namespace) -> int:
+    """Verify catalog content: lint plus duplicate/contradiction/ambiguity/scope checks."""
+    repo_root = _repo_root()
+    paths = load_project_paths(repo_root)
+    fragments, _targets = _load_context(repo_root, paths)
+    if _report_gate_failures("catalog-verify: FAILED", _deterministic_gate(repo_root, fragments)):
+        return 1
+    print("catalog-verify: OK")
     return 0
 
 
@@ -1242,6 +1274,11 @@ def main(argv: list[str] | None = None) -> int:
 
     build_parser = subparsers.add_parser("build", help="Build generated files")
     build_parser.add_argument("--target", help="Build only the specified target")
+    build_parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="Run the deterministic catalog gate first; write nothing if it fails",
+    )
 
     subparsers.add_parser("check", help="Check generated files are up to date")
 
@@ -1287,6 +1324,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Validate catalog YAML sources (schema, no .md sources, single extension)",
     )
 
+    subparsers.add_parser(
+        "catalog-verify",
+        help="Verify catalog content (lint + duplicate/contradiction/ambiguity/scope checks)",
+    )
+
     _add_worktree_parser(subparsers)
     _add_verify_parser(subparsers)
     _add_policy_parser(subparsers)
@@ -1309,6 +1351,7 @@ def main(argv: list[str] | None = None) -> int:
         "hooks-build": cmd_hooks_build,
         "hooks-check": cmd_hooks_check,
         "catalog-lint": cmd_catalog_lint,
+        "catalog-verify": cmd_catalog_verify,
         "worktree": cmd_worktree,
         "verify": cmd_verify,
         "policy": cmd_policy,

@@ -132,7 +132,9 @@ badly to a model — need a capable reader. Both layers run against the same mer
 fragment set, deterministic always first. **[Partial]**: schema/duplicate-id
 validation is implemented inside the normal load path
 (`loader._validate_fragment`); duplicate-body, contradiction, ambiguity, and
-scope-overlap checks, plus a standalone `verify` command, are **[Planned]** (§6, §11).
+scope-overlap checks, plus the standalone `basicly catalog-verify` command, are
+**[Implemented]** (`basicly-ihs`, `catalog_verify.py`). Agent-assisted semantic
+review (`basicly review`) is still **[Planned]** (§6, §11).
 
 **3.4 Source of truth and generated files are each a one-way street.** Users edit
 fragments (core or overlay) and never the generated files; `basicly build` regenerates,
@@ -322,9 +324,10 @@ runs on identical source produce byte-identical output.
 
 ## 6) Verification pipeline
 
-**Summary**: schema/duplicate-id validation already runs on every load. Duplicate-body,
-contradiction, ambiguity, scope-overlap checks, a standalone `verify` command, and
-agent-assisted semantic review are designed but not built.
+**Summary**: schema/duplicate-id validation runs on every load; the deterministic
+content checks (duplicate-body, contradiction, ambiguity, scope-overlap) and the
+standalone `basicly catalog-verify` command (also wired as `basicly build --verify`)
+are built. Only agent-assisted semantic review remains designed but not built.
 
 ### Details
 
@@ -333,12 +336,12 @@ agent-assisted semantic review are designed but not built.
 | Required fields, known category/priority/status/target, extension-field types              | **[Implemented]** — `loader._validate_fragment`, runs on every `list`/`build`/`check` |
 | Duplicate fragment `id` across core + overlay roots                                        | **[Implemented]** — `loader.load_fragments_from_roots`                                |
 | `replaces` target exists / `override: true` required / no mutual user-user replaces        | **[Implemented]** — `loader._validate_replacements`, runs on every `list`/`build`/`check` |
-| Duplicate/near-duplicate fragment bodies                                                   | **[Planned]**                                                                         |
-| Contradiction detection (static dictionary: tabs/spaces, pathlib/os.path, etc.)            | **[Planned]**                                                                         |
-| Ambiguity detection (deny-list of vague phrases)                                           | **[Planned]**                                                                         |
-| Scope-overlap detection                                                                    | **[Planned]**                                                                         |
+| Duplicate/near-duplicate fragment bodies                                                   | **[Implemented]** (`basicly-ihs`) — `catalog_verify._duplicate_bodies` (difflib ratio) |
+| Contradiction detection (static dictionary: tabs/spaces, pathlib/os.path, etc.)            | **[Implemented]** (`basicly-ihs`) — `catalog_verify._contradictions`, curated pairs   |
+| Ambiguity detection (deny-list of vague phrases)                                           | **[Implemented]** (`basicly-ihs`) — `catalog_verify._ambiguous_phrases`               |
+| Scope-overlap detection                                                                    | **[Implemented]** (`basicly-ihs`) — `catalog_verify._scope_overlaps`, scoped pairs    |
 | Enforcement-pointer check (`enforced_by` field, §3.1)                                      | **[Implemented]** (`basicly-a8e`) — `catalog_lint` requires each `enforced_by` command to be cited in the body |
-| Standalone `basicly verify` / `basicly build --verify` commands                            | **[Planned]**                                                                         |
+| Standalone `basicly catalog-verify` / `basicly build --verify` commands                    | **[Implemented]** (`basicly-ihs`) — named `catalog-verify` because `basicly verify` is the loop CI-check runner; `build --verify` gates the write |
 | Semantic review (`basicly review`, agent reads rendered diff for contradictions/ambiguity) | **[Planned]** — advisory, not a merge gate, once built                                |
 
 When built, both layers run in this order — deterministic gate first, always; semantic
@@ -491,8 +494,11 @@ Ordered roughly by blocking-ness. Each is a candidate beads epic/feature/task.
    (`basicly-a8e`): the field is in the fragment schema and `catalog_lint` fails any
    fragment whose `enforced_by` command is not cited in its body, so §3.1 is now
    mechanically checked, not review-only.
-5. **Deterministic `verify` beyond schema/duplicate-id, and `basicly review`, are
-   unbuilt** (§6).
+5. **Deterministic verify beyond schema/duplicate-id** — **[Resolved]** (`basicly-ihs`):
+   `catalog_verify` adds duplicate-body, contradiction, ambiguity, and scope-overlap
+   checks behind `basicly catalog-verify` and `basicly build --verify` (named
+   `catalog-verify` because `basicly verify` is the loop CI-check runner).
+   **`basicly review`** (agent-assisted semantic review) is still unbuilt (§6).
 6. **`hooks-build`/`hooks-check` projection** — **[Resolved]** (`basicly-lku`,
    `basicly-t51`): a tool-agnostic `core/hooks/hooks.yaml` manifest drives
    `basicly hooks-build`, which materializes the scripts and merges a managed

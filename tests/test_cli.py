@@ -163,6 +163,50 @@ def test_cli_unknown_target(work_repo: Path) -> None:
     assert "Unknown target" in result.stderr
 
 
+def _add_duplicate_fragments(work_repo: Path) -> None:
+    """Add two core fragments with identical bodies to trip catalog-verify."""
+    frag_dir = work_repo / ".basicly/core/fragments/project"
+    frag_dir.mkdir(parents=True, exist_ok=True)
+    body = (
+        "schema_version: 1\nid: {id}\ndescription: dup {id}\ncategory: project\n"
+        "applies_to: [all]\nbody: |\n  This fragment body is intentionally duplicated.\n"
+    )
+    (frag_dir / "dup-one.fragment.yaml").write_text(body.format(id="dup-one"), encoding="utf-8")
+    (frag_dir / "dup-two.fragment.yaml").write_text(body.format(id="dup-two"), encoding="utf-8")
+
+
+def test_cli_catalog_verify_passes(work_repo: Path) -> None:
+    """The real catalog passes content verification."""
+    result = run_basicly(work_repo, "catalog-verify")
+    assert result.returncode == 0, result.stderr
+    assert "catalog-verify: OK" in result.stdout
+
+
+def test_cli_catalog_verify_flags_duplicate_bodies(work_repo: Path) -> None:
+    """catalog-verify fails when two fragments share a body."""
+    _add_duplicate_fragments(work_repo)
+    result = run_basicly(work_repo, "catalog-verify")
+    assert result.returncode == 1
+    assert "identical bodies" in result.stderr
+
+
+def test_cli_build_verify_blocks_and_writes_nothing(work_repo: Path) -> None:
+    """Build --verify fails the gate before writing, leaving the manifest untouched."""
+    manifest = work_repo / ".basicly/generated-manifest.json"
+    manifest.unlink()
+    _add_duplicate_fragments(work_repo)
+    result = run_basicly(work_repo, "build", "--verify")
+    assert result.returncode == 1
+    assert "nothing written" in result.stderr
+    assert not manifest.exists()
+
+
+def test_cli_build_verify_passes_on_clean_catalog(work_repo: Path) -> None:
+    """Build --verify builds normally when the catalog is clean."""
+    result = run_basicly(work_repo, "build", "--verify")
+    assert result.returncode == 0, result.stderr
+
+
 def test_cli_update_migrates_legacy_fragments(work_repo: Path) -> None:
     """Update migrates legacy .basicly/fragments into core and overlay roots."""
     legacy_core = work_repo / ".basicly" / "fragments" / "project"
