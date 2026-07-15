@@ -14,6 +14,7 @@ from pathlib import Path
 
 import yaml
 
+from .projection import SyncResult, sync_file
 from .schema import ValidationError
 
 SKILLS_SOURCE_DIR = Path(".basicly/core/skills")
@@ -41,14 +42,6 @@ class SkillDefinition:
     description: str
     instructions: str
     source_path: Path
-
-
-@dataclass(frozen=True)
-class SkillSyncResult:
-    """A summary of what changed while syncing skills."""
-
-    written: list[Path]
-    unchanged: list[Path]
 
 
 def _require_str(value: object, field: str, path: Path) -> str:
@@ -133,25 +126,17 @@ def sync_skills(
     repo_root: Path,
     roots: list[Path],
     source_dir: Path = SKILLS_SOURCE_DIR,
-) -> SkillSyncResult:
+) -> SyncResult:
     """Render source skills into destination roots without deleting extra files."""
     skills = discover_skills(repo_root, source_dir)
-    written: list[Path] = []
-    unchanged: list[Path] = []
+    result = SyncResult()
 
     for skill in skills:
-        rendered = render_skill_md(skill)
+        rendered = render_skill_md(skill).encode("utf-8")
         for root in roots:
-            target_path = root / skill.slug / SKILL_FILE_NAME
-            target_path.parent.mkdir(parents=True, exist_ok=True)
-            if target_path.exists() and target_path.read_text(encoding="utf-8") == rendered:
-                unchanged.append(target_path)
-                continue
+            sync_file(root / skill.slug / SKILL_FILE_NAME, rendered, result)
 
-            target_path.write_text(rendered, encoding="utf-8")
-            written.append(target_path)
-
-    return SkillSyncResult(written=written, unchanged=unchanged)
+    return result
 
 
 def check_synced_skills(
@@ -164,13 +149,13 @@ def check_synced_skills(
     mismatches: list[tuple[Path, str]] = []
 
     for skill in skills:
-        rendered = render_skill_md(skill)
+        rendered = render_skill_md(skill).encode("utf-8")
         for root in roots:
             target_path = root / skill.slug / SKILL_FILE_NAME
             if not target_path.exists():
                 mismatches.append((target_path, "missing"))
                 continue
-            if target_path.read_text(encoding="utf-8") != rendered:
+            if target_path.read_bytes() != rendered:
                 mismatches.append((target_path, "content mismatch"))
 
     return mismatches

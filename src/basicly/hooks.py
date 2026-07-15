@@ -12,12 +12,13 @@ from __future__ import annotations
 import shlex
 import shutil
 import subprocess  # nosec B404
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 
 from .catalog import bundled_catalog_root, iter_catalog_files
+from .projection import SyncResult, sync_file
 
 HOOKS_MANIFEST = "hooks.yaml"
 PRECOMMIT_CONFIG = ".pre-commit-config.yaml"
@@ -32,14 +33,6 @@ class HookSpec:
     stage: str
     pass_filenames: bool = False
     always_run: bool = False
-
-
-@dataclass
-class HookSyncResult:
-    """Files written vs. left unchanged by a hooks-build run."""
-
-    written: list[Path] = field(default_factory=list)
-    unchanged: list[Path] = field(default_factory=list)
 
 
 def _catalog_hooks_dir() -> Path:
@@ -172,29 +165,20 @@ def managed_hook_mismatches(
     return mismatches
 
 
-def _write_if_changed(path: Path, content: bytes, result: HookSyncResult) -> None:
-    if path.exists() and path.read_bytes() == content:
-        result.unchanged.append(path)
-        return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(content)
-    result.written.append(path)
-
-
-def sync_hooks(repo_root: Path, core_hooks_dir: Path) -> HookSyncResult:
+def sync_hooks(repo_root: Path, core_hooks_dir: Path) -> SyncResult:
     """Materialize hook scripts and merge the pre-commit wiring.
 
     ``core_hooks_dir`` is the on-disk destination (e.g. ``.basicly/core/hooks``).
     Scripts are copied from the bundled catalog (write-if-changed); when the
     catalog is its own source (dogfood repo) the copy is skipped.
     """
-    result = HookSyncResult()
+    result = SyncResult()
     src = _catalog_hooks_dir()
     dst = repo_root / core_hooks_dir
 
     if src.resolve() != dst.resolve():
         for path in iter_catalog_files(src):
-            _write_if_changed(dst / path.relative_to(src), path.read_bytes(), result)
+            sync_file(dst / path.relative_to(src), path.read_bytes(), result)
 
     specs = load_hook_specs(src)
     hooks_relpath = core_hooks_dir.as_posix()
@@ -202,7 +186,7 @@ def sync_hooks(repo_root: Path, core_hooks_dir: Path) -> HookSyncResult:
 
     if not config_path.exists():
         rendered = render_precommit_config(None, specs, hooks_relpath)
-        _write_if_changed(config_path, rendered.encode("utf-8"), result)
+        sync_file(config_path, rendered.encode("utf-8"), result)
         return result
 
     # The config is co-owned with the consumer: leave it untouched when the
@@ -212,7 +196,7 @@ def sync_hooks(repo_root: Path, core_hooks_dir: Path) -> HookSyncResult:
     parsed = _parse_config(config_path, existing_text)
     if managed_hook_mismatches(parsed, specs, hooks_relpath):
         rendered = render_precommit_config(existing_text, specs, hooks_relpath)
-        _write_if_changed(config_path, rendered.encode("utf-8"), result)
+        sync_file(config_path, rendered.encode("utf-8"), result)
     else:
         result.unchanged.append(config_path)
 

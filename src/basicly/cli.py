@@ -22,6 +22,7 @@ from . import (
     loop_state,
     merge,
     policy,
+    projection,
     runner,
     verify,
     worktree,
@@ -71,6 +72,42 @@ def _format_path(path: Path, repo_root: Path) -> str:
         return str(path)
 
 
+def _report_sync(
+    result: projection.SyncResult,
+    repo_root: Path,
+    *,
+    noun: str,
+    label: str,
+    extra_note: str | None = None,
+) -> None:
+    """Print the shared build-side projection report (written / unchanged / summary)."""
+    for path in result.written:
+        print(f"Wrote {_format_path(path, repo_root)}")
+    if result.written and extra_note:
+        print(extra_note)
+    if not result.written:
+        print(f"No {noun} changed.")
+    print(
+        f"{label} projection complete: {len(result.written)} written, "
+        f"{len(result.unchanged)} unchanged"
+    )
+
+
+def _report_mismatches(
+    mismatches: list[tuple[Path, str]],
+    repo_root: Path,
+    *,
+    stale_message: str,
+) -> bool:
+    """Print the shared check-side stale report; return True when stale (caller exits 1)."""
+    if not mismatches:
+        return False
+    print(stale_message, file=sys.stderr)
+    for path, reason in mismatches:
+        print(f"  {_format_path(path, repo_root)}: {reason}", file=sys.stderr)
+    return True
+
+
 def _fragment_roots(paths: ProjectPaths) -> list[tuple[Path, str | None]]:
     roots: list[tuple[Path, str | None]] = [(paths.core_fragments_dir, "core")]
 
@@ -106,15 +143,6 @@ def _render_planned(repo_root: Path, paths: ProjectPaths, planned: PlannedOutput
     except ModuleNotFoundError as exc:
         raise RuntimeError(f"No renderer module for target '{planned.target_name}'") from exc
     return module.render(planned, repo_root / paths.templates_dir, __version__)
-
-
-def _write_if_changed(path: Path, content: str) -> bool:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    existing = path.read_text(encoding="utf-8") if path.exists() else None
-    if existing == content:
-        return False
-    path.write_text(content, encoding="utf-8")
-    return True
 
 
 def _build_manifest(
@@ -197,7 +225,7 @@ def cmd_build(args: argparse.Namespace) -> int:
     for item in planned:
         content = _render_planned(repo_root, paths, item)
         rendered[item.output_path] = content
-        changed = _write_if_changed(item.output_path, content)
+        changed = projection.write_if_changed(item.output_path, content.encode("utf-8"))
         if changed:
             changed_count += 1
             print(f"Wrote {item.output_path.relative_to(repo_root)}")
@@ -465,20 +493,13 @@ def cmd_hooks_build(_args: argparse.Namespace) -> int:
     config_existed = config_path.exists()
     result = sync_hooks(repo_root, _core_hooks_dir(paths))
 
-    for path in result.written:
-        print(f"Wrote {_format_path(path, repo_root)}")
+    rewrite_note = None
     if config_existed and config_path in result.written:
-        print(
+        rewrite_note = (
             "Note: .pre-commit-config.yaml was rewritten to update managed hooks; "
             "comments/formatting outside them may have been normalized."
         )
-    if not result.written:
-        print("No hook files changed.")
-
-    print(
-        f"Hooks projection complete: {len(result.written)} written, "
-        f"{len(result.unchanged)} unchanged"
-    )
+    _report_sync(result, repo_root, noun="hook files", label="Hooks", extra_note=rewrite_note)
 
     stages = hook_stages(load_hook_specs())
     if getattr(_args, "no_install", False):
@@ -502,14 +523,11 @@ def cmd_hooks_check(_args: argparse.Namespace) -> int:
     repo_root = _repo_root()
     paths = load_project_paths(repo_root)
     mismatches = check_hooks(repo_root, _core_hooks_dir(paths))
-
-    if mismatches:
-        print(
-            "Stale hook projection detected. Run `basicly hooks-build` to sync hooks.",
-            file=sys.stderr,
-        )
-        for path, reason in mismatches:
-            print(f"  {_format_path(path, repo_root)}: {reason}", file=sys.stderr)
+    if _report_mismatches(
+        mismatches,
+        repo_root,
+        stale_message="Stale hook projection detected. Run `basicly hooks-build` to sync hooks.",
+    ):
         return 1
 
     # Advisory (non-fatal): projected files can be in sync yet the gates inert
@@ -560,17 +578,7 @@ def cmd_skills_build(args: argparse.Namespace) -> int:
     repo_root = _repo_root()
     roots = _resolve_skill_output_roots(args, repo_root)
     result = sync_skills(repo_root, roots)
-
-    for path in result.written:
-        print(f"Wrote {_format_path(path, repo_root)}")
-
-    if not result.written:
-        print("No skill files changed.")
-
-    print(
-        "Skill projection complete: "
-        f"{len(result.written)} written, {len(result.unchanged)} unchanged"
-    )
+    _report_sync(result, repo_root, noun="skill files", label="Skill")
     return 0
 
 
@@ -579,14 +587,8 @@ def cmd_skills_check(args: argparse.Namespace) -> int:
     repo_root = _repo_root()
     roots = _resolve_skill_output_roots(args, repo_root)
     mismatches = check_synced_skills(repo_root, roots)
-
-    if mismatches:
-        print(
-            "Stale skill projection detected. Run `basicly skills-build` to sync skill files.",
-            file=sys.stderr,
-        )
-        for path, reason in mismatches:
-            print(f"  {_format_path(path, repo_root)}: {reason}", file=sys.stderr)
+    stale = "Stale skill projection detected. Run `basicly skills-build` to sync skill files."
+    if _report_mismatches(mismatches, repo_root, stale_message=stale):
         return 1
 
     print("Projected skills are up to date.")
