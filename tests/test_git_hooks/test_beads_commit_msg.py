@@ -49,6 +49,18 @@ def test_validate_skips_check_without_beads_workspace() -> None:
     assert error == ""
 
 
+def test_validate_skips_plain_message_without_beads_workspace() -> None:
+    """Without a workspace, a message with no issue id at all passes.
+
+    Regression (basicly-zrj.13.1): the no-candidates rejection used to run
+    before the workspace check, blocking every commit in beads-less consumers.
+    """
+    module = _load_beads_commit_msg_module()
+    is_valid, error = module.validate("feat(basicly): add hook", None)
+    assert is_valid
+    assert error == ""
+
+
 def test_validate_allows_merge_and_revert_subjects() -> None:
     """Merge and auto-generated revert subjects should be allowed."""
     module = _load_beads_commit_msg_module()

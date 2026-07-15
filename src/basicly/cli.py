@@ -787,6 +787,11 @@ def cmd_hooks_build(_args: argparse.Namespace) -> int:
         print(f"Activated git hooks for stages: {', '.join(stages)}.")
     else:
         print(f"Could not auto-activate git hooks: {message}", file=sys.stderr)
+    if not (repo_root / ".beads" / "issues.jsonl").exists():
+        print(
+            "Note: no beads workspace found (.beads/issues.jsonl); the beads-commit-msg "
+            "hook will skip its issue-id check. Enable tracking with `br init`."
+        )
     return 0
 
 
