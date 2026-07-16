@@ -69,21 +69,34 @@ def test_validate_allows_merge_and_revert_subjects() -> None:
 
 
 def test_load_known_issue_ids_reads_jsonl(tmp_path: Path, monkeypatch) -> None:
-    """_load_known_issue_ids should parse ids from a .beads/issues.jsonl file."""
+    """Ids come from cwd, never from the script's own relocatable location."""
     module = _load_beads_commit_msg_module()
+    (tmp_path / ".git").mkdir()
     beads_dir = tmp_path / ".beads"
     beads_dir.mkdir()
-    issues_jsonl = beads_dir / "issues.jsonl"
-    issues_jsonl.write_text(
+    (beads_dir / "issues.jsonl").write_text(
         '{"id":"proj-abc","title":"x"}\n{"id":"proj-def","title":"y"}\n',
         encoding="utf-8",
     )
-    monkeypatch.setattr(module, "ISSUES_JSONL", issues_jsonl)
+    monkeypatch.chdir(tmp_path)
     assert module._load_known_issue_ids() == {"proj-abc", "proj-def"}
+
+
+def test_load_known_issue_ids_walks_up_from_a_subdirectory(tmp_path: Path, monkeypatch) -> None:
+    """Direct invocation from a subdirectory still finds the repo root."""
+    module = _load_beads_commit_msg_module()
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".beads").mkdir()
+    (tmp_path / ".beads" / "issues.jsonl").write_text('{"id":"proj-abc"}\n', encoding="utf-8")
+    sub = tmp_path / "src" / "pkg"
+    sub.mkdir(parents=True)
+    monkeypatch.chdir(sub)
+    assert module._load_known_issue_ids() == {"proj-abc"}
 
 
 def test_load_known_issue_ids_returns_none_without_workspace(tmp_path: Path, monkeypatch) -> None:
     """_load_known_issue_ids should return None when no issues.jsonl exists."""
     module = _load_beads_commit_msg_module()
-    monkeypatch.setattr(module, "ISSUES_JSONL", tmp_path / ".beads" / "issues.jsonl")
+    (tmp_path / ".git").mkdir()
+    monkeypatch.chdir(tmp_path)
     assert module._load_known_issue_ids() is None
