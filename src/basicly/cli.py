@@ -52,14 +52,17 @@ from .config import (
     record_technology_selection,
 )
 from .hooks import (
+    check_copilot_hooks,
     check_hooks,
     claude_hook_specs,
     hook_stages,
     install_hooks,
     load_hook_specs,
     missing_hook_installations,
+    remove_copilot_hooks,
     remove_managed_hooks,
     selected_hook_specs,
+    sync_copilot_hooks,
     sync_hooks,
 )
 from .loader import load_fragments_from_roots, load_targets
@@ -966,6 +969,11 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
         removed += 1
         print(f"Removed managed agent hooks from {claude_settings.CLAUDE_SETTINGS_PATH}")
 
+    copilot_removed = remove_copilot_hooks(repo_root)
+    if copilot_removed:
+        removed += copilot_removed
+        print(f"Removed {copilot_removed} managed Copilot hook file(s) from .github/hooks/")
+
     for tree in (core_dst, (repo_root / paths.state_path).parent):
         if tree.is_dir():
             shutil.rmtree(tree)
@@ -1029,6 +1037,9 @@ def cmd_hooks_build(_args: argparse.Namespace) -> int:
         else:
             print(f"Agent hooks in {claude_settings.CLAUDE_SETTINGS_PATH} are up to date.")
 
+    copilot_result = sync_copilot_hooks(repo_root, _core_hooks_dir(paths), selection)
+    _report_sync(copilot_result, repo_root, noun="copilot hook files", label="Copilot hooks")
+
     stages = hook_stages(selected_hook_specs(load_hook_specs(), selection))
     if getattr(_args, "no_install", False):
         stage_flags = " ".join(f"-t {stage}" for stage in stages)
@@ -1068,6 +1079,8 @@ def cmd_hooks_check(_args: argparse.Namespace) -> int:
         mismatches.append((settings_path, reason))
     for reason in claude_settings.excluded_agent_hooks_present(repo_root, excluded_agent_specs):
         mismatches.append((settings_path, reason))
+
+    mismatches.extend(check_copilot_hooks(repo_root, _core_hooks_dir(paths), selection))
 
     if _report_mismatches(
         mismatches,

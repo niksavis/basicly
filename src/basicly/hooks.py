@@ -9,6 +9,7 @@ never clobbered. See docs/architecture.md §4.2, §11.6.
 
 from __future__ import annotations
 
+import json
 import shlex
 import shutil
 import subprocess  # nosec B404
@@ -25,11 +26,21 @@ HOOKS_MANIFEST = "hooks.yaml"
 PRECOMMIT_CONFIG = ".pre-commit-config.yaml"
 
 # Hook managers a manifest entry may target: git hooks rendered into the
-# pre-commit config, or Claude Code agent hooks rendered into the committed
-# .claude/settings.json (see claude_settings.sync_agent_hooks).
+# pre-commit config, Claude Code agent hooks rendered into the committed
+# .claude/settings.json (see claude_settings.sync_agent_hooks), or Copilot
+# agent hooks rendered into a managed .github/hooks/basicly-<id>.json.
 GIT_MANAGER = "git"
 CLAUDE_MANAGER = "claude"
-HOOK_MANAGERS = (GIT_MANAGER, CLAUDE_MANAGER)
+COPILOT_MANAGER = "copilot"
+HOOK_MANAGERS = (GIT_MANAGER, CLAUDE_MANAGER, COPILOT_MANAGER)
+
+COPILOT_HOOKS_DIR = Path(".github/hooks")
+# Filename prefix marking a Copilot hook file as basicly-managed (JSON carries
+# no comment marker; ownership rides the name).
+COPILOT_MANAGED_PREFIX = "basicly-"
+
+# Copilot hook event names its .github/hooks schema accepts for `stage`.
+COPILOT_EVENTS = {"posttooluse": "postToolUse", "pretooluse": "preToolUse"}
 
 
 @dataclass(frozen=True)
@@ -43,6 +54,9 @@ class HookSpec:
     always_run: bool = False
     manager: str = GIT_MANAGER
     technologies: tuple[str, ...] = ()
+    # Agent-hook tool filter (claude manager only): regex the manager applies
+    # to the tool name. Empty = the manager's default write-tools matcher.
+    matcher: str = ""
 
 
 def _catalog_hooks_dir() -> Path:
@@ -87,6 +101,7 @@ def load_hook_specs(hooks_dir: Path | None = None) -> list[HookSpec]:
                 always_run=bool(entry.get("always_run", False)),
                 manager=manager,
                 technologies=tuple(technologies),
+                matcher=str(entry.get("matcher", "")),
             )
         )
     return specs
@@ -105,6 +120,99 @@ def git_hook_specs(specs: list[HookSpec]) -> list[HookSpec]:
 def claude_hook_specs(specs: list[HookSpec]) -> list[HookSpec]:
     """Return the specs rendered into Claude Code agent hooks (``manager: claude``)."""
     return [spec for spec in specs if spec.manager == CLAUDE_MANAGER]
+
+
+def copilot_hook_specs(specs: list[HookSpec]) -> list[HookSpec]:
+    """Return the specs rendered into Copilot hook files (``manager: copilot``)."""
+    return [spec for spec in specs if spec.manager == COPILOT_MANAGER]
+
+
+def _copilot_hook_path(repo_root: Path, spec: HookSpec) -> Path:
+    return repo_root / COPILOT_HOOKS_DIR / f"{COPILOT_MANAGED_PREFIX}{spec.id}.json"
+
+
+def render_copilot_hook(spec: HookSpec, hooks_relpath: str) -> str:
+    """Render one managed Copilot hook file (.github/hooks schema, version 1)."""
+    event = COPILOT_EVENTS.get(spec.stage)
+    if event is None:
+        raise ValueError(
+            f"copilot hook '{spec.id}' has stage {spec.stage!r}; allowed: {sorted(COPILOT_EVENTS)}"
+        )
+    script = f"{hooks_relpath}/{spec.script}"
+    entry: dict = {
+        "type": "command",
+        # bash covers Linux/macOS (and the cloud agent sandbox); powershell
+        # covers Windows. Both run the same interpreter-managed script.
+        "bash": f"uv run python {shlex.quote(script)}",
+        "powershell": f"uv run python '{script}'",
+    }
+    if spec.matcher:
+        entry["matcher"] = spec.matcher
+    config = {"version": 1, "hooks": {event: [entry]}}
+    return json.dumps(config, indent=2) + "\n"
+
+
+def sync_copilot_hooks(
+    repo_root: Path, core_hooks_dir: Path, selection: frozenset[str] | None = None
+) -> SyncResult:
+    """Write one managed hook file per copilot spec; prune excluded/retired ones."""
+    all_specs = copilot_hook_specs(load_hook_specs())
+    specs = selected_hook_specs(all_specs, selection)
+    result = SyncResult()
+    hooks_relpath = core_hooks_dir.as_posix()
+
+    wanted = {_copilot_hook_path(repo_root, spec) for spec in specs}
+    for spec in specs:
+        rendered = render_copilot_hook(spec, hooks_relpath)
+        sync_file(_copilot_hook_path(repo_root, spec), rendered.encode("utf-8"), result)
+
+    hooks_dir = repo_root / COPILOT_HOOKS_DIR
+    if hooks_dir.is_dir():
+        for path in sorted(hooks_dir.glob(f"{COPILOT_MANAGED_PREFIX}*.json")):
+            if path not in wanted:
+                path.unlink()
+                result.written.append(path)  # a removal is a change worth reporting
+    return result
+
+
+def check_copilot_hooks(
+    repo_root: Path, core_hooks_dir: Path, selection: frozenset[str] | None = None
+) -> list[tuple[Path, str]]:
+    """Return (path, reason) for Copilot hook files that are missing or stale."""
+    all_specs = copilot_hook_specs(load_hook_specs())
+    specs = selected_hook_specs(all_specs, selection)
+    hooks_relpath = core_hooks_dir.as_posix()
+    mismatches: list[tuple[Path, str]] = []
+
+    wanted = {}
+    for spec in specs:
+        path = _copilot_hook_path(repo_root, spec)
+        wanted[path] = render_copilot_hook(spec, hooks_relpath).encode("utf-8")
+        if not path.exists():
+            mismatches.append((path, "missing"))
+        elif path.read_bytes() != wanted[path]:
+            mismatches.append((path, "content mismatch"))
+
+    hooks_dir = repo_root / COPILOT_HOOKS_DIR
+    if hooks_dir.is_dir():
+        for path in sorted(hooks_dir.glob(f"{COPILOT_MANAGED_PREFIX}*.json")):
+            if path not in wanted:
+                mismatches.append((path, "not in the catalog (stale managed hook file)"))
+    return mismatches
+
+
+def remove_copilot_hooks(repo_root: Path) -> int:
+    """Delete every managed Copilot hook file (uninstall path)."""
+    hooks_dir = repo_root / COPILOT_HOOKS_DIR
+    if not hooks_dir.is_dir():
+        return 0
+    removed = 0
+    for path in sorted(hooks_dir.glob(f"{COPILOT_MANAGED_PREFIX}*.json")):
+        path.unlink()
+        removed += 1
+    if not any(hooks_dir.iterdir()):
+        hooks_dir.rmdir()
+    return removed
 
 
 def _hook_entry(spec: HookSpec, hooks_relpath: str) -> dict:

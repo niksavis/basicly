@@ -137,6 +137,41 @@ def test_agent_hook_mismatches_flags_missing_and_stale(tmp_path: Path) -> None:
     assert claude_settings.agent_hook_mismatches(tmp_path, [GUARD], HOOKS_RELPATH)
 
 
+COUNTER = claude_settings.HookSpec(
+    id="tool-usage", script="tool-usage.py", stage="posttooluse", manager="claude", matcher="Bash"
+)
+
+
+def test_posttooluse_spec_lands_in_its_own_event_with_its_matcher(tmp_path: Path) -> None:
+    """A posttooluse spec projects under PostToolUse with its Bash matcher."""
+    assert claude_settings.sync_agent_hooks(tmp_path, [GUARD, COUNTER], HOOKS_RELPATH) is True
+
+    data = _read_settings(tmp_path)
+    assert data["hooks"]["PreToolUse"] == [
+        {
+            "matcher": claude_settings.AGENT_HOOK_MATCHER,
+            "hooks": [{"type": "command", "command": EXPECTED_COMMAND}],
+        }
+    ]
+    assert data["hooks"]["PostToolUse"] == [
+        {
+            "matcher": "Bash",
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": "uv run python .basicly/core/hooks/tool-usage.py",
+                }
+            ],
+        }
+    ]
+
+    # Idempotent across both events; removal strips both and prunes empties.
+    assert claude_settings.sync_agent_hooks(tmp_path, [GUARD, COUNTER], HOOKS_RELPATH) is False
+    assert claude_settings.agent_hook_mismatches(tmp_path, [GUARD, COUNTER], HOOKS_RELPATH) == []
+    assert claude_settings.remove_agent_hooks(tmp_path, [GUARD, COUNTER]) is True
+    assert "hooks" not in _read_settings(tmp_path)
+
+
 def test_remove_agent_hooks_strips_managed_only(tmp_path: Path) -> None:
     """Uninstall drops managed groups, keeps foreign ones, and prunes empties."""
     foreign = {"matcher": "Bash", "hooks": [{"type": "command", "command": "echo hi"}]}

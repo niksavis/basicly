@@ -652,7 +652,14 @@ Ordered roughly by blocking-ness. Each is a candidate beads epic/feature/task.
    `basicly-t51`): a tool-agnostic `core/hooks/hooks.yaml` manifest drives
    `basicly hooks-build`, which materializes the scripts and merges a managed
    `repo: local` block into a consumer's `.pre-commit-config.yaml` (foreign hooks
-   preserved, idempotent); `hooks-check` reports drift.
+   preserved, idempotent); `hooks-check` reports drift. Three managers ship:
+   `git` (pre-commit config), `claude` (agent hooks in `.claude/settings.json`;
+   the event derives from the spec `stage`, with an optional per-spec `matcher`),
+   and `copilot` (managed `.github/hooks/basicly-<id>.json` files). The
+   `tool-usage` hook (`basicly-mcz`) rides both agent managers: a PostToolUse
+   counter tallying every shell command's pipeline heads into the self-ignored
+   `.basicly/usage/tool-usage.json` — token-free telemetry for culling idle
+   tools/skills from the catalog with real data.
 7. **Skill/fragment source format — [Done].** Catalog content is authored as YAML
    (`skill.yaml`, `<id>.fragment.yaml`) and projected to the discoverable `.md` at target
    roots only; JSON Schemas, the `catalog-authoring` skill, `skills-new`/`fragment-new`
