@@ -19,7 +19,7 @@ from pathlib import Path
 import yaml
 
 from .catalog import bundled_catalog_root, iter_catalog_files
-from .projection import SyncResult, sync_file
+from .projection import SyncResult, atomic_write_text, sync_file
 from .schema import ValidationError, technology_selected
 
 HOOKS_MANIFEST = "hooks.yaml"
@@ -515,9 +515,9 @@ def remove_managed_hooks(repo_root: Path) -> str | None:
 
     if kept:
         parsed["repos"] = kept
-        config_path.write_text(
+        atomic_write_text(
+            config_path,
             yaml.safe_dump(parsed, sort_keys=False, default_flow_style=False),
-            encoding="utf-8",
         )
         return f"Removed managed hooks from {PRECOMMIT_CONFIG} (foreign hooks preserved)"
 

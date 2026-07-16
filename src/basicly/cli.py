@@ -219,15 +219,15 @@ def _sweep_stale_outputs(
     removed = 0
     resolved_root = repo_root.resolve()
     for rel in sorted(set(existing_outputs) - set(manifest["outputs"])):
-        stale = (repo_root / rel).resolve()
-        if not stale.is_relative_to(resolved_root):
-            print(f"Note: skipping manifest entry outside the repo: {rel}", file=sys.stderr)
+        stale = _sweepable_path(repo_root, rel)
+        if stale is None:
+            print(f"Note: skipping unsafe manifest entry: {rel}", file=sys.stderr)
             continue
-        if stale.is_file():
+        if stale.is_symlink() or stale.is_file():
             stale.unlink()
             removed += 1
             print(f"Removed {rel}")
-            _remove_empty_parents(stale.parent, resolved_root)
+            _remove_empty_parents(stale.parent.resolve(), resolved_root)
     return removed
 
 
@@ -339,7 +339,9 @@ def cmd_check(_args: argparse.Namespace) -> int:
             mismatches.append((item.output_path, expected_hash, "missing"))
             continue
 
-        actual = item.output_path.read_text(encoding="utf-8")
+        # read_bytes + decode: no universal-newline translation, so CRLF drift
+        # hashes differently — check must see exactly what build compares.
+        actual = item.output_path.read_bytes().decode("utf-8")
         actual_hash = sha256_of_text(actual)
         if actual_hash != expected_hash:
             mismatches.append((item.output_path, expected_hash, actual_hash))
@@ -824,6 +826,25 @@ def cmd_install(args: argparse.Namespace) -> int:
     return 0
 
 
+def _sweepable_path(repo_root: Path, rel: str) -> Path | None:
+    """The un-resolved in-repo path for a manifest entry, or None when unsafe.
+
+    The entry itself is unlinked — never its symlink target — and anything
+    absolute, traversing (``..``), or under ``.git/`` is refused: a manifest
+    entry must not be able to delete repository internals or out-of-repo
+    files through a planted link.
+    """
+    entry = Path(rel)
+    if entry.is_absolute() or ".." in entry.parts or not entry.parts:
+        return None
+    if entry.parts[0] == ".git":
+        return None
+    candidate = repo_root / entry
+    if not candidate.parent.resolve().is_relative_to(repo_root.resolve()):
+        return None
+    return candidate
+
+
 def _remove_empty_parents(directory: Path, stop: Path) -> None:
     """Remove now-empty directories left behind by a deletion, up to ``stop``."""
     current = directory
@@ -850,15 +871,15 @@ def _remove_generated_outputs(repo_root: Path, paths: ProjectPaths) -> int:
     removed = 0
     resolved_root = repo_root.resolve()
     for rel in rel_paths:
-        target = (repo_root / rel).resolve()
-        if not target.is_relative_to(resolved_root):
-            print(f"Note: skipping manifest entry outside the repo: {rel}", file=sys.stderr)
+        target = _sweepable_path(repo_root, rel)
+        if target is None:
+            print(f"Note: skipping unsafe manifest entry: {rel}", file=sys.stderr)
             continue
-        if target.is_file():
+        if target.is_symlink() or target.is_file():
             target.unlink()
             removed += 1
             print(f"Removed {rel}")
-            _remove_empty_parents(target.parent, resolved_root)
+            _remove_empty_parents(target.parent.resolve(), resolved_root)
 
     manifest_path.unlink()
     print(f"Removed {_format_path(manifest_path, repo_root)}")
@@ -967,7 +988,9 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
         removed += 1
         print(note)
 
-    if claude_settings.remove_agent_hooks(repo_root, claude_hook_specs(load_hook_specs())):
+    if claude_settings.remove_agent_hooks(
+        repo_root, claude_hook_specs(load_hook_specs()), _core_hooks_dir(paths).as_posix()
+    ):
         removed += 1
         print(f"Removed managed agent hooks from {claude_settings.CLAUDE_SETTINGS_PATH}")
 
@@ -1079,7 +1102,9 @@ def cmd_hooks_check(_args: argparse.Namespace) -> int:
         repo_root, agent_specs, _core_hooks_dir(paths).as_posix()
     ):
         mismatches.append((settings_path, reason))
-    for reason in claude_settings.excluded_agent_hooks_present(repo_root, excluded_agent_specs):
+    for reason in claude_settings.excluded_agent_hooks_present(
+        repo_root, excluded_agent_specs, _core_hooks_dir(paths).as_posix()
+    ):
         mismatches.append((settings_path, reason))
 
     mismatches.extend(check_copilot_hooks(repo_root, _core_hooks_dir(paths), selection))
