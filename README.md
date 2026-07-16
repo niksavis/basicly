@@ -36,6 +36,16 @@ One command installs the harness into a consumer repo — and the same command p
 uvx --from git+https://github.com/niksavis/basicly@v0.1.3 basicly install
 ```
 
+No `uv`/Python on the machine? The bootstrap shim installs `uv` first, then runs
+the same command (append `-s -- --ref v0.1.3` to pin, plus any `basicly install`
+arguments):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/niksavis/basicly/main/.scripts/bootstrap.sh | sh
+```
+
+Windows: `.scripts/bootstrap.ps1` is the PowerShell twin.
+
 Pin `@v0.1.3` for reproducible installs, or track `@main` for the latest. The repo is public; no authentication is needed. Install converges everything: managed core catalog, generated agent instruction files, projected skills, activated git hooks, a beads tracker workspace, VS Code tasks, and a CI gates workflow. Customize via YAML fragments in `.basicly-local/fragments/user/` — install never touches them. Remove with `basicly uninstall` (add `--purge` to also drop your overlay and config).
 
 ## Quick start
