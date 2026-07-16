@@ -7,14 +7,18 @@ from pathlib import Path
 import pytest
 
 from basicly.agents import (
+    GENERATED_MARKER,
     MAX_BODY_CHARS,
     SLOT_ORDER,
+    check_synced_agents,
     compose_body,
     compose_description,
     default_agent_roots,
     discover_agents,
     discover_blocks,
     lint_agent_sources,
+    render_agent_md,
+    sync_agents,
     unknown_block_refs,
 )
 from basicly.schema import ValidationError
@@ -283,3 +287,84 @@ def test_default_agent_roots_are_core_then_overlay(tmp_path: Path) -> None:
         (tmp_path / ".basicly/core/agents", "core"),
         (tmp_path / ".basicly-local/agents", "user"),
     ]
+
+
+def test_render_agent_md_shape(tmp_path: Path) -> None:
+    """Frontmatter, marker, and body render in the documented shape."""
+    _write_agent(tmp_path / "core", "code-reviewer")
+    (agent,) = discover_agents(_roots(tmp_path))
+    rendered = render_agent_md(agent, {})
+    lines = rendered.split("\n")
+    assert lines[0] == "---"
+    assert lines[1] == "name: code-reviewer"
+    assert lines[2] == (
+        "description: Reviews things. Use proactively after changes. "
+        "Returns prioritized findings. Read-only."
+    )
+    assert lines[3] == "tools: Read, Grep, Glob"
+    assert lines[4] == "---"
+    assert lines[5] == ""
+    assert lines[6] == GENERATED_MARKER
+    assert "model:" not in rendered  # inherit is Claude's default and is omitted
+    assert rendered.endswith("The constraints slot.\n")
+    assert not rendered.endswith("\n\n")
+
+
+def test_render_marker_stays_in_protect_generated_window(tmp_path: Path) -> None:
+    """The generated marker lands within the first 10 lines (hook scan window)."""
+    _write_agent(
+        tmp_path / "core",
+        "code-reviewer",
+        _agent_yaml("code-reviewer", extra="model: haiku\nclaude:\n  memory: project\n"),
+    )
+    (agent,) = discover_agents(_roots(tmp_path))
+    head = render_agent_md(agent, {}).split("\n")[:10]
+    assert any(GENERATED_MARKER in line for line in head)
+    assert "model: haiku" in head
+    assert "memory: project" in head
+
+
+def test_claude_passthrough_may_not_shadow_rendered_keys(tmp_path: Path) -> None:
+    """A claude map that shadows a rendered frontmatter key is rejected."""
+    _write_agent(
+        tmp_path / "core",
+        "code-reviewer",
+        _agent_yaml("code-reviewer", extra="claude:\n  model: opus\n"),
+    )
+    with pytest.raises(ValidationError, match="may not shadow"):
+        discover_agents(_roots(tmp_path))
+
+
+def _repo_with_agent(tmp_path: Path) -> Path:
+    _write_block(tmp_path / ".basicly/core/agents", "honesty", body="Say so if clean.")
+    slots = "\n".join(f"  {name}:\n    - text: {name} text" for name in SLOT_ORDER[:-1])
+    slots += "\n  constraints:\n    - block: honesty"
+    _write_agent(
+        tmp_path / ".basicly/core/agents",
+        "code-reviewer",
+        _agent_yaml("code-reviewer", slots=slots),
+    )
+    return tmp_path
+
+
+def test_sync_agents_writes_and_is_idempotent(tmp_path: Path) -> None:
+    """sync_agents writes the projected file once and reports no changes after."""
+    repo = _repo_with_agent(tmp_path)
+    first = sync_agents(repo)
+    assert first.written == [repo / ".claude/agents/code-reviewer.md"]
+    rendered = (repo / ".claude/agents/code-reviewer.md").read_text(encoding="utf-8")
+    assert "Say so if clean." in rendered
+    second = sync_agents(repo)
+    assert second.written == []
+    assert second.unchanged == [repo / ".claude/agents/code-reviewer.md"]
+
+
+def test_check_synced_agents_flags_missing_and_stale(tmp_path: Path) -> None:
+    """Check reports missing before build, clean after, stale after a hand-edit."""
+    repo = _repo_with_agent(tmp_path)
+    target = repo / ".claude/agents/code-reviewer.md"
+    assert check_synced_agents(repo) == [(target, "missing")]
+    sync_agents(repo)
+    assert check_synced_agents(repo) == []
+    target.write_text(target.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    assert check_synced_agents(repo) == [(target, "content mismatch")]
