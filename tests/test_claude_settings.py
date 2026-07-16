@@ -79,3 +79,77 @@ def test_cli_bg_isolation_noop_when_already_none(
 
     assert cli.main(["worktree", "bg-isolation", "--yes"]) == 0
     assert _read_settings(tmp_path) == {"worktree": {"bgIsolation": "none"}}
+
+
+GUARD = claude_settings.HookSpec(
+    id="protect-generated", script="protect-generated.py", stage="pretooluse", manager="claude"
+)
+HOOKS_RELPATH = ".basicly/core/hooks"
+EXPECTED_COMMAND = "uv run python .basicly/core/hooks/protect-generated.py"
+
+
+def test_sync_agent_hooks_writes_and_preserves_other_keys(tmp_path: Path) -> None:
+    """The projection adds the PreToolUse wiring without disturbing settings."""
+    _write_settings(tmp_path, {"permissions": {"allow": ["Bash"]}})
+
+    assert claude_settings.sync_agent_hooks(tmp_path, [GUARD], HOOKS_RELPATH) is True
+
+    data = _read_settings(tmp_path)
+    assert data["permissions"] == {"allow": ["Bash"]}
+    groups = data["hooks"]["PreToolUse"]
+    assert groups == [
+        {
+            "matcher": claude_settings.AGENT_HOOK_MATCHER,
+            "hooks": [{"type": "command", "command": EXPECTED_COMMAND}],
+        }
+    ]
+
+
+def test_sync_agent_hooks_is_idempotent(tmp_path: Path) -> None:
+    """A second sync reports no change and leaves a single managed group."""
+    assert claude_settings.sync_agent_hooks(tmp_path, [GUARD], HOOKS_RELPATH) is True
+    assert claude_settings.sync_agent_hooks(tmp_path, [GUARD], HOOKS_RELPATH) is False
+    assert len(_read_settings(tmp_path)["hooks"]["PreToolUse"]) == 1
+
+
+def test_merge_preserves_foreign_pretooluse_groups(tmp_path: Path) -> None:
+    """Consumer-authored agent hooks survive the managed projection."""
+    foreign = {"matcher": "Bash", "hooks": [{"type": "command", "command": "echo hi"}]}
+    _write_settings(tmp_path, {"hooks": {"PreToolUse": [foreign]}})
+
+    assert claude_settings.sync_agent_hooks(tmp_path, [GUARD], HOOKS_RELPATH) is True
+
+    groups = _read_settings(tmp_path)["hooks"]["PreToolUse"]
+    assert foreign in groups
+    assert len(groups) == 2
+
+
+def test_agent_hook_mismatches_flags_missing_and_stale(tmp_path: Path) -> None:
+    """A missing or altered managed entry is reported; a synced one is not."""
+    assert claude_settings.agent_hook_mismatches(tmp_path, [GUARD], HOOKS_RELPATH)
+
+    claude_settings.sync_agent_hooks(tmp_path, [GUARD], HOOKS_RELPATH)
+    assert claude_settings.agent_hook_mismatches(tmp_path, [GUARD], HOOKS_RELPATH) == []
+
+    data = _read_settings(tmp_path)
+    data["hooks"]["PreToolUse"][0]["hooks"][0]["command"] = "echo tampered"
+    _write_settings(tmp_path, data)
+    assert claude_settings.agent_hook_mismatches(tmp_path, [GUARD], HOOKS_RELPATH)
+
+
+def test_remove_agent_hooks_strips_managed_only(tmp_path: Path) -> None:
+    """Uninstall drops managed groups, keeps foreign ones, and prunes empties."""
+    foreign = {"matcher": "Bash", "hooks": [{"type": "command", "command": "echo hi"}]}
+    _write_settings(tmp_path, {"hooks": {"PreToolUse": [foreign]}, "other": 1})
+    claude_settings.sync_agent_hooks(tmp_path, [GUARD], HOOKS_RELPATH)
+
+    assert claude_settings.remove_agent_hooks(tmp_path, [GUARD]) is True
+    data = _read_settings(tmp_path)
+    assert data["hooks"]["PreToolUse"] == [foreign]
+    assert data["other"] == 1
+
+    # With no foreign groups left, the empty containers disappear entirely.
+    _write_settings(tmp_path, {"other": 1})
+    claude_settings.sync_agent_hooks(tmp_path, [GUARD], HOOKS_RELPATH)
+    assert claude_settings.remove_agent_hooks(tmp_path, [GUARD]) is True
+    assert _read_settings(tmp_path) == {"other": 1}
