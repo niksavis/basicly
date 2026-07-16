@@ -8,7 +8,7 @@ tags: [commands, build, test]
 status: active
 title: Commands
 body: |
-  Commands in code fences are exact - run them verbatim instead of improvising variants.
+  Run these verbatim; don't improvise variants.
 
   Setup:
 
