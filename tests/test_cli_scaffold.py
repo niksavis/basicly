@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from basicly import cli
+from basicly.config import load_project_paths
 from basicly.loader import load_fragments
 from basicly.skills import discover_skills
 
@@ -55,3 +56,29 @@ def test_fragment_new_refuses_existing(tmp_path: Path, monkeypatch: pytest.Monke
     monkeypatch.chdir(tmp_path)
     assert cli.main(["fragment-new", "demo-frag"]) == 0
     assert cli.main(["fragment-new", "demo-frag"]) == 1
+
+
+def test_overlay_stubs_are_loadable_drafts(tmp_path: Path) -> None:
+    """The scaffolded overview/commands stubs parse as valid draft fragments."""
+    paths = load_project_paths(tmp_path)
+    cli._scaffold_overlay_stubs(tmp_path, paths)
+
+    user_root = tmp_path / ".basicly-local" / "fragments" / "user"
+    fragments = load_fragments(user_root, set())
+    assert sorted(f.id for f in fragments) == ["commands", "project-overview"]
+    assert all(f.status == "draft" for f in fragments)
+
+
+def test_overlay_stubs_never_overwrite(tmp_path: Path) -> None:
+    """A filled-in stub survives re-running the scaffold."""
+    paths = load_project_paths(tmp_path)
+    cli._scaffold_overlay_stubs(tmp_path, paths)
+
+    stub = (
+        tmp_path / ".basicly-local" / "fragments" / "user" / "commands" / "commands.fragment.yaml"
+    )
+    marker = stub.read_text(encoding="utf-8") + "# user edit\n"
+    stub.write_text(marker, encoding="utf-8")
+
+    cli._scaffold_overlay_stubs(tmp_path, paths)
+    assert stub.read_text(encoding="utf-8") == marker

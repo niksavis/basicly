@@ -20,12 +20,16 @@ not rely on other agent config files being present.
 
 ## Project Defaults
 
-- Scope: cross-platform terminal tooling and automation.
 - Platforms: Windows, Linux, macOS.
-- Python: managed with `uv`.
 - Script harness and CI helpers: `.scripts/`.
 - Shared skills: `.claude/skills/`.
-- No global build/test command yet; the Quality Gate's "checks this repo enforces" means the ones configured per task/subproject.
+
+## Project Overview
+
+- Purpose: harness distribution for coding agents - one YAML catalog projected into agent instruction files, skills, and git hooks, consumed by other repos via `basicly install`.
+- Stack: Python 3.14+, managed with `uv` (hatchling build; version single-sourced from `src/basicly/__init__.py`).
+- Entry point: the `basicly` CLI (`src/basicly/cli.py`); catalog sources live under `.basicly/core/`, per-repo overrides under `.basicly-local/`.
+- Architecture: `docs/architecture.md` is the single authoritative reference.
 
 ## Secure Coding
 
@@ -34,6 +38,44 @@ not rely on other agent config files being present.
 - Never commit secrets (keys, tokens, passwords, connection strings); use env vars or a secret manager and keep them out of logs.
 - Don't leak internal detail (stack traces, paths) in user-facing errors; log the detail, return a generic message.
 - Never commit user- or machine-specific paths, usernames, or hostnames; keep repo defaults generic and portable.
+
+## Commands
+
+Commands in code fences are exact - run them verbatim instead of improvising variants.
+
+Setup:
+
+```sh
+uv sync --group dev
+uv run pre-commit install --install-hooks -t pre-commit -t commit-msg -t pre-push
+```
+
+Test:
+
+```sh
+uv run pytest -q
+```
+
+Single test file:
+
+```sh
+uv run pytest tests/test_cli.py -q
+```
+
+Lint / format:
+
+```sh
+uv run ruff check
+uv run ruff format --check
+```
+
+Projection gates (after editing catalog sources):
+
+```sh
+uv run basicly check
+uv run basicly skills-check --all-default-roots
+uv run basicly hooks-check
+```
 
 ## Git Discipline
 

@@ -1,0 +1,14 @@
+schema_version: 1
+id: project-overview
+description: What basicly is - purpose, stack, entry points.
+category: project
+priority: critical
+applies_to: [all]
+tags: [overview, priming]
+status: active
+title: Project Overview
+body: |
+  - Purpose: harness distribution for coding agents - one YAML catalog projected into agent instruction files, skills, and git hooks, consumed by other repos via `basicly install`.
+  - Stack: Python 3.14+, managed with `uv` (hatchling build; version single-sourced from `src/basicly/__init__.py`).
+  - Entry point: the `basicly` CLI (`src/basicly/cli.py`); catalog sources live under `.basicly/core/`, per-repo overrides under `.basicly-local/`.
+  - Architecture: `docs/architecture.md` is the single authoritative reference.
