@@ -119,7 +119,7 @@ def test_manifest_ships_tool_usage_for_both_agent_managers() -> None:
     """The usage counter targets Claude PostToolUse (Bash) and Copilot postToolUse."""
     specs = load_hook_specs()
     claude = next(spec for spec in specs if spec.id == "tool-usage")
-    assert (claude.manager, claude.stage, claude.matcher) == ("claude", "posttooluse", "Bash")
+    assert (claude.manager, claude.stage, claude.matcher) == ("claude", "posttooluse", "Bash|Skill")
     copilot = next(spec for spec in specs if spec.id == "tool-usage-copilot")
     assert (copilot.manager, copilot.stage) == ("copilot", "posttooluse")
     assert copilot.script == claude.script == "tool-usage.py"

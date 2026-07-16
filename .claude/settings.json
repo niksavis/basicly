@@ -56,7 +56,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "Bash|Skill",
         "hooks": [
           {
             "type": "command",
