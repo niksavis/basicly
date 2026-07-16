@@ -37,8 +37,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import classify, decompose, loop_state, merge, policy, verify, worktree
-from .config import PolicyConfig, load_policy_config, load_worktree_config
+from . import classify, decompose, loop_state, merge, policy, runner, verify, worktree
+from .config import PolicyConfig, load_policy_config, load_runner_config, load_worktree_config
 from .decompose import ChildSpec
 
 # Work classes that are leaf tracks — they build directly rather than decompose
@@ -188,11 +188,48 @@ def _on_ship(ctx: _Ctx) -> AdvanceResult:
 
 
 def _start_build_leaf(ctx: _Ctx) -> AdvanceResult:
-    """Provision the leaf's worktree and block for the agent's work (derive → build)."""
+    """Provision the leaf's worktree and dispatch the selected runner in it.
+
+    A headless runner does the node's coding before the block (§12.8); the
+    manual handoff runner keeps the block-and-resume contract untouched. Either
+    way this step blocks — the next advance verifies and lands whatever the
+    agent committed.
+    """
     name = _worktree_name(ctx.issue_id)
     session = worktree.create(name)
     _bind_worktree(ctx, name, session.branch)
-    return _blocked(ctx, f"worktree {name!r} provisioned; awaiting the agent's work")
+    return _dispatch_runner(ctx, name, Path(session.worktree_path))
+
+
+def _dispatch_runner(ctx: _Ctx, name: str, cwd: Path) -> AdvanceResult:
+    """Run the selected agent headless in the worktree; a handoff just blocks."""
+    config = load_runner_config(ctx.repo_root)
+    spec = runner.select_runner(config.specs, config.default)
+    result = runner.run(spec, _dispatch_prompt(ctx.issue_id), cwd)
+    if result.handoff:
+        return _blocked(ctx, f"worktree {name!r} provisioned; awaiting the agent's work")
+    if result.returncode != 0:
+        tail = (result.stderr or result.stdout).strip().splitlines()
+        detail = tail[-1] if tail else "no output"
+        return _blocked(
+            ctx,
+            f"runner {spec.name!r} failed in worktree {name!r} "
+            f"(exit {result.returncode}): {detail}",
+        )
+    return _blocked(
+        ctx, f"runner {spec.name!r} finished in worktree {name!r}; advance again to land it"
+    )
+
+
+def _dispatch_prompt(issue_id: str) -> str:
+    """The agent-neutral dispatch prompt: point at the tracker, not at an agent."""
+    return (
+        f"You are in a git worktree dedicated to the tracked issue {issue_id}. "
+        f"Read AGENTS.md for the repo rules, run `br show {issue_id}` for the "
+        "requirement and acceptance criteria, implement the work, and commit it "
+        "on the current branch referencing that issue id. Do not merge, push, or "
+        "close the issue — the harness loop lands and ships it."
+    )
 
 
 def _verify_and_land(ctx: _Ctx, worktree_name: str) -> AdvanceResult:

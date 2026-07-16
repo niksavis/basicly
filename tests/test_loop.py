@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from basicly import classify, decompose, loop, merge, policy, verify, worktree
-from basicly.config import PolicyConfig
+from basicly import classify, decompose, loop, merge, policy, runner, verify, worktree
+from basicly.config import PolicyConfig, RunnerConfig
 from basicly.loop_state import NodeState, WorktreeBinding
 from basicly.policy import DoRResult, GateStatus
 from basicly.worktree import Session
@@ -113,10 +113,17 @@ def test_classify_blocks_when_dor_incomplete(
     assert result.blocked and "definition of ready" in result.detail
 
 
-def test_classify_leaf_provisions_worktree(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """A ready leaf type provisions its worktree and blocks for the agent's work."""
+def _pin_runner(monkeypatch: pytest.MonkeyPatch, default: str) -> None:
+    """Pin the loop's runner selection to a built-in adapter by name."""
+    monkeypatch.setattr(
+        loop,
+        "load_runner_config",
+        lambda *_a: RunnerConfig(specs=runner.BUILTIN_RUNNERS, default=default),
+    )
+
+
+def _ready_leaf(at, monkeypatch: pytest.MonkeyPatch) -> dict:
+    """Pin a ready leaf at classify with a fake worktree; return the create record."""
     at(_state("classify", issue_type="task"))
     monkeypatch.setattr(policy, "definition_of_ready", lambda *_a: DoRResult(True, ()))
     created = {}
@@ -127,9 +134,59 @@ def test_classify_leaf_provisions_worktree(
 
     monkeypatch.setattr(worktree, "create", _create)
     monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: None)
+    return created
+
+
+def test_classify_leaf_provisions_worktree(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A ready leaf provisions its worktree; the handoff runner blocks unchanged."""
+    created = _ready_leaf(at, monkeypatch)
+    _pin_runner(monkeypatch, "manual")
     result = _advance(tmp_path)
     assert created["n"] == "i"
     assert result.blocked and "provisioned" in result.detail
+    assert "awaiting the agent's work" in result.detail
+
+
+def test_classify_leaf_dispatches_headless_runner(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A headless runner is dispatched in the worktree with the agent-neutral prompt."""
+    _ready_leaf(at, monkeypatch)
+    _pin_runner(monkeypatch, "claude")
+    calls = {}
+
+    def _run(spec, prompt, cwd, **_k):
+        calls["spec"], calls["prompt"], calls["cwd"] = spec, prompt, cwd
+        return runner.RunResult(spec.name, tuple(spec.command), executed=True, returncode=0)
+
+    monkeypatch.setattr(runner, "run", _run)
+    result = _advance(tmp_path)
+    assert calls["spec"].name == "claude"
+    assert calls["cwd"] == Path("/tmp/i")
+    assert "i" in calls["prompt"] and "AGENTS.md" in calls["prompt"]
+    assert "Do not merge" in calls["prompt"]
+    assert result.blocked and "runner 'claude' finished" in result.detail
+
+
+def test_classify_leaf_reports_failed_runner(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A failing headless run blocks with the runner name and exit code."""
+    _ready_leaf(at, monkeypatch)
+    _pin_runner(monkeypatch, "codex")
+    monkeypatch.setattr(
+        runner,
+        "run",
+        lambda spec, *_a, **_k: runner.RunResult(
+            spec.name, (), executed=True, returncode=2, stderr="boom\n"
+        ),
+    )
+    result = _advance(tmp_path)
+    assert result.blocked
+    assert "runner 'codex' failed" in result.detail
+    assert "exit 2" in result.detail and "boom" in result.detail
 
 
 def test_classify_feature_blocks_without_children(
