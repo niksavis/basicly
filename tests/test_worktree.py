@@ -358,3 +358,35 @@ def test_cli_worktree_uses_configured_base_branch(
     session = worktree.load_session("on-develop", git_repo)
     assert session is not None
     assert session.base == "develop"
+
+
+def test_cleanup_refuses_a_worktree_with_uncommitted_work(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Uncommitted changes block cleanup unless forced; force discards them."""
+    monkeypatch.chdir(git_repo)
+    session = worktree.create("dirty")
+    (session.path / "wip.txt").write_text("not committed", encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="uncommitted changes"):
+        worktree.cleanup("dirty")
+    assert session.path.exists()
+
+    worktree.cleanup("dirty", force=True)
+    assert not session.path.exists()
+
+
+def test_cleanup_ignores_dep_dirs_and_tracker_export(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Provisioned dep dirs and the tracker export never count as dirt."""
+    monkeypatch.chdir(git_repo)
+    session = worktree.create("depsonly")
+    (session.path / ".venv").mkdir(exist_ok=True)
+    (session.path / ".venv" / "marker.txt").write_text("x", encoding="utf-8")
+    beads = session.path / ".beads"
+    beads.mkdir(exist_ok=True)
+    (beads / "issues.jsonl").write_text("{}\n", encoding="utf-8")
+
+    worktree.cleanup("depsonly")
+    assert not session.path.exists()

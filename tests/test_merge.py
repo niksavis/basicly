@@ -166,3 +166,43 @@ def test_merge_queue_all_merged(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     results = merge.merge_queue(tmp_path, [("a", "b1"), ("b", "b2")])
     assert [q.result.name for q in results] == ["a", "b"]
     assert all(q.result.merged for q in results)
+
+
+@pytest.mark.usefixtures("base_ready")
+def test_merge_worktree_rejects_an_unknown_bead(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A bead id missing from the tracker fails before any git merge starts."""
+    beads = tmp_path / ".beads"
+    beads.mkdir()
+    (beads / "issues.jsonl").write_text('{"id":"proj-abc"}\n', encoding="utf-8")
+    fake = _FakeGit({"status": _Proc(0, "")})
+    monkeypatch.setattr(merge, "git", fake)
+
+    with pytest.raises(SystemExit, match="unknown bead id"):
+        merge.merge_worktree(tmp_path, "feat", bead="proj-nope")
+    assert not fake.ran("merge")
+
+
+@pytest.mark.usefixtures("base_ready")
+def test_merge_worktree_aborts_when_the_merge_commit_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A hook-rejected merge commit is aborted instead of stranding MERGE_HEAD."""
+    fake = _FakeGit({
+        "status": _Proc(0, ""),
+        "rebase": _Proc(0),
+        "merge-tree": _Proc(0),
+        "merge": _Proc(1),
+    })
+    monkeypatch.setattr(merge, "git", fake)
+    monkeypatch.setattr(
+        merge.verify,
+        "run_verify",
+        lambda _p, _m: verify.VerifyReport(mode="full", results=()),
+    )
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="proj-abc")
+
+    assert result.status == "merge-failed"
+    assert ["merge", "--abort"] in [c[:2] for c in fake.calls]
