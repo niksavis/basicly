@@ -10,7 +10,50 @@ permissions:
   contents: write
 
 jobs:
+  verify:
+    if: |
+      github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Python dependencies
+        run: uv sync
+      - name: Install Node dependencies
+        run: npm install --no-fund --no-audit
+      - name: Lint markdown
+        run: npx --no-install markdownlint-cli2
+      - name: Lint catalog sources
+        run: uv run python -m basicly.cli catalog-lint
+      - name: Run pre-commit checks
+        run: uv run python .basicly/core/hooks/pre-commit.py
+      - name: Run pre-push checks
+        run: uv run python .basicly/core/hooks/pre-push.py
+
+  smoke-install:
+    if: |
+      github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: astral-sh/setup-uv@v5
+      - name: Install from the tag into a fresh repo then check and uninstall
+        shell: bash
+        run: |
+          repo="https://github.com/${GITHUB_REPOSITORY}"
+          tag="${GITHUB_REF_NAME}"
+          mkdir smoke && cd smoke
+          git init -q
+          git config user.email ci@example.invalid
+          git config user.name ci
+          uvx --from "git+${repo}@${tag}" basicly install
+          uvx --from "git+${repo}@${tag}" basicly check
+          uvx --from "git+${repo}@${tag}" basicly uninstall
+
   release:
+    needs: [verify, smoke-install]
     if: |
       github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
@@ -86,9 +129,15 @@ jobs:
 
           cp release-section.md release-notes.md
 
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Build distribution artifacts
+        run: uv build
+
       - name: Create or update GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.resolve_tag.outputs.tag_name }}
           name: ${{ steps.resolve_tag.outputs.tag_name }}
           body_path: release-notes.md
+          files: dist/*
