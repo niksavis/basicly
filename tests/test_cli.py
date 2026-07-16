@@ -136,6 +136,46 @@ def test_cli_install_is_idempotent_and_preserves_edits(tmp_path: Path) -> None:
     assert config.read_text(encoding="utf-8") == marker
 
 
+def test_cli_install_technology_selection_filters_and_prunes(tmp_path: Path) -> None:
+    """A recorded selection keeps tagged sources out and re-narrowing prunes them."""
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+
+    result = run_basicly_consumer(consumer, "install", "--technologies", "zsh")
+    assert result.returncode == 0, result.stderr
+    assert 'technologies = ["zsh"]' in (consumer / "basicly.toml").read_text(encoding="utf-8")
+    # Universal skills ship; python/tmux-tagged skills are filtered out.
+    assert (consumer / ".claude" / "skills" / "tool-git" / "SKILL.md").is_file()
+    assert (consumer / ".claude" / "skills" / "tool-zsh" / "SKILL.md").is_file()
+    assert not (consumer / ".claude" / "skills" / "tool-uv").exists()
+    assert not (consumer / ".claude" / "skills" / "tool-tmux").exists()
+    # Core sync stays full: the filtered skill's source is still materialized.
+    assert (consumer / ".basicly" / "core" / "skills" / "tool-uv" / "skill.yaml").is_file()
+
+    # Widening the selection ships the tagged skill; narrowing again prunes it.
+    result = run_basicly_consumer(consumer, "install", "--technologies", "python")
+    assert result.returncode == 0, result.stderr
+    assert (consumer / ".claude" / "skills" / "tool-uv" / "SKILL.md").is_file()
+    result = run_basicly_consumer(consumer, "install", "--technologies", "zsh")
+    assert result.returncode == 0, result.stderr
+    assert not (consumer / ".claude" / "skills" / "tool-uv").exists()
+
+    # An out-of-vocabulary flag value fails loudly before anything is recorded.
+    result = run_basicly_consumer(consumer, "install", "--technologies", "pyton")
+    assert result.returncode == 1
+    assert "Unknown technology value" in result.stderr
+
+
+def test_record_install_technologies_rejects_empty_selection(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A flag value that parses to nothing is an error, not an empty selection."""
+    assert cli._record_install_technologies(tmp_path, None) is True
+    assert cli._record_install_technologies(tmp_path, ",") is False
+    assert "at least one value" in capsys.readouterr().err
+    assert not (tmp_path / "basicly.toml").exists()
+
+
 def test_setup_beads_initializes_with_derived_prefix(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from basicly import hooks as hooks_module
 from basicly.hooks import (
     HookSpec,
     check_hooks,
@@ -19,6 +20,7 @@ from basicly.hooks import (
     load_hook_specs,
     merge_precommit_config,
     missing_hook_installations,
+    selected_hook_specs,
     sync_hooks,
 )
 from basicly.schema import ValidationError
@@ -137,6 +139,43 @@ def test_sync_hooks_requires_materialized_core(tmp_path: Path) -> None:
     """Without a materialized core, hooks-build refuses and points at install."""
     with pytest.raises(ValidationError, match="basicly install"):
         sync_hooks(tmp_path, CORE_HOOKS_DIR)
+
+
+def test_selected_hook_specs_filters_tagged_specs() -> None:
+    """Untagged specs are universal; tagged ones need selection overlap."""
+    universal = HookSpec(id="a", script="a.py", stage="pre-commit")
+    tagged = HookSpec(id="b", script="b.py", stage="pre-commit", technologies=("node",))
+    specs = [universal, tagged]
+    assert selected_hook_specs(specs, None) == specs
+    assert selected_hook_specs(specs, frozenset({"node"})) == specs
+    assert selected_hook_specs(specs, frozenset({"python"})) == [universal]
+
+
+def test_sync_hooks_prunes_hook_excluded_by_selection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Narrowing the selection rewrites the config without the excluded hook."""
+    _materialize_hooks(tmp_path)
+    tagged = HookSpec(
+        id="uv-lock-check", script="uv-lock.py", stage="pre-commit", technologies=("python",)
+    )
+    real_specs = load_hook_specs()
+    monkeypatch.setattr(hooks_module, "load_hook_specs", lambda *_a, **_k: [*real_specs, tagged])
+
+    sync_hooks(tmp_path, CORE_HOOKS_DIR)
+    config = tmp_path / ".pre-commit-config.yaml"
+    assert "uv-lock-check" in _local_hook_ids(yaml.safe_load(config.read_text(encoding="utf-8")))
+
+    selection = frozenset({"zsh"})
+    mismatches = check_hooks(tmp_path, CORE_HOOKS_DIR, selection)
+    assert any("excluded by technology selection" in reason for _, reason in mismatches)
+
+    result = sync_hooks(tmp_path, CORE_HOOKS_DIR, selection)
+    assert result.written == [config]
+    assert "uv-lock-check" not in _local_hook_ids(
+        yaml.safe_load(config.read_text(encoding="utf-8"))
+    )
+    assert check_hooks(tmp_path, CORE_HOOKS_DIR, selection) == []
 
 
 def test_check_detects_wiring_drift(tmp_path: Path) -> None:

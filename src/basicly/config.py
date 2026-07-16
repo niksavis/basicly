@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .runner import AUTO, BUILTIN_RUNNERS, HEADLESS, PROMPT_VIA, RunnerSpec
+from .schema import TECHNOLOGIES
 
 CONFIG_FILE = "basicly.toml"
 
@@ -22,6 +23,14 @@ overlay_fragments = [".basicly-local/fragments"]
 targets = ".basicly/core/targets"
 templates = ".basicly/core/templates"
 manifest = ".basicly/generated-manifest.json"
+
+# Catalog technology selection. Absent = the full catalog ships. List the
+# stack/environment tags this repo wants and technology-tagged sources outside
+# it are skipped at projection time (untagged sources are universal and always
+# ship). Recorded by `basicly install --technologies ...`.
+#
+# [catalog]
+# technologies = ["python", "zsh"]
 
 # Sibling git-worktree isolation for harness tracks.
 [worktree]
@@ -448,6 +457,88 @@ def load_policy_config(repo_root: Path) -> PolicyConfig:
         max_rework = defaults.max_rework
 
     return PolicyConfig(required_gates=required_gates, max_rework=max_rework)
+
+
+def load_technology_selection(repo_root: Path) -> frozenset[str] | None:
+    """Load the ``[catalog] technologies`` selection from basicly.toml.
+
+    Returns ``None`` when no selection is recorded (everything ships). Raises
+    ``ValueError`` on a malformed or out-of-vocabulary selection — a typo that
+    silently dropped catalog content must never pass unnoticed.
+    """
+    config_path = repo_root / CONFIG_FILE
+    if not config_path.exists():
+        return None
+
+    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    section = data.get("catalog", {})
+    if not isinstance(section, dict) or "technologies" not in section:
+        return None
+
+    raw = section["technologies"]
+    if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
+        raise ValueError("[catalog] technologies must be a list of strings")
+    selection = frozenset(item.strip() for item in raw if item.strip())
+    unknown = sorted(selection - TECHNOLOGIES)
+    if unknown:
+        raise ValueError(
+            f"[catalog] technologies contains unknown value(s): {', '.join(unknown)} "
+            f"(allowed: {', '.join(sorted(TECHNOLOGIES))})"
+        )
+    return selection
+
+
+def record_technology_selection(repo_root: Path, technologies: list[str]) -> None:
+    """Record the technology selection as ``[catalog] technologies`` in basicly.toml.
+
+    Rewrites the existing ``technologies`` line in place when a ``[catalog]``
+    section already carries one; otherwise appends a fresh section. The rest of
+    the (user-owned) file is left untouched — the result is parsed back before
+    writing, and on an unsupported layout the file is left as-is and a
+    ``ValueError`` names the manual edit to make instead.
+    """
+    config_path = repo_root / CONFIG_FILE
+    wanted = sorted(set(technologies))
+    rendered = "[" + ", ".join(f'"{tech}"' for tech in wanted) + "]"
+    line = f"technologies = {rendered}\n"
+    section = f"\n# Catalog technology selection (see docs: technology scoping).\n[catalog]\n{line}"
+
+    if not config_path.exists():
+        config_path.write_text(DEFAULT_CONFIG_TOML + section, encoding="utf-8")
+        return
+
+    original = config_path.read_text(encoding="utf-8")
+    text = _splice_technologies(original, line, section)
+    try:
+        recorded = tomllib.loads(text).get("catalog", {}).get("technologies")
+    except tomllib.TOMLDecodeError as exc:
+        recorded = exc
+    if not isinstance(recorded, list) or sorted(recorded) != wanted:
+        raise ValueError(
+            f"cannot record the technology selection in {CONFIG_FILE} (unsupported "
+            f"[catalog] layout); set 'technologies = {rendered}' under [catalog] by hand"
+        )
+    config_path.write_text(text, encoding="utf-8")
+
+
+def _splice_technologies(text: str, line: str, section: str) -> str:
+    """Return *text* with the ``[catalog] technologies`` line replaced or added."""
+    lines = text.splitlines(keepends=True)
+    in_catalog = False
+    header_index: int | None = None
+    for index, current in enumerate(lines):
+        stripped = current.strip()
+        if stripped.startswith("["):
+            in_catalog = stripped == "[catalog]"
+            if in_catalog and header_index is None:
+                header_index = index
+        elif in_catalog and stripped.startswith("technologies"):
+            lines[index] = line
+            return "".join(lines)
+    if header_index is not None:
+        lines.insert(header_index + 1, line)
+        return "".join(lines)
+    return text.rstrip("\n") + "\n" + section
 
 
 @dataclass(frozen=True)

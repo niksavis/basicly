@@ -25,11 +25,13 @@ import yaml
 from jsonschema import Draft202012Validator
 
 from . import agents
+from .schema import TECHNOLOGIES
 
 CORE_DIR = Path(".basicly/core")
 SKILLS_DIR = CORE_DIR / "skills"
 FRAGMENTS_DIR = CORE_DIR / "fragments"
 AGENTS_DIR = CORE_DIR / "agents"
+HOOKS_DIR = CORE_DIR / "hooks"
 SCHEMAS_DIR = CORE_DIR / "schemas"
 
 
@@ -135,5 +137,55 @@ def lint_catalog(repo_root: Path) -> list[str]:
 
     # 5. agent composition lint over the merged core+overlay set
     violations.extend(agents.lint_agent_sources(repo_root))
+
+    # 6. technology tags stay inside the controlled vocabulary (§9 scoping)
+    violations.extend(_check_technology_vocabulary(repo_root))
+
+    return violations
+
+
+def _technology_violations(path: Path, data: object, repo_root: Path) -> list[str]:
+    if not isinstance(data, dict):
+        return []
+    technologies = data.get("technologies")
+    if technologies is None:
+        return []
+    if not isinstance(technologies, list) or not all(
+        isinstance(item, str) for item in technologies
+    ):
+        return [f"{_rel(path, repo_root)}: technologies must be a list of strings"]
+    unknown = sorted(set(technologies) - TECHNOLOGIES)
+    if unknown:
+        return [
+            f"{_rel(path, repo_root)}: unknown technologies: {', '.join(unknown)} "
+            f"(allowed: {', '.join(sorted(TECHNOLOGIES))})"
+        ]
+    return []
+
+
+def _check_technology_vocabulary(repo_root: Path) -> list[str]:
+    """Flag `technologies:` values outside the controlled vocabulary."""
+    violations: list[str] = []
+    sources = [
+        *sorted((repo_root / SKILLS_DIR).glob("*/skill.yaml")),
+        *sorted((repo_root / FRAGMENTS_DIR).rglob("*.fragment.yaml")),
+        *sorted((repo_root / AGENTS_DIR).glob(f"*/{agents.AGENT_SOURCE_FILE}")),
+    ]
+    for path in sources:
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except yaml.YAMLError:
+            continue  # schema validation already reports malformed YAML
+        violations.extend(_technology_violations(path, data, repo_root))
+
+    hooks_manifest = repo_root / HOOKS_DIR / "hooks.yaml"
+    if hooks_manifest.exists():
+        try:
+            data = yaml.safe_load(hooks_manifest.read_text(encoding="utf-8"))
+        except yaml.YAMLError:
+            data = None
+        entries = data.get("hooks") if isinstance(data, dict) else None
+        for entry in entries if isinstance(entries, list) else []:
+            violations.extend(_technology_violations(hooks_manifest, entry, repo_root))
 
     return violations

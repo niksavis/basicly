@@ -15,7 +15,7 @@ from pathlib import Path
 import yaml
 
 from .projection import SyncResult, sync_file
-from .schema import ValidationError
+from .schema import ValidationError, technology_selected, validate_technologies
 
 SKILLS_SOURCE_DIR = Path(".basicly/core/skills")
 SKILL_SOURCE_FILE = "skill.yaml"
@@ -49,6 +49,7 @@ class SkillDefinition:
     description: str
     instructions: str
     source_path: Path
+    technologies: tuple[str, ...] = ()
 
 
 def _require_str(value: object, field: str, path: Path) -> str:
@@ -82,6 +83,8 @@ def discover_skills(
         if not isinstance(data, dict):
             raise ValidationError("skill source must be a YAML mapping", path)
 
+        technologies = validate_technologies(data.get("technologies") or [], path)
+
         skills.append(
             SkillDefinition(
                 slug=slug,
@@ -89,6 +92,7 @@ def discover_skills(
                 description=_require_str(data.get("description"), "description", path).strip(),
                 instructions=_require_str(data.get("instructions"), "instructions", path),
                 source_path=path,
+                technologies=tuple(technologies),
             )
         )
 
@@ -129,36 +133,61 @@ def resolve_skill_roots(
     return resolved
 
 
+def _is_generated_skill(path: Path) -> bool:
+    return path.is_file() and GENERATED_MARKER in path.read_text(encoding="utf-8", errors="ignore")
+
+
 def sync_skills(
     repo_root: Path,
     roots: list[Path],
     source_dir: Path = SKILLS_SOURCE_DIR,
-) -> SyncResult:
-    """Render source skills into destination roots without deleting extra files."""
+    selection: frozenset[str] | None = None,
+) -> tuple[SyncResult, list[Path]]:
+    """Render selected source skills into destination roots.
+
+    Extra (hand-authored) files are never touched, but a previously projected
+    skill the technology *selection* now excludes is pruned (generated-marker
+    files only). Returns the sync result plus the pruned paths.
+    """
     skills = discover_skills(repo_root, source_dir)
     result = SyncResult()
+    pruned: list[Path] = []
 
     for skill in skills:
-        rendered = render_skill_md(skill).encode("utf-8")
+        selected = technology_selected(skill.technologies, selection)
+        rendered = render_skill_md(skill).encode("utf-8") if selected else b""
         for root in roots:
-            sync_file(root / skill.slug / SKILL_FILE_NAME, rendered, result)
+            target_path = root / skill.slug / SKILL_FILE_NAME
+            if selected:
+                sync_file(target_path, rendered, result)
+            elif _is_generated_skill(target_path):
+                target_path.unlink()
+                if not any(target_path.parent.iterdir()):
+                    target_path.parent.rmdir()
+                pruned.append(target_path)
 
-    return result
+    return result, pruned
 
 
 def check_synced_skills(
     repo_root: Path,
     roots: list[Path],
     source_dir: Path = SKILLS_SOURCE_DIR,
+    selection: frozenset[str] | None = None,
 ) -> list[tuple[Path, str]]:
     """Return missing or stale skill files for the selected destination roots."""
     skills = discover_skills(repo_root, source_dir)
     mismatches: list[tuple[Path, str]] = []
 
     for skill in skills:
-        rendered = render_skill_md(skill).encode("utf-8")
+        selected = technology_selected(skill.technologies, selection)
+        rendered = render_skill_md(skill).encode("utf-8") if selected else b""
         for root in roots:
             target_path = root / skill.slug / SKILL_FILE_NAME
+            if not selected:
+                if _is_generated_skill(target_path):
+                    mismatches.append((target_path, "excluded by technology selection"))
+                continue
             if not target_path.exists():
                 mismatches.append((target_path, "missing"))
                 continue
