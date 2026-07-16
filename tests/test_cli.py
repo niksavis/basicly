@@ -988,3 +988,23 @@ def test_cli_check_sees_crlf_drift(work_repo: Path) -> None:
 
     result = run_basicly(work_repo, "check")
     assert result.returncode == 1
+
+
+def test_cli_survives_a_narrow_console_encoding(work_repo: Path) -> None:
+    """Unicode output degrades to ? instead of crashing under a legacy codepage.
+
+    Regression for the first windows-latest CI run: cp1252 stdout raised
+    UnicodeEncodeError on the catalog's arrows and failed every command.
+    """
+    env = {"PYTHONPATH": str(work_repo / "src"), "PYTHONIOENCODING": "cp1252"}
+    result = subprocess.run(
+        [sys.executable, "-m", "basicly.cli", "skills-list"],
+        cwd=work_repo,
+        env=env,
+        capture_output=True,
+        encoding="cp1252",
+        errors="replace",
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "charmap" not in result.stderr
