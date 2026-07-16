@@ -33,10 +33,10 @@ Think of it as Lego bricks for agent enablement:
 One command installs the harness into a consumer repo — and the same command performs every upgrade:
 
 ```sh
-uvx --from git+https://github.com/niksavis/basicly@v0.1.2 basicly install
+uvx --from git+https://github.com/niksavis/basicly@v0.1.3 basicly install
 ```
 
-Pin `@v0.1.2` for reproducible installs, or track `@main` for the latest. The repo is public; no authentication is needed. Install converges everything: managed core catalog, generated agent instruction files, projected skills, activated git hooks, a beads tracker workspace, VS Code tasks, and a CI gates workflow. Customize via YAML fragments in `.basicly-local/fragments/user/` — install never touches them. Remove with `basicly uninstall` (add `--purge` to also drop your overlay and config).
+Pin `@v0.1.3` for reproducible installs, or track `@main` for the latest. The repo is public; no authentication is needed. Install converges everything: managed core catalog, generated agent instruction files, projected skills, activated git hooks, a beads tracker workspace, VS Code tasks, and a CI gates workflow. Customize via YAML fragments in `.basicly-local/fragments/user/` — install never touches them. Remove with `basicly uninstall` (add `--purge` to also drop your overlay and config).
 
 ## Quick start
 

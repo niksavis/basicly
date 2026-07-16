@@ -6,6 +6,52 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.1.3 - 2026-07-16
+
+Delta: v0.1.2..v0.1.3
+
+### Added
+
+- **Technology scoping for the catalog**: sources (skills, fragments, agents,
+  hooks) may declare `technologies: [python, zsh, ...]`; an untagged source is
+  universal and always ships. `basicly install --technologies python,zsh`
+  records the selection under `[catalog]` in `basicly.toml`; the projection
+  commands then skip non-matching sources, previously projected skills/agents
+  the selection excludes are pruned, and excluded managed hooks are stripped
+  from `.pre-commit-config.yaml` and `.claude/settings.json`. The tag
+  vocabulary is a controlled list enforced by `catalog-lint` and every loader,
+  and the stack-specific skills (`tool-uv`, `tool-zsh`, `tool-tmux`,
+  `tool-starship`, `tool-wezterm`) are tagged. With no selection recorded the
+  full catalog ships, exactly as before.
+- **Agents as a catalog kind**: subagents are authored as composable
+  `agent.yaml` sources plus shared `*.block.yaml` building blocks, projected to
+  `.claude/agents/` with schema validation, composition lint (unknown block
+  refs, read-only postures granting write tools, portable size cap), and
+  uninstall sweep. Three core agents ship: `code-reviewer`, `test-runner`,
+  `security-auditor`.
+- **A `quirks` fragment category** wired to the self-improvement retro: one
+  real incident, one bullet (environment/timing/platform traps).
+
+### Changed
+
+- **Scoped rules are single-sourced**: the Copilot `scoped_instructions`
+  output was retired in favor of one scoped-rules source per target, and
+  `basicly build` now sweeps manifest-tracked outputs that drop out of the
+  plan, so retiring an output converges consumers instead of stranding stale
+  projections.
+- The committed Claude settings deny `.env*` writes in addition to reads, and
+  catalog guidance was pruned/tightened to fit projection size advisories.
+
+### Fixed
+
+- **Feature fan-in no longer collides with self-landed children**: a parent
+  feature whose children each landed and closed through their own loop
+  advances build -> verify instead of failing with "no worktree session
+  named"; already-merged, torn-down children count as landed.
+- Projected instruction files render lint-clean (their markdownlint ignores
+  were dropped), and new worktrees receive uncommitted tracker state so the
+  first in-worktree commit does not trip the beads hook.
+
 ## v0.1.2 - 2026-07-16
 
 Delta: v0.1.1..v0.1.2
