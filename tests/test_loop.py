@@ -190,6 +190,9 @@ def test_decompose_merges_children_when_all_closed(
     monkeypatch.setattr(loop, "_child_states", lambda _ctx: [("i.1", "closed"), ("i.2", "closed")])
     monkeypatch.setattr(loop, "_ensure_child_worktrees", lambda *_a: None)
     monkeypatch.setattr(
+        worktree, "list_sessions", lambda *_a, **_k: [_session("i-1"), _session("i-2")]
+    )
+    monkeypatch.setattr(
         merge,
         "merge_queue",
         lambda *_a, **_k: [
@@ -203,6 +206,51 @@ def test_decompose_merges_children_when_all_closed(
     assert result.to_phase == "verify" and result.action == "merged"
 
 
+def test_decompose_skips_self_landed_children(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Self-landed children have no worktree left; fan-in treats them as merged."""
+    at(_state("decompose", has_children=True))
+    monkeypatch.setattr(policy, "checkpoint_approved", lambda *_a: True)
+    monkeypatch.setattr(loop, "_child_states", lambda _ctx: [("i.1", "closed"), ("i.2", "closed")])
+    monkeypatch.setattr(loop, "_ensure_child_worktrees", lambda *_a: None)
+    monkeypatch.setattr(worktree, "list_sessions", lambda *_a, **_k: [])
+
+    def _no_queue(*_a, **_k):
+        raise AssertionError("merge_queue must not run when no child worktree is live")
+
+    monkeypatch.setattr(merge, "merge_queue", _no_queue)
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
+    monkeypatch.setattr(verify, "report_gate", lambda *_a, **_k: (True, "ok"))
+    result = _advance(tmp_path)
+    assert result.to_phase == "verify" and result.action == "merged"
+    assert "2 already self-landed" in result.detail
+
+
+def test_decompose_merges_only_live_children(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A mix of live and self-landed children queues only the live worktrees."""
+    at(_state("decompose", has_children=True))
+    monkeypatch.setattr(policy, "checkpoint_approved", lambda *_a: True)
+    monkeypatch.setattr(loop, "_child_states", lambda _ctx: [("i.1", "closed"), ("i.2", "closed")])
+    monkeypatch.setattr(loop, "_ensure_child_worktrees", lambda *_a: None)
+    monkeypatch.setattr(worktree, "list_sessions", lambda *_a, **_k: [_session("i-2")])
+    queued = {}
+
+    def _queue(_root, items, **_k):
+        queued["items"] = items
+        return [merge.QueueResult(merge.MergeResult(name, "merged", "ok")) for name, _ in items]
+
+    monkeypatch.setattr(merge, "merge_queue", _queue)
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
+    monkeypatch.setattr(verify, "report_gate", lambda *_a, **_k: (True, "ok"))
+    result = _advance(tmp_path)
+    assert queued["items"] == [("i-2", "i.2")]
+    assert result.to_phase == "verify" and result.action == "merged"
+    assert "merged 1 child worktree(s); 1 already self-landed" in result.detail
+
+
 def test_decompose_escalates_on_merge_failure(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -211,6 +259,7 @@ def test_decompose_escalates_on_merge_failure(
     monkeypatch.setattr(policy, "checkpoint_approved", lambda *_a: True)
     monkeypatch.setattr(loop, "_child_states", lambda _ctx: [("i.1", "closed")])
     monkeypatch.setattr(loop, "_ensure_child_worktrees", lambda *_a: None)
+    monkeypatch.setattr(worktree, "list_sessions", lambda *_a, **_k: [_session("i-1")])
     monkeypatch.setattr(
         merge,
         "merge_queue",
