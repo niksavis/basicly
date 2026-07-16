@@ -6,6 +6,27 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.1.1 - 2026-07-16
+
+Delta: v0.1.0..v0.1.1 (documentation-only patch)
+
+### Changed
+
+- **`tool-br` skill**: new Common Pitfalls bullet — never commit with a guessed
+  issue id; `br create` assigns a random base, so run it alone, read the
+  generated id from its output, and commit separately (chaining with `|| true`
+  silently swallows the hook rejection).
+- **`conventional-commits` skill**: description rule now states that version
+  strings and filenames (dots/uppercase, e.g. a tag name or `AGENTS.md`) can
+  never appear verbatim in a commit description and must be reworded, with a
+  matching invalid example.
+
+### Added
+
+- The full agent-file state-of-the-art research report (building-blocks table,
+  phrasing rules, determinism ledger, prioritized recommendations, source
+  evaluations) is persisted as a comment on epic `basicly-84v` in the tracker.
+
 ## v0.1.0 - 2026-07-15
 
 Delta: initial..v0.1.0
