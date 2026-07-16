@@ -82,7 +82,7 @@ def test_run_check_fails_cleanly_on_unrunnable_command(
     result = verify.run_check(check, tmp_path, "full")
 
     assert result.status == "fail"
-    assert result.returncode == 126
+    assert result.returncode in (126, 127)  # PermissionError vs FileNotFoundError by OS
     assert "cannot run ghost-tool" in result.detail
     assert "\n" not in result.detail
 

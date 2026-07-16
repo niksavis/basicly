@@ -2061,8 +2061,22 @@ command groups:
 """
 
 
+def _tolerate_narrow_consoles() -> None:
+    """Never crash on unencodable output characters.
+
+    Windows consoles default to a legacy codepage (cp1252), where the
+    catalog's unicode (arrows, dashes) raises UnicodeEncodeError on print.
+    Degrading the character to ``?`` beats failing the whole command.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(errors="replace")
+
+
 def main(argv: list[str] | None = None) -> int:
     """Parse arguments and dispatch to the requested command."""
+    _tolerate_narrow_consoles()
     parser = argparse.ArgumentParser(
         prog="basicly",
         epilog=_HELP_EPILOG,
