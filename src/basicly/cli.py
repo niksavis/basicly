@@ -17,6 +17,7 @@ from typing import Any
 
 from . import (
     __version__,
+    agents,
     catalog_lint,
     catalog_verify,
     claude_settings,
@@ -665,8 +666,8 @@ def cmd_install(args: argparse.Namespace) -> int:
     §9): sync the managed core to the bundled catalog (provenance-guarded, so
     hand-edits are never silently clobbered), migrate/prune legacy layouts,
     scaffold the overlay + config (never overwriting user content), then
-    project fragments, skills, and hooks. Re-running from a newer pinned ref is
-    the upgrade path.
+    project fragments, skills, agents, and hooks. Re-running from a newer
+    pinned ref is the upgrade path.
     """
     repo_root = _repo_root()
     paths = load_project_paths(repo_root)
@@ -736,6 +737,7 @@ def cmd_install(args: argparse.Namespace) -> int:
             cmd_skills_build,
             argparse.Namespace(roots=None, all_default_roots=True),
         ),
+        ("agents-build", cmd_agents_build, argparse.Namespace()),
         ("hooks-build", cmd_hooks_build, argparse.Namespace(no_install=False)),
     ]
     for step, handler, namespace in steps:
@@ -812,6 +814,22 @@ def _remove_projected_skills(repo_root: Path) -> int:
     return _remove_generated_skills(repo_root, (*DEFAULT_SKILL_ROOTS, *RETIRED_SKILL_ROOTS))
 
 
+def _remove_projected_agents(repo_root: Path) -> int:
+    """Delete projected agent files (generated marker only; hand-authored stay)."""
+    base = repo_root / agents.AGENTS_OUTPUT_ROOT
+    if not base.is_dir():
+        return 0
+    removed = 0
+    for agent_md in sorted(base.glob("*.md")):
+        if agents.GENERATED_MARKER not in agent_md.read_text(encoding="utf-8"):
+            continue
+        agent_md.unlink()
+        removed += 1
+        print(f"Removed {_format_path(agent_md, repo_root)}")
+        _remove_empty_parents(agent_md.parent, repo_root)
+    return removed
+
+
 def _purge_user_content(repo_root: Path, paths: ProjectPaths) -> int:
     """Delete the overlay roots and basicly.toml (the --purge extras)."""
     removed = 0
@@ -852,9 +870,9 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
     """Remove everything basicly manages; keep user content unless --purge.
 
     The inverse of ``install`` (§9): deletes the managed core, state, the
-    generated files the manifest lists, projected skills (generated-marker
-    files only), and the managed pre-commit block. The overlay and
-    ``basicly.toml`` are the user's and survive unless ``--purge``.
+    generated files the manifest lists, projected skills and agents
+    (generated-marker files only), and the managed pre-commit block. The
+    overlay and ``basicly.toml`` are the user's and survive unless ``--purge``.
     """
     repo_root = _repo_root()
     paths = load_project_paths(repo_root)
@@ -869,6 +887,7 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
 
     removed = _remove_generated_outputs(repo_root, paths)
     removed += _remove_projected_skills(repo_root)
+    removed += _remove_projected_agents(repo_root)
 
     note = remove_managed_hooks(repo_root)
     if note:
@@ -1082,6 +1101,90 @@ def cmd_skills_new(args: argparse.Namespace) -> int:
     path.write_text(
         _SKILL_TEMPLATE.format(
             slug=args.slug, title=title, description=args.description or "TODO: one-line trigger."
+        ),
+        encoding="utf-8",
+    )
+    print(f"Wrote {_format_path(path, repo_root)}")
+    return 0
+
+
+def cmd_agents_list(_args: argparse.Namespace) -> int:
+    """List agents available in the core and overlay sources."""
+    repo_root = _repo_root()
+    found = agents.discover_agents(agents.default_agent_roots(repo_root))
+    if not found:
+        print(f"No agents found in {agents.CORE_AGENTS_DIR}")
+        return 0
+
+    print(f"{'slug':<24} {'source':<8} description")
+    print("-" * 96)
+    for agent in found:
+        print(f"{agent.slug:<24} {agent.source:<8} {agents.compose_description(agent)}")
+    return 0
+
+
+def cmd_agents_build(_args: argparse.Namespace) -> int:
+    """Project agents from the core and overlay sources into .claude/agents."""
+    repo_root = _repo_root()
+    result = agents.sync_agents(repo_root)
+    _report_sync(result, repo_root, noun="agent files", label="Agent")
+    return 0
+
+
+def cmd_agents_check(_args: argparse.Namespace) -> int:
+    """Check that projected agents are synchronized with their sources."""
+    repo_root = _repo_root()
+    mismatches = agents.check_synced_agents(repo_root)
+    stale = "Stale agent projection detected. Run `basicly agents-build` to sync agent files."
+    if _report_mismatches(mismatches, repo_root, stale_message=stale):
+        return 1
+
+    print("Projected agents are up to date.")
+    return 0
+
+
+_AGENT_TEMPLATE = """\
+# yaml-language-server: $schema=../../schemas/agent.schema.json
+schema_version: 1
+name: {slug}
+purpose: {description}
+triggers: TODO when to delegate ('Use proactively after ...').
+returns: TODO what it hands back, so the caller can delegate without reading dumps.
+posture: Read-only.
+tools: [Read, Grep, Glob]
+slots:
+  role:
+    - text: |
+        You are TODO: role plus epistemic stance, not a resume.
+  startup:
+    - text: |
+        When invoked:
+
+        1. TODO: the first concrete command to run.
+  process:
+    - text: |
+        TODO: the method — checkable steps in priority order, no aspirational metrics.
+  output_contract:
+    - text: |
+        TODO: the deliverable shape, ideally with a literal sample. If clean, say so
+        in one line and stop.
+  constraints:
+    - text: |
+        TODO: never-do list with alternatives, and what to do when blocked.
+"""
+
+
+def cmd_agents_new(args: argparse.Namespace) -> int:
+    """Scaffold a new agent.yaml source under .basicly/core/agents/<slug>."""
+    repo_root = _repo_root()
+    path = repo_root / agents.CORE_AGENTS_DIR / args.slug / agents.AGENT_SOURCE_FILE
+    if path.exists():
+        print(f"Error: {_format_path(path, repo_root)} already exists.", file=sys.stderr)
+        return 1
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        _AGENT_TEMPLATE.format(
+            slug=args.slug, description=args.description or "TODO what this agent does."
         ),
         encoding="utf-8",
     )
@@ -1579,6 +1682,17 @@ def _cmd_worktree_bg_isolation(args: argparse.Namespace) -> int:
     return 0
 
 
+def _add_agents_parsers(subparsers: argparse._SubParsersAction) -> None:
+    subparsers.add_parser("agents-list", help="List agents in the core and overlay sources")
+    subparsers.add_parser(
+        "agents-build", help="Project agents from .basicly/core/agents into .claude/agents"
+    )
+    subparsers.add_parser("agents-check", help="Check projected agents are up to date")
+    agents_new_parser = subparsers.add_parser("agents-new", help="Scaffold a new agent.yaml source")
+    agents_new_parser.add_argument("slug", help="Agent slug (directory + name)")
+    agents_new_parser.add_argument("--description", help="One-line purpose")
+
+
 def _add_skill_root_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--root",
@@ -1822,6 +1936,8 @@ def main(argv: list[str] | None = None) -> int:
     skills_new_parser.add_argument("slug", help="Skill slug (directory + name)")
     skills_new_parser.add_argument("--description", help="One-line trigger description")
 
+    _add_agents_parsers(subparsers)
+
     fragment_new_parser = subparsers.add_parser(
         "fragment-new", help="Scaffold a new <id>.fragment.yaml source"
     )
@@ -1882,6 +1998,10 @@ def main(argv: list[str] | None = None) -> int:
         "skills-build": cmd_skills_build,
         "skills-check": cmd_skills_check,
         "skills-new": cmd_skills_new,
+        "agents-list": cmd_agents_list,
+        "agents-build": cmd_agents_build,
+        "agents-check": cmd_agents_check,
+        "agents-new": cmd_agents_new,
         "fragment-new": cmd_fragment_new,
         "hooks-build": cmd_hooks_build,
         "hooks-check": cmd_hooks_check,
