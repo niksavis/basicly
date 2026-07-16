@@ -54,17 +54,25 @@ class VerifyReport:
         return tuple(r.name for r in self.results if r.status == "fail")
 
 
-def staged_files(repo_root: Path, suffix: str) -> list[str]:
-    """Return staged (added/copied/modified) files ending in *suffix*."""
-    proc = subprocess.run(  # nosec B603 B607
-        ["git", "diff", "--cached", "--name-only", "--diff-filter=ACM"],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+def staged_files(repo_root: Path, suffix: str) -> list[str] | None:
+    """Staged (added/copied/modified) files ending in *suffix*; None if git failed.
+
+    None and [] are deliberately distinct: an empty list means "nothing staged"
+    (the check may skip), None means the git call itself failed — a lost gate
+    must never pass unnoticed, so callers must fail the check.
+    """
+    try:
+        proc = subprocess.run(  # nosec B603 B607
+            ["git", "diff", "--cached", "--name-only", "--diff-filter=ACM"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
     if proc.returncode != 0:
-        return []
+        return None
     return [line for line in proc.stdout.splitlines() if line.endswith(suffix)]
 
 
@@ -73,6 +81,14 @@ def run_check(check: VerifyCheck, repo_root: Path, mode: str) -> CheckResult:
     command = list(check.command)
     if mode == "staged" and check.staged_suffix:
         files = staged_files(repo_root, check.staged_suffix)
+        if files is None:
+            return CheckResult(
+                check.name,
+                "fail",
+                1,
+                "git diff --cached failed — cannot determine staged files, "
+                "refusing to skip the check",
+            )
         if not files:
             return CheckResult(check.name, "skip", 0)
         command += files

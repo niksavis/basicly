@@ -35,6 +35,8 @@ with one command, and let `basicly check` keep them from drifting.
 
 ### Install
 
+basicly requires **Python 3.14+** — for the CLI and for the projected hook
+scripts that run inside your repo; older interpreters are not supported.
 Into any git repo, with [uv](https://docs.astral.sh/uv/) already on the machine:
 
 ```sh
