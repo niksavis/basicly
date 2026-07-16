@@ -3,7 +3,7 @@
 #
 # Usage (from the consumer repo root):
 #   curl -fsSL https://raw.githubusercontent.com/niksavis/basicly/main/.scripts/bootstrap.sh | sh
-#   curl -fsSL .../bootstrap.sh | sh -s -- --ref v0.1.3 --technologies python,zsh
+#   curl -fsSL .../bootstrap.sh | sh -s -- --ref v0.2.0 --technologies python,zsh
 #
 # --ref pins the basicly version (default: main); every other argument passes
 # through to `basicly install`. Windows users: see bootstrap.ps1.
