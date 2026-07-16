@@ -585,6 +585,45 @@ def test_cli_build_target_only(work_repo: Path) -> None:
     assert result_check.returncode == 0
 
 
+def test_cli_build_sweeps_stale_manifest_outputs(work_repo: Path) -> None:
+    """A full build deletes manifest-tracked files no target plans anymore.
+
+    Regression for the retired .github/instructions twins: a consumer
+    re-running install must converge on the single-source layout instead of
+    keeping stale projections around.
+    """
+    run_basicly(work_repo, "build")
+    manifest_path = work_repo / ".basicly/generated-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    stale_rel = ".github/instructions/python-style.instructions.md"
+    stale_file = work_repo / stale_rel
+    stale_file.parent.mkdir(parents=True, exist_ok=True)
+    stale_file.write_text("retired projection\n", encoding="utf-8")
+    manifest["outputs"][stale_rel] = {"hash": "sha256:0", "source_fragments": ["python-style"]}
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+    result = run_basicly(work_repo, "build")
+    assert result.returncode == 0, result.stderr
+    assert f"Removed {stale_rel}" in result.stdout
+    assert not stale_file.exists()
+    assert not stale_file.parent.exists()  # emptied directory is cleaned up too
+    manifest_after = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert stale_rel not in manifest_after["outputs"]
+
+
+def test_cli_build_target_keeps_other_targets_files(work_repo: Path) -> None:
+    """A partial --target build must not sweep other targets' manifest entries."""
+    run_basicly(work_repo, "build")
+    copilot_baseline = work_repo / ".github" / "copilot-instructions.md"
+    assert copilot_baseline.is_file()
+
+    result = run_basicly(work_repo, "build", "--target", "claude")
+    assert result.returncode == 0, result.stderr
+    assert "Removed" not in result.stdout
+    assert copilot_baseline.is_file()
+
+
 def test_cli_unknown_target(work_repo: Path) -> None:
     """Build --target with an unknown target should fail cleanly."""
     result = run_basicly(work_repo, "build", "--target", "unknown")

@@ -22,7 +22,9 @@ def test_plan_outputs() -> None:
     assert Path("/repo/AGENTS.md") in paths
     assert Path("/repo/.claude/CLAUDE.md") in paths
     assert Path("/repo/.github/copilot-instructions.md") in paths
-    assert Path("/repo/.github/instructions/python-style.instructions.md") in paths
+    # Scoped fragments are single-sourced to .claude/rules/; the copilot target
+    # plans no .github/instructions twins.
+    assert Path("/repo/.github/instructions/python-style.instructions.md") not in paths
     assert Path("/repo/.claude/rules/python-style.md") not in paths
 
 

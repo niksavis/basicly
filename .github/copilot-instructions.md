@@ -130,7 +130,7 @@ uv run basicly hooks-check
 
 ## Copilot-specific notes
 
-- Put path-scoped instructions in `.github/instructions/*.instructions.md` (activated by `applyTo:`).
+- Path-scoped rules live in `.claude/rules/*.md` only; `.github/instructions/` twins double-load.
 - Prefer skills over prompt files — VS Code is migrating `*.prompt.md` to skills.
 - Put custom agents in `.github/agents/*.agent.md`.
 - Shared skills in `.claude/skills/` are read by Claude and Copilot alike.

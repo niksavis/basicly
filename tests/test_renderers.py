@@ -9,7 +9,6 @@ from basicly.loader import load_fragments_from_roots, load_targets
 from basicly.planner import plan_outputs
 from basicly.renderers.claude import render as render_claude
 from basicly.renderers.common import sha256_of_text
-from basicly.renderers.copilot import render as render_copilot
 
 REPO_ROOT = Path(__file__).parent.parent
 FRAGMENT_ROOTS: list[tuple[Path, str | None]] = [
@@ -32,17 +31,22 @@ def test_agents_md_contains_header() -> None:
     assert "## Core Rules" in content
 
 
-def test_copilot_instruction_front_matter() -> None:
-    """Scoped Copilot instructions include applyTo front matter."""
+def test_copilot_plans_no_scoped_instruction_twins() -> None:
+    """The real catalog single-sources scoped fragments to .claude/rules only.
+
+    The copilot target keeps the root baseline but must not plan
+    .github/instructions/*.instructions.md twins — VS Code loads both roots
+    without dedup, double-loading every path-scoped rule.
+    """
     targets = load_targets(REPO_ROOT / ".basicly" / "core" / "targets")
     target_names = {t.name for t in targets}
     fragments = load_fragments_from_roots(FRAGMENT_ROOTS, target_names)
     planned = plan_outputs(fragments, targets, REPO_ROOT)
-    scoped = next(p for p in planned if str(p.output_path).endswith("python-style.instructions.md"))
-    content = render_copilot(scoped, REPO_ROOT / ".basicly" / "core" / "templates", __version__)
 
-    assert "applyTo:" in content
-    assert '"**/*.py"' in content
+    paths = {p.output_path for p in planned}
+    assert REPO_ROOT / ".github" / "copilot-instructions.md" in paths
+    assert not [p for p in paths if p.name.endswith(".instructions.md")]
+    assert [p for p in paths if p.parent == REPO_ROOT / ".claude" / "rules"]
 
 
 def test_sha256_of_text() -> None:
