@@ -525,7 +525,7 @@ way. The GitHub repo is public, so the command needs no authentication.
   entry point. `uv build` produces a wheel + sdist; `uvx --from <wheel> basicly`
   resolves `basicly.cli` (verified). The equivalent `git+https://...@<ref>` form is
   verified against a pushed ref for both `@main` and `@<sha>` (`basicly-zrj.14`).
-  `jinja2` is a `[project.dependencies]` runtime dep (§11.2).
+  `jinja2` and `rich` (terminal output, basicly-iwo) are `[project.dependencies]` runtime deps (§11.2).
 - **[Implemented]** The managed core catalog ships inside the distribution: hatchling
   `force-include` projects the dogfooded source `.basicly/core/` to `basicly/catalog/`
   in the wheel, and the sdist carries `.basicly/core/` so `git+` installs resolve it.
