@@ -13,6 +13,7 @@ permissions:
 
 jobs:
   commit-messages:
+    name: Commit messages (conventional + beads id)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -74,6 +75,7 @@ jobs:
           exit "${failed}"
 
   quality-gates:
+    name: Quality gates on ${{ matrix.os }}
     needs: commit-messages
     strategy:
       fail-fast: false

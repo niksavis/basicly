@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   verify:
+    name: Release quality gates
     if: |
       github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
@@ -34,6 +35,7 @@ jobs:
         run: uv run python .basicly/core/hooks/pre-push.py
 
   smoke-install:
+    name: Fresh-repo install smoke test
     if: |
       github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
@@ -53,6 +55,7 @@ jobs:
           uvx --from "git+${repo}@${tag}" basicly uninstall
 
   release:
+    name: Publish GitHub release
     needs: [verify, smoke-install]
     if: |
       github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
