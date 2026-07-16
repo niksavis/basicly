@@ -491,7 +491,7 @@ upgrade sync inside `install` are the remaining planned lifecycle pieces
 | `basicly policy ...`                        | **[Implemented]** | DoR, gate, rework, and checkpoint policy checks; `policy checkpoint <issue> <name> --approve` records the human checkpoints (§12.2)                                 |
 | `basicly decompose`                         | **[Implemented]** | Turns a feature into child `br` issues + a computed dependency graph (§12.2)                                                                                        |
 | `basicly loop status\|advance\|run <issue>` | **[Implemented]** | Drives an issue through the harness loop; a blocked step exits non-zero and names the input it needs (§12.2)                                                        |
-| `basicly runner list\|dry-run\|run`         | **[Implemented]** | Agent-agnostic headless runner adapters (claude/codex/copilot + `manual` handoff); auto-dispatch from the loop build phase is **[Partial]** (`basicly-7ca`) (§12.8) |
+| `basicly runner list\|dry-run\|run`         | **[Implemented]** | Agent-agnostic headless runner adapters (claude/codex/copilot + `manual` handoff); the loop build phase auto-dispatches through them (§12.8)                        |
 
 The formerly planned `basicly conflicts`/`basicly overrides` reporting views are
 **[Deferred]** — cut from scope; `catalog-verify` output covers the reporting need.
@@ -677,13 +677,13 @@ Ordered roughly by blocking-ness. Each is a candidate beads epic/feature/task.
 12. **Cursor as a target** is **[Deferred]**; no renderer, no templates.
 13. **The basicly harness** — **[Implemented]** (§12, epic `basicly-onb` closed): the
     agent-agnostic development loop (work isolation + workflow + hard verify/validate
-    gates) built thin over `br`. Remaining **[Partial]**: auto-dispatching the loop
-    build phase through the selected runner (`basicly-7ca`, post-release).
+    gates) built thin over `br`, including auto-dispatch of the loop build phase
+    through the selected runner (`basicly-7ca`, §12.8).
 
 ## 12) The basicly harness — agent-agnostic development loop
 
-**Summary**: **[Implemented]** (epic `basicly-onb`; the one remaining gap is
-auto-dispatch, `basicly-7ca`, see §12.8) The harness is an always-delivered
+**Summary**: **[Implemented]** (epic `basicly-onb`, completed by the auto-dispatch
+wiring `basicly-7ca`, see §12.8) The harness is an always-delivered
 _core_ that binds work isolation, a workflow loop, and hard verify/validate gates into a
 predictable machine, driven identically by any coding agent (Claude, Codex, Copilot). Its
 thesis is _lean-over-substrate_: it wraps the `br` (beads-rust) tracker's existing primitives
@@ -768,9 +768,11 @@ runner** that shells out to nothing and instead surfaces the exact prompt + work
 deferring to the loop's block-and-resume contract and the one thing that _is_ standardized
 across agents: the projected `AGENTS.md` guidance. `basicly runner dry-run` prints the exact
 command an adapter would execute so it can be verified before any live invocation.
-**[Partial]**: the runner abstraction and CLI exist; wiring `runner.select_runner` +
-`runner.run` into the loop build phase so a node's coding is auto-dispatched headless in
-its worktree is `basicly-7ca` (post-release) — until then the loop uses the handoff contract.
+**[Implemented]** (`basicly-7ca`): `loop advance` on a ready leaf provisions the worktree
+and dispatches the selected runner headless inside it with an agent-neutral prompt (bead id +
+`AGENTS.md` + `br show`; merging/pushing/closing stays with the loop), then blocks with the
+run outcome; the `manual` handoff runner keeps the block-and-resume contract untouched, and a
+failed run blocks with the runner name and exit code.
 
 **12.9 Ship.** Ship is parameterized by the entry branch recorded at Intake: default → merge
 to `main` + push `main` (no feature branches on the remote); if the entry branch is a feature
