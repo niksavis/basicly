@@ -11,7 +11,7 @@ not rely on `AGENTS.md` being present.
 - Editing CI/CD, deployment, infra-as-code, ignore/secrets files, or `.env*`.
 - Adding/removing/upgrading dependencies.
 - New network calls outside task scope.
-- Defeating a gate to force success — skipping or weakening tests, lint, or type checks, or bypassing hooks (`--no-verify`, `--no-gpg-sign`). Fix the failing gate instead.
+- IMPORTANT: never defeat a gate to force success — skipping or weakening tests, lint, or type checks, or bypassing hooks (`--no-verify`, `--no-gpg-sign`). Fix the failing gate instead.
 
 ## Knowledge Priming
 
@@ -93,9 +93,7 @@ uv run basicly hooks-check
 
 ## Core Rules
 
-- Prioritize correctness over speed.
 - Keep diffs minimal; avoid unrelated refactors.
-- Prefer explicit, readable solutions over clever ones.
 - Solve the stated requirement only — no speculative abstractions or unrequested config.
 - Reuse before reinventing: prefer an existing helper, utility, tool, or skill (including the repo's search, tracker, and hooks) over new code or a hand-rolled equivalent.
 - Fix the root cause, not the symptom: check other call sites before assuming a single-site patch is complete.

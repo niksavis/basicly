@@ -46,6 +46,25 @@ gate rejects it.
    fields.
 3. Project + verify: `basicly build` then `basicly check`.
 
+## Phrasing rules for guidance bodies
+
+Distilled from Anthropic's memory/best-practices docs and the curated
+CLAUDE.md corpus (2026-07 research, epic basicly-84v):
+
+- Concrete and verifiable beats vague intent: "use 2-space indentation" works,
+  "format code properly" does not.
+- Put runnable commands in code fences — a fenced command is run verbatim, a
+  command described in prose gets improvised on.
+- Pair every prohibition with the alternative the agent should take instead;
+  a bare "never X" leaves it stuck.
+- Give a one-clause rationale so the rule generalizes beyond its literal case.
+- Emphasis is a scarce resource: at most one `IMPORTANT`-style marker per
+  projection, or every marker becomes invisible.
+- Every rule should trace to a real incident, not a hypothetical one; the
+  quirks category exists for exactly those.
+- Apply the deletion test before adding a bullet: would removing it cause the
+  agent to make mistakes? If not, leave it out.
+
 ## YAML source shape
 
 Every source starts with a `# yaml-language-server: $schema=...` header (editor

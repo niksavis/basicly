@@ -16,4 +16,4 @@ body: |
   - Editing CI/CD, deployment, infra-as-code, ignore/secrets files, or `.env*`.
   - Adding/removing/upgrading dependencies.
   - New network calls outside task scope.
-  - Defeating a gate to force success — skipping or weakening tests, lint, or type checks, or bypassing hooks (`--no-verify`, `--no-gpg-sign`). Fix the failing gate instead.
+  - IMPORTANT: never defeat a gate to force success — skipping or weakening tests, lint, or type checks, or bypassing hooks (`--no-verify`, `--no-gpg-sign`). Fix the failing gate instead.

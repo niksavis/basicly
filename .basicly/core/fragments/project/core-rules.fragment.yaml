@@ -11,9 +11,7 @@ tags:
 - quality
 status: active
 body: |
-  - Prioritize correctness over speed.
   - Keep diffs minimal; avoid unrelated refactors.
-  - Prefer explicit, readable solutions over clever ones.
   - Solve the stated requirement only — no speculative abstractions or unrequested config.
   - Reuse before reinventing: prefer an existing helper, utility, tool, or skill (including the repo's search, tracker, and hooks) over new code or a hand-rolled equivalent.
   - Fix the root cause, not the symptom: check other call sites before assuming a single-site patch is complete.
