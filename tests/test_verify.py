@@ -87,6 +87,21 @@ def test_run_check_fails_cleanly_on_unrunnable_command(
     assert "\n" not in result.detail
 
 
+def test_run_check_staged_fails_when_git_itself_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed git call fails the check instead of silently skipping it."""
+    monkeypatch.setattr(verify, "staged_files", lambda _root, _suffix: None)
+    result = verify.run_check(_check("ruff", ("staged",), ".py"), tmp_path, "staged")
+    assert result.status == "fail"
+    assert "git diff" in (result.detail or "")
+
+
+def test_staged_files_returns_none_outside_a_repo(tmp_path: Path) -> None:
+    """staged_files distinguishes git failure (None) from nothing staged ([])."""
+    assert verify.staged_files(tmp_path, ".py") is None
+
+
 def test_run_check_staged_skips_when_no_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
