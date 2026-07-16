@@ -129,11 +129,11 @@ selected, sorted, and rendered per target. **[Implemented]**: this is exactly ho
 catch a large class of problems cheaply (duplicate ids, missing fields, unknown
 categories). Semantic problems — contradiction, ambiguity that parses fine but reads
 badly to a model — need a capable reader. Both layers run against the same merged
-fragment set, deterministic always first. **[Partial]**: schema/duplicate-id
-validation is implemented inside the normal load path
+fragment set, deterministic always first. **[Implemented]**: schema/duplicate-id
+validation runs inside the normal load path
 (`loader._validate_fragment`); duplicate-body, contradiction, ambiguity, and
-scope-overlap checks, plus the standalone `basicly catalog-verify` command, are
-**[Implemented]** (`basicly-ihs`, `catalog_verify.py`). Agent-assisted semantic
+scope-overlap checks, plus the standalone `basicly catalog-verify` command,
+shipped as `basicly-ihs` (`catalog_verify.py`). Agent-assisted semantic
 review (`basicly review`) is **[Implemented]** (`basicly-qps`, `review.py`):
 advisory, never a merge gate (§6, §11).
 
@@ -666,16 +666,16 @@ Ordered roughly by blocking-ness. Each is a candidate beads epic/feature/task.
    **[Implemented]** — one idempotent converge command covers first install and
    every upgrade without clobbering hand-edits, and `basicly uninstall`
    (`basicly-zrj.12.3`) removes it all cleanly. The lifecycle epic is complete.
-9. **Consumer-repo robustness** — **[Planned]** (`basicly-zrj.13`): the
-   `beads-commit-msg` hook must skip cleanly in a repo with no `.beads` workspace
-   (`basicly-zrj.13.1`), and the verify runner must fail cleanly — not traceback —
+9. **Consumer-repo robustness** — **[Implemented]** (`basicly-zrj.13`): the
+   `beads-commit-msg` hook skips cleanly in a repo with no `.beads` workspace
+   (`basicly-zrj.13.1`), and the verify runner fails cleanly — not a traceback —
    on a missing check command, with scaffolded defaults that don't assume Python
-   tooling (`basicly-zrj.13.2`). Release-blocking (the first consumer hits both).
-10. **v0.1.0 acceptance & release** — **[Partial]**: the pushed-ref `git+` install
-    is verified (`basicly-zrj.14`, see §9); still open: the end-to-end acceptance
-    in the `terminal` repo — install → customize → upgrade → harness loop → ship
-    (`basicly-zrj.15`) — then cut the tag (`basicly-zrj.16`, gated also on the
-    `copilot-instructions.md` size-cap split `basicly-4ce`).
+   tooling (`basicly-zrj.13.2`).
+10. **v0.1.0 acceptance & release** — **[Implemented]**: the pushed-ref `git+`
+    install is verified (`basicly-zrj.14`, see §9), the `terminal`-repo
+    end-to-end acceptance passed (`basicly-zrj.15`), and the tag shipped
+    (`basicly-zrj.16`). Releases through v0.1.3 followed the same
+    changelog-driven flow (`.claude/skills/release-process/`).
 11. **`.codex/rules/*.rules` scoped rules** are **[Deferred]** post-release
     (`basicly-zrj.6`). Catalog selection/flavors shipped as **technology
     scoping** (`basicly-aff`, §9); the `curl` bootstrap shim shipped as
