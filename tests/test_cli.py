@@ -1013,6 +1013,8 @@ def test_cli_survives_a_narrow_console_encoding(work_repo: Path) -> None:
 def test_cli_usage_report_tables_counters_and_flags_unused_skills(work_repo: Path) -> None:
     """Usage report joins the counters against the catalog's skills."""
     usage_dir = work_repo / ".basicly" / "usage"
+    # The fixture copies the live repo, which may carry real telemetry.
+    shutil.rmtree(usage_dir, ignore_errors=True)
     usage_dir.mkdir(parents=True)
     (usage_dir / "tool-usage.json").write_text(
         json.dumps({
@@ -1030,6 +1032,7 @@ def test_cli_usage_report_tables_counters_and_flags_unused_skills(work_repo: Pat
 
 def test_cli_usage_report_notes_missing_data(work_repo: Path) -> None:
     """A repo without the hook's counter file gets a note, not an error."""
+    shutil.rmtree(work_repo / ".basicly" / "usage", ignore_errors=True)
     result = run_basicly(work_repo, "usage", "report")
     assert result.returncode == 0, result.stderr
     assert "No usage data" in result.stdout
