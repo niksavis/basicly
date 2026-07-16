@@ -109,5 +109,5 @@ catalog model, and the verification pipeline.
 
 ## License
 
-By contributing you agree that your contributions are licensed under the
-[MIT License](LICENSE).
+Released under the [MIT License](LICENSE). By contributing you agree that your
+contributions are released under the same license.

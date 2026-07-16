@@ -137,4 +137,4 @@ pass, see [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## License
 
-[MIT](LICENSE).
+Released under the [MIT License](LICENSE).
