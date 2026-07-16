@@ -79,6 +79,14 @@ def read_install_state(state_path: Path) -> InstallState | None:
     except json.JSONDecodeError as exc:
         raise ValidationError(f"invalid install state: {exc}", state_path) from exc
 
+    recorded_schema = payload.get("schema_version")
+    if isinstance(recorded_schema, int) and recorded_schema > STATE_SCHEMA_VERSION:
+        raise ValidationError(
+            f"install state declares schema_version {recorded_schema}, newer than "
+            f"this basicly understands ({STATE_SCHEMA_VERSION}); upgrade basicly",
+            state_path,
+        )
+
     core = payload.get("core")
     version = payload.get("basicly_version")
     installed_at = payload.get("installed_at")
