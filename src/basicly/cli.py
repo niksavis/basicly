@@ -38,6 +38,7 @@ from .config import (
     CONFIG_FILE,
     CONSUMER_CI_WORKFLOW,
     DEFAULT_CONFIG_TOML,
+    OVERLAY_FRAGMENT_STUBS,
     VERIFY_MODES,
     VSCODE_TASKS_JSON,
     ProjectPaths,
@@ -604,6 +605,28 @@ def _setup_beads(repo_root: Path) -> None:
     print(f"Initialized beads workspace (issue prefix: {prefix}).")
 
 
+def _scaffold_overlay_stubs(repo_root: Path, paths: ProjectPaths) -> None:
+    """Seed draft project-overview/commands fragments in the user overlay when absent.
+
+    The two descriptive blocks every agent instruction file needs are per-repo
+    content, so install scaffolds fill-me drafts the consumer completes and
+    flips to ``status: active`` (drafts never project, so the placeholders stay
+    out of generated files). Same contract as the other scaffolds: written
+    once, then the file is the user's — install never overwrites it.
+    """
+    overlay_user = repo_root / paths.overlay_fragments_dirs[0] / "user"
+    for rel_path, content in OVERLAY_FRAGMENT_STUBS.items():
+        stub_path = overlay_user / rel_path
+        if stub_path.exists():
+            print(f"{_format_path(stub_path, repo_root)} already exists; left unchanged")
+            continue
+        stub_path.parent.mkdir(parents=True, exist_ok=True)
+        stub_path.write_text(content, encoding="utf-8")
+        print(
+            f"Wrote {_format_path(stub_path, repo_root)} (draft: fill it in and set status: active)"
+        )
+
+
 def _scaffold_vscode_tasks(repo_root: Path) -> None:
     """Write .vscode/tasks.json with the harness tasks when absent.
 
@@ -691,6 +714,8 @@ def cmd_install(args: argparse.Namespace) -> int:
         user_dir.mkdir(parents=True, exist_ok=True)
         verb = "exists" if existed else "created"
         print(f"Overlay {verb}: {_format_path(user_dir, repo_root)}")
+
+    _scaffold_overlay_stubs(repo_root, paths)
 
     config_path = repo_root / CONFIG_FILE
     if config_path.exists():

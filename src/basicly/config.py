@@ -190,6 +190,72 @@ jobs:
         run: @UVX@ verify --mode full
 """.replace("@UVX@", "uvx --from git+https://github.com/niksavis/basicly@main basicly")
 
+# Scaffolded into the user overlay by `basicly install` when absent — the two
+# highest-signal descriptive blocks an agent instruction file needs (project
+# overview and verbatim-runnable commands). Their content is per-repo, so each
+# ships as a draft the consumer fills in and activates: draft fragments load
+# and lint but never project (the planner keeps only active ones), so the
+# placeholders cannot leak into generated files. Same contract as the other
+# scaffolds: written once, then the file is the user's. Keyed by path relative
+# to the overlay `user/` root.
+OVERLAY_FRAGMENT_STUBS: dict[str, str] = {
+    "project/project-overview.fragment.yaml": """\
+schema_version: 1
+id: project-overview
+description: What this project is - purpose, stack, entry points.
+category: project
+priority: critical
+applies_to: [all]
+tags: [overview, priming]
+# Draft until you fill it in: set `status: active` and run `basicly build`.
+status: draft
+title: Project Overview
+body: |
+  - Purpose: TODO - what this project does and who uses it, in 1-2 lines.
+  - Stack: TODO - the languages, frameworks, and versions that matter (e.g. Python 3.14 + uv).
+  - Entry points: TODO - the main binary/module/service and where it lives.
+  - Architecture docs: TODO - pointer to the authoritative doc; do not embed a directory map here.
+""",
+    "commands/commands.fragment.yaml": """\
+schema_version: 1
+id: commands
+description: Verbatim-runnable commands for everyday development.
+category: commands
+priority: high
+applies_to: [all]
+tags: [commands, build, test]
+# Draft until you fill it in: set `status: active` and run `basicly build`.
+status: draft
+title: Commands
+body: |
+  Commands in code fences are exact - run them verbatim instead of improvising variants.
+
+  Setup:
+
+  ```sh
+  # TODO: dependency install (e.g. uv sync --group dev)
+  ```
+
+  Test:
+
+  ```sh
+  # TODO: full test suite (e.g. uv run pytest -q)
+  ```
+
+  Single test:
+
+  ```sh
+  # TODO: one test file or case (e.g. uv run pytest tests/test_x.py -q)
+  ```
+
+  Lint / format:
+
+  ```sh
+  # TODO: linter and formatter (e.g. uv run ruff check)
+  ```
+""",
+}
+
 # Default concurrency cap when no basicly.toml (or no [worktree]) is present.
 DEFAULT_WORKTREE_CONCURRENCY = 4
 

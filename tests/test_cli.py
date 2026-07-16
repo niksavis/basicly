@@ -66,6 +66,16 @@ def test_cli_install_converges_fresh_consumer(tmp_path: Path) -> None:
     assert list((consumer / ".basicly" / "core" / "fragments").rglob("*.fragment.yaml"))
     assert (consumer / ".basicly" / "core" / "targets" / "claude.yaml").is_file()
 
+    # The overview/commands overlay stubs are seeded as drafts: present as
+    # sources, absent from projections until the consumer activates them.
+    overlay_user = consumer / ".basicly-local" / "fragments" / "user"
+    overview = overlay_user / "project" / "project-overview.fragment.yaml"
+    commands = overlay_user / "commands" / "commands.fragment.yaml"
+    assert "status: draft" in overview.read_text(encoding="utf-8")
+    assert "status: draft" in commands.read_text(encoding="utf-8")
+    claude_md = (consumer / ".claude" / "CLAUDE.md").read_text(encoding="utf-8")
+    assert "Project Overview" not in claude_md
+
     # A single command projects everything — no separate build/skills/hooks runs.
     assert (consumer / "AGENTS.md").is_file()
     assert (consumer / ".claude" / "CLAUDE.md").is_file()
