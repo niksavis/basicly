@@ -172,15 +172,15 @@ generated/core paths; only the user writes to the overlay.
 
 ### Details
 
-| Tree                                                                                                               | Owner (who writes here)                       | Status                                                                          |
-| ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------- | ------------------------------------------------------------------------------- |
-| `src/basicly/` — engine (loader, planner, CLI, renderers)                                                          | `basicly` maintainers, ships with the tool    | **[Implemented]** — moved from `.basicly/basicly/` to a normal `src` layout     |
-| `.basicly/core/` — managed fragment + skill + hook + target + template catalog                                     | `basicly install` only                        | **[Implemented]** (`fragments/`, `skills/`, `hooks/`, `targets/`, `templates/`) |
-| `.basicly/state/install.json` — install provenance (version, timestamp, catalog hashes)                            | `basicly install` only                        | **[Implemented]** (`basicly-8fg`)                                               |
-| `.basicly-local/` — user overlay (path-configurable via `basicly.toml`)                                            | the consumer repo's users                     | **[Implemented]**                                                               |
-| `basicly.toml` — path wiring                                                                                       | the consumer repo                             | **[Implemented]**                                                               |
-| Generated artifacts (`AGENTS.md`, `.claude/CLAUDE.md`, `.github/copilot-instructions.md`, skill/scoped-rule files) | `basicly build` / `basicly skills-build` only | **[Implemented]**                                                               |
-| `.basicly/generated-manifest.json`                                                                                 | `basicly build` only                          | **[Implemented]**                                                               |
+| Tree                                                                                                                     | Owner (who writes here)                                                | Status                                                                                     |
+| ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `src/basicly/` — engine (loader, planner, CLI, renderers)                                                                | `basicly` maintainers, ships with the tool                             | **[Implemented]** — moved from `.basicly/basicly/` to a normal `src` layout                |
+| `.basicly/core/` — managed fragment + skill + agent + hook + target + template catalog                                   | `basicly install` only                                                 | **[Implemented]** (`fragments/`, `skills/`, `agents/`, `hooks/`, `targets/`, `templates/`) |
+| `.basicly/state/install.json` — install provenance (version, timestamp, catalog hashes)                                  | `basicly install` only                                                 | **[Implemented]** (`basicly-8fg`)                                                          |
+| `.basicly-local/` — user overlay (path-configurable via `basicly.toml`)                                                  | the consumer repo's users                                              | **[Implemented]**                                                                          |
+| `basicly.toml` — path wiring                                                                                             | the consumer repo                                                      | **[Implemented]**                                                                          |
+| Generated artifacts (`AGENTS.md`, `.claude/CLAUDE.md`, `.github/copilot-instructions.md`, skill/scoped-rule/agent files) | `basicly build` / `basicly skills-build` / `basicly agents-build` only | **[Implemented]**                                                                          |
+| `.basicly/generated-manifest.json`                                                                                       | `basicly build` only                                                   | **[Implemented]**                                                                          |
 
 #### 4.1 Engine
 
@@ -324,6 +324,37 @@ merged fragment set, and two user fragments may not replace each other.
 Sorting is deterministic: priority (desc) → category (asc) → id (asc). Two `build`
 runs on identical source produce byte-identical output.
 
+### Agent composition model — [Implemented] (`basicly-ajq`)
+
+Subagent definition files are the fourth catalog kind, generated — never
+hand-edited — from YAML sources:
+
+- **Sources**: `.basicly/core/agents/<slug>/agent.yaml` per agent, plus shared
+  building blocks in `.basicly/core/agents/blocks/<id>.block.yaml` (`blocks` is
+  a reserved slug). The overlay mirrors the layout under
+  `.basicly-local/agents/`; an overlay source with the same slug/id needs
+  `override: true` to replace the core one, new names simply add.
+- **Composition**: every agent fills five ordered body slots — `role`,
+  `startup`, `process`, `output_contract`, `constraints` — each a list of
+  `{block: id}` refs or `{text: ...}` inline markdown. The skeleton comes from
+  the `basicly-ajq` research: it is the structure Anthropic's official
+  subagent examples and the community corpus best-in-class files converge on.
+- **Description**: authored as four fields (`purpose`, `triggers`, `returns`,
+  `posture`) the projector joins, so no part of a delegation-quality
+  description can be forgotten. `tools` is a mandatory explicit allowlist —
+  agents never silently inherit every tool. `model` defaults to `inherit`
+  (omitted from output); a `claude:` map passes Claude-only frontmatter
+  (e.g. `memory`, `maxTurns`) through verbatim.
+- **Emission**: `.claude/agents/<slug>.md` only — the single root Claude Code
+  and VS Code both parse natively (same single-source policy as
+  `basicly-2f4`; a second root would double-load in VS Code, which dedupes
+  only skills). Rendered files carry the generated marker inside the
+  `protect-generated` hook's scan window, so tool-time edits are blocked.
+- **Lint** (`catalog-lint`): schema validation for both source kinds, plus
+  composition rules — block refs must resolve, a `Read-only` posture may not
+  grant write tools, and the composed body must stay under 30,000 characters
+  (the strictest reader's prompt ceiling).
+
 ---
 
 ## 6) Verification pipeline
@@ -422,10 +453,10 @@ upgrade sync inside `install` are the remaining planned lifecycle pieces
 
 **Lifecycle** — one command installs _and_ upgrades; a second removes:
 
-| Command                       | Status                                 | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ----------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `basicly install`             | **[Implemented]** (`basicly-zrj.12.1`) | Idempotent converge: materialize the bundled core catalog, migrate/prune legacy layouts, scaffold overlay + `basicly.toml` (never overwriting existing user content), then `build` + `skills-build` (all default roots) + `hooks-build` (with hook activation). The same command performs first install and every upgrade (provenance-guarded core sync, §9; `--force` overwrites kept hand-edits). Replaced the former `init`/`update` staging pair |
-| `basicly uninstall [--purge]` | **[Implemented]** (`basicly-zrj.12.3`) | Removes managed core, state, manifest-listed generated files, projected skills (generated-marker files only), and the managed hook block (deleting the config + uninstalling git hooks when nothing else remains); preserves the overlay + `basicly.toml` unless `--purge`; refuses in the authoring repo                                                                                                                                            |
+| Command                       | Status                                 | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ----------------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `basicly install`             | **[Implemented]** (`basicly-zrj.12.1`) | Idempotent converge: materialize the bundled core catalog, migrate/prune legacy layouts, scaffold overlay + `basicly.toml` (never overwriting existing user content), then `build` + `skills-build` (all default roots) + `agents-build` + `hooks-build` (with hook activation). The same command performs first install and every upgrade (provenance-guarded core sync, §9; `--force` overwrites kept hand-edits). Replaced the former `init`/`update` staging pair |
+| `basicly uninstall [--purge]` | **[Implemented]** (`basicly-zrj.12.3`) | Removes managed core, state, manifest-listed generated files, projected skills and agents (generated-marker files only), and the managed hook block (deleting the config + uninstalling git hooks when nothing else remains); preserves the overlay + `basicly.toml` unless `--purge`; refuses in the authoring repo                                                                                                                                                  |
 
 **Catalog**:
 
@@ -435,7 +466,8 @@ upgrade sync inside `install` are the remaining planned lifecycle pieces
 | `basicly build [--target NAME] [--verify]`                                                | **[Implemented]**                 | Renders enabled targets (or one), writes only changed bytes, updates the manifest, warns on size-cap overrun; `--verify` runs `catalog-verify` first and writes nothing on failure                                                                                                                                                                                                                                 |
 | `basicly check`                                                                           | **[Implemented]**                 | Byte-for-byte staleness check of generated files + manifest; exit `1` on mismatch, no auto-fix                                                                                                                                                                                                                                                                                                                     |
 | `basicly skills-list` / `skills-build [--root ...\|--all-default-roots]` / `skills-check` | **[Implemented]**                 | Same build/check contract, applied to the skill catalog                                                                                                                                                                                                                                                                                                                                                            |
-| `basicly skills-new` / `basicly fragment-new`                                             | **[Implemented]**                 | Scaffold a new `skill.yaml` / `<id>.fragment.yaml` source (§4.2 source format)                                                                                                                                                                                                                                                                                                                                     |
+| `basicly agents-list` / `agents-build` / `agents-check`                                   | **[Implemented]** (`basicly-ajq`) | Same build/check contract for the agent catalog: composes slot blocks into `.claude/agents/<slug>.md` (single-source emission, §5 agent composition model)                                                                                                                                                                                                                                                         |
+| `basicly skills-new` / `basicly fragment-new` / `basicly agents-new`                      | **[Implemented]**                 | Scaffold a new `skill.yaml` / `<id>.fragment.yaml` / `agent.yaml` source (§4.2 source format)                                                                                                                                                                                                                                                                                                                      |
 | `basicly catalog-lint`                                                                    | **[Implemented]**                 | Source-format gate: schema validation, no `.md`-named sources, single `.yaml` extension; wired as a pre-commit hook and CI step                                                                                                                                                                                                                                                                                    |
 | `basicly catalog-verify`                                                                  | **[Implemented]** (`basicly-ihs`) | Deterministic content checks beyond the load-path validation: duplicate bodies, contradictions, ambiguity, scope overlaps (§6); named `catalog-verify` because `basicly verify` is the loop check runner                                                                                                                                                                                                           |
 | `basicly hooks-build [--no-install]` / `hooks-check`                                      | **[Implemented]**                 | Materializes catalog hook scripts, merges a managed `repo: local` block into `.pre-commit-config.yaml` (foreign hooks preserved, idempotent), and then runs `pre-commit install` for every managed stage so the gates are actually active (`--no-install` skips activation; graceful when pre-commit is absent). `hooks-check` reports projection drift and warns (non-fatal) when the git hooks are not installed |
