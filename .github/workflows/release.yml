@@ -35,6 +35,21 @@ jobs:
           git fetch --force --tags origin
           git rev-parse "${tag_name}" >/dev/null
 
+      - name: Verify tag matches package version
+        shell: bash
+        run: |
+          tag_name='${{ steps.resolve_tag.outputs.tag_name }}'
+          pkg_version="$(python3 -c "
+          import re, pathlib
+          text = pathlib.Path('src/basicly/__init__.py').read_text()
+          print(re.search(r'__version__ = \"([^\"]+)\"', text).group(1))
+          ")"
+          if [ "v${pkg_version}" != "${tag_name}" ]; then
+            echo "Tag ${tag_name} does not match package version ${pkg_version};" \
+              "bump src/basicly/__init__.py before tagging" >&2
+            exit 1
+          fi
+
       - name: Generate release notes from changelog
         shell: bash
         run: |

@@ -6,6 +6,28 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.1.2 - 2026-07-16
+
+Delta: v0.1.1..v0.1.2
+
+### Fixed
+
+- **Release tags could ship stale package metadata**: the v0.1.1 tag was cut
+  without a version bump, so `basicly --version` at that tag prints `0.1.0`
+  and consumer `install.json` files get stamped with the stale
+  `basicly_version`, breaking version-based upgrade/drift detection. The
+  package version is now single-sourced from `src/basicly/__init__.py`
+  (hatchling dynamic version) so `pyproject.toml` and the module can no
+  longer drift, and it is correctly bumped for this release. The v0.1.1 tag
+  itself is left untouched; re-running `basicly install` at this tag
+  refreshes a consumer's recorded version.
+
+### Added
+
+- **Release gate for version mismatches**: the release workflow now fails
+  before publishing when the pushed tag name and the package version
+  disagree, so a tag can no longer ship mismatched metadata.
+
 ## v0.1.1 - 2026-07-16
 
 Delta: v0.1.0..v0.1.1 (documentation-only patch)
