@@ -66,9 +66,12 @@ phase is asking for (`basicly loop status`/`advance` names it as `needs input`).
 | **ship** | tear down the worktree and close the issue | `basicly loop advance <id>` (runs teardown + `br close`) |
 
 Leaf types (bug/chore/task) build directly in their own worktree; features
-decompose into children and land them through the merge queue once every child
-closes. See `worktree-isolation` for the sibling-worktree placement and
-provisioning rules the build phase relies on.
+decompose into children and, once every child closes, land the child worktrees
+that are still live through the merge queue. A child driven through its own
+loop self-lands (its ship phase tears the worktree down), so the parent fan-in
+counts it as already merged instead of failing. See `worktree-isolation` for
+the sibling-worktree placement and provisioning rules the build phase relies
+on.
 
 ## Gates: deterministic blocks, semantic advises
 

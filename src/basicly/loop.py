@@ -206,7 +206,12 @@ def _verify_and_land(ctx: _Ctx, worktree_name: str) -> AdvanceResult:
 
 
 def _build_children(ctx: _Ctx) -> AdvanceResult:
-    """Fan out a worktree per ready child; land them all once every child closes."""
+    """Fan out a worktree per ready child; once all close, land those still live.
+
+    A child driven through its own loop lands and tears down its worktree before
+    closing, so only children with a live session go through the merge queue —
+    the rest already self-landed.
+    """
     children = _child_states(ctx)
     if not children:
         return _blocked(ctx, "decompose approved but no child tracks are recorded")
@@ -216,15 +221,21 @@ def _build_children(ctx: _Ctx) -> AdvanceResult:
         return _blocked(ctx, f"building: {len(still_open)} child track(s) still open")
 
     items = [(_worktree_name(cid), cid) for cid, _ in children]
-    results = merge.merge_queue(
-        ctx.repo_root, items, config=ctx.config, verify_mode=ctx.inputs.verify_mode
-    )
-    failed = next((q for q in results if not q.result.merged), None)
-    if failed is not None:
-        action = "escalated" if failed.escalate else "blocked"
-        reason = f"merge failed for {failed.result.name}: {failed.result.detail}"
-        return _blocked(ctx, reason, action=action)
-    return _record_verify(ctx, f"merged {len(items)} child worktree(s)")
+    live = {session.name for session in worktree.list_sessions()}
+    pending = [(name, cid) for name, cid in items if name in live]
+    if pending:
+        results = merge.merge_queue(
+            ctx.repo_root, pending, config=ctx.config, verify_mode=ctx.inputs.verify_mode
+        )
+        failed = next((q for q in results if not q.result.merged), None)
+        if failed is not None:
+            action = "escalated" if failed.escalate else "blocked"
+            reason = f"merge failed for {failed.result.name}: {failed.result.detail}"
+            return _blocked(ctx, reason, action=action)
+    detail = f"merged {len(pending)} child worktree(s)"
+    if len(pending) < len(items):
+        detail += f"; {len(items) - len(pending)} already self-landed"
+    return _record_verify(ctx, detail)
 
 
 def _record_verify(ctx: _Ctx, detail: str) -> AdvanceResult:
