@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from basicly import classify, decompose, loop, merge, policy, runner, verify, worktree
-from basicly.config import PolicyConfig, RunnerConfig
+from basicly.config import PolicyConfig, RunnerConfig, WorktreeConfig
 from basicly.loop_state import NodeState, WorktreeBinding
 from basicly.policy import DoRResult, GateStatus
 from basicly.worktree import Session
@@ -128,11 +128,13 @@ def _ready_leaf(at, monkeypatch: pytest.MonkeyPatch) -> dict:
     monkeypatch.setattr(policy, "definition_of_ready", lambda *_a: DoRResult(True, ()))
     created = {}
 
-    def _create(name: str) -> Session:
+    def _create(name: str, base: str | None = None) -> Session:
         created["n"] = name
+        created["base"] = base
         return _session(name)
 
     monkeypatch.setattr(worktree, "create", _create)
+    monkeypatch.setattr(worktree, "list_sessions", lambda *_a, **_k: [])
     monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: None)
     return created
 
@@ -443,3 +445,35 @@ def test_run_until_blocked_stops_at_first_block(
         tmp_path, "i", config=CONFIG, inputs=loop.Inputs(work_type="task")
     )
     assert len(results) == 1 and results[0].blocked
+
+
+def test_classify_leaf_forks_from_the_configured_base(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The loop passes [worktree].base_branch to create, like the CLI path."""
+    created = _ready_leaf(at, monkeypatch)
+    _pin_runner(monkeypatch, "manual")
+    monkeypatch.setattr(
+        loop,
+        "load_worktree_config",
+        lambda *_a: WorktreeConfig(base_branch="main", concurrency=4),
+    )
+    _advance(tmp_path)
+    assert created["base"] == "main"
+
+
+def test_classify_leaf_blocks_at_the_concurrency_cap(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A leaf refuses to provision past [worktree].concurrency."""
+    created = _ready_leaf(at, monkeypatch)
+    _pin_runner(monkeypatch, "manual")
+    monkeypatch.setattr(
+        loop,
+        "load_worktree_config",
+        lambda *_a: WorktreeConfig(base_branch=None, concurrency=2),
+    )
+    monkeypatch.setattr(worktree, "list_sessions", lambda *_a, **_k: [_session("a"), _session("b")])
+    result = _advance(tmp_path)
+    assert result.blocked and "concurrency cap" in result.detail
+    assert "n" not in created

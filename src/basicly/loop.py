@@ -195,8 +195,16 @@ def _start_build_leaf(ctx: _Ctx) -> AdvanceResult:
     way this step blocks — the next advance verifies and lands whatever the
     agent committed.
     """
+    wt_config = load_worktree_config(ctx.repo_root)
+    active = len(worktree.list_sessions())
+    if active >= wt_config.concurrency:
+        return _blocked(
+            ctx,
+            f"worktree concurrency cap reached ({active}/{wt_config.concurrency}); "
+            "clean up a worktree or raise [worktree].concurrency in basicly.toml",
+        )
     name = _worktree_name(ctx.issue_id)
-    session = worktree.create(name)
+    session = worktree.create(name, base=wt_config.base_branch)
     _bind_worktree(ctx, name, session.branch)
     return _dispatch_runner(ctx, name, Path(session.worktree_path))
 
@@ -293,9 +301,9 @@ def _rework(ctx: _Ctx, gate: str, reason: str) -> AdvanceResult:
 
 def _ensure_child_worktrees(ctx: _Ctx, children: list[tuple[str, str]]) -> None:
     """Provision a worktree for each dependency-unblocked, still-open child, up to the cap."""
-    cap = load_worktree_config(ctx.repo_root).concurrency
+    wt_config = load_worktree_config(ctx.repo_root)
     existing = {session.name for session in worktree.list_sessions()}
-    room = cap - len(existing)
+    room = wt_config.concurrency - len(existing)
     ready = {node.issue_id for node in loop_state.ready_ranked(ctx.repo_root)}
     for cid, status in children:
         if room <= 0:
@@ -303,7 +311,7 @@ def _ensure_child_worktrees(ctx: _Ctx, children: list[tuple[str, str]]) -> None:
         name = _worktree_name(cid)
         if status == "closed" or name in existing or cid not in ready:
             continue
-        session = worktree.create(name)
+        session = worktree.create(name, base=wt_config.base_branch)
         _bind_worktree(ctx, name, session.branch, issue_id=cid)
         existing.add(name)
         room -= 1
