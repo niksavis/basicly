@@ -83,7 +83,9 @@ def test_run_check_fails_cleanly_on_unrunnable_command(
 
     assert result.status == "fail"
     assert result.returncode in (126, 127)  # PermissionError vs FileNotFoundError by OS
-    assert "cannot run ghost-tool" in result.detail
+    # Linux surfaces PermissionError ("cannot run"); Windows treats the
+    # non-executable as not found. Either way the detail names the tool.
+    assert "ghost-tool" in result.detail
     assert "\n" not in result.detail
 
 
