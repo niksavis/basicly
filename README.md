@@ -15,7 +15,11 @@ Both halves are first-class, catalog-distributed artifacts — see [`docs/archit
 - A source-of-truth projector under `.basicly/`.
 - Fragment-driven generation for agent ecosystems (for example Claude and Copilot).
 - Skill projection workflows so shared skills can be synced into target roots.
-- Git hook scripts under `.basicly/core/hooks/`, wired via `.pre-commit-config.yaml`.
+- Git hook scripts under `.basicly/core/hooks/`, covering three git stages
+  (pre-commit, commit-msg, pre-push) plus Claude agent hooks. The git stages are
+  wired through the [pre-commit framework](https://pre-commit.com), whose config
+  file is fixed at `.pre-commit-config.yaml` — the *tool* is named pre-commit;
+  the file is not limited to the pre-commit stage.
 - Release and quality workflows in `.github/workflows/`.
 
 ## Project intent
