@@ -188,6 +188,34 @@ def _build_manifest(
     }
 
 
+def _sweep_stale_outputs(
+    repo_root: Path, existing_manifest: dict[str, Any], manifest: dict[str, Any]
+) -> int:
+    """Delete previously manifest-tracked files that dropped out of the new plan.
+
+    Only files the old manifest vouched for are touched, so retiring an output
+    (e.g. the .github/instructions twins) converges consumers on re-install
+    instead of stranding stale projections.
+    """
+    existing_outputs = existing_manifest.get("outputs")
+    if not isinstance(existing_outputs, dict):
+        return 0
+
+    removed = 0
+    resolved_root = repo_root.resolve()
+    for rel in sorted(set(existing_outputs) - set(manifest["outputs"])):
+        stale = (repo_root / rel).resolve()
+        if not stale.is_relative_to(resolved_root):
+            print(f"Note: skipping manifest entry outside the repo: {rel}", file=sys.stderr)
+            continue
+        if stale.is_file():
+            stale.unlink()
+            removed += 1
+            print(f"Removed {rel}")
+            _remove_empty_parents(stale.parent, resolved_root)
+    return removed
+
+
 def cmd_list(_args: argparse.Namespace) -> int:
     """List active fragments in a table."""
     repo_root = _repo_root()
@@ -266,6 +294,7 @@ def cmd_build(args: argparse.Namespace) -> int:
             existing_manifest = {}
 
     manifest = _build_manifest(rendered, planned, existing_manifest, bool(args.target))
+    changed_count += _sweep_stale_outputs(repo_root, existing_manifest, manifest)
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     print(f"Updated {_format_path(manifest_path, repo_root)}")

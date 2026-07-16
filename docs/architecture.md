@@ -85,7 +85,7 @@ Three roles, one repo can dogfood all of them at once (as this repo does today):
   │ .github/copilot-*.md   │
   │ + scoped, path-gated:  │
   │   .claude/rules/*      │
-  │   .github/instructions/│
+  │   (single source)      │
   └────────────┬───────────┘
                ▼
       Coding agents & humans — read the generated files
@@ -273,19 +273,27 @@ there, and never overwrites an existing `basicly.toml`.
 ```text
 AGENTS.md                                    # applies_to: [all]; inlines scoped fragments (codex can't path-scope)
 .claude/CLAUDE.md                            # applies_to: [all] + [claude]; scoped fragments excluded (exclude_scoped)
-.claude/rules/*.md                           # path-scoped claude fragments, `paths:` frontmatter
+.claude/rules/*.md                           # path-scoped fragments, `paths:` frontmatter (single source)
 .github/copilot-instructions.md              # applies_to: [all] + [copilot], inlined (no @-import); scoped excluded
-.github/instructions/*.instructions.md       # path-scoped copilot fragments, `applyTo:` frontmatter
 .claude/skills/*/SKILL.md                    # projected via `skills-build`
 ```
 
 Which fragments land where is driven by each output's `filter` in `targets/*.yaml`:
 `applies_to` selects by target, `has_scope: true` restricts an output to scoped
-fragments (the `.claude/rules/` and `.github/instructions/` files), and
-`exclude_scoped: true` drops scoped fragments from a baseline (the `CLAUDE.md` and
-`copilot-instructions.md` wrappers) — see §7 detail 4. Codex gets the shared `AGENTS.md`
-baseline only, with scoped fragments inlined because it has no path-scoping mechanism;
-`.codex/rules/*.rules` is **[Deferred]** (§11.11).
+fragments (the `.claude/rules/` files), and `exclude_scoped: true` drops scoped
+fragments from a baseline (the `CLAUDE.md` and `copilot-instructions.md` wrappers) —
+see §7 detail 4. Codex gets the shared `AGENTS.md` baseline only, with scoped
+fragments inlined because it has no path-scoping mechanism; `.codex/rules/*.rules`
+is **[Deferred]** (§11.11).
+
+**Scoped rules are single-sourced to `.claude/rules/`** (adopted 2026-07-16): VS Code
+loads both `.claude/rules/*.md` and `.github/instructions/*.instructions.md` with no
+dedup (it name-dedupes only skills), so a `.github/instructions/` twin double-loaded
+every path-scoped rule for every VS Code consumer. The copilot target therefore no
+longer emits `scoped_instructions`; a full `basicly build`/`install` sweeps previously
+manifest-tracked `.github/instructions/*.instructions.md` files from consumers.
+Trade-off, accepted: github.com-side Copilot (PR code review, cloud agent) loses
+path-scoped rules and keeps only the root `copilot-instructions.md`.
 
 ---
 
@@ -415,8 +423,9 @@ inherits that failure.
    content.
 4. **Scoped fragments stay out of the always-on baseline** (Claude & Copilot): a
    fragment with a non-default `scope.paths` is projected only to its path-gated file
-   (`.claude/rules/*.md` via `paths:`, `.github/instructions/*.instructions.md` via
-   `applyTo:`) — both are real, auto-activating features of those tools — and is **not**
+   (`.claude/rules/*.md` via `paths:` — the single source; the former
+   `.github/instructions/*.instructions.md` twin was retired 2026-07-16 because VS
+   Code loads both roots without dedup, see §4.4) — and is **not**
    inlined into `CLAUDE.md`/`copilot-instructions.md`. This keeps the always-on file lean
    (a Python-only rule shouldn't cost every task its context budget) and is enforced by
    the `exclude_scoped: true` output filter (§4.4). **Exception — `AGENTS.md` (codex)**:
