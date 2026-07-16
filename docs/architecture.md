@@ -585,8 +585,13 @@ way. The GitHub repo is public, so the command needs no authentication.
   are stripped from `.pre-commit-config.yaml` / `.claude/settings.json` instead
   of stranding. Per-block technology conditioning inside agent slots is
   explicitly out of scope (v2).
-- A `curl` bootstrap shim for consumers without `uv`/Python is **[Planned]**
-  (§11.11).
+- **[Implemented]** (`basicly-hmc`) **Bootstrap shim** for consumers without
+  `uv`/Python: `.scripts/bootstrap.sh` (POSIX sh, curl-able) and
+  `.scripts/bootstrap.ps1` (PowerShell) install `uv` from astral.sh when
+  absent, then run the same pinned `uv tool run --from git+...@<ref> basicly
+  install` in the current repo. `--ref` pins the version (default `main`);
+  every other argument passes through to `basicly install`. Both fail fast
+  outside a git repository.
 
 ---
 
@@ -671,9 +676,10 @@ Ordered roughly by blocking-ness. Each is a candidate beads epic/feature/task.
     in the `terminal` repo — install → customize → upgrade → harness loop → ship
     (`basicly-zrj.15`) — then cut the tag (`basicly-zrj.16`, gated also on the
     `copilot-instructions.md` size-cap split `basicly-4ce`).
-11. **`curl` bootstrap script and `.codex/rules/*.rules` scoped rules** are
-    **[Planned]**/**[Deferred]** post-release (`basicly-zrj.6`). Catalog
-    selection/flavors shipped as **technology scoping** (`basicly-aff`, §9).
+11. **`.codex/rules/*.rules` scoped rules** are **[Deferred]** post-release
+    (`basicly-zrj.6`). Catalog selection/flavors shipped as **technology
+    scoping** (`basicly-aff`, §9); the `curl` bootstrap shim shipped as
+    `.scripts/bootstrap.sh`/`.ps1` (`basicly-hmc`, §9).
 12. **Cursor as a target** is **[Deferred]**; no renderer, no templates.
 13. **The basicly harness** — **[Implemented]** (§12, epic `basicly-onb` closed): the
     agent-agnostic development loop (work isolation + workflow + hard verify/validate
