@@ -104,6 +104,52 @@ def test_create_copies_env_local_when_present(
     assert copied.read_text(encoding="utf-8") == "SECRET=1\n"
 
 
+def test_create_syncs_uncommitted_tracker_state(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A freshly filed (uncommitted) beads issue reaches the new worktree.
+
+    Regression for file-then-loop-immediately: the worktree branches from the
+    base HEAD, which predates an uncommitted ``.beads/issues.jsonl`` line, so
+    the beads commit-msg hook rejected the worktree's first commit.
+    """
+    beads = git_repo / ".beads"
+    beads.mkdir()
+    (beads / "issues.jsonl").write_text('{"id":"x-1"}\n', encoding="utf-8")
+    _git(git_repo, "add", ".beads/issues.jsonl")
+    _git(git_repo, "commit", "-m", "track beads")
+    (beads / "issues.jsonl").write_text('{"id":"x-1"}\n{"id":"x-2"}\n', encoding="utf-8")
+
+    monkeypatch.chdir(git_repo)
+    session = worktree.create("fresh-issue")
+
+    synced = session.path / ".beads" / "issues.jsonl"
+    assert synced.read_text(encoding="utf-8") == '{"id":"x-1"}\n{"id":"x-2"}\n'
+
+
+def test_create_leaves_matching_tracker_untouched(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A committed, unchanged tracker file is not rewritten (worktree stays clean)."""
+    beads = git_repo / ".beads"
+    beads.mkdir()
+    (beads / "issues.jsonl").write_text('{"id":"x-1"}\n', encoding="utf-8")
+    _git(git_repo, "add", ".beads/issues.jsonl")
+    _git(git_repo, "commit", "-m", "track beads")
+
+    monkeypatch.chdir(git_repo)
+    session = worktree.create("clean-tracker")
+
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=session.path,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert status == ""
+
+
 def test_create_rejects_duplicate_name(git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Creating a second worktree with a taken name is rejected."""
     monkeypatch.chdir(git_repo)
