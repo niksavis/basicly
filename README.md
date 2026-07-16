@@ -60,28 +60,42 @@ Add `--purge` to also remove the user overlay, `basicly.toml`, and the scaffolde
 
 ## Quick start
 
-### Local development
+### In a consumer repo (end users)
 
-```bash
-uv sync --group dev
-uv run pre-commit install --install-hooks -t pre-commit -t commit-msg -t pre-push
+Day-to-day use needs nothing beyond `install` above — re-running it is also the
+upgrade path (there is no separate `update` command). The scaffolded VS Code
+tasks wrap the same pinned commands. To inspect or re-sync by hand, run these
+from the consumer repo root with the same pin used to install:
+
+```sh
+uvx --from git+https://github.com/niksavis/basicly@v0.1.3 basicly check   # exit non-zero when generated files drifted
+uvx --from git+https://github.com/niksavis/basicly@v0.1.3 basicly build   # regenerate agent instruction files
 ```
 
-### Core projector commands
+### Contributing to this repo
 
-```bash
-PYTHONPATH=src uv run python -m basicly.cli list
-PYTHONPATH=src uv run python -m basicly.cli update
-PYTHONPATH=src uv run python -m basicly.cli build
-PYTHONPATH=src uv run python -m basicly.cli check
+All commands run through `uv` in a checkout; the `basicly` entry point resolves
+from the workspace, so no `PYTHONPATH` prefix is needed:
+
+```sh
+uv sync --group dev   # one-time: create the dev environment
+uv run pre-commit install --install-hooks -t pre-commit -t commit-msg -t pre-push   # activate the git gates for all three stages
 ```
 
-### Skills projection commands
+Core projector commands (fragments → agent instruction files):
 
-```bash
-PYTHONPATH=src uv run python -m basicly.cli skills-list
-PYTHONPATH=src uv run python -m basicly.cli skills-build
-PYTHONPATH=src uv run python -m basicly.cli skills-check
+```sh
+uv run basicly list    # table of active fragments: id, category, priority, scope
+uv run basicly build   # render generated files; --target <name> builds one target, --verify runs the catalog gate first and writes nothing on failure
+uv run basicly check   # fail when generated files or the manifest drifted (what CI runs)
+```
+
+Skill projection commands (`skill.yaml` sources → `SKILL.md` at target roots):
+
+```sh
+uv run basicly skills-list    # table of skills in the catalog
+uv run basicly skills-build   # project skills; --all-default-roots covers .claude/skills and .agents/skills, --root <dir> adds a custom root (repeatable)
+uv run basicly skills-check   # fail when a projected SKILL.md is missing or stale
 ```
 
 ## Architecture
