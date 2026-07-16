@@ -1,10 +1,12 @@
-"""Count which terminal tools the agent actually invokes (PostToolUse hook).
+"""Count which terminal tools and skills the agent actually invokes (PostToolUse hook).
 
-Fired by Claude Code (``PostToolUse``, matcher ``Bash``) and GitHub Copilot
-(``postToolUse``) after a shell tool call. Reads the hook JSON from stdin,
-extracts the head token of every pipeline segment in the executed command, and
-increments per-tool counters in ``.basicly/usage/tool-usage.json`` — real data
-for culling idle tools/skills from the catalog.
+Fired by Claude Code (``PostToolUse``, matcher ``Bash|Skill``) and GitHub
+Copilot (``postToolUse``) after a tool call. Reads the hook JSON from stdin;
+for a shell call it extracts the head token of every pipeline segment in the
+executed command, and for a Claude ``Skill`` call it records the skill as a
+``skill:<name>`` entry. Both increment per-entry counters in
+``.basicly/usage/tool-usage.json`` — real data for culling idle tools/skills
+from the catalog.
 
 Telemetry, never a gate: every path exits 0, the usage dir ignores itself
 (``.basicly/usage/.gitignore``), writes are atomic, and a corrupt counter file
@@ -72,6 +74,19 @@ def _command_from_payload(payload: dict) -> str | None:
         command = args.get("command")
         return command if isinstance(command, str) else None
     return args if isinstance(args, str) else None
+
+
+def _skill_from_payload(payload: dict) -> str | None:
+    """Return the invoked skill name from a Claude ``Skill`` tool payload."""
+    tool = payload.get("tool_name") or payload.get("toolName") or ""
+    if str(tool).lower() != "skill":
+        return None
+    args = payload.get("tool_input") or payload.get("toolArgs") or {}
+    if isinstance(args, dict):
+        skill = args.get("skill")
+        if isinstance(skill, str) and skill:
+            return skill
+    return None
 
 
 def tools_in_command(command: str) -> list[str]:
@@ -145,6 +160,9 @@ def main() -> int:
         command = _command_from_payload(payload)
         if command:
             record(tools_in_command(command), Path.cwd())
+        skill = _skill_from_payload(payload)
+        if skill:
+            record([f"skill:{skill}"], Path.cwd())
     except Exception:  # nosec B110 — telemetry must never fail the tool call
         pass
     return 0

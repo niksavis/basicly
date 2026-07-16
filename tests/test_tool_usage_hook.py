@@ -62,6 +62,20 @@ def test_wrappers_count_wrapper_and_tool(tmp_path: Path) -> None:
     assert counts == {"uv": 1, "pytest": 1}
 
 
+def test_skill_invocations_count_under_skill_prefix(tmp_path: Path) -> None:
+    """A Claude Skill payload records a skill:<name> entry; bad shapes do not."""
+    payload = {
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Skill",
+        "tool_input": {"skill": "conventional-commits"},
+    }
+    assert _run(payload, tmp_path).returncode == 0
+    assert _stats(tmp_path)["skill:conventional-commits"]["count"] == 1
+
+    assert _run({"tool_name": "Skill", "tool_input": {}}, tmp_path).returncode == 0
+    assert len(_stats(tmp_path)) == 1
+
+
 def test_counts_accumulate_across_invocations(tmp_path: Path) -> None:
     """Counters survive between hook invocations (and thus between sessions)."""
     payload = {"tool_name": "Bash", "tool_input": {"command": "rg foo"}}

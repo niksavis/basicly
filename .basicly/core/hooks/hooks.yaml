@@ -39,12 +39,13 @@ hooks:
     stage: pretooluse
     manager: claude
   # Token-free tool-usage telemetry: counts pipeline heads of every executed
-  # shell command into the self-ignored .basicly/usage/tool-usage.json.
+  # shell command and every Skill invocation into the self-ignored
+  # .basicly/usage/tool-usage.json.
   - id: tool-usage
     script: tool-usage.py
     stage: posttooluse
     manager: claude
-    matcher: Bash
+    matcher: Bash|Skill
   - id: tool-usage-copilot
     script: tool-usage.py
     stage: posttooluse
