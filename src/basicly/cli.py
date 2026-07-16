@@ -50,6 +50,7 @@ from .config import (
 )
 from .hooks import (
     check_hooks,
+    claude_hook_specs,
     hook_stages,
     install_hooks,
     load_hook_specs,
@@ -874,6 +875,10 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
         removed += 1
         print(note)
 
+    if claude_settings.remove_agent_hooks(repo_root, claude_hook_specs(load_hook_specs())):
+        removed += 1
+        print(f"Removed managed agent hooks from {claude_settings.CLAUDE_SETTINGS_PATH}")
+
     for tree in (core_dst, (repo_root / paths.state_path).parent):
         if tree.is_dir():
             shutil.rmtree(tree)
@@ -924,6 +929,14 @@ def cmd_hooks_build(_args: argparse.Namespace) -> int:
         )
     _report_sync(result, repo_root, noun="hook files", label="Hooks", extra_note=rewrite_note)
 
+    agent_specs = claude_hook_specs(load_hook_specs())
+    if agent_specs:
+        hooks_relpath = _core_hooks_dir(paths).as_posix()
+        if claude_settings.sync_agent_hooks(repo_root, agent_specs, hooks_relpath):
+            print(f"Wrote {claude_settings.CLAUDE_SETTINGS_PATH} (managed agent hooks)")
+        else:
+            print(f"Agent hooks in {claude_settings.CLAUDE_SETTINGS_PATH} are up to date.")
+
     stages = hook_stages(load_hook_specs())
     if getattr(_args, "no_install", False):
         stage_flags = " ".join(f"-t {stage}" for stage in stages)
@@ -951,6 +964,14 @@ def cmd_hooks_check(_args: argparse.Namespace) -> int:
     repo_root = _repo_root()
     paths = load_project_paths(repo_root)
     mismatches = check_hooks(repo_root, _core_hooks_dir(paths))
+
+    agent_specs = claude_hook_specs(load_hook_specs())
+    settings_path = repo_root / claude_settings.CLAUDE_SETTINGS_PATH
+    for reason in claude_settings.agent_hook_mismatches(
+        repo_root, agent_specs, _core_hooks_dir(paths).as_posix()
+    ):
+        mismatches.append((settings_path, reason))
+
     if _report_mismatches(
         mismatches,
         repo_root,

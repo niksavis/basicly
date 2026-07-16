@@ -24,6 +24,13 @@ from .schema import ValidationError
 HOOKS_MANIFEST = "hooks.yaml"
 PRECOMMIT_CONFIG = ".pre-commit-config.yaml"
 
+# Hook managers a manifest entry may target: git hooks rendered into the
+# pre-commit config, or Claude Code agent hooks rendered into the committed
+# .claude/settings.json (see claude_settings.sync_agent_hooks).
+GIT_MANAGER = "git"
+CLAUDE_MANAGER = "claude"
+HOOK_MANAGERS = (GIT_MANAGER, CLAUDE_MANAGER)
+
 
 @dataclass(frozen=True)
 class HookSpec:
@@ -34,6 +41,7 @@ class HookSpec:
     stage: str
     pass_filenames: bool = False
     always_run: bool = False
+    manager: str = GIT_MANAGER
 
 
 def _catalog_hooks_dir() -> Path:
@@ -56,6 +64,12 @@ def load_hook_specs(hooks_dir: Path | None = None) -> list[HookSpec]:
         missing = [key for key in ("id", "script", "stage") if key not in entry]
         if missing:
             raise ValueError(f"{manifest}: hook entry is missing {', '.join(missing)}")
+        manager = str(entry.get("manager", GIT_MANAGER))
+        if manager not in HOOK_MANAGERS:
+            raise ValueError(
+                f"{manifest}: hook '{entry['id']}' has unknown manager {manager!r}; "
+                f"allowed: {list(HOOK_MANAGERS)}"
+            )
         specs.append(
             HookSpec(
                 id=str(entry["id"]),
@@ -63,9 +77,20 @@ def load_hook_specs(hooks_dir: Path | None = None) -> list[HookSpec]:
                 stage=str(entry["stage"]),
                 pass_filenames=bool(entry.get("pass_filenames", False)),
                 always_run=bool(entry.get("always_run", False)),
+                manager=manager,
             )
         )
     return specs
+
+
+def git_hook_specs(specs: list[HookSpec]) -> list[HookSpec]:
+    """Return the specs rendered into the pre-commit config (``manager: git``)."""
+    return [spec for spec in specs if spec.manager == GIT_MANAGER]
+
+
+def claude_hook_specs(specs: list[HookSpec]) -> list[HookSpec]:
+    """Return the specs rendered into Claude Code agent hooks (``manager: claude``)."""
+    return [spec for spec in specs if spec.manager == CLAUDE_MANAGER]
 
 
 def _hook_entry(spec: HookSpec, hooks_relpath: str) -> dict:
@@ -182,7 +207,7 @@ def sync_hooks(repo_root: Path, core_hooks_dir: Path) -> SyncResult:
     if src.resolve() != dst.resolve() and not dst.is_dir():
         raise ValidationError("core hooks are not materialized; run `basicly install` first", dst)
 
-    specs = load_hook_specs(src)
+    specs = git_hook_specs(load_hook_specs(src))
     hooks_relpath = core_hooks_dir.as_posix()
     config_path = repo_root / PRECOMMIT_CONFIG
 
@@ -206,9 +231,13 @@ def sync_hooks(repo_root: Path, core_hooks_dir: Path) -> SyncResult:
 
 
 def hook_stages(specs: list[HookSpec]) -> list[str]:
-    """Return the distinct git stages used by the given hook specs, in first-seen order."""
+    """Return the distinct git stages used by the given hook specs, in first-seen order.
+
+    Only ``manager: git`` specs participate — the result feeds
+    ``pre-commit install -t <stage>``, which agent-hook stages must never reach.
+    """
     stages: list[str] = []
-    for spec in specs:
+    for spec in git_hook_specs(specs):
         if spec.stage not in stages:
             stages.append(spec.stage)
     return stages
@@ -317,7 +346,7 @@ def remove_managed_hooks(repo_root: Path) -> str | None:
         return None
 
     parsed = _parse_config(config_path, config_path.read_text(encoding="utf-8"))
-    specs = load_hook_specs()
+    specs = git_hook_specs(load_hook_specs())
     managed_ids = {spec.id for spec in specs}
 
     kept: list = []
@@ -367,7 +396,7 @@ def check_hooks(repo_root: Path, core_hooks_dir: Path) -> list[tuple[Path, str]]
             elif target.read_bytes() != path.read_bytes():
                 mismatches.append((target, "differs from catalog"))
 
-    specs = load_hook_specs(src)
+    specs = git_hook_specs(load_hook_specs(src))
     config_path = repo_root / PRECOMMIT_CONFIG
     if not config_path.exists():
         mismatches.append((config_path, "missing"))

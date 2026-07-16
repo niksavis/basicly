@@ -37,5 +37,18 @@
   },
   "worktree": {
     "bgIsolation": "none"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run python .basicly/core/hooks/protect-generated.py"
+          }
+        ]
+      }
+    ]
   }
 }

@@ -12,6 +12,8 @@ import yaml
 from basicly.hooks import (
     HookSpec,
     check_hooks,
+    claude_hook_specs,
+    git_hook_specs,
     hook_stages,
     install_hooks,
     load_hook_specs,
@@ -49,6 +51,7 @@ def test_manifest_lists_every_catalog_hook() -> None:
         "commit-msg-script",
         "beads-commit-msg-script",
         "pre-push-script",
+        "protect-generated",
     }
 
 
@@ -59,6 +62,28 @@ def test_manifest_ships_identity_guard_at_pre_commit() -> None:
     assert guard.script == "identity-guard.py"
     assert guard.stage == "pre-commit"
     assert guard.always_run is True
+
+
+def test_manifest_ships_protect_generated_for_claude() -> None:
+    """The generated-files guard targets the Claude agent-hook manager, not git."""
+    specs = load_hook_specs()
+    guard = next(spec for spec in specs if spec.id == "protect-generated")
+    assert guard.script == "protect-generated.py"
+    assert guard.manager == "claude"
+    assert git_hook_specs(specs) == [s for s in specs if s.id != "protect-generated"]
+    assert claude_hook_specs(specs) == [guard]
+
+
+def test_load_rejects_unknown_manager(tmp_path: Path) -> None:
+    """A manifest entry with a manager basicly cannot render fails the load."""
+    hooks_dir = tmp_path / "hooks"
+    hooks_dir.mkdir()
+    (hooks_dir / "hooks.yaml").write_text(
+        "hooks:\n  - id: x\n    script: x.py\n    stage: pre-commit\n    manager: lefthook\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="unknown manager"):
+        load_hook_specs(hooks_dir)
 
 
 def test_merge_preserves_foreign_hooks_and_is_idempotent() -> None:
@@ -98,6 +123,8 @@ def test_sync_hooks_scaffolds_and_check_round_trips(tmp_path: Path) -> None:
 
     loaded = yaml.safe_load(config.read_text(encoding="utf-8"))
     assert "pre-push-script" in _local_hook_ids(loaded)
+    # Agent-managed hooks never reach the pre-commit config.
+    assert "protect-generated" not in _local_hook_ids(loaded)
 
     assert check_hooks(tmp_path, CORE_HOOKS_DIR) == []
 
@@ -196,7 +223,9 @@ def test_hook_stages_returns_distinct_stages_in_order() -> None:
         HookSpec(id="b", script="b.py", stage="commit-msg"),
         HookSpec(id="c", script="c.py", stage="commit-msg"),
         HookSpec(id="d", script="d.py", stage="pre-push"),
+        HookSpec(id="e", script="e.py", stage="pretooluse", manager="claude"),
     ]
+    # Agent-hook stages must never reach `pre-commit install -t`.
     assert hook_stages(specs) == ["pre-commit", "commit-msg", "pre-push"]
 
 
