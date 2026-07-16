@@ -1,13 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="basicly logo: one catalog block projected into three artifact blocks">
-  <!-- The versioned YAML catalog: one source block with fragment lines. -->
-  <rect x="6" y="34" width="58" height="60" rx="14" fill="#4f46e5"/>
-  <rect x="18" y="50" width="30" height="7" rx="3.5" fill="#a5b4fc"/>
-  <rect x="24" y="62" width="24" height="7" rx="3.5" fill="#a5b4fc"/>
-  <rect x="18" y="74" width="26" height="7" rx="3.5" fill="#a5b4fc"/>
-  <!-- Projection beams: one command fans the catalog out. -->
-  <path d="M68 64 84 25M68 64H84M68 64 84 103" stroke="#64748b" stroke-width="5" stroke-linecap="round" fill="none"/>
-  <!-- The projected artifacts: instructions, skills, and the amber deterministic gate. -->
-  <rect x="90" y="10" width="30" height="30" rx="9" fill="#6366f1"/>
-  <rect x="90" y="49" width="30" height="30" rx="9" fill="#818cf8"/>
-  <rect x="90" y="88" width="30" height="30" rx="9" fill="#f59e0b"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="basicly logo: a central catalog block connected to four lego bricks">
+  <!-- Connections: catalog corners to each brick, rounded and diagonal. -->
+  <path d="M40 40 26 28M88 40 102 28M88 88 102 100M40 88 26 100" stroke="#64748b" stroke-width="5" stroke-linecap="round" fill="none"/>
+  <!-- The versioned YAML catalog: one big block, fragment lines inside. -->
+  <rect x="34" y="34" width="60" height="60" rx="14" fill="#4f46e5"/>
+  <rect x="46" y="50" width="32" height="7" rx="3.5" fill="#a5b4fc"/>
+  <rect x="52" y="62" width="26" height="7" rx="3.5" fill="#a5b4fc"/>
+  <rect x="46" y="74" width="28" height="7" rx="3.5" fill="#a5b4fc"/>
+  <!-- Four lego bricks (two studs each) around the catalog; amber = the gates. -->
+  <rect x="9" y="10" width="7" height="5" rx="2" fill="#6366f1"/>
+  <rect x="20" y="10" width="7" height="5" rx="2" fill="#6366f1"/>
+  <rect x="4" y="14" width="28" height="19" rx="6" fill="#6366f1"/>
+  <rect x="101" y="10" width="7" height="5" rx="2" fill="#818cf8"/>
+  <rect x="112" y="10" width="7" height="5" rx="2" fill="#818cf8"/>
+  <rect x="96" y="14" width="28" height="19" rx="6" fill="#818cf8"/>
+  <rect x="101" y="91" width="7" height="5" rx="2" fill="#f59e0b"/>
+  <rect x="112" y="91" width="7" height="5" rx="2" fill="#f59e0b"/>
+  <rect x="96" y="95" width="28" height="19" rx="6" fill="#f59e0b"/>
+  <rect x="9" y="91" width="7" height="5" rx="2" fill="#818cf8"/>
+  <rect x="20" y="91" width="7" height="5" rx="2" fill="#818cf8"/>
+  <rect x="4" y="95" width="28" height="19" rx="6" fill="#818cf8"/>
 </svg>
