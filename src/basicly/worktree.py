@@ -175,7 +175,11 @@ def create(name: str, base: str | None = None) -> Session:
 
     Adds ``<repo>.worktrees/<name>`` on a new ``harness/<name>`` branch off
     *base* (default: the current branch), provisions its own dependency trees
-    and git hooks, and records a session in the git common dir.
+    and git hooks, and records a session in the git common dir. The base
+    checkout's working-tree ``.beads/issues.jsonl`` is synced in when it
+    differs: a freshly filed issue lives there uncommitted, and without the
+    sync the beads commit-msg hook rejects the worktree's first commit as
+    referencing an unknown id.
     """
     base = base or current_branch()
     branch = f"{BRANCH_PREFIX}{name}"
@@ -198,6 +202,14 @@ def create(name: str, base: str | None = None) -> Session:
             env_local.read_text(encoding="utf-8"), encoding="utf-8"
         )
         notes.append(".env.local: copied")
+
+    tracker = main_checkout() / ".beads" / "issues.jsonl"
+    if tracker.exists():
+        target = worktree / ".beads" / "issues.jsonl"
+        if not target.exists() or target.read_bytes() != tracker.read_bytes():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(tracker.read_bytes())
+            notes.append(".beads/issues.jsonl: synced from base checkout")
 
     notes.append(install_worktree_hooks(worktree))
 
