@@ -5,10 +5,9 @@
 > only source of truth for architecture decisions, and beads (`br`) issues are broken
 > down directly from it (§10).
 >
-> **Status legend** used throughout: **[Implemented]** — exists in code today and is
-> verified working · **[Partial]** — some of the mechanism exists, gaps noted inline ·
-> **[Planned]** — designed, not yet built · **[Deferred]** — explicitly out of scope
-> for now.
+> **Status convention**: this document describes the system as it exists in code
+> today. Anything not yet built is explicitly marked **[Deferred]** and collected
+> in §11; everything else is implemented and available.
 >
 > **How to read this document**: each numbered Part opens with a short **Summary**
 > you can scan alone to get the full picture, followed by **Details** you only need
@@ -114,28 +113,28 @@ measurably hurt agent task success and inflate cost._ If a rule is mechanically
 enforced (ruff, pyright, bandit, markdownlint, a commit-msg hook, pre-push tests), the
 always-on file must reference the command that enforces it, not restate the rule in
 prose. Prose is reserved for what a linter cannot check: judgment calls, escalation
-policy, when to ask instead of guess. **[Implemented]** (`basicly-a8e`): the
+policy, when to ask instead of guess. The
 `enforced_by` schema field lists the commands that enforce a rule, and
 `catalog_lint` requires each listed command to be cited in the fragment body —
 a fragment that claims enforcement must point at the command, not restate the rule.
 
 **3.2 Composability over templates.** Generated files are never hand-templated blobs;
 they are assembled from fragments — one fragment per policy/practice/decision —
-selected, sorted, and rendered per target. **[Implemented]**: this is exactly how
+selected, sorted, and rendered per target — this is exactly how
 [`loader.py`](../src/basicly/loader.py) and
-[`planner.py`](../src/basicly/planner.py) work today.
+[`planner.py`](../src/basicly/planner.py) work.
 
 **3.3 Two-layer verification, deterministic first.** Deterministic, scriptable checks
 catch a large class of problems cheaply (duplicate ids, missing fields, unknown
 categories). Semantic problems — contradiction, ambiguity that parses fine but reads
 badly to a model — need a capable reader. Both layers run against the same merged
-fragment set, deterministic always first. **[Implemented]**: schema/duplicate-id
+fragment set, deterministic always first. Schema/duplicate-id
 validation runs inside the normal load path
 (`loader._validate_fragment`); duplicate-body, contradiction, ambiguity, and
-scope-overlap checks, plus the standalone `basicly catalog-verify` command,
-shipped as `basicly-ihs` (`catalog_verify.py`). Agent-assisted semantic
-review (`basicly review`) is **[Implemented]** (`basicly-qps`, `review.py`):
-advisory, never a merge gate (§6, §11).
+scope-overlap checks live behind the standalone `basicly catalog-verify` command
+(`catalog_verify.py`). Agent-assisted semantic
+review (`basicly review`, `review.py`) is
+advisory, never a merge gate (§6).
 
 **3.4 Source of truth and generated files are each a one-way street.** Users edit
 fragments (core or overlay) and never the generated files; `basicly build` regenerates,
@@ -172,15 +171,15 @@ generated/core paths; only the user writes to the overlay.
 
 ### Details
 
-| Tree                                                                                                                     | Owner (who writes here)                                                | Status                                                                                     |
-| ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `src/basicly/` — engine (loader, planner, CLI, renderers)                                                                | `basicly` maintainers, ships with the tool                             | **[Implemented]** — moved from `.basicly/basicly/` to a normal `src` layout                |
-| `.basicly/core/` — managed fragment + skill + agent + hook + target + template catalog                                   | `basicly install` only                                                 | **[Implemented]** (`fragments/`, `skills/`, `agents/`, `hooks/`, `targets/`, `templates/`) |
-| `.basicly/state/install.json` — install provenance (version, timestamp, catalog hashes)                                  | `basicly install` only                                                 | **[Implemented]** (`basicly-8fg`)                                                          |
-| `.basicly-local/` — user overlay (path-configurable via `basicly.toml`)                                                  | the consumer repo's users                                              | **[Implemented]**                                                                          |
-| `basicly.toml` — path wiring                                                                                             | the consumer repo                                                      | **[Implemented]**                                                                          |
-| Generated artifacts (`AGENTS.md`, `.claude/CLAUDE.md`, `.github/copilot-instructions.md`, skill/scoped-rule/agent files) | `basicly build` / `basicly skills-build` / `basicly agents-build` only | **[Implemented]**                                                                          |
-| `.basicly/generated-manifest.json`                                                                                       | `basicly build` only                                                   | **[Implemented]**                                                                          |
+| Tree                                                                                                                     | Owner (who writes here)                                                |
+| ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| `src/basicly/` — engine (loader, planner, CLI, renderers)                                                                | `basicly` maintainers, ships with the tool                             |
+| `.basicly/core/` — managed fragment + skill + agent + hook + target + template catalog                                   | `basicly install` only                                                 |
+| `.basicly/state/install.json` — install provenance (version, timestamp, catalog hashes)                                  | `basicly install` only                                                 |
+| `.basicly-local/` — user overlay (path-configurable via `basicly.toml`)                                                  | the consumer repo's users                                              |
+| `basicly.toml` — path wiring                                                                                             | the consumer repo                                                      |
+| Generated artifacts (`AGENTS.md`, `.claude/CLAUDE.md`, `.github/copilot-instructions.md`, skill/scoped-rule/agent files) | `basicly build` / `basicly skills-build` / `basicly agents-build` only |
+| `.basicly/generated-manifest.json`                                                                                       | `basicly build` only                                                   |
 
 #### 4.1 Engine
 
@@ -200,9 +199,11 @@ and `src/basicly/` never contains catalog data.
 ```text
 .basicly/
   core/
-    fragments/{boundaries,commands,decisions,project,security,testing,tools}/*.fragment.md
-    skills/<skill-name>/SKILL.md      # source format gap, see below
-    hooks/{pre-commit,identity-guard,commit-msg,beads-commit-msg,pre-push}.py
+    fragments/{boundaries,commands,decisions,project,security,testing,tools}/*.fragment.yaml
+    skills/<skill-name>/skill.yaml    # projected to SKILL.md at target roots, see below
+    agents/<slug>/agent.yaml          # + agents/blocks/<id>.block.yaml (§5)
+    hooks/*.py + hooks.yaml           # git-stage + agent hook scripts and their manifest
+    schemas/*.schema.json
     targets/{claude,copilot,codex}.yaml
     templates/{claude,copilot,codex}/*.j2
   generated-manifest.json
@@ -219,8 +220,7 @@ fragments in them yet. **Important distinction**: category `hooks` labels a _fra
 that describes hook usage_ — it is not the mechanism that ships an actual hook script;
 the actual scripts live in `core/hooks/` (below).
 
-**Skills — [Implemented]**: `core/skills/` is the catalog location (moved from a sibling
-`.basicly/skills/`). Sources are authored as `skill.yaml` (name, description, and an
+**Skills**: `core/skills/` is the catalog location. Sources are authored as `skill.yaml` (name, description, and an
 `instructions` block scalar), **not** the discoverable `SKILL.md` name: because some coding
 agents auto-discover skills by scanning broadly for `SKILL.md`, a `SKILL.md` _source_ would
 risk an agent loading both the catalog copy and the projected copy twice. `skills-build`
@@ -231,9 +231,10 @@ enforces all of this (schema validity, no `.md`-named sources, no `.yml`). The c
 is YAML rather than Python — it needs no code execution, keeps prose lossless via block
 scalars, and matches the existing catalog conventions.
 
-**Hooks — [Implemented as a catalog location, projected and installed by
-`hooks-build`]**: `core/hooks/` holds the actual git hook scripts (`pre-commit.py`,
-`identity-guard.py`, `commit-msg.py`, `beads-commit-msg.py`, `pre-push.py`) as
+**Hooks** (projected and installed by
+`hooks-build`): `core/hooks/` holds the actual hook scripts — git-stage gates
+(`pre-commit.py`, `identity-guard.py`, `commit-msg.py`, `beads-commit-msg.py`,
+`pre-push.py`) plus agent-side hooks (`protect-generated.py`, `tool-usage.py`) — as
 first-class catalog artifacts — the deterministic, gating counterpart to
 fragments/skills — described tool-agnostically in `core/hooks/hooks.yaml`.
 (`identity-guard.py` blocks a commit whose git identity is unset or a hostname
@@ -243,7 +244,14 @@ repo dogfoods them directly: [`.pre-commit-config.yaml`](../.pre-commit-config.y
 points straight at `core/hooks/*.py`. `basicly hooks-build` projects the manifest
 into a consumer's `.pre-commit-config.yaml` and then runs `pre-commit install` so the
 gates are active — not merely written; a gate that is shipped but never installed is
-inert, the exact gap that once let unguarded commits through (§8, §11.6).
+inert, the exact failure that once let unguarded commits through (§8). The manifest's
+`manager` field routes each hook to one of three surfaces: `git` (the pre-commit
+config), `claude` (agent hooks in `.claude/settings.json`; the event derives from the
+spec `stage`, with an optional per-spec `matcher`), and `copilot` (managed
+`.github/hooks/basicly-<id>.json` files). The `tool-usage` hook rides both agent
+managers: a PostToolUse counter tallying every shell command's pipeline heads into the
+self-ignored `.basicly/usage/tool-usage.json` — token-free telemetry for culling idle
+tools/skills from the catalog with real data.
 
 #### 4.3 User overlay
 
@@ -284,7 +292,7 @@ fragments (the `.claude/rules/` files), and `exclude_scoped: true` drops scoped
 fragments from a baseline (the `CLAUDE.md` and `copilot-instructions.md` wrappers) —
 see §7 detail 4. Codex gets the shared `AGENTS.md` baseline only, with scoped
 fragments inlined because it has no path-scoping mechanism; `.codex/rules/*.rules`
-is **[Deferred]** (§11.11).
+is **[Deferred]** (§11).
 
 **Scoped rules are single-sourced to `.claude/rules/`** (adopted 2026-07-16): VS Code
 loads both `.claude/rules/*.md` and `.github/instructions/*.instructions.md` with no
@@ -322,7 +330,7 @@ Confirmed current schema ([`schema.py`](../src/basicly/schema.py)):
 | `replaces`    | no       | list of fragment ids                                                                                                                 | core fragments removed when this fragment is active   |
 | `extends`     | no       | list of fragment ids                                                                                                                 | documentation only, narrows future conflict detection |
 
-**Extension mechanism — [Implemented]**: the planner
+**Extension mechanism**: the planner
 (`planner._apply_user_replacements`) removes core fragments listed in an active user
 fragment's `replaces`, and the loader (`loader._validate_replacements`, run on every
 `list`/`build`/`check`) enforces the integrity rules as hard errors: a fragment
@@ -332,7 +340,7 @@ merged fragment set, and two user fragments may not replace each other.
 Sorting is deterministic: priority (desc) → category (asc) → id (asc). Two `build`
 runs on identical source produce byte-identical output.
 
-### Agent composition model — [Implemented] (`basicly-ajq`)
+### Agent composition model
 
 Subagent definition files are the fourth catalog kind, generated — never
 hand-edited — from YAML sources:
@@ -374,20 +382,20 @@ are built, as is the advisory agent-assisted semantic review (`basicly review`).
 
 ### Details
 
-| Check                                                                                       | Status                                                                                                                                                   |
-| ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Required fields, known category/priority/status/target, extension-field types               | **[Implemented]** — `loader._validate_fragment`, runs on every `list`/`build`/`check`                                                                    |
-| Duplicate fragment `id` across core + overlay roots                                         | **[Implemented]** — `loader.load_fragments_from_roots`                                                                                                   |
-| `replaces` target exists / `override: true` required / no mutual user-user replaces         | **[Implemented]** — `loader._validate_replacements`, runs on every `list`/`build`/`check`                                                                |
-| Duplicate/near-duplicate fragment bodies                                                    | **[Implemented]** (`basicly-ihs`) — `catalog_verify._duplicate_bodies` (difflib ratio)                                                                   |
-| Contradiction detection (static dictionary: tabs/spaces, pathlib/os.path, etc.)             | **[Implemented]** (`basicly-ihs`) — `catalog_verify._contradictions`, curated pairs                                                                      |
-| Ambiguity detection (deny-list of vague phrases)                                            | **[Implemented]** (`basicly-ihs`) — `catalog_verify._ambiguous_phrases`                                                                                  |
-| Scope-overlap detection                                                                     | **[Implemented]** (`basicly-ihs`) — `catalog_verify._scope_overlaps`, scoped pairs                                                                       |
-| Enforcement-pointer check (`enforced_by` field, §3.1)                                       | **[Implemented]** (`basicly-a8e`) — `catalog_lint` requires each `enforced_by` command to be cited in the body                                           |
-| Standalone `basicly catalog-verify` / `basicly build --verify` commands                     | **[Implemented]** (`basicly-ihs`) — named `catalog-verify` because `basicly verify` is the loop CI-check runner; `build --verify` gates the write        |
-| Semantic review (`basicly review`, agent reads rendered files for contradictions/ambiguity) | **[Implemented]** (`basicly-qps`) — `review.py` builds the prompt, dispatches via the agent-agnostic runner, always exits 0 (advisory, not a merge gate) |
+| Check                                                                                       | Mechanism                                                                                                            |
+|---------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------|
+| Required fields, known category/priority/status/target, extension-field types               | `loader._validate_fragment`, runs on every `list`/`build`/`check`                                                    |
+| Duplicate fragment `id` across core + overlay roots                                         | `loader.load_fragments_from_roots`                                                                                   |
+| `replaces` target exists / `override: true` required / no mutual user-user replaces         | `loader._validate_replacements`, runs on every `list`/`build`/`check`                                                |
+| Duplicate/near-duplicate fragment bodies                                                    | `catalog_verify._duplicate_bodies` (difflib ratio)                                                                   |
+| Contradiction detection (static dictionary: tabs/spaces, pathlib/os.path, etc.)             | `catalog_verify._contradictions`, curated pairs                                                                      |
+| Ambiguity detection (deny-list of vague phrases)                                            | `catalog_verify._ambiguous_phrases`                                                                                  |
+| Scope-overlap detection                                                                     | `catalog_verify._scope_overlaps`, scoped pairs                                                                       |
+| Enforcement-pointer check (`enforced_by` field, §3.1)                                       | `catalog_lint` requires each `enforced_by` command to be cited in the body                                           |
+| Standalone `basicly catalog-verify` / `basicly build --verify` commands                     | named `catalog-verify` because `basicly verify` is the loop CI-check runner; `build --verify` gates the write        |
+| Semantic review (`basicly review`, agent reads rendered files for contradictions/ambiguity) | `review.py` builds the prompt, dispatches via the agent-agnostic runner, always exits 0 (advisory, not a merge gate) |
 
-When built, both layers run in this order — deterministic gate first, always; semantic
+Both layers run in this order — deterministic gate first, always; semantic
 review second, advisory, on demand or in CI as a report (not a blocker).
 
 ---
@@ -450,48 +458,47 @@ inherits that failure.
 
 ## 8) CLI surface
 
-**Summary**: the catalog surface (`list`, `build`, `check`, `skills-*`,
-`fragment-new`, `skills-new`, `catalog-lint`, `catalog-verify`, `review`,
-`hooks-build`/`hooks-check`) and the harness surface (`worktree`, `verify`,
-`policy`, `decompose`, `loop`, `runner`) are implemented, as is `basicly install`
-(which replaced the `init`/`update` staging pair). `uninstall` and the core
-upgrade sync inside `install` are the remaining planned lifecycle pieces
-(`basicly-zrj.12`).
+**Summary**: the CLI has three surfaces — lifecycle (`install`, which replaced
+the former `init`/`update` staging pair, and `uninstall`), catalog (`list`,
+`build`, `check`, `skills-*`, `agents-*`, `fragment-new`, `skills-new`,
+`agents-new`, `catalog-lint`, `catalog-verify`, `review`,
+`hooks-build`/`hooks-check`), and harness (`worktree`, `verify`, `policy`,
+`decompose`, `loop`, `runner`).
 
 ### Details
 
 **Lifecycle** — one command installs _and_ upgrades; a second removes:
 
-| Command                       | Status                                 | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ----------------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `basicly install`             | **[Implemented]** (`basicly-zrj.12.1`) | Idempotent converge: materialize the bundled core catalog, migrate/prune legacy layouts, scaffold overlay + `basicly.toml` (never overwriting existing user content), then `build` + `skills-build` (all default roots) + `agents-build` + `hooks-build` (with hook activation). The same command performs first install and every upgrade (provenance-guarded core sync, §9; `--force` overwrites kept hand-edits). Replaced the former `init`/`update` staging pair |
-| `basicly uninstall [--purge]` | **[Implemented]** (`basicly-zrj.12.3`) | Removes managed core, state, manifest-listed generated files, projected skills and agents (generated-marker files only), and the managed hook block (deleting the config + uninstalling git hooks when nothing else remains); preserves the overlay + `basicly.toml` unless `--purge`; refuses in the authoring repo                                                                                                                                                  |
+| Command                       | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `basicly install`             | Idempotent converge: materialize the bundled core catalog, migrate/prune legacy layouts, scaffold overlay + `basicly.toml` (never overwriting existing user content), then `build` + `skills-build` (all default roots) + `agents-build` + `hooks-build` (with hook activation). The same command performs first install and every upgrade (provenance-guarded core sync, §9; `--force` overwrites kept hand-edits). Replaced the former `init`/`update` staging pair |
+| `basicly uninstall [--purge]` | Removes managed core, state, manifest-listed generated files, projected skills and agents (generated-marker files only), and the managed hook block (deleting the config + uninstalling git hooks when nothing else remains); preserves the overlay + `basicly.toml` unless `--purge`; refuses in the authoring repo                                                                                                                                                  |
 
 **Catalog**:
 
-| Command                                                                                   | Status                            | Behavior                                                                                                                                                                                                                                                                                                                                                                                                           |
-| ----------------------------------------------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `basicly list`                                                                            | **[Implemented]**                 | Table of active fragments                                                                                                                                                                                                                                                                                                                                                                                          |
-| `basicly build [--target NAME] [--verify]`                                                | **[Implemented]**                 | Renders enabled targets (or one), writes only changed bytes, updates the manifest, warns on size-cap overrun; `--verify` runs `catalog-verify` first and writes nothing on failure                                                                                                                                                                                                                                 |
-| `basicly check`                                                                           | **[Implemented]**                 | Byte-for-byte staleness check of generated files + manifest; exit `1` on mismatch, no auto-fix                                                                                                                                                                                                                                                                                                                     |
-| `basicly skills-list` / `skills-build [--root ...\|--all-default-roots]` / `skills-check` | **[Implemented]**                 | Same build/check contract, applied to the skill catalog                                                                                                                                                                                                                                                                                                                                                            |
-| `basicly agents-list` / `agents-build` / `agents-check`                                   | **[Implemented]** (`basicly-ajq`) | Same build/check contract for the agent catalog: composes slot blocks into `.claude/agents/<slug>.md` (single-source emission, §5 agent composition model)                                                                                                                                                                                                                                                         |
-| `basicly skills-new` / `basicly fragment-new` / `basicly agents-new`                      | **[Implemented]**                 | Scaffold a new `skill.yaml` / `<id>.fragment.yaml` / `agent.yaml` source (§4.2 source format)                                                                                                                                                                                                                                                                                                                      |
-| `basicly catalog-lint`                                                                    | **[Implemented]**                 | Source-format gate: schema validation, no `.md`-named sources, single `.yaml` extension; wired as a pre-commit hook and CI step                                                                                                                                                                                                                                                                                    |
-| `basicly catalog-verify`                                                                  | **[Implemented]** (`basicly-ihs`) | Deterministic content checks beyond the load-path validation: duplicate bodies, contradictions, ambiguity, scope overlaps (§6); named `catalog-verify` because `basicly verify` is the loop check runner                                                                                                                                                                                                           |
-| `basicly hooks-build [--no-install]` / `hooks-check`                                      | **[Implemented]**                 | Materializes catalog hook scripts, merges a managed `repo: local` block into `.pre-commit-config.yaml` (foreign hooks preserved, idempotent), and then runs `pre-commit install` for every managed stage so the gates are actually active (`--no-install` skips activation; graceful when pre-commit is absent). `hooks-check` reports projection drift and warns (non-fatal) when the git hooks are not installed |
-| `basicly review [--runner NAME] [--dry-run]`                                              | **[Implemented]** (`basicly-qps`) | Advisory agent-assisted semantic review: renders the always-on files, dispatches a review prompt via the agent-agnostic runner (handoff when no CLI is on PATH), always exits 0. `--dry-run` prints the prompt without invoking an agent (§6)                                                                                                                                                                      |
+| Command                                                                                   | Behavior                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `basicly list`                                                                            | Table of active fragments                                                                                                                                                                                                                                                                                                                                                                                          |
+| `basicly build [--target NAME] [--verify]`                                                | Renders enabled targets (or one), writes only changed bytes, updates the manifest, warns on size-cap overrun; `--verify` runs `catalog-verify` first and writes nothing on failure                                                                                                                                                                                                                                 |
+| `basicly check`                                                                           | Byte-for-byte staleness check of generated files + manifest; exit `1` on mismatch, no auto-fix                                                                                                                                                                                                                                                                                                                     |
+| `basicly skills-list` / `skills-build [--root ...\|--all-default-roots]` / `skills-check` | Same build/check contract, applied to the skill catalog                                                                                                                                                                                                                                                                                                                                                            |
+| `basicly agents-list` / `agents-build` / `agents-check`                                   | Same build/check contract for the agent catalog: composes slot blocks into `.claude/agents/<slug>.md` (single-source emission, §5 agent composition model)                                                                                                                                                                                                                                                         |
+| `basicly skills-new` / `basicly fragment-new` / `basicly agents-new`                      | Scaffold a new `skill.yaml` / `<id>.fragment.yaml` / `agent.yaml` source (§4.2 source format)                                                                                                                                                                                                                                                                                                                      |
+| `basicly catalog-lint`                                                                    | Source-format gate: schema validation, no `.md`-named sources, single `.yaml` extension; wired as a pre-commit hook and CI step                                                                                                                                                                                                                                                                                    |
+| `basicly catalog-verify`                                                                  | Deterministic content checks beyond the load-path validation: duplicate bodies, contradictions, ambiguity, scope overlaps (§6); named `catalog-verify` because `basicly verify` is the loop check runner                                                                                                                                                                                                           |
+| `basicly hooks-build [--no-install]` / `hooks-check`                                      | Materializes catalog hook scripts, merges a managed `repo: local` block into `.pre-commit-config.yaml` (foreign hooks preserved, idempotent), and then runs `pre-commit install` for every managed stage so the gates are actually active (`--no-install` skips activation; graceful when pre-commit is absent). `hooks-check` reports projection drift and warns (non-fatal) when the git hooks are not installed |
+| `basicly review [--runner NAME] [--dry-run]`                                              | Advisory agent-assisted semantic review: renders the always-on files, dispatches a review prompt via the agent-agnostic runner (handoff when no CLI is on PATH), always exits 0. `--dry-run` prints the prompt without invoking an agent (§6)                                                                                                                                                                      |
 
 **Harness** (§12):
 
-| Command                                     | Status            | Behavior                                                                                                                                                            |
-| ------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `basicly worktree ...`                      | **[Implemented]** | Sibling git-worktree lifecycle: create + provision (deps, hooks), list, cleanup (§12.5)                                                                             |
-| `basicly verify [--gate]`                   | **[Implemented]** | Runs the consumer's `[[verify.checks]]` from `basicly.toml` per mode and optionally records a `br` gate (§12.3–12.4)                                                |
-| `basicly policy ...`                        | **[Implemented]** | DoR, gate, rework, and checkpoint policy checks; `policy checkpoint <issue> <name> --approve` records the human checkpoints (§12.2)                                 |
-| `basicly decompose`                         | **[Implemented]** | Turns a feature into child `br` issues + a computed dependency graph (§12.2)                                                                                        |
-| `basicly loop status\|advance\|run <issue>` | **[Implemented]** | Drives an issue through the harness loop; a blocked step exits non-zero and names the input it needs (§12.2)                                                        |
-| `basicly runner list\|dry-run\|run`         | **[Implemented]** | Agent-agnostic headless runner adapters (claude/codex/copilot + `manual` handoff); the loop build phase auto-dispatches through them (§12.8)                        |
+| Command                                     | Behavior                                                                                                                                                            |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `basicly worktree ...`                      | Sibling git-worktree lifecycle: create + provision (deps, hooks), list, cleanup (§12.5)                                                                             |
+| `basicly verify [--gate]`                   | Runs the consumer's `[[verify.checks]]` from `basicly.toml` per mode and optionally records a `br` gate (§12.3–12.4)                                                |
+| `basicly policy ...`                        | DoR, gate, rework, and checkpoint policy checks; `policy checkpoint <issue> <name> --approve` records the human checkpoints (§12.2)                                 |
+| `basicly decompose`                         | Turns a feature into child `br` issues + a computed dependency graph (§12.2)                                                                                        |
+| `basicly loop status\|advance\|run <issue>` | Drives an issue through the harness loop; a blocked step exits non-zero and names the input it needs (§12.2)                                                        |
+| `basicly runner list\|dry-run\|run`         | Agent-agnostic headless runner adapters (claude/codex/copilot + `manual` handoff); the loop build phase auto-dispatches through them (§12.8)                        |
 
 The formerly planned `basicly conflicts`/`basicly overrides` reporting views are
 **[Deferred]** — cut from scope; `catalog-verify` output covers the reporting need.
@@ -509,30 +516,24 @@ uvx --from git+https://github.com/niksavis/basicly@<ref> basicly uninstall  # re
 ```
 
 Packaging, the bundled catalog, the unified `install`/`uninstall` commands, core
-upgrade sync, and provenance tracking are all **[Implemented]** (`basicly-zrj.12`).
-The live `git+<remote>@<ref>` path is **verified against a pushed ref**
-(`basicly-zrj.14`, 2026-07-15): from a clean git repo, `uvx --from
-git+https://github.com/niksavis/basicly@main basicly install` (main @ `1f5ce62`)
-converged the repo (core catalog synced, instruction/skill/hook projections
-written), `basicly check` reported everything up to date, and an immediate re-run
-was a no-op (0 written) — the commit-pinned `@<sha>` form was verified the same
-way. The GitHub repo is public, so the command needs no authentication.
+upgrade sync, and provenance tracking all live behind those two commands. The
+live `git+<remote>@<ref>` path works for both `@main` and commit-pinned
+`@<sha>` refs: install converges the repo, `basicly check` passes afterwards,
+and an immediate re-run is a no-op.
 
 ### Details
 
-- **[Implemented]** `pyproject.toml` declares a `[build-system]` table (hatchling),
+- `pyproject.toml` declares a `[build-system]` table (hatchling),
   `tool.uv.package = true`, and a `[project.scripts]` `basicly = "basicly.cli:main"`
   entry point. `uv build` produces a wheel + sdist; `uvx --from <wheel> basicly`
-  resolves `basicly.cli` (verified). The equivalent `git+https://...@<ref>` form is
-  verified against a pushed ref for both `@main` and `@<sha>` (`basicly-zrj.14`).
-  `jinja2` and `rich` (terminal output, basicly-iwo) are `[project.dependencies]` runtime deps (§11.2).
-- **[Implemented]** The managed core catalog ships inside the distribution: hatchling
+  resolves `basicly.cli`, as does the equivalent `git+https://...@<ref>` form.
+  `jinja2` and `rich` (terminal output) are `[project.dependencies]` runtime deps.
+- The managed core catalog ships inside the distribution: hatchling
   `force-include` projects the dogfooded source `.basicly/core/` to `basicly/catalog/`
   in the wheel, and the sdist carries `.basicly/core/` so `git+` installs resolve it.
   `basicly.catalog.bundled_catalog_root()` prefers a source checkout (marker walk) and
-  falls back to the packaged copy in installed wheels. Verified end-to-end from a
-  clean dir: `init` → `build` → `skills-build` → `hooks-build`, all checks passing.
-- **[Implemented]** (`basicly-zrj.12.1`) **`basicly install` — one idempotent
+  falls back to the packaged copy in installed wheels.
+- **`basicly install` — one idempotent
   converge command** replacing the former `init` → `build` → `skills-build` →
   `hooks-build` staging and the separate `update` (both removed pre-release).
   Design finding (2026-07-15): `init` was never a technical prerequisite —
@@ -542,14 +543,14 @@ way. The GitHub repo is public, so the command needs no authentication.
   `basicly.toml` only if missing, keep the authoring-repo guard (bundled source
   == destination → leave in place), then rebuild all artifacts and install the
   hooks.
-- **Provenance — [Implemented]** (`basicly-8fg`, `state.py`): `install` writes
+- **Provenance** (`state.py`): `install` writes
   `.basicly/state/install.json` (sibling of the configured core root) recording the
   basicly version, timestamp, and a per-file sha256 snapshot of the core as
   materialized — so a later hash mismatch means a hand-edit of managed content.
   `basicly check` surfaces drift (modified/removed core files) and an
   installed-vs-current version mismatch as advisory notes that never change its
   exit code. The authoring repo writes no state file.
-- **Core upgrade sync — [Implemented]** (`basicly-zrj.12.2`, `cli._sync_catalog`):
+- **Core upgrade sync** (`cli._sync_catalog`):
   on a repeat `install` from a newer ref, the managed core is synced to the bundled
   catalog: changed files overwritten, upstream-removed files deleted, the overlay
   and `basicly.toml` never touched. The provenance snapshot distinguishes upstream
@@ -561,13 +562,13 @@ way. The GitHub repo is public, so the command needs no authentication.
   owns core content); it errors when the core was never materialized. Upgrading is
   therefore literally re-running the same pinned `uvx ... basicly install` command
   with a newer `@<ref>` (§3.6).
-- **[Implemented]** (`basicly-zrj.12.3`) **`basicly uninstall`** removes everything
+- **`basicly uninstall`** removes everything
   managed — core, state, manifest-listed generated files, projected skills
   (generated-marker files only), the managed hook block (deleting the config and
   uninstalling the git hooks when nothing else remains) — and preserves the user's
   overlay + `basicly.toml` unless `--purge`. It refuses to run in the authoring
   repo, where the core is the catalog source itself.
-- **[Implemented]** (`basicly-aff`) **Technology scoping** — catalog selection by
+- **Technology scoping** — catalog selection by
   stack/environment tag. Sources (skills, fragments, agents, hooks) carry an
   optional `technologies:` list; an untagged source is universal and always
   ships. The vocabulary is a controlled list (`schema.TECHNOLOGIES`: stack tags
@@ -584,8 +585,8 @@ way. The GitHub repo is public, so the command needs no authentication.
   excludes are pruned (generated-marker files only), and excluded managed hooks
   are stripped from `.pre-commit-config.yaml` / `.claude/settings.json` instead
   of stranding. Per-block technology conditioning inside agent slots is
-  explicitly out of scope (v2).
-- **[Implemented]** (`basicly-hmc`) **Bootstrap shim** for consumers without
+  **[Deferred]** (§11).
+- **Bootstrap shim** for consumers without
   `uv`/Python: `.scripts/bootstrap.sh` (POSIX sh, curl-able) and
   `.scripts/bootstrap.ps1` (PowerShell) install `uv` from astral.sh when
   absent, then run the same pinned `uv tool run --from git+...@<ref> basicly
@@ -618,85 +619,36 @@ git hook, not just convention.
 - These hooks are both this repo's own dev-process tooling **and** the literal
   catalog source (§4.2) — dogfooding is direct, not a copy.
 - Practical implication for planning work as beads issues: use `epic` for large
-  initiatives (e.g. "make basicly uvx-installable"), `feature`/`task` for the
-  gaps in §11, `bug` for regressions, and `--parent` to link a `task` under a
-  `feature`/`epic` instead of inventing a "story"/"sub-task" type.
+  initiatives (e.g. "make basicly uvx-installable"), `feature`/`task` for new
+  work (including the deferred items in §11), `bug` for regressions, and
+  `--parent` to link a `task` under a `feature`/`epic` instead of inventing a
+  "story"/"sub-task" type.
 
 ---
 
-## 11) Known gaps and roadmap
+## 11) Not yet implemented
 
-Ordered roughly by blocking-ness. Each is a candidate beads epic/feature/task.
+Everything described elsewhere in this document exists in code today. The items
+below are the only known exceptions — each is **[Deferred]**: consciously not
+built until a real consumer need appears, and tracked as an open beads issue
+where noted.
 
-1. **Packaging** — **[Resolved]** (`basicly-8a7`, `basicly-juj`): added a
-   `[build-system]` table (hatchling), flipped `tool.uv.package = true`, and bundled the
-   core catalog into the distribution (`force-include` → `basicly/catalog/`). `uvx`
-   installation now resolves `basicly.cli` from a built wheel and from `git+` (§9).
-2. **`jinja2` runtime dependency** — **[Resolved]** (`basicly-8if`): moved from the dev
-   group to `[project.dependencies]` alongside `pyyaml`.
-3. **Override validation** — **[Resolved]** (`basicly-q49`): `loader._validate_replacements`
-   enforces `replaces` target existence, the `override: true` requirement, and
-   user-user mutual-replace rejection as hard errors on every load (§5, §6).
-4. **`enforced_by` schema field and the enforcement-pointer check** — **[Resolved]**
-   (`basicly-a8e`): the field is in the fragment schema and `catalog_lint` fails any
-   fragment whose `enforced_by` command is not cited in its body, so §3.1 is now
-   mechanically checked, not review-only.
-5. **Deterministic verify beyond schema/duplicate-id** — **[Resolved]** (`basicly-ihs`):
-   `catalog_verify` adds duplicate-body, contradiction, ambiguity, and scope-overlap
-   checks behind `basicly catalog-verify` and `basicly build --verify` (named
-   `catalog-verify` because `basicly verify` is the loop CI-check runner).
-   **`basicly review`** (agent-assisted semantic review) is now **[Resolved]**
-   (`basicly-qps`, `review.py`): advisory, dispatched via the agent-agnostic
-   runner, always exits 0 — a report, never a merge gate (§6).
-6. **`hooks-build`/`hooks-check` projection** — **[Resolved]** (`basicly-lku`,
-   `basicly-t51`): a tool-agnostic `core/hooks/hooks.yaml` manifest drives
-   `basicly hooks-build`, which materializes the scripts and merges a managed
-   `repo: local` block into a consumer's `.pre-commit-config.yaml` (foreign hooks
-   preserved, idempotent); `hooks-check` reports drift. Three managers ship:
-   `git` (pre-commit config), `claude` (agent hooks in `.claude/settings.json`;
-   the event derives from the spec `stage`, with an optional per-spec `matcher`),
-   and `copilot` (managed `.github/hooks/basicly-<id>.json` files). The
-   `tool-usage` hook (`basicly-mcz`) rides both agent managers: a PostToolUse
-   counter tallying every shell command's pipeline heads into the self-ignored
-   `.basicly/usage/tool-usage.json` — token-free telemetry for culling idle
-   tools/skills from the catalog with real data.
-7. **Skill/fragment source format — [Done].** Catalog content is authored as YAML
-   (`skill.yaml`, `<id>.fragment.yaml`) and projected to the discoverable `.md` at target
-   roots only; JSON Schemas, the `catalog-authoring` skill, `skills-new`/`fragment-new`
-   scaffolds, and the `catalog-lint` gate (pre-commit + CI) support and enforce it.
-   The update path (folded into `install`, §11.8) prunes any leftover legacy
-   `SKILL.md`/`*.fragment.md` sources from the managed core, so installing over a
-   pre-migration hand-copied catalog self-cleans.
-8. **One-command lifecycle** — **[Implemented]** (`basicly-zrj.12` + children, §9):
-   `basicly install` (`basicly-zrj.12.1`), provenance tracking (`basicly-8fg`),
-   and the provenance-guarded core upgrade sync (`basicly-zrj.12.2`) are
-   **[Implemented]** — one idempotent converge command covers first install and
-   every upgrade without clobbering hand-edits, and `basicly uninstall`
-   (`basicly-zrj.12.3`) removes it all cleanly. The lifecycle epic is complete.
-9. **Consumer-repo robustness** — **[Implemented]** (`basicly-zrj.13`): the
-   `beads-commit-msg` hook skips cleanly in a repo with no `.beads` workspace
-   (`basicly-zrj.13.1`), and the verify runner fails cleanly — not a traceback —
-   on a missing check command, with scaffolded defaults that don't assume Python
-   tooling (`basicly-zrj.13.2`).
-10. **v0.1.0 acceptance & release** — **[Implemented]**: the pushed-ref `git+`
-    install is verified (`basicly-zrj.14`, see §9), the `terminal`-repo
-    end-to-end acceptance passed (`basicly-zrj.15`), and the tag shipped
-    (`basicly-zrj.16`). Releases through v0.1.3 followed the same
-    changelog-driven flow (`.claude/skills/release-process/`).
-11. **`.codex/rules/*.rules` scoped rules** are **[Deferred]** post-release
-    (`basicly-zrj.6`). Catalog selection/flavors shipped as **technology
-    scoping** (`basicly-aff`, §9); the `curl` bootstrap shim shipped as
-    `.scripts/bootstrap.sh`/`.ps1` (`basicly-hmc`, §9).
-12. **Cursor as a target** is **[Deferred]**; no renderer, no templates.
-13. **The basicly harness** — **[Implemented]** (§12, epic `basicly-onb` closed): the
-    agent-agnostic development loop (work isolation + workflow + hard verify/validate
-    gates) built thin over `br`, including auto-dispatch of the loop build phase
-    through the selected runner (`basicly-7ca`, §12.8).
+1. **`.codex/rules/*.rules` scoped rules renderer** (`basicly-30j`): Codex reads
+   the shared `AGENTS.md` baseline today, with path-scoped fragments inlined for
+   glob fidelity (§7 detail 4). A native scoped-rules projection would add
+   per-path parity once a real Codex consumer needs it.
+2. **Cursor as a target** (`basicly-3ii`): no renderer, no templates.
+3. **Offloading directory-shaped scopes** via nested `AGENTS.md`/skills for the
+   codex target (§7 detail 4).
+4. **`basicly conflicts`/`basicly overrides` reporting views** — cut from scope;
+   `catalog-verify` output covers the reporting need (§8).
+5. **Per-block technology conditioning inside agent slots** — technology scoping
+   applies at whole-source granularity (§9); per-block conditioning is a v2
+   idea.
 
 ## 12) The basicly harness — agent-agnostic development loop
 
-**Summary**: **[Implemented]** (epic `basicly-onb`, completed by the auto-dispatch
-wiring `basicly-7ca`, see §12.8) The harness is an always-delivered
+**Summary**: The harness is an always-delivered
 _core_ that binds work isolation, a workflow loop, and hard verify/validate gates into a
 predictable machine, driven identically by any coding agent (Claude, Codex, Copilot). Its
 thesis is _lean-over-substrate_: it wraps the `br` (beads-rust) tracker's existing primitives
@@ -781,7 +733,7 @@ runner** that shells out to nothing and instead surfaces the exact prompt + work
 deferring to the loop's block-and-resume contract and the one thing that _is_ standardized
 across agents: the projected `AGENTS.md` guidance. `basicly runner dry-run` prints the exact
 command an adapter would execute so it can be verified before any live invocation.
-**[Implemented]** (`basicly-7ca`): `loop advance` on a ready leaf provisions the worktree
+`loop advance` on a ready leaf provisions the worktree
 and dispatches the selected runner headless inside it with an agent-neutral prompt (bead id +
 `AGENTS.md` + `br show`; merging/pushing/closing stays with the loop), then blocks with the
 run outcome; the `manual` handoff runner keeps the block-and-resume contract untouched, and a
