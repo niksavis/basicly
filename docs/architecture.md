@@ -630,14 +630,15 @@ git hook, not just convention.
 
 Everything described elsewhere in this document exists in code today. The items
 below are the only known exceptions — each is **[Deferred]**: consciously not
-built until a real consumer need appears, and tracked as an open beads issue
-where noted.
+built until a real consumer need appears. None is tracked as an open issue
+(the former tracking beads were closed as won't-do, 2026-07-16); file a fresh
+task if demand appears.
 
-1. **`.codex/rules/*.rules` scoped rules renderer** (`basicly-30j`): Codex reads
+1. **`.codex/rules/*.rules` scoped rules renderer**: Codex reads
    the shared `AGENTS.md` baseline today, with path-scoped fragments inlined for
    glob fidelity (§7 detail 4). A native scoped-rules projection would add
    per-path parity once a real Codex consumer needs it.
-2. **Cursor as a target** (`basicly-3ii`): no renderer, no templates.
+2. **Cursor as a target**: no renderer, no templates.
 3. **Offloading directory-shaped scopes** via nested `AGENTS.md`/skills for the
    codex target (§7 detail 4).
 4. **`basicly conflicts`/`basicly overrides` reporting views** — cut from scope;
