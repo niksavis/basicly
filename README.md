@@ -46,7 +46,7 @@ curl -fsSL https://raw.githubusercontent.com/niksavis/basicly/main/.scripts/boot
 
 Windows: `.scripts/bootstrap.ps1` is the PowerShell twin.
 
-Pin `@v0.1.3` for reproducible installs, or track `@main` for the latest. The repo is public; no authentication is needed. Install converges everything: managed core catalog, generated agent instruction files, projected skills, activated git hooks, a beads tracker workspace, VS Code tasks, and a CI gates workflow. Customize via YAML fragments in `.basicly-local/fragments/user/` — install never touches them. Remove with `basicly uninstall` (add `--purge` to also drop your overlay and config).
+Pin `@v0.1.3` for reproducible installs, or track `@main` for the latest. Install converges everything: managed core catalog, generated agent instruction files, projected skills, activated git hooks, a beads tracker workspace, VS Code tasks, and a CI gates workflow. Customize via YAML fragments in `.basicly-local/fragments/user/` — install never touches them. Remove with `basicly uninstall` (add `--purge` to also drop your overlay and config).
 
 ## Quick start
 
