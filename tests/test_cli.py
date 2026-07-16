@@ -136,6 +136,28 @@ def test_cli_install_is_idempotent_and_preserves_edits(tmp_path: Path) -> None:
     assert config.read_text(encoding="utf-8") == marker
 
 
+def test_cli_help_groups_commands_by_audience(tmp_path: Path) -> None:
+    """--help carries the consumer/contributor/harness grouping (and no update)."""
+    result = run_basicly_consumer(tmp_path, "--help")
+    assert result.returncode == 0
+    for marker in ("command groups:", "consumer (", "contributor (", "harness ("):
+        assert marker in result.stdout
+    assert "re-running install IS the upgrade" in result.stdout
+
+
+def test_cli_piped_output_stays_plain_text(work_repo: Path) -> None:
+    """Piped/CI output carries no ANSI styling and keeps the exact wording."""
+    result = run_basicly(work_repo, "check")
+    assert result.returncode == 0, result.stderr
+    assert "\x1b" not in result.stdout
+    assert "All generated files and manifest are up to date." in result.stdout
+
+    listing = run_basicly(work_repo, "skills-list")
+    assert listing.returncode == 0
+    assert "\x1b" not in listing.stdout
+    assert "tool-ripgrep" in listing.stdout
+
+
 def test_cli_install_technology_selection_filters_and_prunes(tmp_path: Path) -> None:
     """A recorded selection keeps tagged sources out and re-narrowing prunes them."""
     consumer = tmp_path / "consumer"

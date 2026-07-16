@@ -30,6 +30,7 @@ from . import (
     review,
     runner,
     state,
+    ui,
     verify,
     worktree,
 )
@@ -109,12 +110,12 @@ def _report_sync(
 ) -> None:
     """Print the shared build-side projection report (written / unchanged / summary)."""
     for path in result.written:
-        print(f"Wrote {_format_path(path, repo_root)}")
+        ui.say(f"Wrote {_format_path(path, repo_root)}", style="ok")
     if result.written and extra_note:
-        print(extra_note)
+        ui.say(extra_note, style="warn")
     if not result.written:
-        print(f"No {noun} changed.")
-    print(
+        ui.say(f"No {noun} changed.", style="muted")
+    ui.say(
         f"{label} projection complete: {len(result.written)} written, "
         f"{len(result.unchanged)} unchanged"
     )
@@ -129,9 +130,9 @@ def _report_mismatches(
     """Print the shared check-side stale report; return True when stale (caller exits 1)."""
     if not mismatches:
         return False
-    print(stale_message, file=sys.stderr)
+    ui.fail(stale_message)
     for path, reason in mismatches:
-        print(f"  {_format_path(path, repo_root)}: {reason}", file=sys.stderr)
+        ui.fail(f"  {_format_path(path, repo_root)}: {reason}")
     return True
 
 
@@ -237,16 +238,14 @@ def cmd_list(_args: argparse.Namespace) -> int:
     fragments, _targets = _load_context(repo_root, paths)
     active = [f for f in fragments if f.status == "active"]
 
-    headers = f"{'id':<30} {'category':<15} {'priority':<10} "
-    headers += f"{'applies_to':<20} {'scope':<20} {'status':<10}"
-    print(headers)
-    print("-" * 105)
-    for f in sorted(active, key=lambda x: (x.category, -x.priority_value, x.id)):
-        applies = ", ".join(f.applies_to)
-        print(
-            f"{f.id:<30} {f.category:<15} {f.priority:<10} "
-            f"{applies:<20} {f.scope_summary:<20} {f.status:<10}"
-        )
+    ui.table(
+        f"Active fragments ({len(active)})",
+        ["id", "category", "priority", "applies_to", "scope", "status"],
+        [
+            [f.id, f.category, f.priority, ", ".join(f.applies_to), f.scope_summary, f.status]
+            for f in sorted(active, key=lambda x: (x.category, -x.priority_value, x.id))
+        ],
+    )
     return 0
 
 
@@ -285,7 +284,7 @@ def cmd_build(args: argparse.Namespace) -> int:
         changed = projection.write_if_changed(item.output_path, content.encode("utf-8"))
         if changed:
             changed_count += 1
-            print(f"Wrote {item.output_path.relative_to(repo_root)}")
+            ui.say(f"Wrote {item.output_path.relative_to(repo_root)}", style="ok")
         for target in targets:
             if (
                 target.name == item.target_name
@@ -311,9 +310,9 @@ def cmd_build(args: argparse.Namespace) -> int:
     changed_count += _sweep_stale_outputs(repo_root, existing_manifest, manifest)
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    print(f"Updated {_format_path(manifest_path, repo_root)}")
+    ui.say(f"Updated {_format_path(manifest_path, repo_root)}", style="ok")
     if changed_count == 0:
-        print("No files changed.")
+        ui.say("No files changed.", style="muted")
     return 0
 
 
@@ -369,7 +368,7 @@ def cmd_check(_args: argparse.Namespace) -> int:
             )
         return 1
 
-    print("All generated files and manifest are up to date.")
+    ui.say("All generated files and manifest are up to date.", style="ok")
     return 0
 
 
@@ -812,13 +811,16 @@ def cmd_install(args: argparse.Namespace) -> int:
         ("hooks-build", cmd_hooks_build, argparse.Namespace(no_install=False)),
     ]
     for step, handler, namespace in steps:
-        print(f"\n== basicly {step} ==")
+        ui.heading(f"\n== basicly {step} ==")
         rc = handler(namespace)
         if rc != 0:
             print(f"basicly install: {step} failed (exit {rc})", file=sys.stderr)
             return rc
 
-    print("\nbasicly install complete: repo converged. Re-run the same command to upgrade.")
+    ui.say(
+        "\nbasicly install complete: repo converged. Re-run the same command to upgrade.",
+        style="ok",
+    )
     return 0
 
 
@@ -989,7 +991,7 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
     if removed == 0:
         print("Nothing to remove; basicly is not installed here.")
     else:
-        print("basicly uninstall complete.")
+        ui.say("basicly uninstall complete.", style="ok")
     return 0
 
 
@@ -1105,7 +1107,7 @@ def cmd_hooks_check(_args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
 
-    print("Projected hooks are up to date.")
+    ui.say("Projected hooks are up to date.", style="ok")
     return 0
 
 
@@ -1127,10 +1129,14 @@ def cmd_skills_list(_args: argparse.Namespace) -> int:
         print("No skills found in .basicly/core/skills")
         return 0
 
-    print(f"{'slug':<24} {'name':<24} description")
-    print("-" * 96)
-    for skill in skills:
-        print(f"{skill.slug:<24} {skill.name:<24} {skill.description}")
+    ui.table(
+        f"Catalog skills ({len(skills)})",
+        ["slug", "technologies", "description"],
+        [
+            [skill.slug, ", ".join(skill.technologies) or "universal", skill.description]
+            for skill in skills
+        ],
+    )
     return 0
 
 
@@ -1156,7 +1162,7 @@ def cmd_skills_check(args: argparse.Namespace) -> int:
     if _report_mismatches(mismatches, repo_root, stale_message=stale):
         return 1
 
-    print("Projected skills are up to date.")
+    ui.say("Projected skills are up to date.", style="ok")
     return 0
 
 
@@ -1238,7 +1244,7 @@ def cmd_agents_check(_args: argparse.Namespace) -> int:
     if _report_mismatches(mismatches, repo_root, stale_message=stale):
         return 1
 
-    print("Projected agents are up to date.")
+    ui.say("Projected agents are up to date.", style="ok")
     return 0
 
 
@@ -2009,9 +2015,34 @@ def _add_loop_parser(subparsers: argparse._SubParsersAction) -> None:
     _add_loop_input_args(l_run)
 
 
+_HELP_EPILOG = """\
+command groups:
+  consumer (run in a repo that installed basicly, usually via the pinned uvx):
+    install            converge the repo: catalog, projections, hooks
+                       (re-running install IS the upgrade; no update command)
+    uninstall          remove everything basicly manages (--purge: overlay too)
+    build / check      regenerate agent instruction files / fail on drift
+    skills-build / skills-check, hooks-build / hooks-check,
+    agents-build / agents-check
+                       project and verify the other catalog kinds
+
+  contributor (author the catalog in the basicly repo itself):
+    list, skills-list, agents-list           inspect the catalog
+    skills-new, agents-new, fragment-new     scaffold a new source
+    catalog-lint, catalog-verify, review     deterministic and semantic gates
+
+  harness (agent-facing development loop, either repo):
+    worktree, verify, policy, decompose, loop, runner
+"""
+
+
 def main(argv: list[str] | None = None) -> int:
     """Parse arguments and dispatch to the requested command."""
-    parser = argparse.ArgumentParser(prog="basicly")
+    parser = argparse.ArgumentParser(
+        prog="basicly",
+        epilog=_HELP_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("--version", action="version", version=f"basicly {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
