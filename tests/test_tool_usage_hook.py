@@ -96,3 +96,12 @@ def test_non_shell_tools_and_garbage_never_fail(tmp_path: Path) -> None:
     payload = {"tool_name": "Bash", "tool_input": {"command": "bat file"}}
     assert _run(payload, tmp_path).returncode == 0
     assert _stats(tmp_path)["bat"]["count"] == 1  # restarted clean
+
+
+def test_heredoc_bodies_are_not_counted(tmp_path: Path) -> None:
+    """Here-document content lines never register as tools (basicly-587)."""
+    command = "python3 - <<'PYEOF'\nt = p.read_text()\n- bullet line\nassert t\nPYEOF\nrg foo"
+    payload = {"tool_name": "Bash", "tool_input": {"command": command}}
+    assert _run(payload, tmp_path).returncode == 0
+    counts = {tool: entry["count"] for tool, entry in _stats(tmp_path).items()}
+    assert counts == {"python3": 1, "rg": 1}

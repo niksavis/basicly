@@ -31,6 +31,7 @@ from . import (
     runner,
     state,
     ui,
+    usage,
     verify,
     worktree,
 )
@@ -1146,6 +1147,44 @@ def _resolve_skill_output_roots(args: argparse.Namespace, repo_root: Path) -> li
     )
 
 
+def cmd_usage(args: argparse.Namespace) -> int:
+    """Dispatch the usage telemetry subcommands."""
+    if args.usage_command != "report":
+        return 0
+    repo_root = _repo_root()
+    slugs = [skill.slug for skill in discover_skills(repo_root)]
+    report = usage.build_report(repo_root, slugs)
+    if report is None:
+        ui.say(
+            f"No usage data at {usage.USAGE_FILE} — the tool-usage hook has not "
+            "recorded anything in this repo yet.",
+            style="warn",
+        )
+        return 0
+
+    if report.tools:
+        ui.table(
+            f"Terminal tools ({len(report.tools)})",
+            ["tool", "count", "last used"],
+            [[e.name, str(e.count), e.last_used] for e in report.tools],
+        )
+    if report.skills:
+        ui.table(
+            f"Skills ({len(report.skills)})",
+            ["skill", "count", "last used"],
+            [[e.name, str(e.count), e.last_used] for e in report.skills],
+        )
+    if report.never_used_skills:
+        ui.say(
+            "Never-used catalog skills (culling candidates): "
+            + ", ".join(report.never_used_skills),
+            style="muted",
+        )
+    else:
+        ui.say("Every catalog skill has recorded usage.", style="ok")
+    return 0
+
+
 def cmd_skills_list(_args: argparse.Namespace) -> int:
     """List skills available in the source collection."""
     repo_root = _repo_root()
@@ -2061,6 +2100,17 @@ command groups:
 """
 
 
+def _add_usage_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Register the `basicly usage` command group."""
+    usage_parser = subparsers.add_parser(
+        "usage", help="Tool/skill usage telemetry recorded by the tool-usage hook"
+    )
+    usage_sub = usage_parser.add_subparsers(dest="usage_command", required=True)
+    usage_sub.add_parser(
+        "report", help="Report recorded tool/skill counts and never-used catalog skills"
+    )
+
+
 def _tolerate_narrow_consoles() -> None:
     """Never crash on unencodable output characters.
 
@@ -2100,6 +2150,8 @@ def main(argv: list[str] | None = None) -> int:
     subparsers.add_parser("check", help="Check generated files are up to date")
 
     subparsers.add_parser("skills-list", help="List skills in .basicly/core/skills")
+
+    _add_usage_parser(subparsers)
 
     skills_build_parser = subparsers.add_parser(
         "skills-build",
@@ -2195,6 +2247,7 @@ def main(argv: list[str] | None = None) -> int:
         "decompose": cmd_decompose,
         "loop": cmd_loop,
         "runner": cmd_runner,
+        "usage": cmd_usage,
     }
 
     try:
