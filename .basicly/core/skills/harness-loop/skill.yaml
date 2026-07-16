@@ -31,6 +31,12 @@ instructions: |
   Pick the next actionable issue with `br ready` / `br scheduler --json`; `basicly
   loop status` then tells you which phase it is parked in and what it is waiting on.
 
+  Tracker state and worktrees do not mix: claim the bead and commit
+  `.beads/issues.jsonl` in the base checkout *before* `loop advance` provisions
+  the worktree, and never commit that file on a harness branch (restore it
+  before staging) — provisioning syncs it from base, so committing it on both
+  sides makes the landing rebase conflict.
+
   ## Advancing the loop
 
   Each step is one resumable transition: the engine re-reads the phase from `br`,
