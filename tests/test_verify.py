@@ -157,7 +157,7 @@ def test_run_verify_filters_by_mode_and_aggregates(
 
 def test_report_gate_without_br(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """When br is absent, reporting degrades gracefully instead of raising."""
-    monkeypatch.setattr(verify.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(verify.br, "try_run_br", lambda *_a, **_kw: None)
     report = verify.VerifyReport(mode="full", results=())
     ok, message = verify.report_gate(tmp_path, "basicly-x", report)
     assert ok is False
@@ -168,20 +168,19 @@ def test_report_gate_builds_expected_command(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A passing report records a pass gate with the aggregate note."""
-    monkeypatch.setattr(verify.shutil, "which", lambda _name: "/usr/bin/br")
     captured: dict[str, list[str]] = {}
 
-    def fake_run(command, **_kw):
-        captured["cmd"] = command
+    def fake_run(_root, args):
+        captured["cmd"] = args
         return _Proc(0)
 
-    monkeypatch.setattr(verify.subprocess, "run", fake_run)
+    monkeypatch.setattr(verify.br, "try_run_br", fake_run)
     report = verify.VerifyReport(mode="full", results=(verify.CheckResult("ruff", "pass", 0),))
 
     ok, _message = verify.report_gate(tmp_path, "basicly-x", report, gate="verify")
     cmd = captured["cmd"]
     assert ok is True
-    assert cmd[:3] == ["/usr/bin/br", "gate", "report"]
+    assert cmd[:2] == ["gate", "report"]
     assert "--status" in cmd and cmd[cmd.index("--status") + 1] == "pass"
     assert cmd[-1] == "basicly-x"
 

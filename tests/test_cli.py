@@ -206,18 +206,17 @@ def test_setup_beads_initializes_with_derived_prefix(
     repo.mkdir()
     calls: list[tuple[list[str], Path]] = []
 
-    monkeypatch.setattr(cli.shutil, "which", lambda _name: "/usr/bin/br")
     monkeypatch.setattr(
-        cli.subprocess,
-        "run",
-        lambda cmd, **kw: (
-            calls.append((cmd, kw["cwd"])) or subprocess.CompletedProcess(cmd, 0, "", "")
+        cli.br,
+        "try_run_br",
+        lambda root, args: (
+            calls.append((args, root)) or subprocess.CompletedProcess(args, 0, "", "")
         ),
     )
 
     cli._setup_beads(repo)
 
-    assert calls == [(["/usr/bin/br", "init", "--prefix", "myterminal2", "--quiet"], repo)]
+    assert calls == [(["init", "--prefix", "myterminal2", "--quiet"], repo)]
     assert "issue prefix: myterminal2" in capsys.readouterr().out
 
 
@@ -228,7 +227,7 @@ def test_setup_beads_skips_existing_workspace(
     (tmp_path / ".beads").mkdir()
     (tmp_path / ".beads" / "config.yaml").write_text("issue_prefix: kept\n", encoding="utf-8")
     monkeypatch.setattr(
-        cli.subprocess, "run", lambda *_a, **_kw: pytest.fail("must not call br init")
+        cli.br, "try_run_br", lambda *_a, **_kw: pytest.fail("must not call br init")
     )
 
     cli._setup_beads(tmp_path)
@@ -240,10 +239,7 @@ def test_setup_beads_degrades_without_br(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """No br on PATH: actionable guidance, no failure, no subprocess call."""
-    monkeypatch.setattr(cli.shutil, "which", lambda _name: None)
-    monkeypatch.setattr(
-        cli.subprocess, "run", lambda *_a, **_kw: pytest.fail("must not call br init")
-    )
+    monkeypatch.setattr(cli.br, "try_run_br", lambda *_a, **_kw: None)
 
     cli._setup_beads(tmp_path)
 

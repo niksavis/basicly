@@ -32,33 +32,17 @@ decomposition and build in their own worktree.
 from __future__ import annotations
 
 import json
-import shutil
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 from . import classify, decompose, loop_state, merge, policy, runner, verify, worktree
+from .br import run_br as _run_br
 from .config import PolicyConfig, load_policy_config, load_runner_config, load_worktree_config
 from .decompose import ChildSpec
 
 # Work classes that are leaf tracks — they build directly rather than decompose
 # (architecture §12.1: bug/chore are leaves; a task is a unit of work).
 _LEAF_TYPES = ("bug", "chore", "task")
-
-
-def _run_br(
-    repo_root: Path, args: list[str], *, check: bool = True
-) -> subprocess.CompletedProcess[str]:
-    """Run a ``br`` subcommand. Raises if ``br`` is absent — the loop drives the tracker."""
-    br = shutil.which("br")
-    if not br:
-        raise RuntimeError("br is not on PATH; the loop engine requires the beads tracker")
-    proc = subprocess.run(  # nosec B603
-        [br, *args], cwd=repo_root, capture_output=True, text=True, check=False
-    )
-    if check and proc.returncode != 0:
-        raise RuntimeError(f"br {' '.join(args)} failed: {(proc.stderr or proc.stdout).strip()}")
-    return proc
 
 
 @dataclass(frozen=True)

@@ -18,28 +18,12 @@ module records only the ``br`` type.
 
 from __future__ import annotations
 
-import shutil
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 from . import policy
+from .br import run_br as _run_br
 from .config import WORK_TYPES
-
-
-def _run_br(
-    repo_root: Path, args: list[str], *, check: bool = True
-) -> subprocess.CompletedProcess[str]:
-    """Run a ``br`` subcommand. Raises if ``br`` is absent — classify records into the tracker."""
-    br = shutil.which("br")
-    if not br:
-        raise RuntimeError("br is not on PATH; the classifier requires the beads tracker")
-    proc = subprocess.run(  # nosec B603
-        [br, *args], cwd=repo_root, capture_output=True, text=True, check=False
-    )
-    if check and proc.returncode != 0:
-        raise RuntimeError(f"br {' '.join(args)} failed: {(proc.stderr or proc.stdout).strip()}")
-    return proc
 
 
 @dataclass(frozen=True)

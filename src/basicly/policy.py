@@ -16,31 +16,15 @@ gate history. The block-vs-advise policy lives here; ``br`` only stores verdicts
 from __future__ import annotations
 
 import json
-import shutil
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from .br import run_br as _run_br
 from .config import CHECKPOINTS, PolicyConfig, load_policy_config
 
 # Prefix for the harness's own comment markers, so they are both machine-parseable
 # and obvious to a human reading the issue's comments.
 MARKER = "[harness-policy]"
-
-
-def _run_br(
-    repo_root: Path, args: list[str], *, check: bool = True
-) -> subprocess.CompletedProcess[str]:
-    """Run a ``br`` subcommand. Raises if ``br`` is absent — policy needs the tracker."""
-    br = shutil.which("br")
-    if not br:
-        raise RuntimeError("br is not on PATH; the policy engine requires the beads tracker")
-    proc = subprocess.run(  # nosec B603
-        [br, *args], cwd=repo_root, capture_output=True, text=True, check=False
-    )
-    if check and proc.returncode != 0:
-        raise RuntimeError(f"br {' '.join(args)} failed: {(proc.stderr or proc.stdout).strip()}")
-    return proc
 
 
 # --- Definition of Ready ----------------------------------------------------
