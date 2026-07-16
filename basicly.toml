@@ -61,4 +61,6 @@ max_rework = 2
 # agent). Add or override an agent with [[runner.agents]]; verify any command
 # with `basicly runner dry-run` before a live run.
 [runner]
-default = "auto"
+# Manual in this repo: the loop is driven interactively by the agent itself, so
+# auto-dispatching a second headless agent at build time would double-run it.
+default = "manual"
