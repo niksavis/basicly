@@ -1,0 +1,11 @@
+schema_version: 1
+id: quirks
+description: Environment traps hit in this repo - one incident, one bullet.
+category: quirks
+priority: medium
+applies_to: [all]
+tags: [gotchas, environment]
+status: active
+title: Quirks
+body: |
+  - Non-interactive WSL shells skip the profile that loads version managers (nvm), so `npx`/`node` can resolve to a Windows install and break node-based hooks (markdownlint failed exactly this way) - put the repo's node version on PATH before committing or pushing from scripts and background jobs.

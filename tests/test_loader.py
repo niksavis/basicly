@@ -57,6 +57,16 @@ def test_unknown_category(tmp_path: Path) -> None:
         load_fragments(tmp_path, {"claude"})
 
 
+def test_quirks_category_loads(tmp_path: Path) -> None:
+    """The incident-derived quirks category is a valid fragment category."""
+    _wf(
+        tmp_path / "quirks.fragment.yaml",
+        "id: quirks\ndescription: x\ncategory: quirks\napplies_to: [all]",
+    )
+    fragments = load_fragments(tmp_path, {"claude"})
+    assert [f.category for f in fragments] == ["quirks"]
+
+
 def test_unknown_target_in_applies_to(tmp_path: Path) -> None:
     """An applies_to value that is not a registered target raises ValidationError."""
     _wf(

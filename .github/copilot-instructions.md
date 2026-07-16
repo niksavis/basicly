@@ -141,6 +141,7 @@ uv run basicly hooks-check
 
 - If this session hit a real rejection or user-corrected mistake, find the root cause before ending, not just the fix.
 - Propose the exact fragment/skill/hook file and wording change that would have prevented it; skip vague "be careful" notes.
+- An environment/timing/platform trap belongs in a quirks-category fragment: one incident, one bullet, phrased as the trap plus how to avoid it.
 - Present each proposal for explicit approval; never self-apply a fragment/skill/hook edit from a retro.
 - Skip the retro when nothing concrete surfaced; inventing gaps to look thorough is the anti-pattern this exists to prevent.
 
@@ -148,6 +149,10 @@ uv run basicly hooks-check
 
 - Leave the repo in a state a fresh session could pick up cleanly: no partial edits, no stray debug output, no unexplained changes.
 - Summarize what changed, what was verified, and what — if anything — remains open before ending the turn.
+
+## Quirks
+
+- Non-interactive WSL shells skip the profile that loads version managers (nvm), so `npx`/`node` can resolve to a Windows install and break node-based hooks (markdownlint failed exactly this way) - put the repo's node version on PATH before committing or pushing from scripts and background jobs.
 
 ## Non Interactive Shell
 
