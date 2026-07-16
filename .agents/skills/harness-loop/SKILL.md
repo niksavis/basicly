@@ -25,7 +25,7 @@ diffing). This skill sequences them; it does not replace them.
 resumable across restarts and across agents. Whatever happened last session, begin
 by reconstructing where a track is:
 
-```
+```sh
 basicly loop status <issue>     # phase, worktree binding, gates, checkpoints, rework, ready/blocked
 ```
 
@@ -45,7 +45,7 @@ does the phase's action (or blocks waiting on an input, a checkpoint, or a gate)
 and returns the outcome. A blocked step exits non-zero so scripts and CI can
 branch on it.
 
-```
+```sh
 basicly loop advance <issue> [--work-type T] [--children plan.toml] [--mode M]
 basicly loop run <issue> [flags]   # advance repeatedly until it blocks or finishes
 ```
@@ -83,7 +83,7 @@ A failed node enters a bounded **rework loop (default n=2)**, tracked with gate
 results and comments — not a status change (`br` has no `rework` status). At the
 cap it escalates to a human. Inspect or record attempts with:
 
-```
+```sh
 basicly policy rework <id> --gate verify [--record]
 ```
 
@@ -97,7 +97,7 @@ the worktree, and closes the issue. After an epic slice lands, capture a retro a
 tracker comments and file a `br` issue for each finding the user does not choose
 to ignore:
 
-```
+```sh
 br comments add <epic-id> "Retro: <finding>"
 ```
 

@@ -10,14 +10,6 @@ globs:
 ignores:
   - ".venv/**"
   - "node_modules/**"
-  # Generated projections are generator-owned: their formatting is the
-  # projector's contract (basicly build / skills-build), so linting them here
-  # would make the gate fight the generator. Hand-authored markdown only.
-  - "AGENTS.md"
-  - ".claude/CLAUDE.md"
-  - ".github/copilot-instructions.md"
-  - ".claude/skills/**"
-  - ".github/skills/**"
-  - ".agents/skills/**"
-  - ".claude/rules/**"
-  - ".github/instructions/**"
+  # Generated projections are linted too (basicly-gdi): the generator emits
+  # lint-clean markdown, so a violation in a projected file means a template
+  # or catalog source regressed — fix it there and rebuild.
