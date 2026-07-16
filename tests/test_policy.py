@@ -140,3 +140,27 @@ def test_approve_unknown_checkpoint_rejected(
     _install(monkeypatch, _FakeBr())
     with pytest.raises(ValueError, match="unknown checkpoint"):
         policy.approve_checkpoint(tmp_path, "i", "deploy")
+
+
+def test_rework_markers_do_not_cross_count_prefix_gates(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Attempts on gate verify-full must not inflate the count for verify."""
+    comments = [
+        "[harness-policy] rework gate=verify",
+        "[harness-policy] rework gate=verify-full",
+        "[harness-policy] rework gate=verify-full",
+    ]
+    monkeypatch.setattr(policy, "_comment_texts", lambda _root, _issue: comments)
+    assert policy.rework_attempts(tmp_path, "x-1", "verify") == 1
+    assert policy.rework_attempts(tmp_path, "x-1", "verify-full") == 2
+
+
+def test_checkpoint_markers_are_token_exact(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A checkpoint named ship must not approve one named ship-final."""
+    comments = ["[harness-policy] checkpoint=ship approved"]
+    monkeypatch.setattr(policy, "_comment_texts", lambda _root, _issue: comments)
+    assert policy.checkpoint_approved(tmp_path, "x-1", "ship")
+    assert not policy.checkpoint_approved(tmp_path, "x-1", "ship-final")

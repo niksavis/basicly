@@ -122,10 +122,22 @@ def _rework_marker(gate: str) -> str:
     return f"{MARKER} rework gate={gate}"
 
 
+def _marker_matches(text: str, marker: str) -> bool:
+    """Token-exact marker match on the comment's first line.
+
+    A bare prefix match would cross-count gates whose names extend each other
+    (``verify`` vs ``verify-full``), so the marker must be the whole first
+    line or be followed by a space-separated suffix.
+    """
+    stripped = text.strip()
+    first_line = stripped.splitlines()[0] if stripped else ""
+    return first_line == marker or first_line.startswith(marker + " ")
+
+
 def rework_attempts(repo_root: Path, issue_id: str, gate: str) -> int:
     """Count the rework attempts recorded for *gate* on *issue_id*."""
     marker = _rework_marker(gate)
-    return sum(1 for text in _comment_texts(repo_root, issue_id) if text.strip().startswith(marker))
+    return sum(1 for text in _comment_texts(repo_root, issue_id) if _marker_matches(text, marker))
 
 
 def record_rework(repo_root: Path, issue_id: str, gate: str) -> int:
@@ -149,7 +161,7 @@ def _checkpoint_marker(name: str) -> str:
 def checkpoint_approved(repo_root: Path, issue_id: str, name: str) -> bool:
     """True when the *name* checkpoint has been approved on *issue_id*."""
     marker = _checkpoint_marker(name)
-    return any(text.strip().startswith(marker) for text in _comment_texts(repo_root, issue_id))
+    return any(_marker_matches(text, marker) for text in _comment_texts(repo_root, issue_id))
 
 
 def approve_checkpoint(repo_root: Path, issue_id: str, name: str) -> None:
