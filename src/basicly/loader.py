@@ -11,6 +11,7 @@ from .schema import (
     CATEGORIES,
     DEFAULT_SCOPE,
     PRIORITY_MAP,
+    SOURCE_SCHEMA_VERSION,
     STATUSES,
     Fragment,
     OutputDef,
@@ -103,6 +104,18 @@ def _validate_replacements(fragments: list[Fragment]) -> None:
         for replaced_id in fragment.replaces:
             replaced = by_id.get(replaced_id)
             if replaced is None:
+                if fragment.source == "user":
+                    # A core upgrade may remove the replaced fragment; the
+                    # overlay must not brick every command. The replace is
+                    # ignored until the user updates their overlay.
+                    print(
+                        f"Warning: overlay fragment '{fragment.id}' "
+                        f"({fragment.source_path}) replaces unknown id "
+                        f"'{replaced_id}' — likely removed by a core upgrade; "
+                        "the replace is ignored. Review the overlay fragment.",
+                        file=sys.stderr,
+                    )
+                    continue
                 raise ValidationError(
                     f"fragment '{fragment.id}' replaces unknown fragment id '{replaced_id}'",
                     fragment.source_path,
@@ -134,6 +147,7 @@ def _load_fragment(path: Path, source_hint: str | None = None) -> Fragment:
     inferred_source = source_hint or _infer_source_from_path(path)
     source = front.get("source", inferred_source)
 
+    _validate_schema_version(front.get("schema_version"), path)
     return Fragment(
         id=front.get("id", ""),
         description=front.get("description", ""),
@@ -153,6 +167,25 @@ def _load_fragment(path: Path, source_hint: str | None = None) -> Fragment:
         extends=front.get("extends", []),
         enforced_by=front.get("enforced_by", []),
     )
+
+
+def _validate_schema_version(value: object, path: Path) -> None:
+    """Reject a source authored for a newer schema than this basicly knows.
+
+    Missing is accepted (pre-versioning overlays); catalog-lint enforces the
+    field on core sources. Newer must be a hard, actionable error — silently
+    misreading a future format is worse than failing.
+    """
+    if value is None:
+        return
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValidationError(f"schema_version must be an integer, got {value!r}", path)
+    if value > SOURCE_SCHEMA_VERSION:
+        raise ValidationError(
+            f"source declares schema_version {value}, newer than this basicly "
+            f"understands ({SOURCE_SCHEMA_VERSION}); upgrade basicly",
+            path,
+        )
 
 
 def _infer_source_from_path(path: Path) -> str:

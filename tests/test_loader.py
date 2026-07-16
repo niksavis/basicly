@@ -208,14 +208,43 @@ def test_replaces_missing_override_is_rejected(tmp_path: Path) -> None:
         load_fragments(tmp_path, {"claude"})
 
 
-def test_replaces_unknown_target_is_rejected(tmp_path: Path) -> None:
-    """A replaces id that no loaded fragment defines is a hard error."""
+def test_user_replaces_of_a_removed_core_id_warns_and_loads(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An overlay replacing an id a core upgrade removed degrades to a warning.
+
+    A hard error here would brick every basicly command in the consumer repo
+    after the upgrade; the replace is ignored instead and named in stderr.
+    """
     _wf(
         tmp_path / "user.fragment.yaml",
         "id: repl\ndescription: x\ncategory: project\napplies_to: [all]\n"
         "source: user\noverride: true\nreplaces: [does-not-exist]",
     )
+    fragments = load_fragments(tmp_path, {"claude"})
+    assert [f.id for f in fragments] == ["repl"]
+    err = capsys.readouterr().err
+    assert "replaces unknown id 'does-not-exist'" in err
+
+
+def test_core_replaces_unknown_target_is_rejected(tmp_path: Path) -> None:
+    """A core fragment replacing an unknown id is still a hard authoring error."""
+    _wf(
+        tmp_path / "core.fragment.yaml",
+        "id: repl\ndescription: x\ncategory: project\napplies_to: [all]\n"
+        "source: core\noverride: true\nreplaces: [does-not-exist]",
+    )
     with pytest.raises(ValidationError, match="unknown fragment id 'does-not-exist'"):
+        load_fragments(tmp_path, {"claude"})
+
+
+def test_source_newer_schema_version_is_rejected(tmp_path: Path) -> None:
+    """A source authored for a newer schema fails loudly instead of misreading."""
+    _wf(
+        tmp_path / "future.fragment.yaml",
+        "schema_version: 99\nid: fut\ndescription: x\ncategory: project\napplies_to: [all]",
+    )
+    with pytest.raises(ValidationError, match="upgrade basicly"):
         load_fragments(tmp_path, {"claude"})
 
 

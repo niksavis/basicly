@@ -12,6 +12,12 @@ PRIORITY_MAP = {
     "low": 1,
 }
 
+# Source-format version shared by every catalog source kind (fragment, skill,
+# agent, block). Bump only when the loader contract changes; loaders reject a
+# source authored for a NEWER version with an "upgrade basicly" error instead
+# of misreading it.
+SOURCE_SCHEMA_VERSION = 1
+
 CATEGORIES = {
     "boundaries",
     "code-style",

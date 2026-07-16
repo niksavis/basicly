@@ -87,3 +87,19 @@ def test_snapshot_skips_bytecode_caches(tmp_path: Path) -> None:
     (core / "hooks" / "__pycache__").mkdir()
     (core / "hooks" / "__pycache__" / "x.pyc").write_bytes(b"\x00")
     assert not any("__pycache__" in key for key in snapshot_core(core))
+
+
+def test_read_install_state_rejects_a_newer_schema(tmp_path: Path) -> None:
+    """A state file from a newer basicly fails with an upgrade hint."""
+    state_path = tmp_path / "install.json"
+    state_path.write_text(
+        json.dumps({
+            "schema_version": 99,
+            "basicly_version": "9.9.9",
+            "installed_at": "2099-01-01T00:00:00+00:00",
+            "core": {},
+        }),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValidationError, match="upgrade basicly"):
+        read_install_state(state_path)
