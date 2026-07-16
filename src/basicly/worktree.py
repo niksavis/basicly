@@ -280,15 +280,39 @@ def stale_sessions(cwd: Path | str | None = None) -> list[Session]:
     return [s for s in list_sessions(cwd) if not s.path.exists()]
 
 
+def _uncommitted_changes(worktree: Path) -> str:
+    """Pending changes in *worktree*, ignoring the provisioned dep dirs.
+
+    ``git worktree remove --force`` discards whatever this reports, so cleanup
+    must refuse on a non-empty result unless explicitly forced. The dep dirs
+    (and the tracker export, which provisioning syncs from base) are expected
+    noise, not work.
+    """
+    proc = git(["status", "--porcelain"], cwd=worktree, check=False)
+    if proc.returncode != 0:
+        return ""
+    expected_noise = (*DEP_DIRS, ".beads")
+    noise_prefixes = tuple(f"{d}/" for d in expected_noise)
+    lines = []
+    for line in proc.stdout.splitlines():
+        path = line[3:].strip().strip('"')
+        if path in expected_noise or path.startswith(noise_prefixes):
+            continue
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def cleanup(name: str, *, force: bool = False) -> None:
     """Remove worktree *name* and delete its merged branch.
 
     Removes the worktree directory (``git worktree remove --force`` — the
     provisioned deps are untracked, so a plain remove would refuse), prunes the
     registry, deletes the ``harness/<name>`` branch, and drops the session
-    record. The base branch is never touched. ``force`` deletes the branch even
-    if unmerged (``git branch -D``); by default an unmerged branch is left with
-    a note instead of being lost. Reclaims a stale record whose worktree dir is
+    record. The base branch is never touched. Refuses when the worktree holds
+    uncommitted changes beyond the dep dirs and tracker export — ``--force``
+    discards them. ``force`` also deletes the branch even if unmerged
+    (``git branch -D``); by default an unmerged branch is left with a note
+    instead of being lost. Reclaims a stale record whose worktree dir is
     already gone.
 
     Finishes by reinstalling the base checkout's hooks: worktrees share the
@@ -300,6 +324,12 @@ def cleanup(name: str, *, force: bool = False) -> None:
     worktree, branch = _resolve_worktree(name, main)
 
     if worktree.exists():
+        pending = _uncommitted_changes(worktree)
+        if pending and not force:
+            raise SystemExit(
+                f"worktree {name!r} has uncommitted changes; commit them or pass "
+                f"force to discard:\n{pending}"
+            )
         git(["worktree", "remove", "--force", str(worktree)], cwd=main)
     git(["worktree", "prune"], cwd=main, check=False)
 

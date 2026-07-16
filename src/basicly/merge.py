@@ -15,6 +15,7 @@ given order serially and stops at the first node that does not cleanly merge.
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -40,7 +41,7 @@ class MergeResult:
     """Outcome of attempting to merge one worktree back to its base."""
 
     name: str
-    # "merged" | "rebase-conflicts" | "verify-failed" | "merge-conflicts"
+    # "merged" | "rebase-conflicts" | "verify-failed" | "merge-conflicts" | "merge-failed"
     status: str
     detail: str
 
@@ -92,6 +93,26 @@ def reconcile_beads(repo_root: Path) -> None:
     )
 
 
+def _known_bead_ids(repo_root: Path) -> set[str] | None:
+    """Ids from ``.beads/issues.jsonl``, or None when no workspace exists."""
+    issues = repo_root / ".beads" / "issues.jsonl"
+    if not issues.exists():
+        return None
+    ids: set[str] = set()
+    for raw_line in issues.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        issue_id = record.get("id")
+        if isinstance(issue_id, str):
+            ids.add(issue_id)
+    return ids
+
+
 def _merge_message(name: str, branch: str, base: str, bead: str) -> str:
     """Build a Conventional-Commits merge message the commit-msg hook accepts.
 
@@ -116,6 +137,12 @@ def merge_worktree(
     if not bead:
         raise SystemExit(
             "merge needs a bead id for the merge commit (the commit-msg hook requires one)"
+        )
+    known = _known_bead_ids(repo_root)
+    if known is not None and bead not in known:
+        raise SystemExit(
+            f"unknown bead id {bead!r}: not in .beads/issues.jsonl — the commit-msg "
+            "hook would reject the merge commit and strand the base mid-merge"
         )
 
     session = load_session(name, repo_root)
@@ -145,8 +172,20 @@ def merge_worktree(
     if not probe.safe:
         return MergeResult(name, "merge-conflicts", f"conflicts in: {', '.join(probe.conflicts)}")
 
-    # 4. Local --no-ff merge into the base from the base checkout.
-    git(["merge", "--no-ff", branch, "-m", _merge_message(name, branch, base, bead)], cwd=repo_root)
+    # 4. Local --no-ff merge into the base from the base checkout. A failure
+    # (e.g. a commit-msg hook rejection) must not strand MERGE_HEAD.
+    proc = git(
+        ["merge", "--no-ff", branch, "-m", _merge_message(name, branch, base, bead)],
+        cwd=repo_root,
+        check=False,
+    )
+    if proc.returncode != 0:
+        git(["merge", "--abort"], cwd=repo_root, check=False)
+        return MergeResult(
+            name,
+            "merge-failed",
+            f"git merge of {branch} exited {proc.returncode}; aborted, base left clean",
+        )
     reconcile_beads(repo_root)
     head = git(["rev-parse", "--short", "HEAD"], cwd=repo_root).stdout.strip()
     return MergeResult(name, "merged", f"merged {branch} into {base} @ {head}")
