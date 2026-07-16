@@ -1008,3 +1008,28 @@ def test_cli_survives_a_narrow_console_encoding(work_repo: Path) -> None:
     )
     assert result.returncode == 0, result.stderr
     assert "charmap" not in result.stderr
+
+
+def test_cli_usage_report_tables_counters_and_flags_unused_skills(work_repo: Path) -> None:
+    """Usage report joins the counters against the catalog's skills."""
+    usage_dir = work_repo / ".basicly" / "usage"
+    usage_dir.mkdir(parents=True)
+    (usage_dir / "tool-usage.json").write_text(
+        json.dumps({
+            "rg": {"count": 7, "last_used": "2026-07-16"},
+            "skill:conventional-commits": {"count": 2, "last_used": "2026-07-16"},
+        }),
+        encoding="utf-8",
+    )
+    result = run_basicly(work_repo, "usage", "report")
+    assert result.returncode == 0, result.stderr
+    assert "rg" in result.stdout and "7" in result.stdout
+    assert "conventional-commits" in result.stdout
+    assert "Never-used catalog skills" in result.stdout
+
+
+def test_cli_usage_report_notes_missing_data(work_repo: Path) -> None:
+    """A repo without the hook's counter file gets a note, not an error."""
+    result = run_basicly(work_repo, "usage", "report")
+    assert result.returncode == 0, result.stderr
+    assert "No usage data" in result.stdout

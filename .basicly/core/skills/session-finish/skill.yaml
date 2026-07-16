@@ -19,20 +19,17 @@ instructions: |
 
   The `tool-usage` PostToolUse hook counts every shell command's pipeline
   heads and every `Skill` invocation into `.basicly/usage/tool-usage.json`
-  (git-ignored, survives between sessions). Read it and report:
+  (git-ignored, survives between sessions). Report it with:
 
   ```sh
-  cat .basicly/usage/tool-usage.json
+  basicly usage report
   ```
 
-  - Entries keyed by plain name (`rg`, `uv`, `jq`, ...) are terminal tools;
-    entries keyed `skill:<name>` are skill invocations.
-  - Report the top tools and skills by count with their `last_used` dates,
-    and call out installed tools that never appear — they are candidates for
-    culling from the harness.
-  - The file accumulates across sessions by design; do not reset or delete
-    it. If it is missing, say so (the hook may not be active in this repo)
-    and continue with the rest of the ritual.
+  - The report tables terminal tools and skills by count with `last used`
+    dates, and names never-used catalog skills — the culling candidates.
+  - The counter file accumulates across sessions by design; do not reset or
+    delete it. When the command reports no usage data, say so (the hook may
+    not be active in this repo) and continue with the rest of the ritual.
 
   ## 2) Self-improvement retro
 

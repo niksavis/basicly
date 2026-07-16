@@ -63,6 +63,26 @@ WRAPPER_TOKENS = {"uv", "uvx", "npx", "sudo", "xargs", "command", "exec", "nohup
 
 _OPERATORS = re.compile(r"(?:\|\||&&|;|\||\n)")
 
+# `cmd <<TAG` / `cmd <<-'TAG'`: everything until the terminator line is data,
+# not commands — counting heredoc body lines as tools was basicly-587.
+_HEREDOC = re.compile(r"<<-?\s*(['\"]?)(?P<tag>[A-Za-z_][A-Za-z0-9_]*)\1")
+
+
+def _strip_heredocs(command: str) -> str:
+    """Drop here-document bodies so their lines are never counted as tools."""
+    out: list[str] = []
+    terminator: str | None = None
+    for line in command.split("\n"):
+        if terminator is not None:
+            if line.strip() == terminator:
+                terminator = None
+            continue
+        match = _HEREDOC.search(line)
+        if match:
+            terminator = match.group("tag")
+        out.append(line)
+    return "\n".join(out)
+
 
 def _command_from_payload(payload: dict) -> str | None:
     """Return the executed shell command from a Claude or Copilot payload."""
@@ -92,7 +112,7 @@ def _skill_from_payload(payload: dict) -> str | None:
 def tools_in_command(command: str) -> list[str]:
     """Head tokens (basenames) of every pipeline segment, wrappers unwrapped."""
     tools: list[str] = []
-    for segment in _OPERATORS.split(command):
+    for segment in _OPERATORS.split(_strip_heredocs(command)):
         try:
             tokens = shlex.split(segment, posix=True)
         except ValueError:
