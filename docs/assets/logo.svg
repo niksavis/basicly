@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="basicly logo: four building blocks, one projected out">
+  <!-- Three anchored blocks: the managed catalog. -->
+  <rect x="14" y="14" width="44" height="44" rx="11" fill="#4f46e5"/>
+  <rect x="14" y="70" width="44" height="44" rx="11" fill="#6366f1"/>
+  <rect x="70" y="70" width="44" height="44" rx="11" fill="#818cf8"/>
+  <!-- The fourth block lifting out of the grid: a projection landing in a target repo. -->
+  <rect x="76" y="8" width="44" height="44" rx="11" fill="#f59e0b"/>
+</svg>

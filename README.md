@@ -1,73 +1,126 @@
+<div align="center">
+
+<img src="docs/assets/logo.svg" alt="basicly logo" width="112">
+
 # basicly
 
-`basicly` is a harness distribution repository for coding agents.
+**One command installs a complete coding-agent harness — instructions, skills, and gates — projected from a single catalog.**
 
-It packages reusable, versioned building blocks that help agents work reliably across repositories:
+[![latest release](https://img.shields.io/github/v/release/niksavis/basicly?label=release)](https://github.com/niksavis/basicly/releases/latest)
+[![quality gates](https://github.com/niksavis/basicly/actions/workflows/quality-gates.yml/badge.svg)](https://github.com/niksavis/basicly/actions/workflows/quality-gates.yml)
+[![projection gate](https://github.com/niksavis/basicly/actions/workflows/basicly.yml/badge.svg)](https://github.com/niksavis/basicly/actions/workflows/basicly.yml)
+[![python 3.14+](https://img.shields.io/badge/python-3.14%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
+[![license](https://img.shields.io/github/license/niksavis/basicly)](LICENSE)
 
-- **Suggestive guidance** (non-deterministic): skills, instructions, prompts, and policy fragments a model reads.
-- **Deterministic gates** (hard gates): git hook scripts that mechanically block a bad commit/push regardless of whether the guidance was followed.
-- **Projection tooling**: generate target-native agent config files from one source of truth.
+</div>
 
-Both halves are first-class, catalog-distributed artifacts — see [`docs/architecture.md`](docs/architecture.md) for the full design.
+## What is basicly?
 
-## What this repo provides
+Coding agents read guidance from many places — `CLAUDE.md`, `AGENTS.md`,
+`.github/copilot-instructions.md`, skill folders, hook configs — and keeping
+them consistent by hand does not scale. `basicly` fixes that with one catalog
+and a projector:
 
-- A source-of-truth projector under `.basicly/`.
-- Fragment-driven generation for agent ecosystems (for example Claude and Copilot).
-- Skill projection workflows so shared skills can be synced into target roots.
-- Git hook scripts under `.basicly/core/hooks/`, covering three git stages
-  (pre-commit, commit-msg, pre-push) plus Claude agent hooks. The git stages are
-  wired through the [pre-commit framework](https://pre-commit.com), whose config
-  file is fixed at `.pre-commit-config.yaml` — the *tool* is named pre-commit;
-  the file is not limited to the pre-commit stage.
-- Release and quality workflows in `.github/workflows/`.
+- **Suggestive guidance** — instructions, skills, and policy fragments a model
+  reads. Authored once as YAML, projected into every format your agents expect.
+- **Deterministic gates** — git hook scripts that mechanically block a bad
+  commit or push, whether or not the guidance was followed.
+- **Projection tooling** — the `basicly` CLI that generates, verifies, and
+  upgrades all of the above in any consumer repo.
 
-## Project intent
+Think of it as Lego bricks for agent enablement: pick the blocks, install them
+with one command, and let `basicly check` keep them from drifting.
 
-This repository is designed to be consumed by other repositories.
+## Quick start
 
-Think of it as Lego bricks for agent enablement:
+### Install
 
-1. Choose which blocks to install (skills, hooks, policies, workflows).
-2. Configure the selected blocks for your target repo.
-3. Run checks/build to keep generated and projected files in sync.
-
-## Install
-
-One command installs the harness into a consumer repo — and the same command performs every upgrade:
+Into any git repo, with [uv](https://docs.astral.sh/uv/) already on the machine:
 
 ```sh
 uvx --from git+https://github.com/niksavis/basicly@v0.1.3 basicly install
 ```
 
-No `uv`/Python on the machine? The bootstrap shim installs `uv` first, then runs
-the same command (append `-s -- --ref v0.1.3` to pin, plus any `basicly install`
-arguments):
+No `uv` or Python yet? The bootstrap shim installs `uv` first, then runs the
+same command:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/niksavis/basicly/main/.scripts/bootstrap.sh | sh
 ```
 
-Windows: `.scripts/bootstrap.ps1` is the PowerShell twin.
+Windows (PowerShell):
 
-Pin `@v0.1.3` for reproducible installs, or track `@main` for the latest. Install converges everything: managed core catalog, generated agent instruction files, projected skills, activated git hooks, a beads tracker workspace, VS Code tasks, and a CI gates workflow. Customize via YAML fragments in `.basicly-local/fragments/user/` — install never touches them.
+```powershell
+powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/niksavis/basicly/main/.scripts/bootstrap.ps1 | iex"
+```
 
-## Uninstall
+Pin `@v0.1.3` for reproducible installs, or track `@main` for the latest. To
+pin through the shim, append `-s -- --ref v0.1.3` (POSIX) or download the
+script and pass `-Ref v0.1.3` (PowerShell).
 
-One command removes everything basicly manages (core catalog, generated files, projected skills and agents, the managed hook block); your overlay and `basicly.toml` survive:
+### Upgrade
+
+Re-run the install command with the new pin — install is idempotent and
+converges the repo to the selected version. There is no separate `update`
+command.
+
+### Uninstall
+
+One command removes everything basicly manages; your overlay and
+`basicly.toml` survive:
 
 ```sh
 uvx --from git+https://github.com/niksavis/basicly@v0.1.3 basicly uninstall
 ```
 
-Add `--purge` to also remove the user overlay, `basicly.toml`, and the scaffolded VS Code tasks/CI workflow (only when still unedited).
+Add `--purge` to also remove the user overlay, `basicly.toml`, and the
+scaffolded VS Code tasks/CI workflow (only when still unedited).
 
-## Quick start
+## What install gives you
 
-### In a consumer repo (end users)
+- The managed core catalog under `.basicly/` (fragments, skills, hook scripts).
+- Generated agent instruction files (`CLAUDE.md`, `AGENTS.md`,
+  `.github/copilot-instructions.md`) rendered from shared fragments.
+- Projected skills at `.claude/skills/` and `.agents/skills/`.
+- Activated hooks across three surfaces: git stages (pre-commit, commit-msg,
+  pre-push — wired through the [pre-commit framework](https://pre-commit.com),
+  whose config file is fixed at `.pre-commit-config.yaml`; the *tool* is named
+  pre-commit, the file is not limited to that stage), Claude Code agent hooks,
+  and Copilot agent hooks.
+- A beads issue-tracker workspace, VS Code tasks, and a CI gates workflow.
 
-Day-to-day use needs nothing beyond `install` above — re-running it is also the
-upgrade path (there is no separate `update` command). The scaffolded VS Code
+Customize via YAML fragments in `.basicly-local/fragments/user/` — install
+never touches them. Scope the catalog to your stack with
+`--technologies` (for example `--technologies python,zsh`).
+
+## How it works
+
+```mermaid
+flowchart LR
+    subgraph sources["One source of truth"]
+        core[".basicly/core/<br>managed catalog"]
+        local[".basicly-local/<br>your overlay"]
+    end
+    cli{{"basicly install / build"}}
+    core --> cli
+    local --> cli
+    subgraph outputs["Projected into your repo"]
+        agents["Agent instructions<br>CLAUDE.md / AGENTS.md / copilot-instructions.md"]
+        skills["Skills<br>.claude/skills / .agents/skills"]
+        hooks["Hooks<br>git stages / Claude Code / Copilot"]
+    end
+    cli --> agents
+    cli --> skills
+    cli --> hooks
+    gate["basicly check<br>drift gate, run by CI"] -. verifies .-> outputs
+```
+
+The full design — directory contract, catalog model, verification pipeline —
+lives in [`docs/architecture.md`](docs/architecture.md).
+
+## Everyday commands
+
+Day-to-day use needs nothing beyond `install` above. The scaffolded VS Code
 tasks wrap the same pinned commands. To inspect or re-sync by hand, run these
 from the consumer repo root with the same pin used to install:
 
@@ -76,7 +129,7 @@ uvx --from git+https://github.com/niksavis/basicly@v0.1.3 basicly check   # exit
 uvx --from git+https://github.com/niksavis/basicly@v0.1.3 basicly build   # regenerate agent instruction files
 ```
 
-### Contributing to this repo
+## Contributing to this repo
 
 All commands run through `uv` in a checkout; the `basicly` entry point resolves
 from the workspace, so no `PYTHONPATH` prefix is needed:
@@ -102,9 +155,6 @@ uv run basicly skills-build   # project skills; --all-default-roots covers .clau
 uv run basicly skills-check   # fail when a projected SKILL.md is missing or stale
 ```
 
-## Architecture
+## License
 
-See [`docs/architecture.md`](docs/architecture.md) — the single authoritative
-architecture reference for this project. It defines the directory contract, the
-fragment/skill/hook catalog model, the verification pipeline, and the current
-implementation gaps that become beads issues.
+[MIT](LICENSE).
