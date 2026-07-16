@@ -13,11 +13,11 @@ so the consumer sees each tool's own output live.
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import br
 from .config import VerifyCheck, VerifyConfig, load_verify_config
 
 DEFAULT_GATE = "verify"
@@ -132,16 +132,12 @@ def report_gate(
     guidance) when ``br`` is not on PATH or the command fails, rather than
     raising, so a missing tracker never masks the verify result itself.
     """
-    br = shutil.which("br")
-    if not br:
-        return False, "br not on PATH; gate not recorded"
-
     status = "pass" if report.passed else "fail"
     detail = ", ".join(f"{r.name}={r.status}" for r in report.results) or "no checks"
     note = f"verify {report.mode}: {detail}"
-    proc = subprocess.run(  # nosec B603
+    proc = br.try_run_br(
+        repo_root,
         [
-            br,
             "gate",
             "report",
             "--gate",
@@ -154,11 +150,9 @@ def report_gate(
             note,
             issue_id,
         ],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        check=False,
     )
+    if proc is None:
+        return False, "br not on PATH; gate not recorded"
     if proc.returncode != 0:
         return False, f"br gate report failed: {(proc.stderr or proc.stdout).strip()}"
     return True, f"recorded gate {gate}={status} on {issue_id}"

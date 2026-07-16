@@ -16,12 +16,10 @@ given order serially and stops at the first node that does not cleanly merge.
 from __future__ import annotations
 
 import json
-import shutil
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import policy, verify
+from . import br, policy, verify
 from .config import PolicyConfig, load_policy_config
 from .worktree import current_branch, git, load_session
 
@@ -85,12 +83,7 @@ def _assert_base_ready(repo_root: Path, base: str) -> None:
 
 def reconcile_beads(repo_root: Path) -> None:
     """Reconcile ``.beads/issues.jsonl`` via ``br sync --merge`` (no hand-editing)."""
-    br = shutil.which("br")
-    if not br:
-        return
-    subprocess.run(  # nosec B603
-        [br, "sync", "--merge"], cwd=repo_root, capture_output=True, text=True, check=False
-    )
+    br.try_run_br(repo_root, ["sync", "--merge"])
 
 
 def _known_bead_ids(repo_root: Path) -> set[str] | None:

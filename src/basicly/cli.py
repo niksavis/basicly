@@ -8,7 +8,6 @@ import json
 import re
 import shlex
 import shutil
-import subprocess
 import sys
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -18,6 +17,7 @@ from typing import Any
 from . import (
     __version__,
     agents,
+    br,
     catalog_lint,
     catalog_verify,
     claude_settings,
@@ -626,22 +626,14 @@ def _setup_beads(repo_root: Path) -> None:
         print("Beads workspace exists; left unchanged.")
         return
 
-    br = shutil.which("br")
-    if not br:
+    prefix = _beads_prefix(repo_root)
+    result = br.try_run_br(repo_root, ["init", "--prefix", prefix, "--quiet"])
+    if result is None:
         print(
             "br not on PATH; skipped beads init. Enable the harness tracker later "
             "with `br init --prefix <prefix>` (see the tool-br skill)."
         )
         return
-
-    prefix = _beads_prefix(repo_root)
-    result = subprocess.run(  # nosec B603
-        [br, "init", "--prefix", prefix, "--quiet"],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip() or "unknown error"
         print(
