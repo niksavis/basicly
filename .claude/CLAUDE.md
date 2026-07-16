@@ -6,7 +6,7 @@ not rely on `AGENTS.md` being present.
 
 ## Require Explicit Confirmation
 
-- Force-push, history rewrite, destructive git resets, `rm -rf`, and reading or writing `.env*` files — the `.claude/settings.json` deny-list hard-blocks these for Claude Code; this rule is the rationale and covers other agents, so treat a blocked command as the answer, not an obstacle.
+- Force-push, history rewrite, destructive resets, `rm -rf`, and `.env*` reads/writes — hard-denied in `.claude/settings.json` for Claude Code; this rule covers other agents, so treat a blocked command as the answer.
 - Deleting files/branches/data beyond explicit task scope.
 - Editing CI/CD, deployment, infra-as-code, or ignore/secrets files.
 - Adding/removing/upgrading dependencies.
@@ -15,8 +15,8 @@ not rely on `AGENTS.md` being present.
 
 ## Knowledge Priming
 
-- Before non-trivial work, load repo-specific context (README, architecture/CONTRIBUTING docs, local overlay) and treat it as ground truth; when it conflicts with general best practice, repo evidence wins — flag the conflict, don't silently override.
-- If no repo-specific context exists for a decision, say so explicitly and proceed on stated assumptions; do not block on missing priming material alone.
+- Before non-trivial work, load repo-specific context (README, architecture docs, local overlay); when it conflicts with general best practice, repo evidence wins — flag the conflict, don't silently override.
+- If no repo context covers a decision, say so and proceed on stated assumptions; don't block on missing priming alone.
 
 ## Project Defaults
 
@@ -27,21 +27,21 @@ not rely on `AGENTS.md` being present.
 ## Project Overview
 
 - Purpose: harness distribution for coding agents - one YAML catalog projected into agent instruction files, skills, and git hooks, consumed by other repos via `basicly install`.
-- Stack: Python 3.14+, managed with `uv` (hatchling build; version single-sourced from `src/basicly/__init__.py`).
-- Entry point: the `basicly` CLI (`src/basicly/cli.py`); catalog sources live under `.basicly/core/`, per-repo overrides under `.basicly-local/`.
-- Architecture: `docs/architecture.md` is the single authoritative reference.
+- Stack: Python 3.14+, managed with `uv`; version single-sourced from `src/basicly/__init__.py`.
+- Entry point: the `basicly` CLI (`src/basicly/cli.py`); catalog sources in `.basicly/core/`, overrides in `.basicly-local/`.
+- Architecture: `docs/architecture.md` is the authoritative reference.
 
 ## Secure Coding
 
-- Validate and sanitize all external input at trust boundaries before it reaches business logic.
-- Parameterize shell commands and any queries; never build them by concatenating untrusted input.
-- Never commit secrets (keys, tokens, passwords, connection strings); use env vars or a secret manager and keep them out of logs.
-- Don't leak internal detail (stack traces, paths) in user-facing errors; log the detail, return a generic message.
-- Never commit user- or machine-specific paths, usernames, or hostnames; keep repo defaults generic and portable.
+- Validate and sanitize external input at trust boundaries before it reaches business logic.
+- Parameterize shell commands and queries; never concatenate untrusted input into them.
+- Never commit secrets; use env vars or a secret manager and keep them out of logs.
+- Don't leak internal detail (stack traces, paths) in user-facing errors; log it, return a generic message.
+- Never commit user- or machine-specific paths, usernames, or hostnames; keep defaults portable.
 
 ## Commands
 
-Commands in code fences are exact - run them verbatim instead of improvising variants.
+Run these verbatim; don't improvise variants.
 
 Setup:
 
@@ -79,54 +79,53 @@ uv run basicly hooks-check
 
 ## Git Discipline
 
-- Run `git commit` as its own command; never chain state-dependent follow-ups (issue-tracker updates, tagging, `git push`) after it on one line — a hook rejection leaves the chain half-run.
-- Commits are gated by `commit-msg` hooks (Conventional Commits + a trailing beads issue id) — use the `conventional-commits` skill to format one, and the `tool-br` skill to claim the issue first.
+- Run `git commit` as its own command; never chain follow-ups (tracker updates, tagging, `git push`) after it — a hook rejection leaves the chain half-run.
+- Commits are gated by `commit-msg` hooks (Conventional Commits + a trailing beads issue id) — the `conventional-commits` skill formats one, the `tool-br` skill claims the issue first.
 - When a hook rejects a commit, fix the reported cause and re-commit.
 
 ## Decision Protocol
 
-- Decide it yourself when grounded in inspected code/docs, the choice is low-impact and reversible and not on the Require Explicit Confirmation list, or repo context already specifies it.
-- Stop and ask when a needed fact can't be found, sources conflict, or an assumption would be unfalsifiable and would change the outcome.
-- State exactly what's missing or conflicting and what answer would unblock you — don't present options just to look thorough.
+- Decide yourself when grounded in inspected code/docs and the choice is low-impact, reversible, and not on the confirmation list.
+- Stop and ask when a needed fact can't be found, sources conflict, or an unverifiable assumption would change the outcome.
+- State exactly what's missing and what answer would unblock you — don't present options just to look thorough.
 - If rules conflict, prefer safety/security boundaries.
-- If repeated attempts at the same approach fail, stop, report the failure pattern, and propose a different approach rather than retrying it.
+- If repeated attempts at one approach fail, report the pattern and propose a different approach instead of retrying.
 
 ## Core Rules
 
 - Keep diffs minimal; avoid unrelated refactors.
 - Solve the stated requirement only — no speculative abstractions or unrequested config.
-- Reuse before reinventing: prefer an existing helper, utility, tool, or skill (including the repo's search, tracker, and hooks) over new code or a hand-rolled equivalent.
-- Fix the root cause, not the symptom: check other call sites before assuming a single-site patch is complete.
-- Back claims with evidence (files read, commands run, tests); don't assert without checking.
+- Reuse before reinventing: prefer an existing helper, tool, or skill over new code or a hand-rolled equivalent.
+- Fix the root cause, not the symptom: check other call sites before calling a single-site patch complete.
+- Back claims with evidence (files read, commands run, tests).
 - Keep code clean: no dead code, debug prints, or silent error swallowing.
 - Match existing style and naming conventions in touched files.
 - Use deterministic tests; add regression tests for bug fixes.
 
 ## Harness Loop
 
-- Drive non-trivial work through the harness loop, not ad hoc: intake → classify → decompose → build → verify → ship → teardown → retro. `br` is the single source of truth (the loop keeps no side-state, so it is resumable); the `harness-loop` skill is the runbook.
-- Start by reconstructing a track with `basicly loop status <issue>`, then step it with `basicly loop advance <issue>` / `basicly loop run <issue>`; a blocked step exits non-zero and names the input it needs.
-- The three human checkpoints (classify, decompose, ship) and the bounded rework loop are engine-enforced — approve with `basicly policy checkpoint <issue> <name> --approve`.
+- Drive non-trivial work through the harness loop (intake → classify → decompose → build → verify → ship → teardown → retro); `br` is the single source of truth and the `harness-loop` skill is the runbook.
+- Reconstruct a track with `basicly loop status <issue>`, step it with `basicly loop advance <issue>`; a blocked step exits non-zero and names the input it needs.
+- Checkpoints (classify, decompose, ship) and bounded rework are engine-enforced — approve with `basicly policy checkpoint <issue> <name> --approve`.
 
 ## Quality Gate
 
-- Review the diff before finishing; do not mark complete with "should work" — verify.
-- Run the checks this repo already enforces (tests, lint, type check, hooks/CI config) for anything the change touches, and re-run them after your final edit — a later change can break what passed earlier. Point at existing gates; don't restate what they check.
-- Confirm a check passed from its explicit pass/fail summary line; never infer success from truncated or partial output (a cut-off `tail` can hide a failure).
-- Before calling a change done, exercise it as it will really be used — run the command, read the output, and run any new or changed check against this repo itself (the dogfood consumer); passing tests is not the same as having used the feature.
-- Docs must state the verification scope actually exercised; never upgrade "expected to work" to "works".
-- If a gate can't be run, say so explicitly instead of skipping it silently.
+- Review the diff before finishing; verify instead of declaring "should work".
+- Run the repo's existing checks for anything touched, and re-run after the final edit — a later change can break what passed earlier. Point at gates; don't restate what they check.
+- Confirm success from the explicit pass/fail summary line; truncated output can hide a failure.
+- Exercise the change as it will really be used — run it and read the output; passing tests is not the same as having used the feature.
+- Docs state the verification scope actually exercised; never upgrade "expected to work" to "works".
+- If a gate can't be run, say so instead of skipping it silently.
 
 ## Use
 
-- Read this file before taking action.
-- Re-read after context resets or long tool chains.
+- Read this file before acting; re-read after context resets or long tool chains.
 - User instructions in the current task override this file.
 - More specific path-scoped instructions override this file for matching files.
 
 ## Catalog Authoring
 
-- Author catalog content as YAML sources (`skill.yaml`, `<id>.fragment.yaml`), never a discoverable `.md`; scaffold with `basicly skills-new` / `basicly fragment-new`, follow the `catalog-authoring` skill, and let `basicly catalog-lint` enforce the format.
+- Author catalog content as YAML sources, never a discoverable `.md`; scaffold with `basicly skills-new`/`fragment-new` and follow the `catalog-authoring` skill — `catalog-lint` enforces the format.
 
 ## Claude-specific notes
 
@@ -136,16 +135,16 @@ uv run basicly hooks-check
 
 ## Self Improvement Retro
 
-- If this session hit a real rejection or user-corrected mistake, find the root cause before ending, not just the fix.
-- Propose the exact fragment/skill/hook file and wording change that would have prevented it; skip vague "be careful" notes.
-- An environment/timing/platform trap belongs in a quirks-category fragment: one incident, one bullet, phrased as the trap plus how to avoid it.
-- Present each proposal for explicit approval; never self-apply a fragment/skill/hook edit from a retro.
-- Skip the retro when nothing concrete surfaced; inventing gaps to look thorough is the anti-pattern this exists to prevent.
+- If the session hit a real rejection or user-corrected mistake, find the root cause before ending.
+- Propose the exact fragment/skill/hook change that would have prevented it; skip vague "be careful" notes.
+- An environment/timing/platform trap belongs in a quirks fragment: one incident, one bullet, trap plus avoidance.
+- Present each proposal for explicit approval; never self-apply a retro edit.
+- Skip the retro when nothing concrete surfaced; inventing gaps to look thorough is the anti-pattern.
 
 ## Session Completion
 
-- Leave the repo in a state a fresh session could pick up cleanly: no partial edits, no stray debug output, no unexplained changes.
-- Summarize what changed, what was verified, and what — if anything — remains open before ending the turn.
+- Leave the repo pickup-clean: no partial edits, stray debug output, or unexplained changes.
+- Summarize what changed, what was verified, and what remains open before ending.
 
 ## Quirks
 
@@ -158,4 +157,4 @@ uv run basicly hooks-check
 
 ## Tool Usage
 
-- Retrieval ladder: find files by name, localize with focused search, then read only the ranges you need — expand scope only as required; don't bulk-load unrelated files.
+- Retrieval ladder: find files by name, localize with focused search, read only the ranges you need; don't bulk-load unrelated files.

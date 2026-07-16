@@ -11,7 +11,7 @@ tags:
 - confirmation
 status: active
 body: |
-  - Force-push, history rewrite, destructive git resets, `rm -rf`, and reading or writing `.env*` files — the `.claude/settings.json` deny-list hard-blocks these for Claude Code; this rule is the rationale and covers other agents, so treat a blocked command as the answer, not an obstacle.
+  - Force-push, history rewrite, destructive resets, `rm -rf`, and `.env*` reads/writes — hard-denied in `.claude/settings.json` for Claude Code; this rule covers other agents, so treat a blocked command as the answer.
   - Deleting files/branches/data beyond explicit task scope.
   - Editing CI/CD, deployment, infra-as-code, or ignore/secrets files.
   - Adding/removing/upgrading dependencies.
