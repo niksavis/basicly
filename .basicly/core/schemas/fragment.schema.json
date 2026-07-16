@@ -26,7 +26,8 @@
         "skills",
         "testing",
         "tools",
-        "ci-cd"
+        "ci-cd",
+        "quirks"
       ]
     },
     "priority": {"enum": ["critical", "high", "medium", "low"]},

@@ -25,6 +25,9 @@ CATEGORIES = {
     "testing",
     "tools",
     "ci-cd",
+    # One real incident, one bullet: env traps, timing, platform gotchas. The
+    # landing zone for self-improvement-retro proposals.
+    "quirks",
 }
 
 STATUSES = {"active", "draft", "deprecated"}
