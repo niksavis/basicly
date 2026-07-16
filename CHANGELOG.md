@@ -6,6 +6,47 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.2.0 - 2026-07-16
+
+Delta: v0.1.3..v0.2.0
+
+### Added
+
+- **Tool-usage telemetry hook**: a PostToolUse hook for both Claude Code and
+  GitHub Copilot counts every shell command's pipeline heads into
+  `.basicly/usage/tool-usage.json` (self-ignored from git) — token-free,
+  deterministic data on which terminal tools agents actually use, for tailoring
+  the catalog with real evidence. Ships in the catalog and is dogfooded here.
+- **Copilot hook manager**: `hooks.yaml` entries now target one of three
+  managers — `git` (pre-commit config), `claude` (`.claude/settings.json`, with
+  per-spec event and matcher), or `copilot` (managed
+  `.github/hooks/basicly-<id>.json` files, synced and pruned like every other
+  projection).
+- **Runner auto-dispatch in the harness loop**: `basicly loop advance` on a
+  ready leaf provisions the worktree and dispatches the selected headless
+  runner inside it; the `manual` runner preserves the block-and-resume handoff
+  (this repo pins `[runner] default = "manual"`).
+- **Bootstrap shims**: `.scripts/bootstrap.sh` (curl-able POSIX sh) and
+  `.scripts/bootstrap.ps1` install `uv` when absent, then run the pinned
+  install — one command on a machine with no Python at all.
+- **Rich terminal output**: styled status lines, real tables, and `--help`
+  grouped by audience (consumer / contributor / harness); piped and CI output
+  stays byte-identical plain text. Adds `rich` as a runtime dependency.
+- **Branding and a landing page**: a project logo, README badges, a
+  GitHub-rendered architecture diagram, a root `CONTRIBUTING.md`, and a
+  GitHub Pages site at <https://niksavis.github.io/basicly/>.
+
+### Changed
+
+- **README rewritten user-first**: overview → quick start (copy-pasteable
+  install, upgrade, uninstall) → reference; `PYTHONPATH=` relics removed, every
+  flag explained, hook stages vs the pre-commit framework filename clarified.
+- **architecture.md now describes shipped behavior plainly**: implementation
+  status markers were removed everywhere except the genuinely deferred items,
+  which are collected in one section.
+- `.claude/settings.json` is committed: the deny-list is tracked in git and
+  carries the tool-usage hook wiring.
+
 ## v0.1.3 - 2026-07-16
 
 Delta: v0.1.2..v0.1.3
