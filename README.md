@@ -46,7 +46,17 @@ curl -fsSL https://raw.githubusercontent.com/niksavis/basicly/main/.scripts/boot
 
 Windows: `.scripts/bootstrap.ps1` is the PowerShell twin.
 
-Pin `@v0.1.3` for reproducible installs, or track `@main` for the latest. Install converges everything: managed core catalog, generated agent instruction files, projected skills, activated git hooks, a beads tracker workspace, VS Code tasks, and a CI gates workflow. Customize via YAML fragments in `.basicly-local/fragments/user/` — install never touches them. Remove with `basicly uninstall` (add `--purge` to also drop your overlay and config).
+Pin `@v0.1.3` for reproducible installs, or track `@main` for the latest. Install converges everything: managed core catalog, generated agent instruction files, projected skills, activated git hooks, a beads tracker workspace, VS Code tasks, and a CI gates workflow. Customize via YAML fragments in `.basicly-local/fragments/user/` — install never touches them.
+
+## Uninstall
+
+One command removes everything basicly manages (core catalog, generated files, projected skills and agents, the managed hook block); your overlay and `basicly.toml` survive:
+
+```sh
+uvx --from git+https://github.com/niksavis/basicly@v0.1.3 basicly uninstall
+```
+
+Add `--purge` to also remove the user overlay, `basicly.toml`, and the scaffolded VS Code tasks/CI workflow (only when still unedited).
 
 ## Quick start
 
