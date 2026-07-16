@@ -952,6 +952,7 @@ def test_cli_install_prunes_retired_github_skills_root(tmp_path: Path) -> None:
     assert not list((consumer / ".github" / "skills").rglob("SKILL.md"))[1:]
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="symlink creation needs privileges on Windows")
 def test_cli_build_sweep_never_follows_symlinks_or_git_paths(work_repo: Path) -> None:
     """A symlinked manifest entry unlinks the link only; .git entries are refused."""
     run_basicly(work_repo, "build")

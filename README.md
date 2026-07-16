@@ -58,7 +58,10 @@ powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.c
 
 Pin `@v0.2.0` for reproducible installs, or track `@main` for the latest. To
 pin through the shim, append `-s -- --ref v0.2.0` (POSIX) or download the
-script and pass `-Ref v0.2.0` (PowerShell).
+script and pass `-Ref v0.2.0` (PowerShell). Where `git` is unavailable
+(proxied or air-gapped environments), every
+[release](https://github.com/niksavis/basicly/releases) attaches a built
+wheel: download it and run `uvx --from ./basicly-*.whl basicly install`.
 
 ### Upgrade
 
