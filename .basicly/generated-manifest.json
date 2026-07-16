@@ -1,6 +1,6 @@
 {
   "version": "1",
-  "generated_at": "2026-07-16T11:09:38.190983+00:00",
+  "generated_at": "2026-07-16T11:14:30.465822+00:00",
   "outputs": {
     ".claude/CLAUDE.md": {
       "hash": "sha256:b16cf0dac7d533244519b07334497ab8a0c947b636f0e0d7d977178925af35eb",
@@ -27,13 +27,13 @@
       ]
     },
     ".claude/rules/python-style.md": {
-      "hash": "sha256:d4570546b2ac63c6dc0282d19cd5927e8ece064d761710917c9d9bab96c34a5e",
+      "hash": "sha256:d2b0e3a0ca8c8d5770d00085218129d98cdace6cd9d3f6cd0b387ce0c4ccd74f",
       "source_fragments": [
         "python-style"
       ]
     },
     ".claude/rules/test-discipline.md": {
-      "hash": "sha256:9186bbc1fc64cc179a7327f1fde87705871d0d6360ceb2c077282c86fa8deeca",
+      "hash": "sha256:a8f0a608901140e2b92b0dcd1012d603a92f1c84d6cb38e28dcd2fb443c94f41",
       "source_fragments": [
         "test-discipline"
       ]
@@ -88,13 +88,13 @@
       ]
     },
     ".github/instructions/python-style.instructions.md": {
-      "hash": "sha256:460614bdb23a1e720fbf40412e6abe3be4742d0ab5575c52ce2d99cb750084da",
+      "hash": "sha256:bca15139c8ce629a6eeec4cbeeed13accaefe0ba1fca039a6160b3e6530de6e4",
       "source_fragments": [
         "python-style"
       ]
     },
     ".github/instructions/test-discipline.instructions.md": {
-      "hash": "sha256:d73e043c413b1d3a73cb3f520beb0d3d7cd4f48bfef52ab72287fe61d0d0c10c",
+      "hash": "sha256:b025e6f01fdbd9650f7a6afe06f2c59cf4c4483eb1f4db1805e0466ce3f550c0",
       "source_fragments": [
         "test-discipline"
       ]
