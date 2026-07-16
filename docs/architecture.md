@@ -567,8 +567,25 @@ way. The GitHub repo is public, so the command needs no authentication.
   uninstalling the git hooks when nothing else remains) — and preserves the user's
   overlay + `basicly.toml` unless `--purge`. It refuses to run in the authoring
   repo, where the core is the catalog source itself.
-- A `curl` bootstrap shim for consumers without `uv`/Python is **[Planned]** (§11.11);
-  catalog selection ("install fragments + hooks but not skills") is **[Deferred]**
+- **[Implemented]** (`basicly-aff`) **Technology scoping** — catalog selection by
+  stack/environment tag. Sources (skills, fragments, agents, hooks) carry an
+  optional `technologies:` list; an untagged source is universal and always
+  ships. The vocabulary is a controlled list (`schema.TECHNOLOGIES`: stack tags
+  like `python`/`go` plus environment tools like `zsh`/`tmux`), enforced by
+  `catalog-lint` across all four source types (the fragment loader also
+  validates it, since overlay fragments bypass catalog-lint). The consumer's
+  selection is recorded as `[catalog] technologies` in `basicly.toml`
+  (`basicly install --technologies python,zsh`; absent = everything ships) and
+  applied at **projection time**: `build`/`skills-build`/`agents-build`/
+  `hooks-build` and their checks skip non-overlapping sources, while the core
+  sync stays full for provenance-simple upgrades. Narrowing the selection
+  converges on rebuild: fragment outputs recompose (per-fragment outputs are
+  swept via the generated manifest), projected skills/agents the selection
+  excludes are pruned (generated-marker files only), and excluded managed hooks
+  are stripped from `.pre-commit-config.yaml` / `.claude/settings.json` instead
+  of stranding. Per-block technology conditioning inside agent slots is
+  explicitly out of scope (v2).
+- A `curl` bootstrap shim for consumers without `uv`/Python is **[Planned]**
   (§11.11).
 
 ---
@@ -654,8 +671,9 @@ Ordered roughly by blocking-ness. Each is a candidate beads epic/feature/task.
     in the `terminal` repo — install → customize → upgrade → harness loop → ship
     (`basicly-zrj.15`) — then cut the tag (`basicly-zrj.16`, gated also on the
     `copilot-instructions.md` size-cap split `basicly-4ce`).
-11. **`curl` bootstrap script, catalog selection/flavors, and `.codex/rules/*.rules`
-    scoped rules** are **[Planned]**/**[Deferred]** post-release (`basicly-zrj.6`).
+11. **`curl` bootstrap script and `.codex/rules/*.rules` scoped rules** are
+    **[Planned]**/**[Deferred]** post-release (`basicly-zrj.6`). Catalog
+    selection/flavors shipped as **technology scoping** (`basicly-aff`, §9).
 12. **Cursor as a target** is **[Deferred]**; no renderer, no templates.
 13. **The basicly harness** — **[Implemented]** (§12, epic `basicly-onb` closed): the
     agent-agnostic development loop (work isolation + workflow + hard verify/validate

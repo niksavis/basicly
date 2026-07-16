@@ -16,7 +16,7 @@ from pathlib import Path
 import yaml
 
 from .projection import SyncResult, sync_file
-from .schema import ValidationError
+from .schema import ValidationError, technology_selected, validate_technologies
 
 CORE_AGENTS_DIR = Path(".basicly/core/agents")
 OVERLAY_AGENTS_DIR = Path(".basicly-local/agents")
@@ -85,6 +85,7 @@ class AgentDefinition:
     source: str
     override: bool
     source_path: Path
+    technologies: tuple[str, ...] = ()
 
     def slot(self, name: str) -> tuple[SlotItem, ...]:
         """Return the items of the named slot."""
@@ -219,6 +220,8 @@ def _parse_agent(slug: str, data: dict, path: Path, source: str) -> AgentDefinit
             path,
         )
 
+    technologies = validate_technologies(data.get("technologies") or [], path)
+
     return AgentDefinition(
         slug=slug,
         purpose=_require_str(data.get("purpose"), "purpose", path).strip(),
@@ -232,6 +235,7 @@ def _parse_agent(slug: str, data: dict, path: Path, source: str) -> AgentDefinit
         source=data.get("source", source),
         override=bool(data.get("override", False)),
         source_path=path,
+        technologies=tuple(technologies),
     )
 
 
@@ -328,19 +332,37 @@ def render_agent_md(agent: AgentDefinition, blocks: dict[str, BlockDefinition]) 
     return f"---\n{frontmatter}---\n\n{GENERATED_MARKER}\n\n{body}\n"
 
 
-def sync_agents(repo_root: Path) -> SyncResult:
-    """Render source agents into the output root without deleting extra files."""
+def _is_generated_agent(path: Path) -> bool:
+    return path.is_file() and GENERATED_MARKER in path.read_text(encoding="utf-8", errors="ignore")
+
+
+def sync_agents(
+    repo_root: Path, selection: frozenset[str] | None = None
+) -> tuple[SyncResult, list[Path]]:
+    """Render selected source agents into the output root.
+
+    Hand-authored files are never touched, but a previously projected agent the
+    technology *selection* now excludes is pruned (generated-marker files only).
+    Returns the sync result plus the pruned paths.
+    """
     roots = default_agent_roots(repo_root)
     blocks = discover_blocks(roots)
     result = SyncResult()
+    pruned: list[Path] = []
     base = repo_root / AGENTS_OUTPUT_ROOT
     for agent in discover_agents(roots):
-        rendered = render_agent_md(agent, blocks).encode("utf-8")
-        sync_file(base / f"{agent.slug}.md", rendered, result)
-    return result
+        target_path = base / f"{agent.slug}.md"
+        if technology_selected(agent.technologies, selection):
+            sync_file(target_path, render_agent_md(agent, blocks).encode("utf-8"), result)
+        elif _is_generated_agent(target_path):
+            target_path.unlink()
+            pruned.append(target_path)
+    return result, pruned
 
 
-def check_synced_agents(repo_root: Path) -> list[tuple[Path, str]]:
+def check_synced_agents(
+    repo_root: Path, selection: frozenset[str] | None = None
+) -> list[tuple[Path, str]]:
     """Return missing or stale projected agent files."""
     roots = default_agent_roots(repo_root)
     blocks = discover_blocks(roots)
@@ -348,6 +370,10 @@ def check_synced_agents(repo_root: Path) -> list[tuple[Path, str]]:
     mismatches: list[tuple[Path, str]] = []
     for agent in discover_agents(roots):
         target_path = base / f"{agent.slug}.md"
+        if not technology_selected(agent.technologies, selection):
+            if _is_generated_agent(target_path):
+                mismatches.append((target_path, "excluded by technology selection"))
+            continue
         if not target_path.exists():
             mismatches.append((target_path, "missing"))
             continue

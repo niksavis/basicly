@@ -16,6 +16,7 @@ from .schema import (
     OutputDef,
     Target,
     ValidationError,
+    validate_technologies,
 )
 
 FRAGMENT_SOURCE_GLOB = "*.fragment.yaml"
@@ -141,6 +142,7 @@ def _load_fragment(path: Path, source_hint: str | None = None) -> Fragment:
         priority=front.get("priority", "medium"),
         scope_paths=scope_paths,
         tags=front.get("tags", []),
+        technologies=front.get("technologies") or [],
         status=front.get("status", "active"),
         title=front.get("title"),
         body=body,
@@ -218,6 +220,8 @@ def _validate_fragment(
         isinstance(x, str) for x in fragment.enforced_by
     ):
         raise ValidationError("enforced_by must be a list of strings", path)
+
+    validate_technologies(fragment.technologies, path)
 
 
 def load_targets(targets_dir: Path) -> list[Target]:

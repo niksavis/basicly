@@ -100,3 +100,43 @@ def test_no_enforced_by_is_a_noop(tmp_path: Path) -> None:
     """A fragment without enforced_by triggers no enforcement-pointer violation."""
     root = _catalog(tmp_path)
     assert not any("enforced_by" in v for v in lint_catalog(root))
+
+
+def test_valid_technologies_pass(tmp_path: Path) -> None:
+    """Vocabulary-conformant technologies on a skill and a fragment are clean."""
+    root = _catalog(tmp_path)
+    (root / ".basicly/core/skills/s/skill.yaml").write_text(
+        "schema_version: 1\nname: s\ndescription: d\ntechnologies: [python]\n"
+        "instructions: |\n  body\n",
+        encoding="utf-8",
+    )
+    (root / ".basicly/core/fragments/project/f.fragment.yaml").write_text(
+        VALID_FRAGMENT.replace("applies_to: [all]\n", "applies_to: [all]\ntechnologies: [zsh]\n"),
+        encoding="utf-8",
+    )
+    assert lint_catalog(root) == []
+
+
+def test_flags_unknown_technology(tmp_path: Path) -> None:
+    """A technologies value outside the controlled vocabulary is a violation."""
+    root = _catalog(tmp_path)
+    (root / ".basicly/core/skills/s/skill.yaml").write_text(
+        "schema_version: 1\nname: s\ndescription: d\ntechnologies: [cobol]\n"
+        "instructions: |\n  body\n",
+        encoding="utf-8",
+    )
+    violations = lint_catalog(root)
+    assert any("unknown technologies: cobol" in v for v in violations)
+
+
+def test_flags_unknown_technology_in_hooks_manifest(tmp_path: Path) -> None:
+    """The hooks manifest participates in the vocabulary check (it has no schema)."""
+    root = _catalog(tmp_path)
+    hooks = root / ".basicly/core/hooks"
+    hooks.mkdir(parents=True)
+    (hooks / "hooks.yaml").write_text(
+        "hooks:\n  - id: x\n    script: x.py\n    stage: pre-commit\n    technologies: [fortran]\n",
+        encoding="utf-8",
+    )
+    violations = lint_catalog(root)
+    assert any("unknown technologies: fortran" in v for v in violations)

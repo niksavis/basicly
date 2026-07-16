@@ -46,8 +46,10 @@ from .config import (
     load_policy_config,
     load_project_paths,
     load_runner_config,
+    load_technology_selection,
     load_verify_config,
     load_worktree_config,
+    record_technology_selection,
 )
 from .hooks import (
     check_hooks,
@@ -57,12 +59,19 @@ from .hooks import (
     load_hook_specs,
     missing_hook_installations,
     remove_managed_hooks,
+    selected_hook_specs,
     sync_hooks,
 )
 from .loader import load_fragments_from_roots, load_targets
 from .planner import plan_outputs
 from .renderers.common import sha256_of_text
-from .schema import CATEGORIES, PlannedOutput, ValidationError
+from .schema import (
+    CATEGORIES,
+    TECHNOLOGIES,
+    PlannedOutput,
+    ValidationError,
+    technology_selected,
+)
 from .skills import (
     DEFAULT_SKILL_ROOTS,
     GENERATED_MARKER,
@@ -148,6 +157,8 @@ def _load_context(repo_root: Path, paths: ProjectPaths) -> tuple[list[Any], list
     target_names = {t.name for t in targets}
     roots = [(repo_root / root, source_hint) for root, source_hint in _fragment_roots(paths)]
     fragments = load_fragments_from_roots(roots, target_names)
+    selection = load_technology_selection(repo_root)
+    fragments = [f for f in fragments if technology_selected(f.technologies, selection)]
     return fragments, targets
 
 
@@ -688,6 +699,31 @@ def _scaffold_ci_workflow(repo_root: Path) -> None:
     print("Wrote .github/workflows/basicly-gates.yml (commit messages, drift, verify)")
 
 
+def _record_install_technologies(repo_root: Path, raw: str | None) -> bool:
+    """Record a ``--technologies`` selection in basicly.toml; False on bad input."""
+    if raw is None:
+        return True
+    technologies = [item.strip() for item in raw.split(",") if item.strip()]
+    if not technologies:
+        print("--technologies requires at least one value", file=sys.stderr)
+        return False
+    unknown = sorted(set(technologies) - TECHNOLOGIES)
+    if unknown:
+        print(
+            f"Unknown technology value(s): {', '.join(unknown)}. "
+            f"Allowed: {', '.join(sorted(TECHNOLOGIES))}",
+            file=sys.stderr,
+        )
+        return False
+    try:
+        record_technology_selection(repo_root, technologies)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return False
+    print(f"Recorded technology selection in {CONFIG_FILE}: {', '.join(sorted(set(technologies)))}")
+    return True
+
+
 def cmd_install(args: argparse.Namespace) -> int:
     """Converge a consumer repo: sync core, scaffold, and project everything.
 
@@ -754,6 +790,9 @@ def cmd_install(args: argparse.Namespace) -> int:
     else:
         config_path.write_text(DEFAULT_CONFIG_TOML, encoding="utf-8")
         print(f"Wrote {CONFIG_FILE}")
+
+    if not _record_install_technologies(repo_root, getattr(args, "technologies", None)):
+        return 1
 
     _setup_beads(repo_root)
     _scaffold_vscode_tasks(repo_root)
@@ -965,9 +1004,10 @@ def cmd_hooks_build(_args: argparse.Namespace) -> int:
     """Materialize hook scripts and wire them into the pre-commit config."""
     repo_root = _repo_root()
     paths = load_project_paths(repo_root)
+    selection = load_technology_selection(repo_root)
     config_path = repo_root / ".pre-commit-config.yaml"
     config_existed = config_path.exists()
-    result = sync_hooks(repo_root, _core_hooks_dir(paths))
+    result = sync_hooks(repo_root, _core_hooks_dir(paths), selection)
 
     rewrite_note = None
     if config_existed and config_path in result.written:
@@ -977,15 +1017,19 @@ def cmd_hooks_build(_args: argparse.Namespace) -> int:
         )
     _report_sync(result, repo_root, noun="hook files", label="Hooks", extra_note=rewrite_note)
 
-    agent_specs = claude_hook_specs(load_hook_specs())
-    if agent_specs:
+    all_agent_specs = claude_hook_specs(load_hook_specs())
+    agent_specs = selected_hook_specs(all_agent_specs, selection)
+    excluded_agent_specs = [spec for spec in all_agent_specs if spec not in agent_specs]
+    if all_agent_specs:
         hooks_relpath = _core_hooks_dir(paths).as_posix()
-        if claude_settings.sync_agent_hooks(repo_root, agent_specs, hooks_relpath):
+        if claude_settings.sync_agent_hooks(
+            repo_root, agent_specs, hooks_relpath, excluded_agent_specs
+        ):
             print(f"Wrote {claude_settings.CLAUDE_SETTINGS_PATH} (managed agent hooks)")
         else:
             print(f"Agent hooks in {claude_settings.CLAUDE_SETTINGS_PATH} are up to date.")
 
-    stages = hook_stages(load_hook_specs())
+    stages = hook_stages(selected_hook_specs(load_hook_specs(), selection))
     if getattr(_args, "no_install", False):
         stage_flags = " ".join(f"-t {stage}" for stage in stages)
         print(
@@ -1011,13 +1055,18 @@ def cmd_hooks_check(_args: argparse.Namespace) -> int:
     """Check that projected hooks and their wiring are up to date."""
     repo_root = _repo_root()
     paths = load_project_paths(repo_root)
-    mismatches = check_hooks(repo_root, _core_hooks_dir(paths))
+    selection = load_technology_selection(repo_root)
+    mismatches = check_hooks(repo_root, _core_hooks_dir(paths), selection)
 
-    agent_specs = claude_hook_specs(load_hook_specs())
+    all_agent_specs = claude_hook_specs(load_hook_specs())
+    agent_specs = selected_hook_specs(all_agent_specs, selection)
+    excluded_agent_specs = [spec for spec in all_agent_specs if spec not in agent_specs]
     settings_path = repo_root / claude_settings.CLAUDE_SETTINGS_PATH
     for reason in claude_settings.agent_hook_mismatches(
         repo_root, agent_specs, _core_hooks_dir(paths).as_posix()
     ):
+        mismatches.append((settings_path, reason))
+    for reason in claude_settings.excluded_agent_hooks_present(repo_root, excluded_agent_specs):
         mismatches.append((settings_path, reason))
 
     if _report_mismatches(
@@ -1031,7 +1080,9 @@ def cmd_hooks_check(_args: argparse.Namespace) -> int:
     # because pre-commit was never installed — the exact gap behind unguarded
     # commits. Report it without failing, since CI runs the scripts directly and
     # does not install git hooks.
-    missing = missing_hook_installations(repo_root, hook_stages(load_hook_specs()))
+    missing = missing_hook_installations(
+        repo_root, hook_stages(selected_hook_specs(load_hook_specs(), selection))
+    )
     if missing:
         stage_flags = " ".join(f"-t {stage}" for stage in missing)
         print(
@@ -1074,7 +1125,9 @@ def cmd_skills_build(args: argparse.Namespace) -> int:
     """Project skills from .basicly/core/skills into one or more destination roots."""
     repo_root = _repo_root()
     roots = _resolve_skill_output_roots(args, repo_root)
-    result = sync_skills(repo_root, roots)
+    result, pruned = sync_skills(repo_root, roots, selection=load_technology_selection(repo_root))
+    for path in pruned:
+        print(f"Removed {_format_path(path, repo_root)} (excluded by technology selection)")
     _report_sync(result, repo_root, noun="skill files", label="Skill")
     return 0
 
@@ -1083,7 +1136,9 @@ def cmd_skills_check(args: argparse.Namespace) -> int:
     """Check that projected skill roots are synchronized with source skills."""
     repo_root = _repo_root()
     roots = _resolve_skill_output_roots(args, repo_root)
-    mismatches = check_synced_skills(repo_root, roots)
+    mismatches = check_synced_skills(
+        repo_root, roots, selection=load_technology_selection(repo_root)
+    )
     stale = "Stale skill projection detected. Run `basicly skills-build` to sync skill files."
     if _report_mismatches(mismatches, repo_root, stale_message=stale):
         return 1
@@ -1155,7 +1210,9 @@ def cmd_agents_list(_args: argparse.Namespace) -> int:
 def cmd_agents_build(_args: argparse.Namespace) -> int:
     """Project agents from the core and overlay sources into .claude/agents."""
     repo_root = _repo_root()
-    result = agents.sync_agents(repo_root)
+    result, pruned = agents.sync_agents(repo_root, load_technology_selection(repo_root))
+    for path in pruned:
+        print(f"Removed {_format_path(path, repo_root)} (excluded by technology selection)")
     _report_sync(result, repo_root, noun="agent files", label="Agent")
     return 0
 
@@ -1163,7 +1220,7 @@ def cmd_agents_build(_args: argparse.Namespace) -> int:
 def cmd_agents_check(_args: argparse.Namespace) -> int:
     """Check that projected agents are synchronized with their sources."""
     repo_root = _repo_root()
-    mismatches = agents.check_synced_agents(repo_root)
+    mismatches = agents.check_synced_agents(repo_root, load_technology_selection(repo_root))
     stale = "Stale agent projection detected. Run `basicly agents-build` to sync agent files."
     if _report_mismatches(mismatches, repo_root, stale_message=stale):
         return 1
@@ -1711,6 +1768,42 @@ def _cmd_worktree_bg_isolation(args: argparse.Namespace) -> int:
     return 0
 
 
+def _add_lifecycle_parsers(subparsers: argparse._SubParsersAction) -> None:
+    install_parser = subparsers.add_parser(
+        "install",
+        help=(
+            "Install or upgrade basicly in this repo "
+            "(sync catalog + scaffold + build + skills + hooks)"
+        ),
+    )
+    install_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite hand-edited managed core files instead of keeping them",
+    )
+    install_parser.add_argument(
+        "--technologies",
+        help=(
+            "Comma-separated technology selection to record in basicly.toml "
+            f"(allowed: {', '.join(sorted(TECHNOLOGIES))}); technology-tagged "
+            "catalog sources outside it are skipped at projection time"
+        ),
+    )
+
+    uninstall_parser = subparsers.add_parser(
+        "uninstall",
+        help=(
+            "Remove everything basicly manages (core, state, generated files, "
+            "projected skills, managed hooks); user content survives"
+        ),
+    )
+    uninstall_parser.add_argument(
+        "--purge",
+        action="store_true",
+        help="Also remove the user overlay and basicly.toml",
+    )
+
+
 def _add_agents_parsers(subparsers: argparse._SubParsersAction) -> None:
     subparsers.add_parser("agents-list", help="List agents in the core and overlay sources")
     subparsers.add_parser(
@@ -1911,31 +2004,7 @@ def main(argv: list[str] | None = None) -> int:
 
     subparsers.add_parser("list", help="List active fragments")
 
-    install_parser = subparsers.add_parser(
-        "install",
-        help=(
-            "Install or upgrade basicly in this repo "
-            "(sync catalog + scaffold + build + skills + hooks)"
-        ),
-    )
-    install_parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Overwrite hand-edited managed core files instead of keeping them",
-    )
-
-    uninstall_parser = subparsers.add_parser(
-        "uninstall",
-        help=(
-            "Remove everything basicly manages (core, state, generated files, "
-            "projected skills, managed hooks); user content survives"
-        ),
-    )
-    uninstall_parser.add_argument(
-        "--purge",
-        action="store_true",
-        help="Also remove the user overlay and basicly.toml",
-    )
+    _add_lifecycle_parsers(subparsers)
 
     build_parser = subparsers.add_parser("build", help="Build generated files")
     build_parser.add_argument("--target", help="Build only the specified target")

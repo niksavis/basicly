@@ -19,7 +19,7 @@ import yaml
 
 from .catalog import bundled_catalog_root, iter_catalog_files
 from .projection import SyncResult, sync_file
-from .schema import ValidationError
+from .schema import ValidationError, technology_selected
 
 HOOKS_MANIFEST = "hooks.yaml"
 PRECOMMIT_CONFIG = ".pre-commit-config.yaml"
@@ -42,6 +42,7 @@ class HookSpec:
     pass_filenames: bool = False
     always_run: bool = False
     manager: str = GIT_MANAGER
+    technologies: tuple[str, ...] = ()
 
 
 def _catalog_hooks_dir() -> Path:
@@ -70,6 +71,13 @@ def load_hook_specs(hooks_dir: Path | None = None) -> list[HookSpec]:
                 f"{manifest}: hook '{entry['id']}' has unknown manager {manager!r}; "
                 f"allowed: {list(HOOK_MANAGERS)}"
             )
+        technologies = entry.get("technologies") or []
+        if not isinstance(technologies, list) or not all(
+            isinstance(item, str) for item in technologies
+        ):
+            raise ValueError(
+                f"{manifest}: hook '{entry['id']}' technologies must be a list of strings"
+            )
         specs.append(
             HookSpec(
                 id=str(entry["id"]),
@@ -78,9 +86,15 @@ def load_hook_specs(hooks_dir: Path | None = None) -> list[HookSpec]:
                 pass_filenames=bool(entry.get("pass_filenames", False)),
                 always_run=bool(entry.get("always_run", False)),
                 manager=manager,
+                technologies=tuple(technologies),
             )
         )
     return specs
+
+
+def selected_hook_specs(specs: list[HookSpec], selection: frozenset[str] | None) -> list[HookSpec]:
+    """Return the specs the technology *selection* keeps (untagged = universal)."""
+    return [spec for spec in specs if technology_selected(spec.technologies, selection)]
 
 
 def git_hook_specs(specs: list[HookSpec]) -> list[HookSpec]:
@@ -113,15 +127,18 @@ def merge_precommit_config(
     existing: dict | None,
     specs: list[HookSpec],
     hooks_relpath: str,
+    strip_ids: set[str] | None = None,
 ) -> dict:
     """Return a pre-commit config with basicly's managed hooks merged in.
 
     Managed hooks (matched by id) are stripped from every ``local`` repo and a
     single fresh managed block is appended, so re-running is idempotent and
-    foreign repos/hooks are preserved untouched.
+    foreign repos/hooks are preserved untouched. ``strip_ids`` widens the strip
+    set beyond the rendered specs so a hook a technology selection excludes is
+    removed rather than stranded.
     """
     config = dict(existing) if isinstance(existing, dict) else {}
-    managed_ids = {spec.id for spec in specs}
+    managed_ids = strip_ids or {spec.id for spec in specs}
 
     kept: list = []
     for repo in config.get("repos") or []:
@@ -146,11 +163,12 @@ def render_precommit_config(
     existing_text: str | None,
     specs: list[HookSpec],
     hooks_relpath: str,
+    strip_ids: set[str] | None = None,
 ) -> str:
     """Render the merged pre-commit config to deterministic YAML text."""
     existing = yaml.safe_load(existing_text) if existing_text else None
     base = existing if isinstance(existing, dict) else None
-    merged = merge_precommit_config(base, specs, hooks_relpath)
+    merged = merge_precommit_config(base, specs, hooks_relpath, strip_ids)
     return yaml.safe_dump(merged, sort_keys=False, default_flow_style=False)
 
 
@@ -191,7 +209,20 @@ def managed_hook_mismatches(
     return mismatches
 
 
-def sync_hooks(repo_root: Path, core_hooks_dir: Path) -> SyncResult:
+def excluded_hooks_present(config: dict, excluded_ids: set[str]) -> list[str]:
+    """Return a reason per excluded managed hook still wired in the config."""
+    present: list[str] = []
+    for repo in config.get("repos") or []:
+        if isinstance(repo, dict) and repo.get("repo") == "local":
+            for hook in repo.get("hooks") or []:
+                if isinstance(hook, dict) and hook.get("id") in excluded_ids:
+                    present.append(f"managed hook '{hook['id']}' excluded by technology selection")
+    return present
+
+
+def sync_hooks(
+    repo_root: Path, core_hooks_dir: Path, selection: frozenset[str] | None = None
+) -> SyncResult:
     """Merge the pre-commit wiring for the materialized hook scripts.
 
     ``core_hooks_dir`` is the on-disk hooks location (e.g.
@@ -207,7 +238,10 @@ def sync_hooks(repo_root: Path, core_hooks_dir: Path) -> SyncResult:
     if src.resolve() != dst.resolve() and not dst.is_dir():
         raise ValidationError("core hooks are not materialized; run `basicly install` first", dst)
 
-    specs = git_hook_specs(load_hook_specs(src))
+    all_specs = git_hook_specs(load_hook_specs(src))
+    specs = selected_hook_specs(all_specs, selection)
+    all_ids = {spec.id for spec in all_specs}
+    excluded_ids = all_ids - {spec.id for spec in specs}
     hooks_relpath = core_hooks_dir.as_posix()
     config_path = repo_root / PRECOMMIT_CONFIG
 
@@ -218,11 +252,14 @@ def sync_hooks(repo_root: Path, core_hooks_dir: Path) -> SyncResult:
 
     # The config is co-owned with the consumer: leave it untouched when the
     # managed hooks are already semantically in sync (preserving their comments
-    # and formatting); rewrite only when a managed hook is missing or wrong.
+    # and formatting); rewrite only when a managed hook is missing, wrong, or
+    # stranded after a technology selection excluded it.
     existing_text = config_path.read_text(encoding="utf-8")
     parsed = _parse_config(config_path, existing_text)
-    if managed_hook_mismatches(parsed, specs, hooks_relpath):
-        rendered = render_precommit_config(existing_text, specs, hooks_relpath)
+    if managed_hook_mismatches(parsed, specs, hooks_relpath) or excluded_hooks_present(
+        parsed, excluded_ids
+    ):
+        rendered = render_precommit_config(existing_text, specs, hooks_relpath, all_ids)
         sync_file(config_path, rendered.encode("utf-8"), result)
     else:
         result.unchanged.append(config_path)
@@ -382,7 +419,9 @@ def remove_managed_hooks(repo_root: Path) -> str | None:
     return note if ok else f"{note}; {message}"
 
 
-def check_hooks(repo_root: Path, core_hooks_dir: Path) -> list[tuple[Path, str]]:
+def check_hooks(
+    repo_root: Path, core_hooks_dir: Path, selection: frozenset[str] | None = None
+) -> list[tuple[Path, str]]:
     """Return (path, reason) for any hook script or wiring that is out of sync."""
     mismatches: list[tuple[Path, str]] = []
     src = _catalog_hooks_dir()
@@ -396,7 +435,9 @@ def check_hooks(repo_root: Path, core_hooks_dir: Path) -> list[tuple[Path, str]]
             elif target.read_bytes() != path.read_bytes():
                 mismatches.append((target, "differs from catalog"))
 
-    specs = git_hook_specs(load_hook_specs(src))
+    all_specs = git_hook_specs(load_hook_specs(src))
+    specs = selected_hook_specs(all_specs, selection)
+    excluded_ids = {spec.id for spec in all_specs} - {spec.id for spec in specs}
     config_path = repo_root / PRECOMMIT_CONFIG
     if not config_path.exists():
         mismatches.append((config_path, "missing"))
@@ -405,6 +446,8 @@ def check_hooks(repo_root: Path, core_hooks_dir: Path) -> list[tuple[Path, str]]
     existing_text = config_path.read_text(encoding="utf-8")
     parsed = _parse_config(config_path, existing_text)
     for reason in managed_hook_mismatches(parsed, specs, core_hooks_dir.as_posix()):
+        mismatches.append((config_path, reason))
+    for reason in excluded_hooks_present(parsed, excluded_ids):
         mismatches.append((config_path, reason))
 
     return mismatches

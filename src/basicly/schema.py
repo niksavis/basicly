@@ -32,7 +32,56 @@ CATEGORIES = {
 
 STATUSES = {"active", "draft", "deprecated"}
 
+# Controlled vocabulary for technology scoping (§9): stack tags plus the
+# environment tools the catalog ships skills for. A source without a
+# `technologies:` list is universal and always ships; catalog-lint rejects
+# values outside this list.
+TECHNOLOGIES = {
+    "dotnet",
+    "go",
+    "java",
+    "node",
+    "python",
+    "rust",
+    "starship",
+    "tmux",
+    "wezterm",
+    "zsh",
+}
+
 DEFAULT_SCOPE = ["**"]
+
+
+def technology_selected(
+    technologies: list[str] | tuple[str, ...], selection: frozenset[str] | None
+) -> bool:
+    """True when a source ships under the repo's technology selection.
+
+    An untagged source is universal; ``selection`` is a set of selected tags or
+    ``None`` meaning no selection was recorded (everything ships).
+    """
+    return selection is None or not technologies or bool(set(technologies) & selection)
+
+
+def validate_technologies(technologies: object, path: Path) -> list[str]:
+    """Validate a source's ``technologies`` value against the controlled vocabulary.
+
+    Runs at load time for every source type (overlay sources never pass through
+    catalog-lint), so a typo'd tag fails loudly instead of silently dropping the
+    source from every selection.
+    """
+    if not isinstance(technologies, list) or not all(
+        isinstance(item, str) for item in technologies
+    ):
+        raise ValidationError("technologies must be a list of strings", path)
+    unknown = sorted(set(technologies) - TECHNOLOGIES)
+    if unknown:
+        raise ValidationError(
+            f"unknown technologies: {', '.join(unknown)} "
+            f"(allowed: {', '.join(sorted(TECHNOLOGIES))})",
+            path,
+        )
+    return technologies
 
 
 @dataclass(frozen=True)
@@ -46,6 +95,7 @@ class Fragment:
     priority: str = "medium"
     scope_paths: list[str] = field(default_factory=lambda: list(DEFAULT_SCOPE))
     tags: list[str] = field(default_factory=list)
+    technologies: list[str] = field(default_factory=list)
     status: str = "active"
     title: str | None = None
     body: str = ""

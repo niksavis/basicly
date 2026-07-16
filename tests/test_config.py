@@ -14,8 +14,10 @@ from basicly.config import (
     load_policy_config,
     load_project_paths,
     load_runner_config,
+    load_technology_selection,
     load_verify_config,
     load_worktree_config,
+    record_technology_selection,
 )
 from basicly.runner import BUILTIN_RUNNERS
 
@@ -32,6 +34,76 @@ def test_default_config_toml_matches_builtin_defaults(tmp_path: Path) -> None:
     scaffolded = load_project_paths(tmp_path)
 
     assert scaffolded == defaults
+
+
+def test_technology_selection_absent_means_everything(tmp_path: Path) -> None:
+    """No file, no [catalog] section, or the scaffold all mean: no selection."""
+    assert load_technology_selection(tmp_path) is None
+    (tmp_path / CONFIG_FILE).write_text(DEFAULT_CONFIG_TOML, encoding="utf-8")
+    assert load_technology_selection(tmp_path) is None
+
+
+def test_record_technology_selection_round_trips(tmp_path: Path) -> None:
+    """Recording appends a [catalog] section and the loader reads it back."""
+    (tmp_path / CONFIG_FILE).write_text(DEFAULT_CONFIG_TOML + "\n# user note\n", encoding="utf-8")
+    record_technology_selection(tmp_path, ["python", "zsh"])
+    assert load_technology_selection(tmp_path) == frozenset({"python", "zsh"})
+    # The user-owned parts of the file survive the append.
+    assert "# user note" in (tmp_path / CONFIG_FILE).read_text(encoding="utf-8")
+
+    # Re-recording rewrites the selection in place instead of duplicating it.
+    record_technology_selection(tmp_path, ["go"])
+    assert load_technology_selection(tmp_path) == frozenset({"go"})
+    assert (tmp_path / CONFIG_FILE).read_text(encoding="utf-8").count("\n[catalog]") == 1
+
+
+def test_record_technology_selection_scaffolds_missing_config(tmp_path: Path) -> None:
+    """Recording into a repo without basicly.toml scaffolds it first."""
+    record_technology_selection(tmp_path, ["python"])
+    assert load_technology_selection(tmp_path) == frozenset({"python"})
+    assert load_project_paths(tmp_path) == load_project_paths(tmp_path / "elsewhere")
+
+
+def test_technology_selection_rejects_unknown_value(tmp_path: Path) -> None:
+    """A typo in the selection fails loudly instead of silently dropping content."""
+    (tmp_path / CONFIG_FILE).write_text('[catalog]\ntechnologies = ["pyton"]\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="pyton"):
+        load_technology_selection(tmp_path)
+
+
+def test_record_technology_selection_reuses_bare_catalog_section(tmp_path: Path) -> None:
+    """A [catalog] section without the key gains the line — never a second table."""
+    (tmp_path / CONFIG_FILE).write_text(
+        "[catalog]\n# future keys\n\n[worktree]\nconcurrency = 2\n", encoding="utf-8"
+    )
+    record_technology_selection(tmp_path, ["python"])
+    assert load_technology_selection(tmp_path) == frozenset({"python"})
+    text = (tmp_path / CONFIG_FILE).read_text(encoding="utf-8")
+    assert text.count("[catalog]") == 1 and "# future keys" in text
+
+
+def test_record_technology_selection_repairs_invalid_value(tmp_path: Path) -> None:
+    """Re-recording over a typo'd selection rewrites it (the natural repair path)."""
+    (tmp_path / CONFIG_FILE).write_text('[catalog]\ntechnologies = ["pyton"]\n', encoding="utf-8")
+    record_technology_selection(tmp_path, ["python"])
+    assert load_technology_selection(tmp_path) == frozenset({"python"})
+
+
+@pytest.mark.parametrize(
+    "layout",
+    [
+        '[catalog]\ntechnologies = [\n  "python",\n]\n',  # multiline array
+        'catalog.technologies = ["python"]\n',  # dotted key, no [catalog] header
+    ],
+)
+def test_record_technology_selection_refuses_unsupported_layouts(
+    tmp_path: Path, layout: str
+) -> None:
+    """A layout the line splice cannot rewrite errors out with the file untouched."""
+    (tmp_path / CONFIG_FILE).write_text(layout, encoding="utf-8")
+    with pytest.raises(ValueError, match="unsupported"):
+        record_technology_selection(tmp_path, ["zsh"])
+    assert (tmp_path / CONFIG_FILE).read_text(encoding="utf-8") == layout
 
 
 def test_core_root_derives_from_fragments_dir(tmp_path: Path) -> None:

@@ -56,6 +56,11 @@
       "type": "boolean",
       "description": "Required true when an overlay agent replaces a core agent of the same slug."
     },
+    "technologies": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "description": "Technology scoping tags (controlled vocabulary, enforced by catalog-lint); absent means universal."
+    },
     "slots": {
       "type": "object",
       "additionalProperties": false,

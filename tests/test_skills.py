@@ -19,7 +19,9 @@ from basicly.skills import (
 )
 
 
-def _write_skill(repo_root: Path, slug: str, name: str, description: str) -> None:
+def _write_skill(
+    repo_root: Path, slug: str, name: str, description: str, technologies: str | None = None
+) -> None:
     path = repo_root / SKILLS_SOURCE_DIR / slug / "skill.yaml"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -28,6 +30,7 @@ def _write_skill(repo_root: Path, slug: str, name: str, description: str) -> Non
             "schema_version: 1",
             f"name: {name}",
             f"description: {description}",
+            *([f"technologies: {technologies}"] if technologies else []),
             "instructions: |",
             f"  # {name}",
             "",
@@ -90,7 +93,7 @@ def test_sync_and_check_skills(tmp_path: Path) -> None:
     _write_skill(tmp_path, "tool-ripgrep", "tool-ripgrep", "Use ripgrep for fast code search.")
     roots = resolve_skill_roots(tmp_path, roots=[".claude/skills"], use_default_roots=False)
 
-    result = sync_skills(tmp_path, roots)
+    result, _pruned = sync_skills(tmp_path, roots)
 
     assert len(result.written) == 1
     target = roots[0] / "tool-ripgrep" / "SKILL.md"
@@ -99,3 +102,30 @@ def test_sync_and_check_skills(tmp_path: Path) -> None:
 
     target.write_text(target.read_text(encoding="utf-8") + "\n", encoding="utf-8")
     assert check_synced_skills(tmp_path, roots) == [(target, "content mismatch")]
+
+
+def test_sync_skills_filters_and_prunes_by_selection(tmp_path: Path) -> None:
+    """A tagged skill outside the selection is skipped and its projection pruned."""
+    _write_skill(tmp_path, "tool-uv", "tool-uv", "Python tooling.", technologies="[python]")
+    _write_skill(tmp_path, "tool-git", "tool-git", "Git usage.")
+    roots = resolve_skill_roots(tmp_path, roots=[".claude/skills"], use_default_roots=False)
+    excluded = roots[0] / "tool-uv" / "SKILL.md"
+
+    # Full projection first (no selection recorded): both skills ship.
+    sync_skills(tmp_path, roots)
+    assert excluded.is_file()
+
+    # Narrowing to zsh flags the stray projection, then the build prunes it.
+    selection = frozenset({"zsh"})
+    assert check_synced_skills(tmp_path, roots, selection=selection) == [
+        (excluded, "excluded by technology selection")
+    ]
+    result, pruned = sync_skills(tmp_path, roots, selection=selection)
+    assert pruned == [excluded]
+    assert not excluded.parent.exists()
+    assert (roots[0] / "tool-git" / "SKILL.md").is_file()  # universal always ships
+    assert check_synced_skills(tmp_path, roots, selection=selection) == []
+
+    # A matching selection ships the tagged skill like any other.
+    result, pruned = sync_skills(tmp_path, roots, selection=frozenset({"python"}))
+    assert pruned == [] and excluded in result.written

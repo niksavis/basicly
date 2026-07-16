@@ -49,6 +49,16 @@ instructions: |
      fields.
   3. Project + verify: `basicly build` then `basicly check`.
 
+  ## Technology scoping
+
+  A source that only makes sense for one stack or environment tool declares
+  `technologies: [python]` (skills, fragments, agents, and hooks all accept it);
+  an untagged source is universal and always ships. Values come from the
+  controlled vocabulary in `basicly.schema.TECHNOLOGIES` (stack tags plus
+  environment tools like `zsh`/`tmux`) — `catalog-lint` rejects anything else.
+  Consumers narrow what they receive with `basicly install --technologies ...`;
+  don't tag a source unless it is genuinely useless outside that technology.
+
   ## Phrasing rules for guidance bodies
 
   Distilled from Anthropic's memory/best-practices docs and the curated

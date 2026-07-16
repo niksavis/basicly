@@ -106,18 +106,25 @@ def _references_managed_script(group: object, script_names: set[str]) -> bool:
     return False
 
 
-def merge_agent_hooks(settings: dict, specs: list[HookSpec], hooks_relpath: str) -> dict:
+def merge_agent_hooks(
+    settings: dict,
+    specs: list[HookSpec],
+    hooks_relpath: str,
+    strip_scripts: set[str] | None = None,
+) -> dict:
     """Return settings with basicly's managed PreToolUse hooks merged in.
 
     Managed groups (matched by the hook script they run) are stripped and a
     fresh group per spec is appended, so re-running is idempotent and any
-    consumer-authored hooks are preserved untouched.
+    consumer-authored hooks are preserved untouched. ``strip_scripts`` widens
+    the strip set beyond the rendered specs so a hook a technology selection
+    excludes is removed rather than stranded.
     """
     merged = dict(settings)
     hooks_section = merged.get(HOOKS_KEY)
     hooks_section = dict(hooks_section) if isinstance(hooks_section, dict) else {}
 
-    script_names = {spec.script for spec in specs}
+    script_names = strip_scripts or {spec.script for spec in specs}
     existing = hooks_section.get(PRE_TOOL_USE_KEY)
     kept = [
         group
@@ -161,20 +168,44 @@ def agent_hook_mismatches(repo_root: Path, specs: list[HookSpec], hooks_relpath:
     return mismatches
 
 
-def sync_agent_hooks(repo_root: Path, specs: list[HookSpec], hooks_relpath: str) -> bool:
+def excluded_agent_hooks_present(repo_root: Path, excluded_specs: list[HookSpec]) -> list[str]:
+    """Return a reason per excluded managed agent hook still wired in the settings."""
+    settings = _load_settings(repo_root / CLAUDE_SETTINGS_PATH)
+    hooks_section = settings.get(HOOKS_KEY)
+    groups = hooks_section.get(PRE_TOOL_USE_KEY) if isinstance(hooks_section, dict) else None
+    groups = groups if isinstance(groups, list) else []
+
+    return [
+        f"managed agent hook '{spec.id}' excluded by technology selection"
+        for spec in excluded_specs
+        if any(_references_managed_script(group, {spec.script}) for group in groups)
+    ]
+
+
+def sync_agent_hooks(
+    repo_root: Path,
+    specs: list[HookSpec],
+    hooks_relpath: str,
+    excluded_specs: list[HookSpec] | None = None,
+) -> bool:
     """Project managed agent hooks into ``.claude/settings.json``.
 
     Returns True when the file changed, False when already in sync. No-op
-    (returns False) when there are no ``manager: claude`` specs to project.
+    (returns False) when there is nothing to project or prune. Hooks in
+    ``excluded_specs`` (excluded by a technology selection) are stripped.
     """
-    if not specs:
+    excluded_specs = excluded_specs or []
+    if not specs and not excluded_specs:
         return False
-    if not agent_hook_mismatches(repo_root, specs, hooks_relpath):
+    if not agent_hook_mismatches(repo_root, specs, hooks_relpath) and not (
+        excluded_agent_hooks_present(repo_root, excluded_specs)
+    ):
         return False
 
     path = repo_root / CLAUDE_SETTINGS_PATH
     settings = _load_settings(path)
-    merged = merge_agent_hooks(settings, specs, hooks_relpath)
+    strip_scripts = {spec.script for spec in (*specs, *excluded_specs)}
+    merged = merge_agent_hooks(settings, specs, hooks_relpath, strip_scripts)
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(merged, indent=2) + "\n", encoding="utf-8")

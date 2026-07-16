@@ -350,13 +350,46 @@ def _repo_with_agent(tmp_path: Path) -> Path:
 def test_sync_agents_writes_and_is_idempotent(tmp_path: Path) -> None:
     """sync_agents writes the projected file once and reports no changes after."""
     repo = _repo_with_agent(tmp_path)
-    first = sync_agents(repo)
+    first, _pruned = sync_agents(repo)
     assert first.written == [repo / ".claude/agents/code-reviewer.md"]
     rendered = (repo / ".claude/agents/code-reviewer.md").read_text(encoding="utf-8")
     assert "Say so if clean." in rendered
-    second = sync_agents(repo)
+    second, _pruned = sync_agents(repo)
     assert second.written == []
     assert second.unchanged == [repo / ".claude/agents/code-reviewer.md"]
+
+
+def test_sync_agents_filters_and_prunes_by_selection(tmp_path: Path) -> None:
+    """A tagged agent outside the selection is skipped and its projection pruned."""
+    repo = _repo_with_agent(tmp_path)
+    source = repo / ".basicly/core/agents/code-reviewer/agent.yaml"
+    source.write_text(
+        "technologies: [node]\n" + source.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    target = repo / ".claude/agents/code-reviewer.md"
+
+    sync_agents(repo)  # no selection recorded: the tagged agent still ships
+    assert target.is_file()
+
+    selection = frozenset({"python"})
+    assert check_synced_agents(repo, selection) == [(target, "excluded by technology selection")]
+    _result, pruned = sync_agents(repo, selection)
+    assert pruned == [target] and not target.exists()
+    assert check_synced_agents(repo, selection) == []
+
+    _result, pruned = sync_agents(repo, frozenset({"node"}))
+    assert pruned == [] and target.is_file()
+
+
+def test_discover_agents_rejects_unknown_technology(tmp_path: Path) -> None:
+    """An out-of-vocabulary tag fails the load (overlay agents skip catalog-lint)."""
+    repo = _repo_with_agent(tmp_path)
+    source = repo / ".basicly/core/agents/code-reviewer/agent.yaml"
+    source.write_text(
+        "technologies: [pyton]\n" + source.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    with pytest.raises(ValidationError, match="unknown technologies: pyton"):
+        discover_agents(default_agent_roots(repo))
 
 
 def test_check_synced_agents_flags_missing_and_stale(tmp_path: Path) -> None:
