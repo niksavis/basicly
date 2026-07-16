@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -12,6 +13,7 @@ import yaml
 from basicly import hooks as hooks_module
 from basicly.hooks import (
     HookSpec,
+    check_copilot_hooks,
     check_hooks,
     claude_hook_specs,
     git_hook_specs,
@@ -20,7 +22,9 @@ from basicly.hooks import (
     load_hook_specs,
     merge_precommit_config,
     missing_hook_installations,
+    remove_copilot_hooks,
     selected_hook_specs,
+    sync_copilot_hooks,
     sync_hooks,
 )
 from basicly.schema import ValidationError
@@ -54,6 +58,8 @@ def test_manifest_lists_every_catalog_hook() -> None:
         "beads-commit-msg-script",
         "pre-push-script",
         "protect-generated",
+        "tool-usage",
+        "tool-usage-copilot",
     }
 
 
@@ -72,8 +78,51 @@ def test_manifest_ships_protect_generated_for_claude() -> None:
     guard = next(spec for spec in specs if spec.id == "protect-generated")
     assert guard.script == "protect-generated.py"
     assert guard.manager == "claude"
-    assert git_hook_specs(specs) == [s for s in specs if s.id != "protect-generated"]
-    assert claude_hook_specs(specs) == [guard]
+    assert git_hook_specs(specs) == [s for s in specs if s.manager == "git"]
+    assert guard in claude_hook_specs(specs)
+
+
+def test_copilot_hooks_sync_check_and_remove_roundtrip(tmp_path: Path) -> None:
+    """The copilot manager writes .github/hooks/basicly-*.json; check and remove agree."""
+    result = sync_copilot_hooks(tmp_path, CORE_HOOKS_DIR)
+    hook_file = tmp_path / ".github/hooks/basicly-tool-usage-copilot.json"
+    assert hook_file in result.written
+
+    config = json.loads(hook_file.read_text(encoding="utf-8"))
+    assert config["version"] == 1
+    entry = config["hooks"]["postToolUse"][0]
+    assert entry["type"] == "command"
+    assert entry["bash"] == "uv run python .basicly/core/hooks/tool-usage.py"
+    assert "tool-usage.py" in entry["powershell"]
+
+    assert check_copilot_hooks(tmp_path, CORE_HOOKS_DIR) == []
+    again = sync_copilot_hooks(tmp_path, CORE_HOOKS_DIR)
+    assert again.written == []
+
+    # A stale managed file (not in the catalog) is flagged and pruned on sync.
+    stray = tmp_path / ".github/hooks/basicly-retired.json"
+    stray.write_text("{}\n", encoding="utf-8")
+    assert any(
+        "stale managed" in reason for _, reason in check_copilot_hooks(tmp_path, CORE_HOOKS_DIR)
+    )
+    sync_copilot_hooks(tmp_path, CORE_HOOKS_DIR)
+    assert not stray.exists()
+
+    # A consumer's own hook file survives uninstall; managed files do not.
+    foreign = tmp_path / ".github/hooks/my-own.json"
+    foreign.write_text("{}\n", encoding="utf-8")
+    assert remove_copilot_hooks(tmp_path) == 1
+    assert foreign.exists() and not hook_file.exists()
+
+
+def test_manifest_ships_tool_usage_for_both_agent_managers() -> None:
+    """The usage counter targets Claude PostToolUse (Bash) and Copilot postToolUse."""
+    specs = load_hook_specs()
+    claude = next(spec for spec in specs if spec.id == "tool-usage")
+    assert (claude.manager, claude.stage, claude.matcher) == ("claude", "posttooluse", "Bash")
+    copilot = next(spec for spec in specs if spec.id == "tool-usage-copilot")
+    assert (copilot.manager, copilot.stage) == ("copilot", "posttooluse")
+    assert copilot.script == claude.script == "tool-usage.py"
 
 
 def test_load_rejects_unknown_manager(tmp_path: Path) -> None:
