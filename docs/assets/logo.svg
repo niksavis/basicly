@@ -1,22 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="basicly logo: a central catalog block connected to four lego bricks">
-  <!-- Connections: catalog corners to each brick, rounded and diagonal. -->
-  <path d="M40 40 26 28M88 40 102 28M88 88 102 100M40 88 26 100" stroke="#64748b" stroke-width="5" stroke-linecap="round" fill="none"/>
-  <!-- The versioned YAML catalog: one big block, fragment lines inside. -->
-  <rect x="34" y="34" width="60" height="60" rx="14" fill="#4f46e5"/>
-  <rect x="46" y="50" width="32" height="7" rx="3.5" fill="#a5b4fc"/>
-  <rect x="52" y="62" width="26" height="7" rx="3.5" fill="#a5b4fc"/>
-  <rect x="46" y="74" width="28" height="7" rx="3.5" fill="#a5b4fc"/>
-  <!-- Four lego bricks (two studs each) around the catalog; amber = the gates. -->
-  <rect x="9" y="10" width="7" height="5" rx="2" fill="#6366f1"/>
-  <rect x="20" y="10" width="7" height="5" rx="2" fill="#6366f1"/>
-  <rect x="4" y="14" width="28" height="19" rx="6" fill="#6366f1"/>
-  <rect x="101" y="10" width="7" height="5" rx="2" fill="#818cf8"/>
-  <rect x="112" y="10" width="7" height="5" rx="2" fill="#818cf8"/>
-  <rect x="96" y="14" width="28" height="19" rx="6" fill="#818cf8"/>
-  <rect x="101" y="91" width="7" height="5" rx="2" fill="#f59e0b"/>
-  <rect x="112" y="91" width="7" height="5" rx="2" fill="#f59e0b"/>
-  <rect x="96" y="95" width="28" height="19" rx="6" fill="#f59e0b"/>
-  <rect x="9" y="91" width="7" height="5" rx="2" fill="#818cf8"/>
-  <rect x="20" y="91" width="7" height="5" rx="2" fill="#818cf8"/>
-  <rect x="4" y="95" width="28" height="19" rx="6" fill="#818cf8"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="basicly logo: a central catalog block framed by four L-shaped bricks">
+  <!-- The versioned YAML catalog: central block, symmetric fragment lines. -->
+  <rect x="44" y="44" width="40" height="40" rx="9" fill="#4f46e5"/>
+  <rect x="52" y="52" width="24" height="6" rx="3" fill="#a5b4fc"/>
+  <rect x="52" y="61" width="24" height="6" rx="3" fill="#a5b4fc"/>
+  <rect x="52" y="70" width="24" height="6" rx="3" fill="#a5b4fc"/>
+  <!-- Four L-tetrominoes pinwheeled around the catalog corners; amber = the gates. -->
+  <path d="M30 8 H74 Q80 8 80 14 V18 Q80 24 74 24 H46 Q40 24 40 30 V34 Q40 40 34 40 H30 Q24 40 24 34 V14 Q24 8 30 8 Z" fill="#6366f1"/>
+  <path d="M30 8 H74 Q80 8 80 14 V18 Q80 24 74 24 H46 Q40 24 40 30 V34 Q40 40 34 40 H30 Q24 40 24 34 V14 Q24 8 30 8 Z" transform="rotate(90 64 64)" fill="#818cf8"/>
+  <path d="M30 8 H74 Q80 8 80 14 V18 Q80 24 74 24 H46 Q40 24 40 30 V34 Q40 40 34 40 H30 Q24 40 24 34 V14 Q24 8 30 8 Z" transform="rotate(180 64 64)" fill="#f59e0b"/>
+  <path d="M30 8 H74 Q80 8 80 14 V18 Q80 24 74 24 H46 Q40 24 40 30 V34 Q40 40 34 40 H30 Q24 40 24 34 V14 Q24 8 30 8 Z" transform="rotate(270 64 64)" fill="#6366f1"/>
 </svg>
