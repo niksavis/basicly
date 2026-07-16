@@ -20,6 +20,25 @@ class SyncResult:
     unchanged: list[Path] = field(default_factory=list)
 
 
+def atomic_write_bytes(path: Path, content: bytes) -> None:
+    """Write via a same-directory tmp file + rename.
+
+    A crash mid-write must never leave ``path`` truncated — several
+    destinations (``.claude/settings.json``, ``.pre-commit-config.yaml``)
+    are co-owned with the consumer and hold content basicly cannot
+    regenerate.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".basicly-tmp")
+    tmp.write_bytes(content)
+    tmp.replace(path)
+
+
+def atomic_write_text(path: Path, content: str) -> None:
+    """Atomic UTF-8 text write (see :func:`atomic_write_bytes`)."""
+    atomic_write_bytes(path, content.encode("utf-8"))
+
+
 def write_if_changed(path: Path, content: bytes) -> bool:
     """Write ``content`` to ``path`` only when it differs; return True when written.
 
@@ -29,8 +48,7 @@ def write_if_changed(path: Path, content: bytes) -> bool:
     """
     if path.exists() and path.read_bytes() == content:
         return False
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(content)
+    atomic_write_bytes(path, content)
     return True
 
 

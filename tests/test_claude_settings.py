@@ -168,7 +168,7 @@ def test_posttooluse_spec_lands_in_its_own_event_with_its_matcher(tmp_path: Path
     # Idempotent across both events; removal strips both and prunes empties.
     assert claude_settings.sync_agent_hooks(tmp_path, [GUARD, COUNTER], HOOKS_RELPATH) is False
     assert claude_settings.agent_hook_mismatches(tmp_path, [GUARD, COUNTER], HOOKS_RELPATH) == []
-    assert claude_settings.remove_agent_hooks(tmp_path, [GUARD, COUNTER]) is True
+    assert claude_settings.remove_agent_hooks(tmp_path, [GUARD, COUNTER], HOOKS_RELPATH) is True
     assert "hooks" not in _read_settings(tmp_path)
 
 
@@ -178,7 +178,7 @@ def test_remove_agent_hooks_strips_managed_only(tmp_path: Path) -> None:
     _write_settings(tmp_path, {"hooks": {"PreToolUse": [foreign]}, "other": 1})
     claude_settings.sync_agent_hooks(tmp_path, [GUARD], HOOKS_RELPATH)
 
-    assert claude_settings.remove_agent_hooks(tmp_path, [GUARD]) is True
+    assert claude_settings.remove_agent_hooks(tmp_path, [GUARD], HOOKS_RELPATH) is True
     data = _read_settings(tmp_path)
     assert data["hooks"]["PreToolUse"] == [foreign]
     assert data["other"] == 1
@@ -186,5 +186,26 @@ def test_remove_agent_hooks_strips_managed_only(tmp_path: Path) -> None:
     # With no foreign groups left, the empty containers disappear entirely.
     _write_settings(tmp_path, {"other": 1})
     claude_settings.sync_agent_hooks(tmp_path, [GUARD], HOOKS_RELPATH)
-    assert claude_settings.remove_agent_hooks(tmp_path, [GUARD]) is True
+    assert claude_settings.remove_agent_hooks(tmp_path, [GUARD], HOOKS_RELPATH) is True
     assert _read_settings(tmp_path) == {"other": 1}
+
+
+def test_consumer_hook_with_same_basename_survives(tmp_path: Path) -> None:
+    """A consumer hook running its own protect-generated.py is not managed."""
+    consumer_group = {
+        "matcher": "Bash",
+        "hooks": [{"type": "command", "command": "python scripts/protect-generated.py"}],
+    }
+    _write_settings(
+        tmp_path,
+        {"hooks": {"PreToolUse": [consumer_group]}},
+    )
+    claude_settings.sync_agent_hooks(tmp_path, [GUARD], HOOKS_RELPATH)
+    data = json.loads((tmp_path / claude_settings.CLAUDE_SETTINGS_PATH).read_text())
+    commands = [hook["command"] for group in data["hooks"]["PreToolUse"] for hook in group["hooks"]]
+    assert "python scripts/protect-generated.py" in commands
+
+    assert claude_settings.remove_agent_hooks(tmp_path, [GUARD], HOOKS_RELPATH) is True
+    data = json.loads((tmp_path / claude_settings.CLAUDE_SETTINGS_PATH).read_text())
+    commands = [hook["command"] for group in data["hooks"]["PreToolUse"] for hook in group["hooks"]]
+    assert commands == ["python scripts/protect-generated.py"]

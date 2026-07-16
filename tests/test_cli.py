@@ -950,3 +950,40 @@ def test_cli_install_prunes_retired_github_skills_root(tmp_path: Path) -> None:
     assert list((consumer / ".claude" / "skills").rglob("SKILL.md"))
     assert list((consumer / ".agents" / "skills").rglob("SKILL.md"))
     assert not list((consumer / ".github" / "skills").rglob("SKILL.md"))[1:]
+
+
+def test_cli_build_sweep_never_follows_symlinks_or_git_paths(work_repo: Path) -> None:
+    """A symlinked manifest entry unlinks the link only; .git entries are refused."""
+    run_basicly(work_repo, "build")
+    manifest_path = work_repo / ".basicly/generated-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    victim = work_repo / "victim.txt"
+    victim.write_text("precious consumer file\n", encoding="utf-8")
+    link_rel = "stale-link.md"
+    (work_repo / link_rel).symlink_to(victim)
+    git_rel = ".git/fake-hook"
+    (work_repo / ".git").mkdir(exist_ok=True)
+    (work_repo / git_rel).write_text("repo internals\n", encoding="utf-8")
+
+    manifest["outputs"][link_rel] = {"hash": "sha256:0", "source_fragments": ["x"]}
+    manifest["outputs"][git_rel] = {"hash": "sha256:0", "source_fragments": ["x"]}
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+    result = run_basicly(work_repo, "build")
+    assert result.returncode == 0, result.stderr
+    assert victim.exists()  # the symlink target survives
+    assert not (work_repo / link_rel).exists()  # the link itself is swept
+    assert (work_repo / git_rel).exists()  # .git/ is never sweepable
+    assert "skipping unsafe manifest entry" in result.stderr
+
+
+def test_cli_check_sees_crlf_drift(work_repo: Path) -> None:
+    """A newline-only change to a generated file is drift, same as build sees it."""
+    run_basicly(work_repo, "build")
+    target = work_repo / "AGENTS.md"
+    content = target.read_bytes()
+    target.write_bytes(content.replace(b"\n", b"\r\n"))
+
+    result = run_basicly(work_repo, "check")
+    assert result.returncode == 1

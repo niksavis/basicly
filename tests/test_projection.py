@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from basicly import projection
 from basicly.projection import SyncResult, sync_file, write_if_changed
 
 
@@ -60,3 +61,13 @@ def test_sync_file_records_written_then_unchanged(tmp_path: Path) -> None:
     sync_file(path, b"x", result)
     assert result.written == [path]
     assert result.unchanged == [path]
+
+
+def test_atomic_write_leaves_no_tmp_and_replaces_content(tmp_path: Path) -> None:
+    """Writes go through tmp+rename; the tmp file never outlives the write."""
+    target = tmp_path / "nested" / "settings.json"
+    projection.atomic_write_text(target, '{"a": 1}\n')
+    assert target.read_text(encoding="utf-8") == '{"a": 1}\n'
+    projection.atomic_write_text(target, '{"a": 2}\n')
+    assert target.read_text(encoding="utf-8") == '{"a": 2}\n'
+    assert list(tmp_path.rglob("*.basicly-tmp")) == []

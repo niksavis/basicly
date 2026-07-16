@@ -26,6 +26,7 @@ import shlex
 from pathlib import Path
 
 from .hooks import HookSpec
+from .projection import atomic_write_text
 
 CLAUDE_SETTINGS_PATH = Path(".claude/settings.json")
 WORKTREE_KEY = "worktree"
@@ -76,7 +77,7 @@ def set_bg_isolation_none(repo_root: Path) -> bool:
     settings[WORKTREE_KEY] = section
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+    atomic_write_text(path, json.dumps(settings, indent=2) + "\n")
     return True
 
 
@@ -107,14 +108,19 @@ def _managed_group(spec: HookSpec, hooks_relpath: str) -> dict:
     }
 
 
-def _references_managed_script(group: object, script_names: set[str]) -> bool:
-    """True when a hook group runs one of the managed hook scripts."""
+def _references_managed_script(group: object, script_paths: set[str]) -> bool:
+    """True when a hook group runs one of the managed hook scripts.
+
+    Matches the relpath-qualified script (``.basicly/core/hooks/x.py``), never
+    the bare basename — a consumer hook running its own same-named script must
+    not be classified as basicly-managed and stripped.
+    """
     if not isinstance(group, dict):
         return False
     for hook in group.get("hooks") or []:
         if isinstance(hook, dict):
             command = hook.get("command")
-            if isinstance(command, str) and any(name in command for name in script_names):
+            if isinstance(command, str) and any(path in command for path in script_paths):
                 return True
     return False
 
@@ -137,12 +143,12 @@ def merge_agent_hooks(
     hooks_section = merged.get(HOOKS_KEY)
     hooks_section = dict(hooks_section) if isinstance(hooks_section, dict) else {}
 
-    script_names = strip_scripts or {spec.script for spec in specs}
+    script_paths = strip_scripts or {f"{hooks_relpath}/{spec.script}" for spec in specs}
     for event in AGENT_HOOK_EVENTS.values():
         existing = hooks_section.get(event)
         if isinstance(existing, list):
             hooks_section[event] = [
-                group for group in existing if not _references_managed_script(group, script_names)
+                group for group in existing if not _references_managed_script(group, script_paths)
             ]
 
     for spec in specs:
@@ -187,7 +193,9 @@ def agent_hook_mismatches(repo_root: Path, specs: list[HookSpec], hooks_relpath:
     return mismatches
 
 
-def excluded_agent_hooks_present(repo_root: Path, excluded_specs: list[HookSpec]) -> list[str]:
+def excluded_agent_hooks_present(
+    repo_root: Path, excluded_specs: list[HookSpec], hooks_relpath: str
+) -> list[str]:
     """Return a reason per excluded managed agent hook still wired in the settings."""
     settings = _load_settings(repo_root / CLAUDE_SETTINGS_PATH)
     hooks_section = settings.get(HOOKS_KEY)
@@ -201,7 +209,10 @@ def excluded_agent_hooks_present(repo_root: Path, excluded_specs: list[HookSpec]
     return [
         f"managed agent hook '{spec.id}' excluded by technology selection"
         for spec in excluded_specs
-        if any(_references_managed_script(group, {spec.script}) for group in groups)
+        if any(
+            _references_managed_script(group, {f"{hooks_relpath}/{spec.script}"})
+            for group in groups
+        )
     ]
 
 
@@ -221,21 +232,21 @@ def sync_agent_hooks(
     if not specs and not excluded_specs:
         return False
     if not agent_hook_mismatches(repo_root, specs, hooks_relpath) and not (
-        excluded_agent_hooks_present(repo_root, excluded_specs)
+        excluded_agent_hooks_present(repo_root, excluded_specs, hooks_relpath)
     ):
         return False
 
     path = repo_root / CLAUDE_SETTINGS_PATH
     settings = _load_settings(path)
-    strip_scripts = {spec.script for spec in (*specs, *excluded_specs)}
+    strip_scripts = {f"{hooks_relpath}/{spec.script}" for spec in (*specs, *excluded_specs)}
     merged = merge_agent_hooks(settings, specs, hooks_relpath, strip_scripts)
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(merged, indent=2) + "\n", encoding="utf-8")
+    atomic_write_text(path, json.dumps(merged, indent=2) + "\n")
     return True
 
 
-def remove_agent_hooks(repo_root: Path, specs: list[HookSpec]) -> bool:
+def remove_agent_hooks(repo_root: Path, specs: list[HookSpec], hooks_relpath: str) -> bool:
     """Strip basicly's managed agent hooks from the settings (uninstall path).
 
     Drops every hook group (any managed event) referencing a managed script;
@@ -249,13 +260,13 @@ def remove_agent_hooks(repo_root: Path, specs: list[HookSpec]) -> bool:
     if not isinstance(hooks_section, dict):
         return False
 
-    script_names = {spec.script for spec in specs}
+    script_paths = {f"{hooks_relpath}/{spec.script}" for spec in specs}
     changed = False
     for event in AGENT_HOOK_EVENTS.values():
         existing = hooks_section.get(event)
         if not isinstance(existing, list):
             continue
-        kept = [g for g in existing if not _references_managed_script(g, script_names)]
+        kept = [g for g in existing if not _references_managed_script(g, script_paths)]
         if len(kept) == len(existing):
             continue
         changed = True
@@ -270,5 +281,5 @@ def remove_agent_hooks(repo_root: Path, specs: list[HookSpec]) -> bool:
         settings[HOOKS_KEY] = hooks_section
     else:
         settings.pop(HOOKS_KEY, None)
-    path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+    atomic_write_text(path, json.dumps(settings, indent=2) + "\n")
     return True
