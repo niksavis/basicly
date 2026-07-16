@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>basicly — a harness distribution for coding agents</title>
+<meta name="description" content="One command installs a complete coding-agent harness — instructions, skills, and git gates — projected from a single YAML catalog.">
+<link rel="icon" type="image/svg+xml" href="assets/logo.svg">
+<style>
+  :root {
+    --bg: #0f1117;
+    --bg-raise: #171a23;
+    --border: #262b38;
+    --text: #d7dce6;
+    --text-dim: #8b93a7;
+    --indigo: #818cf8;
+    --indigo-deep: #6366f1;
+    --amber: #f59e0b;
+    --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--indigo); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 1.5rem; }
+
+  header.hero { padding: 5rem 0 3.5rem; text-align: center; }
+  .hero img { width: 84px; height: 84px; }
+  .hero h1 {
+    font-size: 3rem;
+    letter-spacing: -0.03em;
+    margin-top: 1rem;
+    font-weight: 700;
+  }
+  .hero h1 span { color: var(--indigo); }
+  .hero p.tag {
+    max-width: 40rem;
+    margin: 1rem auto 0;
+    font-size: 1.2rem;
+    color: var(--text-dim);
+  }
+  .hero .links { margin-top: 1.75rem; display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-block;
+    padding: 0.55rem 1.2rem;
+    border-radius: 8px;
+    font-weight: 600;
+    border: 1px solid var(--border);
+  }
+  .btn.primary { background: var(--indigo-deep); color: #fff; border-color: transparent; }
+  .btn.primary:hover { background: var(--indigo); text-decoration: none; }
+  .btn.ghost:hover { border-color: var(--indigo); text-decoration: none; }
+
+  section { padding: 2.5rem 0; border-top: 1px solid var(--border); }
+  section h2 {
+    font-size: 1.5rem;
+    letter-spacing: -0.02em;
+    margin-bottom: 1rem;
+  }
+  section h2::before { content: "// "; color: var(--amber); font-family: var(--mono); font-size: 1.1rem; }
+  .muted { color: var(--text-dim); }
+
+  pre {
+    background: var(--bg-raise);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.9rem 1.1rem;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 0.88rem;
+    line-height: 1.5;
+    margin: 0.9rem 0;
+  }
+  pre .c { color: var(--text-dim); }
+  pre .p { color: var(--amber); user-select: none; }
+
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 1.25rem; }
+  @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } .hero h1 { font-size: 2.2rem; } }
+  .card {
+    background: var(--bg-raise);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.1rem 1.2rem;
+  }
+  .card h3 { font-size: 1.02rem; margin-bottom: 0.4rem; }
+  .card h3::before { content: "■ "; color: var(--indigo); font-size: 0.7rem; vertical-align: 2px; }
+  .card p { font-size: 0.92rem; color: var(--text-dim); }
+
+  .flow {
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    background: var(--bg-raise);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.1rem 1.2rem;
+    overflow-x: auto;
+    margin-top: 1.25rem;
+    white-space: pre;
+    line-height: 1.7;
+  }
+  .flow b { color: var(--text); font-weight: 600; }
+  .flow em { color: var(--amber); font-style: normal; }
+
+  ul.plain { padding-left: 1.2rem; }
+  ul.plain li { margin: 0.35rem 0; }
+  ul.plain li::marker { color: var(--indigo); }
+
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 2rem 0 3rem;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 0.9rem;
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <img src="assets/logo.svg" alt="basicly logo">
+    <h1><span>basicly</span></h1>
+    <p class="tag">One command installs a complete coding-agent harness — instructions,
+    skills, and git gates — projected from a single YAML catalog.</p>
+    <div class="links">
+      <a class="btn primary" href="#install">Get started</a>
+      <a class="btn ghost" href="https://github.com/niksavis/basicly">GitHub</a>
+      <a class="btn ghost" href="https://github.com/niksavis/basicly/blob/main/docs/architecture.md">Architecture</a>
+    </div>
+  </div>
+</header>
+
+<section id="why">
+  <div class="wrap">
+    <h2>Why</h2>
+    <p>Coding agents read guidance from many places — <code>CLAUDE.md</code>,
+    <code>AGENTS.md</code>, <code>copilot-instructions.md</code>, skill folders, hook
+    configs — and keeping them consistent by hand does not scale. basicly keeps
+    <em>one</em> catalog and projects it into every format your agents expect,
+    then guards the result with deterministic gates.</p>
+    <div class="grid">
+      <div class="card">
+        <h3>Instructions</h3>
+        <p>Agent instruction files generated from shared fragments — edit one YAML
+        source, every target regenerates consistently.</p>
+      </div>
+      <div class="card">
+        <h3>Skills</h3>
+        <p>Reusable runbooks projected to <code>.claude/skills</code> and
+        <code>.agents/skills</code>, discoverable by any agent that reads the
+        SKILL.md convention.</p>
+      </div>
+      <div class="card">
+        <h3>Gates</h3>
+        <p>Git hooks across pre-commit, commit-msg, and pre-push — plus Claude Code
+        and Copilot agent hooks — that block bad changes whether or not the
+        guidance was followed.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <h2>Install</h2>
+    <p>Into any git repo, with <a href="https://docs.astral.sh/uv/">uv</a> on the machine:</p>
+    <pre><span class="p">$ </span>uvx --from git+https://github.com/niksavis/basicly@v0.1.3 basicly install</pre>
+    <p>No uv or Python yet? The bootstrap shim installs uv first, then runs the same command:</p>
+    <pre><span class="p">$ </span>curl -fsSL https://raw.githubusercontent.com/niksavis/basicly/main/.scripts/bootstrap.sh | sh</pre>
+    <p>Windows (PowerShell):</p>
+    <pre><span class="p">&gt; </span>powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/niksavis/basicly/main/.scripts/bootstrap.ps1 | iex"</pre>
+    <p class="muted">Upgrading is the same command with a newer pin — install is an
+    idempotent converge. <code>basicly uninstall</code> removes everything managed;
+    your overlay survives.</p>
+  </div>
+</section>
+
+<section id="how">
+  <div class="wrap">
+    <h2>How it works</h2>
+    <p>You author guidance once, as versioned YAML sources. The projector renders
+    what each tool natively reads, and a drift gate keeps it honest.</p>
+    <div class="flow">  <b>.basicly/core/</b> managed catalog ─┐
+  <b>.basicly-local/</b> your overlay ──┤
+                                  ▼
+                    <em>basicly install / build</em>
+                                  ▼
+        ┌─────────────────────────┼─────────────────────────┐
+        ▼                         ▼                         ▼
+  <b>instructions</b>            <b>skills</b>                    <b>hooks</b>
+  CLAUDE.md / AGENTS.md   .claude/skills/           git stages
+  copilot-instructions    .agents/skills/           Claude Code + Copilot
+        ▲                         ▲                         ▲
+        └──────────── <em>basicly check</em> (drift gate, CI) ──────┘</div>
+    <ul class="plain" style="margin-top:1.25rem">
+      <li><strong>Yours stays yours.</strong> Overrides and additions live in
+      <code>.basicly-local/</code>; installs and upgrades never touch them.</li>
+      <li><strong>Scoped to your stack.</strong> <code>--technologies python,zsh</code>
+      ships only the catalog content that matches.</li>
+      <li><strong>Deterministic first.</strong> Everything is plain git-tracked
+      files — no daemon, no hidden state, no network calls at build time.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="more">
+  <div class="wrap">
+    <h2>Learn more</h2>
+    <ul class="plain">
+      <li><a href="https://github.com/niksavis/basicly#readme">README</a> — quick start and command reference</li>
+      <li><a href="https://github.com/niksavis/basicly/blob/main/docs/architecture.md">Architecture</a> — the full design, from catalog model to verification pipeline</li>
+      <li><a href="https://github.com/niksavis/basicly/blob/main/CHANGELOG.md">Changelog</a> and <a href="https://github.com/niksavis/basicly/releases">releases</a></li>
+      <li><a href="https://github.com/niksavis/basicly/blob/main/CONTRIBUTING.md">Contributing</a> — how changes land and which gates they pass</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>MIT licensed. Built in the open at
+    <a href="https://github.com/niksavis/basicly">github.com/niksavis/basicly</a>.</p>
+  </div>
+</footer>
+
+</body>
+</html>
