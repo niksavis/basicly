@@ -297,6 +297,24 @@ def test_scaffold_ci_workflow_writes_once_and_parses(
     assert "left unchanged" in capsys.readouterr().out
 
 
+def test_ci_workflows_ignore_tracker_only_pushes() -> None:
+    """Tracker-only pushes must not trigger builds: .beads/** is paths-ignored.
+
+    The harness loop necessarily makes tracker-only commits (basicly-flp), so
+    both the authoring workflows and the consumer scaffold skip CI for them.
+    """
+    sources = [
+        (REPO_ROOT / ".github" / "workflows" / "basicly.yml").read_text(encoding="utf-8"),
+        (REPO_ROOT / ".github" / "workflows" / "quality-gates.yml").read_text(encoding="utf-8"),
+        CONSUMER_CI_WORKFLOW,
+    ]
+    for text in sources:
+        data = yaml.safe_load(text)
+        triggers = data.get("on", data.get(True))  # bare `on:` parses as YAML boolean
+        for event in ("push", "pull_request"):
+            assert triggers[event]["paths-ignore"] == [".beads/**"], text[:200]
+
+
 def test_purge_removes_only_pristine_ci_workflow(tmp_path: Path) -> None:
     """--purge deletes the workflow only while byte-identical to the scaffold."""
     paths = load_project_paths(tmp_path)
