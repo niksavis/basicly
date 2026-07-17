@@ -41,6 +41,44 @@ def test_validate_rejects_unknown_issue_id() -> None:
     assert "unknown beads issue id" in error
 
 
+def test_validate_ignores_hyphenated_words_when_a_valid_id_is_present() -> None:
+    """Hyphenated description words are never mistaken for ids (basicly-jms0).
+
+    Detection is prefix-anchored like br's own commit scanner, so a phrase such
+    as "fork-drove-the-loop" is not a candidate and cannot shadow the real id.
+    """
+    module = _load_beads_commit_msg_module()
+    message = "docs(spike): note the fork-drove-the-loop incident (basicly-idr)"
+    is_valid, error = module.validate(message, {"basicly-idr"})
+    assert is_valid
+    assert error == ""
+
+
+def test_validate_missing_id_error_does_not_name_hyphenated_words() -> None:
+    """A commit with no id reports the accurate 'no id' error, not 'fork-drove' (basicly-jms0)."""
+    module = _load_beads_commit_msg_module()
+    is_valid, error = module.validate("docs: the fork-drove-the-loop incident", {"basicly-idr"})
+    assert not is_valid
+    assert "does not reference a beads issue id" in error
+    assert "fork-drove" not in error
+
+
+def test_validate_accepts_dotted_child_id() -> None:
+    """A dotted child id is matched in full (basicly-jms0)."""
+    module = _load_beads_commit_msg_module()
+    is_valid, error = module.validate("fix(x): child work (basicly-zrj.4.1)", {"basicly-zrj.4.1"})
+    assert is_valid
+    assert error == ""
+
+
+def test_validate_accepts_id_in_a_footer() -> None:
+    """The id is matched anywhere by word boundary, so a git-trailer footer works."""
+    module = _load_beads_commit_msg_module()
+    is_valid, error = module.validate("fix(x): a thing\n\nRefs: basicly-idr", {"basicly-idr"})
+    assert is_valid
+    assert error == ""
+
+
 def test_validate_skips_check_without_beads_workspace() -> None:
     """When known_ids is None (no .beads workspace), any candidate id passes."""
     module = _load_beads_commit_msg_module()
