@@ -20,6 +20,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from .br import try_run_br
 from .hooks import PRECOMMIT_CONFIG, hook_stages, install_hooks, load_hook_specs
 
 BRANCH_PREFIX = "harness/"
@@ -170,6 +171,34 @@ def install_worktree_hooks(worktree: Path) -> str:
     return f"{prefix}: {', '.join(stages)} — {message}"
 
 
+def _probe_redirect(name: str, worktree: Path, base_beads: Path) -> None:
+    """Fail fast when the installed br does not honor ``.beads/redirect``.
+
+    A br without redirect support ignores the file, auto-imports the
+    worktree's checked-out ``issues.jsonl`` into a fresh local DB, and
+    silently runs a divergent tracker — lost gates and claims. A missing br
+    or a base that is not a br workspace skips the probe (both are supported
+    states); the probe rejects only a br that answers with the wrong dir.
+    """
+    proc = try_run_br(worktree, ["where", "--json"])
+    if proc is None or proc.returncode != 0:
+        return
+    try:
+        data = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return
+    if not isinstance(data, dict) or "path" not in data:
+        return
+    resolved = Path(str(data["path"]))
+    if resolved.resolve() != base_beads.resolve():
+        raise SystemExit(
+            f"the installed br ignored .beads/redirect and resolved {resolved} — "
+            "worktree tracker sharing needs a redirect-capable br (0.2.16 is the "
+            "known-good floor). Run `br upgrade`, then "
+            f"`basicly worktree cleanup {name} --force` and recreate the worktree."
+        )
+
+
 def create(name: str, base: str | None = None) -> Session:
     """Create and provision a sibling worktree for *name*.
 
@@ -197,15 +226,9 @@ def create(name: str, base: str | None = None) -> Session:
     worktree.parent.mkdir(parents=True, exist_ok=True)
     git(["worktree", "add", str(worktree), "-b", branch, base])
 
-    notes = provision_deps(worktree)
-
-    env_local = main_checkout() / ".env.local"
-    if env_local.exists():
-        (worktree / ".env.local").write_text(
-            env_local.read_text(encoding="utf-8"), encoding="utf-8"
-        )
-        notes.append(".env.local: copied")
-
+    # Tracker sharing first (before the slow dep install), so a br that cannot
+    # follow the redirect fails the provisioning fast.
+    notes: list[str] = []
     base_beads = main_checkout() / ".beads"
     if base_beads.is_dir():
         target_beads = worktree / ".beads"
@@ -214,6 +237,16 @@ def create(name: str, base: str | None = None) -> Session:
         # absolute path here never reaches a commit.
         (target_beads / "redirect").write_text(f"{base_beads}\n", encoding="utf-8")
         notes.append(".beads/redirect: tracker shared with the base checkout")
+        _probe_redirect(name, worktree, base_beads)
+
+    notes += provision_deps(worktree)
+
+    env_local = main_checkout() / ".env.local"
+    if env_local.exists():
+        (worktree / ".env.local").write_text(
+            env_local.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+        notes.append(".env.local: copied")
 
     notes.append(install_worktree_hooks(worktree))
 
