@@ -7,7 +7,7 @@ Usage (from the consumer repo root):
 
 To pin a version or pass install arguments, download first:
   irm .../bootstrap.ps1 -OutFile bootstrap.ps1
-  ./bootstrap.ps1 -Ref v0.3.0 -- --technologies python,zsh
+  ./bootstrap.ps1 -Ref v0.3.1 -- --technologies python,zsh
 
 -Ref pins the basicly version (default: main); every other argument passes
 through to `basicly install`. POSIX users: see bootstrap.sh.
