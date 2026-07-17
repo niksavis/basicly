@@ -6,6 +6,44 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.4.0 - 2026-07-17
+
+Delta: v0.3.1..v0.4.0
+
+### Added
+
+- **Per-run record at the dispatch seam**: every runner dispatch writes a
+  metadata-only record keyed by bead id (agent, outcome, return code, duration,
+  redacted command) to a self-ignored `.basicly/usage/run-records.json`
+  (basicly-z6dh).
+- **Catalog-managed agent deny-list**: a `permissions.yaml` catalog source
+  projects a baseline Claude Code `deny` list into `.claude/settings.json`
+  (`permissions build` / `permissions check`), and the repo dogfoods it
+  (basicly-u0zg).
+- **Stdlib secret-scan pre-commit gate**: a dependency-free hook scans staged
+  added lines for common secret shapes, honoring a `pragma: allowlist secret`
+  marker (basicly-yzyd).
+- **Rubric-based behavioral eval**: `basicly rubric eval` runs YAML-authored
+  rubric checks (deterministic first, judged advisory) and reports an advisory
+  `rubric` gate (basicly-0122).
+
+### Fixed
+
+- **The loop no longer strands a commit**: `loop advance` refuses the build and
+  ship transitions when run from a linked worktree, and worktree cleanup drops a
+  session record whose branch is already gone (basicly-9niw).
+- **Accurate tool-usage telemetry**: the counter no longer records
+  backslash/dash heredoc bodies, flag-led pipeline segments, or inline
+  `python -c` / `-m` code as tool names (basicly-v7eu).
+- **Prefix-anchored commit id detection**: `beads-commit-msg` matches issue ids
+  by the configured prefix (like `br`'s own commit scanner) instead of any
+  hyphenated word, so ordinary phrases are never mis-flagged and the error names
+  the real cause (basicly-jms0).
+- **`.env` deny-list uses the form Claude Code accepts**: the guardrail keeps
+  only the `Edit(...)` globs (which cover every file-mutation tool) and drops the
+  `Write`/`MultiEdit`/`NotebookEdit` file rules Claude Code rejects at startup
+  (basicly-7ihd).
+
 ## v0.3.1 - 2026-07-17
 
 Delta: v0.3.0..v0.3.1
