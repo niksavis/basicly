@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -127,6 +128,48 @@ def test_create_never_rewrites_the_checked_out_tracker(
     checked_out = session.path / ".beads" / "issues.jsonl"
     assert checked_out.read_text(encoding="utf-8") == '{"id":"x-1"}\n'
     assert (session.path / ".beads" / "redirect").read_text(encoding="utf-8").strip() == str(beads)
+
+
+class _Proc:
+    def __init__(self, returncode: int = 0, stdout: str = "") -> None:
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = ""
+
+
+def test_create_rejects_a_br_that_ignores_the_redirect(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A br that resolves the worktree's own .beads fails provisioning fast.
+
+    Such a br silently runs a divergent tracker (lost gates and claims); the
+    probe turns that into an explicit upgrade instruction (basicly-o0ph).
+    """
+    (git_repo / ".beads").mkdir()
+    (git_repo / ".beads" / "issues.jsonl").write_text('{"id":"x-1"}\n', encoding="utf-8")
+
+    def _wrong_dir(worktree_path, _args):
+        return _Proc(0, json.dumps({"path": str(Path(worktree_path) / ".beads")}))
+
+    monkeypatch.setattr(worktree, "try_run_br", _wrong_dir)
+    monkeypatch.chdir(git_repo)
+    with pytest.raises(SystemExit, match="redirect-capable br"):
+        worktree.create("old-br")
+
+
+def test_create_probe_skips_absent_or_failing_br(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No br on PATH, or a br error (non-workspace base), skips the probe."""
+    (git_repo / ".beads").mkdir()
+    (git_repo / ".beads" / "issues.jsonl").write_text('{"id":"x-1"}\n', encoding="utf-8")
+    monkeypatch.chdir(git_repo)
+
+    monkeypatch.setattr(worktree, "try_run_br", lambda *_a: None)
+    worktree.create("no-br")
+
+    monkeypatch.setattr(worktree, "try_run_br", lambda *_a: _Proc(1, "not a workspace"))
+    worktree.create("br-errors")
 
 
 def test_create_redirects_beads_to_base(git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:

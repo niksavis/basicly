@@ -721,10 +721,15 @@ git merge-driver, unlike `bd`), never by hand-editing JSONL conflict markers.
 checkout's tracker via `br`'s git-ignored `.beads/redirect` file (written at provisioning;
 the `beads-commit-msg` hook follows it too), so `br` reads/writes from any checkout hit the
 one real DB/JSONL and there is no divergent copy to reconcile. The engine owns the tracker
-commits: the landing advance rolls accumulated `.beads/**` dirt in base into one
-`chore(beads)` commit before merging (non-beads dirt still blocks), and ship commits the
+commits at three points: provisioning commits the claim (so teammates who pull see it from
+the moment work starts), the landing advance rolls accumulated `.beads/**` dirt in base into
+one `chore(beads)` commit before merging (non-beads dirt still blocks), and ship commits the
 close after `br close`. Agents never stage `.beads/` for loop-tracked work, and CI ignores
-`.beads/**`-only pushes (the commit-msg hooks are the deterministic floor).
+`.beads/**`-only pushes (the commit-msg hooks are the deterministic floor). A
+redirect-capable `br` is a hard requirement of worktree tracker sharing (`br` 0.2.16 is the
+known-good floor): a `br` that ignores the file would silently run a divergent tracker, so
+provisioning probes `br where --json` from the new worktree and aborts with upgrade guidance
+when the answer is not the base `.beads`.
 
 **12.7 State & resumability.** `br` is the single source of truth — the harness keeps no
 durable side-state. In-flight worktree/branch bindings are stashed on the issue via
