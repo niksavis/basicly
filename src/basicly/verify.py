@@ -27,11 +27,11 @@ GATE_PROVIDER = "basicly-verify"
 def linked_worktree_guard(repo_root: Path) -> str | None:
     """Reason recording a gate from *repo_root* would lose it, or None when safe.
 
-    A linked git worktree carries its own throwaway copy of the beads tracker
-    (provisioning syncs it in), so a gate recorded there never reaches the base
-    checkout's tracker and is discarded at landing. The loop records the verify
-    gate from the base checkout after the merge — a manual record must happen
-    there too.
+    A linked git worktree whose ``.beads`` redirects to the base checkout (the
+    ``redirect`` file provisioning writes) shares the one real tracker, so
+    recording from it is safe. Without the redirect, the worktree carries its
+    own throwaway tracker copy and a gate recorded there never reaches the base
+    checkout — it is discarded at landing.
     """
     try:
         main = worktree.main_checkout(repo_root)
@@ -39,14 +39,23 @@ def linked_worktree_guard(repo_root: Path) -> str | None:
         # worktree.run wraps any git failure in RuntimeError — outside a git
         # checkout there is no landing to lose the gate to.
         return None
-    if main == Path(repo_root).resolve():
+    root = Path(repo_root).resolve()
+    if main == root:
         return None
+    redirect = root / ".beads" / "redirect"
+    if redirect.is_file():
+        try:
+            target = Path(redirect.read_text(encoding="utf-8").strip()).resolve()
+        except OSError:
+            target = None
+        if target == main / ".beads":
+            return None  # shared tracker — the record lands in the base checkout
     return (
-        f"this checkout is a linked worktree of {main}; a gate recorded here "
-        "lives in the worktree's throwaway tracker copy and is discarded at "
-        "landing. The loop records the verify gate from the base checkout when "
-        "it lands the worktree — run without --issue here, or record the gate "
-        "from the base checkout."
+        f"this checkout is a linked worktree of {main} without a .beads/redirect "
+        "to it; a gate recorded here lives in the worktree's throwaway tracker "
+        "copy and is discarded at landing. The loop records the verify gate from "
+        "the base checkout when it lands the worktree — run without --issue "
+        "here, or record the gate from the base checkout."
     )
 
 

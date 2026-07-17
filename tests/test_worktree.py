@@ -127,14 +127,38 @@ def test_create_syncs_uncommitted_tracker_state(
     assert synced.read_text(encoding="utf-8") == '{"id":"x-1"}\n{"id":"x-2"}\n'
 
 
-def test_create_leaves_matching_tracker_untouched(
-    git_repo: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A committed, unchanged tracker file is not rewritten (worktree stays clean)."""
+def test_create_redirects_beads_to_base(git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The worktree's .beads redirects at the base checkout's, sharing one tracker.
+
+    br follows the git-ignored ``redirect`` file, so every tracker read/write
+    from the worktree hits the base DB/JSONL — no divergent copy (basicly-c9e5).
+    """
     beads = git_repo / ".beads"
     beads.mkdir()
     (beads / "issues.jsonl").write_text('{"id":"x-1"}\n', encoding="utf-8")
     _git(git_repo, "add", ".beads/issues.jsonl")
+    _git(git_repo, "commit", "-m", "track beads")
+
+    monkeypatch.chdir(git_repo)
+    session = worktree.create("shared-tracker")
+
+    redirect = session.path / ".beads" / "redirect"
+    assert redirect.read_text(encoding="utf-8").strip() == str(beads)
+
+
+def test_create_leaves_matching_tracker_untouched(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A committed, unchanged tracker file is not rewritten (worktree stays clean).
+
+    The fixture tracks ``.beads/.gitignore`` the way ``br init`` writes it, so
+    the provisioning-written ``redirect`` file stays invisible to git.
+    """
+    beads = git_repo / ".beads"
+    beads.mkdir()
+    (beads / "issues.jsonl").write_text('{"id":"x-1"}\n', encoding="utf-8")
+    (beads / ".gitignore").write_text("redirect\n", encoding="utf-8")
+    _git(git_repo, "add", ".beads/issues.jsonl", ".beads/.gitignore")
     _git(git_repo, "commit", "-m", "track beads")
 
     monkeypatch.chdir(git_repo)

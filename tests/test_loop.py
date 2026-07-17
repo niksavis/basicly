@@ -388,16 +388,24 @@ def test_verify_advances_to_ship_when_approved(
 
 
 def test_ship_tears_down_and_closes(at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Ship cleans up the worktree and closes the issue, reaching done."""
+    """Ship cleans up the worktree, closes the issue, and commits the tracker."""
     at(_state("ship", worktree=WorktreeBinding("i", "harness/i")))
     torn = {}
     monkeypatch.setattr(worktree, "cleanup", lambda name, **_k: torn.setdefault("n", name))
     closed = {}
     monkeypatch.setattr(loop, "_run_br", lambda _r, args, **_k: closed.setdefault("args", args))
+    committed = {}
+    monkeypatch.setattr(
+        loop.merge,
+        "commit_tracker_state",
+        lambda _r, bead, **_k: committed.setdefault("bead", bead) or True,
+    )
     result = _advance(tmp_path)
     assert torn["n"] == "i"
     assert closed["args"][:2] == ["close", "i"]
+    assert committed["bead"] == "i"
     assert result.to_phase == "done" and result.action == "tore-down"
+    assert "tracker state committed" in result.detail
 
 
 def test_done_is_terminal(at, tmp_path: Path) -> None:

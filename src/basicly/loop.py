@@ -161,11 +161,17 @@ def _on_verify(ctx: _Ctx) -> AdvanceResult:
 
 
 def _on_ship(ctx: _Ctx) -> AdvanceResult:
-    """Tear down the worktree and close the issue."""
+    """Tear down the worktree, close the issue, and commit the tracker state."""
     if ctx.state.worktree is not None:
         worktree.cleanup(ctx.state.worktree.name, force=False)
     _run_br(ctx.repo_root, ["close", ctx.issue_id, "--reason", "shipped by the harness loop"])
-    return _moved(ctx, "done", "tore-down", "worktree torn down and issue closed")
+    committed = merge.commit_tracker_state(
+        ctx.repo_root, ctx.issue_id, action="close the shipped track"
+    )
+    detail = "worktree torn down and issue closed"
+    if committed:
+        detail += "; tracker state committed"
+    return _moved(ctx, "done", "tore-down", detail)
 
 
 # --- Build helpers ----------------------------------------------------------

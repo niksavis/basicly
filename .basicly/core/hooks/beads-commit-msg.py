@@ -56,9 +56,28 @@ Check valid ids with:
 """
 
 
+def _beads_dir() -> Path:
+    """The active beads dir, following br's git-ignored ``redirect`` file.
+
+    A harness worktree shares the base checkout's tracker via a one-line
+    ``.beads/redirect`` (written at provisioning); a fresh id then only exists
+    in the redirected JSONL, so the hook must read the same dir ``br`` does.
+    """
+    beads = _project_root() / ".beads"
+    redirect = beads / "redirect"
+    if redirect.is_file():
+        try:
+            target = Path(redirect.read_text(encoding="utf-8").strip())
+        except OSError:
+            return beads
+        if target.is_dir():
+            return target
+    return beads
+
+
 def _load_known_issue_ids() -> set[str] | None:
     """Return the set of known issue ids, or None if no beads workspace exists."""
-    issues_jsonl = _project_root() / ".beads" / "issues.jsonl"
+    issues_jsonl = _beads_dir() / "issues.jsonl"
     if not issues_jsonl.exists():
         return None
 

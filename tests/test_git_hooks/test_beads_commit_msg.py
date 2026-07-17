@@ -100,3 +100,35 @@ def test_load_known_issue_ids_returns_none_without_workspace(tmp_path: Path, mon
     (tmp_path / ".git").mkdir()
     monkeypatch.chdir(tmp_path)
     assert module._load_known_issue_ids() is None
+
+
+def test_load_known_issue_ids_follows_beads_redirect(tmp_path: Path, monkeypatch) -> None:
+    """A worktree's .beads/redirect resolves ids from the shared base tracker.
+
+    A fresh id exists only in the redirected JSONL (the worktree copy is stale
+    or absent), so the hook must read the same dir ``br`` does (basicly-c9e5).
+    """
+    module = _load_beads_commit_msg_module()
+    base_beads = tmp_path / "base" / ".beads"
+    base_beads.mkdir(parents=True)
+    (base_beads / "issues.jsonl").write_text('{"id":"proj-fresh"}\n', encoding="utf-8")
+
+    worktree = tmp_path / "wt"
+    (worktree / ".git").mkdir(parents=True)
+    (worktree / ".beads").mkdir()
+    (worktree / ".beads" / "issues.jsonl").write_text('{"id":"proj-old"}\n', encoding="utf-8")
+    (worktree / ".beads" / "redirect").write_text(f"{base_beads}\n", encoding="utf-8")
+    monkeypatch.chdir(worktree)
+    assert module._load_known_issue_ids() == {"proj-fresh"}
+
+
+def test_load_known_issue_ids_ignores_dangling_redirect(tmp_path: Path, monkeypatch) -> None:
+    """A redirect to a missing dir falls back to the local .beads."""
+    module = _load_beads_commit_msg_module()
+    (tmp_path / ".git").mkdir()
+    beads = tmp_path / ".beads"
+    beads.mkdir()
+    (beads / "issues.jsonl").write_text('{"id":"proj-local"}\n', encoding="utf-8")
+    (beads / "redirect").write_text(str(tmp_path / "gone" / ".beads"), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    assert module._load_known_issue_ids() == {"proj-local"}

@@ -86,6 +86,27 @@ def reconcile_beads(repo_root: Path) -> None:
     br.try_run_br(repo_root, ["sync", "--merge"])
 
 
+def commit_tracker_state(
+    repo_root: Path, bead: str, *, action: str = "sync tracker state for the harness loop"
+) -> bool:
+    """Commit the base checkout's dirt when it is tracker-only; False when it is not.
+
+    The loop mutates the tracker from claim through gate recording while the
+    agent builds (worktrees share it via br's ``redirect`` file), so `.beads/**`
+    dirt in base is expected engine state, not the agent's business — roll it
+    into one chore commit instead of blocking the advance on it. Any non-beads
+    dirt still blocks: that is someone's uncommitted work.
+    """
+    lines = git(["status", "--porcelain"], cwd=repo_root).stdout.splitlines()
+    paths = [line[3:] for line in lines if line.strip()]
+    if not paths or not all(path.startswith(".beads/") for path in paths):
+        return False
+    br.try_run_br(repo_root, ["sync", "--flush-only"])
+    git(["add", ".beads"], cwd=repo_root)
+    git(["commit", "-m", f"chore(beads): {action} ({bead})"], cwd=repo_root)
+    return True
+
+
 def _known_bead_ids(repo_root: Path) -> set[str] | None:
     """Ids from ``.beads/issues.jsonl``, or None when no workspace exists."""
     issues = repo_root / ".beads" / "issues.jsonl"
@@ -143,6 +164,11 @@ def merge_worktree(
         raise SystemExit(f"no worktree session named {name!r}")
     base, branch, worktree_path = session.base, session.branch, session.path
 
+    # Tracker-only dirt in base is the loop's own state (claim, checkpoints,
+    # gate records) — roll it up before the clean-tree check instead of
+    # bouncing the landing back to the agent.
+    if current_branch(repo_root) == base:
+        commit_tracker_state(repo_root, bead)
     _assert_base_ready(repo_root, base)
 
     # 1. Rebase onto the *current* base so serialized merges stay conflict-free.
