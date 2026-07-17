@@ -68,7 +68,7 @@ def _warn_legacy_sources(root: Path) -> None:
     Only YAML sources load since the format migration; a legacy file is user
     content that has silently stopped affecting builds. Advisory (never fails
     the load) — the fix is the user's: migrate each file to
-    ``<id>.fragment.yaml`` (``basicly fragment-new`` scaffolds one).
+    ``<id>.fragment.yaml`` (``basicly catalog new fragment`` scaffolds one).
     """
     legacy = sorted(root.rglob(LEGACY_FRAGMENT_GLOB))
     if not legacy:
@@ -77,7 +77,7 @@ def _warn_legacy_sources(root: Path) -> None:
     print(
         f"Warning: {len(legacy)} legacy .fragment.md file(s) under {root} are ignored "
         f"(only .fragment.yaml sources load since the format migration): {names}. "
-        "Migrate each to <id>.fragment.yaml — `basicly fragment-new` scaffolds one.",
+        "Migrate each to <id>.fragment.yaml — `basicly catalog new fragment` scaffolds one.",
         file=sys.stderr,
     )
 
@@ -172,7 +172,7 @@ def _load_fragment(path: Path, source_hint: str | None = None) -> Fragment:
 def _validate_schema_version(value: object, path: Path) -> None:
     """Reject a source authored for a newer schema than this basicly knows.
 
-    Missing is accepted (pre-versioning overlays); catalog-lint enforces the
+    Missing is accepted (pre-versioning overlays); catalog lint enforces the
     field on core sources. Newer must be a hard, actionable error — silently
     misreading a future format is worse than failing.
     """

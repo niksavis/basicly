@@ -12,7 +12,7 @@ fragment set that ``loader.load_fragments`` produces:
 
 These are conservative, high-precision heuristics: each is tuned to stay silent on a
 clean catalog and only fire on a genuine problem. Semantic review that needs a capable
-reader (§6, advisory) is out of scope here — that is ``basicly review``.
+reader (§6, advisory) is out of scope here — that is ``basicly catalog review``.
 """
 
 from __future__ import annotations

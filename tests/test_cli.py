@@ -163,7 +163,7 @@ def test_cli_piped_output_stays_plain_text(work_repo: Path) -> None:
     assert "\x1b" not in result.stdout
     assert "All generated files and manifest are up to date." in result.stdout
 
-    listing = run_basicly(work_repo, "skills-list")
+    listing = run_basicly(work_repo, "catalog", "list", "skill")
     assert listing.returncode == 0
     assert "\x1b" not in listing.stdout
     assert "tool-ripgrep" in listing.stdout
@@ -783,15 +783,15 @@ def _add_duplicate_fragments(work_repo: Path) -> None:
 
 def test_cli_catalog_verify_passes(work_repo: Path) -> None:
     """The real catalog passes content verification."""
-    result = run_basicly(work_repo, "catalog-verify")
+    result = run_basicly(work_repo, "catalog", "verify")
     assert result.returncode == 0, result.stderr
-    assert "catalog-verify: OK" in result.stdout
+    assert "catalog verify: OK" in result.stdout
 
 
 def test_cli_catalog_verify_flags_duplicate_bodies(work_repo: Path) -> None:
     """catalog-verify fails when two fragments share a body."""
     _add_duplicate_fragments(work_repo)
-    result = run_basicly(work_repo, "catalog-verify")
+    result = run_basicly(work_repo, "catalog", "verify")
     assert result.returncode == 1
     assert "identical bodies" in result.stderr
 
@@ -815,7 +815,7 @@ def test_cli_build_verify_passes_on_clean_catalog(work_repo: Path) -> None:
 
 def test_cli_review_dry_run_prints_prompt_without_agent(work_repo: Path) -> None:
     """Review --dry-run assembles the prompt from the rendered files, no agent invoked."""
-    result = run_basicly(work_repo, "review", "--dry-run")
+    result = run_basicly(work_repo, "catalog", "review", "--dry-run")
     assert result.returncode == 0, result.stderr
     assert "advisory semantic review" in result.stdout
     assert "===== FILE: AGENTS.md =====" in result.stdout
@@ -824,7 +824,7 @@ def test_cli_review_dry_run_prints_prompt_without_agent(work_repo: Path) -> None
 
 def test_cli_review_handoff_is_advisory(work_repo: Path) -> None:
     """With the manual handoff runner, review reports the handoff and still exits 0."""
-    result = run_basicly(work_repo, "review", "--runner", "manual")
+    result = run_basicly(work_repo, "catalog", "review", "--runner", "manual")
     assert result.returncode == 0, result.stderr
     assert "handoff" in result.stdout
     assert "Advisory only" in result.stdout
@@ -960,8 +960,10 @@ def test_cli_skills_check_fails_after_manual_edit(work_repo: Path) -> None:
 
 
 def test_cli_agents_new_build_check_roundtrip(work_repo: Path) -> None:
-    """agents-new scaffolds a source that builds, checks clean, then goes stale."""
-    result = run_basicly(work_repo, "agents-new", "triage-bot", "--description", "Triages issues.")
+    """Scaffolding via `catalog new agent` yields a source that builds, then goes stale."""
+    result = run_basicly(
+        work_repo, "catalog", "new", "agent", "triage-bot", "--description", "Triages issues."
+    )
     assert result.returncode == 0, result.stderr
     assert (work_repo / ".basicly/core/agents/triage-bot/agent.yaml").exists()
 
@@ -1074,7 +1076,7 @@ def test_cli_survives_a_narrow_console_encoding(work_repo: Path) -> None:
     """
     env = {**os.environ, "PYTHONPATH": str(work_repo / "src"), "PYTHONIOENCODING": "cp1252"}
     result = subprocess.run(
-        [sys.executable, "-m", "basicly.cli", "skills-list"],
+        [sys.executable, "-m", "basicly.cli", "catalog", "list", "skill"],
         cwd=work_repo,
         env=env,
         capture_output=True,

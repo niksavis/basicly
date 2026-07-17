@@ -1,7 +1,8 @@
-"""Tests for the catalog scaffold commands (skills-new / fragment-new)."""
+"""Tests for the catalog scaffold commands (catalog new skill / catalog new fragment)."""
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
 import pytest
@@ -12,13 +13,47 @@ from basicly.loader import load_fragments
 from basicly.skills import discover_skills
 
 
+def _catalog_subparser() -> argparse._SubParsersAction:
+    """The ``catalog`` group's subparser action from the built parser."""
+    top = next(a for a in cli._build_parser()._actions if isinstance(a, argparse._SubParsersAction))
+    return next(
+        a for a in top.choices["catalog"]._actions if isinstance(a, argparse._SubParsersAction)
+    )
+
+
+def test_catalog_group_exposes_the_authoring_verbs() -> None:
+    """`basicly catalog` groups exactly lint/verify/review/new/list (basicly-b6j)."""
+    assert set(_catalog_subparser().choices) == {"lint", "verify", "review", "new", "list"}
+
+
+@pytest.mark.parametrize(
+    "flat",
+    [
+        "catalog-lint",
+        "catalog-verify",
+        "review",
+        "list",
+        "skills-list",
+        "agents-list",
+        "skills-new",
+        "agents-new",
+        "fragment-new",
+    ],
+)
+def test_old_flat_names_are_removed(flat: str) -> None:
+    """The pre-b6j flat names no longer parse — breaking change, no aliases."""
+    with pytest.raises(SystemExit):
+        cli._build_parser().parse_args([flat])
+
+
 def test_skills_new_creates_loadable_source(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """skills-new writes a skill.yaml the loader accepts."""
+    """Scaffolding a skill via `catalog new skill` writes a loadable skill.yaml."""
     monkeypatch.chdir(tmp_path)
 
-    assert cli.main(["skills-new", "demo-skill", "--description", "A demo skill."]) == 0
+    args = ["catalog", "new", "skill", "demo-skill", "--description", "A demo skill."]
+    assert cli.main(args) == 0
     assert (tmp_path / ".basicly/core/skills/demo-skill/skill.yaml").is_file()
 
     skills = discover_skills(tmp_path)
@@ -28,21 +63,20 @@ def test_skills_new_creates_loadable_source(
 
 
 def test_skills_new_refuses_existing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """skills-new does not clobber an existing source."""
+    """Re-running `catalog new skill` does not clobber an existing source."""
     monkeypatch.chdir(tmp_path)
-    assert cli.main(["skills-new", "demo-skill"]) == 0
-    assert cli.main(["skills-new", "demo-skill"]) == 1
+    assert cli.main(["catalog", "new", "skill", "demo-skill"]) == 0
+    assert cli.main(["catalog", "new", "skill", "demo-skill"]) == 1
 
 
 def test_fragment_new_creates_loadable_source(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """fragment-new writes a <id>.fragment.yaml the loader accepts, in the category dir."""
+    """Scaffolding via `catalog new fragment` writes a loadable source in the category dir."""
     monkeypatch.chdir(tmp_path)
 
-    assert (
-        cli.main(["fragment-new", "demo-frag", "--category", "tools", "--description", "D."]) == 0
-    )
+    args = ["catalog", "new", "fragment", "demo-frag", "--category", "tools", "--description", "D."]
+    assert cli.main(args) == 0
     path = tmp_path / ".basicly/core/fragments/tools/demo-frag.fragment.yaml"
     assert path.is_file()
 
@@ -52,10 +86,10 @@ def test_fragment_new_creates_loadable_source(
 
 
 def test_fragment_new_refuses_existing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """fragment-new does not clobber an existing source."""
+    """Re-running `catalog new fragment` does not clobber an existing source."""
     monkeypatch.chdir(tmp_path)
-    assert cli.main(["fragment-new", "demo-frag"]) == 0
-    assert cli.main(["fragment-new", "demo-frag"]) == 1
+    assert cli.main(["catalog", "new", "fragment", "demo-frag"]) == 0
+    assert cli.main(["catalog", "new", "fragment", "demo-frag"]) == 1
 
 
 def test_overlay_stubs_are_loadable_drafts(tmp_path: Path) -> None:

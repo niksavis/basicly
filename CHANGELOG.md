@@ -6,6 +6,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING — CLI namespace grouping**: the flat authoring and inspection
+  subcommands moved under a `basicly catalog <verb>` group and the old names were
+  removed (no aliases). `catalog-lint` → `catalog lint`, `catalog-verify` →
+  `catalog verify`, `review` → `catalog review`, `list`/`skills-list`/`agents-list`
+  → `catalog list [fragment|skill|agent]`, and
+  `fragment-new`/`skills-new`/`agents-new` → `catalog new <fragment|skill|agent>`.
+  The consumer projection pairs (`build`/`check`, `skills-build`/`skills-check`,
+  `agents-build`/`agents-check`, `hooks-build`/`hooks-check`) and the harness
+  commands stay top-level. Consumers who script the old names — including the
+  scaffolded CI `catalog lint` step — must update them; re-run `basicly install`
+  to refresh the scaffolded workflow.
+
 ## v0.2.0 - 2026-07-16
 
 Delta: v0.1.3..v0.2.0

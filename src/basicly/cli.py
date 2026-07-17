@@ -1613,11 +1613,11 @@ def cmd_catalog_lint(_args: argparse.Namespace) -> int:
     repo_root = _repo_root()
     violations = catalog_lint.lint_catalog(repo_root)
     if violations:
-        print("catalog-lint: FAILED", file=sys.stderr)
+        print("catalog lint: FAILED", file=sys.stderr)
         for violation in violations:
             print(f"  {violation}", file=sys.stderr)
         return 1
-    print("catalog-lint: OK")
+    print("catalog lint: OK")
     return 0
 
 
@@ -1641,9 +1641,9 @@ def cmd_catalog_verify(_args: argparse.Namespace) -> int:
     repo_root = _repo_root()
     paths = load_project_paths(repo_root)
     fragments, _targets = _load_context(repo_root, paths)
-    if _report_gate_failures("catalog-verify: FAILED", _deterministic_gate(repo_root, fragments)):
+    if _report_gate_failures("catalog verify: FAILED", _deterministic_gate(repo_root, fragments)):
         return 1
-    print("catalog-verify: OK")
+    print("catalog verify: OK")
     return 0
 
 
@@ -1696,6 +1696,38 @@ def cmd_review(args: argparse.Namespace) -> int:
         )
     print("[review] advisory pass complete (non-blocking)")
     return 0
+
+
+def cmd_catalog(args: argparse.Namespace) -> int:
+    """Dispatch the ``catalog`` subcommands (lint / verify / review / new / list)."""
+    handlers = {
+        "lint": cmd_catalog_lint,
+        "verify": cmd_catalog_verify,
+        "review": cmd_review,
+        "new": _cmd_catalog_new,
+        "list": _cmd_catalog_list,
+    }
+    handler = handlers.get(args.catalog_command)
+    return handler(args) if handler else 0
+
+
+def _cmd_catalog_new(args: argparse.Namespace) -> int:
+    """Scaffold a new source, routing on ``kind`` to the per-kind scaffolder."""
+    if args.kind == "fragment":
+        args.id = args.name
+        return cmd_fragment_new(args)
+    args.slug = args.name
+    return cmd_skills_new(args) if args.kind == "skill" else cmd_agents_new(args)
+
+
+def _cmd_catalog_list(args: argparse.Namespace) -> int:
+    """List catalog sources, routing on ``kind`` to the per-kind lister."""
+    listers = {
+        "fragment": cmd_list,
+        "skill": cmd_skills_list,
+        "agent": cmd_agents_list,
+    }
+    return listers[args.kind](args)
 
 
 def cmd_policy(args: argparse.Namespace) -> int:
@@ -2119,14 +2151,10 @@ def _add_lifecycle_parsers(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _add_agents_parsers(subparsers: argparse._SubParsersAction) -> None:
-    subparsers.add_parser("agents-list", help="List agents in the core and overlay sources")
     subparsers.add_parser(
         "agents-build", help="Project agents from .basicly/core/agents into .claude/agents"
     )
     subparsers.add_parser("agents-check", help="Check projected agents are up to date")
-    agents_new_parser = subparsers.add_parser("agents-new", help="Scaffold a new agent.yaml source")
-    agents_new_parser.add_argument("slug", help="Agent slug (directory + name)")
-    agents_new_parser.add_argument("--description", help="One-line purpose")
 
 
 def _add_skill_root_args(parser: argparse.ArgumentParser) -> None:
@@ -2140,6 +2168,57 @@ def _add_skill_root_args(parser: argparse.ArgumentParser) -> None:
         "--all-default-roots",
         action="store_true",
         help="Use .claude/skills and .agents/skills.",
+    )
+
+
+_CATALOG_KINDS = ("fragment", "skill", "agent")
+
+
+def _add_catalog_parser(subparsers: argparse._SubParsersAction) -> None:
+    catalog_parser = subparsers.add_parser(
+        "catalog", help="Author and inspect the catalog sources (lint/verify/review/new/list)"
+    )
+    catalog_sub = catalog_parser.add_subparsers(dest="catalog_command", required=True)
+
+    catalog_sub.add_parser(
+        "lint",
+        help="Validate catalog YAML sources (schema, no .md sources, single extension)",
+    )
+    catalog_sub.add_parser(
+        "verify",
+        help="Verify catalog content (lint + duplicate/contradiction/ambiguity/scope checks)",
+    )
+    c_review = catalog_sub.add_parser(
+        "review",
+        help="Advisory agent-assisted semantic review of the rendered files (never blocks)",
+    )
+    c_review.add_argument(
+        "--runner", help="Runner name or 'auto' (default: the configured [runner].default)"
+    )
+    c_review.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the assembled review prompt without invoking any agent",
+    )
+
+    c_new = catalog_sub.add_parser("new", help="Scaffold a new fragment/skill/agent source")
+    c_new.add_argument("kind", choices=_CATALOG_KINDS, help="Source kind to scaffold")
+    c_new.add_argument("name", help="Source name (fragment id, or skill/agent slug)")
+    c_new.add_argument(
+        "--category",
+        default="project",
+        choices=sorted(CATEGORIES),
+        help="Fragment category (only used when kind is 'fragment')",
+    )
+    c_new.add_argument("--description", help="One-line description")
+
+    c_list = catalog_sub.add_parser("list", help="List catalog sources of the given kind")
+    c_list.add_argument(
+        "kind",
+        nargs="?",
+        default="fragment",
+        choices=_CATALOG_KINDS,
+        help="Source kind to list (default: fragment)",
     )
 
 
@@ -2323,10 +2402,10 @@ command groups:
     agents-build / agents-check
                        project and verify the other catalog kinds
 
-  contributor (author the catalog in the basicly repo itself):
-    list, skills-list, agents-list           inspect the catalog
-    skills-new, agents-new, fragment-new     scaffold a new source
-    catalog-lint, catalog-verify, review     deterministic and semantic gates
+  contributor (author the catalog in the basicly repo itself, under `catalog`):
+    catalog list [fragment|skill|agent]      inspect the catalog
+    catalog new <fragment|skill|agent> NAME  scaffold a new source
+    catalog lint / verify / review           deterministic and semantic gates
 
   harness (agent-facing development loop, either repo):
     worktree, verify, policy, decompose, loop, runner
@@ -2380,8 +2459,6 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"basicly {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    subparsers.add_parser("list", help="List active fragments")
-
     _add_lifecycle_parsers(subparsers)
 
     build_parser = subparsers.add_parser("build", help="Build generated files")
@@ -2395,8 +2472,6 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("check", help="Check generated files are up to date")
 
     _add_status_parser(subparsers)
-
-    subparsers.add_parser("skills-list", help="List skills in .basicly/core/skills")
 
     _add_usage_parser(subparsers)
 
@@ -2412,20 +2487,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_skill_root_args(skills_check_parser)
 
-    skills_new_parser = subparsers.add_parser("skills-new", help="Scaffold a new skill.yaml source")
-    skills_new_parser.add_argument("slug", help="Skill slug (directory + name)")
-    skills_new_parser.add_argument("--description", help="One-line trigger description")
-
     _add_agents_parsers(subparsers)
-
-    fragment_new_parser = subparsers.add_parser(
-        "fragment-new", help="Scaffold a new <id>.fragment.yaml source"
-    )
-    fragment_new_parser.add_argument("id", help="Fragment id")
-    fragment_new_parser.add_argument(
-        "--category", default="project", choices=sorted(CATEGORIES), help="Fragment category"
-    )
-    fragment_new_parser.add_argument("--description", help="One-line description")
 
     hooks_build_parser = subparsers.add_parser(
         "hooks-build", help="Project git hooks into .pre-commit-config.yaml"
@@ -2437,29 +2499,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     subparsers.add_parser("hooks-check", help="Check projected hooks are up to date")
 
-    subparsers.add_parser(
-        "catalog-lint",
-        help="Validate catalog YAML sources (schema, no .md sources, single extension)",
-    )
-
-    subparsers.add_parser(
-        "catalog-verify",
-        help="Verify catalog content (lint + duplicate/contradiction/ambiguity/scope checks)",
-    )
-
-    review_parser = subparsers.add_parser(
-        "review",
-        help="Advisory agent-assisted semantic review of the rendered files (never blocks)",
-    )
-    review_parser.add_argument(
-        "--runner", help="Runner name or 'auto' (default: the configured [runner].default)"
-    )
-    review_parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Print the assembled review prompt without invoking any agent",
-    )
-
+    _add_catalog_parser(subparsers)
     _add_worktree_parser(subparsers)
     _add_verify_parser(subparsers)
     _add_policy_parser(subparsers)
@@ -2475,26 +2515,18 @@ def main(argv: list[str] | None = None) -> int:
     _tolerate_narrow_consoles()
     args = _build_parser().parse_args(argv)
     handlers = {
-        "list": cmd_list,
         "install": cmd_install,
         "uninstall": cmd_uninstall,
         "build": cmd_build,
         "check": cmd_check,
         "status": cmd_status,
-        "skills-list": cmd_skills_list,
         "skills-build": cmd_skills_build,
         "skills-check": cmd_skills_check,
-        "skills-new": cmd_skills_new,
-        "agents-list": cmd_agents_list,
         "agents-build": cmd_agents_build,
         "agents-check": cmd_agents_check,
-        "agents-new": cmd_agents_new,
-        "fragment-new": cmd_fragment_new,
         "hooks-build": cmd_hooks_build,
         "hooks-check": cmd_hooks_check,
-        "catalog-lint": cmd_catalog_lint,
-        "catalog-verify": cmd_catalog_verify,
-        "review": cmd_review,
+        "catalog": cmd_catalog,
         "worktree": cmd_worktree,
         "verify": cmd_verify,
         "policy": cmd_policy,
