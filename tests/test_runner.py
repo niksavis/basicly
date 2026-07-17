@@ -122,6 +122,7 @@ def test_run_dry_run_returns_argv_without_executing(monkeypatch: pytest.MonkeyPa
     result = runner.run(spec, "hello", Path("/tmp"), dry_run=True)
     assert result.executed is False
     assert result.command == ("claude", "-p", "hello")
+    assert result.duration_s is None  # nothing ran, so no wall-clock
 
 
 def test_run_handoff_never_executes(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -135,6 +136,7 @@ def test_run_handoff_never_executes(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.handoff is True
     assert result.executed is False
     assert result.command == ()
+    assert result.duration_s is None  # nothing ran, so no wall-clock
 
 
 def test_run_executes_and_captures(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -162,6 +164,7 @@ def test_run_executes_and_captures(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.executed is True
     assert result.returncode == 0
     assert result.stdout == "done"
+    assert isinstance(result.duration_s, float) and result.duration_s >= 0
 
 
 def test_run_stdin_injection_passes_prompt_on_stdin(monkeypatch: pytest.MonkeyPatch) -> None:

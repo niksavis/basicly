@@ -1,0 +1,135 @@
+"""Runner run-record: the per-dispatch outcome, keyed by bead id (basicly-z6dh).
+
+The runner is the only place basicly holds who ran a node (agent), on what
+model, for how long, and with what outcome; today the loop keeps only the exit
+code and discards the rest (``runner.run`` -> ``loop._dispatch_runner``). This
+module persists a structured, metadata-only record per dispatched run into the
+self-ignored ``.basicly/usage/`` directory, using the same atomic
+tmp-write-then-replace pattern as the ``tool-usage`` telemetry.
+
+It is the correlation foundation the spike (basicly-zv48, Dimension 3) calls the
+keystone: agent attribution (basicly-140a), model provenance (basicly-45ld), the
+cross-repo fleet rollup (basicly-h0f0), and health/drift scoring (basicly-y886)
+all consume this one record.
+
+Redaction (coordinates with basicly-3p2i): only metadata is persisted — never
+the prompt body and never the captured stdout/stderr. The command is stored with
+the prompt argument elided (:data:`REDACTED_PROMPT`), so a run-record can never
+carry a prompt or a secret embedded in one. Records accumulate as a list per
+bead id, so a re-dispatched (reworked) node keeps its run history.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+
+USAGE_DIR = Path(".basicly/usage")
+RUN_RECORDS_FILE = USAGE_DIR / "run-records.json"
+
+# Substituted for the prompt argument in a persisted command, so a run-record is
+# metadata-only and can never carry the prompt (or a secret embedded in it).
+REDACTED_PROMPT = "<prompt-redacted>"
+
+# Outcome labels for a dispatched run.
+EXECUTED = "executed"  # ran to completion with exit 0
+FAILED = "failed"  # ran to completion with a non-zero exit
+HANDOFF = "handoff"  # no CLI invocation — handed to the driving agent/human
+
+
+@dataclass(frozen=True)
+class RunRecord:
+    """One dispatched run's metadata, stored on disk under the bead it ran."""
+
+    agent: str
+    outcome: str
+    returncode: int | None
+    duration_s: float | None
+    command: tuple[str, ...]  # redacted: the prompt argument is elided
+    timestamp: str
+    # Reserved for follow-on beads; present but null until they land:
+    # model provenance (basicly-45ld), token/cost ingestion (a token follow-on).
+    model: str | None = None
+    tokens: int | None = None
+    cost: float | None = None
+
+
+def outcome_of(*, handoff: bool, returncode: int | None) -> str:
+    """Label a dispatch: handoff, or executed/failed by its exit code."""
+    if handoff:
+        return HANDOFF
+    return EXECUTED if returncode == 0 else FAILED
+
+
+def build_record(
+    *,
+    agent: str,
+    handoff: bool,
+    returncode: int | None,
+    duration_s: float | None,
+    command: tuple[str, ...],
+) -> RunRecord:
+    """Assemble a :class:`RunRecord`, deriving the outcome and stamping the time.
+
+    *command* must already be redacted by the caller (the prompt elided) — this
+    module never sees the raw prompt. Model and token/cost stay null here; the
+    beads that source them (basicly-45ld and the token follow-on) will plumb them
+    through :class:`RunRecord` directly when they land.
+    """
+    return RunRecord(
+        agent=agent,
+        outcome=outcome_of(handoff=handoff, returncode=returncode),
+        returncode=returncode,
+        duration_s=duration_s,
+        command=tuple(command),
+        timestamp=datetime.now(UTC).isoformat(),
+    )
+
+
+def record(repo_root: Path, bead_id: str, run_record: RunRecord) -> None:
+    """Append *run_record* under *bead_id*, writing the file atomically.
+
+    Creates the self-ignored ``.basicly/usage/`` directory on first write. A
+    corrupt, non-dict, or wrong-shaped file restarts that bead's history empty
+    rather than raising — the record history is telemetry, not something that
+    should ever fail a loop landing. The tmp file is per-process so concurrent
+    dispatches writing the shared base file cannot corrupt each other's rename
+    (a lost update under a true write-write race is acceptable for telemetry).
+    """
+    usage_dir = repo_root / USAGE_DIR
+    usage_dir.mkdir(parents=True, exist_ok=True)
+    gitignore = usage_dir / ".gitignore"
+    if not gitignore.exists():
+        gitignore.write_text("*\n", encoding="utf-8")
+
+    records_file = repo_root / RUN_RECORDS_FILE
+    data = _read(records_file)
+    history = data.get(bead_id)
+    if not isinstance(history, list):  # missing, or an externally-tampered value
+        history = []
+        data[bead_id] = history
+    history.append(asdict(run_record))
+
+    tmp = records_file.with_suffix(f".{os.getpid()}.json.tmp")
+    tmp.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    tmp.replace(records_file)
+
+
+def load_run_records(repo_root: Path) -> dict[str, list[dict]] | None:
+    """The raw record map keyed by bead id, or None when no file exists yet."""
+    records_file = repo_root / RUN_RECORDS_FILE
+    if not records_file.exists():
+        return None
+    return _read(records_file)
+
+
+def _read(records_file: Path) -> dict[str, list]:
+    """The record map on disk; an empty map for a missing/corrupt/non-dict file."""
+    try:
+        data = json.loads(records_file.read_text(encoding="utf-8"))
+    except OSError, json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}

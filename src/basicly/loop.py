@@ -31,11 +31,12 @@ decomposition and build in their own worktree.
 
 from __future__ import annotations
 
+import contextlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import classify, decompose, loop_state, merge, policy, runner, verify, worktree
+from . import classify, decompose, loop_state, merge, policy, run_record, runner, verify, worktree
 from .br import run_br as _run_br
 from .config import PolicyConfig, load_policy_config, load_runner_config, load_worktree_config
 from .decompose import ChildSpec
@@ -210,6 +211,7 @@ def _dispatch_runner(ctx: _Ctx, name: str, cwd: Path) -> AdvanceResult:
     config = load_runner_config(ctx.repo_root)
     spec = runner.select_runner(config.specs, config.default)
     result = runner.run(spec, _dispatch_prompt(ctx.issue_id), cwd)
+    _record_run(ctx, spec, result)
     if result.handoff:
         return _blocked(ctx, f"worktree {name!r} provisioned; awaiting the agent's work")
     if result.returncode != 0:
@@ -223,6 +225,28 @@ def _dispatch_runner(ctx: _Ctx, name: str, cwd: Path) -> AdvanceResult:
     return _blocked(
         ctx, f"runner {spec.name!r} finished in worktree {name!r}; advance again to land it"
     )
+
+
+def _record_run(ctx: _Ctx, spec: runner.RunnerSpec, result: runner.RunResult) -> None:
+    """Persist a metadata-only run-record for this dispatch, keyed by the bead.
+
+    The command is redacted here (the prompt argument elided) before it is
+    handed to the record, so no prompt or secret is ever persisted. Best-effort:
+    a write failure must not fail the loop landing (same stance as the
+    ``tool-usage`` telemetry hook), so an OS error is tolerated, not fatal.
+    """
+    command: tuple[str, ...] = ()
+    if not result.handoff:
+        command = tuple(runner.format_command(spec, run_record.REDACTED_PROMPT))
+    entry = run_record.build_record(
+        agent=spec.name,
+        handoff=result.handoff,
+        returncode=result.returncode,
+        duration_s=result.duration_s,
+        command=command,
+    )
+    with contextlib.suppress(OSError):
+        run_record.record(ctx.repo_root, ctx.issue_id, entry)
 
 
 def _dispatch_prompt(issue_id: str) -> str:

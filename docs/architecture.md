@@ -768,7 +768,13 @@ command an adapter would execute so it can be verified before any live invocatio
 and dispatches the selected runner headless inside it with an agent-neutral prompt (bead id +
 `AGENTS.md` + `br show`; merging/pushing/closing stays with the loop), then blocks with the
 run outcome; the `manual` handoff runner keeps the block-and-resume contract untouched, and a
-failed run blocks with the runner name and exit code.
+failed run blocks with the runner name and exit code. Each dispatch also writes a
+metadata-only **run-record** keyed by bead id into the self-ignored `.basicly/usage/`
+(`run_record.py`, same atomic tmp-write pattern as `tool-usage`): wall-clock duration, exit
+outcome (executed/handoff/failed), and agent, with model and token/cost fields reserved for
+follow-on beads. Only metadata is persisted — the command is stored with the prompt argument
+elided, never the prompt body or captured output. This is the correlation foundation for
+agent attribution, model provenance, and the cross-repo fleet rollup.
 
 **12.9 Ship.** Ship is parameterized by the entry branch recorded at Intake: default → merge
 to `main` + push `main` (no feature branches on the remote); if the entry branch is a feature
