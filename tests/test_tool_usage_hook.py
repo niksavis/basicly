@@ -126,3 +126,31 @@ def test_quoted_body_words_are_not_counted(tmp_path: Path) -> None:
     assert _run(payload, tmp_path).returncode == 0
     counts = {tool: entry["count"] for tool, entry in _stats(tmp_path).items()}
     assert counts == {"git": 1, "python3": 1, "gh": 1}
+
+
+def test_backslash_and_dash_heredoc_tags_are_stripped(tmp_path: Path) -> None:
+    r"""A backslash-escaped (`<<\TAG`) or tab-stripped (`<<-TAG`) heredoc is stripped.
+
+    The tag forms bypassed the opener regex, so the body's python keywords and the
+    terminator line leaked as tool names (basicly-v7eu).
+    """
+    command = "python3 - <<\\PY\ndef f(): return 1\nimport os\nassert f()\nPY\nrg foo"
+    payload = {"tool_name": "Bash", "tool_input": {"command": command}}
+    assert _run(payload, tmp_path).returncode == 0
+    counts = {tool: entry["count"] for tool, entry in _stats(tmp_path).items()}
+    assert counts == {"python3": 1, "rg": 1}
+
+
+def test_flag_or_builtin_led_segment_names_no_tool(tmp_path: Path) -> None:
+    """A pipeline segment whose head is a bare flag records nothing for it (basicly-v7eu)."""
+    payload = {"tool_name": "Bash", "tool_input": {"command": "grep x file | -d 3"}}
+    assert _run(payload, tmp_path).returncode == 0
+    assert {tool: entry["count"] for tool, entry in _stats(tmp_path).items()} == {"grep": 1}
+
+
+def test_python_c_and_m_inline_snippets_do_not_leak(tmp_path: Path) -> None:
+    """`python -c`/`-m` inline code is never parsed into tool names (basicly-v7eu)."""
+    command = 'python3 -c "import os; x=1; print(x)"\npython3 -m timeit "x+1"'
+    payload = {"tool_name": "Bash", "tool_input": {"command": command}}
+    assert _run(payload, tmp_path).returncode == 0
+    assert {tool: entry["count"] for tool, entry in _stats(tmp_path).items()} == {"python3": 2}
