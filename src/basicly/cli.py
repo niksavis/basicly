@@ -2370,9 +2370,8 @@ def _tolerate_narrow_consoles() -> None:
             reconfigure(errors="replace")
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Parse arguments and dispatch to the requested command."""
-    _tolerate_narrow_consoles()
+def _build_parser() -> argparse.ArgumentParser:
+    """Construct the full argument parser (also introspected by the docs tripwire)."""
     parser = argparse.ArgumentParser(
         prog="basicly",
         epilog=_HELP_EPILOG,
@@ -2468,7 +2467,13 @@ def main(argv: list[str] | None = None) -> int:
     _add_loop_parser(subparsers)
     _add_runner_parser(subparsers)
 
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Parse arguments and dispatch to the requested command."""
+    _tolerate_narrow_consoles()
+    args = _build_parser().parse_args(argv)
     handlers = {
         "list": cmd_list,
         "install": cmd_install,
