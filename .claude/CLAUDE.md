@@ -150,6 +150,7 @@ uv run basicly hooks-check
 ## Quirks
 
 - Non-interactive WSL shells skip the profile that loads version managers (nvm), so `npx`/`node` can resolve to a Windows install and break node-based hooks (markdownlint failed exactly this way) - put the repo's node version on PATH before committing or pushing from scripts and background jobs.
+- Test subprocess helpers must inherit `os.environ` (keep `PATH`), not pass a bare env dict - missing `PATH` still finds `git`/tools on POSIX but not on Windows, so a CLI that shells out fails only on Windows CI (`[WinError 2]`).
 
 ## Non Interactive Shell
 
