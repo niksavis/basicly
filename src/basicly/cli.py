@@ -30,6 +30,7 @@ from . import (
     policy,
     projection,
     review,
+    rubrics,
     runner,
     state,
     ui,
@@ -1743,6 +1744,72 @@ def cmd_review(args: argparse.Namespace) -> int:
     return 0
 
 
+def _issue_work_type(repo_root: Path, issue_id: str) -> str | None:
+    """The br work type of *issue_id*, or None when it cannot be read."""
+    proc = br.try_run_br(repo_root, ["show", issue_id, "--json"])
+    if proc is None or proc.returncode != 0:
+        return None
+    try:
+        data = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return None
+    record = data[0] if isinstance(data, list) and data else data
+    if not isinstance(record, dict):
+        return None
+    work_type = record.get("issue_type") or record.get("type")
+    return work_type if isinstance(work_type, str) and work_type else None
+
+
+def _cmd_rubric_eval(args: argparse.Namespace) -> int:
+    """Evaluate the work-type rubric for an issue and report the advisory gate."""
+    repo_root = _repo_root()
+    work_type = _issue_work_type(repo_root, args.issue)
+    if work_type is None:
+        print(f"could not read the work type for {args.issue!r}", file=sys.stderr)
+        return 1
+    selected = rubrics.select_rubrics(rubrics.load_rubrics(), work_type)
+    if not selected:
+        ui.say(f"No rubric applies to work type {work_type!r}; nothing to evaluate.", style="muted")
+        return 0
+
+    if args.dry_run:
+        for rubric in selected:
+            judged = [c for c in rubric.checks if c.kind == rubrics.JUDGED]
+            if judged:
+                print(rubrics.build_judge_prompt(args.issue, rubric, judged))
+        return 0
+
+    verdicts: list[rubrics.CheckVerdict] = []
+    for rubric in selected:
+        rubric_verdicts = rubrics.evaluate(args.issue, rubric, repo_root, args.runner)
+        verdicts.extend(rubric_verdicts)
+        for verdict in rubric_verdicts:
+            print(
+                f"  [{rubric.id}] {verdict.check_id}: {verdict.answer} "
+                f"({verdict.kind}) — {verdict.evidence}"
+            )
+
+    guard = verify.linked_worktree_guard(repo_root)
+    if guard:
+        print(f"rubric gate not recorded: {guard}", file=sys.stderr)
+        return 0
+    ok, message = rubrics.report_gate(repo_root, args.issue, verdicts)
+    (ui.say if ok else ui.fail)(message)
+    ui.say(
+        "[rubric] advisory gate reported (non-blocking unless 'rubric' is in "
+        "[policy] required_gates).",
+        style="muted",
+    )
+    return 0
+
+
+def cmd_rubric(args: argparse.Namespace) -> int:
+    """Dispatch the ``rubric`` subcommands (eval)."""
+    handlers = {"eval": _cmd_rubric_eval}
+    handler = handlers.get(args.rubric_command)
+    return handler(args) if handler else 0
+
+
 def cmd_catalog(args: argparse.Namespace) -> int:
     """Dispatch the ``catalog`` subcommands (lint / verify / review / new / list)."""
     handlers = {
@@ -2371,6 +2438,23 @@ def _add_policy_parser(subparsers: argparse._SubParsersAction) -> None:
     p_rw.add_argument("--record", action="store_true", help="Record a new rework attempt")
 
 
+def _add_rubric_parser(subparsers: argparse._SubParsersAction) -> None:
+    rubric_parser = subparsers.add_parser(
+        "rubric", help="Evaluate work-type behavioral rubrics (advisory gate)"
+    )
+    rubric_sub = rubric_parser.add_subparsers(dest="rubric_command", required=True)
+    r_eval = rubric_sub.add_parser(
+        "eval", help="Evaluate the issue's work-type rubric and report the advisory rubric gate"
+    )
+    r_eval.add_argument("issue")
+    r_eval.add_argument(
+        "--runner", help="Runner name or 'auto' for judged checks (default: [runner].default)"
+    )
+    r_eval.add_argument(
+        "--dry-run", action="store_true", help="Print the judged-check prompt without dispatching"
+    )
+
+
 def _add_loop_input_args(parser: argparse.ArgumentParser) -> None:
     """Add the shared agent-input flags that map onto a ``loop.Inputs``."""
     parser.add_argument(
@@ -2558,6 +2642,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_decompose_parser(subparsers)
     _add_loop_parser(subparsers)
     _add_runner_parser(subparsers)
+    _add_rubric_parser(subparsers)
 
     return parser
 
@@ -2587,6 +2672,7 @@ def main(argv: list[str] | None = None) -> int:
         "decompose": cmd_decompose,
         "loop": cmd_loop,
         "runner": cmd_runner,
+        "rubric": cmd_rubric,
         "usage": cmd_usage,
     }
 

@@ -1,17 +1,19 @@
-"""Tests for the behavioral-rubric catalog sources (basicly-0122).
+"""Tests for the behavioral-rubric framework (basicly-0122).
 
-Covers the source model + loader + work-type selection, and that the shipped
-sample rubrics load. The evaluation + gate wiring is basicly-0122.2.
+Covers the source model + loader + work-type selection (basicly-0122.1) and the
+evaluation + advisory-gate layer (basicly-0122.2): deterministic checks via the
+verify runner, judged checks via the agent-agnostic runner, and gate status.
 """
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
 
-from basicly import rubrics
-from basicly.rubrics import DETERMINISTIC, JUDGED
+from basicly import rubrics, runner
+from basicly.rubrics import DETERMINISTIC, JUDGED, NO, UNKNOWN, YES, Rubric, RubricCheck
 
 VALID = """\
 id: sample
@@ -112,3 +114,83 @@ def test_bundled_sample_rubrics_load() -> None:
     assert "feature-behaviors" in by_id
     kinds = {c.kind for c in by_id["bug-behaviors"].checks}
     assert kinds == {JUDGED, DETERMINISTIC}  # bug rubric exercises both paths
+
+
+# --- evaluation (basicly-0122.2) --------------------------------------------
+
+
+def _det(command: str) -> RubricCheck:
+    return RubricCheck(id="det", question="q", kind=DETERMINISTIC, command=command)
+
+
+def _judged_rubric() -> Rubric:
+    return Rubric(
+        id="r",
+        description="d",
+        applies_to=("bug",),
+        checks=(
+            RubricCheck(id="q1", question="Q1?", kind=JUDGED),
+            RubricCheck(id="q2", question="Q2?", kind=JUDGED),
+        ),
+    )
+
+
+def test_evaluate_deterministic_maps_exit_code(tmp_path: Path) -> None:
+    """A deterministic check is yes on exit 0, no on a non-zero exit."""
+    ok = rubrics.evaluate_deterministic(_det(f"{sys.executable} -c pass"), tmp_path)
+    assert ok.answer == YES and ok.kind == DETERMINISTIC
+    fail_cmd = _det(f'{sys.executable} -c "import sys;sys.exit(1)"')
+    assert rubrics.evaluate_deterministic(fail_cmd, tmp_path).answer == NO
+
+
+def test_parse_judged_reads_yes_no_and_defaults_unknown() -> None:
+    """Parsed answers map to verdicts; an unanswered check is UNKNOWN."""
+    checks = _judged_rubric().checks
+    verdicts = rubrics.parse_judged("q1: yes - has a test\nq2: maybe\n", list(checks))
+    by_id = {v.check_id: v for v in verdicts}
+    assert by_id["q1"].answer == YES and by_id["q1"].evidence == "has a test"
+    assert by_id["q2"].answer == UNKNOWN  # "maybe" is not yes/no
+
+
+def test_evaluate_judged_parses_runner_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Judged checks dispatch one runner call and parse its structured answers."""
+    monkeypatch.setattr(
+        runner,
+        "run",
+        lambda *_a, **_k: runner.RunResult(
+            "x", (), executed=True, returncode=0, stdout="q1: yes - ok\nq2: no - missing\n"
+        ),
+    )
+    verdicts = rubrics.evaluate("i", _judged_rubric(), tmp_path)
+    assert {v.check_id: v.answer for v in verdicts} == {"q1": YES, "q2": NO}
+
+
+def test_evaluate_judged_handoff_is_unknown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When the runner hands off (no agent CLI), judged checks resolve to UNKNOWN."""
+    monkeypatch.setattr(
+        runner,
+        "run",
+        lambda *_a, **_k: runner.RunResult("manual", (), executed=False, handoff=True),
+    )
+    verdicts = rubrics.evaluate("i", _judged_rubric(), tmp_path)
+    assert all(v.answer == UNKNOWN for v in verdicts)
+
+
+def test_gate_status_is_deterministic_first() -> None:
+    """Only a deterministic 'no' fails the gate; a judged 'no' stays advisory."""
+    det_no = [rubrics.CheckVerdict("d", DETERMINISTIC, NO)]
+    judged_no = [rubrics.CheckVerdict("j", JUDGED, NO)]
+    assert rubrics.gate_status(det_no) == "fail"
+    assert rubrics.gate_status(judged_no) == "pass"
+    assert rubrics.gate_status([rubrics.CheckVerdict("d", DETERMINISTIC, YES)]) == "pass"
+
+
+def test_build_judge_prompt_lists_checks_and_format() -> None:
+    """The judge prompt names each check id and states the required answer format."""
+    prompt = rubrics.build_judge_prompt("i", _judged_rubric(), list(_judged_rubric().checks))
+    assert "q1: Q1?" in prompt and "q2: Q2?" in prompt
+    assert "yes|no" in prompt
