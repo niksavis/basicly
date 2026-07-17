@@ -132,6 +132,16 @@ jobs:
 
           cp release-section.md release-notes.md
 
+          # Append a copy-paste install command pinned to this tag, so every
+          # release page shows how to install exactly this version (basicly-vwlm).
+          repo_url="https://github.com/${GITHUB_REPOSITORY}"
+          {
+            printf '\n## Install\n\n'
+            printf '```sh\n'
+            printf 'uvx --from git+%s@%s basicly install\n' "${repo_url}" "${tag_name}"
+            printf '```\n'
+          } >> release-notes.md
+
       - uses: astral-sh/setup-uv@v5
 
       - name: Build distribution artifacts
