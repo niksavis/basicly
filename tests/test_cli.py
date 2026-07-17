@@ -1141,3 +1141,32 @@ def test_cli_status_never_writes(tmp_path: Path) -> None:
     assert run_basicly_consumer(consumer, "status").returncode == 0
     assert run_basicly_consumer(consumer, "status", "--json").returncode == 0
     assert snapshot() == before
+
+
+def test_cli_hooks_check_warns_when_uv_is_missing(
+    work_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A committer machine without uv gets a diagnosis at check time, not commit time."""
+    monkeypatch.chdir(work_repo)
+    real_which = shutil.which
+    monkeypatch.setattr(
+        cli.shutil,
+        "which",
+        lambda name, *args, **kwargs: None if name == "uv" else real_which(name, *args, **kwargs),
+    )
+    assert cli.main(["hooks-check"]) == 0
+    err = capsys.readouterr().err
+    assert "uv is not on PATH" in err and "every committer" in err
+
+
+def test_cli_hooks_check_stays_quiet_when_uv_is_present(
+    work_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """With uv installed (the test environment), the diagnostic does not fire."""
+    monkeypatch.chdir(work_repo)
+    assert cli.main(["hooks-check"]) == 0
+    assert "uv is not on PATH" not in capsys.readouterr().err

@@ -1308,6 +1308,18 @@ def cmd_hooks_check(_args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
 
+    # Advisory (non-fatal): every projected hook entry runs `uv run python ...`,
+    # so a committer without uv hits an opaque failure at commit time — diagnose
+    # it here, at check time, instead.
+    if shutil.which("uv") is None:
+        print(
+            "Note: uv is not on PATH. The projected git hooks run `uv run python ...`, "
+            "so every committer to this repo needs uv (and Python 3.14+) installed — "
+            "without it, commits fail with a command-not-found error. "
+            "Install uv: https://docs.astral.sh/uv/",
+            file=sys.stderr,
+        )
+
     ui.say("Projected hooks are up to date.", style="ok")
     return 0
 
