@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -87,6 +88,9 @@ class RunResult:
     stdout: str = ""
     stderr: str = ""
     handoff: bool = False
+    # Wall-clock seconds around the subprocess; None when nothing executed
+    # (a handoff or a dry run). Feeds the loop's run-record (basicly-z6dh).
+    duration_s: float | None = None
 
 
 def format_command(spec: RunnerSpec, prompt: str) -> list[str]:
@@ -157,9 +161,11 @@ def run(spec: RunnerSpec, prompt: str, cwd: Path, *, dry_run: bool = False) -> R
     if dry_run:
         return RunResult(spec.name, tuple(argv), executed=False)
     stdin = prompt if spec.prompt_via == "stdin" else None
+    start = time.perf_counter()
     proc = subprocess.run(  # nosec B603
         argv, cwd=cwd, input=stdin, capture_output=True, text=True, check=False
     )
+    duration_s = time.perf_counter() - start
     return RunResult(
         spec.name,
         tuple(argv),
@@ -167,4 +173,5 @@ def run(spec: RunnerSpec, prompt: str, cwd: Path, *, dry_run: bool = False) -> R
         returncode=proc.returncode,
         stdout=proc.stdout,
         stderr=proc.stderr,
+        duration_s=duration_s,
     )

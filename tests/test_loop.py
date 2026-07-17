@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import classify, decompose, loop, merge, policy, runner, verify, worktree
+from basicly import classify, decompose, loop, merge, policy, run_record, runner, verify, worktree
 from basicly.config import PolicyConfig, RunnerConfig, WorktreeConfig
 from basicly.loop_state import NodeState, WorktreeBinding
 from basicly.policy import DoRResult, GateStatus
@@ -187,6 +187,72 @@ def test_classify_leaf_dispatches_headless_runner(
     assert "i" in calls["prompt"] and "AGENTS.md" in calls["prompt"]
     assert "Do not merge" in calls["prompt"]
     assert result.blocked and "runner 'claude' finished" in result.detail
+
+
+def test_dispatch_writes_a_run_record_keyed_by_bead(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Every dispatch persists a metadata-only run-record under the bead id."""
+    _ready_leaf(at, monkeypatch)
+    _pin_runner(monkeypatch, "claude")
+    monkeypatch.setattr(
+        runner,
+        "run",
+        lambda spec, *_a, **_k: runner.RunResult(
+            spec.name, tuple(spec.command), executed=True, returncode=0, duration_s=0.5
+        ),
+    )
+    _advance(tmp_path)
+
+    records = run_record.load_run_records(tmp_path)
+    assert records is not None
+    entry = records["i"][0]
+    assert entry["agent"] == "claude"
+    assert entry["outcome"] == "executed"
+    assert entry["duration_s"] == 0.5
+    assert entry["model"] is None  # reserved until basicly-45ld
+    # Redaction: the persisted command carries the placeholder, never the prompt.
+    assert run_record.REDACTED_PROMPT in entry["command"]
+    assert not any("AGENTS.md" in part for part in entry["command"])
+
+
+def test_dispatch_record_redacts_a_stdin_runner(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A stdin runner injects no prompt into argv, so none can reach the record."""
+    _ready_leaf(at, monkeypatch)
+    stdin_spec = runner.RunnerSpec("x", runner.HEADLESS, ("x", "--headless"), prompt_via="stdin")
+    monkeypatch.setattr(
+        loop, "load_runner_config", lambda *_a: RunnerConfig(specs=(stdin_spec,), default="x")
+    )
+    monkeypatch.setattr(
+        runner,
+        "run",
+        lambda spec, *_a, **_k: runner.RunResult(
+            spec.name, tuple(spec.command), executed=True, returncode=0, duration_s=0.1
+        ),
+    )
+    _advance(tmp_path)
+
+    records = run_record.load_run_records(tmp_path)
+    assert records is not None
+    assert records["i"][0]["command"] == ["x", "--headless"]  # bare argv: nothing to redact
+
+
+def test_dispatch_record_captures_a_handoff(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A handoff dispatch still records — with an empty command and handoff outcome."""
+    _ready_leaf(at, monkeypatch)
+    _pin_runner(monkeypatch, "manual")
+    _advance(tmp_path)
+
+    records = run_record.load_run_records(tmp_path)
+    assert records is not None
+    entry = records["i"][0]
+    assert entry["outcome"] == "handoff"
+    assert entry["command"] == []
+    assert entry["duration_s"] is None
 
 
 def test_classify_leaf_reports_failed_runner(
