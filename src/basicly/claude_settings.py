@@ -41,7 +41,8 @@ PRE_TOOL_USE_KEY = "PreToolUse"
 # Settings event per manifest stage; a spec's `stage` picks its section.
 AGENT_HOOK_EVENTS = {"pretooluse": PRE_TOOL_USE_KEY, "posttooluse": "PostToolUse"}
 # Default tool filter (the file-writing family); a spec's `matcher` overrides.
-AGENT_HOOK_MATCHER = "Edit|Write|MultiEdit|NotebookEdit"
+# `MultiEdit` is intentionally absent: Claude Code no longer ships that tool.
+AGENT_HOOK_MATCHER = "Edit|Write|NotebookEdit"
 
 
 def _load_settings(path: Path) -> dict:

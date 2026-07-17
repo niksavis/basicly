@@ -52,21 +52,12 @@ deny:
   - id: env-edit
     description: block mutating dotenv secret files via any file-writing tool
     claude:
-      # Every Claude Code file-mutation tool, so `.env` cannot be created or
-      # overwritten through a write path the Edit-only deny used to leave open.
+      # `Edit(path)` file-permission rules cover every Claude Code file-mutation
+      # tool (Edit, Write, NotebookEdit), so `.env` cannot be created or
+      # overwritten through any write path. Do not add Write(...)/NotebookEdit(...)
+      # variants: they are not matched by file permission checks and are rejected
+      # with a warning at startup.
       - "Edit(.env)"
       - "Edit(.env.*)"
       - "Edit(**/.env)"
       - "Edit(**/.env.*)"
-      - "Write(.env)"
-      - "Write(.env.*)"
-      - "Write(**/.env)"
-      - "Write(**/.env.*)"
-      - "MultiEdit(.env)"
-      - "MultiEdit(.env.*)"
-      - "MultiEdit(**/.env)"
-      - "MultiEdit(**/.env.*)"
-      - "NotebookEdit(.env)"
-      - "NotebookEdit(.env.*)"
-      - "NotebookEdit(**/.env)"
-      - "NotebookEdit(**/.env.*)"

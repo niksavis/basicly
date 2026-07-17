@@ -36,19 +36,7 @@
       "Edit(.env)",
       "Edit(.env.*)",
       "Edit(**/.env)",
-      "Edit(**/.env.*)",
-      "Write(.env)",
-      "Write(.env.*)",
-      "Write(**/.env)",
-      "Write(**/.env.*)",
-      "MultiEdit(.env)",
-      "MultiEdit(.env.*)",
-      "MultiEdit(**/.env)",
-      "MultiEdit(**/.env.*)",
-      "NotebookEdit(.env)",
-      "NotebookEdit(.env.*)",
-      "NotebookEdit(**/.env)",
-      "NotebookEdit(**/.env.*)"
+      "Edit(**/.env.*)"
     ]
   },
   "worktree": {
@@ -57,7 +45,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "matcher": "Edit|Write|NotebookEdit",
         "hooks": [
           {
             "type": "command",

@@ -168,8 +168,18 @@ def test_merge_and_mismatches_tolerate_a_tampered_file() -> None:
 # --- the shipped source keeps the .env guardrail complete (basicly-u0zg) -----
 
 
-def test_bundled_source_denies_every_env_mutation_tool() -> None:
-    """Regression: `.env` must be blocked for every file-writing tool, not just Edit."""
+def test_bundled_source_denies_env_mutation_via_edit_only() -> None:
+    """Regression: `.env` mutation is blocked by `Edit(...)` rules alone.
+
+    An `Edit(path)` deny covers every Claude Code file-mutation tool (Edit,
+    Write, NotebookEdit); Claude Code rejects `Write(...)`/`NotebookEdit(...)`
+    file rules (and the removed `MultiEdit` tool) with a startup warning, so the
+    source must carry the `Edit(...)` form and no other file-writing variant.
+    """
     patterns = set(permissions.claude_deny_patterns(permissions.load_deny_rules()))
-    for tool in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
-        assert f"{tool}(.env)" in patterns, f"{tool} leaves a .env write path open"
+    for glob in (".env", ".env.*", "**/.env", "**/.env.*"):
+        assert f"Edit({glob})" in patterns, f"Edit({glob}) leaves a .env write path open"
+    for tool in ("Write", "MultiEdit", "NotebookEdit"):
+        assert not any(p.startswith(f"{tool}(") for p in patterns), (
+            f"{tool}(...) file rules are not matched by Claude Code permission checks"
+        )
