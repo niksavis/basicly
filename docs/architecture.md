@@ -383,7 +383,7 @@ are built, as is the advisory agent-assisted semantic review (`basicly review`).
 ### Details
 
 | Check                                                                                       | Mechanism                                                                                                            |
-|---------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------|
+| ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | Required fields, known category/priority/status/target, extension-field types               | `loader._validate_fragment`, runs on every `list`/`build`/`check`                                                    |
 | Duplicate fragment `id` across core + overlay roots                                         | `loader.load_fragments_from_roots`                                                                                   |
 | `replaces` target exists / `override: true` required / no mutual user-user replaces         | `loader._validate_replacements`, runs on every `list`/`build`/`check`                                                |
@@ -459,7 +459,8 @@ inherits that failure.
 ## 8) CLI surface
 
 **Summary**: the CLI has three surfaces — lifecycle (`install`, which replaced
-the former `init`/`update` staging pair, and `uninstall`), catalog (`list`,
+the former `init`/`update` staging pair, `uninstall`, and the read-only
+`status`), catalog (`list`,
 `build`, `check`, `skills-*`, `agents-*`, `fragment-new`, `skills-new`,
 `agents-new`, `catalog-lint`, `catalog-verify`, `review`,
 `hooks-build`/`hooks-check`), and harness (`worktree`, `verify`, `policy`,
@@ -473,6 +474,7 @@ the former `init`/`update` staging pair, and `uninstall`), catalog (`list`,
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `basicly install`             | Idempotent converge: materialize the bundled core catalog, migrate/prune legacy layouts, scaffold overlay + `basicly.toml` (never overwriting existing user content), then `build` + `skills-build` (all default roots) + `agents-build` + `hooks-build` (with hook activation). The same command performs first install and every upgrade (provenance-guarded core sync, §9; `--force` overwrites kept hand-edits). Replaced the former `init`/`update` staging pair |
 | `basicly uninstall [--purge]` | Removes managed core, state, manifest-listed generated files, projected skills and agents (generated-marker files only), and the managed hook block (deleting the config + uninstalling git hooks when nothing else remains); preserves the overlay + `basicly.toml` unless `--purge`; refuses in the authoring repo                                                                                                                                                  |
+| `basicly status [--json]`     | Read-only snapshot for fleet loops and humans: installed catalog version vs running engine version, drift summary (the `check` comparison plus install-provenance drift), per-manager hook state (projection sync + git stage activation), technology selection, and overlay counts; never writes, always exits 0; `--json` emits a stable versioned schema                                                                                                           |
 
 **Catalog**:
 
@@ -491,14 +493,14 @@ the former `init`/`update` staging pair, and `uninstall`), catalog (`list`,
 
 **Harness** (§12):
 
-| Command                                     | Behavior                                                                                                                                                            |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `basicly worktree ...`                      | Sibling git-worktree lifecycle: create + provision (deps, hooks), list, cleanup (§12.5)                                                                             |
-| `basicly verify [--gate]`                   | Runs the consumer's `[[verify.checks]]` from `basicly.toml` per mode and optionally records a `br` gate (§12.3–12.4)                                                |
-| `basicly policy ...`                        | DoR, gate, rework, and checkpoint policy checks; `policy checkpoint <issue> <name> --approve` records the human checkpoints (§12.2)                                 |
-| `basicly decompose`                         | Turns a feature into child `br` issues + a computed dependency graph (§12.2)                                                                                        |
-| `basicly loop status\|advance\|run <issue>` | Drives an issue through the harness loop; a blocked step exits non-zero and names the input it needs (§12.2)                                                        |
-| `basicly runner list\|dry-run\|run`         | Agent-agnostic headless runner adapters (claude/codex/copilot + `manual` handoff); the loop build phase auto-dispatches through them (§12.8)                        |
+| Command                                     | Behavior                                                                                                                                     |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `basicly worktree ...`                      | Sibling git-worktree lifecycle: create + provision (deps, hooks), list, cleanup (§12.5)                                                      |
+| `basicly verify [--gate]`                   | Runs the consumer's `[[verify.checks]]` from `basicly.toml` per mode and optionally records a `br` gate (§12.3–12.4)                         |
+| `basicly policy ...`                        | DoR, gate, rework, and checkpoint policy checks; `policy checkpoint <issue> <name> --approve` records the human checkpoints (§12.2)          |
+| `basicly decompose`                         | Turns a feature into child `br` issues + a computed dependency graph (§12.2)                                                                 |
+| `basicly loop status\|advance\|run <issue>` | Drives an issue through the harness loop; a blocked step exits non-zero and names the input it needs (§12.2)                                 |
+| `basicly runner list\|dry-run\|run`         | Agent-agnostic headless runner adapters (claude/codex/copilot + `manual` handoff); the loop build phase auto-dispatches through them (§12.8) |
 
 The formerly planned `basicly conflicts`/`basicly overrides` reporting views are
 **[Deferred]** — cut from scope; `catalog-verify` output covers the reporting need.
