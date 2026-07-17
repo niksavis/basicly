@@ -736,7 +736,10 @@ concurrently in their worktrees but land one at a time through a **merge queue**
 when it cannot, it emits a fixed serial order. A **conflict-resolver** (agent + scripts +
 skills) handles residual conflicts under the same n=2→human rule. Tracker state
 (`.beads/issues.jsonl`) is reconciled with **`br sync --merge`** (a 3-way merge; `br` has no
-git merge-driver, unlike `bd`), never by hand-editing JSONL conflict markers.
+git merge-driver, unlike `bd`), never by hand-editing JSONL conflict markers. Git refuses to
+update a branch checked out in another worktree, so the merge/ship transitions must run from
+the **base checkout**; `advance` refuses the `build` and `ship` phases when invoked from a
+linked worktree (git-dir ≠ git-common-dir), blocking cleanly rather than stranding a commit.
 
 **12.6.1 Zero-touch tracker state.** Every loop-provisioned worktree shares the base
 checkout's tracker via `br`'s git-ignored `.beads/redirect` file (written at provisioning;

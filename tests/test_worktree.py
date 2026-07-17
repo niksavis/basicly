@@ -254,6 +254,40 @@ def test_cleanup_removes_worktree_branch_and_metadata(
     assert worktree.load_session("gone", git_repo) is None
 
 
+def test_is_linked_checkout_distinguishes_worktree_from_base(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A linked worktree reports True; the primary checkout and a non-repo False."""
+    monkeypatch.chdir(git_repo)
+    session = worktree.create("linked")
+
+    assert worktree.is_linked_checkout(session.path) is True
+    assert worktree.is_linked_checkout(git_repo) is False
+    assert worktree.is_linked_checkout(git_repo.parent) is False  # not a repo
+
+
+def test_cleanup_drops_record_when_branch_already_gone(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A hand-recovered worktree (dir + branch already removed) leaves no orphan record.
+
+    Regression (basicly-9niw): cleanup kept the session ``.json`` whenever the
+    branch delete failed — including when the branch was already gone — and the
+    stale record kept counting toward the concurrency cap.
+    """
+    monkeypatch.chdir(git_repo)
+    session = worktree.create("recovered")
+    # Simulate the manual recovery: remove the worktree and branch out-of-band.
+    shutil.rmtree(session.path)
+    _git(git_repo, "worktree", "prune")
+    _git(git_repo, "branch", "-D", "harness/recovered")
+    assert worktree.load_session("recovered", git_repo) is not None  # orphan present
+
+    worktree.cleanup("recovered", force=True)
+
+    assert worktree.load_session("recovered", git_repo) is None
+
+
 def test_cleanup_reinstalls_base_checkout_hooks(
     git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

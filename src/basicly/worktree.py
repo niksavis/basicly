@@ -86,6 +86,24 @@ def current_branch(cwd: Path | str | None = None) -> str:
     return git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=cwd).stdout.strip()
 
 
+def is_linked_checkout(cwd: Path | str | None = None) -> bool:
+    """True when *cwd* is inside a linked worktree rather than the primary checkout.
+
+    A linked worktree has its own per-worktree git dir under
+    ``<common>/worktrees/<name>``; the primary checkout's git dir *is* the common
+    dir. Comparing the two is git's own definition of "am I in a linked worktree",
+    which the loop uses to refuse merge/ship transitions that must run from base.
+    Returns ``False`` when *cwd* is not a git repository (nothing to refuse).
+    """
+    proc = git(["rev-parse", "--git-dir"], cwd=cwd, check=False)
+    if proc.returncode != 0:
+        return False
+    git_dir = Path(proc.stdout.strip())
+    if not git_dir.is_absolute():
+        git_dir = Path(cwd or Path.cwd()) / git_dir
+    return git_dir.resolve() != git_common_dir(cwd)
+
+
 def now_iso() -> str:
     """Return the current local time as an ISO-8601 string."""
     return datetime.now(UTC).astimezone().isoformat()
@@ -378,6 +396,16 @@ def cleanup(name: str, *, force: bool = False) -> None:
         delete_flag = "-D" if force else "-d"
         deleted = git(["branch", delete_flag, branch], cwd=main, check=False)
         branch_removed = deleted.returncode == 0
+        if not branch_removed:
+            # A branch that is already gone (e.g. deleted by hand during a manual
+            # recovery) is effectively removed — treat it so, or its session
+            # record is stranded and keeps counting toward the concurrency cap.
+            exists = git(
+                ["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
+                cwd=main,
+                check=False,
+            )
+            branch_removed = exists.returncode != 0
         if not branch_removed:
             detail = (deleted.stderr or deleted.stdout).strip()
             print(f"  note: branch {branch} not deleted ({detail})")
