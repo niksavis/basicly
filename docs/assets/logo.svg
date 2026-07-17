@@ -1,12 +1,48 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="basicly logo: a central catalog block framed by four L-shaped bricks">
-  <!-- The versioned YAML catalog: central block, symmetric fragment lines. -->
-  <rect x="44" y="44" width="40" height="40" rx="9" fill="#4f46e5"/>
-  <rect x="52" y="52" width="24" height="6" rx="3" fill="#a5b4fc"/>
-  <rect x="52" y="61" width="24" height="6" rx="3" fill="#a5b4fc"/>
-  <rect x="52" y="70" width="24" height="6" rx="3" fill="#a5b4fc"/>
-  <!-- Four L-tetrominoes pinwheeled around the catalog corners; amber = the gates. -->
-  <path d="M30 8 H74 Q80 8 80 14 V18 Q80 24 74 24 H46 Q40 24 40 30 V34 Q40 40 34 40 H30 Q24 40 24 34 V14 Q24 8 30 8 Z" fill="#6366f1"/>
-  <path d="M30 8 H74 Q80 8 80 14 V18 Q80 24 74 24 H46 Q40 24 40 30 V34 Q40 40 34 40 H30 Q24 40 24 34 V14 Q24 8 30 8 Z" transform="rotate(90 64 64)" fill="#818cf8"/>
-  <path d="M30 8 H74 Q80 8 80 14 V18 Q80 24 74 24 H46 Q40 24 40 30 V34 Q40 40 34 40 H30 Q24 40 24 34 V14 Q24 8 30 8 Z" transform="rotate(180 64 64)" fill="#f59e0b"/>
-  <path d="M30 8 H74 Q80 8 80 14 V18 Q80 24 74 24 H46 Q40 24 40 30 V34 Q40 40 34 40 H30 Q24 40 24 34 V14 Q24 8 30 8 Z" transform="rotate(270 64 64)" fill="#6366f1"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-labelledby="logo-title logo-desc">
+  <title id="logo-title">basicly</title>
+  <desc id="logo-desc">Four L-brackets pinwheel around a sharp-edged catalog block carrying a pixelated B monogram in shades of orange.</desc>
+
+  <!-- Four projected modules: one sharp-edged long-arm/short-foot L-bracket rotated 90 degrees four times, hugging each corner of the catalog block with a small gap. -->
+  <defs>
+    <path id="module" d="M25 25 H66 V36 H36 V54 H25 Z"/>
+    <!-- Mask: block is visible (white) except the B counters and corner cells (black), which become transparent holes to the page. -->
+    <mask id="bHoles">
+      <rect x="41" y="41" width="46" height="46" rx="2" fill="#fff"/>
+      <rect x="75" y="47" width="6" height="6" rx="1.5" fill="#000"/>
+      <rect x="54" y="54" width="6" height="6" rx="1.5" fill="#000"/>
+      <rect x="61" y="54" width="6" height="6" rx="1.5" fill="#000"/>
+      <rect x="68" y="54" width="6" height="6" rx="1.5" fill="#000"/>
+      <rect x="75" y="61" width="6" height="6" rx="1.5" fill="#000"/>
+      <rect x="54" y="68" width="6" height="6" rx="1.5" fill="#000"/>
+      <rect x="61" y="68" width="6" height="6" rx="1.5" fill="#000"/>
+      <rect x="68" y="68" width="6" height="6" rx="1.5" fill="#000"/>
+      <rect x="75" y="75" width="6" height="6" rx="1.5" fill="#000"/>
+    </mask>
+  </defs>
+  <use href="#module" fill="#818cf8"/>
+  <use href="#module" fill="#6366f1" transform="rotate(90 64 64)"/>
+  <use href="#module" fill="#ea580c" transform="rotate(180 64 64)"/>
+  <use href="#module" fill="#6366f1" transform="rotate(270 64 64)"/>
+
+  <!-- The single catalog: a large sharp-edged block; the B counters and corner cells are masked out so the page background shows through. -->
+  <rect x="41" y="41" width="46" height="46" rx="2" fill="#4f46e5" mask="url(#bHoles)"/>
+  <!-- B monogram: only the orange letter bricks are drawn; the counters and corners are left as the block colour so the letter reads cleanly at any size. -->
+  <g>
+    <rect x="47" y="47" width="6" height="6" rx="1.5" fill="#fdba74"/>
+    <rect x="54" y="47" width="6" height="6" rx="1.5" fill="#fb923c"/>
+    <rect x="61" y="47" width="6" height="6" rx="1.5" fill="#f97316"/>
+    <rect x="68" y="47" width="6" height="6" rx="1.5" fill="#f59e0b"/>
+    <rect x="47" y="54" width="6" height="6" rx="1.5" fill="#fb923c"/>
+    <rect x="75" y="54" width="6" height="6" rx="1.5" fill="#fdba74"/>
+    <rect x="47" y="61" width="6" height="6" rx="1.5" fill="#f97316"/>
+    <rect x="54" y="61" width="6" height="6" rx="1.5" fill="#f59e0b"/>
+    <rect x="61" y="61" width="6" height="6" rx="1.5" fill="#ea580c"/>
+    <rect x="68" y="61" width="6" height="6" rx="1.5" fill="#fdba74"/>
+    <rect x="47" y="68" width="6" height="6" rx="1.5" fill="#f59e0b"/>
+    <rect x="75" y="68" width="6" height="6" rx="1.5" fill="#f97316"/>
+    <rect x="47" y="75" width="6" height="6" rx="1.5" fill="#ea580c"/>
+    <rect x="54" y="75" width="6" height="6" rx="1.5" fill="#fdba74"/>
+    <rect x="61" y="75" width="6" height="6" rx="1.5" fill="#fb923c"/>
+    <rect x="68" y="75" width="6" height="6" rx="1.5" fill="#f97316"/>
+  </g>
 </svg>
