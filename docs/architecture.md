@@ -203,6 +203,7 @@ and `src/basicly/` never contains catalog data.
     skills/<skill-name>/skill.yaml    # projected to SKILL.md at target roots, see below
     agents/<slug>/agent.yaml          # + agents/blocks/<id>.block.yaml (§5)
     hooks/*.py + hooks.yaml           # git-stage + agent hook scripts and their manifest
+    rubrics/*.rubric.yaml             # work-type behavioral rubrics (basicly-0122), advisory gate
     schemas/*.schema.json
     targets/{claude,copilot,codex}.yaml
     templates/{claude,copilot,codex}/*.j2
