@@ -31,6 +31,12 @@ uv run pre-commit install --install-hooks -t pre-commit -t commit-msg -t pre-pus
 Note: the markdownlint hook runs on Node.js; have a Linux/macOS-native `node`
 on `PATH` (on WSL, a Windows Node install will not work for hooks).
 
+Committer requirements: the projected git hooks run `uv run python ...`, so
+every committer needs uv on `PATH` and Python 3.14+ — `basicly hooks-check`
+warns when uv is missing. Driving the harness loop also needs a
+redirect-capable `br` (0.2.16 is the known-good floor; worktree provisioning
+verifies it).
+
 ## Everyday contributor commands
 
 Core projector commands (fragments → agent instruction files):
