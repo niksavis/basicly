@@ -1125,6 +1125,53 @@ def test_cli_status_reports_authoring_repo(work_repo: Path) -> None:
     assert "drift: generated files up to date" in result.stdout
 
 
+def test_cli_permissions_build_and_check_are_idempotent(work_repo: Path) -> None:
+    """permissions-build converges the deny-list; permissions-check then passes."""
+    settings = json.loads((work_repo / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    # The authoring repo already carries its deny-list, so build is a no-op...
+    build = run_basicly(work_repo, "permissions-build")
+    assert build.returncode == 0, build.stderr
+    assert "up to date" in build.stdout
+    # ...and check confirms every managed pattern is present.
+    check = run_basicly(work_repo, "permissions-check")
+    assert check.returncode == 0, check.stderr
+
+    # Drop a managed pattern: check must now fail, build must restore it.
+    settings["permissions"]["deny"] = [
+        p for p in settings["permissions"]["deny"] if p != "Bash(rm -rf*)"
+    ]
+    (work_repo / ".claude" / "settings.json").write_text(
+        json.dumps(settings, indent=2) + "\n", encoding="utf-8"
+    )
+    assert run_basicly(work_repo, "permissions-check").returncode == 1
+    restore = run_basicly(work_repo, "permissions-build")
+    assert restore.returncode == 0, restore.stderr
+    assert "Wrote" in restore.stdout
+    restored = json.loads((work_repo / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    assert "Bash(rm -rf*)" in restored["permissions"]["deny"]
+
+
+def test_cli_install_projects_permissions_deny_list(tmp_path: Path) -> None:
+    """A fresh consumer install inherits the catalog deny-list, not just the repo."""
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    assert run_basicly_consumer(consumer, "install").returncode == 0
+
+    settings = json.loads((consumer / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    deny = settings["permissions"]["deny"]
+    assert "Bash(rm -rf*)" in deny
+    assert "Read(.env)" in deny
+    # A consumer's own deny entry survives a re-projection.
+    settings["permissions"]["deny"].append("Bash(sudo*)")
+    (consumer / ".claude" / "settings.json").write_text(
+        json.dumps(settings, indent=2) + "\n", encoding="utf-8"
+    )
+    assert run_basicly_consumer(consumer, "permissions-build").returncode == 0
+    after = json.loads((consumer / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    assert "Bash(sudo*)" in after["permissions"]["deny"]
+    assert "Bash(rm -rf*)" in after["permissions"]["deny"]
+
+
 def test_cli_status_json_authoring_schema(work_repo: Path) -> None:
     """The --json payload keeps its stable schema; authoring has no install state."""
     result = run_basicly(work_repo, "status", "--json")
@@ -1137,10 +1184,11 @@ def test_cli_status_json_authoring_schema(work_repo: Path) -> None:
         "catalog",
         "drift",
         "hooks",
+        "permissions",
         "technologies",
         "overlays",
     }
-    assert report["schema_version"] == 1
+    assert report["schema_version"] == 1  # additive "permissions" section is not breaking
     assert report["repo_kind"] == "authoring"
     assert report["catalog"] == {
         "installed_version": None,
@@ -1151,6 +1199,9 @@ def test_cli_status_json_authoring_schema(work_repo: Path) -> None:
     assert set(report["hooks"]) == {"git", "claude", "copilot"}
     for entry in report["hooks"].values():
         assert entry["mismatches"] == 0
+    # The authoring repo dogfoods its own deny-list, so it is fully in sync.
+    assert report["permissions"]["claude"]["managed_patterns"] > 0
+    assert report["permissions"]["claude"]["mismatches"] == 0
     assert set(report["overlays"]) == {"fragments", "agents"}
 
 
