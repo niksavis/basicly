@@ -104,14 +104,15 @@ def test_create_copies_env_local_when_present(
     assert copied.read_text(encoding="utf-8") == "SECRET=1\n"
 
 
-def test_create_syncs_uncommitted_tracker_state(
+def test_create_never_rewrites_the_checked_out_tracker(
     git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A freshly filed (uncommitted) beads issue reaches the new worktree.
+    """Uncommitted base tracker state must NOT be copied over the worktree's file.
 
-    Regression for file-then-loop-immediately: the worktree branches from the
-    base HEAD, which predates an uncommitted ``.beads/issues.jsonl`` line, so
-    the beads commit-msg hook rejected the worktree's first commit.
+    Fresh ids reach the worktree through the ``redirect`` (br and the beads
+    hook both follow it); overwriting the checked-out ``issues.jsonl`` with
+    the base working-tree version leaves the worktree permanently dirty and
+    blocks the landing rebase (basicly-h61t rework 1).
     """
     beads = git_repo / ".beads"
     beads.mkdir()
@@ -123,8 +124,9 @@ def test_create_syncs_uncommitted_tracker_state(
     monkeypatch.chdir(git_repo)
     session = worktree.create("fresh-issue")
 
-    synced = session.path / ".beads" / "issues.jsonl"
-    assert synced.read_text(encoding="utf-8") == '{"id":"x-1"}\n{"id":"x-2"}\n'
+    checked_out = session.path / ".beads" / "issues.jsonl"
+    assert checked_out.read_text(encoding="utf-8") == '{"id":"x-1"}\n'
+    assert (session.path / ".beads" / "redirect").read_text(encoding="utf-8").strip() == str(beads)
 
 
 def test_create_redirects_beads_to_base(git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:

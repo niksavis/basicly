@@ -177,12 +177,12 @@ def create(name: str, base: str | None = None) -> Session:
     *base* (default: the current branch), provisions its own dependency trees
     and git hooks, and records a session in the git common dir. The worktree's
     ``.beads`` is redirected at the base checkout's (br's git-ignored
-    ``redirect`` file), so every tracker read/write from the worktree hits the
-    one shared DB/JSONL — no divergent copy, nothing to reconcile at landing.
-    The base's working-tree ``.beads/issues.jsonl`` is also synced in as a
-    fallback for a ``br`` without redirect support: a freshly filed issue
-    lives there uncommitted, and without it the beads commit-msg hook would
-    reject the worktree's first commit as referencing an unknown id.
+    ``redirect`` file), so every tracker read/write from the worktree — br
+    itself and the beads commit-msg hook alike — hits the one shared DB/JSONL:
+    no divergent copy, nothing to reconcile at landing. The checked-out
+    ``issues.jsonl`` is deliberately left untouched; overwriting it with the
+    base working-tree version would leave the worktree permanently dirty and
+    block the landing rebase.
     """
     base = base or current_branch()
     branch = f"{BRANCH_PREFIX}{name}"
@@ -214,14 +214,6 @@ def create(name: str, base: str | None = None) -> Session:
         # absolute path here never reaches a commit.
         (target_beads / "redirect").write_text(f"{base_beads}\n", encoding="utf-8")
         notes.append(".beads/redirect: tracker shared with the base checkout")
-
-        tracker = base_beads / "issues.jsonl"
-        target = target_beads / "issues.jsonl"
-        if tracker.exists() and (
-            not target.exists() or target.read_bytes() != tracker.read_bytes()
-        ):
-            target.write_bytes(tracker.read_bytes())
-            notes.append(".beads/issues.jsonl: synced from base checkout")
 
     notes.append(install_worktree_hooks(worktree))
 
