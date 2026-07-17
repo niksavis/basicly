@@ -274,7 +274,17 @@ manifest = ".basicly/generated-manifest.json"
 
 `basicly install` only ever writes under the managed core and state paths; it creates
 `paths.overlay_fragments/.../user/` if missing but never writes fragment content
-there, and never overwrites an existing `basicly.toml`.
+there, and never overwrites an existing `basicly.toml`. When the existing file lacks
+sections the shipped default now carries, install names them in a hint instead of
+editing the file.
+
+**Per-machine overlay — `basicly.local.toml`** (gitignored; install adds the
+`.gitignore` entry): keys there override `basicly.toml` key-by-key for the harness
+sections only (`[worktree]`, `[verify]`, `[policy]`, `[runner]`), so machine-specific
+choices (a runner default, a lower worktree cap) stay out of the shared config. A key
+set locally replaces the shared key wholesale (a local `checks`/`agents` list is not
+concatenated). Projection config (`[paths]`, `[catalog]`) shapes repo-committed
+outputs, so it is repo-level only and never reads the overlay.
 
 #### 4.4 Generated artifacts
 

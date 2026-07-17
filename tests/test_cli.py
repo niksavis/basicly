@@ -14,7 +14,14 @@ import yaml
 
 from basicly import cli
 from basicly.agents import GENERATED_MARKER as AGENT_GENERATED_MARKER
-from basicly.config import CONSUMER_CI_WORKFLOW, VSCODE_TASKS_JSON, load_project_paths
+from basicly.config import (
+    CONFIG_FILE,
+    CONSUMER_CI_WORKFLOW,
+    DEFAULT_CONFIG_TOML,
+    LOCAL_CONFIG_FILE,
+    VSCODE_TASKS_JSON,
+    load_project_paths,
+)
 from basicly.skills import GENERATED_MARKER
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -295,6 +302,57 @@ def test_scaffold_ci_workflow_writes_once_and_parses(
     cli._scaffold_ci_workflow(tmp_path)
     assert workflow_path.read_text(encoding="utf-8") == "name: mine\n"
     assert "left unchanged" in capsys.readouterr().out
+
+
+def test_scaffold_local_config_ignore_appends_once(tmp_path: Path) -> None:
+    """The ignore entry is created, appended without clobbering, and idempotent."""
+    cli._scaffold_local_config_ignore(tmp_path)
+    ignore_path = tmp_path / ".gitignore"
+    assert LOCAL_CONFIG_FILE in ignore_path.read_text(encoding="utf-8").splitlines()
+
+    ignore_path.write_text("node_modules/\n", encoding="utf-8")
+    cli._scaffold_local_config_ignore(tmp_path)
+    lines = ignore_path.read_text(encoding="utf-8").splitlines()
+    assert lines[0] == "node_modules/"  # existing content survives the append
+    assert LOCAL_CONFIG_FILE in lines
+
+    before = ignore_path.read_text(encoding="utf-8")
+    cli._scaffold_local_config_ignore(tmp_path)
+    assert ignore_path.read_text(encoding="utf-8") == before  # second run is a no-op
+
+
+def test_scaffold_local_config_ignore_accepts_rooted_entry(tmp_path: Path) -> None:
+    """A user's /basicly.local.toml spelling counts as covered — no duplicate."""
+    ignore_path = tmp_path / ".gitignore"
+    ignore_path.write_text(f"/{LOCAL_CONFIG_FILE}\n", encoding="utf-8")
+    cli._scaffold_local_config_ignore(tmp_path)
+    assert ignore_path.read_text(encoding="utf-8") == f"/{LOCAL_CONFIG_FILE}\n"
+
+
+def test_install_hints_missing_config_sections_without_editing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An older basicly.toml gets its missing sections named, never edited."""
+    original = "[worktree]\nconcurrency = 2\n"
+    (tmp_path / CONFIG_FILE).write_text(original, encoding="utf-8")
+
+    cli._report_missing_config_sections(tmp_path)
+
+    out = capsys.readouterr().out
+    for section in ("[paths]", "[policy]", "[runner]"):
+        assert section in out
+    assert "[worktree]" not in out
+    assert LOCAL_CONFIG_FILE in out
+    assert (tmp_path / CONFIG_FILE).read_text(encoding="utf-8") == original
+
+
+def test_install_hints_stay_quiet_for_a_current_config(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A config carrying every shipped section produces no hint."""
+    (tmp_path / CONFIG_FILE).write_text(DEFAULT_CONFIG_TOML, encoding="utf-8")
+    cli._report_missing_config_sections(tmp_path)
+    assert capsys.readouterr().out == ""
 
 
 def test_ci_workflows_ignore_tracker_only_pushes() -> None:

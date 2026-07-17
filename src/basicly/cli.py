@@ -9,6 +9,7 @@ import re
 import shlex
 import shutil
 import sys
+import tomllib
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -41,6 +42,7 @@ from .config import (
     CONFIG_FILE,
     CONSUMER_CI_WORKFLOW,
     DEFAULT_CONFIG_TOML,
+    LOCAL_CONFIG_FILE,
     OVERLAY_FRAGMENT_STUBS,
     VERIFY_MODES,
     VSCODE_TASKS_JSON,
@@ -879,6 +881,41 @@ def _scaffold_ci_workflow(repo_root: Path) -> None:
     print("Wrote .github/workflows/basicly-gates.yml (commit messages, drift, verify)")
 
 
+def _report_missing_config_sections(repo_root: Path) -> None:
+    """Name shipped-default sections absent from an existing basicly.toml.
+
+    Install never edits a consumer's config, so a file scaffolded by an older
+    basicly silently lacks sections added since; the hint is the upgrade path.
+    """
+    existing = tomllib.loads((repo_root / CONFIG_FILE).read_text(encoding="utf-8"))
+    shipped = tomllib.loads(DEFAULT_CONFIG_TOML)
+    missing = [name for name in shipped if name not in existing]
+    if not missing:
+        return
+    rendered = ", ".join(f"[{name}]" for name in missing)
+    print(
+        f"Note: {CONFIG_FILE} lacks section(s) the shipped default now carries: "
+        f"{rendered}. Install never edits your file — copy what you need from the "
+        f"default scaffold, or override per machine in the gitignored {LOCAL_CONFIG_FILE}."
+    )
+
+
+def _scaffold_local_config_ignore(repo_root: Path) -> None:
+    """Ensure .gitignore covers the per-machine config overlay (append-only).
+
+    An existing ignore file gains the one entry when missing; nothing else in
+    it is touched.
+    """
+    ignore_path = repo_root / ".gitignore"
+    text = ignore_path.read_text(encoding="utf-8") if ignore_path.exists() else ""
+    if any(line.strip().lstrip("/") == LOCAL_CONFIG_FILE for line in text.splitlines()):
+        return
+    prefix = "" if not text or text.endswith("\n") else "\n"
+    entry = f"# Per-machine basicly overrides; harness keys win over {CONFIG_FILE}.\n"
+    ignore_path.write_text(text + prefix + entry + LOCAL_CONFIG_FILE + "\n", encoding="utf-8")
+    print(f"Added {LOCAL_CONFIG_FILE} to .gitignore")
+
+
 def _record_install_technologies(repo_root: Path, raw: str | None) -> bool:
     """Record a ``--technologies`` selection in basicly.toml; False on bad input."""
     if raw is None:
@@ -967,9 +1004,11 @@ def cmd_install(args: argparse.Namespace) -> int:
     config_path = repo_root / CONFIG_FILE
     if config_path.exists():
         print(f"{CONFIG_FILE} already exists; left unchanged")
+        _report_missing_config_sections(repo_root)
     else:
         config_path.write_text(DEFAULT_CONFIG_TOML, encoding="utf-8")
         print(f"Wrote {CONFIG_FILE}")
+    _scaffold_local_config_ignore(repo_root)
 
     if not _record_install_technologies(repo_root, getattr(args, "technologies", None)):
         return 1
