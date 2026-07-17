@@ -175,11 +175,14 @@ def create(name: str, base: str | None = None) -> Session:
 
     Adds ``<repo>.worktrees/<name>`` on a new ``harness/<name>`` branch off
     *base* (default: the current branch), provisions its own dependency trees
-    and git hooks, and records a session in the git common dir. The base
-    checkout's working-tree ``.beads/issues.jsonl`` is synced in when it
-    differs: a freshly filed issue lives there uncommitted, and without the
-    sync the beads commit-msg hook rejects the worktree's first commit as
-    referencing an unknown id.
+    and git hooks, and records a session in the git common dir. The worktree's
+    ``.beads`` is redirected at the base checkout's (br's git-ignored
+    ``redirect`` file), so every tracker read/write from the worktree hits the
+    one shared DB/JSONL — no divergent copy, nothing to reconcile at landing.
+    The base's working-tree ``.beads/issues.jsonl`` is also synced in as a
+    fallback for a ``br`` without redirect support: a freshly filed issue
+    lives there uncommitted, and without it the beads commit-msg hook would
+    reject the worktree's first commit as referencing an unknown id.
     """
     base = base or current_branch()
     branch = f"{BRANCH_PREFIX}{name}"
@@ -203,11 +206,20 @@ def create(name: str, base: str | None = None) -> Session:
         )
         notes.append(".env.local: copied")
 
-    tracker = main_checkout() / ".beads" / "issues.jsonl"
-    if tracker.exists():
-        target = worktree / ".beads" / "issues.jsonl"
-        if not target.exists() or target.read_bytes() != tracker.read_bytes():
-            target.parent.mkdir(parents=True, exist_ok=True)
+    base_beads = main_checkout() / ".beads"
+    if base_beads.is_dir():
+        target_beads = worktree / ".beads"
+        target_beads.mkdir(parents=True, exist_ok=True)
+        # Machine-local, git-ignored by br's own .beads/.gitignore — an
+        # absolute path here never reaches a commit.
+        (target_beads / "redirect").write_text(f"{base_beads}\n", encoding="utf-8")
+        notes.append(".beads/redirect: tracker shared with the base checkout")
+
+        tracker = base_beads / "issues.jsonl"
+        target = target_beads / "issues.jsonl"
+        if tracker.exists() and (
+            not target.exists() or target.read_bytes() != tracker.read_bytes()
+        ):
             target.write_bytes(tracker.read_bytes())
             notes.append(".beads/issues.jsonl: synced from base checkout")
 

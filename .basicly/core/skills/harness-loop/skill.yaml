@@ -31,31 +31,29 @@ instructions: |
   Pick the next actionable issue with `br ready` / `br scheduler --json`; `basicly
   loop status` then tells you which phase it is parked in and what it is waiting on.
 
-  ## Tracker commits and pushes — exactly two per track, one push
+  ## Tracker state is zero-touch — the engine commits it, you never do
 
-  Tracker state and worktrees do not mix, and every tracker-only commit is
-  overhead — so a track makes exactly two, both in the base checkout:
+  One tracker, everywhere: a loop-provisioned worktree shares the base
+  checkout's `.beads` via br's git-ignored `redirect` file, so `br` commands
+  (create, update, comments, gates) work identically from base or any
+  worktree and always hit the one real DB/JSONL. There is no worktree tracker
+  copy to diverge and nothing to reconcile at landing.
 
-  1. **Pre-provisioning commit**: fold *all* early tracker mutations — filing,
-     claiming, the recorded work type, the classify approval, any comments —
-     into ONE `chore(beads)` commit right before the `loop advance` that
-     provisions the worktree. Landing requires a clean base, and provisioning
-     syncs the working-tree `.beads/issues.jsonl` into the worktree so its
-     commit-msg hook already knows fresh ids.
-  2. **Closing commit**: after ship (teardown + `br close`), commit the flushed
-     tracker state. This one is structurally separate — the close happens
-     *after* the merge commit exists, so it can never ride a work commit; do
-     not try to fold it (that rule in `tool-br` applies only to non-loop work
-     done directly in the base checkout).
+  The engine makes the only tracker commits, at the two natural points:
 
-  Never commit `.beads/issues.jsonl` on a harness branch (restore it before
-  staging — `br` may re-dirty it at any time): base keeps mutating the same
-  lines, so committing it on both sides makes the landing rebase conflict.
+  1. **At landing**, `loop advance` rolls all accumulated `.beads/**` dirt in
+     base (claim, work type, checkpoints, gate records) into one
+     `chore(beads)` commit before merging. A base that is dirty with anything
+     *outside* `.beads/` still blocks — that is someone's uncommitted work.
+  2. **At ship**, after `br close`, the engine commits the closing tracker
+     state itself.
 
-  **Push once per track**, after the closing tracker commit — never push
-  tracker-only commits on their own. CI ignores `.beads/**`-only pushes by
-  design (the local commit-msg hooks are the deterministic floor), so batched
-  pushes cost one CI run for the real change and none for the tracker noise.
+  So: never `git add .beads` yourself for loop-tracked work, and never commit
+  `.beads/issues.jsonl` on a harness branch (restore it if something staged
+  it). **Push once per track**, after ship — CI ignores `.beads/**`-only
+  pushes by design (the local commit-msg hooks are the deterministic floor),
+  so batched pushes cost one CI run for the real change and none for the
+  tracker noise.
 
   ## Advancing the loop
 
@@ -99,12 +97,13 @@ instructions: |
   AI-semantic verification reports a **non-required** gate — advisory, never
   blocking. Inspect the decision with `basicly policy gate <id>`.
 
-  Record gates from the base checkout only. A linked worktree carries a
-  throwaway tracker copy, so a gate recorded there is discarded at landing —
-  `basicly verify --issue` refuses to record from one for exactly this reason.
-  During build you never need to record the gate manually: the landing advance
-  verifies the rebased tree in the worktree and records the required gate from
-  base itself.
+  Gates recorded from a loop-provisioned worktree are safe: its `.beads`
+  redirects to the base checkout, so the record lands in the one real tracker.
+  `basicly verify --issue` refuses only from a linked worktree *without* that
+  redirect (a throwaway tracker copy — the record would be discarded at
+  landing). During build you never need to record the gate manually anyway:
+  the landing advance verifies the rebased tree in the worktree and records
+  the required gate itself.
 
   ## Rework and escalation
 

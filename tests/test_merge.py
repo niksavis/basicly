@@ -84,6 +84,70 @@ def test_merge_worktree_happy_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
     assert merge_calls and merge_calls[0][:3] == ["merge", "--no-ff", "harness/feat"]
 
 
+def test_commit_tracker_state_commits_beads_only_dirt(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Tracker-only dirt is rolled into one chore commit referencing the bead."""
+    fake = _FakeGit({"status": _Proc(0, " M .beads/issues.jsonl\n?? .beads/metadata.json\n")})
+    monkeypatch.setattr(merge, "git", fake)
+    flushed = {}
+    monkeypatch.setattr(merge.br, "try_run_br", lambda _r, args: flushed.setdefault("args", args))
+
+    assert merge.commit_tracker_state(tmp_path, "basicly-x") is True
+    assert flushed["args"] == ["sync", "--flush-only"]
+    assert ["add", ".beads"] in fake.calls
+    commit = next(call for call in fake.calls if call[0] == "commit")
+    assert "(basicly-x)" in commit[-1] and commit[-1].startswith("chore(beads):")
+
+
+def test_commit_tracker_state_refuses_mixed_dirt(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Non-beads dirt is someone's work — nothing is committed."""
+    fake = _FakeGit({"status": _Proc(0, " M src/app.py\n M .beads/issues.jsonl\n")})
+    monkeypatch.setattr(merge, "git", fake)
+
+    assert merge.commit_tracker_state(tmp_path, "basicly-x") is False
+    assert not fake.ran("commit")
+
+    fake_clean = _FakeGit({"status": _Proc(0, "")})
+    monkeypatch.setattr(merge, "git", fake_clean)
+    assert merge.commit_tracker_state(tmp_path, "basicly-x") is False
+
+
+@pytest.mark.usefixtures("base_ready")
+def test_merge_worktree_rolls_up_tracker_dirt_before_landing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Loop tracker state dirtying the base no longer blocks the landing."""
+    status_results = iter([
+        _Proc(0, " M .beads/issues.jsonl\n"),  # commit_tracker_state sees the dirt
+        _Proc(0, ""),  # after the rollup commit, _assert_base_ready sees clean
+    ])
+    responses = {
+        "rebase": _Proc(0),
+        "merge-tree": _Proc(0),
+        "merge": _Proc(0),
+        "rev-parse": _Proc(0, "def456"),
+    }
+    calls: list[list[str]] = []
+
+    def fake_git(args, **_kwargs):
+        calls.append(args)
+        if args[0] == "status":
+            return next(status_results)
+        return responses.get(args[0], _Proc(0))
+
+    monkeypatch.setattr(merge, "git", fake_git)
+    monkeypatch.setattr(merge.br, "try_run_br", lambda *_a, **_k: None)
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-onb.5")
+    assert result.merged is True
+    assert any(call[0] == "commit" for call in calls)  # the rollup chore commit
+    assert any(call[0] == "merge" for call in calls)
+
+
 @pytest.mark.usefixtures("base_ready")
 def test_merge_worktree_aborts_on_rebase_conflict(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path

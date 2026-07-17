@@ -217,6 +217,22 @@ def test_linked_worktree_guard_states(linked_worktree: tuple[Path, Path], tmp_pa
     assert verify.linked_worktree_guard(outside) is None
 
 
+def test_linked_worktree_guard_allows_redirected_tracker(
+    linked_worktree: tuple[Path, Path],
+) -> None:
+    """A worktree whose .beads redirects to base shares the tracker — recording is safe."""
+    repo, linked = linked_worktree
+    (repo / ".beads").mkdir()
+    beads = linked / ".beads"
+    beads.mkdir()
+    (beads / "redirect").write_text(f"{repo / '.beads'}\n", encoding="utf-8")
+    assert verify.linked_worktree_guard(linked) is None
+
+    # A redirect elsewhere (or dangling) keeps the refusal.
+    (beads / "redirect").write_text(str(linked / "elsewhere"), encoding="utf-8")
+    assert verify.linked_worktree_guard(linked) is not None
+
+
 def test_cli_verify_refuses_to_record_gate_from_linked_worktree(
     linked_worktree: tuple[Path, Path],
     monkeypatch: pytest.MonkeyPatch,

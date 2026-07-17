@@ -717,6 +717,15 @@ skills) handles residual conflicts under the same n=2→human rule. Tracker stat
 (`.beads/issues.jsonl`) is reconciled with **`br sync --merge`** (a 3-way merge; `br` has no
 git merge-driver, unlike `bd`), never by hand-editing JSONL conflict markers.
 
+**12.6.1 Zero-touch tracker state.** Every loop-provisioned worktree shares the base
+checkout's tracker via `br`'s git-ignored `.beads/redirect` file (written at provisioning;
+the `beads-commit-msg` hook follows it too), so `br` reads/writes from any checkout hit the
+one real DB/JSONL and there is no divergent copy to reconcile. The engine owns the tracker
+commits: the landing advance rolls accumulated `.beads/**` dirt in base into one
+`chore(beads)` commit before merging (non-beads dirt still blocks), and ship commits the
+close after `br close`. Agents never stage `.beads/` for loop-tracked work, and CI ignores
+`.beads/**`-only pushes (the commit-msg hooks are the deterministic floor).
+
 **12.7 State & resumability.** `br` is the single source of truth — the harness keeps no
 durable side-state. In-flight worktree/branch bindings are stashed on the issue via
 `br update --external-ref`; design/architecture constraints ride _down_ a dependency tree via
