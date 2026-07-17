@@ -193,6 +193,12 @@ def _start_build_leaf(ctx: _Ctx) -> AdvanceResult:
             f"worktree concurrency cap reached ({active}/{wt_config.concurrency}); "
             "clean up a worktree or raise [worktree].concurrency in basicly.toml",
         )
+    # Publish the claim: roll the pending tracker-only dirt (status, work type,
+    # classify approval) into a chore commit now, so a teammate pulling the
+    # repo sees the claim from the moment work starts, not at landing.
+    merge.commit_tracker_state(
+        ctx.repo_root, ctx.issue_id, action="record the claim before provisioning"
+    )
     name = _worktree_name(ctx.issue_id)
     session = worktree.create(name, base=wt_config.base_branch)
     _bind_worktree(ctx, name, session.branch)
@@ -295,6 +301,10 @@ def _ensure_child_worktrees(ctx: _Ctx, children: list[tuple[str, str]]) -> None:
     existing = {session.name for session in worktree.list_sessions()}
     room = wt_config.concurrency - len(existing)
     ready = {node.issue_id for node in loop_state.ready_ranked(ctx.repo_root)}
+    # Publish the fan-out claims the same way a leaf publishes its own.
+    merge.commit_tracker_state(
+        ctx.repo_root, ctx.issue_id, action="record the claim before provisioning"
+    )
     for cid, status in children:
         if room <= 0:
             break

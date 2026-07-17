@@ -56,6 +56,19 @@ def at(monkeypatch: pytest.MonkeyPatch):
     return _pin
 
 
+@pytest.fixture(autouse=True)
+def tracker_commits(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str | None]]:
+    """Record engine tracker commits — loop tests run outside a git repo."""
+    calls: list[tuple[str, str | None]] = []
+
+    def _record(_repo_root, bead, **kwargs):
+        calls.append((bead, kwargs.get("action")))
+        return True
+
+    monkeypatch.setattr(loop.merge, "commit_tracker_state", _record)
+    return calls
+
+
 def _session(name: str = "i") -> Session:
     return Session(
         name=name,
@@ -140,13 +153,17 @@ def _ready_leaf(at, monkeypatch: pytest.MonkeyPatch) -> dict:
 
 
 def test_classify_leaf_provisions_worktree(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    at,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    tracker_commits: list[tuple[str, str | None]],
 ) -> None:
-    """A ready leaf provisions its worktree; the handoff runner blocks unchanged."""
+    """A ready leaf publishes its claim, then provisions; the handoff blocks unchanged."""
     created = _ready_leaf(at, monkeypatch)
     _pin_runner(monkeypatch, "manual")
     result = _advance(tmp_path)
     assert created["n"] == "i"
+    assert tracker_commits == [("i", "record the claim before provisioning")]
     assert result.blocked and "provisioned" in result.detail
     assert "awaiting the agent's work" in result.detail
 
@@ -453,6 +470,25 @@ def test_run_until_blocked_stops_at_first_block(
         tmp_path, "i", config=CONFIG, inputs=loop.Inputs(work_type="task")
     )
     assert len(results) == 1 and results[0].blocked
+
+
+def test_ensure_child_worktrees_publishes_claims_first(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    tracker_commits: list[tuple[str, str | None]],
+) -> None:
+    """Fan-out provisioning publishes pending tracker claims before any worktree."""
+    ctx = loop._Ctx(tmp_path, "i", _state("decompose", has_children=True), CONFIG, loop.Inputs())
+    monkeypatch.setattr(
+        loop,
+        "load_worktree_config",
+        lambda *_a: WorktreeConfig(base_branch=None, concurrency=4),
+    )
+    monkeypatch.setattr(worktree, "list_sessions", lambda *_a, **_k: [])
+    monkeypatch.setattr(loop.loop_state, "ready_ranked", lambda *_a, **_k: ())
+
+    loop._ensure_child_worktrees(ctx, [("i.1", "in_progress")])
+    assert tracker_commits == [("i", "record the claim before provisioning")]
 
 
 def test_classify_leaf_forks_from_the_configured_base(

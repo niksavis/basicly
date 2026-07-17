@@ -39,21 +39,33 @@ instructions: |
   worktree and always hit the one real DB/JSONL. There is no worktree tracker
   copy to diverge and nothing to reconcile at landing.
 
-  The engine makes the only tracker commits, at the two natural points:
+  The engine makes the only tracker commits, at the three natural points:
 
-  1. **At landing**, `loop advance` rolls all accumulated `.beads/**` dirt in
-     base (claim, work type, checkpoints, gate records) into one
-     `chore(beads)` commit before merging. A base that is dirty with anything
-     *outside* `.beads/` still blocks — that is someone's uncommitted work.
-  2. **At ship**, after `br close`, the engine commits the closing tracker
+  1. **At provisioning**, the claim (status, work type, classify approval) is
+     committed before the worktree is created, so the claim is in git history
+     from the moment work starts — a teammate who pulls sees it immediately.
+  2. **At landing**, `loop advance` rolls the `.beads/**` dirt accumulated
+     since (checkpoints, gate records) into one `chore(beads)` commit before
+     merging. A base that is dirty with anything *outside* `.beads/` still
+     blocks — that is someone's uncommitted work.
+  3. **At ship**, after `br close`, the engine commits the closing tracker
      state itself.
 
   So: never `git add .beads` yourself for loop-tracked work, and never commit
   `.beads/issues.jsonl` on a harness branch (restore it if something staged
-  it). **Push once per track**, after ship — CI ignores `.beads/**`-only
-  pushes by design (the local commit-msg hooks are the deterministic floor),
-  so batched pushes cost one CI run for the real change and none for the
-  tracker noise.
+  it).
+
+  **Push cadence** — tracker-only pushes are CI-free by design (`paths-ignore
+  .beads/**`; the local commit-msg hooks are the deterministic floor), so the
+  choice is purely about who is watching the remote:
+
+  - **Solo repo**: push once per track, after ship — one CI run for the real
+    change, none for the tracker noise.
+  - **Team repo** (other agents or humans pull the same tracker): push each
+    engine tracker commit as soon as it lands — especially the provisioning
+    claim commit, so nobody starts work someone already claimed. Cross-machine
+    races that still slip through are caught by `br scheduler
+    --stale-claim-hours` and `br coordination`.
 
   ## Advancing the loop
 
