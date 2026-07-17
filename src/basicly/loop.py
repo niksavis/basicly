@@ -45,6 +45,12 @@ from .decompose import ChildSpec
 # (architecture §12.1: bug/chore are leaves; a task is a unit of work).
 _LEAF_TYPES = ("bug", "chore", "task")
 
+# Phases whose transition merges a worktree back or tears one down and closes the
+# issue. Git refuses to update a branch checked out in another worktree, so these
+# must run from the base checkout; advancing them from a linked worktree once
+# stranded a commit (child closed but unmerged) — the loop now refuses instead.
+_BASE_CHECKOUT_PHASES = ("build", "ship")
+
 
 @dataclass(frozen=True)
 class Inputs:
@@ -397,6 +403,14 @@ def advance(
         return AdvanceResult(issue_id, "done", "done", "done", "already shipped")
 
     ctx = _Ctx(repo_root, issue_id, state, config, inputs)
+    if state.phase in _BASE_CHECKOUT_PHASES and worktree.is_linked_checkout(repo_root):
+        return _blocked(
+            ctx,
+            f"the {state.phase!r} transition merges/ships and must run from the base "
+            f"checkout, not a linked worktree ({repo_root}); cd to the base checkout "
+            "and re-run 'basicly loop advance'",
+            needs_input="base-checkout",
+        )
     return _HANDLERS[state.phase](ctx)
 
 

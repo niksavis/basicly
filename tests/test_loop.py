@@ -491,6 +491,30 @@ def test_ship_tears_down_and_closes(at, monkeypatch: pytest.MonkeyPatch, tmp_pat
     assert "tracker state committed" in result.detail
 
 
+@pytest.mark.parametrize("phase", ["build", "ship"])
+def test_base_checkout_phase_refuses_a_linked_worktree(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, phase: str
+) -> None:
+    """build/ship advanced from a linked worktree blocks without merging or shipping.
+
+    Regression (basicly-9niw): advancing from inside a loop worktree once stranded
+    a commit (child closed but unmerged); the guard refuses and mutates nothing.
+    """
+    at(_state(phase, worktree=WorktreeBinding("i", "harness/i")))
+    monkeypatch.setattr(worktree, "is_linked_checkout", lambda *_a, **_k: True)
+
+    def _boom(*_a, **_k):
+        raise AssertionError("must not merge/ship from a linked worktree")
+
+    monkeypatch.setattr(merge, "merge_worktree", _boom)
+    monkeypatch.setattr(worktree, "cleanup", _boom)
+
+    result = _advance(tmp_path)
+    assert result.blocked and result.needs_input == "base-checkout"
+    assert result.to_phase == result.from_phase
+    assert "base checkout" in result.detail
+
+
 def test_done_is_terminal(at, tmp_path: Path) -> None:
     """A closed track reports done without further work."""
     at(_state("done"))
