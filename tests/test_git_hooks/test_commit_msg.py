@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
+import sys
 from pathlib import Path
+
+SCRIPT_PATH = Path(__file__).resolve().parents[2] / ".basicly" / "core" / "hooks" / "commit-msg.py"
 
 
 def _load_commit_msg_module():
     """Load the commit-msg hook module from its script path."""
-    script_path = (
-        Path(__file__).resolve().parents[2] / ".basicly" / "core" / "hooks" / "commit-msg.py"
-    )
+    script_path = SCRIPT_PATH
     spec = importlib.util.spec_from_file_location("commit_msg_hook", script_path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -95,3 +97,37 @@ def test_validate_allows_breaking_change_bang_with_issue_id() -> None:
     """A '!' should compose with a trailing beads issue id."""
     module = _load_commit_msg_module()
     assert module.validate("feat(basicly)!: remove deprecated config format (basicly-idr)")
+
+
+def test_disallowed_description_chars_names_capitals_and_dots() -> None:
+    """The helper lists the distinct out-of-charset characters, in first-seen order."""
+    module = _load_commit_msg_module()
+    assert module.disallowed_description_chars("add Font Awesome v4 icons") == ["F", "A"]
+    assert module.disallowed_description_chars("restamp the install to 0.2.0") == ["."]
+    assert module.disallowed_description_chars("all lowercase and hyphen-ok") == []
+
+
+def _run_hook(message: str, tmp_path: Path) -> subprocess.CompletedProcess[str]:
+    msg_file = tmp_path / "COMMIT_EDITMSG"
+    msg_file.write_text(message, encoding="utf-8")
+    return subprocess.run(
+        [sys.executable, str(SCRIPT_PATH), str(msg_file)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_hook_error_names_the_offending_character(tmp_path: Path) -> None:
+    """A rejected description echoes the specific disallowed char and points at the body."""
+    proc = _run_hook("chore: restamp the install to 0.2.0 (basicly-dlxk)", tmp_path)
+    assert proc.returncode == 1
+    assert "'.'" in proc.stderr
+    assert "commit body" in proc.stderr
+
+
+def test_hook_accepts_a_valid_message(tmp_path: Path) -> None:
+    """A conforming subject exits 0 with no disallowed-character notice."""
+    proc = _run_hook("chore: restamp the install (basicly-dlxk)", tmp_path)
+    assert proc.returncode == 0
+    assert "disallowed character" not in proc.stderr
