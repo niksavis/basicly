@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.3.0 - 2026-07-17
+
+Delta: v0.2.0..v0.3.0
+
 ### Changed
 
 - **BREAKING — CLI namespace grouping**: the flat authoring and inspection
@@ -19,6 +23,59 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   commands stay top-level. Consumers who script the old names — including the
   scaffolded CI `catalog lint` step — must update them; re-run `basicly install`
   to refresh the scaffolded workflow.
+- **Always-on size-warning cap raised to 9000** for the claude and copilot
+  targets, calibrated to warn before the projected instruction files dilute
+  attention rather than at an arbitrary round number; codex stays at 12000.
+- **Every `br` invocation routes through one adapter seam**, giving tracker
+  access a single, testable boundary.
+- **Refreshed branding**: a redesigned logo and landing-page flow diagram.
+
+### Added
+
+- **`basicly status`**: a read-only snapshot of the harness/tracker/worktree
+  state (with `--json`), safe to run anywhere — it never mutates and always
+  exits 0.
+- **`basicly usage`**: a report over the tool-usage telemetry, alongside a
+  gitignored `basicly.local.toml` overlay that layers per-machine
+  `[worktree]`/`[verify]`/`[policy]`/`[runner]` settings over the committed
+  harness config.
+- **Zero-touch tracker in loop worktrees**: worktrees share the base tracker
+  through a `.beads/redirect` (capability probed at provisioning), and the engine
+  owns tracker commits at provisioning, landing, and ship — agents no longer
+  stage `.beads` on a harness branch.
+- **Core-upgrade resilience**: the loader survives upgrades that remove a
+  replaced fragment id and gates sources on `schema_version`.
+- **OS-matrix release gating**: the release workflow runs on ubuntu/windows/macos
+  with a fresh-repo install smoke test and attaches built wheels, and every
+  release page now carries a copy-paste, tag-pinned `uvx` install command.
+- **`session-finish` skill** and skill-invocation counting.
+- **`hooks-check` diagnoses a missing `uv`**, and the committer requirements are
+  documented in the README and CONTRIBUTING.
+
+### Fixed
+
+- **Harness-loop correctness**: hook scripts derive the repo root from cwd;
+  staged and verify checks fail when the underlying `git` call fails; policy
+  markers are matched token-exactly with a hook-floor compile test; the merge
+  queue validates beads upfront, aborts failed merges, and guards dirty
+  worktrees; co-owned writes are atomic with a byte-exact check and safe sweeps;
+  the loop honors the configured base branch and concurrency cap; and
+  `verify --issue` refuses to record a gate from a linked worktree so the landing
+  advance records it from base.
+- **Windows compatibility**: `basicly status` and the CLI degrade gracefully when
+  `git` is absent from PATH, unencodable output is downgraded on narrow/cp1252
+  consoles, unrunnable-command detection accepts the Windows "not found" detail,
+  and the CLI test helpers stop stripping `PATH` from the subprocess env.
+- **Tool-usage telemetry** counts only the real command at each quote-aware
+  pipeline head — quoted-string bodies, flag values, and heredoc bodies are no
+  longer miscounted as tools.
+- **commit-msg** now names the offending character when a description is
+  rejected, and the `conventional-commits` skill documents the lowercase-only
+  charset (put version numbers and proper nouns in the body).
+- **CI hygiene**: tracker-only pushes no longer trigger builds, the pytest gate
+  runs in parallel via xdist (dropping a duplicate pre-commit step), workflow
+  jobs have descriptive names, and the usage-report tests are hermetic against
+  live telemetry.
 
 ## v0.2.0 - 2026-07-16
 
