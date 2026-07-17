@@ -18,6 +18,6 @@ jobs:
     name: Projection drift check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
       - run: PYTHONPATH=src uv run python -m basicly.cli check
