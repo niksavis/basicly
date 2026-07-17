@@ -11,12 +11,23 @@ from .schema import TECHNOLOGIES
 
 CONFIG_FILE = "basicly.toml"
 
+# Gitignored per-machine overlay: keys here override CONFIG_FILE for the
+# harness sections only ([worktree], [verify], [policy], [runner]). Projection
+# config ([paths], [catalog]) shapes repo-committed outputs, so it stays
+# repo-level and never reads the overlay.
+LOCAL_CONFIG_FILE = "basicly.local.toml"
+
 # Scaffolded into a consumer repo by `basicly install`. Kept next to the
 # defaults below; test_config asserts parsing this yields exactly the built-in
 # defaults, so the two can never drift apart.
 DEFAULT_CONFIG_TOML = """\
 # basicly path wiring. Managed core catalog is materialized and upgraded by
 # `basicly install`; the overlay is always yours to edit.
+#
+# Per-machine harness settings ([worktree], [verify], [policy], [runner]) can
+# be overridden in a gitignored basicly.local.toml next to this file — keys
+# there win over this file, so machine-specific choices (e.g. runner default)
+# stay out of the shared config. [paths] and [catalog] are repo-level only.
 [paths]
 core_fragments = ".basicly/core/fragments"
 overlay_fragments = [".basicly-local/fragments"]
@@ -321,6 +332,27 @@ class ProjectPaths:
         return self.core_root.parent / "state" / "install.json"
 
 
+def _harness_section(repo_root: Path, name: str) -> dict:
+    """The named harness section with basicly.local.toml keys overriding basicly.toml.
+
+    Key-level shallow merge: a key set in the gitignored local overlay replaces
+    the same key from the shared file wholesale (so a local ``checks`` or
+    ``agents`` list is taken as-is, not concatenated). A missing file or a
+    non-table section contributes nothing. Only harness sections go through
+    this merge — projection config ([paths], [catalog]) reads basicly.toml
+    alone.
+    """
+    merged: dict = {}
+    for filename in (CONFIG_FILE, LOCAL_CONFIG_FILE):
+        config_path = repo_root / filename
+        if not config_path.exists():
+            continue
+        section = tomllib.loads(config_path.read_text(encoding="utf-8")).get(name, {})
+        if isinstance(section, dict):
+            merged.update(section)
+    return merged
+
+
 @dataclass(frozen=True)
 class WorktreeConfig:
     """Settings for sibling git-worktree isolation."""
@@ -331,17 +363,10 @@ class WorktreeConfig:
 
 
 def load_worktree_config(repo_root: Path) -> WorktreeConfig:
-    """Load ``[worktree]`` settings from basicly.toml, falling back to defaults."""
+    """Load ``[worktree]`` settings (basicly.toml + local overlay), with defaults."""
     defaults = WorktreeConfig(base_branch=None, concurrency=DEFAULT_WORKTREE_CONCURRENCY)
 
-    config_path = repo_root / CONFIG_FILE
-    if not config_path.exists():
-        return defaults
-
-    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
-    section = data.get("worktree", {})
-    if not isinstance(section, dict):
-        return defaults
+    section = _harness_section(repo_root, "worktree")
 
     base = section.get("base_branch")
     base_branch = base.strip() if isinstance(base, str) and base.strip() else None
@@ -377,19 +402,14 @@ class VerifyConfig:
 
 
 def load_verify_config(repo_root: Path) -> VerifyConfig:
-    """Load ``[verify].checks`` from basicly.toml.
+    """Load ``[verify].checks`` (basicly.toml + local overlay).
 
-    Returns an empty config when the file or section is absent. Raises
+    Returns an empty config when the files or section are absent. Raises
     ``ValueError`` on a malformed check entry rather than silently dropping it —
     a lost gate must never pass unnoticed.
     """
-    config_path = repo_root / CONFIG_FILE
-    if not config_path.exists():
-        return VerifyConfig(())
-
-    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
-    section = data.get("verify", {})
-    raw_checks = section.get("checks") if isinstance(section, dict) else None
+    section = _harness_section(repo_root, "verify")
+    raw_checks = section.get("checks")
     if not isinstance(raw_checks, list):
         return VerifyConfig(())
 
@@ -441,17 +461,10 @@ class PolicyConfig:
 
 
 def load_policy_config(repo_root: Path) -> PolicyConfig:
-    """Load ``[policy]`` settings from basicly.toml, falling back to defaults."""
+    """Load ``[policy]`` settings (basicly.toml + local overlay), with defaults."""
     defaults = PolicyConfig(required_gates=DEFAULT_REQUIRED_GATES, max_rework=DEFAULT_MAX_REWORK)
 
-    config_path = repo_root / CONFIG_FILE
-    if not config_path.exists():
-        return defaults
-
-    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
-    section = data.get("policy", {})
-    if not isinstance(section, dict):
-        return defaults
+    section = _harness_section(repo_root, "policy")
 
     raw_gates = section.get("required_gates")
     if isinstance(raw_gates, list) and all(isinstance(g, str) for g in raw_gates):
@@ -559,21 +572,13 @@ class RunnerConfig:
 def load_runner_config(repo_root: Path) -> RunnerConfig:
     """Load ``[runner]`` settings, merging config overrides onto the built-in adapters.
 
-    Returns the built-in adapters with ``default = "auto"`` when the file or
-    section is absent. Each ``[[runner.agents]]`` entry overrides a built-in by
-    name or adds a new agent. Raises ``ValueError`` on a malformed entry rather
-    than silently dropping it — a lost adapter must never pass unnoticed.
+    Reads basicly.toml plus the local overlay. Returns the built-in adapters
+    with ``default = "auto"`` when the files or section are absent. Each
+    ``[[runner.agents]]`` entry overrides a built-in by name or adds a new
+    agent. Raises ``ValueError`` on a malformed entry rather than silently
+    dropping it — a lost adapter must never pass unnoticed.
     """
-    defaults = RunnerConfig(specs=BUILTIN_RUNNERS, default=AUTO)
-
-    config_path = repo_root / CONFIG_FILE
-    if not config_path.exists():
-        return defaults
-
-    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
-    section = data.get("runner", {})
-    if not isinstance(section, dict):
-        return defaults
+    section = _harness_section(repo_root, "runner")
 
     specs = {spec.name: spec for spec in BUILTIN_RUNNERS}
     raw_agents = section.get("agents")

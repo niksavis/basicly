@@ -9,6 +9,7 @@ import pytest
 from basicly.config import (
     CONFIG_FILE,
     DEFAULT_CONFIG_TOML,
+    LOCAL_CONFIG_FILE,
     PolicyConfig,
     WorktreeConfig,
     load_policy_config,
@@ -262,3 +263,58 @@ def test_runner_config_rejects_malformed_agent(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="unknown prompt_via"):
         load_runner_config(tmp_path)
+
+
+def test_local_config_overrides_harness_sections(tmp_path: Path) -> None:
+    """basicly.local.toml keys win over basicly.toml, key by key, per section."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[worktree]\nbase_branch = "develop"\nconcurrency = 8\n'
+        "[policy]\nmax_rework = 3\n"
+        '[runner]\ndefault = "claude"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / LOCAL_CONFIG_FILE).write_text(
+        '[worktree]\nconcurrency = 2\n[policy]\nmax_rework = 1\n[runner]\ndefault = "manual"\n',
+        encoding="utf-8",
+    )
+
+    worktree = load_worktree_config(tmp_path)
+    assert worktree.concurrency == 2
+    assert worktree.base_branch == "develop"  # untouched base keys survive the merge
+    assert load_policy_config(tmp_path).max_rework == 1
+    assert load_runner_config(tmp_path).default == "manual"
+
+
+def test_local_config_alone_configures_harness(tmp_path: Path) -> None:
+    """The overlay works without a basicly.toml at all."""
+    (tmp_path / LOCAL_CONFIG_FILE).write_text(
+        '[runner]\ndefault = "manual"\n[worktree]\nconcurrency = 1\n',
+        encoding="utf-8",
+    )
+    assert load_runner_config(tmp_path).default == "manual"
+    assert load_worktree_config(tmp_path).concurrency == 1
+
+
+def test_local_config_replaces_verify_checks_wholesale(tmp_path: Path) -> None:
+    """A local checks list replaces the shared one; it is not concatenated."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[verify.checks]]\nname = "pytest"\ncommand = ["pytest", "-q"]\nmodes = ["full"]\n',
+        encoding="utf-8",
+    )
+    (tmp_path / LOCAL_CONFIG_FILE).write_text(
+        '[[verify.checks]]\nname = "ruff"\ncommand = ["ruff", "check"]\nmodes = ["fast"]\n',
+        encoding="utf-8",
+    )
+    checks = load_verify_config(tmp_path).checks
+    assert [check.name for check in checks] == ["ruff"]
+
+
+def test_local_config_never_affects_projection_config(tmp_path: Path) -> None:
+    """[paths] and [catalog] are repo-level: the overlay must not shift them."""
+    (tmp_path / CONFIG_FILE).write_text(DEFAULT_CONFIG_TOML, encoding="utf-8")
+    (tmp_path / LOCAL_CONFIG_FILE).write_text(
+        '[paths]\ncore_fragments = "elsewhere/fragments"\n[catalog]\ntechnologies = ["python"]\n',
+        encoding="utf-8",
+    )
+    assert load_project_paths(tmp_path).core_fragments_dir == Path(".basicly/core/fragments")
+    assert load_technology_selection(tmp_path) is None
