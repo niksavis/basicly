@@ -6,9 +6,12 @@
 # by `basicly permissions-build`, so a consumer inherits the guardrail on
 # install instead of only the dogfooding repo having it.
 #
-# Copilot tool-deny and Codex sandbox/approval renderings land in basicly-u0zg.2
-# (each rule will gain `copilot:` / `codex:` keys); until then only Claude is
-# projected.
+# Only Claude is projected here: a projected config-file deny is Claude-only.
+# Copilot CLI has no config-file deny (deny is a session-scoped --deny-tool flag;
+# github/copilot-cli#2398), and Codex forbids project-scope override of
+# sandbox_mode / approval_policy by design. Their guardrails are therefore
+# invocation-time only, tracked at the runner seam by basicly-lqz5 (copilot
+# --deny-tool) and basicly-t0kt (codex --sandbox/-a).
 deny:
   - id: destructive-rm
     description: block recursive force-remove of files

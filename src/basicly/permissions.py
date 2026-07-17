@@ -15,8 +15,11 @@ into the co-owned deny-list (dedup, order-preserving), consumer-added entries ar
 left untouched, and drift is a subset match (every managed pattern present;
 extras allowed). Nothing managed is pruned: an extra deny is fail-safe, and
 without a marker there is no way to tell a consumer's identical entry from ours.
-The per-target rendering (Claude ``permissions.deny`` here; Copilot/Codex in
-basicly-u0zg.2) lives in the target modules; this module owns the source model.
+A projected config-file deny is Claude-only: Copilot CLI has no config-file deny
+(only a session-scoped ``--deny-tool`` flag; github/copilot-cli#2398) and Codex
+forbids project-scope override of ``sandbox_mode``/``approval_policy`` by design,
+so those two are enforceable only at invocation time — tracked at the runner seam
+by basicly-lqz5 (copilot ``--deny-tool``) and basicly-t0kt (codex ``--sandbox``).
 """
 
 from __future__ import annotations
@@ -32,7 +35,8 @@ PERMISSIONS_DIRNAME = "permissions"
 PERMISSIONS_MANIFEST = "permissions.yaml"
 
 CLAUDE_TARGET = "claude"
-# Copilot and Codex targets are added in basicly-u0zg.2.
+# Claude is the only config-file deny target; Copilot/Codex are invocation-only
+# (see the module docstring: basicly-lqz5 / basicly-t0kt at the runner seam).
 PERMISSION_TARGETS = (CLAUDE_TARGET,)
 
 
