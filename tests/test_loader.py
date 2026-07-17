@@ -300,4 +300,4 @@ def test_legacy_md_fragment_warns_but_loads_yaml(
     assert {f.id for f in fragments} == {"kept"}  # md is not loaded...
     err = capsys.readouterr().err
     assert "old.fragment.md" in err  # ...but its presence is called out
-    assert "fragment-new" in err
+    assert "catalog new fragment" in err

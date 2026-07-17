@@ -390,7 +390,7 @@ def _rel(path: Path, repo_root: Path) -> str:
 
 
 def lint_agent_sources(repo_root: Path) -> list[str]:
-    """Semantic agent lint over the merged core+overlay set (for catalog-lint)."""
+    """Semantic agent lint over the merged core+overlay set (for catalog lint)."""
     try:
         roots = default_agent_roots(repo_root)
         blocks = discover_blocks(roots)

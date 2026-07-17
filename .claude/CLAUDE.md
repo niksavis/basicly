@@ -124,7 +124,7 @@ uv run basicly hooks-check
 
 ## Catalog Authoring
 
-- Author catalog content as YAML sources, never a discoverable `.md`; scaffold with `basicly skills-new`/`fragment-new` and follow the `catalog-authoring` skill — `catalog-lint` enforces the format.
+- Author catalog content as YAML sources, never a discoverable `.md`; scaffold with `basicly catalog new skill`/`catalog new fragment` and follow the `catalog-authoring` skill — `basicly catalog lint` enforces the format.
 
 ## Claude-specific notes
 

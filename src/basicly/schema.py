@@ -40,7 +40,7 @@ STATUSES = {"active", "draft", "deprecated"}
 
 # Controlled vocabulary for technology scoping (§9): stack tags plus the
 # environment tools the catalog ships skills for. A source without a
-# `technologies:` list is universal and always ships; catalog-lint rejects
+# `technologies:` list is universal and always ships; catalog lint rejects
 # values outside this list.
 TECHNOLOGIES = {
     "dotnet",
@@ -73,7 +73,7 @@ def validate_technologies(technologies: object, path: Path) -> list[str]:
     """Validate a source's ``technologies`` value against the controlled vocabulary.
 
     Runs at load time for every source type (overlay sources never pass through
-    catalog-lint), so a typo'd tag fails loudly instead of silently dropping the
+    catalog lint), so a typo'd tag fails loudly instead of silently dropping the
     source from every selection.
     """
     if not isinstance(technologies, list) or not all(

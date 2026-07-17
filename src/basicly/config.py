@@ -206,7 +206,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
       - name: Catalog lint
-        run: @UVX@ catalog-lint
+        run: @UVX@ catalog lint
       - name: Projection drift check
         run: @UVX@ check
       - name: Skill projection drift check

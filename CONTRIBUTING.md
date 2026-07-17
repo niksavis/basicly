@@ -42,7 +42,7 @@ verifies it).
 Core projector commands (fragments → agent instruction files):
 
 ```sh
-uv run basicly list    # table of active fragments: id, category, priority, scope
+uv run basicly catalog list    # table of active fragments: id, category, priority, scope
 uv run basicly build   # render generated files; --target <name> builds one target, --verify runs the catalog gate first and writes nothing on failure
 uv run basicly check   # fail when generated files or the manifest drifted (what CI runs)
 ```
@@ -50,7 +50,7 @@ uv run basicly check   # fail when generated files or the manifest drifted (what
 Skill projection commands (`skill.yaml` sources → `SKILL.md` at target roots):
 
 ```sh
-uv run basicly skills-list    # table of skills in the catalog
+uv run basicly catalog list skill    # table of skills in the catalog
 uv run basicly skills-build   # project skills; --all-default-roots covers .claude/skills and .agents/skills, --root <dir> adds a custom root (repeatable)
 uv run basicly skills-check   # fail when a projected SKILL.md is missing or stale
 ```
@@ -95,9 +95,9 @@ environment) and use the id it prints — ids cannot be invented.
 Guidance content (skills, fragments, hooks) is authored as YAML sources under
 `.basicly/core/`, never as hand-written projected markdown:
 
-- Scaffold with `uv run basicly skills-new <name>` or
-  `uv run basicly fragment-new <name>`.
-- `catalog-lint` (a pre-commit gate) enforces the source format.
+- Scaffold with `uv run basicly catalog new skill <name>` or
+  `uv run basicly catalog new fragment <name>`.
+- `basicly catalog lint` (a pre-commit gate) enforces the source format.
 - Projected files (`CLAUDE.md`, `AGENTS.md`, `SKILL.md`, and friends) are
   generated — edit the source and rebuild; direct edits are rejected.
 

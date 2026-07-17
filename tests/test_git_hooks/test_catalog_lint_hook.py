@@ -27,7 +27,7 @@ def test_prefers_basicly_on_path(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         module.shutil, "which", lambda name: "/usr/bin/basicly" if name == "basicly" else None
     )
-    assert module._cli_command() == ["/usr/bin/basicly", "catalog-lint"]
+    assert module._cli_command() == ["/usr/bin/basicly", "catalog", "lint"]
 
 
 def test_falls_back_to_importable_module(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -35,7 +35,7 @@ def test_falls_back_to_importable_module(monkeypatch: pytest.MonkeyPatch) -> Non
     module = _load_hook()
     monkeypatch.setattr(module.shutil, "which", lambda _name: None)
     # The test venv has basicly importable, so the real find_spec resolves it.
-    assert module._cli_command() == [sys.executable, "-m", "basicly.cli", "catalog-lint"]
+    assert module._cli_command() == [sys.executable, "-m", "basicly.cli", "catalog", "lint"]
 
 
 def test_falls_back_to_uvx(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -50,7 +50,8 @@ def test_falls_back_to_uvx(monkeypatch: pytest.MonkeyPatch) -> None:
         "--from",
         module.DIST_SOURCE,
         "basicly",
-        "catalog-lint",
+        "catalog",
+        "lint",
     ]
 
 

@@ -1,7 +1,7 @@
 """Advisory agent-assisted semantic review of the rendered files (basicly-qps).
 
 This is the *second*, advisory layer of the verification pipeline (§6, §11.5).
-The deterministic gate (`catalog-verify`: schema, duplicate bodies, static
+The deterministic gate (`catalog verify`: schema, duplicate bodies, static
 contradiction/ambiguity/scope) runs first and blocks; this layer asks an agent to
 read the rendered always-on files and report only what the static checks cannot
 catch — contradictions between sections, genuinely ambiguous instructions, and

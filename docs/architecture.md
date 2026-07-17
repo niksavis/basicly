@@ -131,9 +131,9 @@ badly to a model — need a capable reader. Both layers run against the same mer
 fragment set, deterministic always first. Schema/duplicate-id
 validation runs inside the normal load path
 (`loader._validate_fragment`); duplicate-body, contradiction, ambiguity, and
-scope-overlap checks live behind the standalone `basicly catalog-verify` command
+scope-overlap checks live behind the `basicly catalog verify` command
 (`catalog_verify.py`). Agent-assisted semantic
-review (`basicly review`, `review.py`) is
+review (`basicly catalog review`, `review.py`) is
 advisory, never a merge gate (§6).
 
 **3.4 Source of truth and generated files are each a one-way street.** Users edit
@@ -226,7 +226,7 @@ agents auto-discover skills by scanning broadly for `SKILL.md`, a `SKILL.md` _so
 risk an agent loading both the catalog copy and the projected copy twice. `skills-build`
 renders the discoverable `SKILL.md` at the target roots only, with a generated marker.
 Fragments follow the same rule (`<id>.fragment.yaml` → projected `.md`), YAML is the single
-catalog source format (targets and hooks were already YAML), and `basicly catalog-lint`
+catalog source format (targets and hooks were already YAML), and `basicly catalog lint`
 enforces all of this (schema validity, no `.md`-named sources, no `.yml`). The chosen format
 is YAML rather than Python — it needs no code execution, keeps prose lossless via block
 scalars, and matches the existing catalog conventions.
@@ -376,7 +376,7 @@ hand-edited — from YAML sources:
   `basicly-2f4`; a second root would double-load in VS Code, which dedupes
   only skills). Rendered files carry the generated marker inside the
   `protect-generated` hook's scan window, so tool-time edits are blocked.
-- **Lint** (`catalog-lint`): schema validation for both source kinds, plus
+- **Lint** (`catalog lint`): schema validation for both source kinds, plus
   composition rules — block refs must resolve, a `Read-only` posture may not
   grant write tools, and the composed body must stay under 30,000 characters
   (the strictest reader's prompt ceiling).
@@ -387,23 +387,23 @@ hand-edited — from YAML sources:
 
 **Summary**: schema/duplicate-id validation runs on every load; the deterministic
 content checks (duplicate-body, contradiction, ambiguity, scope-overlap) and the
-standalone `basicly catalog-verify` command (also wired as `basicly build --verify`)
-are built, as is the advisory agent-assisted semantic review (`basicly review`).
+standalone `basicly catalog verify` command (also wired as `basicly build --verify`)
+are built, as is the advisory agent-assisted semantic review (`basicly catalog review`).
 
 ### Details
 
-| Check                                                                                       | Mechanism                                                                                                            |
-| ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Required fields, known category/priority/status/target, extension-field types               | `loader._validate_fragment`, runs on every `list`/`build`/`check`                                                    |
-| Duplicate fragment `id` across core + overlay roots                                         | `loader.load_fragments_from_roots`                                                                                   |
-| `replaces` target exists / `override: true` required / no mutual user-user replaces         | `loader._validate_replacements`, runs on every `list`/`build`/`check`                                                |
-| Duplicate/near-duplicate fragment bodies                                                    | `catalog_verify._duplicate_bodies` (difflib ratio)                                                                   |
-| Contradiction detection (static dictionary: tabs/spaces, pathlib/os.path, etc.)             | `catalog_verify._contradictions`, curated pairs                                                                      |
-| Ambiguity detection (deny-list of vague phrases)                                            | `catalog_verify._ambiguous_phrases`                                                                                  |
-| Scope-overlap detection                                                                     | `catalog_verify._scope_overlaps`, scoped pairs                                                                       |
-| Enforcement-pointer check (`enforced_by` field, §3.1)                                       | `catalog_lint` requires each `enforced_by` command to be cited in the body                                           |
-| Standalone `basicly catalog-verify` / `basicly build --verify` commands                     | named `catalog-verify` because `basicly verify` is the loop CI-check runner; `build --verify` gates the write        |
-| Semantic review (`basicly review`, agent reads rendered files for contradictions/ambiguity) | `review.py` builds the prompt, dispatches via the agent-agnostic runner, always exits 0 (advisory, not a merge gate) |
+| Check | Mechanism |
+| --- | --- |
+| Required fields, known category/priority/status/target, extension-field types | `loader._validate_fragment`, runs on every `list`/`build`/`check` |
+| Duplicate fragment `id` across core + overlay roots | `loader.load_fragments_from_roots` |
+| `replaces` target exists / `override: true` required / no mutual user-user replaces | `loader._validate_replacements`, runs on every `list`/`build`/`check` |
+| Duplicate/near-duplicate fragment bodies | `catalog_verify._duplicate_bodies` (difflib ratio) |
+| Contradiction detection (static dictionary: tabs/spaces, pathlib/os.path, etc.) | `catalog_verify._contradictions`, curated pairs |
+| Ambiguity detection (deny-list of vague phrases) | `catalog_verify._ambiguous_phrases` |
+| Scope-overlap detection | `catalog_verify._scope_overlaps`, scoped pairs |
+| Enforcement-pointer check (`enforced_by` field, §3.1) | `catalog_lint` requires each `enforced_by` command to be cited in the body |
+| Standalone `basicly catalog verify` / `basicly build --verify` commands | named `catalog verify` because `basicly verify` is the loop CI-check runner; `build --verify` gates the write |
+| Semantic review (`basicly catalog review`, agent reads rendered files for contradictions/ambiguity) | `review.py` builds the prompt, dispatches via the agent-agnostic runner, always exits 0 (advisory, not a merge gate) |
 
 Both layers run in this order — deterministic gate first, always; semantic
 review second, advisory, on demand or in CI as a report (not a blocker).
@@ -470,11 +470,14 @@ inherits that failure.
 
 **Summary**: the CLI has three surfaces — lifecycle (`install`, which replaced
 the former `init`/`update` staging pair, `uninstall`, and the read-only
-`status`), catalog (`list`,
-`build`, `check`, `skills-*`, `agents-*`, `fragment-new`, `skills-new`,
-`agents-new`, `catalog-lint`, `catalog-verify`, `review`, `usage`,
-`hooks-build`/`hooks-check`), and harness (`worktree`, `verify`, `policy`,
-`decompose`, `loop`, `runner`).
+`status`), catalog (the consumer projection pairs `build`/`check`,
+`skills-build`/`skills-check`, `agents-build`/`agents-check`,
+`hooks-build`/`hooks-check`, `usage`, plus the contributor authoring group
+`catalog` with the verbs `lint`, `verify`, `review`, `new`, `list`), and harness
+(`worktree`, `verify`, `policy`, `decompose`, `loop`, `runner`). The authoring
+and inspection verbs moved under `basicly catalog <verb>` (a breaking change:
+the old flat `list`/`skills-list`/`agents-list`/`*-new`/`catalog-lint`/`catalog-verify`/`review`
+names were removed, not aliased).
 
 ### Details
 
@@ -488,19 +491,19 @@ the former `init`/`update` staging pair, `uninstall`, and the read-only
 
 **Catalog**:
 
-| Command                                                                                   | Behavior                                                                                                                                                                                                                                                                                                                                                                                                           |
-| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `basicly list`                                                                            | Table of active fragments                                                                                                                                                                                                                                                                                                                                                                                          |
-| `basicly build [--target NAME] [--verify]`                                                | Renders enabled targets (or one), writes only changed bytes, updates the manifest, warns on size-cap overrun; `--verify` runs `catalog-verify` first and writes nothing on failure                                                                                                                                                                                                                                 |
-| `basicly check`                                                                           | Byte-for-byte staleness check of generated files + manifest; exit `1` on mismatch, no auto-fix                                                                                                                                                                                                                                                                                                                     |
-| `basicly skills-list` / `skills-build [--root ...\|--all-default-roots]` / `skills-check` | Same build/check contract, applied to the skill catalog                                                                                                                                                                                                                                                                                                                                                            |
-| `basicly agents-list` / `agents-build` / `agents-check`                                   | Same build/check contract for the agent catalog: composes slot blocks into `.claude/agents/<slug>.md` (single-source emission, §5 agent composition model)                                                                                                                                                                                                                                                         |
-| `basicly skills-new` / `basicly fragment-new` / `basicly agents-new`                      | Scaffold a new `skill.yaml` / `<id>.fragment.yaml` / `agent.yaml` source (§4.2 source format)                                                                                                                                                                                                                                                                                                                      |
-| `basicly catalog-lint`                                                                    | Source-format gate: schema validation, no `.md`-named sources, single `.yaml` extension; wired as a pre-commit hook and CI step                                                                                                                                                                                                                                                                                    |
-| `basicly catalog-verify`                                                                  | Deterministic content checks beyond the load-path validation: duplicate bodies, contradictions, ambiguity, scope overlaps (§6); named `catalog-verify` because `basicly verify` is the loop check runner                                                                                                                                                                                                           |
-| `basicly hooks-build [--no-install]` / `hooks-check`                                      | Materializes catalog hook scripts, merges a managed `repo: local` block into `.pre-commit-config.yaml` (foreign hooks preserved, idempotent), and then runs `pre-commit install` for every managed stage so the gates are actually active (`--no-install` skips activation; graceful when pre-commit is absent). `hooks-check` reports projection drift and warns (non-fatal) when the git hooks are not installed |
-| `basicly review [--runner NAME] [--dry-run]`                                              | Advisory agent-assisted semantic review: renders the always-on files, dispatches a review prompt via the agent-agnostic runner (handoff when no CLI is on PATH), always exits 0. `--dry-run` prints the prompt without invoking an agent (§6)                                                                                                                                                                      |
-| `basicly usage report`                                                                    | Reports the tool/skill counts recorded by the `tool-usage` agent hook (token-free telemetry in `.basicly/usage/`) and names never-used catalog skills — the culling input (§4.3)                                                                                                                                                                                                                                   |
+| Command | Behavior |
+| --- | --- |
+| `basicly build [--target NAME] [--verify]` | Renders enabled targets (or one), writes only changed bytes, updates the manifest, warns on size-cap overrun; `--verify` runs `catalog verify` first and writes nothing on failure |
+| `basicly check` | Byte-for-byte staleness check of generated files + manifest; exit `1` on mismatch, no auto-fix |
+| `basicly skills-build [--root ...\|--all-default-roots]` / `skills-check` | Same build/check contract, applied to the skill catalog |
+| `basicly agents-build` / `agents-check` | Same build/check contract for the agent catalog: composes slot blocks into `.claude/agents/<slug>.md` (single-source emission, §5 agent composition model) |
+| `basicly hooks-build [--no-install]` / `hooks-check` | Materializes catalog hook scripts, merges a managed `repo: local` block into `.pre-commit-config.yaml` (foreign hooks preserved, idempotent), and then runs `pre-commit install` for every managed stage so the gates are actually active (`--no-install` skips activation; graceful when pre-commit is absent). `hooks-check` reports projection drift and warns (non-fatal) when the git hooks are not installed |
+| `basicly usage report` | Reports the tool/skill counts recorded by the `tool-usage` agent hook (token-free telemetry in `.basicly/usage/`) and names never-used catalog skills — the culling input (§4.3) |
+| `basicly catalog list [fragment\|skill\|agent]` | Table of catalog sources of the given kind (default `fragment`); the authoring/inspection verbs live under the `catalog` group |
+| `basicly catalog new <fragment\|skill\|agent> NAME [--category C] [--description D]` | Scaffold a new `<id>.fragment.yaml` / `skill.yaml` / `agent.yaml` source (§4.2 source format); `--category` sets a fragment's category, `--description` seeds the one-line summary |
+| `basicly catalog lint` | Source-format gate: schema validation, no `.md`-named sources, single `.yaml` extension; wired as a pre-commit hook and CI step |
+| `basicly catalog verify` | Deterministic content checks beyond the load-path validation: duplicate bodies, contradictions, ambiguity, scope overlaps (§6); named `catalog verify` because `basicly verify` is the loop check runner |
+| `basicly catalog review [--runner NAME] [--dry-run]` | Advisory agent-assisted semantic review: renders the always-on files, dispatches a review prompt via the agent-agnostic runner (handoff when no CLI is on PATH), always exits 0. `--dry-run` prints the prompt without invoking an agent (§6) |
 
 **Harness** (§12):
 
@@ -514,7 +517,7 @@ the former `init`/`update` staging pair, `uninstall`, and the read-only
 | `basicly runner list\|dry-run\|run`         | Agent-agnostic headless runner adapters (claude/codex/copilot + `manual` handoff); the loop build phase auto-dispatches through them (§12.8) |
 
 The formerly planned `basicly conflicts`/`basicly overrides` reporting views are
-**[Deferred]** — cut from scope; `catalog-verify` output covers the reporting need.
+**[Deferred]** — cut from scope; `catalog verify` output covers the reporting need.
 
 ---
 
@@ -586,8 +589,8 @@ and an immediate re-run is a no-op.
   optional `technologies:` list; an untagged source is universal and always
   ships. The vocabulary is a controlled list (`schema.TECHNOLOGIES`: stack tags
   like `python`/`go` plus environment tools like `zsh`/`tmux`), enforced by
-  `catalog-lint` across all four source types (the fragment loader also
-  validates it, since overlay fragments bypass catalog-lint). The consumer's
+  `catalog lint` across all four source types (the fragment loader also
+  validates it, since overlay fragments bypass catalog lint). The consumer's
   selection is recorded as `[catalog] technologies` in `basicly.toml`
   (`basicly install --technologies python,zsh`; absent = everything ships) and
   applied at **projection time**: `build`/`skills-build`/`agents-build`/
@@ -655,7 +658,7 @@ task if demand appears.
 3. **Offloading directory-shaped scopes** via nested `AGENTS.md`/skills for the
    codex target (§7 detail 4).
 4. **`basicly conflicts`/`basicly overrides` reporting views** — cut from scope;
-   `catalog-verify` output covers the reporting need (§8).
+   `catalog verify` output covers the reporting need (§8).
 5. **Per-block technology conditioning inside agent slots** — technology scoping
    applies at whole-source granularity (§9); per-block conditioning is a v2
    idea.
