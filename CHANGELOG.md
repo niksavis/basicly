@@ -6,6 +6,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.3.1 - 2026-07-17
+
+Delta: v0.3.0..v0.3.1
+
+### Changed
+
+- **CI runtimes bumped to Node 24**: every marketplace action pin
+  (`actions/checkout`, `actions/setup-node`, `astral-sh/setup-uv`,
+  `softprops/action-gh-release`) moved to its floating major that targets
+  `node24`, clearing GitHub's Node 20 deprecation warning. No shipped-package
+  change.
+
 ## v0.3.0 - 2026-07-17
 
 Delta: v0.2.0..v0.3.0
