@@ -1717,6 +1717,11 @@ def _cmd_policy_rework(args: argparse.Namespace) -> int:
 def cmd_verify(args: argparse.Namespace) -> int:
     """Run the configured verify checks for a mode and optionally record a gate."""
     repo_root = _repo_root()
+    if args.issue:
+        reason = verify.linked_worktree_guard(repo_root)
+        if reason is not None:
+            ui.fail(f"refusing to record gate for {args.issue}: {reason}")
+            return 1
     config = load_verify_config(repo_root)
     if not config.for_mode(args.mode):
         print(f"No verify checks configured for mode '{args.mode}' in {CONFIG_FILE}.")
