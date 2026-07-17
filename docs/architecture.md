@@ -326,19 +326,19 @@ safe defaults today.
 
 Confirmed current schema ([`schema.py`](../src/basicly/schema.py)):
 
-| Field         | Required | Values                                                                                                                               | Notes                                                 |
-| ------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------- |
-| `id`          | yes      | kebab-case, unique                                                                                                                   | duplicate id across core+overlay is a hard error      |
-| `description` | yes      | one line                                                                                                                             |                                                       |
-| `category`    | yes      | `boundaries`, `code-style`, `commands`, `decisions`, `design`, `hooks`, `project`, `security`, `skills`, `testing`, `tools`, `ci-cd` |                                                       |
-| `applies_to`  | yes      | target names or `all`                                                                                                                |                                                       |
-| `priority`    | no       | `critical`(4) `high`(3) `medium`(2, default) `low`(1)                                                                                | sorts descending                                      |
-| `scope.paths` | no       | glob list, default `["**"]`                                                                                                          | non-default → scoped output                           |
-| `status`      | no       | `active`(default) `draft` `deprecated`                                                                                               | only `active` is projected                            |
-| `source`      | no       | `core`(default) `user`                                                                                                               | inferred from load root if omitted                    |
-| `override`    | no       | bool, default `false`                                                                                                                | must be `true` to replace a core fragment             |
-| `replaces`    | no       | list of fragment ids                                                                                                                 | core fragments removed when this fragment is active   |
-| `extends`     | no       | list of fragment ids                                                                                                                 | documentation only, narrows future conflict detection |
+| Field         | Required | Values                                                                                                                                         | Notes                                                 |
+| ------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| `id`          | yes      | kebab-case, unique                                                                                                                             | duplicate id across core+overlay is a hard error      |
+| `description` | yes      | one line                                                                                                                                       |                                                       |
+| `category`    | yes      | `boundaries`, `code-style`, `commands`, `decisions`, `design`, `hooks`, `project`, `security`, `skills`, `testing`, `tools`, `ci-cd`, `quirks` |                                                       |
+| `applies_to`  | yes      | target names or `all`                                                                                                                          |                                                       |
+| `priority`    | no       | `critical`(4) `high`(3) `medium`(2, default) `low`(1)                                                                                          | sorts descending                                      |
+| `scope.paths` | no       | glob list, default `["**"]`                                                                                                                    | non-default → scoped output                           |
+| `status`      | no       | `active`(default) `draft` `deprecated`                                                                                                         | only `active` is projected                            |
+| `source`      | no       | `core`(default) `user`                                                                                                                         | inferred from load root if omitted                    |
+| `override`    | no       | bool, default `false`                                                                                                                          | must be `true` to replace a core fragment             |
+| `replaces`    | no       | list of fragment ids                                                                                                                           | core fragments removed when this fragment is active   |
+| `extends`     | no       | list of fragment ids                                                                                                                           | documentation only, narrows future conflict detection |
 
 **Extension mechanism**: the planner
 (`planner._apply_user_replacements`) removes core fragments listed in an active user
@@ -472,7 +472,7 @@ inherits that failure.
 the former `init`/`update` staging pair, `uninstall`, and the read-only
 `status`), catalog (`list`,
 `build`, `check`, `skills-*`, `agents-*`, `fragment-new`, `skills-new`,
-`agents-new`, `catalog-lint`, `catalog-verify`, `review`,
+`agents-new`, `catalog-lint`, `catalog-verify`, `review`, `usage`,
 `hooks-build`/`hooks-check`), and harness (`worktree`, `verify`, `policy`,
 `decompose`, `loop`, `runner`).
 
@@ -500,6 +500,7 @@ the former `init`/`update` staging pair, `uninstall`, and the read-only
 | `basicly catalog-verify`                                                                  | Deterministic content checks beyond the load-path validation: duplicate bodies, contradictions, ambiguity, scope overlaps (§6); named `catalog-verify` because `basicly verify` is the loop check runner                                                                                                                                                                                                           |
 | `basicly hooks-build [--no-install]` / `hooks-check`                                      | Materializes catalog hook scripts, merges a managed `repo: local` block into `.pre-commit-config.yaml` (foreign hooks preserved, idempotent), and then runs `pre-commit install` for every managed stage so the gates are actually active (`--no-install` skips activation; graceful when pre-commit is absent). `hooks-check` reports projection drift and warns (non-fatal) when the git hooks are not installed |
 | `basicly review [--runner NAME] [--dry-run]`                                              | Advisory agent-assisted semantic review: renders the always-on files, dispatches a review prompt via the agent-agnostic runner (handoff when no CLI is on PATH), always exits 0. `--dry-run` prints the prompt without invoking an agent (§6)                                                                                                                                                                      |
+| `basicly usage report`                                                                    | Reports the tool/skill counts recorded by the `tool-usage` agent hook (token-free telemetry in `.basicly/usage/`) and names never-used catalog skills — the culling input (§4.3)                                                                                                                                                                                                                                   |
 
 **Harness** (§12):
 
