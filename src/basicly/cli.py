@@ -26,6 +26,7 @@ from . import (
     loop,
     loop_state,
     merge,
+    permissions,
     policy,
     projection,
     review,
@@ -480,6 +481,10 @@ def _status_report(repo_root: Path, paths: ProjectPaths) -> dict[str, Any]:
 
     stages = hook_stages(selected)
 
+    # Permissions deny-list state, reported like the per-manager hook state.
+    deny_patterns = permissions.claude_deny_patterns(permissions.load_deny_rules())
+    permission_mismatches = claude_settings.permission_deny_mismatches(repo_root, deny_patterns)
+
     fragment_overlays = sum(1 for fragment in fragments if fragment.source == "user")
     agent_overlays = sum(
         1
@@ -517,6 +522,12 @@ def _status_report(repo_root: Path, paths: ProjectPaths) -> dict[str, Any]:
                 "mismatches": len(
                     check_copilot_hooks(repo_root, _core_hooks_dir(paths), selection)
                 ),
+            },
+        },
+        "permissions": {
+            "claude": {
+                "managed_patterns": len(deny_patterns),
+                "mismatches": len(permission_mismatches),
             },
         },
         "technologies": sorted(selection) if selection is not None else None,
@@ -1026,6 +1037,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         ),
         ("agents-build", cmd_agents_build, argparse.Namespace()),
         ("hooks-build", cmd_hooks_build, argparse.Namespace(no_install=False)),
+        ("permissions-build", cmd_permissions_build, argparse.Namespace()),
     ]
     for step, handler, namespace in steps:
         ui.heading(f"\n== basicly {step} ==")
@@ -1360,6 +1372,39 @@ def cmd_hooks_check(_args: argparse.Namespace) -> int:
         )
 
     ui.say("Projected hooks are up to date.", style="ok")
+    return 0
+
+
+def cmd_permissions_build(_args: argparse.Namespace) -> int:
+    """Project the catalog deny-list into the agent permissions config."""
+    repo_root = _repo_root()
+    patterns = permissions.claude_deny_patterns(permissions.load_deny_rules())
+    if claude_settings.sync_permission_deny(repo_root, patterns):
+        print(f"Wrote {claude_settings.CLAUDE_SETTINGS_PATH} (managed permissions deny-list)")
+    else:
+        print(f"Permissions deny-list in {claude_settings.CLAUDE_SETTINGS_PATH} is up to date.")
+    return 0
+
+
+def cmd_permissions_check(_args: argparse.Namespace) -> int:
+    """Check that the projected permissions deny-list is up to date."""
+    repo_root = _repo_root()
+    patterns = permissions.claude_deny_patterns(permissions.load_deny_rules())
+    settings_path = repo_root / claude_settings.CLAUDE_SETTINGS_PATH
+    mismatches = [
+        (settings_path, reason)
+        for reason in claude_settings.permission_deny_mismatches(repo_root, patterns)
+    ]
+    if _report_mismatches(
+        mismatches,
+        repo_root,
+        stale_message=(
+            "Stale permissions projection detected. "
+            "Run `basicly permissions-build` to sync the deny-list."
+        ),
+    ):
+        return 1
+    ui.say("Projected permissions deny-list is up to date.", style="ok")
     return 0
 
 
@@ -2499,6 +2544,13 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     subparsers.add_parser("hooks-check", help="Check projected hooks are up to date")
 
+    subparsers.add_parser(
+        "permissions-build", help="Project the agent-permissions deny-list into agent configs"
+    )
+    subparsers.add_parser(
+        "permissions-check", help="Check the projected permissions deny-list is up to date"
+    )
+
     _add_catalog_parser(subparsers)
     _add_worktree_parser(subparsers)
     _add_verify_parser(subparsers)
@@ -2526,6 +2578,8 @@ def main(argv: list[str] | None = None) -> int:
         "agents-check": cmd_agents_check,
         "hooks-build": cmd_hooks_build,
         "hooks-check": cmd_hooks_check,
+        "permissions-build": cmd_permissions_build,
+        "permissions-check": cmd_permissions_check,
         "catalog": cmd_catalog,
         "worktree": cmd_worktree,
         "verify": cmd_verify,

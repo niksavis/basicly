@@ -33,6 +33,9 @@ WORKTREE_KEY = "worktree"
 BG_ISOLATION_KEY = "bgIsolation"
 BG_ISOLATION_NONE = "none"
 
+PERMISSIONS_KEY = "permissions"
+DENY_KEY = "deny"
+
 HOOKS_KEY = "hooks"
 PRE_TOOL_USE_KEY = "PreToolUse"
 # Settings event per manifest stage; a spec's `stage` picks its section.
@@ -78,6 +81,65 @@ def set_bg_isolation_none(repo_root: Path) -> bool:
 
     path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(path, json.dumps(settings, indent=2) + "\n")
+    return True
+
+
+def merge_permission_deny(settings: dict, patterns: list[str]) -> dict:
+    """Return settings with the managed deny *patterns* ensured present (union).
+
+    Order-preserving: existing deny entries keep their place and any missing
+    managed pattern is appended. Consumer-added entries are never removed — an
+    extra deny is fail-safe, and a flat deny string carries no marker to prune
+    managed-ness by (see permissions.py).
+    """
+    merged = dict(settings)
+    perms = merged.get(PERMISSIONS_KEY)
+    perms = dict(perms) if isinstance(perms, dict) else {}
+    deny = perms.get(DENY_KEY)
+    deny = list(deny) if isinstance(deny, list) else []
+
+    present = set(deny)
+    for pattern in patterns:
+        if pattern not in present:
+            deny.append(pattern)
+            present.add(pattern)
+
+    perms[DENY_KEY] = deny
+    merged[PERMISSIONS_KEY] = perms
+    return merged
+
+
+def permission_deny_mismatches(repo_root: Path, patterns: list[str]) -> list[str]:
+    """Return a reason per managed deny pattern missing from the committed settings."""
+    settings = _load_settings(repo_root / CLAUDE_SETTINGS_PATH)
+    perms = settings.get(PERMISSIONS_KEY)
+    perms = perms if isinstance(perms, dict) else {}
+    deny = perms.get(DENY_KEY)
+    present = set(deny) if isinstance(deny, list) else set()
+    return [
+        f"managed deny pattern {pattern!r} missing"
+        for pattern in patterns
+        if pattern not in present
+    ]
+
+
+def sync_permission_deny(repo_root: Path, patterns: list[str]) -> bool:
+    """Project managed deny patterns into ``.claude/settings.json``.
+
+    Returns True when the file changed, False when already in sync (all managed
+    patterns already present) or when there is nothing to project.
+    """
+    if not patterns:
+        return False
+    if not permission_deny_mismatches(repo_root, patterns):
+        return False
+
+    path = repo_root / CLAUDE_SETTINGS_PATH
+    settings = _load_settings(path)
+    merged = merge_permission_deny(settings, patterns)
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(path, json.dumps(merged, indent=2) + "\n")
     return True
 
 

@@ -1,0 +1,69 @@
+# Baseline agent-permissions deny-list, projected per target (basicly-u0zg).
+#
+# Each entry is a semantic guardrail; `claude` lists the native
+# `permissions.deny` patterns Claude Code enforces at tool time. The list is
+# authored here once and projected into every consumer's co-owned agent config
+# by `basicly permissions-build`, so a consumer inherits the guardrail on
+# install instead of only the dogfooding repo having it.
+#
+# Copilot tool-deny and Codex sandbox/approval renderings land in basicly-u0zg.2
+# (each rule will gain `copilot:` / `codex:` keys); until then only Claude is
+# projected.
+deny:
+  - id: destructive-rm
+    description: block recursive force-remove of files
+    claude:
+      - "Bash(rm -rf*)"
+      - "Bash(rm -fr*)"
+      - "Bash(rm -r -f*)"
+      - "Bash(rm -f -r*)"
+  - id: force-push
+    description: block force / lease-force pushes that rewrite remote history
+    claude:
+      - "Bash(git push --force*)"
+      - "Bash(git push --force-with-lease*)"
+      - "Bash(git push -f*)"
+      - "Bash(git push*--force*)"
+  - id: bypass-gates
+    description: block skipping the commit/push gates (no-verify / no-gpg-sign)
+    claude:
+      - "Bash(git push*--no-verify*)"
+      - "Bash(git push*--no-gpg-sign*)"
+      - "Bash(git commit*--no-verify*)"
+      - "Bash(git commit*--no-gpg-sign*)"
+  - id: destructive-git
+    description: block hard reset, force clean, and history rewrites
+    claude:
+      - "Bash(git reset --hard*)"
+      - "Bash(git clean*-f*)"
+      - "Bash(git filter-branch*)"
+      - "Bash(git filter-repo*)"
+  - id: env-read
+    description: block reading dotenv secret files
+    claude:
+      - "Read(.env)"
+      - "Read(.env.*)"
+      - "Read(**/.env)"
+      - "Read(**/.env.*)"
+      - "Read(**/.env.local)"
+  - id: env-edit
+    description: block mutating dotenv secret files via any file-writing tool
+    claude:
+      # Every Claude Code file-mutation tool, so `.env` cannot be created or
+      # overwritten through a write path the Edit-only deny used to leave open.
+      - "Edit(.env)"
+      - "Edit(.env.*)"
+      - "Edit(**/.env)"
+      - "Edit(**/.env.*)"
+      - "Write(.env)"
+      - "Write(.env.*)"
+      - "Write(**/.env)"
+      - "Write(**/.env.*)"
+      - "MultiEdit(.env)"
+      - "MultiEdit(.env.*)"
+      - "MultiEdit(**/.env)"
+      - "MultiEdit(**/.env.*)"
+      - "NotebookEdit(.env)"
+      - "NotebookEdit(.env.*)"
+      - "NotebookEdit(**/.env)"
+      - "NotebookEdit(**/.env.*)"

@@ -472,7 +472,8 @@ inherits that failure.
 the former `init`/`update` staging pair, `uninstall`, and the read-only
 `status`), catalog (the consumer projection pairs `build`/`check`,
 `skills-build`/`skills-check`, `agents-build`/`agents-check`,
-`hooks-build`/`hooks-check`, `usage`, plus the contributor authoring group
+`hooks-build`/`hooks-check`, `permissions-build`/`permissions-check`, `usage`,
+plus the contributor authoring group
 `catalog` with the verbs `lint`, `verify`, `review`, `new`, `list`), and harness
 (`worktree`, `verify`, `policy`, `decompose`, `loop`, `runner`). The authoring
 and inspection verbs moved under `basicly catalog <verb>` (a breaking change:
@@ -498,6 +499,7 @@ names were removed, not aliased).
 | `basicly skills-build [--root ...\|--all-default-roots]` / `skills-check` | Same build/check contract, applied to the skill catalog |
 | `basicly agents-build` / `agents-check` | Same build/check contract for the agent catalog: composes slot blocks into `.claude/agents/<slug>.md` (single-source emission, §5 agent composition model) |
 | `basicly hooks-build [--no-install]` / `hooks-check` | Materializes catalog hook scripts, merges a managed `repo: local` block into `.pre-commit-config.yaml` (foreign hooks preserved, idempotent), and then runs `pre-commit install` for every managed stage so the gates are actually active (`--no-install` skips activation; graceful when pre-commit is absent). `hooks-check` reports projection drift and warns (non-fatal) when the git hooks are not installed |
+| `basicly permissions-build` / `permissions-check` | Projects the catalog agent-permissions deny-list (`.basicly/core/permissions/permissions.yaml`) into the co-owned `.claude/settings.json` `permissions.deny`, the way hooks are managed: ensure-present (managed patterns merged in, consumer-added entries preserved, nothing pruned — an extra deny is fail-safe and a flat deny string has no per-entry marker), with a semantic subset-match drift check. Copilot/Codex surfaces land in basicly-u0zg.2 |
 | `basicly usage report` | Reports the tool/skill counts recorded by the `tool-usage` agent hook (token-free telemetry in `.basicly/usage/`) and names never-used catalog skills — the culling input (§4.3) |
 | `basicly catalog list [fragment\|skill\|agent]` | Table of catalog sources of the given kind (default `fragment`); the authoring/inspection verbs live under the `catalog` group |
 | `basicly catalog new <fragment\|skill\|agent> NAME [--category C] [--description D]` | Scaffold a new `<id>.fragment.yaml` / `skill.yaml` / `agent.yaml` source (§4.2 source format); `--category` sets a fragment's category, `--description` seeds the one-line summary |
