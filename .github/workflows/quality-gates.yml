@@ -103,7 +103,8 @@ jobs:
         run: npx --no-install markdownlint-cli2
       - name: Lint catalog sources
         run: uv run python -m basicly.cli catalog-lint
-      - name: Run pre-commit checks
-        run: uv run python .basicly/core/hooks/pre-commit.py
-      - name: Run pre-push checks
+      # Only the full (pre-push) gate runs: it is a superset of the fast
+      # (pre-commit) checks — ruff, format, pyright, bandit — plus pytest, so
+      # running pre-commit too just repeated that work (basicly-5uo6).
+      - name: Run full checks (ruff, format, pyright, bandit, pytest)
         run: uv run python .basicly/core/hooks/pre-push.py

@@ -44,7 +44,9 @@ modes = ["fast", "full"]
 
 [[verify.checks]]
 name = "pytest"
-command = ["pytest", "-q"]
+# -n auto (pytest-xdist) parallelizes the subprocess-heavy CLI tests across
+# cores; on the multi-core CI runners this is the bulk of the gate's wall time.
+command = ["pytest", "-q", "-n", "auto"]
 modes = ["full"]
 
 # Loop gate/checkpoint policy: which gates block advancement and the rework cap.
