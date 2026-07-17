@@ -234,7 +234,10 @@ scalars, and matches the existing catalog conventions.
 **Hooks** (projected and installed by
 `hooks-build`): `core/hooks/` holds the actual hook scripts — git-stage gates
 (`pre-commit.py`, `identity-guard.py`, `commit-msg.py`, `beads-commit-msg.py`,
-`pre-push.py`) plus agent-side hooks (`protect-generated.py`, `tool-usage.py`) — as
+`pre-push.py`, `secret-scan.py` — a stdlib scanner that blocks a commit whose
+staged added lines carry a likely credential, with an inline
+`pragma: allowlist secret` escape for reviewed false positives) plus agent-side
+hooks (`protect-generated.py`, `tool-usage.py`) — as
 first-class catalog artifacts — the deterministic, gating counterpart to
 fragments/skills — described tool-agnostically in `core/hooks/hooks.yaml`.
 (`identity-guard.py` blocks a commit whose git identity is unset or a hostname
