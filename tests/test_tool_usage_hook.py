@@ -105,3 +105,24 @@ def test_heredoc_bodies_are_not_counted(tmp_path: Path) -> None:
     assert _run(payload, tmp_path).returncode == 0
     counts = {tool: entry["count"] for tool, entry in _stats(tmp_path).items()}
     assert counts == {"python3": 1, "rg": 1}
+
+
+def test_quoted_body_words_are_not_counted(tmp_path: Path) -> None:
+    """Operators/newlines inside a quoted argument stay in one segment (basicly-zcvo).
+
+    A multi-line ``git commit -m`` body and a ``<<'PY'`` heredoc must not leak
+    their words (musical, portable, --description, import) as command heads.
+    """
+    command = (
+        'git commit -m "Refine the layout\n'
+        "musical note icon && portable paths\n"
+        '--description stuff"\n'
+        "python3 - <<'PY'\n"
+        "import os; print('nope')\n"
+        "PY\n"
+        'gh pr create --title "add x; ship it"'
+    )
+    payload = {"tool_name": "Bash", "tool_input": {"command": command}}
+    assert _run(payload, tmp_path).returncode == 0
+    counts = {tool: entry["count"] for tool, entry in _stats(tmp_path).items()}
+    assert counts == {"git": 1, "python3": 1, "gh": 1}
