@@ -57,6 +57,8 @@ from .hooks import (
     check_copilot_hooks,
     check_hooks,
     claude_hook_specs,
+    copilot_hook_specs,
+    git_hook_specs,
     hook_stages,
     install_hooks,
     load_hook_specs,
@@ -408,6 +410,187 @@ def _report_provenance_notes(repo_root: Path, paths: ProjectPaths) -> None:
         )
         for rel_path, reason in drift:
             print(f"  {rel_path}: {reason}", file=sys.stderr)
+
+
+# Bump only on breaking changes to the `basicly status --json` payload shape —
+# fleet loops key on it to detect a schema they do not understand.
+STATUS_SCHEMA_VERSION = 1
+
+
+def _status_report(repo_root: Path, paths: ProjectPaths) -> dict[str, Any]:
+    """Assemble the read-only status snapshot; must never write anything."""
+    try:
+        authoring = bundled_catalog_root().resolve() == (repo_root / paths.core_root).resolve()
+    except FileNotFoundError:
+        authoring = False
+
+    install_state = None
+    state_error: str | None = None
+    try:
+        install_state = state.read_install_state(repo_root / paths.state_path)
+    except ValidationError as exc:
+        state_error = str(exc)
+    core_drift = (
+        state.core_drift(install_state, repo_root / paths.core_root) if install_state else []
+    )
+
+    # Same comparison `basicly check` fails on, reported here without failing.
+    fragments, targets = _load_context(repo_root, paths)
+    planned = plan_outputs(fragments, targets, repo_root)
+    stale_outputs: list[str] = []
+    expected_manifest_outputs: dict[str, dict[str, Any]] = {}
+    for item in planned:
+        content = _render_planned(repo_root, paths, item)
+        rel_path = item.output_path.relative_to(repo_root).as_posix()
+        expected_hash = sha256_of_text(content)
+        expected_manifest_outputs[rel_path] = {
+            "hash": expected_hash,
+            "source_fragments": [f.id for f in item.fragments],
+        }
+        if (
+            not item.output_path.exists()
+            or sha256_of_text(item.output_path.read_bytes().decode("utf-8")) != expected_hash
+        ):
+            stale_outputs.append(rel_path)
+
+    manifest_path = repo_root / paths.manifest_path
+    existing_manifest: dict[str, Any] = {}
+    if manifest_path.exists():
+        try:
+            existing_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            existing_manifest = {}
+    manifest_stale = existing_manifest.get("outputs") != expected_manifest_outputs
+
+    # Per-manager hook state, composed exactly like `basicly hooks-check`.
+    selection = load_technology_selection(repo_root)
+    all_specs = load_hook_specs()
+    selected = selected_hook_specs(all_specs, selection)
+    hooks_relpath = _core_hooks_dir(paths).as_posix()
+
+    claude_selected = claude_hook_specs(selected)
+    excluded_agent_specs = [
+        spec for spec in claude_hook_specs(all_specs) if spec not in claude_selected
+    ]
+    claude_mismatches = claude_settings.agent_hook_mismatches(
+        repo_root, claude_selected, hooks_relpath
+    ) + claude_settings.excluded_agent_hooks_present(repo_root, excluded_agent_specs, hooks_relpath)
+
+    stages = hook_stages(selected)
+
+    fragment_overlays = sum(1 for fragment in fragments if fragment.source == "user")
+    agent_overlays = sum(
+        1
+        for agent in agents.discover_agents(agents.default_agent_roots(repo_root))
+        if agent.source == "user"
+    )
+
+    return {
+        "schema_version": STATUS_SCHEMA_VERSION,
+        "engine_version": __version__,
+        "repo_kind": "authoring" if authoring else "consumer",
+        "catalog": {
+            "installed_version": install_state.basicly_version if install_state else None,
+            "installed_at": install_state.installed_at if install_state else None,
+            "state_error": state_error,
+        },
+        "drift": {
+            "stale_outputs": stale_outputs,
+            "manifest_stale": manifest_stale,
+            "core_drift": [{"path": rel_path, "reason": reason} for rel_path, reason in core_drift],
+        },
+        "hooks": {
+            "git": {
+                "selected_specs": len(git_hook_specs(selected)),
+                "mismatches": len(check_hooks(repo_root, _core_hooks_dir(paths), selection)),
+                "stages": stages,
+                "missing_stages": missing_hook_installations(repo_root, stages),
+            },
+            "claude": {
+                "selected_specs": len(claude_selected),
+                "mismatches": len(claude_mismatches),
+            },
+            "copilot": {
+                "selected_specs": len(copilot_hook_specs(selected)),
+                "mismatches": len(
+                    check_copilot_hooks(repo_root, _core_hooks_dir(paths), selection)
+                ),
+            },
+        },
+        "technologies": sorted(selection) if selection is not None else None,
+        "overlays": {"fragments": fragment_overlays, "agents": agent_overlays},
+    }
+
+
+def _say_status_catalog(report: dict[str, Any]) -> None:
+    """Print the repo-kind and installed-vs-engine catalog lines."""
+    catalog = report["catalog"]
+    if report["repo_kind"] == "authoring":
+        ui.say("repo: authoring (catalog is the live bundled source; no install state)")
+        return
+    ui.say("repo: consumer")
+    if catalog["state_error"] is not None:
+        ui.warn(f"catalog: {catalog['state_error']}")
+    elif catalog["installed_version"] is None:
+        ui.say("catalog: no install state recorded; run `basicly install`", style="warn")
+    else:
+        match = catalog["installed_version"] == report["engine_version"]
+        note = "matches engine" if match else "run `basicly install` to upgrade"
+        ui.say(
+            f"catalog: installed by basicly {catalog['installed_version']} "
+            f"at {catalog['installed_at']} ({note})",
+            style="ok" if match else "warn",
+        )
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    """Read-only repo snapshot: versions, drift, hooks, selection, overlays."""
+    repo_root = _repo_root()
+    paths = load_project_paths(repo_root)
+    report = _status_report(repo_root, paths)
+    if args.json:
+        print(json.dumps(report, indent=2))
+        return 0
+
+    ui.say(f"engine: basicly {report['engine_version']}")
+    _say_status_catalog(report)
+
+    drift = report["drift"]
+    stale_count = len(drift["stale_outputs"]) + (1 if drift["manifest_stale"] else 0)
+    if stale_count:
+        ui.say(f"drift: {stale_count} stale generated file(s); run `basicly build`", style="warn")
+    else:
+        ui.say("drift: generated files up to date", style="ok")
+    if drift["core_drift"]:
+        ui.say(
+            f"drift: {len(drift['core_drift'])} managed core file(s) differ from the "
+            "installed snapshot",
+            style="warn",
+        )
+
+    rows = []
+    for manager in ("git", "claude", "copilot"):
+        entry = report["hooks"][manager]
+        projection = "in sync" if entry["mismatches"] == 0 else f"{entry['mismatches']} stale"
+        if manager == "git":
+            activation = (
+                "missing: " + ", ".join(entry["missing_stages"])
+                if entry["missing_stages"]
+                else "installed"
+            )
+        else:
+            activation = "-"
+        rows.append([manager, str(entry["selected_specs"]), projection, activation])
+    ui.table("Hooks", ["manager", "specs", "projection", "activation"], rows)
+
+    technologies = report["technologies"]
+    if technologies is None:
+        ui.say("technologies: all (no selection recorded)")
+    else:
+        ui.say(f"technologies: {', '.join(technologies)}")
+    overlays = report["overlays"]
+    ui.say(f"overlays: {overlays['fragments']} fragment(s), {overlays['agents']} agent(s)")
+    return 0
 
 
 def _merge_directories(src: Path, dst: Path) -> tuple[int, int]:
@@ -2078,6 +2261,8 @@ command groups:
                        (re-running install IS the upgrade; no update command)
     uninstall          remove everything basicly manages (--purge: overlay too)
     build / check      regenerate agent instruction files / fail on drift
+    status             read-only snapshot: versions, drift, hooks, overlays
+                       (--json emits a stable schema for fleet loops)
     skills-build / skills-check, hooks-build / hooks-check,
     agents-build / agents-check
                        project and verify the other catalog kinds
@@ -2090,6 +2275,19 @@ command groups:
   harness (agent-facing development loop, either repo):
     worktree, verify, policy, decompose, loop, runner
 """
+
+
+def _add_status_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Register the `basicly status` command."""
+    status_parser = subparsers.add_parser(
+        "status",
+        help="Read-only repo snapshot: versions, drift, hooks, technologies, overlays",
+    )
+    status_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the snapshot as JSON (stable schema, for fleet loops)",
+    )
 
 
 def _add_usage_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -2140,6 +2338,8 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     subparsers.add_parser("check", help="Check generated files are up to date")
+
+    _add_status_parser(subparsers)
 
     subparsers.add_parser("skills-list", help="List skills in .basicly/core/skills")
 
@@ -2219,6 +2419,7 @@ def main(argv: list[str] | None = None) -> int:
         "uninstall": cmd_uninstall,
         "build": cmd_build,
         "check": cmd_check,
+        "status": cmd_status,
         "skills-list": cmd_skills_list,
         "skills-build": cmd_skills_build,
         "skills-check": cmd_skills_check,

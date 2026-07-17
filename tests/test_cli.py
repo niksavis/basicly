@@ -1032,3 +1032,94 @@ def test_cli_usage_report_notes_missing_data(work_repo: Path) -> None:
     result = run_basicly(work_repo, "usage", "report")
     assert result.returncode == 0, result.stderr
     assert "No usage data" in result.stdout
+
+
+def test_cli_status_reports_authoring_repo(work_repo: Path) -> None:
+    """In the authoring repo, status names the repo kind and skips install state."""
+    result = run_basicly(work_repo, "status")
+    assert result.returncode == 0, result.stderr
+    assert "engine: basicly" in result.stdout
+    assert "repo: authoring" in result.stdout
+    assert "drift: generated files up to date" in result.stdout
+
+
+def test_cli_status_json_authoring_schema(work_repo: Path) -> None:
+    """The --json payload keeps its stable schema; authoring has no install state."""
+    result = run_basicly(work_repo, "status", "--json")
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    assert set(report) == {
+        "schema_version",
+        "engine_version",
+        "repo_kind",
+        "catalog",
+        "drift",
+        "hooks",
+        "technologies",
+        "overlays",
+    }
+    assert report["schema_version"] == 1
+    assert report["repo_kind"] == "authoring"
+    assert report["catalog"] == {
+        "installed_version": None,
+        "installed_at": None,
+        "state_error": None,
+    }
+    assert report["drift"] == {"stale_outputs": [], "manifest_stale": False, "core_drift": []}
+    assert set(report["hooks"]) == {"git", "claude", "copilot"}
+    for entry in report["hooks"].values():
+        assert entry["mismatches"] == 0
+    assert set(report["overlays"]) == {"fragments", "agents"}
+
+
+def test_cli_status_json_consumer_reports_install_and_drift(tmp_path: Path) -> None:
+    """In a consumer repo, status reports the install provenance and any drift."""
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    install = run_basicly_consumer(consumer, "install")
+    assert install.returncode == 0, install.stderr
+
+    result = run_basicly_consumer(consumer, "status", "--json")
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    assert report["repo_kind"] == "consumer"
+    assert report["catalog"]["installed_version"] == report["engine_version"]
+    assert report["drift"] == {"stale_outputs": [], "manifest_stale": False, "core_drift": []}
+
+    state_payload = json.loads(
+        (consumer / ".basicly" / "state" / "install.json").read_text(encoding="utf-8")
+    )
+    tracked = next(iter(sorted(state_payload["core"])))
+    core_file = consumer / ".basicly" / "core" / tracked
+    core_file.write_text(core_file.read_text(encoding="utf-8") + "\n# drift\n", encoding="utf-8")
+    manifest = json.loads(
+        (consumer / ".basicly" / "generated-manifest.json").read_text(encoding="utf-8")
+    )
+    generated = next(iter(sorted(manifest["outputs"])))
+    (consumer / generated).unlink()
+
+    result = run_basicly_consumer(consumer, "status", "--json")
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    assert {"path": tracked, "reason": "modified"} in report["drift"]["core_drift"]
+    assert generated in report["drift"]["stale_outputs"]
+
+
+def test_cli_status_never_writes(tmp_path: Path) -> None:
+    """Both output modes leave every file in the repo byte-identical."""
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    install = run_basicly_consumer(consumer, "install")
+    assert install.returncode == 0, install.stderr
+
+    def snapshot() -> dict[str, str]:
+        return {
+            path.relative_to(consumer).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in sorted(consumer.rglob("*"))
+            if path.is_file()
+        }
+
+    before = snapshot()
+    assert run_basicly_consumer(consumer, "status").returncode == 0
+    assert run_basicly_consumer(consumer, "status", "--json").returncode == 0
+    assert snapshot() == before
