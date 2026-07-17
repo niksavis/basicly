@@ -479,7 +479,7 @@ the former `init`/`update` staging pair, `uninstall`, and the read-only
 `hooks-build`/`hooks-check`, `permissions-build`/`permissions-check`, `usage`,
 plus the contributor authoring group
 `catalog` with the verbs `lint`, `verify`, `review`, `new`, `list`), and harness
-(`worktree`, `verify`, `policy`, `decompose`, `loop`, `runner`). The authoring
+(`worktree`, `verify`, `policy`, `decompose`, `loop`, `runner`, `rubric`). The authoring
 and inspection verbs moved under `basicly catalog <verb>` (a breaking change:
 the old flat `list`/`skills-list`/`agents-list`/`*-new`/`catalog-lint`/`catalog-verify`/`review`
 names were removed, not aliased).
@@ -510,6 +510,7 @@ names were removed, not aliased).
 | `basicly catalog lint` | Source-format gate: schema validation, no `.md`-named sources, single `.yaml` extension; wired as a pre-commit hook and CI step |
 | `basicly catalog verify` | Deterministic content checks beyond the load-path validation: duplicate bodies, contradictions, ambiguity, scope overlaps (§6); named `catalog verify` because `basicly verify` is the loop check runner |
 | `basicly catalog review [--runner NAME] [--dry-run]` | Advisory agent-assisted semantic review: renders the always-on files, dispatches a review prompt via the agent-agnostic runner (handoff when no CLI is on PATH), always exits 0. `--dry-run` prints the prompt without invoking an agent (§6) |
+| `basicly rubric eval <issue> [--runner NAME] [--dry-run]` | Evaluates the issue's work-type behavioral rubric (`.basicly/core/rubrics/*.rubric.yaml`): deterministic checks run via the verify runner (exit code = yes/no), judged checks dispatch one agent prompt via the runner (handoff when no CLI). Reports an advisory `rubric` gate (`br gate report`) — non-required by default (a judged verdict never fails the gate; deterministic-first), promotable by adding `rubric` to `[policy] required_gates`. `--dry-run` prints the judged prompt (basicly-0122) |
 
 **Harness** (§12):
 
