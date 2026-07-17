@@ -32,11 +32,31 @@ basicly loop status <issue>     # phase, worktree binding, gates, checkpoints, r
 Pick the next actionable issue with `br ready` / `br scheduler --json`; `basicly
 loop status` then tells you which phase it is parked in and what it is waiting on.
 
-Tracker state and worktrees do not mix: claim the bead and commit
-`.beads/issues.jsonl` in the base checkout *before* `loop advance` provisions
-the worktree, and never commit that file on a harness branch (restore it
-before staging) — provisioning syncs it from base, so committing it on both
-sides makes the landing rebase conflict.
+## Tracker commits and pushes — exactly two per track, one push
+
+Tracker state and worktrees do not mix, and every tracker-only commit is
+overhead — so a track makes exactly two, both in the base checkout:
+
+1. **Pre-provisioning commit**: fold *all* early tracker mutations — filing,
+   claiming, the recorded work type, the classify approval, any comments —
+   into ONE `chore(beads)` commit right before the `loop advance` that
+   provisions the worktree. Landing requires a clean base, and provisioning
+   syncs the working-tree `.beads/issues.jsonl` into the worktree so its
+   commit-msg hook already knows fresh ids.
+2. **Closing commit**: after ship (teardown + `br close`), commit the flushed
+   tracker state. This one is structurally separate — the close happens
+   *after* the merge commit exists, so it can never ride a work commit; do
+   not try to fold it (that rule in `tool-br` applies only to non-loop work
+   done directly in the base checkout).
+
+Never commit `.beads/issues.jsonl` on a harness branch (restore it before
+staging — `br` may re-dirty it at any time): base keeps mutating the same
+lines, so committing it on both sides makes the landing rebase conflict.
+
+**Push once per track**, after the closing tracker commit — never push
+tracker-only commits on their own. CI ignores `.beads/**`-only pushes by
+design (the local commit-msg hooks are the deterministic floor), so batched
+pushes cost one CI run for the real change and none for the tracker noise.
 
 ## Advancing the loop
 

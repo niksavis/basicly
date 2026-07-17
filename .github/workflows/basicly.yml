@@ -1,10 +1,17 @@
 name: basicly
 
+# Tracker-only pushes (.beads/**) skip CI: the harness loop necessarily commits
+# beads state separately from the work (basicly-flp), and the local commit-msg
+# hooks are the deterministic floor for those commits.
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - ".beads/**"
   pull_request:
     branches: [main]
+    paths-ignore:
+      - ".beads/**"
 
 jobs:
   check:

@@ -137,11 +137,18 @@ CONSUMER_CI_WORKFLOW = """\
 # Scaffolded by `basicly install`; yours to edit — install never overwrites it.
 name: basicly-gates
 
+# Tracker-only pushes (.beads/**) skip CI: the harness loop necessarily commits
+# beads state separately from the work, and the local commit-msg hooks are the
+# deterministic floor for those commits.
 "on":
   push:
     branches: [main]
+    paths-ignore:
+      - ".beads/**"
   pull_request:
     branches: [main]
+    paths-ignore:
+      - ".beads/**"
   workflow_dispatch:
 
 permissions:
