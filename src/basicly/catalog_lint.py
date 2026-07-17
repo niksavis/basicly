@@ -24,7 +24,7 @@ from pathlib import Path
 import yaml
 from jsonschema import Draft202012Validator
 
-from . import agents
+from . import agents, rubrics
 from .schema import TECHNOLOGIES
 
 CORE_DIR = Path(".basicly/core")
@@ -32,6 +32,7 @@ SKILLS_DIR = CORE_DIR / "skills"
 FRAGMENTS_DIR = CORE_DIR / "fragments"
 AGENTS_DIR = CORE_DIR / "agents"
 HOOKS_DIR = CORE_DIR / "hooks"
+RUBRICS_DIR = CORE_DIR / "rubrics"
 SCHEMAS_DIR = CORE_DIR / "schemas"
 
 
@@ -116,6 +117,10 @@ def lint_catalog(repo_root: Path) -> list[str]:
             f"{_rel(path, repo_root)}: agent sources must be agent.yaml or *.block.yaml, "
             "not markdown (the projector renders .claude/agents)"
         )
+    for path in sorted((repo_root / RUBRICS_DIR).rglob("*.md")):
+        violations.append(
+            f"{_rel(path, repo_root)}: rubric sources must be *.rubric.yaml, not markdown"
+        )
 
     # 2. single YAML extension
     for path in sorted(core.rglob("*.yml")):
@@ -130,6 +135,7 @@ def lint_catalog(repo_root: Path) -> list[str]:
         violations.extend(_validate(path, fragment_validator, repo_root))
 
     violations.extend(_validate_agent_schemas(repo_root))
+    violations.extend(_validate_rubrics(repo_root))
 
     # 4. enforcement-pointer check (§3.1)
     for path in sorted((repo_root / FRAGMENTS_DIR).rglob("*.fragment.yaml")):
@@ -142,6 +148,18 @@ def lint_catalog(repo_root: Path) -> list[str]:
     violations.extend(_check_technology_vocabulary(repo_root))
 
     return violations
+
+
+def _validate_rubrics(repo_root: Path) -> list[str]:
+    """Report a violation when a rubric source fails to load/validate."""
+    rubrics_dir = repo_root / RUBRICS_DIR
+    if not rubrics_dir.is_dir():
+        return []
+    try:
+        rubrics.load_rubrics(rubrics_dir)
+    except ValueError as exc:
+        return [str(exc)]
+    return []
 
 
 def _technology_violations(path: Path, data: object, repo_root: Path) -> list[str]:
