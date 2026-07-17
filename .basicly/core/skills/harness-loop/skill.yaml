@@ -81,7 +81,7 @@ instructions: |
   | **decompose** | features need an agent child plan; leaves (bug/chore/task) skip straight to build | `basicly decompose <feature> --plan plan.toml` (or `--children` on advance); preview with `basicly decompose <feature> --plan plan.toml --dry-run` |
   | **decompose** *(human checkpoint)* | approve before fan-out | `basicly policy checkpoint <id> decompose --approve` |
   | **build** | fan out one worktree per dependency-unblocked child (ranked by `br scheduler`, concurrency-capped), do the work, land through the serial merge queue | `basicly worktree list`; do the coding; `basicly loop advance <id>` lands it |
-  | **verify** | required deterministic gates must be green; then approve ship | `basicly verify --mode full --issue <id>`; `basicly policy gate <id>`; `basicly policy checkpoint <id> ship --approve` |
+  | **verify** | the landing already ran verify and recorded the required gate; inspect it, then approve ship | `basicly policy gate <id>`; `basicly policy checkpoint <id> ship --approve`. Re-run gates (e.g. after rework) with `basicly verify --mode full --issue <id>` — from the base checkout only |
   | **ship** | tear down the worktree and close the issue | `basicly loop advance <id>` (runs teardown + `br close`) |
 
   Leaf types (bug/chore/task) build directly in their own worktree; features
@@ -98,6 +98,13 @@ instructions: |
   `br gate report --status pass|fail`; a failed required gate blocks advancement.
   AI-semantic verification reports a **non-required** gate — advisory, never
   blocking. Inspect the decision with `basicly policy gate <id>`.
+
+  Record gates from the base checkout only. A linked worktree carries a
+  throwaway tracker copy, so a gate recorded there is discarded at landing —
+  `basicly verify --issue` refuses to record from one for exactly this reason.
+  During build you never need to record the gate manually: the landing advance
+  verifies the rebased tree in the worktree and records the required gate from
+  base itself.
 
   ## Rework and escalation
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -183,6 +184,51 @@ def test_report_gate_builds_expected_command(
     assert cmd[:2] == ["gate", "report"]
     assert "--status" in cmd and cmd[cmd.index("--status") + 1] == "pass"
     assert cmd[-1] == "basicly-x"
+
+
+def _git(cwd: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)  # nosec B603 B607
+
+
+@pytest.fixture
+def linked_worktree(tmp_path: Path) -> tuple[Path, Path]:
+    """A real git repo plus a linked worktree of it, as ``(repo, worktree)``."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-b", "main")
+    _git(repo, "config", "user.name", "Test")
+    _git(repo, "config", "user.email", "test@example.com")
+    (repo / "README.md").write_text("hi\n", encoding="utf-8")
+    _git(repo, "add", "README.md")
+    _git(repo, "commit", "-m", "init", "--no-verify")
+    linked = tmp_path / "repo.worktrees" / "wt"
+    _git(repo, "worktree", "add", "-b", "harness/wt", str(linked))
+    return repo, linked
+
+
+def test_linked_worktree_guard_states(linked_worktree: tuple[Path, Path], tmp_path: Path) -> None:
+    """The guard trips only in a linked worktree — not in the main checkout or outside git."""
+    repo, linked = linked_worktree
+    assert verify.linked_worktree_guard(repo) is None
+    reason = verify.linked_worktree_guard(linked)
+    assert reason is not None and "linked worktree" in reason
+    outside = tmp_path / "plain"
+    outside.mkdir()
+    assert verify.linked_worktree_guard(outside) is None
+
+
+def test_cli_verify_refuses_to_record_gate_from_linked_worktree(
+    linked_worktree: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`verify --issue` from a linked worktree fails fast instead of losing the gate."""
+    _repo, linked = linked_worktree
+    monkeypatch.chdir(linked)
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: pytest.fail("checks must not run"))
+    assert cli.main(["verify", "--mode", "full", "--issue", "basicly-x"]) == 1
+    err = capsys.readouterr().err
+    assert "refusing to record gate" in err and "base checkout" in err
 
 
 def test_cli_verify_returns_nonzero_on_failure(
