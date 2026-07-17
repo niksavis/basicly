@@ -389,14 +389,22 @@ def hook_stages(specs: list[HookSpec]) -> list[str]:
 
 
 def _git_hooks_dir(repo_root: Path) -> Path:
-    """Resolve the active git hooks directory (worktree- and hooksPath-aware)."""
-    result = subprocess.run(
-        ["git", "rev-parse", "--git-path", "hooks"],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        check=False,
-    )  # nosec B603 B607
+    """Resolve the active git hooks directory (worktree- and hooksPath-aware).
+
+    Falls back to ``<repo>/.git/hooks`` when git cannot be run (not on PATH) or
+    the query yields nothing — callers such as the read-only ``status`` command
+    must degrade gracefully rather than crash on a git-less environment.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--git-path", "hooks"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )  # nosec B603 B607
+    except OSError:
+        return repo_root / ".git" / "hooks"
     rel = result.stdout.strip()
     if not rel:
         return repo_root / ".git" / "hooks"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -37,7 +38,10 @@ def work_repo(tmp_path: Path) -> Path:
 
 def run_basicly(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     """Run the basicly CLI with the given arguments in the given working directory."""
-    env = {"PYTHONPATH": str(cwd / "src")}
+    # Inherit the real environment (PATH included) so the CLI's own subprocess
+    # calls — e.g. `git` in status — resolve; a bare env has no PATH fallback on
+    # Windows, only on POSIX.
+    env = {**os.environ, "PYTHONPATH": str(cwd / "src")}
     return subprocess.run(
         [sys.executable, "-m", "basicly.cli", *args],
         cwd=cwd,
@@ -50,7 +54,7 @@ def run_basicly(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 def run_basicly_consumer(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     """Run the CLI in a consumer dir, importing basicly from the real repo's src."""
-    env = {"PYTHONPATH": str(REPO_ROOT / "src")}
+    env = {**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")}
     return subprocess.run(
         [sys.executable, "-m", "basicly.cli", *args],
         cwd=cwd,
@@ -1068,7 +1072,7 @@ def test_cli_survives_a_narrow_console_encoding(work_repo: Path) -> None:
     Regression for the first windows-latest CI run: cp1252 stdout raised
     UnicodeEncodeError on the catalog's arrows and failed every command.
     """
-    env = {"PYTHONPATH": str(work_repo / "src"), "PYTHONIOENCODING": "cp1252"}
+    env = {**os.environ, "PYTHONPATH": str(work_repo / "src"), "PYTHONIOENCODING": "cp1252"}
     result = subprocess.run(
         [sys.executable, "-m", "basicly.cli", "skills-list"],
         cwd=work_repo,

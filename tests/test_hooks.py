@@ -331,6 +331,23 @@ def test_missing_hook_installations_detects_uninstalled_and_unmanaged(tmp_path: 
     assert missing == ["commit-msg", "pre-push"]
 
 
+def test_missing_hook_installations_degrades_when_git_is_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Git not on PATH must fall back to <repo>/.git/hooks, not raise (status exits 0)."""
+
+    def _no_git(*_args: object, **_kwargs: object) -> object:
+        raise FileNotFoundError(2, "The system cannot find the file specified")
+
+    monkeypatch.setattr(hooks_module.subprocess, "run", _no_git)
+    hooks_dir = tmp_path / ".git" / "hooks"
+    hooks_dir.mkdir(parents=True)
+    (hooks_dir / "pre-commit").write_text("# pre-commit\n", encoding="utf-8")
+
+    # Resolves via the .git/hooks fallback instead of propagating the OSError.
+    assert missing_hook_installations(tmp_path, ["pre-commit", "pre-push"]) == ["pre-push"]
+
+
 def test_install_hooks_returns_guidance_when_precommit_unavailable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
