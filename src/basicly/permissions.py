@@ -47,18 +47,33 @@ class DenyRule:
     id: str
     description: str
     claude: tuple[str, ...] = ()
+    # Copilot `--deny-tool` specs injected at invocation by the runner
+    # (basicly-lqz5). Empty for rules with no faithful copilot form (the `.env`
+    # read/edit rules); see the manifest header for the prefix-match limitation.
+    copilot: tuple[str, ...] = ()
 
 
 def _catalog_permissions_dir() -> Path:
     return bundled_catalog_root() / PERMISSIONS_DIRNAME
 
 
+def _str_list(entry: dict, key: str, rule_id: str, manifest: Path) -> tuple[str, ...]:
+    """Validate an optional per-target pattern list: absent or a list of non-empty strings."""
+    values = entry.get(key) or []
+    if not isinstance(values, list) or not all(isinstance(p, str) and p for p in values):
+        raise ValueError(
+            f"{manifest}: deny rule '{rule_id}' '{key}' must be a list of non-empty strings"
+        )
+    return tuple(values)
+
+
 def load_deny_rules(permissions_dir: Path | None = None) -> list[DenyRule]:
     """Load deny rules from ``permissions.yaml`` in the given (or bundled) dir.
 
     Validated imperatively (the lightweight ``hooks.yaml`` pattern, no JSON
-    schema): each rule needs an ``id`` and ``description``, and ``claude`` — when
-    present — must be a list of non-empty strings.
+    schema): each rule needs an ``id`` and ``description``, and each per-target
+    pattern list (``claude``, ``copilot``) — when present — must be a list of
+    non-empty strings.
     """
     permissions_dir = permissions_dir or _catalog_permissions_dir()
     manifest = permissions_dir / PERMISSIONS_MANIFEST
@@ -74,29 +89,35 @@ def load_deny_rules(permissions_dir: Path | None = None) -> list[DenyRule]:
         missing = [key for key in ("id", "description") if key not in entry]
         if missing:
             raise ValueError(f"{manifest}: deny rule is missing {', '.join(missing)}")
-        claude = entry.get("claude") or []
-        if not isinstance(claude, list) or not all(isinstance(p, str) and p for p in claude):
-            raise ValueError(
-                f"{manifest}: deny rule '{entry['id']}' 'claude' "
-                "must be a list of non-empty strings"
-            )
+        rule_id = str(entry["id"])
         rules.append(
             DenyRule(
-                id=str(entry["id"]),
+                id=rule_id,
                 description=str(entry["description"]),
-                claude=tuple(claude),
+                claude=_str_list(entry, "claude", rule_id, manifest),
+                copilot=_str_list(entry, "copilot", rule_id, manifest),
             )
         )
     return rules
 
 
-def claude_deny_patterns(rules: list[DenyRule]) -> list[str]:
-    """The flat, de-duplicated Claude deny patterns, in source order."""
+def _flat_patterns(rules: list[DenyRule], attr: str) -> list[str]:
+    """The flat, de-duplicated per-target patterns across *rules*, in source order."""
     seen: set[str] = set()
     patterns: list[str] = []
     for rule in rules:
-        for pattern in rule.claude:
+        for pattern in getattr(rule, attr):
             if pattern not in seen:
                 seen.add(pattern)
                 patterns.append(pattern)
     return patterns
+
+
+def claude_deny_patterns(rules: list[DenyRule]) -> list[str]:
+    """The flat, de-duplicated Claude deny patterns, in source order."""
+    return _flat_patterns(rules, "claude")
+
+
+def copilot_deny_specs(rules: list[DenyRule]) -> list[str]:
+    """The flat, de-duplicated Copilot ``--deny-tool`` specs, in source order."""
+    return _flat_patterns(rules, "copilot")

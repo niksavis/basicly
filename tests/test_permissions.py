@@ -89,6 +89,51 @@ def test_load_deny_rules_rejects_bad_claude_patterns(tmp_path: Path) -> None:
         permissions.load_deny_rules(_write_perms(tmp_path, bad))
 
 
+COPILOT_YAML = """\
+deny:
+  - id: destructive-rm
+    description: block recursive force-remove
+    claude:
+      - "Bash(rm -rf*)"
+    copilot:
+      - "shell(rm -rf)"
+      - "shell(rm -fr)"
+  - id: force-push
+    description: block force pushes
+    copilot:
+      - "shell(git push --force)"
+      - "shell(rm -rf)"
+  - id: env-read
+    description: block reading dotenv files
+    claude:
+      - "Read(.env)"
+"""
+
+
+def test_load_deny_rules_parses_copilot_specs(tmp_path: Path) -> None:
+    """The copilot field parses into the rule; a rule without it is an empty tuple."""
+    rules = {r.id: r for r in permissions.load_deny_rules(_write_perms(tmp_path, COPILOT_YAML))}
+    assert rules["destructive-rm"].copilot == ("shell(rm -rf)", "shell(rm -fr)")
+    assert rules["env-read"].copilot == ()  # no copilot form for the .env rule
+
+
+def test_copilot_deny_specs_flattens_dedups_in_order(tmp_path: Path) -> None:
+    """Copilot specs flatten across rules, de-duplicated, preserving first-seen order."""
+    rules = permissions.load_deny_rules(_write_perms(tmp_path, COPILOT_YAML))
+    assert permissions.copilot_deny_specs(rules) == [
+        "shell(rm -rf)",
+        "shell(rm -fr)",
+        "shell(git push --force)",
+    ]
+
+
+def test_load_deny_rules_rejects_bad_copilot_specs(tmp_path: Path) -> None:
+    """A non-string / empty copilot spec is rejected the same way claude is."""
+    bad = "deny:\n  - id: r\n    description: d\n    copilot: ['']\n"
+    with pytest.raises(ValueError, match="'copilot' must be a list of non-empty strings"):
+        permissions.load_deny_rules(_write_perms(tmp_path, bad))
+
+
 # --- Claude projection (ensure-present, never clobber) -----------------------
 
 
@@ -183,3 +228,19 @@ def test_bundled_source_denies_env_mutation_via_edit_only() -> None:
         assert not any(p.startswith(f"{tool}(") for p in patterns), (
             f"{tool}(...) file rules are not matched by Claude Code permission checks"
         )
+
+
+def test_bundled_source_copilot_specs_cover_shell_rules_only() -> None:
+    """The shipped manifest carries copilot deny specs for the shell rules, none for .env.
+
+    Copilot's `--deny-tool` matches shell commands by prefix (basicly-lqz5); the
+    `.env` read/edit rules have no faithful copilot form, so they must stay
+    copilot-free while every emitted spec is a `shell(...)` guardrail.
+    """
+    rules = {r.id: r for r in permissions.load_deny_rules()}
+    for rule_id in ("destructive-rm", "force-push", "bypass-gates", "destructive-git"):
+        assert rules[rule_id].copilot, f"{rule_id} should carry copilot deny specs"
+    for rule_id in ("env-read", "env-edit"):
+        assert rules[rule_id].copilot == (), f"{rule_id} has no faithful copilot form"
+    specs = permissions.copilot_deny_specs(permissions.load_deny_rules())
+    assert specs and all(s.startswith("shell(") and s.endswith(")") for s in specs)
