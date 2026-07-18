@@ -36,7 +36,18 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import classify, decompose, loop_state, merge, policy, run_record, runner, verify, worktree
+from . import (
+    classify,
+    decompose,
+    loop_state,
+    merge,
+    needs_input,
+    policy,
+    run_record,
+    runner,
+    verify,
+    worktree,
+)
 from .br import run_br as _run_br
 from .config import PolicyConfig, load_policy_config, load_runner_config, load_worktree_config
 from .decompose import ChildSpec
@@ -274,6 +285,17 @@ def _dispatch_runner(ctx: _Ctx, name: str, cwd: Path) -> AdvanceResult:
             f"runner {spec.name!r} failed in worktree {name!r} "
             f"(exit {result.returncode}): {detail}",
         )
+    # The agent finished cleanly but may have signalled it could not resolve a
+    # required fact (basicly-o774): a needs-input sentinel maps to the loop's
+    # block-and-resume contract so the missing fact is surfaced instead of the
+    # loop landing a confident wrong answer. Consumed here so a re-dispatch (once
+    # the fact is supplied) starts clean.
+    needs = needs_input.take(cwd)
+    if needs is not None:
+        reason = (
+            f"runner {spec.name!r} needs input in worktree {name!r}: {needs.detail or needs.fact}"
+        )
+        return _blocked(ctx, reason, needs_input=needs.fact)
     return _blocked(
         ctx, f"runner {spec.name!r} finished in worktree {name!r}; advance again to land it"
     )
@@ -309,7 +331,11 @@ def _dispatch_prompt(issue_id: str) -> str:
         f"Read AGENTS.md for the repo rules, run `br show {issue_id}` for the "
         "requirement and acceptance criteria, implement the work, and commit it "
         "on the current branch referencing that issue id. Do not merge, push, or "
-        "close the issue — the harness loop lands and ships it."
+        "close the issue — the harness loop lands and ships it. "
+        "If you exhaust your ability to resolve a required fact, do NOT guess: "
+        f"write {needs_input.SENTINEL_FILE.as_posix()} as "
+        '{"fact": "<the missing fact>", "detail": "<what you tried>"} and stop '
+        "without committing a guess — the loop will block and surface it."
     )
 
 

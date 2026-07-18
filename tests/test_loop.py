@@ -13,7 +13,18 @@ from types import SimpleNamespace
 
 import pytest
 
-from basicly import classify, decompose, loop, merge, policy, run_record, runner, verify, worktree
+from basicly import (
+    classify,
+    decompose,
+    loop,
+    merge,
+    needs_input,
+    policy,
+    run_record,
+    runner,
+    verify,
+    worktree,
+)
 from basicly.config import PolicyConfig, RunnerConfig, WorktreeConfig
 from basicly.loop_state import NodeState, WorktreeBinding
 from basicly.policy import DoRResult, GateStatus
@@ -188,6 +199,71 @@ def test_classify_leaf_dispatches_headless_runner(
     assert "i" in calls["prompt"] and "AGENTS.md" in calls["prompt"]
     assert "Do not merge" in calls["prompt"]
     assert result.blocked and "runner 'claude' finished" in result.detail
+
+
+def test_dispatch_prompt_documents_the_needs_input_protocol(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The dispatch prompt tells the agent how to signal an unresolved fact (basicly-o774)."""
+    _ready_leaf(at, monkeypatch)
+    _pin_runner(monkeypatch, "claude")
+    seen = {}
+
+    def _run(spec, prompt, *_a, **_k):
+        seen["prompt"] = prompt
+        return runner.RunResult(spec.name, tuple(spec.command), executed=True, returncode=0)
+
+    monkeypatch.setattr(runner, "run", _run)
+    _advance(tmp_path)
+    assert needs_input.SENTINEL_FILE.as_posix() in seen["prompt"]
+    assert "do NOT guess" in seen["prompt"].lower() or "not guess" in seen["prompt"].lower()
+
+
+def test_dispatch_blocks_on_needs_input_sentinel(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A clean run that leaves a needs-input sentinel blocks the loop instead of landing.
+
+    Exercised end-to-end against a real worktree dir: the agent writes the
+    sentinel, the loop reads and consumes it, and surfaces the missing fact.
+    """
+    wt = tmp_path / "wt"
+    (wt / needs_input.SENTINEL_FILE.parent).mkdir(parents=True)
+    sentinel = wt / needs_input.SENTINEL_FILE
+    at(_state("classify", issue_type="task"))
+    monkeypatch.setattr(policy, "definition_of_ready", lambda *_a: DoRResult(True, ()))
+    monkeypatch.setattr(worktree, "list_sessions", lambda *_a, **_k: [])
+    monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: None)
+
+    def _create(name: str, **_k) -> Session:
+        return Session(
+            name=name,
+            branch=f"harness/{name}",
+            base="main",
+            base_head="abc",
+            worktree_path=str(wt),
+            created_at="2026-07-14T00:00:00Z",
+        )
+
+    monkeypatch.setattr(worktree, "create", _create)
+    _pin_runner(monkeypatch, "claude")
+
+    def _run(spec, *_a, **_k):
+        # The agent gives up cleanly, leaving a structured needs-input signal.
+        sentinel.write_text(
+            '{"fact": "prod db dialect", "detail": "schema.sql has no vendor marker"}',
+            encoding="utf-8",
+        )
+        return runner.RunResult(spec.name, tuple(spec.command), executed=True, returncode=0)
+
+    monkeypatch.setattr(runner, "run", _run)
+    result = _advance(tmp_path)
+    assert result.blocked
+    assert result.needs_input == "prod db dialect"
+    assert "needs input" in result.detail
+    assert "schema.sql has no vendor marker" in result.detail
+    # Consumed so a re-dispatch (once the fact is supplied) starts clean.
+    assert not sentinel.exists()
 
 
 def test_dispatch_writes_a_run_record_keyed_by_bead(
