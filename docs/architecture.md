@@ -804,6 +804,14 @@ token/cost fields reserved for a follow-on bead. Only metadata is persisted — 
 elided, never the prompt body or captured output. This is the correlation foundation for
 agent attribution, model provenance, and the cross-repo fleet rollup.
 
+**Output redaction and egress (`basicly-3p2i`).** Captured stdout/stderr is redacted at the
+source before it enters a `RunResult`: high-signal secret shapes (private-key headers, provider
+tokens, secret-named assignments — the sibling pattern set of the `secret-scan` hook, `redact.py`)
+are replaced with a labeled placeholder, so no surface (CLI print, loop log) leaks a credential
+an agent echoed. Network egress is _not_ sandboxed by basicly — it cannot portably restrict a
+generic subprocess; egress control is delegated to the agent-layer sandbox (Codex `sandbox_mode`,
+`basicly-t0kt`; Claude/Copilot config).
+
 **Attribution (`basicly-140a`).** At landing the loop reads the bead's latest run-record
 and stamps the dispatched runner into the audit trail: the `--no-ff` merge commit carries
 `Harness-Runner: <agent>` and (when the run pinned one) `Harness-Model: <model>` git

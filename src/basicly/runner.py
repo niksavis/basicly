@@ -32,6 +32,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from .redact import redact_secrets
+
 # Marker replaced by the prompt when a runner injects it as a command argument.
 PROMPT_PLACEHOLDER = "{prompt}"
 
@@ -301,12 +303,16 @@ def run(spec: RunnerSpec, prompt: str, cwd: Path, *, dry_run: bool = False) -> R
         argv, cwd=cwd, input=stdin, capture_output=True, text=True, check=False
     )
     duration_s = time.perf_counter() - start
+    # Redact secrets at the source so no downstream surface (CLI print, loop log)
+    # can leak a credential the agent echoed (basicly-3p2i). Network egress is not
+    # sandboxed here — that is agent-layer (codex basicly-t0kt, claude/copilot
+    # config); basicly cannot portably restrict a generic subprocess.
     return RunResult(
         spec.name,
         tuple(argv),
         executed=True,
         returncode=proc.returncode,
-        stdout=proc.stdout,
-        stderr=proc.stderr,
+        stdout=redact_secrets(proc.stdout),
+        stderr=redact_secrets(proc.stderr),
         duration_s=duration_s,
     )
