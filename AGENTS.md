@@ -144,12 +144,6 @@ uv run basicly hooks-check
 - Test subprocess helpers must inherit `os.environ` (keep `PATH`), not pass a bare env dict - missing `PATH` still finds `git`/tools on POSIX but not on Windows, so a CLI that shells out fails only on Windows CI (`[WinError 2]`).
 - POSIX `shlex.split` treats `\` as an escape, so a backslash OS path (e.g. Windows `sys.executable`) embedded in a shell-string command is mangled and fails only on Windows CI - use `Path(...).as_posix()` or an argv list, not a shell string.
 
-## Test Discipline
-
-- A test that reads or asserts on state it did not create is broken even if it passes today — build your own fixtures and clean them up.
-- A test must pass regardless of what ran before it, in what order, or whether it runs alone: no shared mutable state, no reliance on execution order.
-- Assert on observable behavior and public contracts, not private implementation details.
-
 ## Non Interactive Shell
 
 - Prefer cross-platform implementations over shell-specific behavior when a choice exists.

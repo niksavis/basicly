@@ -1,6 +1,6 @@
 {
   "version": "1",
-  "generated_at": "2026-07-18T20:25:51.916120+00:00",
+  "generated_at": "2026-07-18T21:57:07.976972+00:00",
   "outputs": {
     ".claude/CLAUDE.md": {
       "hash": "sha256:d5a5f270837f49d4d5576664ca84fb4344983d354d84b9a25694bc60117bfdff",
@@ -37,14 +37,8 @@
         "quirks"
       ]
     },
-    ".claude/rules/test-discipline.md": {
-      "hash": "sha256:6a07a7e64a619ffbaa145904d87912fe0133afa490aa7014bc70ab39b8a47400",
-      "source_fragments": [
-        "test-discipline"
-      ]
-    },
     "AGENTS.md": {
-      "hash": "sha256:2a7968abb729ed2a90478a70ac8cd9dfab3aef0b2bf08afcb1f263a94bb758d0",
+      "hash": "sha256:2164f983c30f3d40dc0a244060e2675bd3de0174c88d144b9fa6a5a3535430e7",
       "source_fragments": [
         "require-explicit-confirmation",
         "knowledge-priming",
@@ -63,7 +57,6 @@
         "self-improvement-retro",
         "session-completion",
         "quirks",
-        "test-discipline",
         "non-interactive-shell",
         "tool-usage"
       ]
