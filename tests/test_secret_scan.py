@@ -30,7 +30,15 @@ scan = _load_hook()
 # Constructed so no literal secret lives in this committed file.
 AWS = "AKIA" + "IOSFODNN7EXAMPLE"
 GITHUB = "ghp_" + "B" * 36
+GITLAB = "glpat-" + "C" * 24
 SLACK = "xoxb-" + "111111111-abcdefghijkl"
+TEAMS = "https://t." + "webhook.office.com/webhookb2/" + "d" * 20
+TELEGRAM = "123456789" + ":" + "E" * 35
+GOOGLE = "AIza" + "k" * 35
+OPENAI = "sk-" + "l" * 40
+STRIPE = "sk_live_" + "f" * 24
+NPM = "npm_" + "g" * 36
+JWT = "eyJ" + "h" * 12 + ".eyJ" + "i" * 12 + ".sig" + "j" * 12
 PK = "-----BEGIN RSA PRIVATE " + "KEY-----"
 GENERIC = "api_key" + ' = "' + "s3cr3tValue123" + '"'
 
@@ -40,7 +48,15 @@ GENERIC = "api_key" + ' = "' + "s3cr3tValue123" + '"'
     [
         (AWS, "aws-access-key-id"),
         (GITHUB, "github-token"),
+        (GITLAB, "gitlab-token"),
         (SLACK, "slack-token"),
+        (TEAMS, "teams-webhook"),
+        (TELEGRAM, "telegram-bot-token"),
+        (GOOGLE, "google-api-key"),
+        (OPENAI, "openai-key"),
+        (STRIPE, "stripe-key"),
+        (NPM, "npm-token"),
+        (JWT, "jwt"),
         (PK, "private-key"),
         (GENERIC, "generic-secret-assignment"),
     ],

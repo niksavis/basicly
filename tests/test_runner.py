@@ -317,6 +317,23 @@ def test_run_executes_and_captures(monkeypatch: pytest.MonkeyPatch) -> None:
     assert isinstance(result.duration_s, float) and result.duration_s >= 0
 
 
+def test_run_redacts_secrets_from_captured_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A secret an agent echoes on stdout/stderr is redacted at the source (basicly-3p2i)."""
+    token = "ghp_" + "a" * 30
+
+    class _Proc:
+        returncode = 0
+        stdout = f"pushed with {token}"
+        stderr = f"warning near {token}"
+
+    monkeypatch.setattr(runner.subprocess, "run", lambda _argv, **_kw: _Proc())
+    spec = RunnerSpec("claude", HEADLESS, ("claude", "-p", PROMPT_PLACEHOLDER))
+    result = runner.run(spec, "go", Path("/work"))
+
+    assert token not in result.stdout and "<redacted:github-token>" in result.stdout
+    assert token not in result.stderr and "<redacted:github-token>" in result.stderr
+
+
 def test_run_stdin_injection_passes_prompt_on_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
     """A stdin runner sends the prompt via subprocess input, not argv."""
     captured: dict[str, object] = {}

@@ -34,19 +34,31 @@ _GENERIC_RULE = "generic-secret-assignment"
 
 # (rule name, pattern). High-signal credential shapes first; the generic
 # secret-named assignment last (it is the one placeholders are filtered from).
+# Kept in step with the runner-output redactor (src/basicly/redact.py,
+# basicly-3p2i) — the same shapes; edit both together.
 _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("private-key", re.compile(r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----")),
     ("aws-access-key-id", re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b")),
     ("github-token", re.compile(r"\b(?:ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]{20,}\b")),
+    ("gitlab-token", re.compile(r"\bglpat-[A-Za-z0-9_-]{20,}\b")),
     ("slack-token", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}")),
     ("slack-webhook", re.compile(r"https://hooks\.slack\.com/services/[A-Za-z0-9/]{20,}")),
+    (
+        "teams-webhook",
+        re.compile(r"https://[A-Za-z0-9.-]+\.webhook\.office\.com/[A-Za-z0-9@/._-]{10,}"),
+    ),
+    ("telegram-bot-token", re.compile(r"\b\d{8,10}:[A-Za-z0-9_-]{35}\b")),
     ("google-api-key", re.compile(r"\bAIza[A-Za-z0-9_\-]{35}\b")),
     ("openai-key", re.compile(r"\bsk-[A-Za-z0-9]{32,}\b")),
+    ("stripe-key", re.compile(r"\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b")),
+    ("npm-token", re.compile(r"\bnpm_[A-Za-z0-9]{36}\b")),
+    ("jwt", re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b")),
     (
         _GENERIC_RULE,
         re.compile(
             r"(?i)(?:password|passwd|secret|token|api[_-]?key|access[_-]?key"
-            r"|private[_-]?key|client[_-]?secret)\s*[:=]\s*['\"][^'\"]{8,}['\"]"
+            r"|private[_-]?key|client[_-]?secret|bearer|credential|webhook"
+            r"|connection[_-]?string)\s*[:=]\s*['\"][^'\"]{8,}['\"]"
         ),
     ),
 )
