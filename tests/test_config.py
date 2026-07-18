@@ -239,6 +239,36 @@ def test_runner_config_adds_custom_agent(tmp_path: Path) -> None:
     assert "claude" in by_name  # built-ins are preserved
 
 
+def test_runner_config_parses_optional_model(tmp_path: Path) -> None:
+    """An [[runner.agents]] entry may pin a model; it lands on the RunnerSpec."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[runner.agents]]\nname = "claude"\n'
+        'command = ["claude", "-p", "{prompt}"]\nmodel = "opus"\n',
+        encoding="utf-8",
+    )
+    by_name = {spec.name: spec for spec in load_runner_config(tmp_path).specs}
+    assert by_name["claude"].model == "opus"
+
+
+def test_runner_config_model_defaults_none(tmp_path: Path) -> None:
+    """An agent entry without a model leaves the spec's model unset."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[runner.agents]]\nname = "x"\ncommand = ["x", "{prompt}"]\n', encoding="utf-8"
+    )
+    by_name = {spec.name: spec for spec in load_runner_config(tmp_path).specs}
+    assert by_name["x"].model is None
+
+
+def test_runner_config_rejects_blank_model(tmp_path: Path) -> None:
+    """A present-but-empty model is a config error, not a silent None."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[runner.agents]]\nname = "x"\ncommand = ["x", "{prompt}"]\nmodel = "  "\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="non-empty string"):
+        load_runner_config(tmp_path)
+
+
 def test_runner_config_overrides_builtin_command(tmp_path: Path) -> None:
     """An agent entry matching a built-in name overrides its command template."""
     (tmp_path / CONFIG_FILE).write_text(

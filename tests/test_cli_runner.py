@@ -53,6 +53,33 @@ def test_runner_list_shows_availability(
     assert "selected (auto): codex" in out
 
 
+def test_runner_dry_run_surfaces_pinned_model(tmp_path, capsys: pytest.CaptureFixture[str]) -> None:
+    """A pinned model shows on the dry-run header and is injected into the argv."""
+    (tmp_path / "basicly.toml").write_text(
+        '[[runner.agents]]\nname = "claude"\n'
+        'command = ["claude", "-p", "{prompt}"]\nmodel = "opus"\n',
+        encoding="utf-8",
+    )
+    assert cli.main(["runner", "dry-run", "--runner", "claude", "--prompt", "do it"]) == 0
+    out = capsys.readouterr().out
+    assert "model: opus" in out
+    assert "claude --model opus -p" in out
+
+
+def test_runner_list_surfaces_pinned_model(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """List annotates an adapter that pins a model."""
+    (tmp_path / "basicly.toml").write_text(
+        '[[runner.agents]]\nname = "claude"\n'
+        'command = ["claude", "-p", "{prompt}"]\nmodel = "opus"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(runner.shutil, "which", lambda _b: "/usr/bin/claude")
+    assert cli.main(["runner", "list"]) == 0
+    assert "(model: opus)" in capsys.readouterr().out
+
+
 def test_runner_run_streams_output_and_exit_code(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

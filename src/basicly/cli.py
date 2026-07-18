@@ -2072,7 +2072,8 @@ def _cmd_runner_list(_args: argparse.Namespace) -> int:
             print(f"- {spec.name} [{spec.kind}] — always available (work handed off)")
             continue
         avail = "available" if runner.is_available(spec) else "not on PATH"
-        print(f"- {spec.name} [{spec.kind}] — {avail}: {shlex.join(spec.command)}")
+        model = f" (model: {spec.model})" if spec.model else ""
+        print(f"- {spec.name} [{spec.kind}] — {avail}: {shlex.join(spec.command)}{model}")
     resolved = runner.select_runner(config.specs, config.default)
     print(f"selected ({config.default}): {resolved.name}")
     return 0
@@ -2089,6 +2090,8 @@ def _cmd_runner_dry_run(args: argparse.Namespace) -> int:
         )
         return 0
     print(f"runner '{spec.name}':")
+    if spec.model:
+        print(f"  model: {spec.model}")
     print(f"  {shlex.join(result.command)}")
     return 0
 

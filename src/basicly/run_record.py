@@ -50,8 +50,8 @@ class RunRecord:
     duration_s: float | None
     command: tuple[str, ...]  # redacted: the prompt argument is elided
     timestamp: str
-    # Reserved for follow-on beads; present but null until they land:
-    # model provenance (basicly-45ld), token/cost ingestion (a token follow-on).
+    # Model provenance, the pinned model the dispatch ran (basicly-45ld); null
+    # when the runner pins no model. Token/cost stay reserved for a follow-on.
     model: str | None = None
     tokens: int | None = None
     cost: float | None = None
@@ -64,20 +64,23 @@ def outcome_of(*, handoff: bool, returncode: int | None) -> str:
     return EXECUTED if returncode == 0 else FAILED
 
 
-def build_record(
+# Six intrinsic record fields: the raw RunResult can't be passed in as one arg
+# because it carries the un-redacted command, which must never enter this module.
+def build_record(  # noqa: PLR0913
     *,
     agent: str,
     handoff: bool,
     returncode: int | None,
     duration_s: float | None,
     command: tuple[str, ...],
+    model: str | None = None,
 ) -> RunRecord:
     """Assemble a :class:`RunRecord`, deriving the outcome and stamping the time.
 
     *command* must already be redacted by the caller (the prompt elided) — this
-    module never sees the raw prompt. Model and token/cost stay null here; the
-    beads that source them (basicly-45ld and the token follow-on) will plumb them
-    through :class:`RunRecord` directly when they land.
+    module never sees the raw prompt. *model* is the runner's pinned model
+    (basicly-45ld), null when it pins none. Token/cost stay null here; the token
+    follow-on will plumb them through :class:`RunRecord` directly when it lands.
     """
     return RunRecord(
         agent=agent,
@@ -86,6 +89,7 @@ def build_record(
         duration_s=duration_s,
         command=tuple(command),
         timestamp=datetime.now(UTC).isoformat(),
+        model=model,
     )
 
 

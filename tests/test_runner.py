@@ -62,6 +62,47 @@ def test_format_command_rejects_arg_template_without_placeholder() -> None:
         runner.format_command(spec, "p")
 
 
+# --- format_command: model pinning (basicly-45ld) ---------------------------
+
+
+def test_format_command_no_model_leaves_argv_unchanged() -> None:
+    """The default (no model) never touches the argv."""
+    spec = RunnerSpec("claude", HEADLESS, ("claude", "-p", PROMPT_PLACEHOLDER))
+    assert runner.format_command(spec, "do it") == ["claude", "-p", "do it"]
+
+
+def test_format_command_injects_model_after_binary() -> None:
+    """A pinned model with no placeholder injects `--model <value>` right after the binary."""
+    spec = RunnerSpec("claude", HEADLESS, ("claude", "-p", PROMPT_PLACEHOLDER), model="opus")
+    assert runner.format_command(spec, "do it") == ["claude", "--model", "opus", "-p", "do it"]
+
+
+def test_format_command_substitutes_model_placeholder() -> None:
+    """A `{model}` placeholder is the escape hatch for a non-`--model` flag: substitute it."""
+    spec = RunnerSpec(
+        "acme",
+        HEADLESS,
+        ("acme", "--llm", runner.MODEL_PLACEHOLDER, "run", PROMPT_PLACEHOLDER),
+        model="fast-1",
+    )
+    assert runner.format_command(spec, "go") == ["acme", "--llm", "fast-1", "run", "go"]
+
+
+def test_format_command_model_placeholder_without_model_raises() -> None:
+    """A `{model}` slot with no model to fill it is a config error, not a literal in argv."""
+    spec = RunnerSpec(
+        "acme", HEADLESS, ("acme", "--llm", runner.MODEL_PLACEHOLDER, PROMPT_PLACEHOLDER)
+    )
+    with pytest.raises(ValueError, match="no model is set"):
+        runner.format_command(spec, "go")
+
+
+def test_format_command_injects_model_for_stdin_runner() -> None:
+    """Model injection applies regardless of how the prompt is delivered."""
+    spec = RunnerSpec("x", HEADLESS, ("x", "--headless"), prompt_via="stdin", model="m1")
+    assert runner.format_command(spec, "ignored") == ["x", "--model", "m1", "--headless"]
+
+
 # --- availability + selection ----------------------------------------------
 
 

@@ -250,6 +250,7 @@ def _record_run(ctx: _Ctx, spec: runner.RunnerSpec, result: runner.RunResult) ->
         returncode=result.returncode,
         duration_s=result.duration_s,
         command=command,
+        model=spec.model,
     )
     with contextlib.suppress(OSError):
         run_record.record(ctx.repo_root, ctx.issue_id, entry)

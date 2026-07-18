@@ -35,6 +35,10 @@ from pathlib import Path
 # Marker replaced by the prompt when a runner injects it as a command argument.
 PROMPT_PLACEHOLDER = "{prompt}"
 
+# Marker replaced by the pinned model, the escape hatch for an agent whose
+# model flag is not `--model` (see format_command). Optional in a command.
+MODEL_PLACEHOLDER = "{model}"
+
 # Runner kinds.
 HEADLESS = "headless"
 HANDOFF = "handoff"
@@ -60,6 +64,10 @@ class RunnerSpec:
     # contain exactly one PROMPT_PLACEHOLDER element. Empty for a handoff runner.
     command: tuple[str, ...] = ()
     prompt_via: str = "arg"
+    # Optional pinned model, folded into the command by format_command: a
+    # `{model}` placeholder is substituted, otherwise `--model <value>` is
+    # injected right after the binary. None leaves the argv unchanged.
+    model: str | None = None
 
     @property
     def binary(self) -> str | None:
@@ -96,8 +104,20 @@ class RunResult:
 def format_command(spec: RunnerSpec, prompt: str) -> list[str]:
     """Return the exact argv *spec* would execute for *prompt*.
 
+    Prompt injection is unchanged: an ``arg`` runner substitutes its
+    ``{prompt}`` placeholder, a ``stdin`` runner takes the command verbatim.
+
+    Model pinning (basicly-45ld) layers on top when ``spec.model`` is set: a
+    ``{model}`` placeholder in the command is substituted with the model (the
+    escape hatch for an agent whose flag is not ``--model``); otherwise
+    ``--model <value>`` is injected immediately after the binary. With no model
+    set the argv is unchanged — and a ``{model}`` placeholder with no model to
+    fill it is a config error, raised rather than left literal in the argv
+    (symmetric to the missing-prompt-placeholder guard below).
+
     Raises for a handoff runner (it has no command line) and for an arg-injected
-    template missing its placeholder — a silent drop would send an empty prompt.
+    template missing its prompt placeholder — a silent drop would send an empty
+    prompt.
     """
     if spec.kind != HEADLESS:
         raise ValueError(f"runner {spec.name!r} is {spec.kind}, not headless; it has no command")
@@ -107,8 +127,25 @@ def format_command(spec: RunnerSpec, prompt: str) -> list[str]:
                 f"runner {spec.name!r} injects the prompt as an argument but its command "
                 f"has no {PROMPT_PLACEHOLDER!r} placeholder"
             )
-        return [prompt if part == PROMPT_PLACEHOLDER else part for part in spec.command]
-    return list(spec.command)
+        argv = [prompt if part == PROMPT_PLACEHOLDER else part for part in spec.command]
+    else:
+        argv = list(spec.command)
+    return _apply_model(spec, argv)
+
+
+def _apply_model(spec: RunnerSpec, argv: list[str]) -> list[str]:
+    """Fold the pinned model into *argv* (semantics documented on format_command)."""
+    has_placeholder = MODEL_PLACEHOLDER in argv
+    if spec.model is None:
+        if has_placeholder:
+            raise ValueError(
+                f"runner {spec.name!r} command has a {MODEL_PLACEHOLDER!r} placeholder "
+                "but no model is set to fill it"
+            )
+        return argv
+    if has_placeholder:
+        return [spec.model if part == MODEL_PLACEHOLDER else part for part in argv]
+    return [argv[0], "--model", spec.model, *argv[1:]]
 
 
 def is_available(spec: RunnerSpec, *, which: Callable[[str], str | None] | None = None) -> bool:

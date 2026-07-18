@@ -41,7 +41,7 @@ def test_outcome_of_labels_handoff_executed_and_failed() -> None:
 
 
 def test_build_record_derives_outcome_stamps_time_and_reserves_fields() -> None:
-    """build_record fills outcome + timestamp and leaves model/token/cost null."""
+    """build_record fills outcome + timestamp; model defaults null, token/cost stay reserved."""
     entry = run_record.build_record(
         agent="claude",
         handoff=False,
@@ -54,6 +54,20 @@ def test_build_record_derives_outcome_stamps_time_and_reserves_fields() -> None:
     assert entry.duration_s == 1.5
     assert entry.timestamp  # ISO stamp present
     assert entry.model is None and entry.tokens is None and entry.cost is None
+
+
+def test_build_record_stamps_model_provenance() -> None:
+    """A pinned model is recorded as provenance (basicly-45ld); token/cost stay null."""
+    entry = run_record.build_record(
+        agent="claude",
+        handoff=False,
+        returncode=0,
+        duration_s=1.0,
+        command=("claude", "--model", "opus", "-p", REDACTED_PROMPT),
+        model="opus",
+    )
+    assert entry.model == "opus"
+    assert entry.tokens is None and entry.cost is None
 
 
 # --- record (write) ---------------------------------------------------------

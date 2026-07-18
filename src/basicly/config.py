@@ -86,6 +86,8 @@ default = "auto"
 # name = "opencode"
 # command = ["opencode", "run", "{prompt}"]
 # prompt_via = "arg"   # or "stdin"
+# model = "opus"       # optional: injects `--model opus` after the binary,
+#                      # or substitutes a `{model}` placeholder if the command has one
 """
 
 # Scaffolded into .vscode/tasks.json by `basicly install` when absent — one
@@ -612,8 +614,17 @@ def _parse_runner_agent(entry: object) -> RunnerSpec:
             f"allowed: {list(PROMPT_VIA)}"
         )
 
+    model = entry.get("model")
+    if model is not None and (not isinstance(model, str) or not model.strip()):
+        raise ValueError(f"runner agent {name!r} has a 'model' that must be a non-empty string")
+    model = model.strip() if isinstance(model, str) else None
+
     return RunnerSpec(
-        name=name.strip(), kind=HEADLESS, command=tuple(command), prompt_via=prompt_via
+        name=name.strip(),
+        kind=HEADLESS,
+        command=tuple(command),
+        prompt_via=prompt_via,
+        model=model,
     )
 
 

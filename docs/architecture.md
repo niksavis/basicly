@@ -768,9 +768,15 @@ adapter (invocation command, headless flags, prompt injection, output capture), 
 capability detection or an explicit flag. The loop logic is agent-neutral; only the runner
 differs per agent. Detection (`auto`) probes the big 3 on `PATH` (claude → codex → copilot);
 any other agent is supported by an explicit `[[runner.agents]]` command template in
-`basicly.toml`. There is no cross-agent CLI invocation standard, so an unknown agent's command
-is **never guessed** — when nothing matches, selection falls back to a **`manual` handoff
-runner** that shells out to nothing and instead surfaces the exact prompt + worktree path,
+`basicly.toml`. A runner may pin an optional **`model`** (`[[runner.agents]] model = "opus"`):
+the invocation seam folds it into the command — substituting a `{model}` placeholder when the
+template has one (the escape hatch for an agent whose flag is not `--model`), otherwise
+injecting `--model <value>` right after the binary; no model leaves the argv unchanged. This is
+model/agent-property _awareness at the invocation seam_, not a token-level inference client —
+per-track model choice and capability probing (`basicly-bveo`) stay out of scope. There is no
+cross-agent CLI invocation standard, so an unknown agent's command is **never guessed** — when
+nothing matches, selection falls back to a **`manual` handoff runner** that shells out to
+nothing and instead surfaces the exact prompt + worktree path,
 deferring to the loop's block-and-resume contract and the one thing that _is_ standardized
 across agents: the projected `AGENTS.md` guidance. `basicly runner dry-run` prints the exact
 command an adapter would execute so it can be verified before any live invocation.
@@ -781,8 +787,8 @@ run outcome; the `manual` handoff runner keeps the block-and-resume contract unt
 failed run blocks with the runner name and exit code. Each dispatch also writes a
 metadata-only **run-record** keyed by bead id into the self-ignored `.basicly/usage/`
 (`run_record.py`, same atomic tmp-write pattern as `tool-usage`): wall-clock duration, exit
-outcome (executed/handoff/failed), and agent, with model and token/cost fields reserved for
-follow-on beads. Only metadata is persisted — the command is stored with the prompt argument
+outcome (executed/handoff/failed), agent, and the pinned model when the runner sets one, with
+token/cost fields reserved for a follow-on bead. Only metadata is persisted — the command is stored with the prompt argument
 elided, never the prompt body or captured output. This is the correlation foundation for
 agent attribution, model provenance, and the cross-repo fleet rollup.
 

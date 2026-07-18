@@ -210,10 +210,35 @@ def test_dispatch_writes_a_run_record_keyed_by_bead(
     assert entry["agent"] == "claude"
     assert entry["outcome"] == "executed"
     assert entry["duration_s"] == 0.5
-    assert entry["model"] is None  # reserved until basicly-45ld
+    assert entry["model"] is None  # this runner pins no model
     # Redaction: the persisted command carries the placeholder, never the prompt.
     assert run_record.REDACTED_PROMPT in entry["command"]
     assert not any("AGENTS.md" in part for part in entry["command"])
+
+
+def test_dispatch_record_stamps_model_provenance(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A runner pinning a model stamps it as provenance on the run-record (basicly-45ld)."""
+    _ready_leaf(at, monkeypatch)
+    pinned = runner.RunnerSpec(
+        "claude", runner.HEADLESS, ("claude", "-p", "{prompt}"), model="opus"
+    )
+    monkeypatch.setattr(
+        loop, "load_runner_config", lambda *_a: RunnerConfig(specs=(pinned,), default="claude")
+    )
+    monkeypatch.setattr(
+        runner,
+        "run",
+        lambda spec, *_a, **_k: runner.RunResult(
+            spec.name, tuple(spec.command), executed=True, returncode=0, duration_s=0.2
+        ),
+    )
+    _advance(tmp_path)
+
+    records = run_record.load_run_records(tmp_path)
+    assert records is not None
+    assert records["i"][0]["model"] == "opus"
 
 
 def test_dispatch_record_redacts_a_stdin_runner(
