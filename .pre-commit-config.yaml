@@ -55,6 +55,14 @@ repos:
     - pre-push
     pass_filenames: false
     always_run: true
+  - id: protect-generated-commit
+    name: protect-generated-commit
+    entry: uv run python .basicly/core/hooks/protect-generated-commit.py
+    language: system
+    stages:
+    - pre-commit
+    pass_filenames: false
+    always_run: true
   - id: markdownlint
     name: markdownlint
     # Repo-wide run through .markdownlint-cli2.yaml (globs + generated-file

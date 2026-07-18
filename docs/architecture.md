@@ -140,7 +140,14 @@ advisory, never a merge gate (§6).
 fragments (core or overlay) and never the generated files; `basicly build` regenerates,
 `basicly check` catches manual edits. `basicly install` edits only the managed core
 catalog and never the user's overlay — the mechanism, not just the convention,
-guarantees this (§4.3).
+guarantees this (§4.3). Two guardrails defend the one-way street at different moments:
+the `protect-generated` PreToolUse guard blocks an agent's edit to a marked generated
+file at tool time (Claude-only, fail-open), and the `protect-generated-commit` pre-commit
+hook (basicly-yw28) is the deterministic, agent-independent backstop — it blocks a commit
+that stages a generated output whose content no longer matches the projection manifest's
+recorded hash, so a tool-time bypass or a non-Claude agent is still caught before the
+edit lands. A legitimate rebuild stages the regenerated file and the updated manifest
+together, so their hashes agree and the commit passes.
 
 **3.5 Addition and override, never silent replacement.** Consumers extend the catalog
 by adding a new fragment id, or by overriding a core fragment with
