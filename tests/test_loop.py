@@ -458,6 +458,33 @@ def test_build_leaf_lands_and_records_gate(
     assert result.to_phase == "verify" and result.action == "merged"
 
 
+def test_landing_gate_is_attributed_to_the_runner(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The verify gate recorded at landing carries the dispatched runner + model (basicly-140a)."""
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    monkeypatch.setattr(
+        merge, "merge_worktree", lambda *_a, **_k: merge.MergeResult("i", "merged", "landed")
+    )
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
+    run_record.record(
+        tmp_path,
+        "i",
+        run_record.build_record(
+            agent="claude",
+            handoff=False,
+            returncode=0,
+            duration_s=1.0,
+            command=("claude", "-p", run_record.REDACTED_PROMPT),
+            model="opus",
+        ),
+    )
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(verify, "report_gate", lambda *_a, **k: captured.update(k) or (True, "ok"))
+    _advance(tmp_path)
+    assert captured.get("actor") == "claude"
+
+
 def test_build_leaf_reworks_on_failed_merge(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

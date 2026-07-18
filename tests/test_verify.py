@@ -186,6 +186,42 @@ def test_report_gate_builds_expected_command(
     assert cmd[-1] == "basicly-x"
 
 
+def test_report_gate_stamps_the_runner_as_actor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A known runner is recorded as the gate's audit-trail actor."""
+    captured: dict[str, list[str]] = {}
+
+    def fake_run(_root, args):
+        captured["cmd"] = args
+        return _Proc(0)
+
+    monkeypatch.setattr(verify.br, "try_run_br", fake_run)
+    report = verify.VerifyReport(mode="full", results=(verify.CheckResult("ruff", "pass", 0),))
+
+    verify.report_gate(tmp_path, "basicly-x", report, actor="claude")
+    cmd = captured["cmd"]
+    assert cmd[cmd.index("--actor") + 1] == "claude"
+    assert cmd[-1] == "basicly-x"
+
+
+def test_report_gate_omits_the_actor_without_a_runner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No runner known: no --actor flag is added."""
+    captured: dict[str, list[str]] = {}
+
+    def fake_run(_root, args):
+        captured["cmd"] = args
+        return _Proc(0)
+
+    monkeypatch.setattr(verify.br, "try_run_br", fake_run)
+    report = verify.VerifyReport(mode="full", results=())
+
+    verify.report_gate(tmp_path, "basicly-x", report)
+    assert "--actor" not in captured["cmd"]
+
+
 def _git(cwd: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)  # nosec B603 B607
 

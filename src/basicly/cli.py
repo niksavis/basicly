@@ -31,6 +31,7 @@ from . import (
     projection,
     review,
     rubrics,
+    run_record,
     runner,
     state,
     ui,
@@ -1929,7 +1930,14 @@ def cmd_verify(args: argparse.Namespace) -> int:
         print(f"  {result.name}: {result.status.upper()}{suffix}")
 
     if args.issue:
-        ok, message = verify.report_gate(repo_root, args.issue, report, gate=args.gate)
+        record = run_record.latest_record(repo_root, args.issue)
+        ok, message = verify.report_gate(
+            repo_root,
+            args.issue,
+            report,
+            gate=args.gate,
+            actor=record.agent if record else None,
+        )
         print(message if ok else f"Warning: {message}", file=sys.stderr if not ok else sys.stdout)
 
     if report.passed:

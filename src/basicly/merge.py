@@ -19,7 +19,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import br, policy, verify
+from . import br, policy, run_record, verify
 from .config import PolicyConfig, load_policy_config
 from .worktree import current_branch, git, load_session
 
@@ -127,16 +127,25 @@ def _known_bead_ids(repo_root: Path) -> set[str] | None:
     return ids
 
 
-def _merge_message(name: str, branch: str, base: str, bead: str) -> str:
+def _merge_message(
+    name: str, branch: str, base: str, bead: str, record: run_record.RunRecord | None = None
+) -> str:
     """Build a Conventional-Commits merge message the commit-msg hook accepts.
 
     The subject is static (safe regardless of the worktree name); the specifics
-    and the trailing bead id live in the body so the beads hook is satisfied.
+    and the bead id live in the body so the beads hook is satisfied. When the
+    dispatched runner is known (basicly-140a, from the run-*record*), it is
+    stamped as ``Harness-Runner`` / ``Harness-Model`` git trailers in a final
+    trailer paragraph, so history attributes the landed work to an agent instead
+    of only the human git identity.
     """
-    return (
-        "chore(worktree): merge a harness worktree back to its base\n\n"
-        f"Integrate worktree {name} ({branch}) into {base}.\n\n{bead}"
-    )
+    body = f"Integrate worktree {name} ({branch}) into {base}.\n\n{bead}"
+    if record is not None and record.agent:
+        trailers = [f"Harness-Runner: {record.agent}"]
+        if record.model:
+            trailers.append(f"Harness-Model: {record.model}")
+        body += "\n\n" + "\n".join(trailers)
+    return f"chore(worktree): merge a harness worktree back to its base\n\n{body}"
 
 
 def merge_worktree(
@@ -192,9 +201,11 @@ def merge_worktree(
         return MergeResult(name, "merge-conflicts", f"conflicts in: {', '.join(probe.conflicts)}")
 
     # 4. Local --no-ff merge into the base from the base checkout. A failure
-    # (e.g. a commit-msg hook rejection) must not strand MERGE_HEAD.
+    # (e.g. a commit-msg hook rejection) must not strand MERGE_HEAD. Attribute the
+    # dispatched runner (basicly-140a) from the run-record, best-effort.
+    record = run_record.latest_record(repo_root, bead)
     proc = git(
-        ["merge", "--no-ff", branch, "-m", _merge_message(name, branch, base, bead)],
+        ["merge", "--no-ff", branch, "-m", _merge_message(name, branch, base, bead, record)],
         cwd=repo_root,
         check=False,
     )

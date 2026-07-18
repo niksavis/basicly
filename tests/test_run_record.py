@@ -163,3 +163,62 @@ def test_load_run_records_round_trips(tmp_path: Path) -> None:
     assert loaded is not None
     assert loaded["i"][0]["agent"] == "copilot"
     assert loaded["i"][0]["command"] == ["copilot", "-p", REDACTED_PROMPT]
+
+
+# --- latest_record (attribution source, basicly-140a) -----------------------
+
+
+def test_latest_record_none_when_absent(tmp_path: Path) -> None:
+    """No file, or no history for the bead, reads back as None."""
+    assert run_record.latest_record(tmp_path, "i") is None
+
+
+def test_latest_record_returns_the_most_recent_with_model(tmp_path: Path) -> None:
+    """The last-appended record for the bead comes back rebuilt, model included."""
+    run_record.record(
+        tmp_path,
+        "i",
+        run_record.build_record(
+            agent="claude",
+            handoff=False,
+            returncode=0,
+            duration_s=1.0,
+            command=("claude", "-p", REDACTED_PROMPT),
+        ),
+    )
+    run_record.record(
+        tmp_path,
+        "i",
+        run_record.build_record(
+            agent="codex",
+            handoff=False,
+            returncode=0,
+            duration_s=2.0,
+            command=("codex", "exec", REDACTED_PROMPT),
+            model="o4",
+        ),
+    )
+    latest = run_record.latest_record(tmp_path, "i")
+    assert latest is not None
+    assert latest.agent == "codex" and latest.model == "o4"
+
+
+def test_latest_record_tolerates_an_unknown_key(tmp_path: Path) -> None:
+    """An on-disk record with a field this version does not know still loads."""
+    run_record.record(
+        tmp_path,
+        "i",
+        run_record.build_record(
+            agent="claude",
+            handoff=False,
+            returncode=0,
+            duration_s=1.0,
+            command=("claude", "-p", REDACTED_PROMPT),
+        ),
+    )
+    records_file = tmp_path / run_record.RUN_RECORDS_FILE
+    data = json.loads(records_file.read_text(encoding="utf-8"))
+    data["i"][0]["future_field"] = "xyz"  # a newer writer added a field
+    records_file.write_text(json.dumps(data), encoding="utf-8")
+    latest = run_record.latest_record(tmp_path, "i")
+    assert latest is not None and latest.agent == "claude"
