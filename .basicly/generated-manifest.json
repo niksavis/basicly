@@ -1,9 +1,9 @@
 {
   "version": "1",
-  "generated_at": "2026-07-18T13:19:11.313666+00:00",
+  "generated_at": "2026-07-18T20:25:51.916120+00:00",
   "outputs": {
     ".claude/CLAUDE.md": {
-      "hash": "sha256:fa9018cae845fb701bd1186b0fc8f9016082c1077cf186e36591c33484658f6c",
+      "hash": "sha256:d5a5f270837f49d4d5576664ca84fb4344983d354d84b9a25694bc60117bfdff",
       "source_fragments": [
         "require-explicit-confirmation",
         "knowledge-priming",
@@ -21,7 +21,6 @@
         "claude-defaults",
         "self-improvement-retro",
         "session-completion",
-        "quirks",
         "non-interactive-shell",
         "tool-usage"
       ]
@@ -32,6 +31,12 @@
         "python-style"
       ]
     },
+    ".claude/rules/quirks.md": {
+      "hash": "sha256:1771948494d186595826f9c4d1706e66fb1f3e69aec57b96e9b73c90f0018dc4",
+      "source_fragments": [
+        "quirks"
+      ]
+    },
     ".claude/rules/test-discipline.md": {
       "hash": "sha256:6a07a7e64a619ffbaa145904d87912fe0133afa490aa7014bc70ab39b8a47400",
       "source_fragments": [
@@ -39,7 +44,7 @@
       ]
     },
     "AGENTS.md": {
-      "hash": "sha256:f417daf3bf5c38bb66144e1e67a8e42f18463a6fe61ed0ac518a43d91e9f503e",
+      "hash": "sha256:2a7968abb729ed2a90478a70ac8cd9dfab3aef0b2bf08afcb1f263a94bb758d0",
       "source_fragments": [
         "require-explicit-confirmation",
         "knowledge-priming",
@@ -64,7 +69,7 @@
       ]
     },
     ".github/copilot-instructions.md": {
-      "hash": "sha256:bbba29a0b3a689e4f187e2c9c65a1df97984bac84fd1b858a970f32489cac516",
+      "hash": "sha256:c40fdeec9b96c9e9eb8b32424ad6b64fddf8d3c775ed6bef0c0eb3a3de35c27b",
       "source_fragments": [
         "require-explicit-confirmation",
         "knowledge-priming",
@@ -82,7 +87,6 @@
         "copilot-defaults",
         "self-improvement-retro",
         "session-completion",
-        "quirks",
         "non-interactive-shell",
         "tool-usage"
       ]

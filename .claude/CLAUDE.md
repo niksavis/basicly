@@ -105,10 +105,7 @@ uv run basicly hooks-check
 
 ## Harness Loop
 
-- Drive non-trivial work through the harness loop (intake → classify → decompose → build → verify → ship → teardown → retro); `br` is the single source of truth and the `harness-loop` skill is the runbook.
-- Reconstruct a track with `basicly loop status <issue>`, step it with `basicly loop advance <issue>`; a blocked step exits non-zero and names the input it needs.
-- Checkpoints (classify, decompose, ship) and bounded rework are engine-enforced — approve with `basicly policy checkpoint <issue> <name> --approve`.
-- When a dispatched agent cannot resolve a required fact, it must not guess: write `.basicly/usage/needs-input.json` (`{"fact": ..., "detail": ...}`) and stop — the loop blocks and surfaces the missing fact instead of landing a wrong answer.
+- Drive non-trivial work through the basicly harness loop; `br` is the single source of truth. The `harness-loop` skill is the runbook — it covers the phases (intake → classify → decompose → build → verify → ship → teardown → retro), the `basicly loop status/advance` commands, the engine-enforced checkpoints and bounded rework, and the block-don't-guess `needs-input.json` protocol.
 
 ## Quality Gate
 
@@ -135,22 +132,11 @@ uv run basicly hooks-check
 
 ## Self Improvement Retro
 
-- If the session hit a real rejection or user-corrected mistake, find the root cause before ending.
-- Propose the exact fragment/skill/hook change that would have prevented it; skip vague "be careful" notes.
-- An environment/timing/platform trap belongs in a quirks fragment: one incident, one bullet, trap plus avoidance.
-- Present each proposal for explicit approval; never self-apply a retro edit.
-- Skip the retro when nothing concrete surfaced; inventing gaps to look thorough is the anti-pattern.
+- When a session hits a real rejection or user-corrected mistake, run the retro from the `session-finish` skill: find the root cause and propose the exact fragment/skill/hook change that would have prevented it — never a vague "be careful", never self-applied. Skip it when nothing concrete surfaced.
 
 ## Session Completion
 
-- Leave the repo pickup-clean: no partial edits, stray debug output, or unexplained changes.
-- Summarize what changed, what was verified, and what remains open before ending.
-
-## Quirks
-
-- Non-interactive WSL shells skip the profile that loads version managers (nvm), so `npx`/`node` can resolve to a Windows install and break node-based hooks (markdownlint failed exactly this way) - put the repo's node version on PATH before committing or pushing from scripts and background jobs.
-- Test subprocess helpers must inherit `os.environ` (keep `PATH`), not pass a bare env dict - missing `PATH` still finds `git`/tools on POSIX but not on Windows, so a CLI that shells out fails only on Windows CI (`[WinError 2]`).
-- POSIX `shlex.split` treats `\` as an escape, so a backslash OS path (e.g. Windows `sys.executable`) embedded in a shell-string command is mangled and fails only on Windows CI - use `Path(...).as_posix()` or an argv list, not a shell string.
+- Before ending, close out per the `session-finish` skill: leave the repo pickup-clean (no partial edits or stray output) and summarize what changed, what was verified, and what remains open.
 
 ## Non Interactive Shell
 

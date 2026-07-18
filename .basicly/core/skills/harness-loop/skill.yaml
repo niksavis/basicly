@@ -127,6 +127,13 @@ instructions: |
   the landing advance verifies the rebased tree in the worktree and records
   the required gate itself.
 
+  ## Blocked on a missing fact — don't guess
+
+  When a dispatched agent cannot resolve a required fact, it must not guess.
+  Write `.basicly/usage/needs-input.json` (`{"fact": ..., "detail": ...}`) and
+  stop — the loop blocks and surfaces the missing fact instead of landing a
+  wrong answer.
+
   ## Rework and escalation
 
   A failed node enters a bounded **rework loop (default n=2)**, tracked with gate

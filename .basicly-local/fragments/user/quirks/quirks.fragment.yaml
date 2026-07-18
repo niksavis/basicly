@@ -4,6 +4,13 @@ description: Environment traps hit in this repo - one incident, one bullet.
 category: quirks
 priority: medium
 applies_to: [all]
+scope:
+  paths:
+  - '**/hooks/**'
+  - '.scripts/**'
+  - '**/tests/**'
+  - '**/conftest.py'
+  - 'src/basicly/cli.py'
 tags: [gotchas, environment]
 status: active
 title: Quirks

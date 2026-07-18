@@ -12,7 +12,4 @@ tags:
 - workflow
 status: active
 body: |
-  - Drive non-trivial work through the harness loop (intake → classify → decompose → build → verify → ship → teardown → retro); `br` is the single source of truth and the `harness-loop` skill is the runbook.
-  - Reconstruct a track with `basicly loop status <issue>`, step it with `basicly loop advance <issue>`; a blocked step exits non-zero and names the input it needs.
-  - Checkpoints (classify, decompose, ship) and bounded rework are engine-enforced — approve with `basicly policy checkpoint <issue> <name> --approve`.
-  - When a dispatched agent cannot resolve a required fact, it must not guess: write `.basicly/usage/needs-input.json` (`{"fact": ..., "detail": ...}`) and stop — the loop blocks and surfaces the missing fact instead of landing a wrong answer.
+  - Drive non-trivial work through the basicly harness loop; `br` is the single source of truth. The `harness-loop` skill is the runbook — it covers the phases (intake → classify → decompose → build → verify → ship → teardown → retro), the `basicly loop status/advance` commands, the engine-enforced checkpoints and bounded rework, and the block-don't-guess `needs-input.json` protocol.
