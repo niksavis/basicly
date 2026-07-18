@@ -1205,6 +1205,28 @@ def test_cli_status_json_authoring_schema(work_repo: Path) -> None:
     assert set(report["overlays"]) == {"fragments", "agents"}
 
 
+def test_cli_status_fleet_rolls_up_the_workspace(work_repo: Path) -> None:
+    """`status --fleet` aggregates the housed repos under the workspace root as JSON.
+
+    The workspace is `work_repo`'s parent: the real authoring copy yields a proper
+    snapshot; an empty `.basicly` sibling is captured, not crashed — exit 0 either way.
+    """
+    workspace = work_repo.parent
+    (workspace / "other-repo" / ".basicly").mkdir(parents=True)
+    result = run_basicly(work_repo, "status", "--fleet")
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    assert report["schema_version"] == 1
+    assert report["workspace_root"] == str(workspace)
+    by_name = {r["name"]: r for r in report["repos"]}
+    assert {work_repo.name, "other-repo"} <= set(by_name)
+    # The real repo produces a proper status snapshot...
+    assert by_name[work_repo.name]["status"]["repo_kind"] == "authoring"
+    # ...and every entry carries a run-record summary and a status payload.
+    assert "runs" in by_name["other-repo"] and "status" in by_name["other-repo"]
+    assert report["totals"]["repos"] >= 2
+
+
 def test_cli_status_json_consumer_reports_install_and_drift(tmp_path: Path) -> None:
     """In a consumer repo, status reports the install provenance and any drift."""
     consumer = tmp_path / "consumer"
