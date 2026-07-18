@@ -699,7 +699,10 @@ leaf is a child `br` issue linked with `br dep add`.
 
 **12.2 The loop.** Intake (any input) → **Classify** (agent proposes, engine records the `br`
 type) → _[human checkpoint]_ → **Decompose** into child issues + a `br dep` graph, gated by a
-**Definition-of-Ready** (`br lint` required template sections; acceptance criteria present)
+**Definition-of-Ready** (`br lint` required template sections; a non-empty structured
+`acceptance_criteria` field satisfies the `## Acceptance Criteria` section without a body heading —
+`br lint` ignores the field and has no config for it, so the credit lives in
+`policy.definition_of_ready`, not upstream, basicly-58iu)
 → _[human checkpoint]_ → **fan-out build** (one worktree per dependency-unblocked node, ranked
 by `br scheduler`, concurrency-capped) with a **serial merge queue** on the way back →
 **Verify** (deterministic, blocking) + **Validate** (acceptance/traceability) → _[human
