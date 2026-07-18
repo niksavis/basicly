@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -128,6 +128,29 @@ def load_run_records(repo_root: Path) -> dict[str, list[dict]] | None:
     if not records_file.exists():
         return None
     return _read(records_file)
+
+
+def latest_record(repo_root: Path, bead_id: str) -> RunRecord | None:
+    """The most recent :class:`RunRecord` for *bead_id*, or None when there is none.
+
+    Rebuilds the last persisted entry into a :class:`RunRecord`, keeping only
+    known fields (an older on-disk record with extra/missing keys still loads via
+    the dataclass defaults). Returns None for a missing file, an absent/empty bead
+    history, or a malformed last entry — attribution (basicly-140a) reads this and
+    must be best-effort, never fatal to a landing.
+    """
+    data = load_run_records(repo_root)
+    if not data:
+        return None
+    history = data.get(bead_id)
+    if not isinstance(history, list) or not history or not isinstance(history[-1], dict):
+        return None
+    known = {f.name for f in fields(RunRecord)}
+    kwargs = {k: v for k, v in history[-1].items() if k in known}
+    try:
+        return RunRecord(**kwargs)
+    except TypeError:
+        return None
 
 
 def _read(records_file: Path) -> dict[str, list]:

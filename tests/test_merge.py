@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import merge, policy, verify
+from basicly import merge, policy, run_record, verify
 from basicly.config import PolicyConfig
 from basicly.worktree import Session
 
@@ -82,6 +82,79 @@ def test_merge_worktree_happy_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
     assert result.merged is True
     merge_calls = [c for c in fake.calls if c[0] == "merge"]
     assert merge_calls and merge_calls[0][:3] == ["merge", "--no-ff", "harness/feat"]
+
+
+# --- merge-commit attribution (basicly-140a) --------------------------------
+
+
+def _record(agent: str, model: str | None = None) -> run_record.RunRecord:
+    return run_record.build_record(
+        agent=agent,
+        handoff=False,
+        returncode=0,
+        duration_s=1.0,
+        command=(agent, "-p", run_record.REDACTED_PROMPT),
+        model=model,
+    )
+
+
+def test_merge_message_stamps_runner_trailers() -> None:
+    """A record with an agent + model is stamped as Harness-Runner / Harness-Model trailers."""
+    msg = merge._merge_message(
+        "feat", "harness/feat", "main", "basicly-x", _record("claude", "opus")
+    )
+    assert "Harness-Runner: claude" in msg
+    assert "Harness-Model: opus" in msg
+    assert "basicly-x" in msg
+
+
+def test_merge_message_runner_without_a_model_omits_the_model_trailer() -> None:
+    """A record with no pinned model stamps only Harness-Runner."""
+    msg = merge._merge_message("feat", "harness/feat", "main", "basicly-x", _record("manual"))
+    assert "Harness-Runner: manual" in msg
+    assert "Harness-Model" not in msg
+
+
+def test_merge_message_unchanged_without_a_record() -> None:
+    """No run-record: the message ends at the bead id, no trailers added."""
+    msg = merge._merge_message("feat", "harness/feat", "main", "basicly-x")
+    assert "Harness-Runner" not in msg
+    assert msg.rstrip().endswith("basicly-x")
+
+
+@pytest.mark.usefixtures("base_ready")
+def test_merge_worktree_stamps_attribution_from_the_run_record(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """merge_worktree reads the latest run-record and stamps its agent/model trailers."""
+    run_record.record(
+        tmp_path,
+        "basicly-onb.5",
+        run_record.build_record(
+            agent="claude",
+            handoff=False,
+            returncode=0,
+            duration_s=1.0,
+            command=("claude", "-p", run_record.REDACTED_PROMPT),
+            model="opus",
+        ),
+    )
+    fake = _FakeGit({
+        "status": _Proc(0, ""),
+        "rebase": _Proc(0),
+        "merge-tree": _Proc(0),
+        "merge": _Proc(0),
+        "rev-parse": _Proc(0, "def456"),
+    })
+    monkeypatch.setattr(merge, "git", fake)
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-onb.5")
+    assert result.merged is True
+    merge_call = next(c for c in fake.calls if c[0] == "merge")
+    message = merge_call[merge_call.index("-m") + 1]
+    assert "Harness-Runner: claude" in message
+    assert "Harness-Model: opus" in message
 
 
 def test_commit_tracker_state_commits_beads_only_dirt(

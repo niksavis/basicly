@@ -792,6 +792,15 @@ token/cost fields reserved for a follow-on bead. Only metadata is persisted — 
 elided, never the prompt body or captured output. This is the correlation foundation for
 agent attribution, model provenance, and the cross-repo fleet rollup.
 
+**Attribution (`basicly-140a`).** At landing the loop reads the bead's latest run-record
+and stamps the dispatched runner into the audit trail: the `--no-ff` merge commit carries
+`Harness-Runner: <agent>` and (when the run pinned one) `Harness-Model: <model>` git
+trailers, and the recorded verify gate carries the agent as its `br gate report --actor`.
+So history and the gate ledger distinguish which agent produced a landing instead of
+collapsing onto the one human git identity. It is best-effort and non-fatal: with no
+run-record the merge message and gate are unchanged. A per-agent _bot_ git identity and
+commit signing stay out of scope (`basicly-smzg`).
+
 **12.9 Ship.** Ship is parameterized by the entry branch recorded at Intake: default → merge
 to `main` + push `main` (no feature branches on the remote); if the entry branch is a feature
 branch → merge to it, push, open a PR to `main`. Delivery is incremental per feature; teardown

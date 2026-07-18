@@ -159,9 +159,19 @@ def run_verify(repo_root: Path, mode: str, config: VerifyConfig | None = None) -
 
 
 def report_gate(
-    repo_root: Path, issue_id: str, report: VerifyReport, gate: str = DEFAULT_GATE
+    repo_root: Path,
+    issue_id: str,
+    report: VerifyReport,
+    gate: str = DEFAULT_GATE,
+    *,
+    actor: str | None = None,
 ) -> tuple[bool, str]:
     """Record the verdict on *issue_id* via ``br gate report``.
+
+    When the dispatched runner is known (basicly-140a), *actor* is recorded as the
+    gate's audit-trail actor, so a gate result ties to the agent that produced it.
+    It is optional — a gate reported outside a dispatch records no actor. (Model
+    provenance rides the landing commit trailer, not the gate's free-text note.)
 
     Returns ``(ok, message)``; degrades gracefully (returns ``False`` with
     guidance) when ``br`` is not on PATH or the command fails, rather than
@@ -170,22 +180,22 @@ def report_gate(
     status = "pass" if report.passed else "fail"
     detail = ", ".join(f"{r.name}={r.status}" for r in report.results) or "no checks"
     note = f"verify {report.mode}: {detail}"
-    proc = br.try_run_br(
-        repo_root,
-        [
-            "gate",
-            "report",
-            "--gate",
-            gate,
-            "--provider",
-            GATE_PROVIDER,
-            "--status",
-            status,
-            "--note",
-            note,
-            issue_id,
-        ],
-    )
+    args = [
+        "gate",
+        "report",
+        "--gate",
+        gate,
+        "--provider",
+        GATE_PROVIDER,
+        "--status",
+        status,
+        "--note",
+        note,
+    ]
+    if actor:
+        args += ["--actor", actor]
+    args.append(issue_id)
+    proc = br.try_run_br(repo_root, args)
     if proc is None:
         return False, "br not on PATH; gate not recorded"
     if proc.returncode != 0:

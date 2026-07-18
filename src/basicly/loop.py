@@ -359,7 +359,8 @@ def _build_children(ctx: _Ctx) -> AdvanceResult:
 def _record_verify(ctx: _Ctx, detail: str) -> AdvanceResult:
     """Run verify + record the required gate so the derived phase becomes verify."""
     report = verify.run_verify(ctx.repo_root, ctx.inputs.verify_mode)
-    verify.report_gate(ctx.repo_root, ctx.issue_id, report)
+    record = run_record.latest_record(ctx.repo_root, ctx.issue_id)
+    verify.report_gate(ctx.repo_root, ctx.issue_id, report, actor=record.agent if record else None)
     if not report.passed:
         return _rework(ctx, verify.DEFAULT_GATE, f"verify failed: {', '.join(report.failures)}")
     return _moved(ctx, "verify", "merged", detail)
