@@ -9,6 +9,7 @@ from basicly.loader import load_fragments_from_roots, load_targets
 from basicly.planner import plan_outputs
 from basicly.renderers.claude import render as render_claude
 from basicly.renderers.common import sha256_of_text
+from basicly.schema import Fragment
 
 REPO_ROOT = Path(__file__).parent.parent
 FRAGMENT_ROOTS: list[tuple[Path, str | None]] = [
@@ -32,16 +33,26 @@ def test_agents_md_contains_header() -> None:
 
 
 def test_copilot_plans_no_scoped_instruction_twins() -> None:
-    """The real catalog single-sources scoped fragments to .claude/rules only.
+    """A path-scoped fragment single-sources to .claude/rules only.
 
     The copilot target keeps the root baseline but must not plan
     .github/instructions/*.instructions.md twins — VS Code loads both roots
-    without dedup, double-loading every path-scoped rule.
+    without dedup, double-loading every path-scoped rule. A synthetic scoped
+    fragment exercises the invariant regardless of what the live catalog ships
+    (all path-scoped guidance now lives in skills, so the catalog may have none).
     """
     targets = load_targets(REPO_ROOT / ".basicly" / "core" / "targets")
     target_names = {t.name for t in targets}
     fragments = load_fragments_from_roots(FRAGMENT_ROOTS, target_names)
-    planned = plan_outputs(fragments, targets, REPO_ROOT)
+    scoped = Fragment(
+        id="scoped-example",
+        description="A path-scoped example rule.",
+        category="testing",
+        applies_to=["all"],
+        scope_paths=["**/*.py"],
+        body="- rule",
+    )
+    planned = plan_outputs([*fragments, scoped], targets, REPO_ROOT)
 
     paths = {p.output_path for p in planned}
     assert REPO_ROOT / ".github" / "copilot-instructions.md" in paths
