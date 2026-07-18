@@ -518,7 +518,7 @@ names were removed, not aliased).
 | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `basicly worktree ...`                      | Sibling git-worktree lifecycle: create + provision (deps, hooks), list, cleanup (§12.5)                                                      |
 | `basicly verify [--gate]`                   | Runs the consumer's `[[verify.checks]]` from `basicly.toml` per mode and optionally records a `br` gate (§12.3–12.4)                         |
-| `basicly policy ...`                        | DoR, gate, rework, and checkpoint policy checks; `policy checkpoint <issue> <name> --approve` records the human checkpoints (§12.2)          |
+| `basicly policy ...`                        | DoR/gate/rework/checkpoint checks; `policy checkpoint --approve` needs an interactive TTY or a one-time `--confirm` code (§12.2)             |
 | `basicly decompose`                         | Turns a feature into child `br` issues + a computed dependency graph (§12.2)                                                                 |
 | `basicly loop status\|advance\|run <issue>` | Drives an issue through the harness loop; a blocked step exits non-zero and names the input it needs (§12.2)                                 |
 | `basicly runner list\|dry-run\|run`         | Agent-agnostic headless runner adapters (claude/codex/copilot + `manual` handoff); the loop build phase auto-dispatches through them (§12.8) |
@@ -701,7 +701,13 @@ checkpoint]_ → **Ship** + **Teardown** → **epic retro**. A failed node enter
 forward, re-hit only the Decomposition checkpoint) without restarting. Default is
 task-by-task; one-shot mode collapses the middle checkpoint. Concurrency cap is configurable
 (default 4). The retro emits a findings list; per finding the user picks ignore / fix-now /
-fix-later, and a bead is created for everything not ignored.
+fix-later, and a bead is created for everything not ignored. Each _[human checkpoint]_
+approval (`policy checkpoint <issue> <name> --approve`) is gated on an interactive terminal:
+off a TTY — as any tool-invoked Bash runs — the command refuses and issues a one-time
+confirm code that a human must echo back with `--confirm`, so a subagent driving the loop
+cannot self-approve ship autonomously. This mitigates the shared-identity gap (a fork and its
+human share one OS/git identity); it does not defeat a process deliberately re-running with
+the code.
 
 **12.3 Components — build vs reuse.** The engine we build is thin: worktree lifecycle; merge
 orchestrator + serial merge queue + conflict-resolver; a **verify runner** (runs the

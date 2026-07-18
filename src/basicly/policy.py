@@ -16,6 +16,9 @@ gate history. The block-vs-advise policy lives here; ``br`` only stores verdicts
 from __future__ import annotations
 
 import json
+import os
+import secrets
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -154,6 +157,116 @@ def approve_checkpoint(repo_root: Path, issue_id: str, name: str) -> None:
         raise ValueError(f"unknown checkpoint {name!r}; expected one of {list(CHECKPOINTS)}")
     if not checkpoint_approved(repo_root, issue_id, name):
         _run_br(repo_root, ["comments", "add", issue_id, _checkpoint_marker(name)])
+
+
+# --- Interactive-confirmation gate on checkpoint approval -------------------
+#
+# A tool-invoked Bash (Claude Code, and codex/copilot via the same piped
+# subprocess) has no controlling TTY, so a subagent cannot self-approve a
+# checkpoint by default. A non-interactive caller must echo back a one-time
+# ephemeral code, forcing a deliberate second step an autopilot "drive to ship"
+# directive will not contain. This is a mitigation, not a boundary: it does not
+# stop a determined process that shares the human's OS/git identity (the D1 gap).
+
+CONFIRM_TTL_SECONDS = 900
+_CONFIRM_FILE = Path(".basicly/usage/checkpoint-confirms.json")
+
+
+def _now() -> float:
+    """Wall-clock seconds; indirection so tests can pin the clock."""
+    return time.time()
+
+
+def _new_code() -> str:
+    """A short one-time confirm code; indirection so tests can pin it."""
+    return secrets.token_hex(4)
+
+
+def _confirm_key(issue_id: str, name: str) -> str:
+    return f"{issue_id}:{name}"
+
+
+def _read_confirms(path: Path) -> dict[str, dict]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except OSError, json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_confirms(path: Path, data: dict[str, dict]) -> None:
+    """Atomically persist the confirm-code map to the self-ignored usage dir."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    gitignore = path.parent / ".gitignore"
+    if not gitignore.exists():
+        gitignore.write_text("*\n", encoding="utf-8")
+    tmp = path.with_suffix(f".{os.getpid()}.json.tmp")
+    tmp.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
+def _issue_confirm_code(repo_root: Path, issue_id: str, name: str) -> str:
+    """Generate, store, and return a one-time confirm code for the checkpoint."""
+    path = repo_root / _CONFIRM_FILE
+    data = _read_confirms(path)
+    code = _new_code()
+    data[_confirm_key(issue_id, name)] = {"code": code, "expires": _now() + CONFIRM_TTL_SECONDS}
+    _write_confirms(path, data)
+    return code
+
+
+def _consume_confirm_code(repo_root: Path, issue_id: str, name: str, code: str) -> bool:
+    """True when *code* matches the stored, unexpired code; consumes it on match."""
+    path = repo_root / _CONFIRM_FILE
+    data = _read_confirms(path)
+    entry = data.get(_confirm_key(issue_id, name))
+    if not isinstance(entry, dict):
+        return False
+    expired = _now() > float(entry.get("expires", 0))
+    ok = not expired and secrets.compare_digest(str(entry.get("code", "")), code)
+    if expired or ok:  # single-use on match, housekeeping on expiry
+        data.pop(_confirm_key(issue_id, name), None)
+        _write_confirms(path, data)
+    return ok
+
+
+@dataclass(frozen=True)
+class ApprovalResult:
+    """Outcome of a guarded checkpoint approval."""
+
+    status: str  # "approved" | "challenge" | "rejected"
+    code: str | None = None  # the confirm code to relay, when status == "challenge"
+    detail: str = ""
+
+
+def approve_checkpoint_guarded(
+    repo_root: Path,
+    issue_id: str,
+    name: str,
+    *,
+    interactive: bool,
+    confirm: str | None = None,
+) -> ApprovalResult:
+    """Approve a checkpoint only via an interactive TTY or a valid confirm code.
+
+    Interactive callers approve directly. A non-interactive caller with no
+    ``confirm`` gets a one-time ``challenge`` code it must echo back; a matching,
+    unexpired code approves, anything else is ``rejected`` with no marker recorded.
+    Already-approved checkpoints short-circuit to ``approved`` (idempotent).
+    """
+    if name not in CHECKPOINTS:
+        raise ValueError(f"unknown checkpoint {name!r}; expected one of {list(CHECKPOINTS)}")
+    if checkpoint_approved(repo_root, issue_id, name):
+        return ApprovalResult("approved", detail="already approved")
+    if interactive:
+        approve_checkpoint(repo_root, issue_id, name)
+        return ApprovalResult("approved")
+    if confirm is None:
+        return ApprovalResult("challenge", code=_issue_confirm_code(repo_root, issue_id, name))
+    if _consume_confirm_code(repo_root, issue_id, name, confirm):
+        approve_checkpoint(repo_root, issue_id, name)
+        return ApprovalResult("approved")
+    return ApprovalResult("rejected", detail="invalid or expired confirm code")
 
 
 def load_policy(repo_root: Path) -> PolicyConfig:

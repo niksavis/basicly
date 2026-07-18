@@ -164,3 +164,101 @@ def test_checkpoint_markers_are_token_exact(
     monkeypatch.setattr(policy, "_comment_texts", lambda _root, _issue: comments)
     assert policy.checkpoint_approved(tmp_path, "x-1", "ship")
     assert not policy.checkpoint_approved(tmp_path, "x-1", "ship-final")
+
+
+# --- Interactive-confirmation gate (basicly-shgo) ---------------------------
+
+
+def _pin_code(monkeypatch: pytest.MonkeyPatch, code: str, now: float = 1000.0) -> None:
+    monkeypatch.setattr(policy, "_new_code", lambda: code)
+    monkeypatch.setattr(policy, "_now", lambda: now)
+
+
+def test_guarded_approve_interactive_records_directly(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An interactive TTY approves and records the marker with no confirm code."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    result = policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=True)
+    assert result.status == "approved"
+    assert policy.checkpoint_approved(tmp_path, "i", "ship")
+
+
+def test_guarded_approve_non_interactive_challenges_without_recording(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No TTY and no code yields a challenge code and records nothing."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _pin_code(monkeypatch, "deadbeef")
+    result = policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
+    assert result.status == "challenge" and result.code == "deadbeef"
+    assert not policy.checkpoint_approved(tmp_path, "i", "ship")
+
+
+def test_guarded_approve_valid_confirm_records(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A matching, unexpired confirm code approves; the code is single-use."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _pin_code(monkeypatch, "abc123")
+    policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
+    ok = policy.approve_checkpoint_guarded(
+        tmp_path, "i", "ship", interactive=False, confirm="abc123"
+    )
+    assert ok.status == "approved"
+    assert policy.checkpoint_approved(tmp_path, "i", "ship")
+
+
+def test_guarded_approve_wrong_code_rejected(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A non-matching code is rejected and records no marker."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _pin_code(monkeypatch, "abc123")
+    policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
+    bad = policy.approve_checkpoint_guarded(
+        tmp_path, "i", "ship", interactive=False, confirm="nope"
+    )
+    assert bad.status == "rejected"
+    assert not policy.checkpoint_approved(tmp_path, "i", "ship")
+
+
+def test_guarded_approve_expired_code_rejected(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A code past its TTL is rejected even when it matches."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    monkeypatch.setattr(policy, "_new_code", lambda: "abc123")
+    monkeypatch.setattr(policy, "_now", lambda: 1000.0)
+    policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
+    monkeypatch.setattr(policy, "_now", lambda: 1000.0 + policy.CONFIRM_TTL_SECONDS + 1)
+    stale = policy.approve_checkpoint_guarded(
+        tmp_path, "i", "ship", interactive=False, confirm="abc123"
+    )
+    assert stale.status == "rejected"
+    assert not policy.checkpoint_approved(tmp_path, "i", "ship")
+
+
+def test_guarded_approve_already_approved_short_circuits(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An already-approved checkpoint returns approved without demanding a TTY."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    policy.approve_checkpoint(tmp_path, "i", "ship")
+    result = policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
+    assert result.status == "approved"
+
+
+def test_guarded_approve_unknown_checkpoint_rejected(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The guarded path enforces the fixed checkpoint set too."""
+    _install(monkeypatch, _FakeBr())
+    with pytest.raises(ValueError, match="unknown checkpoint"):
+        policy.approve_checkpoint_guarded(tmp_path, "i", "deploy", interactive=True)
