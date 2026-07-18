@@ -72,6 +72,10 @@ class RunnerSpec:
     # `{model}` placeholder is substituted, otherwise `--model <value>` is
     # injected right after the binary. None leaves the argv unchanged.
     model: str | None = None
+    # Invocation-time tool-deny specs (basicly-lqz5). format_command emits one
+    # `--deny-tool=<spec>` per entry after the binary. Populated for the copilot
+    # runner from permissions.yaml at config load; empty leaves the argv unchanged.
+    deny_tools: tuple[str, ...] = ()
 
     @property
     def binary(self) -> str | None:
@@ -134,7 +138,9 @@ def format_command(spec: RunnerSpec, prompt: str) -> list[str]:
         argv = [prompt if part == PROMPT_PLACEHOLDER else part for part in spec.command]
     else:
         argv = list(spec.command)
-    return _apply_model(spec, argv)
+    # Model outermost so it stays "right after the binary" (its documented
+    # contract); deny-tool flags then follow the model.
+    return _apply_model(spec, _apply_deny_tools(spec, argv))
 
 
 def _apply_model(spec: RunnerSpec, argv: list[str]) -> list[str]:
@@ -150,6 +156,19 @@ def _apply_model(spec: RunnerSpec, argv: list[str]) -> list[str]:
     if has_placeholder:
         return [spec.model if part == MODEL_PLACEHOLDER else part for part in argv]
     return [argv[0], "--model", spec.model, *argv[1:]]
+
+
+def _apply_deny_tools(spec: RunnerSpec, argv: list[str]) -> list[str]:
+    """Inject one ``--deny-tool=<spec>`` per entry after the binary (basicly-lqz5).
+
+    Empty ``deny_tools`` leaves the argv unchanged. The ``--deny-tool=`` (single
+    token) form is used so a spec containing spaces — e.g. ``shell(git push
+    --force)`` — stays one argv element and is never mis-parsed as the next flag.
+    """
+    if not spec.deny_tools:
+        return argv
+    flags = [f"--deny-tool={tool}" for tool in spec.deny_tools]
+    return [argv[0], *flags, *argv[1:]]
 
 
 def is_available(spec: RunnerSpec, *, which: Callable[[str], str | None] | None = None) -> bool:

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
+from basicly import permissions
 from basicly.config import (
     CONFIG_FILE,
     DEFAULT_CONFIG_TOML,
@@ -208,10 +210,26 @@ def test_policy_config_custom_values(tmp_path: Path) -> None:
     assert load_policy_config(tmp_path).max_rework == 2
 
 
+def _builtins_with_copilot_deny_stripped(config) -> tuple:
+    """config.specs with the copilot deny-list cleared, to compare against BUILTIN_RUNNERS.
+
+    load_runner_config folds the baseline deny-list onto the copilot spec
+    (basicly-lqz5), so the resolved specs no longer equal the raw built-ins;
+    normalizing that one field back lets the rest be compared for drift.
+    """
+    return tuple(replace(s, deny_tools=()) if s.name == "copilot" else s for s in config.specs)
+
+
+def _expected_copilot_deny() -> tuple[str, ...]:
+    return tuple(permissions.copilot_deny_specs(permissions.load_deny_rules()))
+
+
 def test_runner_config_defaults_without_file(tmp_path: Path) -> None:
-    """With no basicly.toml the runner config is the built-in adapters, default 'auto'."""
+    """With no basicly.toml the config is the built-ins (copilot carries the deny-list)."""
     config = load_runner_config(tmp_path)
-    assert config.specs == BUILTIN_RUNNERS
+    by_name = {spec.name: spec for spec in config.specs}
+    assert by_name["copilot"].deny_tools == _expected_copilot_deny()
+    assert _builtins_with_copilot_deny_stripped(config) == BUILTIN_RUNNERS
     assert config.default == "auto"
 
 
@@ -219,8 +237,17 @@ def test_default_config_toml_runner_matches_defaults(tmp_path: Path) -> None:
     """The scaffolded [runner] section resolves to the built-in adapters and 'auto'."""
     (tmp_path / CONFIG_FILE).write_text(DEFAULT_CONFIG_TOML, encoding="utf-8")
     config = load_runner_config(tmp_path)
-    assert config.specs == BUILTIN_RUNNERS
+    assert _builtins_with_copilot_deny_stripped(config) == BUILTIN_RUNNERS
     assert config.default == "auto"
+
+
+def test_runner_config_injects_copilot_deny_tools(tmp_path: Path) -> None:
+    """The copilot adapter carries the baseline deny-list as --deny-tool specs; others do not."""
+    by_name = {spec.name: spec for spec in load_runner_config(tmp_path).specs}
+    assert by_name["copilot"].deny_tools == _expected_copilot_deny()
+    assert by_name["copilot"].deny_tools  # non-empty from the shipped manifest
+    assert by_name["claude"].deny_tools == ()
+    assert by_name["codex"].deny_tools == ()
 
 
 def test_runner_config_adds_custom_agent(tmp_path: Path) -> None:

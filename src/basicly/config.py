@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
+from . import permissions
 from .runner import AUTO, BUILTIN_RUNNERS, HEADLESS, PROMPT_VIA, RunnerSpec
 from .schema import TECHNOLOGIES
+
+COPILOT_RUNNER = "copilot"
 
 CONFIG_FILE = "basicly.toml"
 
@@ -589,10 +592,29 @@ def load_runner_config(repo_root: Path) -> RunnerConfig:
             spec = _parse_runner_agent(entry)
             specs[spec.name] = spec
 
+    _inject_copilot_deny_tools(specs)
+
     default = section.get("default")
     default = default.strip() if isinstance(default, str) and default.strip() else AUTO
 
     return RunnerConfig(specs=tuple(specs.values()), default=default)
+
+
+def _inject_copilot_deny_tools(specs: dict[str, RunnerSpec]) -> None:
+    """Fold the baseline deny-list into the copilot runner as ``--deny-tool`` specs.
+
+    Invocation-time enforcement of the permissions.yaml deny-list for Copilot,
+    which has no config-file deny (basicly-lqz5). Sourced from the same catalog
+    manifest as the projected Claude deny (:mod:`basicly.permissions`), so the
+    guardrail has one authoring home. A non-headless override under the name is
+    left untouched — a handoff has no argv to carry flags.
+    """
+    spec = specs.get(COPILOT_RUNNER)
+    if spec is None or spec.kind != HEADLESS:
+        return
+    deny = permissions.copilot_deny_specs(permissions.load_deny_rules())
+    if deny:
+        specs[COPILOT_RUNNER] = replace(spec, deny_tools=tuple(deny))
 
 
 def _parse_runner_agent(entry: object) -> RunnerSpec:

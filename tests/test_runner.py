@@ -103,6 +103,51 @@ def test_format_command_injects_model_for_stdin_runner() -> None:
     assert runner.format_command(spec, "ignored") == ["x", "--model", "m1", "--headless"]
 
 
+# --- format_command: deny-tool injection (basicly-lqz5) ---------------------
+
+
+def test_format_command_no_deny_tools_leaves_argv_unchanged() -> None:
+    """The default (no deny_tools) never touches the argv."""
+    spec = RunnerSpec("copilot", HEADLESS, ("copilot", "-p", PROMPT_PLACEHOLDER))
+    assert runner.format_command(spec, "do it") == ["copilot", "-p", "do it"]
+
+
+def test_format_command_injects_deny_tool_flags_after_binary() -> None:
+    """Each deny-tool spec becomes one `--deny-tool=<spec>` argv token after the binary."""
+    spec = RunnerSpec(
+        "copilot",
+        HEADLESS,
+        ("copilot", "-p", PROMPT_PLACEHOLDER),
+        deny_tools=("shell(rm -rf)", "shell(git push --force)"),
+    )
+    assert runner.format_command(spec, "go") == [
+        "copilot",
+        "--deny-tool=shell(rm -rf)",
+        "--deny-tool=shell(git push --force)",
+        "-p",
+        "go",
+    ]
+
+
+def test_format_command_deny_tools_compose_after_model() -> None:
+    """Model injection then deny-tool injection both land after the binary, model first."""
+    spec = RunnerSpec(
+        "copilot",
+        HEADLESS,
+        ("copilot", "-p", PROMPT_PLACEHOLDER),
+        model="fast",
+        deny_tools=("write",),
+    )
+    assert runner.format_command(spec, "go") == [
+        "copilot",
+        "--model",
+        "fast",
+        "--deny-tool=write",
+        "-p",
+        "go",
+    ]
+
+
 # --- availability + selection ----------------------------------------------
 
 
