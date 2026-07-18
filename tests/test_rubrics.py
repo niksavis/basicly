@@ -137,9 +137,13 @@ def _judged_rubric() -> Rubric:
 
 def test_evaluate_deterministic_maps_exit_code(tmp_path: Path) -> None:
     """A deterministic check is yes on exit 0, no on a non-zero exit."""
-    ok = rubrics.evaluate_deterministic(_det(f"{sys.executable} -c pass"), tmp_path)
+    # evaluate_deterministic splits the command with posix shlex, which treats
+    # backslashes as escapes; embed the interpreter with forward slashes so a
+    # Windows sys.executable path survives the split (Windows accepts them too).
+    python = Path(sys.executable).as_posix()
+    ok = rubrics.evaluate_deterministic(_det(f"{python} -c pass"), tmp_path)
     assert ok.answer == YES and ok.kind == DETERMINISTIC
-    fail_cmd = _det(f'{sys.executable} -c "import sys;sys.exit(1)"')
+    fail_cmd = _det(f'{python} -c "import sys;sys.exit(1)"')
     assert rubrics.evaluate_deterministic(fail_cmd, tmp_path).answer == NO
 
 
