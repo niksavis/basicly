@@ -2068,21 +2068,30 @@ def cmd_runner(args: argparse.Namespace) -> int:
 def _resolve_runner(args: argparse.Namespace) -> runner.RunnerSpec:
     """Resolve the runner from --runner (or the configured [runner].default)."""
     config = load_runner_config(_repo_root())
-    return runner.select_runner(config.specs, args.runner or config.default)
+    return runner.select_runner(
+        config.specs, args.runner or config.default, capable=runner.is_capable
+    )
 
 
 def _cmd_runner_list(_args: argparse.Namespace) -> int:
-    """List the configured runner adapters, their availability, and the auto-selection."""
+    """List the configured runner adapters, their availability + capability, and the selection."""
     config = load_runner_config(_repo_root())
     print(f"default: {config.default}")
     for spec in config.specs:
         if spec.kind == runner.HANDOFF:
             print(f"- {spec.name} [{spec.kind}] — always available (work handed off)")
             continue
-        avail = "available" if runner.is_available(spec) else "not on PATH"
         model = f" (model: {spec.model})" if spec.model else ""
-        print(f"- {spec.name} [{spec.kind}] — {avail}: {shlex.join(spec.command)}{model}")
-    resolved = runner.select_runner(config.specs, config.default)
+        if not runner.is_available(spec):
+            print(f"- {spec.name} [{spec.kind}] — not on PATH: {shlex.join(spec.command)}{model}")
+            continue
+        cap = runner.probe_capability(spec)
+        capability = "capable" if cap.flag_ok else f"flag unconfirmed — {cap.detail}"
+        print(
+            f"- {spec.name} [{spec.kind}] — available, {capability}: "
+            f"{shlex.join(spec.command)}{model}"
+        )
+    resolved = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
     print(f"selected ({config.default}): {resolved.name}")
     return 0
 

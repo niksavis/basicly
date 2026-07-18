@@ -46,11 +46,38 @@ def test_runner_list_shows_availability(
     monkeypatch.setattr(
         runner.shutil, "which", lambda b: "/usr/bin/codex" if b == "codex" else None
     )
+    monkeypatch.setattr(runner, "_run_help", lambda _b: "codex exec [options]")  # capable
     assert cli.main(["runner", "list"]) == 0
     out = capsys.readouterr().out
     assert "codex" in out and "available" in out
     assert "not on PATH" in out  # claude/copilot absent
     assert "selected (auto): codex" in out
+
+
+def test_runner_list_surfaces_capability(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An on-PATH runner whose --help confirms its flag is marked capable (basicly-bveo)."""
+    monkeypatch.setattr(
+        runner.shutil, "which", lambda b: "/usr/bin/codex" if b == "codex" else None
+    )
+    monkeypatch.setattr(runner, "_run_help", lambda _b: "codex exec [options]")
+    assert cli.main(["runner", "list"]) == 0
+    assert "capable" in capsys.readouterr().out
+
+
+def test_runner_list_flags_a_dropped_headless_flag(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An on-PATH runner whose --help no longer mentions its flag is flagged unconfirmed."""
+    monkeypatch.setattr(
+        runner.shutil, "which", lambda b: "/usr/bin/codex" if b == "codex" else None
+    )
+    monkeypatch.setattr(runner, "_run_help", lambda _b: "codex chat [options]")  # no 'exec'
+    assert cli.main(["runner", "list"]) == 0
+    out = capsys.readouterr().out
+    assert "flag unconfirmed" in out
+    assert "selected (auto): manual" in out  # incapable codex is skipped
 
 
 def test_runner_dry_run_surfaces_pinned_model(tmp_path, capsys: pytest.CaptureFixture[str]) -> None:

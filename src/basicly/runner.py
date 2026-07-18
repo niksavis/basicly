@@ -43,6 +43,10 @@ MODEL_PLACEHOLDER = "{model}"
 HEADLESS = "headless"
 HANDOFF = "handoff"
 
+# Flag a headless binary is probed with to confirm its assumed capabilities
+# (basicly-bveo) without doing any work.
+HELP_FLAG = "--help"
+
 # How the prompt reaches the agent.
 PROMPT_VIA = ("arg", "stdin")
 
@@ -156,17 +160,90 @@ def is_available(spec: RunnerSpec, *, which: Callable[[str], str | None] | None 
     return spec.binary is not None and which(spec.binary) is not None
 
 
+@dataclass(frozen=True)
+class Capability:
+    """Whether a headless runner's binary confirms its assumed flag (basicly-bveo)."""
+
+    reachable: bool  # the binary ran when probed with --help
+    flag_ok: bool  # the headless flag is present, or the probe could not disprove it
+    detail: str
+
+
+def _headless_flags(spec: RunnerSpec) -> list[str]:
+    """The static headless-flag tokens in *spec*'s command (binary + placeholders removed)."""
+    return [t for t in spec.command[1:] if t not in (PROMPT_PLACEHOLDER, MODEL_PLACEHOLDER)]
+
+
+def _run_help(binary: str) -> str | None:
+    """Run ``<binary> --help``; return its combined output, or None if it could not run."""
+    try:
+        proc = subprocess.run(  # nosec B603
+            [binary, HELP_FLAG], capture_output=True, text=True, check=False, timeout=10
+        )
+    except OSError, subprocess.SubprocessError:
+        return None
+    return (proc.stdout or "") + (proc.stderr or "")
+
+
+def probe_capability(
+    spec: RunnerSpec, *, run: Callable[[str], str | None] | None = None
+) -> Capability:
+    """Confirm *spec*'s assumed headless flag by probing its binary with ``--help``.
+
+    ``flag_ok`` is False only on *positive* evidence — the probe ran and a flag
+    token is absent from the help output (the dropped/renamed-flag case this
+    guards). A handoff runner, a spec with no binary, or a probe that could not
+    run assumes capable, so a flaky or slow probe never false-skips a working
+    agent; PATH presence (:func:`is_available`) stays the primary signal.
+    """
+    if spec.kind != HEADLESS or spec.binary is None:
+        return Capability(reachable=True, flag_ok=True, detail="handoff; no probe needed")
+    run = run or _run_help
+    out = run(spec.binary)
+    if out is None:
+        return Capability(
+            reachable=False, flag_ok=True, detail=f"could not run {spec.binary} {HELP_FLAG}"
+        )
+    flags = _headless_flags(spec)
+    missing = [flag for flag in flags if flag not in out]
+    if missing:
+        return Capability(
+            reachable=True,
+            flag_ok=False,
+            detail=f"{spec.binary} {HELP_FLAG} does not mention {', '.join(missing)}",
+        )
+    supported = ", ".join(flags) or "(none)"
+    return Capability(reachable=True, flag_ok=True, detail=f"{spec.binary} supports {supported}")
+
+
+def is_capable(
+    spec: RunnerSpec,
+    *,
+    which: Callable[[str], str | None] | None = None,
+    run: Callable[[str], str | None] | None = None,
+) -> bool:
+    """True when *spec* is both on PATH and its assumed headless flag is confirmed."""
+    return is_available(spec, which=which) and probe_capability(spec, run=run).flag_ok
+
+
 def select_runner(
     specs: tuple[RunnerSpec, ...],
     chosen: str | None = None,
     *,
     which: Callable[[str], str | None] | None = None,
+    capable: Callable[[RunnerSpec], bool] | None = None,
 ) -> RunnerSpec:
     """Resolve which runner to use.
 
     An explicit name wins (error if unknown); ``auto`` (or no choice) detects the
     big 3 on PATH in :data:`AUTO_ORDER` and otherwise falls back to the handoff
     runner — an unknown agent's command line is never guessed.
+
+    When *capable* is given (basicly-bveo), ``auto`` skips a runner that is on
+    PATH but whose capability probe fails, so a binary with a dropped/renamed
+    headless flag is not auto-selected — it falls through to the next candidate
+    and finally the manual handoff. With no predicate, selection is PATH-only.
+    An explicit choice is never probe-gated (the caller asked for it by name).
     """
     which = which or shutil.which
     by_name = {spec.name: spec for spec in specs}
@@ -177,7 +254,9 @@ def select_runner(
         return spec
     for name in AUTO_ORDER:
         spec = by_name.get(name)
-        if spec is not None and is_available(spec, which=which):
+        if spec is None:
+            continue
+        if capable(spec) if capable is not None else is_available(spec, which=which):
             return spec
     fallback = by_name.get(MANUAL_RUNNER)
     if fallback is None:
