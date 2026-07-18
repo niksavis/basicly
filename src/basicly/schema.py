@@ -39,7 +39,7 @@ CATEGORIES = {
 STATUSES = {"active", "draft", "deprecated"}
 
 # Controlled vocabulary for technology scoping (§9): stack tags plus the
-# environment tools the catalog ships skills for. A source without a
+# environment/platform tools the catalog ships skills for. A source without a
 # `technologies:` list is universal and always ships; catalog lint rejects
 # values outside this list.
 TECHNOLOGIES = {
@@ -52,6 +52,7 @@ TECHNOLOGIES = {
     "starship",
     "tmux",
     "wezterm",
+    "wsl",
     "zsh",
 }
 
