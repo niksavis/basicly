@@ -261,7 +261,7 @@ def _start_build_leaf(ctx: _Ctx) -> AdvanceResult:
 def _dispatch_runner(ctx: _Ctx, name: str, cwd: Path) -> AdvanceResult:
     """Run the selected agent headless in the worktree; a handoff just blocks."""
     config = load_runner_config(ctx.repo_root)
-    spec = runner.select_runner(config.specs, config.default)
+    spec = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
     result = runner.run(spec, _dispatch_prompt(ctx.issue_id), cwd)
     _record_run(ctx, spec, result)
     if result.handoff:

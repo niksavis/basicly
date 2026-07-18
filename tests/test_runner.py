@@ -149,6 +149,70 @@ def test_none_choice_behaves_like_auto() -> None:
     assert spec.name == "claude"
 
 
+# --- capability probe (basicly-bveo) ----------------------------------------
+
+
+def test_headless_flags_excludes_placeholders() -> None:
+    """The probed flag tokens are the static args, not the prompt/model placeholders."""
+    spec = RunnerSpec(
+        "acme", HEADLESS, ("acme", "run", runner.MODEL_PLACEHOLDER, PROMPT_PLACEHOLDER)
+    )
+    assert runner._headless_flags(spec) == ["run"]
+
+
+def test_probe_capability_confirms_a_present_flag() -> None:
+    """The flag appearing in --help output confirms capability."""
+    spec = RunnerSpec("claude", HEADLESS, ("claude", "-p", PROMPT_PLACEHOLDER))
+    cap = runner.probe_capability(spec, run=lambda _b: "usage: claude [-p, --print] ...")
+    assert cap.reachable and cap.flag_ok
+
+
+def test_probe_capability_flags_a_dropped_flag() -> None:
+    """A binary that ran but no longer mentions the flag is not capable."""
+    spec = RunnerSpec("claude", HEADLESS, ("claude", "-p", PROMPT_PLACEHOLDER))
+    cap = runner.probe_capability(spec, run=lambda _b: "usage: claude [--chat] (no print flag)")
+    assert cap.reachable and not cap.flag_ok
+    assert "-p" in cap.detail
+
+
+def test_probe_capability_assumes_capable_when_unprobeable() -> None:
+    """A probe that could not run never false-skips a working agent."""
+    spec = RunnerSpec("claude", HEADLESS, ("claude", "-p", PROMPT_PLACEHOLDER))
+    cap = runner.probe_capability(spec, run=lambda _b: None)
+    assert cap.reachable is False and cap.flag_ok is True
+
+
+def test_probe_capability_handoff_is_trivially_capable() -> None:
+    """A handoff runner has no binary to probe and is always capable."""
+    assert runner.probe_capability(RunnerSpec(MANUAL_RUNNER, HANDOFF)).flag_ok is True
+
+
+def test_is_capable_requires_both_path_and_flag() -> None:
+    """is_capable is on-PATH AND flag-confirmed."""
+    spec = RunnerSpec("codex", HEADLESS, ("codex", "exec", PROMPT_PLACEHOLDER))
+    assert runner.is_capable(spec, which=_which_only("codex"), run=lambda _b: "codex exec ...")
+    assert not runner.is_capable(spec, which=_which_only("codex"), run=lambda _b: "codex chat")
+    assert not runner.is_capable(spec, which=_which_none, run=lambda _b: "codex exec")
+
+
+def test_auto_skips_an_incapable_runner() -> None:
+    """Auto skips a runner on PATH whose probe fails and takes the next capable one."""
+    spec = runner.select_runner(BUILTIN_RUNNERS, "auto", capable=lambda s: s.name == "codex")
+    assert spec.name == "codex"
+
+
+def test_auto_falls_back_to_manual_when_none_capable() -> None:
+    """No capable big-3 runner: fall back to the manual handoff, never guess."""
+    spec = runner.select_runner(BUILTIN_RUNNERS, "auto", capable=lambda _s: False)
+    assert spec.name == MANUAL_RUNNER
+
+
+def test_explicit_choice_is_not_probe_gated() -> None:
+    """An explicit name is honored even when its capability probe would fail."""
+    spec = runner.select_runner(BUILTIN_RUNNERS, "claude", capable=lambda _s: False)
+    assert spec.name == "claude"
+
+
 # --- run --------------------------------------------------------------------
 
 

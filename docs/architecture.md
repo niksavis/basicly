@@ -766,15 +766,21 @@ cross-agent — start on Claude, resume on Codex or Copilot.
 **12.8 Agent-agnostic runner.** Each agent drives the _same_ loop through a thin **runner**
 adapter (invocation command, headless flags, prompt injection, output capture), selected by
 capability detection or an explicit flag. The loop logic is agent-neutral; only the runner
-differs per agent. Detection (`auto`) probes the big 3 on `PATH` (claude → codex → copilot);
-any other agent is supported by an explicit `[[runner.agents]]` command template in
-`basicly.toml`. A runner may pin an optional **`model`** (`[[runner.agents]] model = "opus"`):
-the invocation seam folds it into the command — substituting a `{model}` placeholder when the
-template has one (the escape hatch for an agent whose flag is not `--model`), otherwise
-injecting `--model <value>` right after the binary; no model leaves the argv unchanged. This is
-model/agent-property _awareness at the invocation seam_, not a token-level inference client —
-per-track model choice and capability probing (`basicly-bveo`) stay out of scope. There is no
-cross-agent CLI invocation standard, so an unknown agent's command is **never guessed** — when
+differs per agent. Detection (`auto`) walks the big 3 in order (claude → codex → copilot),
+selecting the first that is both on `PATH` and **capability-probed** (`basicly-bveo`): the
+binary is run with `--help` and auto-selection skips it if the probe positively shows its
+assumed headless flag (`-p`, `exec`) is gone — a dropped/renamed flag no longer gets picked
+and then fails at dispatch. The probe is conservative (a probe that cannot run assumes
+capable, so a flaky probe never false-skips a working agent) and never gates an _explicit_
+choice; `runner list` surfaces each runner's PATH + capability. Any other agent is supported
+by an explicit `[[runner.agents]]` command template in `basicly.toml`. A runner may pin an
+optional **`model`** (`[[runner.agents]] model = "opus"`): the invocation seam folds it into
+the command — substituting a `{model}` placeholder when the template has one (the escape hatch
+for an agent whose flag is not `--model`), otherwise injecting `--model <value>` right after
+the binary; no model leaves the argv unchanged. This is model/agent-property _awareness at the
+invocation seam_, not a token-level inference client — per-track model choice stays out of
+scope. There is no cross-agent CLI invocation standard, so an unknown agent's command is
+**never guessed** — when
 nothing matches, selection falls back to a **`manual` handoff runner** that shells out to
 nothing and instead surfaces the exact prompt + worktree path,
 deferring to the loop's block-and-resume contract and the one thing that _is_ standardized
