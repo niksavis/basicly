@@ -25,14 +25,23 @@ class _FakeBr:
     subsequent list reads, exactly as the real tracker behaves.
     """
 
-    def __init__(self, *, lint_missing: list[str] | None = None, gates: list[dict] | None = None):
+    def __init__(
+        self,
+        *,
+        lint_missing: list[str] | None = None,
+        gates: list[dict] | None = None,
+        acceptance_criteria: str | None = None,
+    ):
         self.lint_missing = lint_missing or []
         self.gates = gates or []
+        self.acceptance_criteria = acceptance_criteria
         self.comments: list[str] = []
 
     def __call__(self, _repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
         if args[:1] == ["lint"]:
             return _Proc(json.dumps({"results": [{"missing": self.lint_missing}]}))
+        if args[:1] == ["show"]:
+            return _Proc(json.dumps([{"acceptance_criteria": self.acceptance_criteria}]))
         if args[:2] == ["gate", "list"]:
             return _Proc(json.dumps({"results": self.gates}))
         if args[:2] == ["comments", "list"]:
@@ -60,6 +69,49 @@ def test_definition_of_ready(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
     result = policy.definition_of_ready(tmp_path, "i")
     assert result.ready is False
     assert result.missing == ("## Acceptance Criteria",)
+
+
+def test_dor_structured_acceptance_field_satisfies_the_section(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A non-empty structured acceptance_criteria field clears the AC section (basicly-58iu)."""
+    _install(
+        monkeypatch,
+        _FakeBr(lint_missing=["## Acceptance Criteria"], acceptance_criteria="the field is set"),
+    )
+    result = policy.definition_of_ready(tmp_path, "i")
+    assert result.ready is True
+    assert result.missing == ()
+
+
+def test_dor_structured_field_does_not_mask_other_missing_sections(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The field clears only AC; other template sections still block (basicly-58iu)."""
+    _install(
+        monkeypatch,
+        _FakeBr(
+            lint_missing=["## Steps to Reproduce", "## Acceptance Criteria"],
+            acceptance_criteria="fixed when x",
+        ),
+    )
+    result = policy.definition_of_ready(tmp_path, "i")
+    assert result.ready is False
+    assert result.missing == ("## Steps to Reproduce",)
+
+
+def test_dor_empty_or_absent_acceptance_field_still_requires_the_section(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A blank or absent field does not satisfy the AC section (basicly-58iu)."""
+    _install(
+        monkeypatch, _FakeBr(lint_missing=["## Acceptance Criteria"], acceptance_criteria="  ")
+    )
+    assert policy.definition_of_ready(tmp_path, "i").ready is False
+    _install(
+        monkeypatch, _FakeBr(lint_missing=["## Acceptance Criteria"], acceptance_criteria=None)
+    )
+    assert policy.definition_of_ready(tmp_path, "i").ready is False
 
 
 def test_gate_status_advances_when_required_pass(

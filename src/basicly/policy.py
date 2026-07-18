@@ -32,6 +32,14 @@ MARKER = "[harness-policy]"
 
 # --- Definition of Ready ----------------------------------------------------
 
+# The ``br lint`` template section satisfied by ``br``'s structured
+# ``acceptance_criteria`` field (basicly-58iu). ``br lint`` only inspects the
+# description body for this heading and ignores the field, so the harness credits
+# the field itself — other template sections (e.g. a bug's Steps to Reproduce)
+# stay body-checked. ``br lint`` has no config to teach it the field, so the fix
+# lives here rather than upstream in beads_rust.
+_ACCEPTANCE_CRITERIA_SECTION = "## Acceptance Criteria"
+
 
 @dataclass(frozen=True)
 class DoRResult:
@@ -42,11 +50,36 @@ class DoRResult:
 
 
 def definition_of_ready(repo_root: Path, issue_id: str) -> DoRResult:
-    """Return the DoR verdict for *issue_id* from ``br lint`` missing sections."""
+    """Return the DoR verdict for *issue_id* from ``br lint`` missing sections.
+
+    A non-empty structured ``acceptance_criteria`` field satisfies the
+    ``## Acceptance Criteria`` template section without duplicating it into the
+    description body (basicly-58iu); every other missing section still blocks.
+    """
     proc = _run_br(repo_root, ["lint", issue_id, "--json"])
     results = json.loads(proc.stdout).get("results", [])
     missing = tuple(results[0].get("missing", [])) if results else ()
+    if _ACCEPTANCE_CRITERIA_SECTION in missing and _has_acceptance_criteria(repo_root, issue_id):
+        missing = tuple(m for m in missing if m != _ACCEPTANCE_CRITERIA_SECTION)
     return DoRResult(ready=not missing, missing=missing)
+
+
+def _has_acceptance_criteria(repo_root: Path, issue_id: str) -> bool:
+    """True when the issue's structured ``acceptance_criteria`` field is non-empty.
+
+    Best-effort: a br failure or an unexpected payload shape returns False, so the
+    body-heading requirement stands rather than a lookup error relaxing the gate.
+    """
+    try:
+        proc = _run_br(repo_root, ["show", issue_id, "--json"])
+        data = json.loads(proc.stdout)
+    except RuntimeError, ValueError:
+        return False
+    issue = data[0] if isinstance(data, list) and data else data
+    if not isinstance(issue, dict):
+        return False
+    value = issue.get("acceptance_criteria")
+    return isinstance(value, str) and bool(value.strip())
 
 
 # --- Gate status ------------------------------------------------------------

@@ -26,8 +26,11 @@ class _FakeBr:
     read to the policy engine) resolves entirely against this fake.
     """
 
-    def __init__(self, *, lint_missing: list[str] | None = None) -> None:
+    def __init__(
+        self, *, lint_missing: list[str] | None = None, acceptance_criteria: str | None = None
+    ) -> None:
         self.lint_missing = lint_missing or []
+        self.acceptance_criteria = acceptance_criteria
         self.recorded_type: str | None = None
         self.calls: list[list[str]] = []
 
@@ -38,6 +41,8 @@ class _FakeBr:
             return _Proc("")
         if args[:1] == ["lint"]:
             return _Proc(json.dumps({"results": [{"missing": self.lint_missing}]}))
+        if args[:1] == ["show"]:
+            return _Proc(json.dumps([{"acceptance_criteria": self.acceptance_criteria}]))
         raise AssertionError(f"unexpected br call: {args}")
 
 
