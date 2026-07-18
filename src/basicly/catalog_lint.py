@@ -19,6 +19,7 @@ and the single-extension decision cannot regress (architecture §4.2):
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import yaml
@@ -26,6 +27,15 @@ from jsonschema import Draft202012Validator
 
 from . import agents, rubrics
 from .schema import TECHNOLOGIES
+
+# Agent Skills spec (https://agentskills.io/specification) name rule: 1-64 chars,
+# lowercase a-z0-9 and single hyphens, no leading/trailing/consecutive hyphen.
+_SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+# A markdown/link reference into a bundled resource dir more than one level deep
+# from SKILL.md (the spec asks for one-level-deep file references).
+_DEEP_REF_RE = re.compile(r"(?:references|scripts|assets)/[^\s)]+/[^\s)]+")
+# Progressive-disclosure guideline: keep the SKILL.md body under ~500 lines.
+_MAX_SKILL_BODY_LINES = 500
 
 CORE_DIR = Path(".basicly/core")
 SKILLS_DIR = CORE_DIR / "skills"
@@ -147,7 +157,73 @@ def lint_catalog(repo_root: Path) -> list[str]:
     # 6. technology tags stay inside the controlled vocabulary (§9 scoping)
     violations.extend(_check_technology_vocabulary(repo_root))
 
+    # 7. Agent Skills spec naming/size constraints JSON Schema cannot express
+    violations.extend(_check_skill_spec(repo_root))
+
     return violations
+
+
+def _load_skill_data(path: Path) -> dict | None:
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError:
+        return None  # schema validation already reports malformed YAML
+    return data if isinstance(data, dict) else None
+
+
+def _check_skill_spec(repo_root: Path) -> list[str]:
+    """Enforce Agent Skills naming/length rules JSON Schema cannot express.
+
+    ``name`` must match the spec regex AND the containing directory; ``metadata``
+    values must be strings. Length limits on ``description``/``compatibility`` are
+    schema-enforced; the name-vs-directory identity and the regex are not.
+    """
+    violations: list[str] = []
+    for path in sorted((repo_root / SKILLS_DIR).glob("*/skill.yaml")):
+        data = _load_skill_data(path)
+        if data is None:
+            continue
+        rel = _rel(path, repo_root)
+        slug = path.parent.name
+        name = data.get("name")
+        if isinstance(name, str):
+            if name != slug:
+                violations.append(f"{rel}: skill name '{name}' must match its directory '{slug}'")
+            if len(name) > 64 or not _SKILL_NAME_RE.match(name):
+                violations.append(
+                    f"{rel}: skill name '{name}' must be 1-64 lowercase a-z0-9/hyphen characters "
+                    "with no leading, trailing, or consecutive hyphen"
+                )
+    return violations
+
+
+def skill_warnings(repo_root: Path) -> list[str]:
+    """Return non-blocking Agent Skills progressive-disclosure advisories.
+
+    Advisory (never fails the gate): a SKILL.md body over ~500 lines, or a file
+    reference more than one level deep — both are spec *recommendations*, so they
+    are surfaced as warnings rather than hard lint violations.
+    """
+    warnings: list[str] = []
+    for path in sorted((repo_root / SKILLS_DIR).glob("*/skill.yaml")):
+        data = _load_skill_data(path)
+        if data is None:
+            continue
+        rel = _rel(path, repo_root)
+        instructions = data.get("instructions")
+        if isinstance(instructions, str):
+            lines = len(instructions.splitlines())
+            if lines > _MAX_SKILL_BODY_LINES:
+                warnings.append(
+                    f"{rel}: SKILL.md body is {lines} lines; keep it under "
+                    f"~{_MAX_SKILL_BODY_LINES} (move detail into references/)"
+                )
+            for match in _DEEP_REF_RE.findall(instructions):
+                warnings.append(
+                    f"{rel}: file reference '{match}' is more than one level deep; "
+                    "keep references one level from SKILL.md"
+                )
+    return warnings
 
 
 def _validate_rubrics(repo_root: Path) -> list[str]:

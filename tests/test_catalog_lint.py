@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from basicly.catalog_lint import lint_catalog
+from basicly.catalog_lint import lint_catalog, skill_warnings
 
 REPO = Path(__file__).parent.parent
 VALID_SKILL = "schema_version: 1\nname: s\ndescription: d\ninstructions: |\n  body\n"
@@ -140,3 +140,54 @@ def test_flags_unknown_technology_in_hooks_manifest(tmp_path: Path) -> None:
     )
     violations = lint_catalog(root)
     assert any("unknown technologies: fortran" in v for v in violations)
+
+
+def test_flags_skill_name_directory_mismatch(tmp_path: Path) -> None:
+    """A skill whose name field differs from its directory is a violation (spec: name==dir)."""
+    root = _catalog(tmp_path)
+    skill = root / ".basicly/core/skills/mismatch/skill.yaml"
+    skill.parent.mkdir(parents=True)
+    skill.write_text(
+        "schema_version: 1\nname: other\ndescription: d\ninstructions: |\n  body\n",
+        encoding="utf-8",
+    )
+    assert any("must match its directory" in v for v in lint_catalog(root))
+
+
+def test_flags_invalid_skill_name(tmp_path: Path) -> None:
+    """A name with uppercase/consecutive hyphens violates the Agent Skills naming rule."""
+    root = _catalog(tmp_path)
+    skill = root / ".basicly/core/skills/bad--name/skill.yaml"
+    skill.parent.mkdir(parents=True)
+    skill.write_text(
+        "schema_version: 1\nname: bad--name\ndescription: d\ninstructions: |\n  body\n",
+        encoding="utf-8",
+    )
+    assert any("no leading, trailing, or consecutive hyphen" in v for v in lint_catalog(root))
+
+
+def test_skill_body_over_limit_warns_but_does_not_fail(tmp_path: Path) -> None:
+    """An oversized SKILL.md body is a warning (advisory), not a hard lint violation."""
+    root = _catalog(tmp_path)
+    body = "\n".join(f"  line {n}" for n in range(600))
+    skill = root / ".basicly/core/skills/big/skill.yaml"
+    skill.parent.mkdir(parents=True)
+    skill.write_text(
+        f"schema_version: 1\nname: big\ndescription: d\ninstructions: |\n{body}\n",
+        encoding="utf-8",
+    )
+    assert lint_catalog(root) == []  # not a hard failure
+    assert any("keep it under" in w for w in skill_warnings(root))
+
+
+def test_deep_file_reference_warns(tmp_path: Path) -> None:
+    """A file reference more than one level deep is surfaced as a warning."""
+    root = _catalog(tmp_path)
+    skill = root / ".basicly/core/skills/refs/skill.yaml"
+    skill.parent.mkdir(parents=True)
+    skill.write_text(
+        "schema_version: 1\nname: refs\ndescription: d\ninstructions: |\n"
+        "  See references/sub/deep.md for details.\n",
+        encoding="utf-8",
+    )
+    assert any("more than one level deep" in w for w in skill_warnings(root))
