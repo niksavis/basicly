@@ -95,6 +95,16 @@ phase is asking for (`basicly loop status`/`advance` names it as `needs input`).
 | **verify** | the landing already ran verify and recorded the required gate; inspect it, then approve ship | `basicly policy gate <id>`; `basicly policy checkpoint <id> ship --approve`. Re-run gates (e.g. after rework) with `basicly verify --mode full --issue <id>` — from the base checkout only |
 | **ship** | tear down the worktree and close the issue | `basicly loop advance <id>` (runs teardown + `br close`) |
 
+> **Never record the verify gate by hand during build.** The build→verify
+> `loop advance` is the *only* step that merges the worktree back to base
+> (`_verify_and_land`); it runs verify and records the gate itself. Recording
+> the gate out-of-band (`basicly verify --issue`, `br gate report verify`)
+> makes the derived phase jump to verify with the merge skipped, and the loop
+> then ships and closes the bead with the code stranded on the harness branch.
+> Let `loop advance` record it; re-run `basicly verify --issue` only *after*
+> the landing has merged (e.g. rework), never before. Ship refuses to close a
+> node whose worktree branch has not landed, as a deterministic backstop.
+
 Leaf types (bug/chore/task) build directly in their own worktree; features
 decompose into children and, once every child closes, land the child worktrees
 that are still live through the merge queue. A child driven through its own

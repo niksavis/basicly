@@ -167,10 +167,56 @@ def _on_verify(ctx: _Ctx) -> AdvanceResult:
     return _moved(ctx, "ship", "shipped", "ship checkpoint satisfied")
 
 
+def _worktree_landed(repo_root: Path, binding: loop_state.WorktreeBinding) -> bool:
+    """True when the worktree branch has landed on its base (or is already gone).
+
+    A branch that no longer exists was merged and cleaned — ``git branch -d``
+    refuses an unmerged branch, so a missing branch is proof it landed. An
+    existing branch counts as landed only when its tip is an ancestor of the base
+    HEAD, i.e. ``_verify_and_land`` really ran ``merge.merge_worktree``. This is
+    the deterministic signal ``_on_ship`` uses to refuse closing a stranded node.
+    """
+    branch = binding.branch
+    exists = (
+        worktree.git(
+            ["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
+            cwd=repo_root,
+            check=False,
+        ).returncode
+        == 0
+    )
+    if not exists:
+        return True
+    session = worktree.load_session(binding.name, repo_root)
+    base = session.base if session is not None else worktree.current_branch(repo_root)
+    return (
+        worktree.git(
+            ["merge-base", "--is-ancestor", branch, base], cwd=repo_root, check=False
+        ).returncode
+        == 0
+    )
+
+
 def _on_ship(ctx: _Ctx) -> AdvanceResult:
-    """Tear down the worktree, close the issue, and commit the tracker state."""
-    if ctx.state.worktree is not None:
-        worktree.cleanup(ctx.state.worktree.name, force=False)
+    """Tear down the worktree, close the issue, and commit the tracker state.
+
+    Guard: never close a leaf whose worktree branch has not landed on its base.
+    The merge happens only in the build->verify transition (``_verify_and_land``);
+    if that step was skipped — e.g. the verify gate was recorded out-of-band, so
+    the derived phase jumped straight to verify — the code is stranded on the
+    harness branch. Block with no side effects (no close, teardown, or tracker
+    commit) instead of closing a bead whose work never merged.
+    """
+    binding = ctx.state.worktree
+    if binding is not None:
+        if not _worktree_landed(ctx.repo_root, binding):
+            return _blocked(
+                ctx,
+                f"ship refuses to close: worktree branch {binding.branch!r} is not merged "
+                "into its base — the build->verify landing was skipped (was the verify gate "
+                "recorded out-of-band?); re-run the build->verify advance to land it first",
+            )
+        worktree.cleanup(binding.name, force=False)
     _run_br(ctx.repo_root, ["close", ctx.issue_id, "--reason", "shipped by the harness loop"])
     committed = merge.commit_tracker_state(
         ctx.repo_root, ctx.issue_id, action="close the shipped track"

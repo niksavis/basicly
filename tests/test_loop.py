@@ -9,6 +9,7 @@ phase forward — the handlers and derive_phase never disagree.
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -514,6 +515,77 @@ def test_ship_tears_down_and_closes(at, monkeypatch: pytest.MonkeyPatch, tmp_pat
     assert committed["bead"] == "i"
     assert result.to_phase == "done" and result.action == "tore-down"
     assert "tracker state committed" in result.detail
+
+
+def test_ship_refuses_an_unmerged_worktree(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Ship blocks with no side effects when the worktree branch never landed.
+
+    Regression (basicly-o0q3): recording the verify gate out-of-band skips the
+    build->verify merge, so the code is stranded on the harness branch. Ship must
+    refuse to close/teardown rather than close a bead whose work never merged.
+    """
+    at(_state("ship", worktree=WorktreeBinding("i", "harness/i")))
+    monkeypatch.setattr(loop, "_worktree_landed", lambda *_a, **_k: False)
+
+    def _boom(*_a, **_k):
+        raise AssertionError("a stranded node must not be closed, torn down, or committed")
+
+    monkeypatch.setattr(worktree, "cleanup", _boom)
+    monkeypatch.setattr(loop, "_run_br", _boom)
+    monkeypatch.setattr(loop.merge, "commit_tracker_state", _boom)
+
+    result = _advance(tmp_path)
+    assert result.blocked
+    assert result.to_phase == result.from_phase  # stays at ship, not "done"
+    assert "not merged" in result.detail
+
+
+def test_ship_proceeds_when_the_worktree_landed(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A landed worktree ships normally: the guard permits close + teardown."""
+    at(_state("ship", worktree=WorktreeBinding("i", "harness/i")))
+    monkeypatch.setattr(loop, "_worktree_landed", lambda *_a, **_k: True)
+    torn = {}
+    monkeypatch.setattr(worktree, "cleanup", lambda name, **_k: torn.setdefault("n", name))
+    monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: None)
+    monkeypatch.setattr(loop.merge, "commit_tracker_state", lambda *_a, **_k: True)
+    result = _advance(tmp_path)
+    assert torn["n"] == "i"
+    assert result.to_phase == "done" and result.action == "tore-down"
+
+
+def test_worktree_landed_missing_branch_counts_as_landed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A branch that no longer exists was merged and cleaned (git branch -d) -> landed."""
+    monkeypatch.setattr(
+        worktree, "git", lambda _args, **_k: SimpleNamespace(returncode=1)
+    )  # show-ref: not found
+    assert loop._worktree_landed(Path("/x"), WorktreeBinding("i", "harness/i")) is True
+
+
+def test_worktree_landed_ancestor_of_base_is_landed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An existing branch whose tip is an ancestor of base HEAD has landed."""
+
+    def git(_args, **_k):
+        return SimpleNamespace(returncode=0)  # show-ref exists (0), merge-base is-ancestor (0)
+
+    monkeypatch.setattr(worktree, "git", git)
+    monkeypatch.setattr(worktree, "load_session", lambda *_a, **_k: _session("i"))
+    assert loop._worktree_landed(Path("/x"), WorktreeBinding("i", "harness/i")) is True
+
+
+def test_worktree_landed_non_ancestor_is_stranded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An existing branch not reachable from base HEAD is stranded (never merged)."""
+
+    def git(args, **_k):
+        # show-ref exists (0); merge-base --is-ancestor fails (1) => not merged
+        return SimpleNamespace(returncode=0 if args[0] == "show-ref" else 1)
+
+    monkeypatch.setattr(worktree, "git", git)
+    monkeypatch.setattr(worktree, "load_session", lambda *_a, **_k: _session("i"))
+    assert loop._worktree_landed(Path("/x"), WorktreeBinding("i", "harness/i")) is False
 
 
 @pytest.mark.parametrize("phase", ["build", "ship"])
