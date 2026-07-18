@@ -1888,12 +1888,37 @@ def _cmd_policy_checkpoint(args: argparse.Namespace) -> int:
     """Show or record approval of a human checkpoint."""
     repo_root = _repo_root()
     if args.approve:
-        policy.approve_checkpoint(repo_root, args.issue, args.name)
-        print(f"checkpoint {args.name}: APPROVED ({args.issue})")
-        return 0
+        return _approve_checkpoint(repo_root, args)
     approved = policy.checkpoint_approved(repo_root, args.issue, args.name)
     print(f"checkpoint {args.name}: {'APPROVED' if approved else 'PENDING'} ({args.issue})")
     return 0 if approved else 1
+
+
+def _approve_checkpoint(repo_root: Path, args: argparse.Namespace) -> int:
+    """Approve a checkpoint, gated on an interactive TTY or a one-time confirm code."""
+    result = policy.approve_checkpoint_guarded(
+        repo_root,
+        args.issue,
+        args.name,
+        interactive=sys.stdin.isatty(),
+        confirm=args.confirm,
+    )
+    if result.status == "approved":
+        print(f"checkpoint {args.name}: APPROVED ({args.issue})")
+        return 0
+    if result.status == "challenge":
+        rerun = (
+            f"basicly policy checkpoint {args.issue} {args.name} --approve --confirm {result.code}"
+        )
+        print(
+            f"checkpoint {args.name}: CONFIRMATION REQUIRED ({args.issue})\n"
+            "  no interactive terminal detected; a human must re-run with the one-time code:\n"
+            f"  {rerun}",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"checkpoint {args.name}: REFUSED ({args.issue}) - {result.detail}", file=sys.stderr)
+    return 1
 
 
 def _cmd_policy_rework(args: argparse.Namespace) -> int:
@@ -2452,6 +2477,11 @@ def _add_policy_parser(subparsers: argparse._SubParsersAction) -> None:
     p_ck.add_argument("issue")
     p_ck.add_argument("name", choices=CHECKPOINTS)
     p_ck.add_argument("--approve", action="store_true", help="Record human approval")
+    p_ck.add_argument(
+        "--confirm",
+        metavar="CODE",
+        help="One-time code from a prior non-interactive --approve (required off a TTY)",
+    )
     p_rw = policy_sub.add_parser("rework", help="Show or record a rework attempt")
     p_rw.add_argument("issue")
     p_rw.add_argument("--gate", default=verify.DEFAULT_GATE, help="Gate the rework is for")
