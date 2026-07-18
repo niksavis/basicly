@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
 
 from basicly.schema import ValidationError
 from basicly.skills import (
@@ -129,3 +130,126 @@ def test_sync_skills_filters_and_prunes_by_selection(tmp_path: Path) -> None:
     # A matching selection ships the tagged skill like any other.
     result, pruned = sync_skills(tmp_path, roots, selection=frozenset({"python"}))
     assert pruned == [] and excluded in result.written
+
+
+def _write_resource(repo_root: Path, slug: str, rel: str, content: bytes) -> Path:
+    path = repo_root / SKILLS_SOURCE_DIR / slug / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content)
+    return path
+
+
+def _frontmatter(text: str) -> dict:
+    body = text.split("---\n", 2)[1]
+    return yaml.safe_load(body)
+
+
+def test_sync_projects_full_skill_directory(tmp_path: Path) -> None:
+    """The whole skill dir (references/scripts/assets/extra) projects verbatim to every root."""
+    _write_skill(tmp_path, "pdf", "pdf", "Work with PDFs.")
+    _write_resource(tmp_path, "pdf", "references/REF.md", b"# Reference\n")
+    _write_resource(tmp_path, "pdf", "scripts/extract.sh", b"#!/bin/sh\necho hi\n")
+    _write_resource(tmp_path, "pdf", "assets/logo.bin", b"\x00\x01\x02")
+    _write_resource(tmp_path, "pdf", "NOTES.txt", b"extra top-level file\n")
+    _write_resource(tmp_path, "pdf", "extra/nested/deep.dat", b"deep\n")
+    roots = resolve_skill_roots(
+        tmp_path, roots=[".claude/skills", ".agents/skills"], use_default_roots=False
+    )
+
+    sync_skills(tmp_path, roots)
+
+    for root in roots:
+        skill_dir = root / "pdf"
+        assert GENERATED_MARKER in (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+        assert (skill_dir / "references/REF.md").read_bytes() == b"# Reference\n"
+        assert (skill_dir / "scripts/extract.sh").read_bytes() == b"#!/bin/sh\necho hi\n"
+        assert (skill_dir / "assets/logo.bin").read_bytes() == b"\x00\x01\x02"
+        assert (skill_dir / "NOTES.txt").read_bytes() == b"extra top-level file\n"
+        assert (skill_dir / "extra/nested/deep.dat").read_bytes() == b"deep\n"
+        # Bundled resources are hand-authored; they carry no generated marker.
+        assert GENERATED_MARKER not in (skill_dir / "references/REF.md").read_text(encoding="utf-8")
+    assert check_synced_skills(tmp_path, roots) == []
+
+
+def test_optional_frontmatter_round_trips(tmp_path: Path) -> None:
+    """license/compatibility/allowed-tools/metadata pass through into SKILL.md frontmatter."""
+    path = tmp_path / SKILLS_SOURCE_DIR / "pdf" / "skill.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "\n".join([
+            "schema_version: 1",
+            "name: pdf",
+            "description: Work with PDFs.",
+            "license: Apache-2.0",
+            "compatibility: Requires Python 3.14+ and uv",
+            "allowed-tools: Bash(git:*) Read",
+            "metadata:",
+            "  author: example-org",
+            '  version: "1.0"',
+            "instructions: |",
+            "  # pdf",
+            "  Body.",
+        ])
+        + "\n",
+        encoding="utf-8",
+    )
+    roots = resolve_skill_roots(tmp_path, roots=[".claude/skills"], use_default_roots=False)
+
+    sync_skills(tmp_path, roots)
+
+    front = _frontmatter((roots[0] / "pdf" / "SKILL.md").read_text(encoding="utf-8"))
+    assert front["name"] == "pdf"
+    assert front["description"] == "Work with PDFs."
+    assert front["license"] == "Apache-2.0"
+    assert front["compatibility"] == "Requires Python 3.14+ and uv"
+    assert front["allowed-tools"] == "Bash(git:*) Read"
+    assert front["metadata"] == {"author": "example-org", "version": "1.0"}
+
+
+def test_minimal_frontmatter_is_unchanged() -> None:
+    """Omitting the optional fields yields the exact pre-spec minimal header."""
+    skill = SkillDefinition("s", "s", "A skill.", "# Body\n\ntext\n", Path("skill.yaml"))
+    out = render_skill_md(skill)
+    assert out.startswith("---\nname: s\ndescription: A skill.\n---\n")
+
+
+def test_deselect_prunes_whole_skill_directory(tmp_path: Path) -> None:
+    """Deselecting a tagged skill prunes its whole projected dir, resources and all."""
+    _write_skill(tmp_path, "tool-uv", "tool-uv", "Python tooling.", technologies="[python]")
+    _write_resource(tmp_path, "tool-uv", "references/REF.md", b"ref\n")
+    roots = resolve_skill_roots(tmp_path, roots=[".claude/skills"], use_default_roots=False)
+    skill_dir = roots[0] / "tool-uv"
+
+    sync_skills(tmp_path, roots)
+    assert (skill_dir / "references/REF.md").is_file()
+
+    selection = frozenset({"zsh"})
+    _result, pruned = sync_skills(tmp_path, roots, selection=selection)
+    assert (skill_dir / "SKILL.md") in pruned and (skill_dir / "references/REF.md") in pruned
+    assert not skill_dir.exists()
+    assert check_synced_skills(tmp_path, roots, selection=selection) == []
+
+
+def test_check_detects_resource_drift_and_orphans(tmp_path: Path) -> None:
+    """A hand-edited resource is flagged stale; an added projected file is flagged orphan."""
+    _write_skill(tmp_path, "pdf", "pdf", "Work with PDFs.")
+    _write_resource(tmp_path, "pdf", "references/REF.md", b"# Reference\n")
+    roots = resolve_skill_roots(tmp_path, roots=[".claude/skills"], use_default_roots=False)
+    skill_dir = roots[0] / "pdf"
+
+    sync_skills(tmp_path, roots)
+    assert check_synced_skills(tmp_path, roots) == []
+
+    ref = skill_dir / "references/REF.md"
+    ref.write_bytes(b"# Reference tampered\n")
+    orphan = skill_dir / "references/STALE.md"
+    orphan.write_bytes(b"left over\n")
+    mismatches = dict(check_synced_skills(tmp_path, roots))
+    assert mismatches[ref] == "content mismatch"
+    assert mismatches[orphan] == "unexpected (not in source)"
+
+    # A rebuild restores the resource and prunes the orphan.
+    _result, pruned = sync_skills(tmp_path, roots)
+    assert orphan in pruned
+    assert ref.read_bytes() == b"# Reference\n"
+    assert check_synced_skills(tmp_path, roots) == []

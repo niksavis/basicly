@@ -1126,7 +1126,13 @@ def _remove_generated_outputs(repo_root: Path, paths: ProjectPaths) -> int:
 
 
 def _remove_generated_skills(repo_root: Path, roots: tuple[Path, ...]) -> int:
-    """Delete projected SKILL.md files under *roots* (generated marker only)."""
+    """Delete projected skill directories under *roots* (generated-marker SKILL.md only).
+
+    A basicly-projected skill directory bundles the rendered SKILL.md plus any
+    hand-authored resources (references/scripts/assets); the whole directory is
+    removed when its SKILL.md carries the generated marker. A user's own skill
+    directory (no marker) is left untouched.
+    """
     removed = 0
     for root in roots:
         base = repo_root / root
@@ -1135,10 +1141,11 @@ def _remove_generated_skills(repo_root: Path, roots: tuple[Path, ...]) -> int:
         for skill_md in sorted(base.rglob(SKILL_FILE_NAME)):
             if GENERATED_MARKER not in skill_md.read_text(encoding="utf-8"):
                 continue
-            skill_md.unlink()
+            skill_dir = skill_md.parent
+            shutil.rmtree(skill_dir)
             removed += 1
-            print(f"Removed {_format_path(skill_md, repo_root)}")
-            _remove_empty_parents(skill_md.parent, repo_root)
+            print(f"Removed {_format_path(skill_dir, repo_root)}")
+            _remove_empty_parents(skill_dir.parent, repo_root)
     return removed
 
 
@@ -1668,6 +1675,8 @@ def cmd_fragment_new(args: argparse.Namespace) -> int:
 def cmd_catalog_lint(_args: argparse.Namespace) -> int:
     """Lint catalog sources: schema-valid, no .md-named sources, single YAML extension."""
     repo_root = _repo_root()
+    for warning in catalog_lint.skill_warnings(repo_root):
+        print(f"catalog lint: warning: {warning}", file=sys.stderr)
     violations = catalog_lint.lint_catalog(repo_root)
     if violations:
         print("catalog lint: FAILED", file=sys.stderr)

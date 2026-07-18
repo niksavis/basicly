@@ -239,6 +239,23 @@ enforces all of this (schema validity, no `.md`-named sources, no `.yml`). The c
 is YAML rather than Python — it needs no code execution, keeps prose lossless via block
 scalars, and matches the existing catalog conventions.
 
+A skill source directory follows the full [Agent Skills spec](https://agentskills.io/specification):
+alongside `skill.yaml` it may bundle `references/`, `scripts/`, `assets/`, and any additional
+files or directories. `skills-build` projects the **whole** source directory into each target
+root — the rendered `SKILL.md` (carrying the generated marker) plus every other file copied
+verbatim (bytes and mode) — so a skill can ship a long reference guide or a fixer script.
+`skill.yaml` also accepts the spec's optional frontmatter (`license`, `compatibility`,
+`allowed-tools`, `metadata`), rendered into the `SKILL.md` header; `technologies` stays
+basicly-internal (§9 scoping) and is never emitted. The projected skill directory is a pure
+projection target owned wholly by basicly and is **mirrored**: `skills-check` flags a stale or
+orphaned resource, a rebuild prunes a resource dropped from the source, and deselecting a
+skill's technology prunes the whole directory. `catalog lint` enforces the spec's naming rules
+(name matches the directory; 1–64 lowercase `a-z0-9`/hyphen characters with no leading,
+trailing, or consecutive hyphen) and warns (advisory) when a `SKILL.md` body exceeds ~500 lines
+or a file reference reaches more than one level deep, per the spec's progressive-disclosure
+guidance. (The upstream `skills-ref validate` tool checks the same frontmatter/naming rules;
+it is not vendored into this repo, so `catalog lint` is the in-tree equivalent.)
+
 **Hooks** (projected and installed by
 `hooks-build`): `core/hooks/` holds the actual hook scripts — git-stage gates
 (`pre-commit.py`, `identity-guard.py`, `commit-msg.py`, `beads-commit-msg.py`,

@@ -1,20 +1,35 @@
 """Skill collection discovery and projection helpers.
 
 Skills are authored as a non-discoverable ``skill.yaml`` source (name,
-description, ``instructions`` block scalar) so a broadly-scanning agent never
-finds the catalog source as a second ``SKILL.md`` (architecture §4.2). The
-projector renders the discoverable ``SKILL.md`` at the target roots only, so
-exactly one copy an agent can load exists per skill.
+description, ``instructions`` block scalar, and optional Agent-Skills-spec
+frontmatter) so a broadly-scanning agent never finds the catalog source as a
+second ``SKILL.md`` (architecture §4.2). The projector renders the discoverable
+``SKILL.md`` at the target roots only, so exactly one copy an agent can load
+exists per skill.
+
+A skill source directory may bundle the full Agent Skills layout
+(https://agentskills.io/specification): ``scripts/``, ``references/``,
+``assets/`` and any additional files or directories. Every bundled file — that
+is, everything under the skill source dir except the ``skill.yaml`` source
+itself — is copied verbatim (bytes and mode) alongside the rendered ``SKILL.md``
+into each destination root, so a skill can carry a long reference guide or a
+fixer script. The rendered ``SKILL.md`` carries the generated marker (a hand
+edit is obviously wrong); the bundled resources are hand-authored and are copied
+without a marker. The projected skill directory is a pure projection target
+owned wholly by basicly, so it is *mirrored*: a resource dropped from the source
+is pruned from the projection, and deselecting a skill's technology prunes the
+whole directory.
 """
 
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 
-from .projection import SyncResult, sync_file
+from .projection import SyncResult, sync_file, write_if_changed
 from .schema import ValidationError, technology_selected, validate_technologies
 
 SKILLS_SOURCE_DIR = Path(".basicly/core/skills")
@@ -42,7 +57,13 @@ GENERATED_MARKER = (
 
 @dataclass(frozen=True)
 class SkillDefinition:
-    """A source skill loaded from .basicly/core/skills."""
+    """A source skill loaded from .basicly/core/skills.
+
+    ``technologies`` is basicly-internal scoping (§9) and is NOT emitted into the
+    projected SKILL.md frontmatter. The optional spec fields (``license``,
+    ``compatibility``, ``allowed_tools``, ``metadata``) round-trip into the
+    frontmatter; omitting them yields the minimal ``name``/``description`` header.
+    """
 
     slug: str
     name: str
@@ -50,12 +71,52 @@ class SkillDefinition:
     instructions: str
     source_path: Path
     technologies: tuple[str, ...] = ()
+    license: str | None = None
+    compatibility: str | None = None
+    allowed_tools: str | None = None
+    metadata: tuple[tuple[str, str], ...] = ()
+
+    @property
+    def source_dir(self) -> Path:
+        """The skill's source directory (parent of ``skill.yaml``)."""
+        return self.source_path.parent
 
 
 def _require_str(value: object, field: str, path: Path) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValidationError(f"missing required field '{field}'", path)
     return value
+
+
+def _optional_str(
+    value: object, field: str, path: Path, *, max_len: int | None = None
+) -> str | None:
+    """Validate an optional spec string field (absent -> None)."""
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValidationError(f"field '{field}' must be a non-empty string", path)
+    if max_len is not None and len(value) > max_len:
+        raise ValidationError(f"field '{field}' exceeds {max_len} characters", path)
+    return value
+
+
+def _load_metadata(value: object, path: Path) -> tuple[tuple[str, str], ...]:
+    """Validate the optional ``metadata`` map (string keys -> string values)."""
+    if value is None:
+        return ()
+    if not isinstance(value, dict):
+        raise ValidationError("field 'metadata' must be a mapping", path)
+    items: list[tuple[str, str]] = []
+    for key, entry in value.items():
+        if not isinstance(key, str):
+            raise ValidationError("metadata keys must be strings", path)
+        if not isinstance(entry, str):
+            raise ValidationError(
+                f"metadata value for '{key}' must be a string (quote numbers, e.g. \"1.0\")", path
+            )
+        items.append((key, entry))
+    return tuple(items)
 
 
 def discover_skills(
@@ -93,15 +154,44 @@ def discover_skills(
                 instructions=_require_str(data.get("instructions"), "instructions", path),
                 source_path=path,
                 technologies=tuple(technologies),
+                license=_optional_str(data.get("license"), "license", path),
+                compatibility=_optional_str(
+                    data.get("compatibility"), "compatibility", path, max_len=500
+                ),
+                allowed_tools=_optional_str(data.get("allowed-tools"), "allowed-tools", path),
+                metadata=_load_metadata(data.get("metadata"), path),
             )
         )
 
     return skills
 
 
+def _optional_frontmatter(skill: SkillDefinition) -> str:
+    """Render the optional spec frontmatter block (empty when none is set)."""
+    fields: dict[str, object] = {}
+    if skill.license is not None:
+        fields["license"] = skill.license
+    if skill.compatibility is not None:
+        fields["compatibility"] = skill.compatibility
+    if skill.allowed_tools is not None:
+        fields["allowed-tools"] = skill.allowed_tools
+    if skill.metadata:
+        fields["metadata"] = dict(skill.metadata)
+    if not fields:
+        return ""
+    return yaml.safe_dump(fields, sort_keys=False, allow_unicode=True, default_flow_style=False)
+
+
 def render_skill_md(skill: SkillDefinition) -> str:
-    """Render the discoverable SKILL.md (frontmatter + generated marker + body)."""
-    header = f"---\nname: {skill.name}\ndescription: {skill.description}\n---\n"
+    """Render the discoverable SKILL.md (frontmatter + generated marker + body).
+
+    ``name`` and ``description`` are emitted verbatim (byte-identical to the
+    pre-spec minimal header); any optional spec fields follow as a YAML block.
+    """
+    header = (
+        f"---\nname: {skill.name}\ndescription: {skill.description}\n"
+        f"{_optional_frontmatter(skill)}---\n"
+    )
     return f"{header}{GENERATED_MARKER}\n\n{skill.instructions}"
 
 
@@ -137,17 +227,85 @@ def _is_generated_skill(path: Path) -> bool:
     return path.is_file() and GENERATED_MARKER in path.read_text(encoding="utf-8", errors="ignore")
 
 
+def _resource_files(skill: SkillDefinition) -> list[Path]:
+    """Relative paths of every bundled file (everything but the skill.yaml source).
+
+    A stray top-level ``SKILL.md`` in the source is skipped so it can never
+    clobber the rendered one (catalog-lint also rejects it as a source).
+    """
+    src_dir = skill.source_dir
+    files: list[Path] = []
+    for candidate in sorted(src_dir.rglob("*")):
+        if not candidate.is_file():
+            continue
+        rel = candidate.relative_to(src_dir)
+        if rel == Path(SKILL_SOURCE_FILE) or rel == Path(SKILL_FILE_NAME):
+            continue
+        files.append(rel)
+    return files
+
+
+def _sync_resource(source: Path, target: Path, result: SyncResult) -> None:
+    """Copy a bundled resource verbatim (bytes + mode) if it changed."""
+    content = source.read_bytes()
+    if write_if_changed(target, content):
+        shutil.copymode(source, target)
+        result.written.append(target)
+    else:
+        result.unchanged.append(target)
+
+
+def _prune_orphans(skill_dir: Path, expected: set[Path]) -> list[Path]:
+    """Remove projected files no longer in the source, then any emptied dirs."""
+    if not skill_dir.is_dir():
+        return []
+    pruned: list[Path] = []
+    for candidate in sorted(skill_dir.rglob("*"), reverse=True):
+        if candidate.is_file() and candidate not in expected:
+            candidate.unlink()
+            pruned.append(candidate)
+        elif candidate.is_dir() and not any(candidate.iterdir()):
+            candidate.rmdir()
+    return pruned
+
+
+def _project_skill(skill: SkillDefinition, skill_dir: Path, result: SyncResult) -> list[Path]:
+    """Mirror the source skill dir into ``skill_dir``; return files pruned as orphans."""
+    expected: set[Path] = set()
+
+    skill_md = skill_dir / SKILL_FILE_NAME
+    sync_file(skill_md, render_skill_md(skill).encode("utf-8"), result)
+    expected.add(skill_md)
+
+    for rel in _resource_files(skill):
+        target = skill_dir / rel
+        _sync_resource(skill.source_dir / rel, target, result)
+        expected.add(target)
+
+    return _prune_orphans(skill_dir, expected)
+
+
+def _prune_skill_dir(skill_dir: Path) -> list[Path]:
+    """Delete a whole projected skill dir when it is basicly-owned (marker present)."""
+    if not _is_generated_skill(skill_dir / SKILL_FILE_NAME):
+        return []
+    pruned = sorted(p for p in skill_dir.rglob("*") if p.is_file())
+    shutil.rmtree(skill_dir)
+    return pruned
+
+
 def sync_skills(
     repo_root: Path,
     roots: list[Path],
     source_dir: Path = SKILLS_SOURCE_DIR,
     selection: frozenset[str] | None = None,
 ) -> tuple[SyncResult, list[Path]]:
-    """Render selected source skills into destination roots.
+    """Project selected source skills (SKILL.md + bundled resources) into each root.
 
-    Extra (hand-authored) files are never touched, but a previously projected
-    skill the technology *selection* now excludes is pruned (generated-marker
-    files only). Returns the sync result plus the pruned paths.
+    The projected skill directory is mirrored, so a resource removed from the
+    source is pruned; a skill the technology *selection* now excludes has its
+    whole projected directory pruned (basicly-owned dirs only, detected by the
+    generated marker on SKILL.md). Returns the sync result plus the pruned paths.
     """
     skills = discover_skills(repo_root, source_dir)
     result = SyncResult()
@@ -155,16 +313,12 @@ def sync_skills(
 
     for skill in skills:
         selected = technology_selected(skill.technologies, selection)
-        rendered = render_skill_md(skill).encode("utf-8") if selected else b""
         for root in roots:
-            target_path = root / skill.slug / SKILL_FILE_NAME
+            skill_dir = root / skill.slug
             if selected:
-                sync_file(target_path, rendered, result)
-            elif _is_generated_skill(target_path):
-                target_path.unlink()
-                if not any(target_path.parent.iterdir()):
-                    target_path.parent.rmdir()
-                pruned.append(target_path)
+                pruned.extend(_project_skill(skill, skill_dir, result))
+            else:
+                pruned.extend(_prune_skill_dir(skill_dir))
 
     return result, pruned
 
@@ -175,23 +329,49 @@ def check_synced_skills(
     source_dir: Path = SKILLS_SOURCE_DIR,
     selection: frozenset[str] | None = None,
 ) -> list[tuple[Path, str]]:
-    """Return missing or stale skill files for the selected destination roots."""
+    """Return missing, stale, or orphaned skill files for the selected roots."""
     skills = discover_skills(repo_root, source_dir)
     mismatches: list[tuple[Path, str]] = []
 
     for skill in skills:
         selected = technology_selected(skill.technologies, selection)
-        rendered = render_skill_md(skill).encode("utf-8") if selected else b""
         for root in roots:
-            target_path = root / skill.slug / SKILL_FILE_NAME
+            skill_dir = root / skill.slug
             if not selected:
-                if _is_generated_skill(target_path):
-                    mismatches.append((target_path, "excluded by technology selection"))
+                skill_md = skill_dir / SKILL_FILE_NAME
+                if _is_generated_skill(skill_md):
+                    mismatches.append((skill_md, "excluded by technology selection"))
                 continue
-            if not target_path.exists():
-                mismatches.append((target_path, "missing"))
-                continue
-            if target_path.read_bytes() != rendered:
-                mismatches.append((target_path, "content mismatch"))
+            mismatches.extend(_check_projected_skill(skill, skill_dir))
+
+    return mismatches
+
+
+def _check_projected_skill(skill: SkillDefinition, skill_dir: Path) -> list[tuple[Path, str]]:
+    """Compare one projected skill dir against its source (SKILL.md + resources + orphans)."""
+    mismatches: list[tuple[Path, str]] = []
+    expected: set[Path] = set()
+
+    skill_md = skill_dir / SKILL_FILE_NAME
+    expected.add(skill_md)
+    rendered = render_skill_md(skill).encode("utf-8")
+    if not skill_md.exists():
+        mismatches.append((skill_md, "missing"))
+    elif skill_md.read_bytes() != rendered:
+        mismatches.append((skill_md, "content mismatch"))
+
+    for rel in _resource_files(skill):
+        target = skill_dir / rel
+        expected.add(target)
+        content = (skill.source_dir / rel).read_bytes()
+        if not target.exists():
+            mismatches.append((target, "missing"))
+        elif target.read_bytes() != content:
+            mismatches.append((target, "content mismatch"))
+
+    if skill_dir.is_dir():
+        for candidate in sorted(skill_dir.rglob("*")):
+            if candidate.is_file() and candidate not in expected:
+                mismatches.append((candidate, "unexpected (not in source)"))
 
     return mismatches
