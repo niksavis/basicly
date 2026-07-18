@@ -256,6 +256,31 @@ or a file reference reaches more than one level deep, per the spec's progressive
 guidance. (The upstream `skills-ref validate` tool checks the same frontmatter/naming rules;
 it is not vendored into this repo, so `catalog lint` is the in-tree equivalent.)
 
+**Skill taxonomy (core vs optional)**: every skill is one of two kinds, set by its
+`technologies:` tag. An **untagged** skill is _universal core_ — it always ships
+(`test-discipline`, the harness and tool skills). A **technologies-tagged** skill is
+_optional_ — it ships only when the consuming repo selects that tag via `[catalog]
+technologies` in `basicly.toml` (§9). So this repo ships `python` and `node` and excludes
+`wsl` and the environment-tagged tool skills, which stay available to repos that opt in.
+Tech-specific and situational guidance belongs in these optional skills, not in the
+always-on files: enforcement stays in the deterministic hooks (`ruff`, `pytest`,
+`markdownlint`) and a skill carries the judgment and pointers a linter cannot — never a
+restated lint rule.
+
+**Two skill roots, both mandatory**: skills project into `.claude/skills` (Claude Code's
+only project skill root) and `.agents/skills` (the Agent Skills open-standard root Codex,
+Copilot, and Cursor discover). The split mirrors how each agent finds its guidance: Claude
+Code reads `.claude/CLAUDE.md` and discovers skills only under `.claude/`; Codex, Copilot,
+and Cursor read `AGENTS.md` and discover skills under `.agents/`. Moving guidance into
+skills drops none of the always-on files — `AGENTS.md` is the canonical open-standard
+baseline, and `.claude/CLAUDE.md` and `.github/copilot-instructions.md` are per-agent
+renders of the _same_ shared `applies_to: [all]` fragments, each self-contained (Claude and
+Copilot do not reliably `@`-import `AGENTS.md`, so the shared content is inlined into each,
+not imported — §4.4 detail 3). Both skill roots and all three always-on files stay. See the
+[Agent Skills spec](https://agentskills.io/specification), the
+[AGENTS.md spec](https://agents.md/), and the
+[skills tooling and agent discovery paths](https://github.com/vercel-labs/skills/blob/main/README.md).
+
 **Hooks** (projected and installed by
 `hooks-build`): `core/hooks/` holds the actual hook scripts — git-stage gates
 (`pre-commit.py`, `identity-guard.py`, `commit-msg.py`, `beads-commit-msg.py`,
