@@ -10,6 +10,14 @@ targets = ".basicly/core/targets"
 templates = ".basicly/core/templates"
 manifest = ".basicly/generated-manifest.json"
 
+# Technology scoping (architecture §9): this repo's stack. Untagged catalog
+# sources are universal and always ship; a technologies-tagged source ships only
+# when its tag is listed here. basicly is a Python + Node repo (the CLI and the
+# markdownlint hook), so it selects python and node; the wsl skill is authored
+# but not selected here, staying available to repos that opt in.
+[catalog]
+technologies = ["python", "node"]
+
 # Sibling git-worktree isolation for harness tracks.
 [worktree]
 # Branch new harness/<name> worktrees fork from. Empty = the current branch.
