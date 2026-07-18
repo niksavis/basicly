@@ -120,12 +120,6 @@ uv run basicly hooks-check
 - User instructions in the current task override this file.
 - More specific path-scoped instructions override this file for matching files.
 
-## Python Style
-
-- Use type hints for public functions.
-- Prefer `pathlib` over `os.path`.
-- Formatting is enforced by `ruff format` (pre-commit hook).
-
 ## Catalog Authoring
 
 - Author catalog content as YAML sources, never a discoverable `.md`; scaffold with `basicly catalog new skill`/`catalog new fragment` and follow the `catalog-authoring` skill — `basicly catalog lint` enforces the format.

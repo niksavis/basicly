@@ -191,3 +191,16 @@ def test_deep_file_reference_warns(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert any("more than one level deep" in w for w in skill_warnings(root))
+
+
+def test_one_level_markdown_link_does_not_warn(tmp_path: Path) -> None:
+    """A normal one-level markdown link must not be misread as a two-level path."""
+    root = _catalog(tmp_path)
+    skill = root / ".basicly/core/skills/refs/skill.yaml"
+    skill.parent.mkdir(parents=True)
+    skill.write_text(
+        "schema_version: 1\nname: refs\ndescription: d\ninstructions: |\n"
+        "  See [the guide](references/guide.md) and run scripts/fix.sh.\n",
+        encoding="utf-8",
+    )
+    assert not any("more than one level deep" in w for w in skill_warnings(root))

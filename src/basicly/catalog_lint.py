@@ -31,9 +31,11 @@ from .schema import TECHNOLOGIES
 # Agent Skills spec (https://agentskills.io/specification) name rule: 1-64 chars,
 # lowercase a-z0-9 and single hyphens, no leading/trailing/consecutive hyphen.
 _SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-# A markdown/link reference into a bundled resource dir more than one level deep
-# from SKILL.md (the spec asks for one-level-deep file references).
-_DEEP_REF_RE = re.compile(r"(?:references|scripts|assets)/[^\s)]+/[^\s)]+")
+# A reference into a bundled resource dir more than one level deep from SKILL.md
+# (the spec asks for one-level-deep file references). The path segments exclude
+# markdown link punctuation (), [], so a normal link like
+# [x](references/x.md) cannot be misread as a two-level path across its `](`.
+_DEEP_REF_RE = re.compile(r"(?:references|scripts|assets)/[^\s()\[\]]+/[^\s()\[\]]+")
 # Progressive-disclosure guideline: keep the SKILL.md body under ~500 lines.
 _MAX_SKILL_BODY_LINES = 500
 
