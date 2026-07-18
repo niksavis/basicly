@@ -59,6 +59,7 @@ def test_manifest_lists_every_catalog_hook() -> None:
         "beads-commit-msg-script",
         "pre-push-script",
         "protect-generated",
+        "protect-generated-commit",
         "tool-usage",
         "tool-usage-copilot",
     }
@@ -81,6 +82,16 @@ def test_manifest_ships_protect_generated_for_claude() -> None:
     assert guard.manager == "claude"
     assert git_hook_specs(specs) == [s for s in specs if s.manager == "git"]
     assert guard in claude_hook_specs(specs)
+
+
+def test_manifest_ships_protect_generated_commit_for_git() -> None:
+    """The commit-time backstop is a git pre-commit gate for all agents (basicly-yw28)."""
+    specs = load_hook_specs()
+    backstop = next(spec for spec in specs if spec.id == "protect-generated-commit")
+    assert backstop.script == "protect-generated-commit.py"
+    assert backstop.stage == "pre-commit"
+    assert backstop.manager == "git"
+    assert backstop in git_hook_specs(specs)
 
 
 def test_copilot_hooks_sync_check_and_remove_roundtrip(tmp_path: Path) -> None:
