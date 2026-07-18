@@ -804,6 +804,21 @@ token/cost fields reserved for a follow-on bead. Only metadata is persisted — 
 elided, never the prompt body or captured output. This is the correlation foundation for
 agent attribution, model provenance, and the cross-repo fleet rollup.
 
+**Structured needs-input outcome (`basicly-o774`, D5/D6 convergence).** The stop-instead-of-guess
+policy used to be soft prose in the `knowledge-priming`/`decision-protocol` fragments the model
+could ignore; this makes it a first-class loop outcome. When a dispatched headless agent cannot
+resolve a required fact it writes a small sentinel — `.basicly/usage/needs-input.json`
+(`{"fact", "detail"}`) — into its worktree and stops without committing a guess. After a clean
+(exit 0) dispatch the loop reads the sentinel (`needs_input.take`), maps it to the existing
+block-and-resume contract (`_blocked(..., needs_input=<fact>)`), and **does not land** — the
+missing fact is surfaced by `loop advance`/`status` like any other block. The sentinel is
+consumed on read (valid or malformed) so a re-dispatch, once the fact is supplied, starts clean;
+a missing sentinel is exactly today's "advance again to land it". A file — not a stdout marker —
+carries the signal so it survives output redaction/truncation and needs no cross-agent output
+convention. Scope is the headless path; the `manual` handoff runner is unchanged (the driver
+already surfaces missing facts), and a manual-driver CLI is out of scope. The protocol is
+projected into the dispatch prompt and the `harness-loop` fragment so agents know the contract.
+
 **Output redaction and egress (`basicly-3p2i`).** Captured stdout/stderr is redacted at the
 source before it enters a `RunResult`: high-signal secret shapes (private-key headers, provider
 tokens, secret-named assignments — the sibling pattern set of the `secret-scan` hook, `redact.py`)
