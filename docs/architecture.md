@@ -492,7 +492,7 @@ names were removed, not aliased).
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `basicly install`             | Idempotent converge: materialize the bundled core catalog, migrate/prune legacy layouts, scaffold overlay + `basicly.toml` (never overwriting existing user content), then `build` + `skills-build` (all default roots) + `agents-build` + `hooks-build` (with hook activation). The same command performs first install and every upgrade (provenance-guarded core sync, §9; `--force` overwrites kept hand-edits). Replaced the former `init`/`update` staging pair |
 | `basicly uninstall [--purge]` | Removes managed core, state, manifest-listed generated files, projected skills and agents (generated-marker files only), and the managed hook block (deleting the config + uninstalling git hooks when nothing else remains); preserves the overlay + `basicly.toml` unless `--purge`; refuses in the authoring repo                                                                                                                                                  |
-| `basicly status [--json]`     | Read-only snapshot for fleet loops and humans: installed catalog version vs running engine version, drift summary (the `check` comparison plus install-provenance drift), per-manager hook state (projection sync + git stage activation), technology selection, and overlay counts; never writes, always exits 0; `--json` emits a stable versioned schema                                                                                                           |
+| basicly status [--json]       | Read-only snapshot for fleet loops and humans: installed catalog version vs running engine version, drift summary (the `check` comparison plus install-provenance drift), per-manager hook state (projection sync + git stage activation), technology selection, and overlay counts; never writes, always exits 0; `--json` emits a stable versioned schema; `--fleet [--root PATH]` rolls it across the housed repos as one json payload (h0f0)                      |
 
 **Catalog**:
 
@@ -803,6 +803,19 @@ outcome (executed/handoff/failed), agent, and the pinned model when the runner s
 token/cost fields reserved for a follow-on bead. Only metadata is persisted — the command is stored with the prompt argument
 elided, never the prompt body or captured output. This is the correlation foundation for
 agent attribution, model provenance, and the cross-repo fleet rollup.
+
+**Fleet rollup (`basicly-h0f0`).** `basicly status --fleet [--root PATH]` (`fleet.py`) is the
+cross-repo view dimension 3 calls for: it discovers the basicly-installed repos under a workspace
+root (immediate subdirs carrying a `.basicly/` dir; default root = the parent of the current repo)
+and rolls up, per repo, the single-repo `status` snapshot plus a run-record summary (total runs,
+counts by outcome, distinct agents/models) into one versioned JSON payload with fleet totals.
+Read-only and resilient by construction: it writes nothing, and a repo whose snapshot raises is
+captured as an `error` entry rather than failing the rollup — the command always exits 0. The
+per-repo snapshot is produced **in-process** by the current engine (the `status_fn` the CLI
+injects, so `fleet.py` never imports the CLI); each repo's payload still carries its own
+`installed_version` vs `engine_version`, so version skew across the fleet stays visible. A
+human-formatted table and a subprocess-per-repo model (each repo reporting via its own pinned
+basicly) are out of scope — this is JSON-first and single-engine.
 
 **Structured needs-input outcome (`basicly-o774`, D5/D6 convergence).** The stop-instead-of-guess
 policy used to be soft prose in the `knowledge-priming`/`decision-protocol` fragments the model

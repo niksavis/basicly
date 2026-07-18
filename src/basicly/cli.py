@@ -23,6 +23,7 @@ from . import (
     catalog_verify,
     claude_settings,
     decompose,
+    fleet,
     loop,
     loop_state,
     merge,
@@ -558,9 +559,18 @@ def _say_status_catalog(report: dict[str, Any]) -> None:
         )
 
 
+def _fleet_status(repo_root: Path) -> dict[str, Any]:
+    """A single repo's status snapshot, loading that repo's own project paths."""
+    return _status_report(repo_root, load_project_paths(repo_root))
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     """Read-only repo snapshot: versions, drift, hooks, selection, overlays."""
     repo_root = _repo_root()
+    if args.fleet:
+        root = Path(args.root).expanduser() if args.root else repo_root.parent
+        print(json.dumps(fleet.fleet_report(root, _fleet_status), indent=2))
+        return 0
     paths = load_project_paths(repo_root)
     report = _status_report(repo_root, paths)
     if args.json:
@@ -2601,6 +2611,17 @@ def _add_status_parser(subparsers: argparse._SubParsersAction) -> None:
         "--json",
         action="store_true",
         help="Emit the snapshot as JSON (stable schema, for fleet loops)",
+    )
+    status_parser.add_argument(
+        "--fleet",
+        action="store_true",
+        help="Roll up status + run-records across the housed workspace repos as JSON "
+        "(read-only, exit 0); implies JSON output",
+    )
+    status_parser.add_argument(
+        "--root",
+        metavar="PATH",
+        help="Workspace root to scan for --fleet (default: the parent of this repo)",
     )
 
 
