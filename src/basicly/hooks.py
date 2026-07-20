@@ -496,25 +496,49 @@ def missing_hook_installations(repo_root: Path, stages: list[str]) -> list[str]:
     return missing
 
 
+def _pre_commit_command(args: list[str]) -> list[str] | None:
+    """The argv to run pre-commit with *args*, or None when it cannot be run.
+
+    Prefers a ``pre-commit`` already on PATH; otherwise runs it through
+    ``uv tool run`` (uvx), which provisions the tool in an ephemeral environment.
+    ``uv run`` is deliberately *not* the fallback: it resolves pre-commit only
+    when the consumer repo declares it as a project dependency — which a fresh
+    consumer never does — so it fails with "program not found" (basicly-x5gh).
+    Returns None only when neither pre-commit nor uv is on PATH.
+    """
+    pre_commit = shutil.which("pre-commit")
+    if pre_commit:
+        return [pre_commit, *args]
+    if shutil.which("uv"):
+        return ["uv", "tool", "run", "pre-commit", *args]
+    return None
+
+
 def install_hooks(repo_root: Path, stages: list[str]) -> tuple[bool, str]:
     """Activate the gates by running ``pre-commit install`` for the given stages.
 
-    Returns ``(ok, message)``. Degrades gracefully when pre-commit isn't on PATH:
-    tries ``uv run pre-commit`` as a fallback, and otherwise returns actionable
-    guidance instead of raising, so a consumer without pre-commit is told what to do.
+    Returns ``(ok, message)``. Degrades gracefully: runs pre-commit via
+    ``uv tool run`` (uvx) when it isn't on PATH, guards a non-git target, and
+    otherwise returns actionable guidance instead of raising, so a consumer
+    without the prerequisites is told exactly what to do.
     """
     stage_args: list[str] = []
     for stage in stages:
         stage_args += ["-t", stage]
-    manual = "pre-commit install --install-hooks " + " ".join(stage_args)
+    manual = "uvx pre-commit install --install-hooks " + " ".join(stage_args)
 
-    pre_commit = shutil.which("pre-commit")
-    if pre_commit:
-        cmd = [pre_commit, "install", "--install-hooks", *stage_args]
-    elif shutil.which("uv"):
-        cmd = ["uv", "run", "pre-commit", "install", "--install-hooks", *stage_args]
-    else:
-        return False, f"pre-commit is not available; install it, then run: {manual}"
+    # pre-commit install needs a git repo; a bare consumer folder has no .git
+    # (a worktree has a .git file, so exists() covers both). Skip with clear
+    # guidance rather than surfacing an opaque pre-commit error (basicly-x5gh).
+    if not (repo_root / ".git").exists():
+        return False, (
+            "not a git repository (no .git); run `git init`, then `basicly hooks-build` "
+            "to activate the gates"
+        )
+
+    cmd = _pre_commit_command(["install", "--install-hooks", *stage_args])
+    if cmd is None:
+        return False, f"neither pre-commit nor uv is on PATH; install uv, then run: {manual}"
 
     result = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True, check=False)  # nosec B603
     if result.returncode != 0:
@@ -526,21 +550,17 @@ def install_hooks(repo_root: Path, stages: list[str]) -> tuple[bool, str]:
 def uninstall_hooks(repo_root: Path, stages: list[str]) -> tuple[bool, str]:
     """Deactivate the gates via ``pre-commit uninstall`` for the given stages.
 
-    Mirrors :func:`install_hooks`: returns ``(ok, message)`` and degrades
-    gracefully when pre-commit isn't on PATH.
+    Mirrors :func:`install_hooks`: returns ``(ok, message)`` and runs pre-commit
+    via ``uv tool run`` (uvx) when it isn't on PATH.
     """
     stage_args: list[str] = []
     for stage in stages:
         stage_args += ["-t", stage]
-    manual = "pre-commit uninstall " + " ".join(stage_args)
+    manual = "uvx pre-commit uninstall " + " ".join(stage_args)
 
-    pre_commit = shutil.which("pre-commit")
-    if pre_commit:
-        cmd = [pre_commit, "uninstall", *stage_args]
-    elif shutil.which("uv"):
-        cmd = ["uv", "run", "pre-commit", "uninstall", *stage_args]
-    else:
-        return False, f"pre-commit is not available; run manually: {manual}"
+    cmd = _pre_commit_command(["uninstall", *stage_args])
+    if cmd is None:
+        return False, f"neither pre-commit nor uv is on PATH; run manually: {manual}"
 
     result = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True, check=False)  # nosec B603
     if result.returncode != 0:

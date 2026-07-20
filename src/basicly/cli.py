@@ -1358,7 +1358,7 @@ def cmd_hooks_build(_args: argparse.Namespace) -> int:
         stage_flags = " ".join(f"-t {stage}" for stage in stages)
         print(
             "Skipped activation (--no-install). Run "
-            f"`pre-commit install --install-hooks {stage_flags}`."
+            f"`uvx pre-commit install --install-hooks {stage_flags}`."
         )
         return 0
 
@@ -1415,7 +1415,7 @@ def cmd_hooks_check(_args: argparse.Namespace) -> int:
         stage_flags = " ".join(f"-t {stage}" for stage in missing)
         print(
             f"Note: git hooks are not installed for stages: {', '.join(missing)}. "
-            f"Run `basicly hooks-build` or `pre-commit install --install-hooks {stage_flags}` "
+            f"Run `basicly hooks-build` or `uvx pre-commit install --install-hooks {stage_flags}` "
             "to activate them locally.",
             file=sys.stderr,
         )

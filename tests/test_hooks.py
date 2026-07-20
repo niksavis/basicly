@@ -27,6 +27,7 @@ from basicly.hooks import (
     selected_hook_specs,
     sync_copilot_hooks,
     sync_hooks,
+    uninstall_hooks,
 )
 from basicly.schema import ValidationError
 
@@ -403,7 +404,69 @@ def test_install_hooks_returns_guidance_when_precommit_unavailable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """When neither pre-commit nor uv is on PATH, install_hooks guides rather than raises."""
+    (tmp_path / ".git").mkdir()  # pass the git precheck to reach the availability branch
     monkeypatch.setattr(shutil, "which", lambda _name: None)
     ok, message = install_hooks(tmp_path, ["pre-commit", "commit-msg", "pre-push"])
     assert ok is False
-    assert "pre-commit install --install-hooks -t pre-commit -t commit-msg -t pre-push" in message
+    assert "neither pre-commit nor uv is on PATH" in message
+    assert "uvx pre-commit install --install-hooks" in message  # guidance that works uninstalled
+
+
+def test_install_hooks_uses_uvx_when_precommit_absent_but_uv_present(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fallback runs `uv tool run pre-commit` (uvx), not `uv run` (basicly-x5gh)."""
+    (tmp_path / ".git").mkdir()
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/uv" if name == "uv" else None)
+    captured: dict[str, list[str]] = {}
+
+    class _Proc:
+        returncode = 0
+        stdout = "hooks installed"
+        stderr = ""
+
+    def _fake_run(cmd, **_kwargs):
+        captured["cmd"] = cmd
+        return _Proc()
+
+    monkeypatch.setattr(hooks_module.subprocess, "run", _fake_run)
+    ok, _message = install_hooks(tmp_path, ["pre-commit", "commit-msg"])
+    assert ok is True
+    assert captured["cmd"][:4] == ["uv", "tool", "run", "pre-commit"]
+    assert "install" in captured["cmd"] and "--install-hooks" in captured["cmd"]
+
+
+def test_install_hooks_no_git_gives_clear_guidance_without_spawning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A target without .git is skipped with guidance and never spawns pre-commit."""
+
+    def _boom(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("pre-commit must not be spawned when there is no .git")
+
+    monkeypatch.setattr(hooks_module.subprocess, "run", _boom)
+    ok, message = install_hooks(tmp_path, ["pre-commit"])
+    assert ok is False
+    assert "not a git repository" in message
+    assert "basicly hooks-build" in message
+
+
+def test_uninstall_hooks_uses_uvx_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """uninstall_hooks mirrors the uvx fallback when pre-commit is absent."""
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/uv" if name == "uv" else None)
+    captured: dict[str, list[str]] = {}
+
+    class _Proc:
+        returncode = 0
+        stdout = "hooks uninstalled"
+        stderr = ""
+
+    def _fake_run(cmd, **_kwargs):
+        captured["cmd"] = cmd
+        return _Proc()
+
+    monkeypatch.setattr(hooks_module.subprocess, "run", _fake_run)
+    ok, _message = uninstall_hooks(tmp_path, ["pre-commit"])
+    assert ok is True
+    assert captured["cmd"][:4] == ["uv", "tool", "run", "pre-commit"]
+    assert "uninstall" in captured["cmd"]
