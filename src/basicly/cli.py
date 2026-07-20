@@ -24,6 +24,7 @@ from . import (
     claude_settings,
     decompose,
     fleet,
+    health,
     loop,
     loop_state,
     merge,
@@ -615,6 +616,47 @@ def cmd_status(args: argparse.Namespace) -> int:
         ui.say(f"technologies: {', '.join(technologies)}")
     overlays = report["overlays"]
     ui.say(f"overlays: {overlays['fragments']} fragment(s), {overlays['agents']} agent(s)")
+    return 0
+
+
+def cmd_health(args: argparse.Namespace) -> int:
+    """Per-agent health scoring and behavioral drift from run-records (read-only)."""
+    repo_root = _repo_root()
+    if args.window < 1:
+        ui.warn("--window must be at least 1")
+        return 2
+    if args.fleet:
+        root = Path(args.root).expanduser() if args.root else repo_root.parent
+        print(json.dumps(health.fleet_health(root, window=args.window), indent=2))
+        return 0
+    report = health.health_report(repo_root, window=args.window)
+    if args.json:
+        print(json.dumps(report, indent=2))
+        return 0
+
+    agents = report["agents"]
+    if not agents:
+        ui.say("health: no run-records yet", style="ok")
+        return 0
+    rows = [
+        [
+            agent["agent"],
+            str(agent["runs"]),
+            f"{agent['failure_rate']:.0%}",
+            f"{agent['rework_rate']:.0%}",
+            f"{agent['health_score']:.2f}",
+        ]
+        for agent in agents
+    ]
+    ui.table("Agent health", ["agent", "runs", "fail", "rework", "score"], rows)
+    if report["regressions"]:
+        ui.say(
+            f"drift: behavioral regression flagged for {', '.join(report['regressions'])} "
+            f"(recent {args.window}-run failure rate up ≥ {health.REGRESSION_DELTA:.0%})",
+            style="warn",
+        )
+    else:
+        ui.say("drift: no behavioral regression against the rolling baseline", style="ok")
     return 0
 
 
@@ -2634,6 +2676,37 @@ def _add_status_parser(subparsers: argparse._SubParsersAction) -> None:
     )
 
 
+def _add_health_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Register the `basicly health` command."""
+    health_parser = subparsers.add_parser(
+        "health",
+        help="Per-agent health scoring and behavioral drift from run-records (read-only)",
+    )
+    health_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the health report as JSON (stable schema)",
+    )
+    health_parser.add_argument(
+        "--fleet",
+        action="store_true",
+        help="Roll up per-repo health across the housed workspace repos as JSON "
+        "(read-only, exit 0); implies JSON output",
+    )
+    health_parser.add_argument(
+        "--root",
+        metavar="PATH",
+        help="Workspace root to scan for --fleet (default: the parent of this repo)",
+    )
+    health_parser.add_argument(
+        "--window",
+        type=int,
+        default=health.DEFAULT_WINDOW,
+        metavar="N",
+        help=f"Recent-window size for drift (default: {health.DEFAULT_WINDOW})",
+    )
+
+
 def _add_usage_parser(subparsers: argparse._SubParsersAction) -> None:
     """Register the `basicly usage` command group."""
     usage_parser = subparsers.add_parser(
@@ -2681,6 +2754,8 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("check", help="Check generated files are up to date")
 
     _add_status_parser(subparsers)
+
+    _add_health_parser(subparsers)
 
     _add_usage_parser(subparsers)
 
@@ -2737,6 +2812,7 @@ def main(argv: list[str] | None = None) -> int:
         "build": cmd_build,
         "check": cmd_check,
         "status": cmd_status,
+        "health": cmd_health,
         "skills-build": cmd_skills_build,
         "skills-check": cmd_skills_check,
         "agents-build": cmd_agents_build,
