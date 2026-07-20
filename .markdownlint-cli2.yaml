@@ -5,6 +5,13 @@ config:
     siblings_only: true
   MD033: false
   MD041: false
+  # MD060 (table-column-style) requires every table to stay internally
+  # consistent with one pipe style; its default "any" still fires the moment a
+  # single cell in an aligned table is edited without re-padding every other
+  # pipe, and --fix will not re-pad the aligned style (basicly-jaz4). Disabled
+  # so editing a wide table no longer forces a hand re-pad; existing aligned
+  # tables stay readable and ragged edits lint clean.
+  MD060: false
 globs:
   - "**/*.md"
 ignores:
