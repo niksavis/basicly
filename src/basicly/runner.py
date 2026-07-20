@@ -25,6 +25,7 @@ one before a live run with ``basicly runner dry-run``.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import time
@@ -78,6 +79,14 @@ class RunnerSpec:
     # `--deny-tool=<spec>` per entry after the binary. Populated for the copilot
     # runner from permissions.yaml at config load; empty leaves the argv unchanged.
     deny_tools: tuple[str, ...] = ()
+    # Optional opt-in per-agent bot git identity (basicly-smzg). When both are
+    # set, run() injects GIT_AUTHOR_*/GIT_COMMITTER_* into the dispatched agent's
+    # environment so commits it makes in its worktree carry the bot identity
+    # (still subject to the identity-guard pre-commit gate — a bot email must
+    # satisfy basicly.identityAllowEmail when strict mode is on). Both or neither:
+    # the config parser rejects a lone half.
+    git_name: str | None = None
+    git_email: str | None = None
 
     @property
     def binary(self) -> str | None:
@@ -285,6 +294,27 @@ def select_runner(
     return fallback
 
 
+def git_identity_env(spec: RunnerSpec) -> dict[str, str] | None:
+    """The GIT_AUTHOR/COMMITTER overrides for *spec*'s bot identity, or None.
+
+    Returns None when the spec carries no bot identity, so the dispatched child
+    inherits the environment unchanged (the current, default behavior). When set,
+    both name and email are present (the config parser enforces the pairing) and
+    all four git identity vars are pinned, so a commit the agent makes reads as
+    the bot for both author and committer. This does not bypass identity-guard:
+    the bot email must still satisfy basicly.identityAllowEmail when strict mode
+    is configured (basicly-smzg).
+    """
+    if spec.git_name is None or spec.git_email is None:
+        return None
+    return {
+        "GIT_AUTHOR_NAME": spec.git_name,
+        "GIT_AUTHOR_EMAIL": spec.git_email,
+        "GIT_COMMITTER_NAME": spec.git_name,
+        "GIT_COMMITTER_EMAIL": spec.git_email,
+    }
+
+
 def run(spec: RunnerSpec, prompt: str, cwd: Path, *, dry_run: bool = False) -> RunResult:
     """Invoke *spec* on *prompt* in *cwd*, capturing output.
 
@@ -298,9 +328,13 @@ def run(spec: RunnerSpec, prompt: str, cwd: Path, *, dry_run: bool = False) -> R
     if dry_run:
         return RunResult(spec.name, tuple(argv), executed=False)
     stdin = prompt if spec.prompt_via == "stdin" else None
+    # Overlay the bot git identity on the inherited environment when configured
+    # (basicly-smzg); None leaves the child env untouched — the default.
+    identity = git_identity_env(spec)
+    env = {**os.environ, **identity} if identity else None
     start = time.perf_counter()
     proc = subprocess.run(  # nosec B603
-        argv, cwd=cwd, input=stdin, capture_output=True, text=True, check=False
+        argv, cwd=cwd, input=stdin, capture_output=True, text=True, check=False, env=env
     )
     duration_s = time.perf_counter() - start
     # Redact secrets at the source so no downstream surface (CLI print, loop log)

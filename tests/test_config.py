@@ -306,6 +306,56 @@ def test_runner_config_overrides_builtin_command(tmp_path: Path) -> None:
     assert by_name["claude"].command == ("claude", "--print", "{prompt}")
 
 
+def test_runner_config_parses_bot_git_identity(tmp_path: Path) -> None:
+    """Both git_name and git_email land on the spec as the opt-in bot identity (basicly-smzg)."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[runner.agents]]\nname = "bot"\ncommand = ["bot", "{prompt}"]\n'
+        'git_name = "basicly-bot"\ngit_email = "bot@example.com"\n',
+        encoding="utf-8",
+    )
+    by_name = {spec.name: spec for spec in load_runner_config(tmp_path).specs}
+    assert by_name["bot"].git_name == "basicly-bot"
+    assert by_name["bot"].git_email == "bot@example.com"
+
+
+def test_runner_config_bot_identity_defaults_none(tmp_path: Path) -> None:
+    """An agent entry without a bot identity leaves both fields unset."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[runner.agents]]\nname = "x"\ncommand = ["x", "{prompt}"]\n', encoding="utf-8"
+    )
+    by_name = {spec.name: spec for spec in load_runner_config(tmp_path).specs}
+    assert by_name["x"].git_name is None
+    assert by_name["x"].git_email is None
+
+
+def test_runner_config_rejects_lone_git_identity_half(tmp_path: Path) -> None:
+    """A git_name without git_email (or vice versa) is a config error, not a half identity."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[runner.agents]]\nname = "x"\ncommand = ["x", "{prompt}"]\ngit_name = "bot"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="both 'git_name' and 'git_email'"):
+        load_runner_config(tmp_path)
+
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[runner.agents]]\nname = "x"\ncommand = ["x", "{prompt}"]\ngit_email = "b@example.com"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="both 'git_name' and 'git_email'"):
+        load_runner_config(tmp_path)
+
+
+def test_runner_config_rejects_blank_git_identity(tmp_path: Path) -> None:
+    """A present-but-empty git identity field is a config error."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[runner.agents]]\nname = "x"\ncommand = ["x", "{prompt}"]\n'
+        'git_name = "  "\ngit_email = "b@example.com"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="non-empty string"):
+        load_runner_config(tmp_path)
+
+
 def test_runner_config_rejects_malformed_agent(tmp_path: Path) -> None:
     """A malformed agent entry raises rather than silently dropping the adapter."""
     (tmp_path / CONFIG_FILE).write_text(

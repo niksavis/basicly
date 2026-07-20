@@ -898,8 +898,28 @@ and stamps the dispatched runner into the audit trail: the `--no-ff` merge commi
 trailers, and the recorded verify gate carries the agent as its `br gate report --actor`.
 So history and the gate ledger distinguish which agent produced a landing instead of
 collapsing onto the one human git identity. It is best-effort and non-fatal: with no
-run-record the merge message and gate are unchanged. A per-agent _bot_ git identity and
-commit signing stay out of scope (`basicly-smzg`).
+run-record the merge message and gate are unchanged.
+
+**Bot identity and the trust model (`basicly-smzg`).** Attribution above is a _trailer_ on
+commits still authored by the human git identity. A runner may go further and commit _as_ a
+bot: an `[[runner.agents]]` entry may pin an optional **`git_name` + `git_email`** (both keys
+or neither — the config parser rejects a lone half). When set, the dispatch seam overlays
+`GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL`/`GIT_COMMITTER_NAME`/`GIT_COMMITTER_EMAIL` on the agent's
+inherited environment (`runner.git_identity_env`), so commits the agent makes in its worktree
+read as the bot for both author and committer. It is opt-in and backward-compatible: no
+identity configured leaves the child environment untouched. This does **not** relax any gate:
+`identity-guard` validates the _effective_ identity git will actually stamp — it resolves the
+author and committer via `git var GIT_AUTHOR_IDENT`/`GIT_COMMITTER_IDENT` (env-first, then
+config), so a bot email must satisfy `basicly.identityAllowEmail` exactly as a human's would
+(a disallowed bot email is blocked). Validating config alone would have missed the override,
+since the env vars change what history records without touching config. The **append-only
+tamper-evidence trust model** is the layering of the existing controls, not new enforcement:
+the per-repo `identity-guard` gate bounds _who_ a commit may claim to be, and optional commit
+signing (`git config commit.gpgsign true` + a `user.signingkey`) makes each commit
+tamper-evident — with the permissions deny-list forbidding `--no-verify`/`--no-gpg-sign` as the
+floor so the gates cannot be skipped. basicly does not _force_ signing (key management is
+per-machine and out of a portable catalog's reach); it documents enabling it and guarantees
+that once enabled it cannot be bypassed through the harness.
 
 **12.9 Ship.** Ship is parameterized by the entry branch recorded at Intake: default → merge
 to `main` + push `main` (no feature branches on the remote); if the entry branch is a feature
