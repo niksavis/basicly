@@ -542,6 +542,7 @@ names were removed, not aliased).
 | `basicly install`             | Idempotent converge: materialize the bundled core catalog, migrate/prune legacy layouts, scaffold overlay + `basicly.toml` (never overwriting existing user content), then `build` + `skills-build` (all default roots) + `agents-build` + `hooks-build` (with hook activation). The same command performs first install and every upgrade (provenance-guarded core sync, §9; `--force` overwrites kept hand-edits). Replaced the former `init`/`update` staging pair |
 | `basicly uninstall [--purge]` | Removes managed core, state, manifest-listed generated files, projected skills and agents (generated-marker files only), and the managed hook block (deleting the config + uninstalling git hooks when nothing else remains); preserves the overlay + `basicly.toml` unless `--purge`; refuses in the authoring repo                                                                                                                                                  |
 | basicly status [--json]       | Read-only snapshot for fleet loops and humans: installed catalog version vs running engine version, drift summary (the `check` comparison plus install-provenance drift), per-manager hook state (projection sync + git stage activation), technology selection, and overlay counts; never writes, always exits 0; `--json` emits a stable versioned schema; `--fleet [--root PATH]` rolls it across the housed repos as one json payload (h0f0)                      |
+| `basicly health [--json]`     | Read-only per-agent health scoring and behavioral drift from the run-record log (`health.py`, y886): dispatch failure rate, a rework signal, and a bounded health score per agent, plus a rolling-baseline drift check flagging agents whose recent failure rate regressed; `--window N` sizes the recent window; `--fleet [--root PATH]` rolls it across the housed repos; never writes, always exits 0                      |
 
 **Catalog**:
 
@@ -868,6 +869,23 @@ injects, so `fleet.py` never imports the CLI); each repo's payload still carries
 `installed_version` vs `engine_version`, so version skew across the fleet stays visible. A
 human-formatted table and a subprocess-per-repo model (each repo reporting via its own pinned
 basicly) are out of scope — this is JSON-first and single-engine.
+
+**Health scoring and behavioral drift (`basicly-y886`).** `basicly health` (`health.py`) turns
+the run-record log into a per-agent health signal and a drift check. The signal source is
+run-records _only_, by necessity: `br` gate results overwrite (no history, §12.7), so gate
+pass/fail over time is not queryable — but a failed dispatch is a `failed` run and a rework
+re-dispatch appends another record for the same bead, so the append-only log is a durable proxy
+for the gate-fail + rework signal. Per agent it reports the dispatch failure rate (handoffs
+excluded — they carry no outcome), a rework signal (beads the agent re-dispatched), and a bounded
+`health_score` in `[0, 1]` where failure dominates and rework is a multiplicative drag. Drift is a
+**rolling baseline read off the log's own timestamps**, not a stored snapshot: an agent's most
+recent `--window` dispatched runs are compared against everything older, and a behavioral
+regression is flagged when the recent failure rate exceeds the baseline by a fixed delta with a
+minimum sample size in each window. `--fleet [--root PATH]` rolls the per-repo report across the
+housed repos (reusing `fleet.discover_repos`). Everything is read-only, deterministic (no
+wall-clock enters the payload), and advisory — nothing gates on a score; token/cost health waits
+on the reserved run-record fields being plumbed, and a persisted time-series/charting layer is out
+of scope.
 
 **Structured needs-input outcome (`basicly-o774`, D5/D6 convergence).** The stop-instead-of-guess
 policy used to be soft prose in the `knowledge-priming`/`decision-protocol` fragments the model
