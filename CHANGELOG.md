@@ -6,6 +6,62 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.5.0 - 2026-07-20
+
+Delta: v0.4.0..v0.5.0
+
+### Added
+
+- **Per-agent health scoring and behavioral drift**: `basicly health [--json]
+  [--window N] [--fleet]` derives a per-agent dispatch failure rate, a rework
+  signal, and a bounded health score from the run-record log, and flags an agent
+  whose recent failure rate regressed against a rolling baseline read off the
+  log's own timestamps (basicly-y886).
+- **Cross-repo fleet rollup**: `basicly status --fleet [--root PATH]` rolls each
+  housed repo's status snapshot and run-record summary into one read-only JSON
+  payload (basicly-h0f0).
+- **Opt-in per-agent bot git identity**: a runner spec may pin a
+  `git_name`/`git_email`; the dispatch seam commits the agent's work under that
+  bot identity, and `identity-guard` validates the effective (env-aware) identity
+  so a bot email is bound by the allow-email pattern (basicly-smzg).
+- **Runner model field and attribution**: a runner adapter may pin a `model`,
+  injected at the invocation seam and recorded in the run-record; landings and
+  gate results carry the dispatched agent and model as `Harness-Runner` /
+  `Harness-Model` attribution (basicly-45ld, basicly-140a).
+- **Headless capability probe**: `auto` runner selection probes a candidate's
+  headless flag before choosing it, so a renamed flag no longer gets picked and
+  then fails at dispatch (basicly-bveo).
+- **Action-boundary guardrails**: copilot deny-tool flags injected at dispatch
+  (basicly-lqz5), captured runner output redacted for secret shapes at the source
+  (basicly-3p2i), and a commit-time backstop blocking staged edits to generated
+  files (basicly-yw28).
+- **Human-checkpoint enforcement**: loop checkpoint approvals require an
+  interactive terminal or a one-time confirm code, so a non-interactive process
+  cannot self-approve ship (basicly-shgo).
+- **Structured needs-input outcome**: a dispatched agent that cannot resolve a
+  required fact writes a sentinel and the loop blocks instead of landing a guess
+  (basicly-o774).
+- **Agent-skills directories and skill taxonomy**: skills project as full
+  agent-skills spec directories with optional frontmatter into both skill roots,
+  split into universal core skills and technology-tagged optional skills (python,
+  node, wsl) (basicly-q1w9 and children).
+- **Structured acceptance-criteria for Definition of Ready**: the DoR gate
+  accepts `br`'s structured `acceptance_criteria` field, not only a description
+  heading (basicly-58iu).
+
+### Fixed
+
+- **Loop landing no longer strands uncommitted work**: a worktree whose build was
+  not committed on its branch now blocks with clear guidance instead of
+  misreporting a rebase conflict and burning rework attempts (basicly-4psl).
+- **Ship refuses an unmerged worktree**: the ship transition blocks a node whose
+  worktree branch has not landed, so a bead can no longer close with its code
+  stranded (basicly-o0q3).
+- **Pre-commit rewrite preserves unmanaged hooks**: projecting the managed hook
+  block no longer drops a consumer's own comments or hook ordering (basicly-wd7u).
+- **Windows path handling in the rubric runner**: a Windows executable path no
+  longer breaks POSIX shell parsing on CI (basicly-5tjk).
+
 ## v0.4.0 - 2026-07-17
 
 Delta: v0.3.1..v0.4.0
