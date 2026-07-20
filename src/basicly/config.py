@@ -91,6 +91,9 @@ default = "auto"
 # prompt_via = "arg"   # or "stdin"
 # model = "opus"       # optional: injects `--model opus` after the binary,
 #                      # or substitutes a `{model}` placeholder if the command has one
+# git_name = "opencode-bot"        # optional bot git identity: dispatched commits
+# git_email = "bot@example.com"    # use it (both keys or neither). Must satisfy
+#                                  # basicly.identityAllowEmail when strict mode is on.
 """
 
 # Scaffolded into .vscode/tasks.json by `basicly install` when absent — one
@@ -641,12 +644,28 @@ def _parse_runner_agent(entry: object) -> RunnerSpec:
         raise ValueError(f"runner agent {name!r} has a 'model' that must be a non-empty string")
     model = model.strip() if isinstance(model, str) else None
 
+    # Optional opt-in bot git identity (basicly-smzg): both keys or neither.
+    git_name = entry.get("git_name")
+    git_email = entry.get("git_email")
+    for key, value in (("git_name", git_name), ("git_email", git_email)):
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            raise ValueError(f"runner agent {name!r} has a {key!r} that must be a non-empty string")
+    git_name = git_name.strip() if isinstance(git_name, str) else None
+    git_email = git_email.strip() if isinstance(git_email, str) else None
+    if (git_name is None) != (git_email is None):
+        raise ValueError(
+            f"runner agent {name!r} must set both 'git_name' and 'git_email' or neither "
+            "(a bot git identity needs a name and an email)"
+        )
+
     return RunnerSpec(
         name=name.strip(),
         kind=HEADLESS,
         command=tuple(command),
         prompt_via=prompt_via,
         model=model,
+        git_name=git_name,
+        git_email=git_email,
     )
 
 

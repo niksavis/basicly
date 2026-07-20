@@ -354,3 +354,79 @@ def test_run_stdin_injection_passes_prompt_on_stdin(monkeypatch: pytest.MonkeyPa
 
     assert captured["argv"] == ["x", "--headless"]
     assert captured["input"] == "prompt on stdin"
+
+
+def test_git_identity_env_none_without_identity() -> None:
+    """No bot identity configured -> no env overrides (basicly-smzg)."""
+    spec = RunnerSpec("claude", HEADLESS, ("claude", "-p", PROMPT_PLACEHOLDER))
+    assert runner.git_identity_env(spec) is None
+
+
+def test_git_identity_env_pins_all_four_vars() -> None:
+    """A configured bot identity pins both author and committer name/email."""
+    spec = RunnerSpec(
+        "bot",
+        HEADLESS,
+        ("bot", "-p", PROMPT_PLACEHOLDER),
+        git_name="basicly-bot",
+        git_email="bot@example.com",
+    )
+    assert runner.git_identity_env(spec) == {
+        "GIT_AUTHOR_NAME": "basicly-bot",
+        "GIT_AUTHOR_EMAIL": "bot@example.com",
+        "GIT_COMMITTER_NAME": "basicly-bot",
+        "GIT_COMMITTER_EMAIL": "bot@example.com",
+    }
+
+
+def test_run_injects_bot_identity_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """run() overlays the bot identity on the inherited env, not replacing it (basicly-smzg)."""
+    captured: dict[str, object] = {}
+
+    class _Proc:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def fake_run(_argv, **kwargs):
+        captured["env"] = kwargs.get("env")
+        return _Proc()
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    monkeypatch.setenv("EXISTING_VAR", "kept")
+    spec = RunnerSpec(
+        "bot",
+        HEADLESS,
+        ("bot", "-p", PROMPT_PLACEHOLDER),
+        git_name="basicly-bot",
+        git_email="bot@example.com",
+    )
+    runner.run(spec, "go", Path("/work"))
+
+    env = captured["env"]
+    assert isinstance(env, dict)
+    assert env["GIT_AUTHOR_NAME"] == "basicly-bot"
+    assert env["GIT_AUTHOR_EMAIL"] == "bot@example.com"
+    assert env["GIT_COMMITTER_NAME"] == "basicly-bot"
+    assert env["GIT_COMMITTER_EMAIL"] == "bot@example.com"
+    assert env["EXISTING_VAR"] == "kept"  # overlay, not replacement
+
+
+def test_run_leaves_env_untouched_without_identity(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No bot identity -> env stays None so the child inherits unchanged (basicly-smzg)."""
+    captured: dict[str, object] = {}
+
+    class _Proc:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def fake_run(_argv, **kwargs):
+        captured["env"] = kwargs.get("env")
+        return _Proc()
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    spec = RunnerSpec("claude", HEADLESS, ("claude", "-p", PROMPT_PLACEHOLDER))
+    runner.run(spec, "go", Path("/work"))
+
+    assert captured["env"] is None
