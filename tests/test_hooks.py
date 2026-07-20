@@ -23,6 +23,7 @@ from basicly.hooks import (
     merge_precommit_config,
     missing_hook_installations,
     remove_copilot_hooks,
+    render_precommit_config,
     selected_hook_specs,
     sync_copilot_hooks,
     sync_hooks,
@@ -276,6 +277,44 @@ def test_dogfood_config_passes_check() -> None:
     was permanently reported stale.
     """
     assert check_hooks(REPO_ROOT, CORE_HOOKS_DIR) == []
+
+
+def test_rewrite_preserves_unmanaged_hook_comments() -> None:
+    """A consumer's own hook and its explanatory comments survive a rewrite.
+
+    Regression (basicly-wd7u): render_precommit_config round-tripped the whole
+    file through yaml.safe_load/safe_dump, which dropped comments and hoisted a
+    hand-maintained hook. Now only basicly's managed block is rebuilt; every
+    unmanaged repo/hook keeps its comments and stays ahead of the managed
+    block.
+    """
+    existing = (
+        "repos:\n"
+        "  # Repo-wide markdownlint through the config file; keep this note.\n"
+        "  - repo: local\n"
+        "    hooks:\n"
+        "      - id: markdownlint\n"
+        "        name: markdownlint\n"
+        "        entry: npx --no-install markdownlint-cli2\n"
+        "        language: system\n"
+        "        files: \\.md$\n"
+    )
+    specs = [HookSpec(id="pre-commit-script", script="pre-commit.py", stage="pre-commit")]
+    rendered = render_precommit_config(existing, specs, CORE_HOOKS_DIR.as_posix())
+
+    # The explanatory comment survives verbatim (the reported regression).
+    assert "# Repo-wide markdownlint through the config file; keep this note." in rendered
+    # The unmanaged hook and its non-default key survive.
+    assert "npx --no-install markdownlint-cli2" in rendered
+    assert "files:" in rendered
+    # It stays ahead of basicly's appended managed block (no hoisting).
+    assert rendered.index("markdownlint") < rendered.index("pre-commit-script")
+    # The managed hook was added and both are seen as local hooks.
+    loaded = yaml.safe_load(rendered)
+    assert "markdownlint" in _local_hook_ids(loaded)
+    assert "pre-commit-script" in _local_hook_ids(loaded)
+    # Re-rendering the output is a no-op (idempotent).
+    assert render_precommit_config(rendered, specs, CORE_HOOKS_DIR.as_posix()) == rendered
 
 
 def test_semantically_synced_config_is_left_untouched(tmp_path: Path) -> None:

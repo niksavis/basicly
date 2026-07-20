@@ -14,9 +14,11 @@ import shlex
 import shutil
 import subprocess  # nosec B404
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 
 import yaml
+from ruamel.yaml import YAML
 
 from .catalog import bundled_catalog_root, iter_catalog_files
 from .projection import SyncResult, atomic_write_text, sync_file
@@ -231,6 +233,11 @@ def _hook_entry(spec: HookSpec, hooks_relpath: str) -> dict:
     return entry
 
 
+def _managed_local_block(specs: list[HookSpec], hooks_relpath: str) -> dict:
+    """The single ``repo: local`` block that carries basicly's managed hooks."""
+    return {"repo": "local", "hooks": [_hook_entry(spec, hooks_relpath) for spec in specs]}
+
+
 def merge_precommit_config(
     existing: dict | None,
     specs: list[HookSpec],
@@ -262,9 +269,51 @@ def merge_precommit_config(
         else:
             kept.append(repo)
 
-    kept.append({"repo": "local", "hooks": [_hook_entry(spec, hooks_relpath) for spec in specs]})
+    kept.append(_managed_local_block(specs, hooks_relpath))
     config["repos"] = kept
     return config
+
+
+def _round_trip_yaml() -> YAML:
+    """A ruamel round-trip parser that keeps comments, order, and quoting."""
+    ryaml = YAML()
+    ryaml.preserve_quotes = True
+    # pre-commit entries can be long; never fold them across lines.
+    ryaml.width = 4096
+    return ryaml
+
+
+def _replace_managed_block(
+    config: dict,
+    specs: list[HookSpec],
+    hooks_relpath: str,
+    strip_ids: set[str] | None,
+) -> None:
+    """Rebuild only basicly's managed block, mutating ``config`` in place.
+
+    Strips basicly's managed hooks from every ``local`` repo and appends one
+    fresh managed block, so a round-trip parser keeps every unmanaged repo/hook
+    (and its comments) exactly where it was.
+    """
+    managed_ids = strip_ids or {spec.id for spec in specs}
+    repos = config.get("repos")
+    if not isinstance(repos, list):
+        repos = []
+        config["repos"] = repos
+    for ri in range(len(repos) - 1, -1, -1):
+        repo = repos[ri]
+        if not (isinstance(repo, dict) and repo.get("repo") == "local"):
+            continue
+        hooks = repo.get("hooks")
+        if isinstance(hooks, list):
+            for hi in range(len(hooks) - 1, -1, -1):
+                hook = hooks[hi]
+                if isinstance(hook, dict) and hook.get("id") in managed_ids:
+                    del hooks[hi]
+        # A local repo left with no hooks was fully basicly-managed; drop it.
+        if not hooks:
+            del repos[ri]
+    repos.append(_managed_local_block(specs, hooks_relpath))
 
 
 def render_precommit_config(
@@ -273,11 +322,26 @@ def render_precommit_config(
     hooks_relpath: str,
     strip_ids: set[str] | None = None,
 ) -> str:
-    """Render the merged pre-commit config to deterministic YAML text."""
-    existing = yaml.safe_load(existing_text) if existing_text else None
-    base = existing if isinstance(existing, dict) else None
-    merged = merge_precommit_config(base, specs, hooks_relpath, strip_ids)
-    return yaml.safe_dump(merged, sort_keys=False, default_flow_style=False)
+    """Render the merged pre-commit config to deterministic YAML text.
+
+    A fresh file is rendered from scratch. When rewriting an existing file,
+    only basicly's managed ``local`` block is rebuilt: every unmanaged repo and
+    hook keeps its comments and position byte-for-byte (regression: a plain
+    ``yaml.safe_load``/``safe_dump`` round-trip dropped comments and reordered
+    hand-maintained hooks — basicly-wd7u).
+    """
+    if not existing_text:
+        merged = merge_precommit_config(None, specs, hooks_relpath, strip_ids)
+        return yaml.safe_dump(merged, sort_keys=False, default_flow_style=False)
+    ryaml = _round_trip_yaml()
+    config = ryaml.load(existing_text)
+    if not isinstance(config, dict):
+        merged = merge_precommit_config(None, specs, hooks_relpath, strip_ids)
+        return yaml.safe_dump(merged, sort_keys=False, default_flow_style=False)
+    _replace_managed_block(config, specs, hooks_relpath, strip_ids)
+    buf = StringIO()
+    ryaml.dump(config, buf)
+    return buf.getvalue()
 
 
 def _parse_config(config_path: Path, existing_text: str) -> dict:
