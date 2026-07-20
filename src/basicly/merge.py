@@ -39,7 +39,8 @@ class MergeResult:
     """Outcome of attempting to merge one worktree back to its base."""
 
     name: str
-    # "merged" | "rebase-conflicts" | "verify-failed" | "merge-conflicts" | "merge-failed"
+    # "merged" | "not-ready" | "rebase-conflicts" | "verify-failed"
+    # | "merge-conflicts" | "merge-failed"
     status: str
     detail: str
 
@@ -79,6 +80,34 @@ def _assert_base_ready(repo_root: Path, base: str) -> None:
     dirty = git(["status", "--porcelain"], cwd=repo_root).stdout.strip()
     if dirty:
         raise SystemExit(f"base checkout has uncommitted changes; commit or stash first:\n{dirty}")
+
+
+def _worktree_land_readiness(
+    worktree_path: Path, repo_root: Path, base: str, branch: str
+) -> str | None:
+    """Why *branch* is not ready to land, or None when it is.
+
+    Landing rebases the branch, so the agent's work must be committed on it. A
+    tree with uncommitted tracked changes makes ``git rebase`` abort with
+    "unstaged changes", and a branch with no commits ahead of base has nothing
+    to merge. Both are operator-fixable states, not conflicts or verification
+    failures — the caller blocks with guidance rather than burning a rework
+    attempt (basicly-4psl). Untracked files are ignored: ``git rebase`` does
+    not abort on them.
+    """
+    dirty = git(["status", "--porcelain", "--untracked-files=no"], cwd=worktree_path).stdout.strip()
+    if dirty:
+        return (
+            f"worktree has uncommitted changes; commit the work on {branch} before "
+            f"landing (the loop does not auto-commit):\n{dirty}"
+        )
+    ahead = git(["rev-list", "--count", f"{base}..{branch}"], cwd=repo_root).stdout.strip()
+    if ahead == "0":
+        return (
+            f"no committed work to land: {branch} has no commits ahead of {base} "
+            "(commit the build's changes on the branch first)"
+        )
+    return None
 
 
 def reconcile_beads(repo_root: Path) -> None:
@@ -173,6 +202,14 @@ def merge_worktree(
         raise SystemExit(f"no worktree session named {name!r}")
     base, branch, worktree_path = session.base, session.branch, session.path
 
+    # The agent's work must be committed on the branch before landing rebases
+    # it. Check first, before mutating base: a dirty tree or an empty branch is
+    # an operator-fixable state, not a conflict or a rework-worthy failure, and
+    # bailing here avoids leaving a redundant tracker commit behind (basicly-4psl).
+    not_ready = _worktree_land_readiness(worktree_path, repo_root, base, branch)
+    if not_ready is not None:
+        return MergeResult(name, "not-ready", not_ready)
+
     # Tracker-only dirt in base is the loop's own state (claim, checkpoints,
     # gate records) — roll it up before the clean-tree check instead of
     # bouncing the landing back to the agent.
@@ -251,6 +288,11 @@ def merge_queue(
         if result.merged:
             results.append(QueueResult(result))
             continue
+        if result.status == "not-ready":
+            # Operator-fixable (work not committed on the branch): stop the queue
+            # so it is resolved, but do not spend a rework attempt on it.
+            results.append(QueueResult(result))
+            break
         attempts = policy.record_rework(repo_root, bead, MERGE_GATE)
         escalate = attempts >= config.max_rework
         results.append(QueueResult(result, attempts=attempts, escalate=escalate))

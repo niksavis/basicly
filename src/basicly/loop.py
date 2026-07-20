@@ -344,6 +344,10 @@ def _verify_and_land(ctx: _Ctx, worktree_name: str) -> AdvanceResult:
     result = merge.merge_worktree(
         ctx.repo_root, worktree_name, bead=ctx.issue_id, verify_mode=ctx.inputs.verify_mode
     )
+    if result.status == "not-ready":
+        # The build's work is not committed on the branch: block with guidance,
+        # do not burn a rework attempt on an operator-fixable state (basicly-4psl).
+        return _blocked(ctx, result.detail)
     if not result.merged:
         return _rework(ctx, merge.MERGE_GATE, f"merge failed: {result.detail}")
     return _record_verify(ctx, result.detail)

@@ -194,10 +194,12 @@ def test_merge_worktree_rolls_up_tracker_dirt_before_landing(
 ) -> None:
     """Loop tracker state dirtying the base no longer blocks the landing."""
     status_results = iter([
-        _Proc(0, " M .beads/issues.jsonl\n"),  # commit_tracker_state sees the dirt
+        _Proc(0, ""),  # _worktree_land_readiness: worktree tree is clean (work committed)
+        _Proc(0, " M .beads/issues.jsonl\n"),  # commit_tracker_state sees the base dirt
         _Proc(0, ""),  # after the rollup commit, _assert_base_ready sees clean
     ])
     responses = {
+        "rev-list": _Proc(0, "1"),  # branch has committed work ahead of base
         "rebase": _Proc(0),
         "merge-tree": _Proc(0),
         "merge": _Proc(0),
@@ -269,6 +271,63 @@ def test_merge_worktree_requires_bead(tmp_path: Path) -> None:
     """A merge without a bead id is rejected (the commit-msg hook needs one)."""
     with pytest.raises(SystemExit, match="bead id"):
         merge.merge_worktree(tmp_path, "feat", bead="")
+
+
+@pytest.mark.usefixtures("base_ready")
+def test_merge_worktree_not_ready_when_work_uncommitted(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A dirty worktree is 'not-ready' and never touches base (basicly-4psl).
+
+    Regression: an uncommitted worktree made ``git rebase`` abort with "unstaged
+    changes", which was misreported as a rebase conflict and burned rework. The
+    landing now bails before rebasing or committing any base tracker state.
+    """
+    fake = _FakeGit({"status": _Proc(0, " M src/app.py\n")})
+    monkeypatch.setattr(merge, "git", fake)
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-onb.5")
+
+    assert result.status == "not-ready"
+    assert "commit the work" in result.detail
+    assert not fake.ran("rebase")  # base is never rebased
+    assert not fake.ran("commit")  # no redundant tracker commit
+    assert not fake.ran("merge")
+
+
+@pytest.mark.usefixtures("base_ready")
+def test_merge_worktree_not_ready_when_branch_has_no_commits(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A clean branch with nothing ahead of base is 'not-ready', not a conflict."""
+    fake = _FakeGit({"status": _Proc(0, ""), "rev-list": _Proc(0, "0")})
+    monkeypatch.setattr(merge, "git", fake)
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-onb.5")
+
+    assert result.status == "not-ready"
+    assert "no committed work" in result.detail
+    assert not fake.ran("rebase")
+
+
+def test_merge_queue_not_ready_does_not_burn_rework(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A 'not-ready' node stops the queue without recording a rework attempt."""
+    monkeypatch.setattr(
+        merge,
+        "merge_worktree",
+        lambda _r, name, **_kwargs: merge.MergeResult(name, "not-ready", "commit first"),
+    )
+    recorded: list = []
+    monkeypatch.setattr(policy, "record_rework", lambda *a, **_k: recorded.append(a) or 1)
+
+    results = merge.merge_queue(tmp_path, [("a", "b1"), ("b", "b2")])
+
+    assert len(results) == 1  # stopped at the first not-ready node
+    assert results[0].result.status == "not-ready"
+    assert results[0].attempts == 0 and results[0].escalate is False
+    assert recorded == []  # no rework spent on an operator-fixable state
 
 
 def test_merge_queue_stops_and_escalates_on_failure(
