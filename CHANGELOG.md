@@ -6,6 +6,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.5.1 - 2026-07-20
+
+Delta: v0.5.0..v0.5.1
+
+### Fixed
+
+- **Install now activates git hooks on a fresh consumer repo**: hook activation
+  runs pre-commit through `uv tool run` (uvx), which provisions the tool in an
+  ephemeral environment, instead of `uv run`, which only resolved pre-commit when
+  the consumer repo already declared it as a dependency and otherwise failed with
+  "program not found". A target with no `.git` is now skipped with clear guidance
+  (run `git init`, then `basicly hooks-build`) instead of an opaque pre-commit
+  error, and the "run manually" hints point at `uvx pre-commit install`
+  (basicly-x5gh).
+
 ## v0.5.0 - 2026-07-20
 
 Delta: v0.4.0..v0.5.0
