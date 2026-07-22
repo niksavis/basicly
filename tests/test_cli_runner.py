@@ -93,6 +93,17 @@ def test_runner_dry_run_surfaces_pinned_model(tmp_path, capsys: pytest.CaptureFi
     assert "claude --model opus -p" in out
 
 
+def test_runner_dry_run_surfaces_codex_sandbox_and_approval(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The codex dry-run header and argv show the sandbox/approval guardrail defaults."""
+    assert cli.main(["runner", "dry-run", "--runner", "codex", "--prompt", "do it"]) == 0
+    out = capsys.readouterr().out
+    assert "sandbox: workspace-write" in out
+    assert "approval: on-failure" in out
+    assert "codex --sandbox workspace-write -a on-failure exec" in out
+
+
 def test_runner_list_surfaces_pinned_model(
     tmp_path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
