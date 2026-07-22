@@ -153,4 +153,8 @@ jobs:
           tag_name: ${{ steps.resolve_tag.outputs.tag_name }}
           name: ${{ steps.resolve_tag.outputs.tag_name }}
           body_path: release-notes.md
-          files: dist/*
+          # Upload only the real build artifacts; a bare dist/* also sweeps up
+          # the 1-byte scratch .gitignore uv writes into the output dir.
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
