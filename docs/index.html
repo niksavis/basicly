@@ -324,7 +324,20 @@
             <p>
               Git hooks across pre-commit, commit-msg, and pre-push — plus
               Claude Code and Copilot agent hooks — that block bad changes
-              whether or not the guidance was followed.
+              whether or not the guidance was followed. Action-boundary
+              guardrails back them up: secret redaction, per-agent deny-tool and
+              sandbox/approval flags, and a generated-file backstop.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Harness</h3>
+            <p>
+              An agent-agnostic development loop — intake, classify, build,
+              verify, ship — that drives Claude, Codex, or Copilot the same way:
+              isolated worktrees, TTY-gated human checkpoints, a structured
+              block-and-resume protocol, per-agent model pinning with runner
+              attribution, and fleet-wide status and health rollups across
+              repos.
             </p>
           </div>
         </div>
@@ -338,7 +351,7 @@
           Into any git repo, with <a href="https://docs.astral.sh/uv/">uv</a> on
           the machine:
         </p>
-        <pre><span class="p">$ </span>uvx --from git+https://github.com/niksavis/basicly@v0.4.0 basicly install</pre>
+        <pre><span class="p">$ </span>uvx --from git+https://github.com/niksavis/basicly@v0.5.1 basicly install</pre>
         <p>
           No uv or Python yet? The bootstrap shim installs uv first, then runs
           the same command:
@@ -364,7 +377,7 @@
         </p>
         <figure
           class="diagram"
-          aria-label="basicly projects one catalog and your overlay into instructions, skills, and hooks, then verifies them with the basicly check drift gate."
+          aria-label="basicly projects one catalog and your overlay into instructions, skills, agents, permissions, and hooks, then verifies them with the basicly check drift gate."
         >
           <div class="stage">
             <div class="node">
@@ -384,6 +397,12 @@
             </div>
             <div class="node">
               <b>skills</b><span>.claude/skills · .agents/skills</span>
+            </div>
+            <div class="node">
+              <b>agents</b><span>.claude/agents</span>
+            </div>
+            <div class="node">
+              <b>permissions</b><span>.claude/settings.json deny-list</span>
             </div>
             <div class="node">
               <b>hooks</b><span>git stages · Claude Code · Copilot</span>
