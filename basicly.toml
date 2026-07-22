@@ -51,6 +51,14 @@ command = ["bandit", "-q", "-c", "pyproject.toml", "-r", ".scripts", ".basicly/c
 modes = ["fast", "full"]
 
 [[verify.checks]]
+name = "lint-imports"
+# Enforces the import-linter engine-independence contract (.importlinter): the
+# basicly engine must not import project-specific fragments/targets. Whole-tree
+# analysis, so no staged variant.
+command = ["lint-imports"]
+modes = ["fast", "full"]
+
+[[verify.checks]]
 name = "pytest"
 # -n auto (pytest-xdist) parallelizes the subprocess-heavy CLI tests across
 # cores; on the multi-core CI runners this is the bulk of the gate's wall time.
