@@ -20,6 +20,20 @@ those gates cannot.
 - Do not hand-format to match the formatter. Run `ruff format` / `ruff check`
   (they run in pre-commit) and let them own whitespace, quotes, and import order.
 
+## Type test doubles and helpers precisely
+
+`pyright` runs as a commit gate, so a loosely-typed test helper blocks the
+commit itself, not just CI. Annotate test doubles, fakes, and helper return
+values with the real type they stand in for — never a bare `object`:
+
+- Return the concrete type, not `object` — `def _fake_args() ->
+  argparse.Namespace:`, not `-> object`. An `object` returned where a concrete
+  type is expected trips `reportArgumentType` at the first call site that
+  passes it on.
+- Type a captured container to its real value type — `captured: dict[str,
+  list[str]]`, not `dict[str, object]`. A `dict[str, object]` value trips
+  `reportOperatorIssue` the moment the test indexes, iterates, or compares it.
+
 ## Cross-platform shell-out (fails only on Windows CI)
 
 Two subprocess mistakes pass every local POSIX run and surface *only* on Windows
