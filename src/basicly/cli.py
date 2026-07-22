@@ -36,6 +36,7 @@ from . import (
     run_record,
     runner,
     state,
+    supervise,
     ui,
     usage,
     verify,
@@ -2071,11 +2072,12 @@ def cmd_decompose(args: argparse.Namespace) -> int:
 
 
 def cmd_loop(args: argparse.Namespace) -> int:
-    """Dispatch the ``loop`` subcommands (status / advance / run)."""
+    """Dispatch the ``loop`` subcommands (status / advance / run / supervise)."""
     handlers = {
         "status": _cmd_loop_status,
         "advance": _cmd_loop_advance,
         "run": _cmd_loop_run,
+        "supervise": _cmd_loop_supervise,
     }
     handler = handlers.get(args.loop_command)
     return handler(args) if handler else 0
@@ -2138,6 +2140,41 @@ def _cmd_loop_run(args: argparse.Namespace) -> int:
     for result in results:
         print(_format_advance(result))
     return 1 if results and results[-1].blocked else 0
+
+
+def _cmd_loop_supervise(args: argparse.Namespace) -> int:
+    """Acquire the singleton supervisor lock and derive the session from ``br``.
+
+    Part 1 of the supervisor (basicly-kjc5.5): one lock-guarded derivation pass
+    reporting the adopted session state. The standing event loop that dispatches
+    and lands lanes under this lock arrives with concurrent dispatch (kjc5.6).
+    """
+    repo_root = _repo_root()
+    session_id = supervise.new_session_id(args.issue)
+    try:
+        lock = supervise.acquire(repo_root, session_id, args.issue)
+    except supervise.LockHeldError as exc:
+        print(f"supervise: refused - {exc}", file=sys.stderr)
+        return 1
+    try:
+        state = supervise.derive_session(repo_root, args.issue)
+        print(f"session:  {session_id}")
+        print(f"root:     {state.root_issue} ({state.root_status})")
+        open_children = state.open_children
+        print(f"children: {len(state.children)} total, {len(open_children)} open")
+        if state.adopted:
+            for lane in state.adopted:
+                liveness = "live" if lane.live else "worktree missing"
+                print(
+                    f"adopted:  {lane.issue_id} ({lane.status}) -> "
+                    f"{lane.binding.name} on {lane.binding.branch} [{liveness}]"
+                )
+        else:
+            print("adopted:  (no in-flight lanes)")
+        print(f"done:     {'yes' if state.done else 'no'}")
+    finally:
+        supervise.release(lock, session_id)
+    return 0
 
 
 def cmd_runner(args: argparse.Namespace) -> int:
@@ -2631,6 +2668,12 @@ def _add_loop_parser(subparsers: argparse._SubParsersAction) -> None:
     l_run = loop_sub.add_parser("run", help="Advance until the track blocks or finishes")
     l_run.add_argument("issue")
     _add_loop_input_args(l_run)
+    l_supervise = loop_sub.add_parser(
+        "supervise",
+        help="Acquire the singleton supervisor lock and adopt the session from br "
+        "(lock/lifecycle core; the standing dispatch loop lands with kjc5.6)",
+    )
+    l_supervise.add_argument("issue", help="Root issue (feature or epic) the session is bound to")
 
 
 _HELP_EPILOG = """\
