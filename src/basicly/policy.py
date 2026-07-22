@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .br import run_br as _run_br
-from .config import CHECKPOINTS, PolicyConfig, load_policy_config
+from .config import CHECKPOINTS, PolicyConfig, SizingConfig, load_policy_config
 
 # Prefix for the harness's own comment markers, so they are both machine-parseable
 # and obvious to a human reading the issue's comments.
@@ -80,6 +80,37 @@ def _has_acceptance_criteria(repo_root: Path, issue_id: str) -> bool:
         return False
     value = issue.get("acceptance_criteria")
     return isinstance(value, str) and bool(value.strip())
+
+
+# --- Working-set sizing governor (basicly-kjc5.2, factory design D8) ---------
+
+
+def check_working_set(
+    title: str, total_tokens: int, scope_tokens: int, sizing: SizingConfig
+) -> str | None:
+    """The DoR sizing rule: a violation message for *title*, or None when it fits.
+
+    Above the ceiling the engine refuses and the agent must split — flatten the
+    tree into more top-level packages, never deepen it (D7/D8). Below the floor
+    the package wastes per-lane overhead (economics, never model quality), so the
+    guidance is to merge it with a sibling in its scope group. The floor applies
+    only when the declared scope matches existing material (*scope_tokens* > 0):
+    a pure-greenfield child has nothing to read yet, so a floor refusal would
+    wedge legitimate new-file decompositions.
+    """
+    if total_tokens > sizing.working_set_max:
+        return (
+            f"child {title!r} estimates {total_tokens} working-set tokens, above "
+            f"working_set_max {sizing.working_set_max}: split it into smaller "
+            "top-level packages (flatten, do not deepen)"
+        )
+    if scope_tokens > 0 and total_tokens < sizing.working_set_min:
+        return (
+            f"child {title!r} estimates {total_tokens} working-set tokens, below "
+            f"working_set_min {sizing.working_set_min}: merge it with a sibling "
+            "in its scope group (under-cutting wastes per-lane overhead)"
+        )
+    return None
 
 
 # --- Gate status ------------------------------------------------------------

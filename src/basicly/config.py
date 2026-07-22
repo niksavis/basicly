@@ -78,6 +78,21 @@ required_gates = ["verify"]
 # Rework retries allowed before a node escalates to a human.
 max_rework = 2
 
+# Working-set sizing governor for decompose (factory D8). A child's context
+# cost is estimated deterministically (instruction overhead + scope read-cost
+# x per-class build factor, chars/4 tokens) and a plan outside the band is
+# refused: above the max split into more packages; below the min (when the
+# scope matches existing files) merge with a sibling in its scope group.
+# [policy.sizing]
+# working_set_min = 8000
+# working_set_max = 64000
+# calibration_min_samples = 10   # measured factors override seeds only past this
+# calibration_window = 50        # rolling run-record window per task class
+# [policy.sizing.build_factor]
+# task = 3.0
+# bug = 2.0
+# chore = 1.5
+
 # Agent-agnostic runner: how the harness invokes a coding agent headless to do a
 # node's work in its worktree. "auto" detects claude -> codex -> copilot on PATH,
 # else falls back to the "manual" handoff (no command is guessed for an unknown
@@ -304,6 +319,19 @@ VERIFY_MODES = ("fast", "full", "staged")
 DEFAULT_REQUIRED_GATES = ("verify",)
 DEFAULT_MAX_REWORK = 2
 
+# Working-set sizing defaults (factory design D8/section 6, basicly-kjc5.2):
+# the govern band is absolute tokens of material to reason over, NOT a fraction
+# of the context window (the 50-70 percent folk rule was researched and refuted).
+DEFAULT_WORKING_SET_MIN = 8_000
+DEFAULT_WORKING_SET_MAX = 64_000
+# Per-task-class multiplier on scope read-cost until run-record telemetry
+# calibrates a measured factor. An unlisted class uses the task seed (the most
+# conservative of the three).
+DEFAULT_BUILD_FACTOR_SEEDS = {"task": 3.0, "bug": 2.0, "chore": 1.5}
+DEFAULT_BUILD_FACTOR = 3.0
+DEFAULT_CALIBRATION_MIN_SAMPLES = 10
+DEFAULT_CALIBRATION_WINDOW = 50
+
 # The three human checkpoints the loop enforces (architecture §12.2).
 CHECKPOINTS = ("classify", "decompose", "ship")
 
@@ -488,6 +516,64 @@ def load_policy_config(repo_root: Path) -> PolicyConfig:
         max_rework = defaults.max_rework
 
     return PolicyConfig(required_gates=required_gates, max_rework=max_rework)
+
+
+@dataclass(frozen=True)
+class SizingConfig:
+    """Working-set sizing governor settings (factory design D8, basicly-kjc5.2)."""
+
+    working_set_min: int
+    working_set_max: int
+    # Per-task-class multiplier on scope read-cost; seeds until calibrated.
+    build_factors: dict[str, float]
+    calibration_min_samples: int
+    calibration_window: int
+
+
+def load_sizing_config(repo_root: Path) -> SizingConfig:
+    """Load ``[policy.sizing]`` settings (basicly.toml + local overlay), with defaults.
+
+    Every key falls back to its D8 default on a missing or wrong-typed value
+    (same stance as the other harness loaders). An inverted band (min >= max)
+    would refuse every decomposition, so it falls back to the default band
+    rather than wedging the engine.
+    """
+    section = _harness_section(repo_root, "policy").get("sizing")
+    if not isinstance(section, dict):
+        section = {}
+
+    working_set_min = _positive_int(section.get("working_set_min"), DEFAULT_WORKING_SET_MIN)
+    working_set_max = _positive_int(section.get("working_set_max"), DEFAULT_WORKING_SET_MAX)
+    if working_set_min >= working_set_max:
+        working_set_min = DEFAULT_WORKING_SET_MIN
+        working_set_max = DEFAULT_WORKING_SET_MAX
+
+    factors = dict(DEFAULT_BUILD_FACTOR_SEEDS)
+    raw_factors = section.get("build_factor")
+    if isinstance(raw_factors, dict):
+        for task_class, value in raw_factors.items():
+            number = isinstance(value, int | float) and not isinstance(value, bool)
+            if isinstance(task_class, str) and task_class.strip() and number and value > 0:
+                factors[task_class.strip()] = float(value)
+
+    return SizingConfig(
+        working_set_min=working_set_min,
+        working_set_max=working_set_max,
+        build_factors=factors,
+        calibration_min_samples=_positive_int(
+            section.get("calibration_min_samples"), DEFAULT_CALIBRATION_MIN_SAMPLES
+        ),
+        calibration_window=_positive_int(
+            section.get("calibration_window"), DEFAULT_CALIBRATION_WINDOW
+        ),
+    )
+
+
+def _positive_int(value: object, default: int) -> int:
+    """*value* when it is a positive int (bool excluded), else *default*."""
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return value
+    return default
 
 
 def load_technology_selection(repo_root: Path) -> frozenset[str] | None:

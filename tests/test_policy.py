@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from basicly import policy
-from basicly.config import PolicyConfig
+from basicly.config import PolicyConfig, SizingConfig
 
 
 class _Proc:
@@ -314,3 +314,47 @@ def test_guarded_approve_unknown_checkpoint_rejected(
     _install(monkeypatch, _FakeBr())
     with pytest.raises(ValueError, match="unknown checkpoint"):
         policy.approve_checkpoint_guarded(tmp_path, "i", "deploy", interactive=True)
+
+
+# --- Working-set sizing governor (basicly-kjc5.2, D8) ------------------------
+
+
+def _sizing(**overrides) -> SizingConfig:
+    defaults = {
+        "working_set_min": 8_000,
+        "working_set_max": 64_000,
+        "build_factors": {"task": 3.0, "bug": 2.0, "chore": 1.5},
+        "calibration_min_samples": 10,
+        "calibration_window": 50,
+    }
+    defaults.update(overrides)
+    return SizingConfig(**defaults)
+
+
+def test_check_working_set_inside_band_fits() -> None:
+    """An estimate inside the band (bounds inclusive) raises no violation."""
+    sizing = _sizing()
+    assert policy.check_working_set("t", 20_000, 5_000, sizing) is None
+    assert policy.check_working_set("t", 8_000, 5_000, sizing) is None  # floor inclusive
+    assert policy.check_working_set("t", 64_000, 5_000, sizing) is None  # ceiling inclusive
+
+
+def test_check_working_set_above_ceiling_says_split() -> None:
+    """Above working_set_max the engine refuses with flatten-and-split guidance."""
+    message = policy.check_working_set("huge child", 65_000, 20_000, _sizing())
+    assert message is not None
+    assert "huge child" in message and "65000" in message
+    assert "split" in message and "flatten" in message
+
+
+def test_check_working_set_below_floor_says_merge_with_sibling() -> None:
+    """Below working_set_min (with existing scope material) the guidance is to merge."""
+    message = policy.check_working_set("tiny child", 2_000, 500, _sizing())
+    assert message is not None
+    assert "tiny child" in message and "2000" in message
+    assert "merge" in message and "sibling" in message
+
+
+def test_check_working_set_floor_skips_greenfield_scope() -> None:
+    """A scope matching no existing files (nothing to read) is never floor-refused."""
+    assert policy.check_working_set("new files child", 2_000, 0, _sizing()) is None
