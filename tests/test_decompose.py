@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
-from basicly import decompose
+from basicly import decompose, run_record
+from basicly.config import SizingConfig
 from basicly.decompose import ChildSpec
 
 
@@ -50,7 +52,7 @@ class _FakeBr:
         return _Proc(json.dumps({"id": issue_id}))
 
 
-def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
+def _install(monkeypatch: pytest.MonkeyPatch, fake: Callable[..., _Proc]) -> None:
     monkeypatch.setattr(decompose, "_run_br", fake)
 
 
@@ -210,3 +212,184 @@ def test_preview_matches_recorded_grouping(monkeypatch: pytest.MonkeyPatch, tmp_
     _install(monkeypatch, _FakeBr())
     result = decompose.decompose(tmp_path, "feat", children)
     assert result.parallel_groups == 2
+
+
+# --- Context-cost sizing (basicly-kjc5.2, factory design D8) -----------------
+
+
+def _write(repo: Path, rel: str, chars: int) -> None:
+    path = repo / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("x" * chars, encoding="utf-8")
+
+
+def _sizing(**overrides) -> SizingConfig:
+    defaults = {
+        "working_set_min": 8_000,
+        "working_set_max": 64_000,
+        "build_factors": {"task": 3.0, "bug": 2.0, "chore": 1.5},
+        "calibration_min_samples": 10,
+        "calibration_window": 50,
+    }
+    defaults.update(overrides)
+    return SizingConfig(**defaults)
+
+
+def test_instruction_overhead_tokenizes_agents_md(tmp_path: Path) -> None:
+    """Overhead is the projected AGENTS.md at chars/4; absent contributes zero."""
+    assert decompose.instruction_overhead(tmp_path) == 0
+    _write(tmp_path, "AGENTS.md", 8_000)
+    assert decompose.instruction_overhead(tmp_path) == 2_000
+
+
+def test_scope_read_cost_sums_matching_files_once(tmp_path: Path) -> None:
+    """Matching files sum at chars/4, deduped across overlapping globs."""
+    _write(tmp_path, "src/a.py", 400)
+    _write(tmp_path, "src/b.py", 200)
+    _write(tmp_path, "docs/c.md", 999)
+    cost = decompose.scope_read_cost(tmp_path, ("src/*.py", "src/a.py"))
+    assert cost == (400 + 200) // 4
+
+
+def test_scope_read_cost_recursive_glob_and_greenfield(tmp_path: Path) -> None:
+    """`**` spans directories; a glob matching nothing contributes zero."""
+    _write(tmp_path, "src/pkg/deep/mod.py", 800)
+    assert decompose.scope_read_cost(tmp_path, ("src/**/*.py",)) == 200
+    assert decompose.scope_read_cost(tmp_path, ("brand/new/file.py",)) == 0
+
+
+def test_estimate_cost_total_is_overhead_plus_factored_scope(tmp_path: Path) -> None:
+    """Total = overhead + scope x class factor; unlisted classes use the task factor."""
+    _write(tmp_path, "src/a.py", 4_000)  # 1000 scope tokens
+    factors = {"task": 3.0, "bug": 2.0}
+    task = decompose.estimate_cost(tmp_path, _child("t", "src/a.py"), factors, overhead=500)
+    assert (task.scope_tokens, task.overhead_tokens, task.build_factor) == (1_000, 500, 3.0)
+    assert task.total == 500 + 3_000
+    bug = ChildSpec(title="b", acceptance=("a",), scope=("src/a.py",), type="bug")
+    assert decompose.estimate_cost(tmp_path, bug, factors, overhead=0).total == 2_000
+    spike = ChildSpec(title="s", acceptance=("a",), scope=("src/a.py",), type="spike")
+    assert decompose.estimate_cost(tmp_path, spike, factors, overhead=0).total == 3_000
+
+
+def test_parse_scope_section_round_trips_child_body() -> None:
+    """The calibration scope parser reads exactly what _child_body records."""
+    spec = _child("t", "src/**/*.py", "tests/test_x.py")
+    body = decompose._child_body(spec)
+    assert decompose._parse_scope_section(body) == ("src/**/*.py", "tests/test_x.py")
+    assert decompose._parse_scope_section("no scope section here") == ()
+
+
+class _FakeBrShow:
+    """br stand-in for calibration: serves `show --json` for seeded beads."""
+
+    def __init__(self, beads: dict[str, tuple[str, str]]) -> None:
+        self.beads = beads  # id -> (issue_type, description)
+
+    def __call__(self, _repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
+        if args[:1] == ["show"]:
+            issue_type, description = self.beads[args[1]]
+            payload = [{"id": args[1], "issue_type": issue_type, "description": description}]
+            return _Proc(json.dumps(payload))
+        raise AssertionError(f"unexpected br call: {args}")
+
+
+def _record_run_tokens(repo: Path, bead_id: str, tokens: int, *, estimated: bool = False) -> None:
+    entry = run_record.build_record(
+        agent="claude",
+        handoff=False,
+        returncode=0,
+        duration_s=1.0,
+        command=("claude",),
+        tokens=tokens,
+        estimated=estimated,
+    )
+    run_record.record(repo, bead_id, entry)
+
+
+def test_calibration_returns_seeds_without_records(tmp_path: Path) -> None:
+    """No run-records (or too few samples) leave the configured seeds untouched."""
+    sizing = _sizing()
+    assert decompose.calibrated_build_factors(tmp_path, sizing) == sizing.build_factors
+
+
+def test_calibration_overrides_seed_past_min_samples(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Past calibration_min_samples the measured median replaces the class seed."""
+    _write(tmp_path, "src/a.py", 4_000)  # 1000 scope tokens
+    body = decompose._child_body(_child("t", "src/a.py"))
+    _install(monkeypatch, _FakeBrShow({"b-1": ("task", body)}))
+    for tokens in (4_000, 5_000, 6_000):  # factors 4.0, 5.0, 6.0 -> median 5.0
+        _record_run_tokens(tmp_path, "b-1", tokens)
+
+    sizing = _sizing(calibration_min_samples=3)
+    factors = decompose.calibrated_build_factors(tmp_path, sizing)
+    assert factors["task"] == 5.0
+    assert factors["bug"] == 2.0  # other classes keep their seeds
+
+    below_min = decompose.calibrated_build_factors(tmp_path, _sizing(calibration_min_samples=4))
+    assert below_min["task"] == 3.0  # not enough samples: seed stands
+
+
+def test_calibration_excludes_estimated_samples(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """chars/4-estimated samples never calibrate (design 7.5 down-weighting)."""
+    _write(tmp_path, "src/a.py", 4_000)
+    body = decompose._child_body(_child("t", "src/a.py"))
+    _install(monkeypatch, _FakeBrShow({"b-1": ("task", body)}))
+    for _ in range(5):
+        _record_run_tokens(tmp_path, "b-1", 9_000, estimated=True)
+
+    factors = decompose.calibrated_build_factors(tmp_path, _sizing(calibration_min_samples=1))
+    assert factors["task"] == 3.0
+
+
+def test_govern_refuses_oversized_child_before_recording(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A child above working_set_max refuses the whole plan; nothing is created."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _write(tmp_path, "src/big.py", 400_000)  # 100k tokens x 3.0 >> 64k
+    with pytest.raises(ValueError, match="split"):
+        decompose.decompose(tmp_path, "feat", (_child("huge", "src/big.py"),))
+    assert fake.created == []
+
+
+def test_govern_refuses_underfloor_child_with_merge_guidance(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A child below working_set_min (existing scope material) says merge with a sibling."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _write(tmp_path, "src/tiny.py", 100)
+    children = (_child("tiny", "src/tiny.py"), _child("other", "src/other-new.py"))
+    with pytest.raises(ValueError, match="sibling"):
+        decompose.decompose(tmp_path, "feat", children)
+    assert fake.created == []
+
+
+def test_govern_passes_greenfield_plan(tmp_path: Path) -> None:
+    """A plan whose scopes match no existing files estimates overhead-only and fits."""
+    estimates = decompose.govern_working_set(tmp_path, (_child("a"), _child("b")))
+    assert [e.total for e in estimates] == [0, 0]
+
+
+def test_scope_read_cost_keeps_dot_directory_scopes(tmp_path: Path) -> None:
+    """A dot-directory glob keeps its leading dot; only a literal ./ prefix strips."""
+    _write(tmp_path, ".claude/rules/python.md", 400)
+    assert decompose.scope_read_cost(tmp_path, (".claude/rules/*.md",)) == 100
+    assert decompose.scope_read_cost(tmp_path, ("./.claude/rules/*.md",)) == 100
+    _write(tmp_path, "src/a.py", 40)
+    assert decompose.scope_read_cost(tmp_path, ("./src/a.py",)) == 10
+
+
+def test_scope_read_cost_skips_unglobbable_patterns(tmp_path: Path) -> None:
+    """An anchored or engine-rejected pattern is skipped, never fatal."""
+    _write(tmp_path, "etc/conf.py", 40)
+    # A leading slash is relativized; a drive-anchored pattern must not raise
+    # (on POSIX "c:" is an ordinary segment, on Windows the glob engine rejects
+    # it and the guard skips it).
+    assert decompose.scope_read_cost(tmp_path, ("/etc/conf.py",)) == 10
+    assert decompose.scope_read_cost(tmp_path, ("c:/nowhere/*.py",)) == 0

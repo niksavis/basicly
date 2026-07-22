@@ -17,6 +17,7 @@ from basicly.config import (
     load_policy_config,
     load_project_paths,
     load_runner_config,
+    load_sizing_config,
     load_technology_selection,
     load_verify_config,
     load_worktree_config,
@@ -499,3 +500,57 @@ def test_local_config_never_affects_projection_config(tmp_path: Path) -> None:
     )
     assert load_project_paths(tmp_path).core_fragments_dir == Path(".basicly/core/fragments")
     assert load_technology_selection(tmp_path) is None
+
+
+# --- [policy.sizing] (basicly-kjc5.2, D8) ------------------------------------
+
+
+def test_sizing_config_defaults_when_absent(tmp_path: Path) -> None:
+    """No config file (or no [policy.sizing]) resolves to the D8 defaults."""
+    sizing = load_sizing_config(tmp_path)
+    assert sizing.working_set_min == 8_000
+    assert sizing.working_set_max == 64_000
+    assert sizing.build_factors == {"task": 3.0, "bug": 2.0, "chore": 1.5}
+    assert sizing.calibration_min_samples == 10
+    assert sizing.calibration_window == 50
+
+
+def test_sizing_config_parses_overrides(tmp_path: Path) -> None:
+    """[policy.sizing] keys and the build_factor table override the defaults."""
+    (tmp_path / CONFIG_FILE).write_text(
+        "[policy.sizing]\n"
+        "working_set_min = 4000\nworking_set_max = 32000\n"
+        "calibration_min_samples = 5\ncalibration_window = 20\n"
+        "[policy.sizing.build_factor]\ntask = 2.5\nspike = 1.0\n",
+        encoding="utf-8",
+    )
+    sizing = load_sizing_config(tmp_path)
+    assert (sizing.working_set_min, sizing.working_set_max) == (4_000, 32_000)
+    assert (sizing.calibration_min_samples, sizing.calibration_window) == (5, 20)
+    assert sizing.build_factors["task"] == 2.5
+    assert sizing.build_factors["spike"] == 1.0
+    assert sizing.build_factors["bug"] == 2.0  # unset classes keep their seeds
+
+
+def test_sizing_config_inverted_band_falls_back(tmp_path: Path) -> None:
+    """An inverted band would refuse everything, so it falls back to defaults."""
+    (tmp_path / CONFIG_FILE).write_text(
+        "[policy.sizing]\nworking_set_min = 64000\nworking_set_max = 8000\n",
+        encoding="utf-8",
+    )
+    sizing = load_sizing_config(tmp_path)
+    assert (sizing.working_set_min, sizing.working_set_max) == (8_000, 64_000)
+
+
+def test_sizing_config_ignores_wrong_typed_values(tmp_path: Path) -> None:
+    """Wrong-typed keys fall back per key (same stance as the other loaders)."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[policy.sizing]\nworking_set_min = "big"\ncalibration_window = -3\n'
+        '[policy.sizing.build_factor]\ntask = "fast"\nbug = 4.0\n',
+        encoding="utf-8",
+    )
+    sizing = load_sizing_config(tmp_path)
+    assert sizing.working_set_min == 8_000
+    assert sizing.calibration_window == 50
+    assert sizing.build_factors["task"] == 3.0  # bad value keeps the seed
+    assert sizing.build_factors["bug"] == 4.0
