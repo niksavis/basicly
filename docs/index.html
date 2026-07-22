@@ -430,6 +430,27 @@
             build time.
           </li>
         </ul>
+        <p class="muted">
+          With guidance in place, the same catalog drives the harness — an
+          agent-agnostic development loop that carries one unit of work from
+          intake to shipped, the same way under Claude, Codex, or Copilot:
+        </p>
+        <figure
+          class="diagram"
+          aria-label="The basicly harness loop runs a unit of work through five phases in order: intake proposes the work type, classify is a human checkpoint with a Definition-of-Ready gate, build happens in an isolated worktree, verify runs the deterministic gate, and ship merges and closes. Classify and ship are TTY-gated human checkpoints."
+        >
+          <div class="stage">
+            <div class="node"><b>intake</b><span>propose type</span></div>
+            <div class="arrow" aria-hidden="true">▶</div>
+            <div class="node"><b>classify</b><span>checkpoint · DoR</span></div>
+            <div class="arrow" aria-hidden="true">▶</div>
+            <div class="node"><b>build</b><span>isolated worktree</span></div>
+            <div class="arrow" aria-hidden="true">▶</div>
+            <div class="node"><b>verify</b><span>deterministic gate</span></div>
+            <div class="arrow" aria-hidden="true">▶</div>
+            <div class="node"><b>ship</b><span>merge · close</span></div>
+          </div>
+        </figure>
       </div>
     </section>
 
