@@ -91,6 +91,9 @@ default = "auto"
 # prompt_via = "arg"   # or "stdin"
 # model = "opus"       # optional: injects `--model opus` after the binary,
 #                      # or substitutes a `{model}` placeholder if the command has one
+# sandbox = "workspace-write"   # optional: injects `--sandbox workspace-write` (codex
+#                               # defaults this); network is disabled by default in it
+# approval = "on-failure"       # optional: injects `-a on-failure` (codex defaults this)
 # git_name = "opencode-bot"        # optional bot git identity: dispatched commits
 # git_email = "bot@example.com"    # use it (both keys or neither). Must satisfy
 #                                  # basicly.identityAllowEmail when strict mode is on.
@@ -644,6 +647,17 @@ def _parse_runner_agent(entry: object) -> RunnerSpec:
         raise ValueError(f"runner agent {name!r} has a 'model' that must be a non-empty string")
     model = model.strip() if isinstance(model, str) else None
 
+    # Optional sandbox/approval guardrail overrides (basicly-t0kt), injected as
+    # `--sandbox <mode>` / `-a <policy>` by format_command. An explicit override
+    # replaces the builtin default (e.g. codex's), so a null is not re-defaulted.
+    sandbox = entry.get("sandbox")
+    approval = entry.get("approval")
+    for key, value in (("sandbox", sandbox), ("approval", approval)):
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            raise ValueError(f"runner agent {name!r} has a {key!r} that must be a non-empty string")
+    sandbox = sandbox.strip() if isinstance(sandbox, str) else None
+    approval = approval.strip() if isinstance(approval, str) else None
+
     # Optional opt-in bot git identity (basicly-smzg): both keys or neither.
     git_name = entry.get("git_name")
     git_email = entry.get("git_email")
@@ -664,6 +678,8 @@ def _parse_runner_agent(entry: object) -> RunnerSpec:
         command=tuple(command),
         prompt_via=prompt_via,
         model=model,
+        sandbox=sandbox,
+        approval=approval,
         git_name=git_name,
         git_email=git_email,
     )

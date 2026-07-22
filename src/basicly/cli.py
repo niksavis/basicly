@@ -2195,6 +2195,10 @@ def _cmd_runner_dry_run(args: argparse.Namespace) -> int:
     print(f"runner '{spec.name}':")
     if spec.model:
         print(f"  model: {spec.model}")
+    if spec.sandbox:
+        print(f"  sandbox: {spec.sandbox}")
+    if spec.approval:
+        print(f"  approval: {spec.approval}")
     print(f"  {shlex.join(result.command)}")
     return 0
 

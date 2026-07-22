@@ -148,6 +148,66 @@ def test_format_command_deny_tools_compose_after_model() -> None:
     ]
 
 
+# --- format_command: sandbox/approval guardrails (basicly-t0kt) -------------
+
+
+def test_format_command_no_sandbox_or_approval_leaves_argv_unchanged() -> None:
+    """The default (neither set) never touches the argv."""
+    spec = RunnerSpec("claude", HEADLESS, ("claude", "-p", PROMPT_PLACEHOLDER))
+    assert runner.format_command(spec, "do it") == ["claude", "-p", "do it"]
+
+
+def test_format_command_injects_sandbox_and_approval_after_binary() -> None:
+    """Sandbox then approval flags land after the binary when both are set."""
+    spec = RunnerSpec(
+        "codex",
+        HEADLESS,
+        ("codex", "exec", PROMPT_PLACEHOLDER),
+        sandbox="workspace-write",
+        approval="on-failure",
+    )
+    assert runner.format_command(spec, "go") == [
+        "codex",
+        "--sandbox",
+        "workspace-write",
+        "-a",
+        "on-failure",
+        "exec",
+        "go",
+    ]
+
+
+def test_format_command_injects_sandbox_alone() -> None:
+    """Approval unset injects only the sandbox flag."""
+    spec = RunnerSpec("codex", HEADLESS, ("codex", "exec", PROMPT_PLACEHOLDER), sandbox="read-only")
+    assert runner.format_command(spec, "go") == ["codex", "--sandbox", "read-only", "exec", "go"]
+
+
+def test_codex_builtin_defaults_render_workspace_write_on_failure() -> None:
+    """The shipped codex adapter carries the guardrail defaults into its rendered argv."""
+    codex = next(s for s in runner.BUILTIN_RUNNERS if s.name == "codex")
+    assert codex.sandbox == "workspace-write"
+    assert codex.approval == "on-failure"
+    assert runner.format_command(codex, "do the work") == [
+        "codex",
+        "--sandbox",
+        "workspace-write",
+        "-a",
+        "on-failure",
+        "exec",
+        "do the work",
+    ]
+
+
+def test_sandbox_approval_do_not_affect_capability_probe() -> None:
+    """Guardrail values live in fields, not command, so the --help probe ignores them."""
+    codex = next(s for s in runner.BUILTIN_RUNNERS if s.name == "codex")
+    # A help text mentioning only the static command flag (`exec`) — not the
+    # `workspace-write`/`on-failure` values — must still confirm the runner.
+    cap = runner.probe_capability(codex, run=lambda _binary: "usage: codex exec [prompt]")
+    assert cap.flag_ok is True
+
+
 # --- availability + selection ----------------------------------------------
 
 

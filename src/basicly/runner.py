@@ -79,6 +79,16 @@ class RunnerSpec:
     # `--deny-tool=<spec>` per entry after the binary. Populated for the copilot
     # runner from permissions.yaml at config load; empty leaves the argv unchanged.
     deny_tools: tuple[str, ...] = ()
+    # Invocation-time sandbox/approval guardrails (basicly-t0kt). Codex forbids
+    # overriding approval_policy/sandbox_mode at repo scope in .codex/config.toml
+    # by design, so safe defaults cannot be projected as committed catalog output;
+    # the only seam is the invocation. format_command emits `--sandbox <mode>` and
+    # `-a <policy>` after the binary when set. Defaulted for the codex runner
+    # (`workspace-write` disables network by default; `on-failure` fails safe in
+    # headless exec — no approver, so an escalation is denied, not auto-granted).
+    # None on claude/copilot leaves their argv unchanged.
+    sandbox: str | None = None
+    approval: str | None = None
     # Optional opt-in per-agent bot git identity (basicly-smzg). When both are
     # set, run() injects GIT_AUTHOR_*/GIT_COMMITTER_* into the dispatched agent's
     # environment so commits it makes in its worktree carry the bot identity
@@ -98,7 +108,13 @@ class RunnerSpec:
 # they are config-overridable and every one is printable via `runner dry-run`.
 BUILTIN_RUNNERS: tuple[RunnerSpec, ...] = (
     RunnerSpec("claude", HEADLESS, ("claude", "-p", PROMPT_PLACEHOLDER)),
-    RunnerSpec("codex", HEADLESS, ("codex", "exec", PROMPT_PLACEHOLDER)),
+    RunnerSpec(
+        "codex",
+        HEADLESS,
+        ("codex", "exec", PROMPT_PLACEHOLDER),
+        sandbox="workspace-write",
+        approval="on-failure",
+    ),
     RunnerSpec("copilot", HEADLESS, ("copilot", "-p", PROMPT_PLACEHOLDER)),
     RunnerSpec(MANUAL_RUNNER, HANDOFF),
 )
@@ -134,6 +150,11 @@ def format_command(spec: RunnerSpec, prompt: str) -> list[str]:
     fill it is a config error, raised rather than left literal in the argv
     (symmetric to the missing-prompt-placeholder guard below).
 
+    Sandbox/approval guardrails (basicly-t0kt) layer on the same way: when
+    ``spec.sandbox``/``spec.approval`` are set, ``--sandbox <mode>`` and
+    ``-a <policy>`` are injected after the binary (the codex runner defaults
+    them). Unset leaves the argv unchanged.
+
     Raises for a handoff runner (it has no command line) and for an arg-injected
     template missing its prompt placeholder — a silent drop would send an empty
     prompt.
@@ -150,8 +171,8 @@ def format_command(spec: RunnerSpec, prompt: str) -> list[str]:
     else:
         argv = list(spec.command)
     # Model outermost so it stays "right after the binary" (its documented
-    # contract); deny-tool flags then follow the model.
-    return _apply_model(spec, _apply_deny_tools(spec, argv))
+    # contract); sandbox/approval and deny-tool flags then follow the model.
+    return _apply_model(spec, _apply_sandbox(spec, _apply_deny_tools(spec, argv)))
 
 
 def _apply_model(spec: RunnerSpec, argv: list[str]) -> list[str]:
@@ -179,6 +200,25 @@ def _apply_deny_tools(spec: RunnerSpec, argv: list[str]) -> list[str]:
     if not spec.deny_tools:
         return argv
     flags = [f"--deny-tool={tool}" for tool in spec.deny_tools]
+    return [argv[0], *flags, *argv[1:]]
+
+
+def _apply_sandbox(spec: RunnerSpec, argv: list[str]) -> list[str]:
+    """Inject sandbox/approval guardrail flags after the binary (basicly-t0kt).
+
+    Emits ``--sandbox <mode>`` and/or ``-a <policy>`` when the spec sets them
+    (the codex runner defaults both). Kept out of ``spec.command`` on purpose:
+    the values are not headless-capability flags, so folding them here — like
+    ``_apply_model`` — leaves the ``--help`` probe (:func:`_headless_flags`)
+    untouched. Neither set leaves the argv unchanged.
+    """
+    flags: list[str] = []
+    if spec.sandbox is not None:
+        flags += ["--sandbox", spec.sandbox]
+    if spec.approval is not None:
+        flags += ["-a", spec.approval]
+    if not flags:
+        return argv
     return [argv[0], *flags, *argv[1:]]
 
 

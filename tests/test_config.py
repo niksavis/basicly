@@ -296,6 +296,49 @@ def test_runner_config_rejects_blank_model(tmp_path: Path) -> None:
         load_runner_config(tmp_path)
 
 
+def test_runner_config_codex_defaults_sandbox_and_approval(tmp_path: Path) -> None:
+    """The shipped codex adapter carries the guardrail defaults; others leave them unset."""
+    by_name = {spec.name: spec for spec in load_runner_config(tmp_path).specs}
+    assert by_name["codex"].sandbox == "workspace-write"
+    assert by_name["codex"].approval == "on-failure"
+    assert by_name["claude"].sandbox is None
+    assert by_name["claude"].approval is None
+
+
+def test_runner_config_parses_sandbox_and_approval_override(tmp_path: Path) -> None:
+    """An [[runner.agents]] entry may set sandbox/approval; they land on the RunnerSpec."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[runner.agents]]\nname = "codex"\n'
+        'command = ["codex", "exec", "{prompt}"]\n'
+        'sandbox = "read-only"\napproval = "untrusted"\n',
+        encoding="utf-8",
+    )
+    by_name = {spec.name: spec for spec in load_runner_config(tmp_path).specs}
+    assert by_name["codex"].sandbox == "read-only"
+    assert by_name["codex"].approval == "untrusted"
+
+
+def test_runner_config_sandbox_approval_default_none_for_override(tmp_path: Path) -> None:
+    """An override that omits the keys is not silently re-defaulted to codex's values."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[runner.agents]]\nname = "codex"\ncommand = ["codex", "exec", "{prompt}"]\n',
+        encoding="utf-8",
+    )
+    by_name = {spec.name: spec for spec in load_runner_config(tmp_path).specs}
+    assert by_name["codex"].sandbox is None
+    assert by_name["codex"].approval is None
+
+
+def test_runner_config_rejects_blank_sandbox(tmp_path: Path) -> None:
+    """A present-but-empty sandbox is a config error, not a silent None."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[runner.agents]]\nname = "x"\ncommand = ["x", "{prompt}"]\nsandbox = "  "\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="non-empty string"):
+        load_runner_config(tmp_path)
+
+
 def test_runner_config_overrides_builtin_command(tmp_path: Path) -> None:
     """An agent entry matching a built-in name overrides its command template."""
     (tmp_path / CONFIG_FILE).write_text(
