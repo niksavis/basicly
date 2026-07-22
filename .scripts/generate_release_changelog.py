@@ -113,13 +113,44 @@ def _find_section_bounds(lines: list[str], tag: str) -> tuple[int | None, int | 
 
 
 def _insert_index(lines: list[str]) -> int:
-    """Return where new release sections should be inserted (newest first)."""
+    """Return where a new dated release section should be inserted (newest first).
+
+    Prefer the position just after an existing ``## [Unreleased]`` section so
+    Unreleased stays pinned at the top and the new ``## vX.Y.Z`` lands directly
+    below it. With no Unreleased section, fall back to the first ``## `` heading
+    after the intro (above the newest existing release). Inserting at the *first*
+    heading unconditionally was the bug: it dropped the new section above
+    ``[Unreleased]`` (basicly-pui7).
+    """
+    for idx, line in enumerate(lines):
+        if line.startswith("## [Unreleased]"):
+            nxt = idx + 1
+            while nxt < len(lines) and not lines[nxt].startswith("## "):
+                nxt += 1
+            return nxt
+
     idx = 1
     while idx < len(lines) and lines[idx].strip() == "":
         idx += 1
     while idx < len(lines) and not lines[idx].startswith("## "):
         idx += 1
     return idx
+
+
+def _collapse_blank_runs(lines: list[str]) -> list[str]:
+    """Collapse runs of consecutive blank lines to a single blank (markdownlint MD012).
+
+    A section built with a trailing blank inserted next to an existing blank
+    line would otherwise leave two blanks at the seam, which MD012 rejects and
+    every release had to hand-fix (basicly-pui7). Applied to the whole document:
+    the changelog never carries intentional consecutive blanks.
+    """
+    out: list[str] = []
+    for line in lines:
+        if line.strip() == "" and out and out[-1].strip() == "":
+            continue
+        out.append(line)
+    return out
 
 
 def _upsert_section(existing_text: str, tag: str, section_lines: list[str]) -> str:
@@ -133,7 +164,7 @@ def _upsert_section(existing_text: str, tag: str, section_lines: list[str]) -> s
         insert_at = _insert_index(lines)
         updated = lines[:insert_at] + section_lines + lines[insert_at:]
 
-    return "\n".join(updated).rstrip() + "\n"
+    return "\n".join(_collapse_blank_runs(updated)).rstrip() + "\n"
 
 
 def _parse_args() -> argparse.Namespace:
