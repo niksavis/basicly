@@ -25,7 +25,6 @@ path = "src/basicly/__init__.py"
 [dependency-groups]
 dev = [
   "bandit>=1.9.4",
-  "curlylint>=0.13.1",
   "djlint>=1.40.4",
   "import-linter>=2.13",
   "pip-audit>=2.10.1",
