@@ -1,4 +1,0 @@
-include: templates
-rules:
-  parse-error: error
-  line-length: disable
