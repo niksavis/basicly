@@ -113,16 +113,25 @@ def derive_phase(
     """Reconstruct the furthest loop phase evidenced by an issue's ``br`` state.
 
     Reads the strongest recorded signal downward: a closed issue is done; an
-    approved ship checkpoint means shipping; green required gates on a bound
-    worktree mean verify passed; a bound worktree means building; a decompose
-    checkpoint (or existing children) means decomposed; a classify checkpoint
-    means classified. Everything else is still intake.
+    approved ship checkpoint on a *landed* node means shipping; green required
+    gates on a bound worktree mean verify passed; a bound worktree means
+    building; a decompose checkpoint (or existing children) means decomposed; a
+    classify checkpoint means classified. Everything else is still intake.
+
+    The ship rung requires the node to have landed, not just the checkpoint to
+    be approved: a bound worktree whose verify gate is not green has not merged,
+    so it derives as ``build`` and the next advance re-runs the build->verify
+    landing. Without this, approving ship before the landing (e.g. after a
+    landing failed on a transient ``.git/index.lock``) wedged the phase at ship
+    with no route back to the merge (basicly-k35r). "Landed" holds when the
+    worktree is gone (torn down after merge, or a feature with no binding) or
+    when verify is green on the still-bound worktree (merged, pending teardown).
     """
     if status == "closed":
         return "done"
     verified = gates.can_advance and (worktree is not None or has_children)
     ladder = (
-        ("ship", "ship" in checkpoints),
+        ("ship", "ship" in checkpoints and (worktree is None or verified)),
         ("verify", verified),
         ("build", worktree is not None),
         ("decompose", "decompose" in checkpoints or has_children),

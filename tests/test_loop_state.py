@@ -102,6 +102,14 @@ def test_worktree_ref_rejects_unset_or_foreign(ref: str | None) -> None:
 _PHASE_CASES = [
     ("closed", ("ship",), None, True, True, "done"),
     ("in_progress", ("ship",), None, True, False, "ship"),
+    # Ship approved but the node has not landed: the worktree is still bound and
+    # its verify gate is not green (e.g. the build->verify landing failed on a
+    # transient lock). Must derive as build so the next advance re-lands, not
+    # wedge at ship (basicly-k35r).
+    ("in_progress", ("classify", "ship"), WorktreeBinding("n", "b"), False, False, "build"),
+    # Ship approved and verify green on a still-bound worktree: merged, pending
+    # teardown — legitimately ship.
+    ("in_progress", ("ship",), WorktreeBinding("n", "b"), True, False, "ship"),
     ("in_progress", (), WorktreeBinding("n", "b"), True, False, "verify"),
     ("in_progress", (), WorktreeBinding("n", "b"), False, False, "build"),
     ("in_progress", ("decompose",), None, False, False, "decompose"),
