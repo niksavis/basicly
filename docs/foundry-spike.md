@@ -1,5 +1,11 @@
 # basicly vs. MS AI Foundry production-agent principles — spike (basicly-zv48)
 
+> **Archived — spike complete (kept for design provenance).** The `basicly-zv48`
+> spike, its seven child dimensions, and every implementation follow-on have
+> shipped; this document is retained because its dimension numbering is cited by
+> `src/basicly/permissions.py` and `src/basicly/rubrics.py`. It is history, not a
+> live design doc — see `docs/file-audit.md` (basicly-vk1n).
+>
 > **Status:** research spike, not implementation. This document is the written
 > deliverable for `basicly-zv48` and its seven child dimensions. It maps, for each
 > production-agent principle drawn from Microsoft AI Foundry engineers, four things:
