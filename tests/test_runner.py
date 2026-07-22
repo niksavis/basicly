@@ -8,6 +8,7 @@ falls back to the manual handoff runner, which never shells out.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -15,11 +16,14 @@ import pytest
 from basicly import runner
 from basicly.runner import (
     BUILTIN_RUNNERS,
+    CLAUDE_JSON,
+    CODEX_JSONL,
     HANDOFF,
     HEADLESS,
     MANUAL_RUNNER,
     PROMPT_PLACEHOLDER,
     RunnerSpec,
+    RunResult,
 )
 
 
@@ -490,3 +494,179 @@ def test_run_leaves_env_untouched_without_identity(monkeypatch: pytest.MonkeyPat
     runner.run(spec, "go", Path("/work"))
 
     assert captured["env"] is None
+
+
+# --- usage capture + extraction (basicly-kjc5.1) -----------------------------
+
+
+def _claude_spec() -> RunnerSpec:
+    return next(s for s in BUILTIN_RUNNERS if s.name == "claude")
+
+
+def _codex_spec() -> RunnerSpec:
+    return next(s for s in BUILTIN_RUNNERS if s.name == "codex")
+
+
+def _executed(spec: RunnerSpec, stdout: str, stderr: str = "") -> RunResult:
+    return RunResult(
+        spec.name, (spec.name,), executed=True, returncode=0, stdout=stdout, stderr=stderr
+    )
+
+
+# Captured from a live `claude -p ... --output-format json` probe (2026-07-22),
+# trimmed to the fields extraction reads plus representative noise.
+_CLAUDE_RESULT = json.dumps({
+    "type": "result",
+    "subtype": "success",
+    "is_error": False,
+    "result": "ok",
+    "total_cost_usd": 0.136147,
+    "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 5960,
+        "cache_read_input_tokens": 15496,
+        "output_tokens": 17,
+        "server_tool_use": {"web_search_requests": 0},
+    },
+})
+
+# The documented `codex exec --json` JSONL event stream: usage rides on
+# turn.completed events; cached_input_tokens is a subset of input_tokens.
+_CODEX_EVENTS = "\n".join([
+    '{"type":"thread.started","thread_id":"t1"}',
+    '{"type":"item.completed","item":{"type":"agent_message","text":"ok"}}',
+    '{"type":"turn.completed","usage":'
+    '{"input_tokens":24763,"cached_input_tokens":24448,"output_tokens":122}}',
+    '{"type":"turn.completed","usage":'
+    '{"input_tokens":100,"cached_input_tokens":50,"output_tokens":7}}',
+])
+
+
+def test_format_command_default_omits_usage_flags() -> None:
+    """Plain-text consumers (rubric judging, review) get the unflagged argv."""
+    assert runner.format_command(_claude_spec(), "go") == ["claude", "-p", "go"]
+
+
+def test_format_command_capture_usage_appends_claude_flags() -> None:
+    """A usage-capturing claude dispatch asks for the JSON result object."""
+    argv = runner.format_command(_claude_spec(), "go", capture_usage=True)
+    assert argv == ["claude", "-p", "go", "--output-format", "json"]
+
+
+def test_format_command_capture_usage_appends_codex_json_trailing() -> None:
+    """Codex gets `--json` trailing, so the flag stays inside the exec subcommand."""
+    argv = runner.format_command(_codex_spec(), "go", capture_usage=True)
+    assert argv[-1] == "--json"
+    assert argv.index("exec") < argv.index("--json")
+
+
+def test_format_command_capture_usage_without_format_leaves_argv_unchanged() -> None:
+    """Copilot reports no token usage (probed 2026-07-22): no flags to append."""
+    copilot = next(s for s in BUILTIN_RUNNERS if s.name == "copilot")
+    assert copilot.usage_format is None
+    argv = runner.format_command(copilot, "go", capture_usage=True)
+    assert argv == runner.format_command(copilot, "go")
+
+
+def test_format_command_unknown_usage_format_raises() -> None:
+    """A hand-built spec with a bogus format fails loudly, not silently unmetered."""
+    spec = RunnerSpec("x", HEADLESS, ("x", PROMPT_PLACEHOLDER), usage_format="bogus")
+    with pytest.raises(ValueError, match="usage_format"):
+        runner.format_command(spec, "go", capture_usage=True)
+
+
+def test_usage_format_does_not_affect_capability_probe() -> None:
+    """Usage flags live outside spec.command, so the --help probe ignores them."""
+    cap = runner.probe_capability(_claude_spec(), run=lambda _binary: "usage: claude -p [prompt]")
+    assert cap.flag_ok is True
+
+
+def test_run_capture_usage_executes_with_usage_flags(monkeypatch: pytest.MonkeyPatch) -> None:
+    """run(capture_usage=True) invokes the argv with the usage-report flags."""
+    captured: dict[str, object] = {}
+
+    class _Proc:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def fake_run(argv, **_k):
+        captured["argv"] = argv
+        return _Proc()
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    runner.run(_claude_spec(), "go", Path("/work"), capture_usage=True)
+    assert captured["argv"] == ["claude", "-p", "go", "--output-format", "json"]
+
+
+def test_extract_usage_claude_reads_tokens_and_cost() -> None:
+    """The claude result object yields summed usage tokens plus total_cost_usd."""
+    usage = runner.extract_usage(_claude_spec(), _executed(_claude_spec(), _CLAUDE_RESULT))
+    assert usage is not None
+    assert usage.tokens == 2 + 5960 + 15496 + 17
+    assert usage.cost == pytest.approx(0.136147)
+    assert usage.estimated is False
+
+
+def test_extract_usage_claude_without_cost_field() -> None:
+    """A usage block without total_cost_usd still reports tokens, cost null."""
+    stdout = json.dumps({"usage": {"input_tokens": 10, "output_tokens": 5}})
+    usage = runner.extract_usage(_claude_spec(), _executed(_claude_spec(), stdout))
+    assert usage == runner.Usage(tokens=15, cost=None, estimated=False)
+
+
+def test_extract_usage_claude_unparseable_falls_back_to_estimate() -> None:
+    """Non-JSON output (e.g. an overridden command) degrades to the chars/4 estimate."""
+    result = _executed(_claude_spec(), "plain text answer", stderr="warn")
+    usage = runner.extract_usage(_claude_spec(), result)
+    assert usage == runner.Usage(
+        tokens=(len("plain text answer") + len("warn")) // 4, cost=None, estimated=True
+    )
+
+
+def test_extract_usage_claude_json_without_usage_block_estimates() -> None:
+    """A parseable object missing the usage block still degrades to the estimate."""
+    stdout = json.dumps({"type": "result", "result": "ok"})
+    usage = runner.extract_usage(_claude_spec(), _executed(_claude_spec(), stdout))
+    assert usage is not None
+    assert usage.estimated is True
+
+
+def test_extract_usage_codex_sums_turns_excluding_cached() -> None:
+    """Codex turn.completed events sum input+output; cached is a subset, not added."""
+    usage = runner.extract_usage(_codex_spec(), _executed(_codex_spec(), _CODEX_EVENTS))
+    assert usage == runner.Usage(tokens=24763 + 122 + 100 + 7, cost=None, estimated=False)
+
+
+def test_extract_usage_codex_without_usage_events_estimates() -> None:
+    """An event stream with no turn.completed usage degrades to the estimate."""
+    stdout = '{"type":"thread.started","thread_id":"t1"}\nnot json\n'
+    usage = runner.extract_usage(_codex_spec(), _executed(_codex_spec(), stdout))
+    assert usage is not None
+    assert usage.estimated is True
+
+
+def test_extract_usage_no_format_estimates_over_transcript() -> None:
+    """A spec with no usage format (copilot) meters the transcript at chars/4."""
+    copilot = next(s for s in BUILTIN_RUNNERS if s.name == "copilot")
+    result = _executed(copilot, "x" * 100, stderr="y" * 20)
+    assert runner.extract_usage(copilot, result) == runner.Usage(
+        tokens=30, cost=None, estimated=True
+    )
+
+
+def test_extract_usage_none_when_nothing_executed() -> None:
+    """A handoff or dry run has no transcript to meter: no usage, not a zero estimate."""
+    handoff = RunResult(MANUAL_RUNNER, (), executed=False, handoff=True)
+    assert runner.extract_usage(RunnerSpec(MANUAL_RUNNER, HANDOFF), handoff) is None
+    dry = RunResult("claude", ("claude",), executed=False)
+    assert runner.extract_usage(_claude_spec(), dry) is None
+
+
+def test_builtin_usage_formats_pin_the_probed_capabilities() -> None:
+    """The claude and codex builtins report usage; copilot does not (probed 2026-07-22)."""
+    by_name = {s.name: s.usage_format for s in BUILTIN_RUNNERS}
+    assert by_name["claude"] == CLAUDE_JSON
+    assert by_name["codex"] == CODEX_JSONL
+    assert by_name["copilot"] is None
+    assert by_name[MANUAL_RUNNER] is None

@@ -355,6 +355,38 @@ def test_dispatch_record_captures_a_handoff(
     assert entry["outcome"] == "handoff"
     assert entry["command"] == []
     assert entry["duration_s"] is None
+    # Nothing executed: no transcript to meter (basicly-kjc5.1).
+    assert entry["tokens"] is None and entry["cost"] is None and entry["estimated"] is None
+
+
+def test_dispatch_record_captures_token_telemetry(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A usage-capturing dispatch lands adapter-reported tokens/cost on the record."""
+    _ready_leaf(at, monkeypatch)
+    _pin_runner(monkeypatch, "claude")
+    stdout = (
+        '{"result": "ok", "total_cost_usd": 0.25,'
+        ' "usage": {"input_tokens": 100, "output_tokens": 40}}'
+    )
+    seen = {}
+
+    def _run(spec, _prompt, _cwd, **kwargs):
+        seen["capture_usage"] = kwargs.get("capture_usage")
+        return runner.RunResult(
+            spec.name, tuple(spec.command), executed=True, returncode=0, stdout=stdout
+        )
+
+    monkeypatch.setattr(runner, "run", _run)
+    _advance(tmp_path)
+
+    assert seen["capture_usage"] is True  # the loop opts into usage reporting
+    records = run_record.load_run_records(tmp_path)
+    assert records is not None
+    entry = records["i"][0]
+    assert (entry["tokens"], entry["cost"], entry["estimated"]) == (140, 0.25, False)
+    # The redacted command reflects the usage-capturing argv actually dispatched.
+    assert entry["command"][-2:] == ["--output-format", "json"]
 
 
 def test_classify_leaf_reports_failed_runner(

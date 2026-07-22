@@ -51,10 +51,15 @@ class RunRecord:
     command: tuple[str, ...]  # redacted: the prompt argument is elided
     timestamp: str
     # Model provenance, the pinned model the dispatch ran (basicly-45ld); null
-    # when the runner pins no model. Token/cost stay reserved for a follow-on.
+    # when the runner pins no model.
     model: str | None = None
+    # Token telemetry (basicly-kjc5.1): total tokens and USD cost for the run,
+    # from adapter-reported usage where the CLI emits it. estimated=True marks
+    # a chars/4 transcript fallback (design 7.5) so calibration can down-weight
+    # it; all three stay null for a handoff — nothing executed, nothing to meter.
     tokens: int | None = None
     cost: float | None = None
+    estimated: bool | None = None
 
 
 def outcome_of(*, handoff: bool, returncode: int | None) -> str:
@@ -64,8 +69,9 @@ def outcome_of(*, handoff: bool, returncode: int | None) -> str:
     return EXECUTED if returncode == 0 else FAILED
 
 
-# Six intrinsic record fields: the raw RunResult can't be passed in as one arg
-# because it carries the un-redacted command, which must never enter this module.
+# Intrinsic record fields, one parameter each: the raw RunResult can't be passed
+# in as one arg because it carries the un-redacted command, which must never
+# enter this module.
 def build_record(  # noqa: PLR0913
     *,
     agent: str,
@@ -74,13 +80,17 @@ def build_record(  # noqa: PLR0913
     duration_s: float | None,
     command: tuple[str, ...],
     model: str | None = None,
+    tokens: int | None = None,
+    cost: float | None = None,
+    estimated: bool | None = None,
 ) -> RunRecord:
     """Assemble a :class:`RunRecord`, deriving the outcome and stamping the time.
 
     *command* must already be redacted by the caller (the prompt elided) — this
     module never sees the raw prompt. *model* is the runner's pinned model
-    (basicly-45ld), null when it pins none. Token/cost stay null here; the token
-    follow-on will plumb them through :class:`RunRecord` directly when it lands.
+    (basicly-45ld), null when it pins none. *tokens*/*cost*/*estimated* carry
+    the run's token telemetry (basicly-kjc5.1, ``runner.extract_usage``); all
+    three null when nothing executed.
     """
     return RunRecord(
         agent=agent,
@@ -90,6 +100,9 @@ def build_record(  # noqa: PLR0913
         command=tuple(command),
         timestamp=datetime.now(UTC).isoformat(),
         model=model,
+        tokens=tokens,
+        cost=cost,
+        estimated=estimated,
     )
 
 

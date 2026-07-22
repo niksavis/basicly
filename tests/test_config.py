@@ -339,6 +339,37 @@ def test_runner_config_rejects_blank_sandbox(tmp_path: Path) -> None:
         load_runner_config(tmp_path)
 
 
+def test_runner_config_parses_usage_format(tmp_path: Path) -> None:
+    """An [[runner.agents]] entry may set usage_format (basicly-kjc5.1); it lands on the spec."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[runner.agents]]\nname = "myclaude"\n'
+        'command = ["myclaude", "-p", "{prompt}"]\nusage_format = "claude-json"\n',
+        encoding="utf-8",
+    )
+    by_name = {spec.name: spec for spec in load_runner_config(tmp_path).specs}
+    assert by_name["myclaude"].usage_format == "claude-json"
+
+
+def test_runner_config_usage_format_defaults_none_for_override(tmp_path: Path) -> None:
+    """An override that omits usage_format is not re-defaulted to the builtin's value."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[runner.agents]]\nname = "claude"\ncommand = ["claude", "-p", "{prompt}"]\n',
+        encoding="utf-8",
+    )
+    by_name = {spec.name: spec for spec in load_runner_config(tmp_path).specs}
+    assert by_name["claude"].usage_format is None
+
+
+def test_runner_config_rejects_unknown_usage_format(tmp_path: Path) -> None:
+    """An unknown usage_format is a config error, not a silently unmetered adapter."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[runner.agents]]\nname = "x"\ncommand = ["x", "{prompt}"]\nusage_format = "bogus"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="usage_format"):
+        load_runner_config(tmp_path)
+
+
 def test_runner_config_overrides_builtin_command(tmp_path: Path) -> None:
     """An agent entry matching a built-in name overrides its command template."""
     (tmp_path / CONFIG_FILE).write_text(

@@ -1,7 +1,7 @@
 """Tests for the runner run-record (basicly-z6dh).
 
 The record is the keystone correlation artifact: per dispatched run it captures
-duration + exit outcome + agent (model/token fields reserved), keyed by bead id,
+duration + exit outcome + agent + model + token telemetry, keyed by bead id,
 written atomically into the self-ignored ``.basicly/usage/``. These tests pin
 that shape and — crucially — that only metadata is persisted (no prompt body).
 """
@@ -40,8 +40,8 @@ def test_outcome_of_labels_handoff_executed_and_failed() -> None:
 # --- build_record -----------------------------------------------------------
 
 
-def test_build_record_derives_outcome_stamps_time_and_reserves_fields() -> None:
-    """build_record fills outcome + timestamp; model defaults null, token/cost stay reserved."""
+def test_build_record_derives_outcome_stamps_time_and_defaults_fields() -> None:
+    """build_record fills outcome + timestamp; model and token telemetry default null."""
     entry = run_record.build_record(
         agent="claude",
         handoff=False,
@@ -54,6 +54,7 @@ def test_build_record_derives_outcome_stamps_time_and_reserves_fields() -> None:
     assert entry.duration_s == 1.5
     assert entry.timestamp  # ISO stamp present
     assert entry.model is None and entry.tokens is None and entry.cost is None
+    assert entry.estimated is None
 
 
 def test_build_record_stamps_model_provenance() -> None:
@@ -68,6 +69,38 @@ def test_build_record_stamps_model_provenance() -> None:
     )
     assert entry.model == "opus"
     assert entry.tokens is None and entry.cost is None
+
+
+def test_build_record_carries_token_telemetry(tmp_path: Path) -> None:
+    """Token telemetry (basicly-kjc5.1) persists and round-trips per adapter shape."""
+    reported = run_record.build_record(
+        agent="claude",
+        handoff=False,
+        returncode=0,
+        duration_s=1.0,
+        command=("claude", "-p", REDACTED_PROMPT, "--output-format", "json"),
+        tokens=21475,
+        cost=0.136147,
+        estimated=False,
+    )
+    estimated = run_record.build_record(
+        agent="copilot",
+        handoff=False,
+        returncode=0,
+        duration_s=1.0,
+        command=("copilot", "-p", REDACTED_PROMPT),
+        tokens=30,
+        estimated=True,
+    )
+    run_record.record(tmp_path, "i", reported)
+    run_record.record(tmp_path, "i", estimated)
+
+    first, second = _records(tmp_path)["i"]
+    assert (first["tokens"], first["cost"], first["estimated"]) == (21475, 0.136147, False)
+    assert (second["tokens"], second["cost"], second["estimated"]) == (30, None, True)
+    latest = run_record.latest_record(tmp_path, "i")
+    assert latest is not None
+    assert (latest.tokens, latest.cost, latest.estimated) == (30, None, True)
 
 
 # --- record (write) ---------------------------------------------------------

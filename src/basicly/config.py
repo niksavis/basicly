@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from . import permissions
-from .runner import AUTO, BUILTIN_RUNNERS, HEADLESS, PROMPT_VIA, RunnerSpec
+from .runner import AUTO, BUILTIN_RUNNERS, HEADLESS, PROMPT_VIA, USAGE_FORMATS, RunnerSpec
 from .schema import TECHNOLOGIES
 
 COPILOT_RUNNER = "copilot"
@@ -672,6 +672,17 @@ def _parse_runner_agent(entry: object) -> RunnerSpec:
             "(a bot git identity needs a name and an email)"
         )
 
+    # Optional usage-report format for token telemetry (basicly-kjc5.1). An
+    # entry replaces a builtin wholesale (no re-defaulting, same stance as
+    # sandbox/approval), so an override of claude/codex must restate the format
+    # to keep exact usage extraction; absent falls back to the chars/4 estimate.
+    usage_format = entry.get("usage_format")
+    if usage_format is not None and usage_format not in USAGE_FORMATS:
+        raise ValueError(
+            f"runner agent {name!r} has unknown usage_format {usage_format!r}; "
+            f"allowed: {list(USAGE_FORMATS)}"
+        )
+
     return RunnerSpec(
         name=name.strip(),
         kind=HEADLESS,
@@ -682,6 +693,7 @@ def _parse_runner_agent(entry: object) -> RunnerSpec:
         approval=approval,
         git_name=git_name,
         git_email=git_email,
+        usage_format=usage_format,
     )
 
 

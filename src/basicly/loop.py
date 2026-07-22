@@ -273,13 +273,17 @@ def _dispatch_runner(ctx: _Ctx, name: str, cwd: Path) -> AdvanceResult:
     """Run the selected agent headless in the worktree; a handoff just blocks."""
     config = load_runner_config(ctx.repo_root)
     spec = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
-    result = runner.run(spec, _dispatch_prompt(ctx.issue_id), cwd)
+    result = runner.run(spec, _dispatch_prompt(ctx.issue_id), cwd, capture_usage=True)
     _record_run(ctx, spec, result)
     if result.handoff:
         return _blocked(ctx, f"worktree {name!r} provisioned; awaiting the agent's work")
     if result.returncode != 0:
         tail = (result.stderr or result.stdout).strip().splitlines()
         detail = tail[-1] if tail else "no output"
+        # A usage-capturing failure can leave one giant JSON envelope line on
+        # stdout; cap the blocked reason so it stays a message, not a blob.
+        if len(detail) > 200:
+            detail = detail[:200] + "…"
         return _blocked(
             ctx,
             f"runner {spec.name!r} failed in worktree {name!r} "
@@ -305,13 +309,16 @@ def _record_run(ctx: _Ctx, spec: runner.RunnerSpec, result: runner.RunResult) ->
     """Persist a metadata-only run-record for this dispatch, keyed by the bead.
 
     The command is redacted here (the prompt argument elided) before it is
-    handed to the record, so no prompt or secret is ever persisted. Best-effort:
+    handed to the record, so no prompt or secret is ever persisted. Token
+    telemetry (basicly-kjc5.1) rides along: adapter-reported usage where the
+    CLI emits it, a flagged chars/4 estimate otherwise. Best-effort:
     a write failure must not fail the loop landing (same stance as the
     ``tool-usage`` telemetry hook), so an OS error is tolerated, not fatal.
     """
     command: tuple[str, ...] = ()
     if not result.handoff:
-        command = tuple(runner.format_command(spec, run_record.REDACTED_PROMPT))
+        command = tuple(runner.format_command(spec, run_record.REDACTED_PROMPT, capture_usage=True))
+    usage = runner.extract_usage(spec, result)
     entry = run_record.build_record(
         agent=spec.name,
         handoff=result.handoff,
@@ -319,6 +326,9 @@ def _record_run(ctx: _Ctx, spec: runner.RunnerSpec, result: runner.RunResult) ->
         duration_s=result.duration_s,
         command=command,
         model=spec.model,
+        tokens=usage.tokens if usage else None,
+        cost=usage.cost if usage else None,
+        estimated=usage.estimated if usage else None,
     )
     with contextlib.suppress(OSError):
         run_record.record(ctx.repo_root, ctx.issue_id, entry)

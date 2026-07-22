@@ -25,6 +25,7 @@ one before a live run with ``basicly runner dry-run``.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -59,6 +60,24 @@ MANUAL_RUNNER = "manual"
 # Detection order for ``auto``: the big 3 by PATH, then the handoff fallback.
 AUTO = "auto"
 AUTO_ORDER = ("claude", "codex", "copilot")
+
+# Usage-report formats a headless CLI can emit (basicly-kjc5.1): how a
+# usage-capturing dispatch asks the CLI to report token usage and how
+# extract_usage parses the captured output. None means the CLI reports no
+# usage, so the chars/4 transcript estimate applies.
+CLAUDE_JSON = "claude-json"  # `--output-format json`: one result object with a usage block
+CODEX_JSONL = "codex-jsonl"  # `--json`: JSONL event stream with turn.completed usage
+USAGE_FORMATS = (CLAUDE_JSON, CODEX_JSONL)
+
+# Flags appended for a usage-capturing dispatch. Trailing — after the prompt —
+# so a subcommand invocation like `codex exec` keeps the flag inside the
+# subcommand; both CLIs accept options after positional arguments. Kept out of
+# spec.command so the --help capability probe is untouched (same stance as
+# sandbox/approval).
+_USAGE_FLAGS = {
+    CLAUDE_JSON: ("--output-format", "json"),
+    CODEX_JSONL: ("--json",),
+}
 
 
 @dataclass(frozen=True)
@@ -97,6 +116,12 @@ class RunnerSpec:
     # the config parser rejects a lone half.
     git_name: str | None = None
     git_email: str | None = None
+    # Usage-report format for token telemetry (basicly-kjc5.1), one of
+    # USAGE_FORMATS or None. None — the CLI reports no token usage (copilot,
+    # probed 2026-07-22: its result event carries premium-request counts, not
+    # tokens) — makes a usage-capturing dispatch fall back to the chars/4
+    # transcript estimate (design 7.5).
+    usage_format: str | None = None
 
     @property
     def binary(self) -> str | None:
@@ -107,13 +132,14 @@ class RunnerSpec:
 # Built-in adapters. The big-3 command templates are best-effort defaults;
 # they are config-overridable and every one is printable via `runner dry-run`.
 BUILTIN_RUNNERS: tuple[RunnerSpec, ...] = (
-    RunnerSpec("claude", HEADLESS, ("claude", "-p", PROMPT_PLACEHOLDER)),
+    RunnerSpec("claude", HEADLESS, ("claude", "-p", PROMPT_PLACEHOLDER), usage_format=CLAUDE_JSON),
     RunnerSpec(
         "codex",
         HEADLESS,
         ("codex", "exec", PROMPT_PLACEHOLDER),
         sandbox="workspace-write",
         approval="on-failure",
+        usage_format=CODEX_JSONL,
     ),
     RunnerSpec("copilot", HEADLESS, ("copilot", "-p", PROMPT_PLACEHOLDER)),
     RunnerSpec(MANUAL_RUNNER, HANDOFF),
@@ -136,7 +162,7 @@ class RunResult:
     duration_s: float | None = None
 
 
-def format_command(spec: RunnerSpec, prompt: str) -> list[str]:
+def format_command(spec: RunnerSpec, prompt: str, *, capture_usage: bool = False) -> list[str]:
     """Return the exact argv *spec* would execute for *prompt*.
 
     Prompt injection is unchanged: an ``arg`` runner substitutes its
@@ -155,6 +181,13 @@ def format_command(spec: RunnerSpec, prompt: str) -> list[str]:
     ``-a <policy>`` are injected after the binary (the codex runner defaults
     them). Unset leaves the argv unchanged.
 
+    *capture_usage* (basicly-kjc5.1) appends the spec's usage-report flags so
+    the CLI emits token usage for :func:`extract_usage`. Opt-in per call site
+    because it changes the output shape (claude's stdout becomes one JSON
+    object): the loop's run-record dispatch captures usage; consumers that
+    parse the agent's answer as plain text (rubric judging, catalog review)
+    must not set it.
+
     Raises for a handoff runner (it has no command line) and for an arg-injected
     template missing its prompt placeholder — a silent drop would send an empty
     prompt.
@@ -172,7 +205,27 @@ def format_command(spec: RunnerSpec, prompt: str) -> list[str]:
         argv = list(spec.command)
     # Model outermost so it stays "right after the binary" (its documented
     # contract); sandbox/approval and deny-tool flags then follow the model.
-    return _apply_model(spec, _apply_sandbox(spec, _apply_deny_tools(spec, argv)))
+    argv = _apply_model(spec, _apply_sandbox(spec, _apply_deny_tools(spec, argv)))
+    return _apply_usage(spec, argv) if capture_usage else argv
+
+
+def _apply_usage(spec: RunnerSpec, argv: list[str]) -> list[str]:
+    """Append the usage-report flags for a usage-capturing dispatch (basicly-kjc5.1).
+
+    No format leaves the argv unchanged — the dispatch still runs, and
+    :func:`extract_usage` falls back to the transcript estimate. An unknown
+    format raises: the config parser validates the value, so this is reachable
+    only from a hand-built spec.
+    """
+    if spec.usage_format is None:
+        return argv
+    flags = _USAGE_FLAGS.get(spec.usage_format)
+    if flags is None:
+        raise ValueError(
+            f"runner {spec.name!r} has unknown usage_format {spec.usage_format!r}; "
+            f"known: {list(USAGE_FORMATS)}"
+        )
+    return [*argv, *flags]
 
 
 def _apply_model(spec: RunnerSpec, argv: list[str]) -> list[str]:
@@ -355,16 +408,20 @@ def git_identity_env(spec: RunnerSpec) -> dict[str, str] | None:
     }
 
 
-def run(spec: RunnerSpec, prompt: str, cwd: Path, *, dry_run: bool = False) -> RunResult:
+def run(
+    spec: RunnerSpec, prompt: str, cwd: Path, *, dry_run: bool = False, capture_usage: bool = False
+) -> RunResult:
     """Invoke *spec* on *prompt* in *cwd*, capturing output.
 
     A handoff runner never executes — it returns a handoff result so the caller
     surfaces the prompt and leaves the work to the driving agent/human. A dry run
-    returns the exact argv without executing it.
+    returns the exact argv without executing it. *capture_usage* asks the CLI to
+    report token usage (see :func:`format_command`); parse the result with
+    :func:`extract_usage`.
     """
     if spec.kind == HANDOFF:
         return RunResult(spec.name, (), executed=False, handoff=True)
-    argv = format_command(spec, prompt)
+    argv = format_command(spec, prompt, capture_usage=capture_usage)
     if dry_run:
         return RunResult(spec.name, tuple(argv), executed=False)
     stdin = prompt if spec.prompt_via == "stdin" else None
@@ -390,3 +447,100 @@ def run(spec: RunnerSpec, prompt: str, cwd: Path, *, dry_run: bool = False) -> R
         stderr=redact_secrets(proc.stderr),
         duration_s=duration_s,
     )
+
+
+@dataclass(frozen=True)
+class Usage:
+    """Token usage for one executed run: adapter-reported, or a chars/4 estimate."""
+
+    tokens: int
+    cost: float | None
+    estimated: bool
+
+
+# Claude usage-block keys: input_tokens excludes the cache fields (Anthropic
+# usage semantics), so the total processed is the sum of all four.
+_CLAUDE_TOKEN_KEYS = (
+    "input_tokens",
+    "cache_creation_input_tokens",
+    "cache_read_input_tokens",
+    "output_tokens",
+)
+# Codex usage keys: cached_input_tokens is a subset of input_tokens (OpenAI
+# usage semantics), so adding it would double-count.
+_CODEX_TOKEN_KEYS = ("input_tokens", "output_tokens")
+
+
+def extract_usage(spec: RunnerSpec, result: RunResult) -> Usage | None:
+    """Token usage for *result*: adapter-reported when parseable, else estimated.
+
+    None when nothing executed (a handoff or a dry run) — there is no transcript
+    to meter. A spec whose format is None (the CLI reports no usage) or output
+    that does not parse falls back to a chars/4 estimate over the captured
+    transcript, flagged ``estimated`` so calibration can down-weight it
+    (design 7.5).
+    """
+    if not result.executed:
+        return None
+    reported: Usage | None = None
+    if spec.usage_format == CLAUDE_JSON:
+        reported = _claude_json_usage(result.stdout)
+    elif spec.usage_format == CODEX_JSONL:
+        reported = _codex_jsonl_usage(result.stdout)
+    if reported is not None:
+        return reported
+    return Usage(tokens=(len(result.stdout) + len(result.stderr)) // 4, cost=None, estimated=True)
+
+
+def _claude_json_usage(stdout: str) -> Usage | None:
+    """Parse claude's ``--output-format json`` result object (one JSON object).
+
+    Tokens sum the usage block's input/output/cache fields; cost comes from
+    ``total_cost_usd``. None on any parse miss so the caller falls back to the
+    estimate.
+    """
+    try:
+        obj = json.loads(stdout.strip() or "null")
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(obj, dict) or not isinstance(obj.get("usage"), dict):
+        return None
+    usage = obj["usage"]
+    values = [usage[key] for key in _CLAUDE_TOKEN_KEYS if isinstance(usage.get(key), int)]
+    if not values:
+        return None
+    cost = obj.get("total_cost_usd")
+    return Usage(
+        tokens=sum(values),
+        cost=float(cost) if isinstance(cost, int | float) else None,
+        estimated=False,
+    )
+
+
+def _codex_jsonl_usage(stdout: str) -> Usage | None:
+    """Sum token usage over codex's ``--json`` event stream (JSONL).
+
+    Each ``turn.completed`` event carries a usage object; input and output
+    tokens sum across turns. Codex reports no cost. None when no usage event
+    parses, so the caller falls back to the estimate.
+    """
+    total = 0
+    found = False
+    for line in stdout.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            event = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict) or event.get("type") != "turn.completed":
+            continue
+        usage = event.get("usage")
+        if not isinstance(usage, dict):
+            continue
+        values = [usage[key] for key in _CODEX_TOKEN_KEYS if isinstance(usage.get(key), int)]
+        if values:
+            total += sum(values)
+            found = True
+    return Usage(tokens=total, cost=None, estimated=False) if found else None

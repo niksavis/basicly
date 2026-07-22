@@ -852,8 +852,15 @@ run outcome; the `manual` handoff runner keeps the block-and-resume contract unt
 failed run blocks with the runner name and exit code. Each dispatch also writes a
 metadata-only **run-record** keyed by bead id into the self-ignored `.basicly/usage/`
 (`run_record.py`, same atomic tmp-write pattern as `tool-usage`): wall-clock duration, exit
-outcome (executed/handoff/failed), agent, and the pinned model when the runner sets one, with
-token/cost fields reserved for a follow-on bead. Only metadata is persisted — the command is stored with the prompt argument
+outcome (executed/handoff/failed), agent, the pinned model when the runner sets one, and
+token/cost telemetry (`basicly-kjc5.1`, factory design §7.5). For telemetry, a loop dispatch
+appends the adapter's usage-report flags (claude `--output-format json`, codex `--json`;
+opt-in per call site — rubric judging and catalog review parse plain-text answers and stay
+unflagged) and `runner.extract_usage` parses reported tokens/cost from the captured output;
+when a CLI reports no usage (copilot, probed 2026-07) or the output does not parse, it falls
+back to a chars/4 transcript estimate flagged `estimated` so calibration can down-weight it.
+A `[[runner.agents]]` override sets `usage_format` (`claude-json`/`codex-jsonl`) to keep
+exact extraction on a custom command. Only metadata is persisted — the command is stored with the prompt argument
 elided, never the prompt body or captured output. This is the correlation foundation for
 agent attribution, model provenance, and the cross-repo fleet rollup.
 
@@ -883,9 +890,9 @@ recent `--window` dispatched runs are compared against everything older, and a b
 regression is flagged when the recent failure rate exceeds the baseline by a fixed delta with a
 minimum sample size in each window. `--fleet [--root PATH]` rolls the per-repo report across the
 housed repos (reusing `fleet.discover_repos`). Everything is read-only, deterministic (no
-wall-clock enters the payload), and advisory — nothing gates on a score; token/cost health waits
-on the reserved run-record fields being plumbed, and a persisted time-series/charting layer is out
-of scope.
+wall-clock enters the payload), and advisory — nothing gates on a score; a token/cost health
+dimension over the now-populated run-record telemetry (`basicly-kjc5.1`) and a persisted
+time-series/charting layer are out of scope.
 
 **Structured needs-input outcome (`basicly-o774`, D5/D6 convergence).** The stop-instead-of-guess
 policy used to be soft prose in the `knowledge-priming`/`decision-protocol` fragments the model
