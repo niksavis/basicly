@@ -46,3 +46,6 @@ node_modules/
 # package.json and package-lock.json are tracked to pin markdownlint-cli2.
 # br doctor per-run artifacts
 .doctor/
+
+# bv (beads viewer) local config and caches
+.bv/
