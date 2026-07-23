@@ -257,13 +257,19 @@ def test_dispatch_blocks_on_needs_input_sentinel(
         return runner.RunResult(spec.name, tuple(spec.command), executed=True, returncode=0)
 
     monkeypatch.setattr(runner, "run", _run)
+    traced: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        policy, "record_needs_input", lambda _r, issue, fact: traced.append((issue, fact))
+    )
     result = _advance(tmp_path)
     assert result.blocked
     assert result.needs_input == "prod db dialect"
     assert "needs input" in result.detail
     assert "schema.sql has no vendor marker" in result.detail
-    # Consumed so a re-dispatch (once the fact is supplied) starts clean.
+    # Consumed so a re-dispatch (once the fact is supplied) starts clean...
     assert not sentinel.exists()
+    # ...which makes the durable marker the L3 audit trace (basicly-kjc5.3).
+    assert traced == [("i", "prod db dialect")]
 
 
 def test_dispatch_writes_a_run_record_keyed_by_bead(

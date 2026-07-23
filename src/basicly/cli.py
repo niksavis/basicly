@@ -44,6 +44,7 @@ from . import (
 )
 from .catalog import bundled_catalog_root, iter_catalog_files
 from .config import (
+    AUTONOMY_LEVELS,
     CHECKPOINTS,
     CONFIG_FILE,
     CONSUMER_CI_WORKFLOW,
@@ -1911,6 +1912,7 @@ def cmd_policy(args: argparse.Namespace) -> int:
         "dor": _cmd_policy_dor,
         "gate": _cmd_policy_gate,
         "checkpoint": _cmd_policy_checkpoint,
+        "grant": _cmd_policy_grant,
         "rework": _cmd_policy_rework,
     }
     handler = handlers.get(args.policy_command)
@@ -1964,6 +1966,7 @@ def _approve_checkpoint(repo_root: Path, args: argparse.Namespace) -> int:
         args.name,
         interactive=sys.stdin.isatty(),
         confirm=args.confirm,
+        grant_root=args.root,
     )
     if result.status == "approved":
         print(f"checkpoint {args.name}: APPROVED ({args.issue})")
@@ -1980,6 +1983,57 @@ def _approve_checkpoint(repo_root: Path, args: argparse.Namespace) -> int:
         )
         return 1
     print(f"checkpoint {args.name}: REFUSED ({args.issue}) - {result.detail}", file=sys.stderr)
+    return 1
+
+
+def _cmd_policy_grant(args: argparse.Namespace) -> int:
+    """Show, issue, or revoke a session autonomy grant (factory design D3).
+
+    Issuance runs through the same anti-autopilot gate as checkpoint approval:
+    interactive TTY, or a one-time confirm code a human must relay — an agent
+    can never self-escalate. With no --level and no --revoke, reports the
+    active grant.
+    """
+    repo_root = _repo_root()
+    if args.revoke:
+        policy.revoke_grant(repo_root, args.issue)
+        print(f"grant: REVOKED ({args.issue})")
+        return 0
+    if args.level is None:
+        grant = policy.active_grant(repo_root, args.issue)
+        if grant is None:
+            print(f"grant: NONE ({args.issue}) - every checkpoint is human (L0)")
+            return 1
+        budget = f", token budget {grant.token_budget}" if grant.token_budget is not None else ""
+        covers = ", ".join(policy.GRANT_COVERAGE[grant.level]) or "(nothing)"
+        print(f"grant: {grant.level} ({args.issue}){budget} - delegable: {covers}")
+        return 0
+    result = policy.issue_grant_guarded(
+        repo_root,
+        args.issue,
+        args.level,
+        args.token_budget,
+        load_policy_config(repo_root),
+        interactive=sys.stdin.isatty(),
+        confirm=args.confirm,
+    )
+    if result.status == "approved":
+        print(f"grant: ISSUED {args.level} ({args.issue})")
+        return 0
+    if result.status == "challenge":
+        rerun = (
+            f"basicly policy grant {args.issue} --level {args.level}"
+            + (f" --token-budget {args.token_budget}" if args.token_budget is not None else "")
+            + f" --confirm {result.code}"
+        )
+        print(
+            f"grant: CONFIRMATION REQUIRED ({args.issue})\n"
+            "  no interactive terminal detected; a human must re-run with the one-time code:\n"
+            f"  {rerun}",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"grant: REFUSED ({args.issue}) - {result.detail}", file=sys.stderr)
     return 1
 
 
@@ -2601,9 +2655,33 @@ def _add_policy_parser(subparsers: argparse._SubParsersAction) -> None:
     p_ck.add_argument("name", choices=CHECKPOINTS)
     p_ck.add_argument("--approve", action="store_true", help="Record human approval")
     p_ck.add_argument(
+        "--root",
+        metavar="ISSUE",
+        help="Session root carrying the grant ledger (default: the issue itself)",
+    )
+    p_ck.add_argument(
         "--confirm",
         metavar="CODE",
         help="One-time code from a prior non-interactive --approve (required off a TTY)",
+    )
+    p_gr = policy_sub.add_parser(
+        "grant", help="Show, issue, or revoke a session autonomy grant (L1-L3)"
+    )
+    p_gr.add_argument("issue", help="The session root issue carrying the grant ledger")
+    p_gr.add_argument(
+        "--level", choices=[lvl for lvl in AUTONOMY_LEVELS if lvl != "L0"], help="Level to issue"
+    )
+    p_gr.add_argument(
+        "--token-budget",
+        type=int,
+        metavar="TOKENS",
+        help="Session spend ceiling in run-record tokens (required for L2+)",
+    )
+    p_gr.add_argument("--revoke", action="store_true", help="Revoke the active grant")
+    p_gr.add_argument(
+        "--confirm",
+        metavar="CODE",
+        help="One-time confirm code for non-interactive issuance",
     )
     p_rw = policy_sub.add_parser("rework", help="Show or record a rework attempt")
     p_rw.add_argument("issue")

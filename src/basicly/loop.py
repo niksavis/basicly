@@ -296,6 +296,9 @@ def _dispatch_runner(ctx: _Ctx, name: str, cwd: Path) -> AdvanceResult:
     # the fact is supplied) starts clean.
     needs = needs_input.take(cwd)
     if needs is not None:
+        # Durable trace (basicly-kjc5.3): the sentinel is consumed here, so the
+        # marker comment is what the L3 lights-out precondition counts (D3).
+        policy.record_needs_input(ctx.repo_root, ctx.issue_id, needs.fact)
         reason = (
             f"runner {spec.name!r} needs input in worktree {name!r}: {needs.detail or needs.fact}"
         )

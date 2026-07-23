@@ -347,6 +347,12 @@ DEFAULT_CONTEXT_CEILING = 0.6
 # The three human checkpoints the loop enforces (architecture §12.2).
 CHECKPOINTS = ("classify", "decompose", "ship")
 
+# Autonomy levels for the session grant ledger (factory design D3,
+# basicly-kjc5.3), lowest to highest. [policy] autonomy is the repo's grantable
+# ceiling; the default keeps every checkpoint human (today's behavior).
+AUTONOMY_LEVELS = ("L0", "L1", "L2", "L3")
+DEFAULT_AUTONOMY = "L0"
+
 # The fixed br work classes the classifier may assign (architecture §12.1).
 # bug/chore are leaf tracks; task/feature/epic nest fractally.
 WORK_TYPES = ("bug", "chore", "task", "feature", "epic")
@@ -509,6 +515,9 @@ class PolicyConfig:
 
     required_gates: tuple[str, ...]
     max_rework: int
+    # The highest grant level this repo allows issuing (factory design D3);
+    # autonomy is opt-in, so the default ceiling makes grants unissuable.
+    autonomy: str = DEFAULT_AUTONOMY
 
 
 def load_policy_config(repo_root: Path) -> PolicyConfig:
@@ -527,7 +536,13 @@ def load_policy_config(repo_root: Path) -> PolicyConfig:
     if not (isinstance(max_rework, int) and not isinstance(max_rework, bool) and max_rework >= 0):
         max_rework = defaults.max_rework
 
-    return PolicyConfig(required_gates=required_gates, max_rework=max_rework)
+    autonomy = section.get("autonomy")
+    if not (isinstance(autonomy, str) and autonomy.strip() in AUTONOMY_LEVELS):
+        autonomy = DEFAULT_AUTONOMY
+    else:
+        autonomy = autonomy.strip()
+
+    return PolicyConfig(required_gates=required_gates, max_rework=max_rework, autonomy=autonomy)
 
 
 @dataclass(frozen=True)

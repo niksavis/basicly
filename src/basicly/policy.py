@@ -22,8 +22,9 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import run_record
 from .br import run_br as _run_br
-from .config import CHECKPOINTS, PolicyConfig, SizingConfig, load_policy_config
+from .config import AUTONOMY_LEVELS, CHECKPOINTS, PolicyConfig, SizingConfig, load_policy_config
 
 # Prefix for the harness's own comment markers, so they are both machine-parseable
 # and obvious to a human reading the issue's comments.
@@ -303,20 +304,26 @@ class ApprovalResult:
     detail: str = ""
 
 
-def approve_checkpoint_guarded(
+def approve_checkpoint_guarded(  # noqa: PLR0913 — mirrors the CLI surface
     repo_root: Path,
     issue_id: str,
     name: str,
     *,
     interactive: bool,
     confirm: str | None = None,
+    grant_root: str | None = None,
 ) -> ApprovalResult:
-    """Approve a checkpoint only via an interactive TTY or a valid confirm code.
+    """Approve a checkpoint via a TTY, a valid confirm code, or a covering grant.
 
     Interactive callers approve directly. A non-interactive caller with no
-    ``confirm`` gets a one-time ``challenge`` code it must echo back; a matching,
-    unexpired code approves, anything else is ``rejected`` with no marker recorded.
-    Already-approved checkpoints short-circuit to ``approved`` (idempotent).
+    ``confirm`` is first checked against the session's autonomy grant ledger
+    (factory design D3, basicly-kjc5.3): a grant on *grant_root* (default: the
+    issue itself) whose level covers *name* — with the lights-out preconditions
+    holding for ship, and spend under the grant's token budget — approves with
+    an attributed marker. Otherwise the caller gets a one-time ``challenge``
+    code it must relay to a human; a matching, unexpired code approves, anything
+    else is ``rejected`` with no marker recorded. Already-approved checkpoints
+    short-circuit to ``approved`` (idempotent).
     """
     if name not in CHECKPOINTS:
         raise ValueError(f"unknown checkpoint {name!r}; expected one of {list(CHECKPOINTS)}")
@@ -326,11 +333,293 @@ def approve_checkpoint_guarded(
         approve_checkpoint(repo_root, issue_id, name)
         return ApprovalResult("approved")
     if confirm is None:
+        delegated = _grant_approval(repo_root, issue_id, name, grant_root or issue_id)
+        if delegated is not None:
+            return delegated
         return ApprovalResult("challenge", code=_issue_confirm_code(repo_root, issue_id, name))
     if _consume_confirm_code(repo_root, issue_id, name, confirm):
         approve_checkpoint(repo_root, issue_id, name)
         return ApprovalResult("approved")
     return ApprovalResult("rejected", detail="invalid or expired confirm code")
+
+
+# --- Autonomy grants: session-scoped ledger (basicly-kjc5.3, design D3) ------
+#
+# A grant is a [harness-policy] comment marker on the session's root issue —
+# the same durable, attributable mechanism checkpoints use. Issuance goes
+# through the interactive-confirmation gate above, so an agent can never
+# self-escalate; like that gate, this is a mitigation, not a boundary (a
+# process sharing the human's identity could forge the comment — the D1 gap).
+# Grants expire with the session (the root issue closing) and are revoked by a
+# later marker; the last grant/revocation in comment order wins.
+
+# Checkpoints each level may delegate. Ship additionally requires the
+# lights-out preconditions (deterministic, checked at approval time).
+GRANT_COVERAGE: dict[str, tuple[str, ...]] = {
+    "L0": (),
+    "L1": ("decompose",),
+    "L2": ("classify", "decompose"),
+    "L3": ("classify", "decompose", "ship"),
+}
+
+_GRANT_PREFIX = f"{MARKER} grant level="
+_REVOKE_MARKER = f"{MARKER} grant revoked"
+_NEEDS_INPUT_MARKER = f"{MARKER} needs-input"
+
+
+@dataclass(frozen=True)
+class Grant:
+    """One active autonomy grant: a level and its spend ceiling."""
+
+    level: str
+    # Required for L2+ at issuance (unbounded lights-out is unreachable);
+    # None only on an L1 grant.
+    token_budget: int | None
+
+
+def _grant_marker(grant: Grant) -> str:
+    text = f"{_GRANT_PREFIX}{grant.level}"
+    if grant.token_budget is not None:
+        text += f" budget={grant.token_budget}"
+    return text
+
+
+def _parse_grant(text: str) -> Grant | None:
+    """Parse a grant marker's first line, or None when it is not one."""
+    stripped = text.strip()
+    first_line = stripped.splitlines()[0] if stripped else ""
+    if not first_line.startswith(_GRANT_PREFIX):
+        return None
+    tokens = first_line[len(_GRANT_PREFIX) :].split()
+    if not tokens or tokens[0] not in AUTONOMY_LEVELS:
+        return None
+    budget: int | None = None
+    for token in tokens[1:]:
+        if token.startswith("budget="):
+            try:
+                budget = int(token[len("budget=") :])
+            except ValueError:
+                return None
+    # Mirror _grant_refusal: an L2+ marker without a positive budget is not a
+    # grant — a hand-written sloppy marker must never be *more* powerful than
+    # a well-formed issued one (unmetered lights-out).
+    if tokens[0] in ("L2", "L3") and not (isinstance(budget, int) and budget > 0):
+        return None
+    return Grant(level=tokens[0], token_budget=budget)
+
+
+def active_grant(repo_root: Path, root_issue: str) -> Grant | None:
+    """The root issue's active grant: the last grant/revocation marker wins.
+
+    Grants expire with the session, so a grant on a closed root issue is dead
+    regardless of markers — without this, an old session's L3 grant would stay
+    live forever unless someone remembered to revoke it.
+    """
+    proc = _run_br(repo_root, ["show", root_issue, "--json"])
+    data = json.loads(proc.stdout)
+    record = data[0] if isinstance(data, list) else data
+    if isinstance(record, dict) and str(record.get("status", "")) == "closed":
+        return None
+    grant: Grant | None = None
+    for text in _comment_texts(repo_root, root_issue):
+        if _marker_matches(text, _REVOKE_MARKER):
+            grant = None
+            continue
+        parsed = _parse_grant(text)
+        if parsed is not None:
+            grant = parsed
+    return grant
+
+
+def _grant_refusal(level: str, token_budget: int | None, config: PolicyConfig) -> str | None:
+    """The deterministic reason issuing this grant must be refused, or None.
+
+    An unknown or L0 level, a level above the repo's ``[policy] autonomy``
+    ceiling, or an L2+ grant without a positive token budget are rejected
+    outright, before any interactivity gate.
+    """
+    if level not in AUTONOMY_LEVELS or level == "L0":
+        grantable = [lvl for lvl in AUTONOMY_LEVELS if lvl != "L0"]
+        return f"grant level must be one of {grantable}"
+    if AUTONOMY_LEVELS.index(level) > AUTONOMY_LEVELS.index(config.autonomy):
+        return (
+            f"level {level} exceeds the [policy] autonomy ceiling "
+            f"({config.autonomy}); raise it in basicly.toml to opt in"
+        )
+    if level in ("L2", "L3") and not (isinstance(token_budget, int) and token_budget > 0):
+        return (
+            f"an {level} grant requires a positive token_budget "
+            "(unbounded lights-out is unreachable by design)"
+        )
+    return None
+
+
+def issue_grant_guarded(  # noqa: PLR0913 — mirrors the CLI surface
+    repo_root: Path,
+    root_issue: str,
+    level: str,
+    token_budget: int | None,
+    config: PolicyConfig,
+    *,
+    interactive: bool,
+    confirm: str | None = None,
+) -> ApprovalResult:
+    """Issue a grant only via an interactive TTY or a valid confirm code (D3).
+
+    The same anti-autopilot gate as checkpoint approval: an agent without a TTY
+    gets a challenge code only a human should relay back — so a grant can never
+    be self-issued. Deterministic refusals (:func:`_grant_refusal`) come first.
+    """
+    refusal = _grant_refusal(level, token_budget, config)
+    if refusal is not None:
+        return ApprovalResult("rejected", detail=refusal)
+    grant = Grant(level=level, token_budget=token_budget)
+    if interactive:
+        _run_br(repo_root, ["comments", "add", root_issue, _grant_marker(grant)])
+        return ApprovalResult("approved")
+    # The code is keyed on level AND budget, so the exact grant the human saw
+    # in the rerun hint is the only one the code can issue.
+    checkpoint_name = f"grant-{level}-{token_budget}"
+    if confirm is None:
+        return ApprovalResult(
+            "challenge", code=_issue_confirm_code(repo_root, root_issue, checkpoint_name)
+        )
+    if _consume_confirm_code(repo_root, root_issue, checkpoint_name, confirm):
+        _run_br(repo_root, ["comments", "add", root_issue, _grant_marker(grant)])
+        return ApprovalResult("approved")
+    return ApprovalResult("rejected", detail="invalid or expired confirm code")
+
+
+def revoke_grant(repo_root: Path, root_issue: str) -> None:
+    """Record a revocation marker; the ledger's last-wins scan turns the grant off."""
+    _run_br(repo_root, ["comments", "add", root_issue, _REVOKE_MARKER])
+
+
+def _grant_approval(
+    repo_root: Path, issue_id: str, name: str, root_issue: str
+) -> ApprovalResult | None:
+    """A delegated approval under the root's grant, or None to fall back to a challenge.
+
+    None (no grant, or the level does not cover *name*) drops to the normal
+    challenge path. A covering grant still refuses — also via the challenge
+    fallback, so the decision returns to a human — when the session's
+    run-record spend has reached the grant's token budget, or when a ship
+    approval finds any lights-out precondition violated (any wrinkle drops
+    ship back to human — D3).
+    """
+    grant = active_grant(repo_root, root_issue)
+    if grant is None or name not in GRANT_COVERAGE.get(grant.level, ()):
+        return None
+    session_ids = _session_issue_ids(repo_root, root_issue)
+    if issue_id not in session_ids:
+        # grant_root is caller-supplied: a grant must never authorize approvals
+        # outside its own session (and the preconditions below are keyed on the
+        # session, so approving a foreign issue would also check the wrong one).
+        return None
+    config = load_policy_config(repo_root)
+    if grant.token_budget is not None:
+        spent = session_spend_tokens(repo_root, root_issue, ids=session_ids)
+        if spent >= grant.token_budget:
+            return None  # spend halt: human-only until re-granted
+    if name == "ship":
+        violations = lights_out_violations(repo_root, root_issue, config, ids=session_ids)
+        if violations:
+            return None
+    marker = f"{_checkpoint_marker(name)} under grant {grant.level}"
+    _run_br(repo_root, ["comments", "add", issue_id, marker])
+    return ApprovalResult("approved", detail=f"delegated under {grant.level} grant")
+
+
+# --- Session accounting for grants: spend, needs-input, preconditions --------
+
+
+def _session_issue_ids(repo_root: Path, root_issue: str) -> tuple[str, ...]:
+    """The session's bead ids: the root plus its parent-child tree, transitively.
+
+    The tree nests fractally (a feature child decomposes into its own
+    children), and both the spend meter and the lights-out preconditions claim
+    session-wide coverage — so grandchildren must count too, or their spend and
+    needs-input events would silently bypass the grant (D3).
+    """
+    seen: dict[str, None] = {root_issue: None}  # insertion-ordered BFS
+    queue = [root_issue]
+    while queue:
+        proc = _run_br(repo_root, ["show", queue.pop(0), "--json"])
+        data = json.loads(proc.stdout)
+        record = data[0] if isinstance(data, list) else data
+        if not isinstance(record, dict):
+            continue
+        for dep in record.get("dependents") or []:
+            is_child = isinstance(dep, dict) and dep.get("dependency_type") == "parent-child"
+            if is_child and "id" in dep and str(dep["id"]) not in seen:
+                seen[str(dep["id"])] = None
+                queue.append(str(dep["id"]))
+    return tuple(seen)
+
+
+def session_spend_tokens(
+    repo_root: Path, root_issue: str, *, ids: tuple[str, ...] | None = None
+) -> int:
+    """Total run-record tokens across the session's beads (the grant's meter).
+
+    Estimated (chars/4) samples count too — a spend ceiling must err toward
+    halting, never toward uncounted spend. *ids* skips re-walking the session
+    tree when the caller already has it.
+    """
+    records = run_record.load_run_records(repo_root) or {}
+    total = 0
+    for issue_id in ids if ids is not None else _session_issue_ids(repo_root, root_issue):
+        history = records.get(issue_id)
+        if not isinstance(history, list):
+            continue
+        for entry in history:
+            tokens = entry.get("tokens") if isinstance(entry, dict) else None
+            if isinstance(tokens, int) and not isinstance(tokens, bool):
+                total += tokens
+    return total
+
+
+def record_needs_input(repo_root: Path, issue_id: str, fact: str) -> None:
+    """Durably record a needs-input event as a marker comment on *issue_id*.
+
+    The sentinel file is consumed when the loop surfaces it, so this marker is
+    the trace the L3 lights-out precondition counts (zero needs-input events in
+    the session — D3).
+    """
+    _run_br(repo_root, ["comments", "add", issue_id, f"{_NEEDS_INPUT_MARKER} {fact}"])
+
+
+def lights_out_violations(
+    repo_root: Path,
+    root_issue: str,
+    config: PolicyConfig,
+    *,
+    ids: tuple[str, ...] | None = None,
+) -> tuple[str, ...]:
+    """The deterministic reasons an L3 ship delegation must refuse (D3).
+
+    All three preconditions are session-wide: every required gate green on the
+    root, zero rework escalations on any session bead, and zero needs-input
+    events recorded anywhere in the session.
+    """
+    violations: list[str] = []
+    status = gate_status(repo_root, root_issue, config)
+    if not status.can_advance:
+        pending = ", ".join((*status.required_failed, *status.required_missing))
+        violations.append(f"required gates not green on {root_issue}: {pending}")
+    for issue_id in ids if ids is not None else _session_issue_ids(repo_root, root_issue):
+        texts = _comment_texts(repo_root, issue_id)
+        needs = sum(1 for text in texts if _marker_matches(text, _NEEDS_INPUT_MARKER))
+        if needs:
+            violations.append(f"{needs} needs-input event(s) recorded on {issue_id}")
+        for gate in config.required_gates:
+            marker = _rework_marker(gate)
+            attempts = sum(1 for text in texts if _marker_matches(text, marker))
+            if attempts >= config.max_rework:
+                violations.append(
+                    f"rework escalation on {issue_id} (gate {gate}: {attempts}/{config.max_rework})"
+                )
+    return tuple(violations)
 
 
 def load_policy(repo_root: Path) -> PolicyConfig:
