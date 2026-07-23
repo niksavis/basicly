@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import policy
+from basicly import policy, run_record
 from basicly.config import PolicyConfig, SizingConfig
 
 
@@ -25,23 +25,36 @@ class _FakeBr:
     subsequent list reads, exactly as the real tracker behaves.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 — one knob per br surface the fake serves
         self,
         *,
         lint_missing: list[str] | None = None,
         gates: list[dict] | None = None,
         acceptance_criteria: str | None = None,
+        dependents: list[dict] | None = None,
+        status: str = "open",
+        records: dict[str, dict] | None = None,
     ):
         self.lint_missing = lint_missing or []
         self.gates = gates or []
         self.acceptance_criteria = acceptance_criteria
+        self.dependents = dependents or []
+        self.status = status
+        self.records = records or {}
         self.comments: list[str] = []
 
     def __call__(self, _repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
         if args[:1] == ["lint"]:
             return _Proc(json.dumps({"results": [{"missing": self.lint_missing}]}))
         if args[:1] == ["show"]:
-            return _Proc(json.dumps([{"acceptance_criteria": self.acceptance_criteria}]))
+            if args[1] in self.records:
+                return _Proc(json.dumps([self.records[args[1]]]))
+            record = {
+                "acceptance_criteria": self.acceptance_criteria,
+                "dependents": self.dependents,
+                "status": self.status,
+            }
+            return _Proc(json.dumps([record]))
         if args[:2] == ["gate", "list"]:
             return _Proc(json.dumps({"results": self.gates}))
         if args[:2] == ["comments", "list"]:
@@ -358,3 +371,285 @@ def test_check_working_set_below_floor_says_merge_with_sibling() -> None:
 def test_check_working_set_floor_skips_greenfield_scope() -> None:
     """A scope matching no existing files (nothing to read) is never floor-refused."""
     assert policy.check_working_set("new files child", 2_000, 0, _sizing()) is None
+
+
+# --- Autonomy grants: session-scoped ledger (basicly-kjc5.3, design D3) --------
+
+
+L3_CONFIG = PolicyConfig(required_gates=("verify",), max_rework=2, autonomy="L3")
+_VERIFY_GREEN = [{"gate": "verify", "provider": "t", "passed": True}]
+
+
+def test_active_grant_last_marker_wins_and_revocation_turns_it_off(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The ledger is a last-wins scan: later grants replace, a revocation clears."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    assert policy.active_grant(tmp_path, "root") is None
+
+    fake.comments.append("[harness-policy] grant level=L1")
+    fake.comments.append("[harness-policy] grant level=L2 budget=100")
+    assert policy.active_grant(tmp_path, "root") == policy.Grant(level="L2", token_budget=100)
+
+    policy.revoke_grant(tmp_path, "root")
+    assert policy.active_grant(tmp_path, "root") is None
+
+    fake.comments.append("[harness-policy] grant level=L1")
+    assert policy.active_grant(tmp_path, "root") == policy.Grant(level="L1", token_budget=None)
+
+
+def test_parse_grant_skips_malformed_markers(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A garbled level or budget never yields a phantom grant."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    fake.comments += [
+        "[harness-policy] grant level=L9",
+        "[harness-policy] grant level=L2 budget=lots",
+        "[harness-policy] grant level=L3",  # unmetered L2+ must not parse
+        "[harness-policy] grant level=L2 budget=-5",
+        "plain comment",
+    ]
+    assert policy.active_grant(tmp_path, "root") is None
+
+
+def test_issue_grant_interactive_records_the_marker(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A TTY caller under the config ceiling issues directly."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    result = policy.issue_grant_guarded(tmp_path, "root", "L2", 50_000, L3_CONFIG, interactive=True)
+    assert result.status == "approved"
+    assert policy.active_grant(tmp_path, "root") == policy.Grant(level="L2", token_budget=50_000)
+
+
+def test_issue_grant_refuses_above_the_autonomy_ceiling(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """[policy] autonomy is the opt-in ceiling; the default L0 makes grants unissuable."""
+    _install(monkeypatch, _FakeBr())
+    l0 = PolicyConfig(required_gates=("verify",), max_rework=2)
+    result = policy.issue_grant_guarded(tmp_path, "root", "L1", None, l0, interactive=True)
+    assert result.status == "rejected"
+    assert "autonomy ceiling" in result.detail
+
+
+def test_issue_grant_refuses_l2_plus_without_token_budget(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Unbounded lights-out must be unreachable: L2+ needs a positive budget."""
+    _install(monkeypatch, _FakeBr())
+    for level in ("L2", "L3"):
+        result = policy.issue_grant_guarded(
+            tmp_path, "root", level, None, L3_CONFIG, interactive=True
+        )
+        assert result.status == "rejected"
+        assert "token_budget" in result.detail
+
+
+def test_issue_grant_non_interactive_needs_a_relayed_code(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An agent cannot self-issue a grant: no TTY yields a challenge, the code approves."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _pin_code(monkeypatch, "cafe0123")
+    first = policy.issue_grant_guarded(tmp_path, "root", "L1", None, L3_CONFIG, interactive=False)
+    assert first.status == "challenge" and first.code == "cafe0123"
+    assert policy.active_grant(tmp_path, "root") is None
+
+    second = policy.issue_grant_guarded(
+        tmp_path, "root", "L1", None, L3_CONFIG, interactive=False, confirm="cafe0123"
+    )
+    assert second.status == "approved"
+    assert policy.active_grant(tmp_path, "root") == policy.Grant(level="L1", token_budget=None)
+
+
+def test_grant_delegates_only_covered_checkpoints(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An L2 grant approves classify/decompose non-interactively; ship still challenges."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    fake.comments.append("[harness-policy] grant level=L2 budget=100000")
+
+    for name in ("classify", "decompose"):
+        result = policy.approve_checkpoint_guarded(tmp_path, "i", name, interactive=False)
+        assert result.status == "approved"
+        assert "delegated under L2 grant" in result.detail
+        assert policy.checkpoint_approved(tmp_path, "i", name)
+
+    result = policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
+    assert result.status == "challenge"
+    assert not policy.checkpoint_approved(tmp_path, "i", "ship")
+
+
+def test_grant_spend_halt_drops_delegation_to_human(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Run-record spend at the budget refuses delegation (human-only until re-granted)."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    fake.comments.append("[harness-policy] grant level=L2 budget=100")
+    entry = run_record.build_record(
+        agent="t", handoff=False, returncode=0, duration_s=1.0, command=("t",), tokens=150
+    )
+    run_record.record(tmp_path, "root", entry)
+
+    assert policy.session_spend_tokens(tmp_path, "root") == 150
+    result = policy.approve_checkpoint_guarded(
+        tmp_path, "root", "classify", interactive=False, grant_root="root"
+    )
+    assert result.status == "challenge"
+    assert not policy.checkpoint_approved(tmp_path, "root", "classify")
+
+
+def test_session_spend_sums_the_children_too(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The grant's meter covers the whole session: root plus parent-child beads."""
+    fake = _FakeBr(
+        dependents=[{"id": "root.1", "dependency_type": "parent-child", "status": "open"}]
+    )
+    _install(monkeypatch, fake)
+    for issue_id, tokens in (("root", 40), ("root.1", 60), ("unrelated", 999)):
+        entry = run_record.build_record(
+            agent="t", handoff=False, returncode=0, duration_s=1.0, command=("t",), tokens=tokens
+        )
+        run_record.record(tmp_path, issue_id, entry)
+    assert policy.session_spend_tokens(tmp_path, "root") == 100
+
+
+def test_l3_ship_delegates_only_when_preconditions_hold(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Lights-out ship needs green gates, no rework escalation, no needs-input (D3)."""
+    fake = _FakeBr(gates=_VERIFY_GREEN)
+    _install(monkeypatch, fake)
+    fake.comments.append("[harness-policy] grant level=L3 budget=1000000")
+
+    result = policy.approve_checkpoint_guarded(tmp_path, "root", "ship", interactive=False)
+    assert result.status == "approved"
+    assert "delegated under L3 grant" in result.detail
+
+
+def test_l3_ship_refuses_on_any_wrinkle(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Any precondition violation drops ship back to human (challenge, no marker)."""
+    # A needs-input event recorded in the session.
+    fake = _FakeBr(gates=_VERIFY_GREEN)
+    _install(monkeypatch, fake)
+    fake.comments.append("[harness-policy] grant level=L3 budget=1000000")
+    policy.record_needs_input(tmp_path, "root", "which API version")
+    result = policy.approve_checkpoint_guarded(tmp_path, "root", "ship", interactive=False)
+    assert result.status == "challenge"
+
+    # A rework escalation (attempts at the cap).
+    fake = _FakeBr(gates=_VERIFY_GREEN)
+    _install(monkeypatch, fake)
+    fake.comments.append("[harness-policy] grant level=L3 budget=1000000")
+    fake.comments += ["[harness-policy] rework gate=verify"] * 2
+    result = policy.approve_checkpoint_guarded(tmp_path, "root", "ship", interactive=False)
+    assert result.status == "challenge"
+
+    # Required gate not green.
+    fake = _FakeBr(gates=[])
+    _install(monkeypatch, fake)
+    fake.comments.append("[harness-policy] grant level=L3 budget=1000000")
+    result = policy.approve_checkpoint_guarded(tmp_path, "root", "ship", interactive=False)
+    assert result.status == "challenge"
+
+
+def test_lights_out_violations_name_each_reason(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The precondition report is specific enough to act on."""
+    fake = _FakeBr(gates=[])
+    _install(monkeypatch, fake)
+    policy.record_needs_input(tmp_path, "root", "missing fact")
+    fake.comments += ["[harness-policy] rework gate=verify"] * 2
+
+    violations = policy.lights_out_violations(tmp_path, "root", CONFIG)
+
+    assert any("required gates not green" in v for v in violations)
+    assert any("needs-input" in v for v in violations)
+    assert any("rework escalation" in v for v in violations)
+
+
+def test_grant_never_authorizes_outside_its_session(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """grant_root is caller-supplied: a grant covers only its own session tree."""
+    fake = _FakeBr()  # no dependents: the session is just "root"
+    _install(monkeypatch, fake)
+    fake.comments.append("[harness-policy] grant level=L2 budget=100000")
+
+    foreign = policy.approve_checkpoint_guarded(
+        tmp_path, "unrelated", "classify", interactive=False, grant_root="root"
+    )
+    assert foreign.status == "challenge"
+    assert not policy.checkpoint_approved(tmp_path, "unrelated", "classify")
+
+    fake.dependents.append({"id": "unrelated", "dependency_type": "parent-child"})
+    member = policy.approve_checkpoint_guarded(
+        tmp_path, "unrelated", "classify", interactive=False, grant_root="root"
+    )
+    assert member.status == "approved"
+
+
+def test_active_grant_expires_with_a_closed_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A grant on a closed session root is dead without an explicit revocation."""
+    fake = _FakeBr(status="closed")
+    _install(monkeypatch, fake)
+    fake.comments.append("[harness-policy] grant level=L1")
+    assert policy.active_grant(tmp_path, "root") is None
+
+
+def test_session_ids_walk_the_tree_transitively(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Grandchild spend counts toward the budget: the session walk is not depth-1."""
+    child = {"id": "root.1", "dependency_type": "parent-child"}
+    grandchild = {"id": "root.1.1", "dependency_type": "parent-child"}
+    fake = _FakeBr(
+        records={
+            "root": {"status": "open", "dependents": [child]},
+            "root.1": {"status": "open", "dependents": [grandchild]},
+            "root.1.1": {"status": "open", "dependents": []},
+        }
+    )
+    _install(monkeypatch, fake)
+    entry = run_record.build_record(
+        agent="t", handoff=False, returncode=0, duration_s=1.0, command=("t",), tokens=70
+    )
+    run_record.record(tmp_path, "root.1.1", entry)
+    assert policy.session_spend_tokens(tmp_path, "root") == 70
+
+
+def test_grant_confirm_code_binds_level_and_budget(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A relayed code issues exactly the grant the human saw, not a swapped budget."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _pin_code(monkeypatch, "beef4242")
+    challenge = policy.issue_grant_guarded(
+        tmp_path, "root", "L2", 5_000, L3_CONFIG, interactive=False
+    )
+    assert challenge.status == "challenge"
+
+    swapped = policy.issue_grant_guarded(
+        tmp_path, "root", "L2", 999_999, L3_CONFIG, interactive=False, confirm="beef4242"
+    )
+    assert swapped.status == "rejected"
+    assert policy.active_grant(tmp_path, "root") is None
+
+    exact = policy.issue_grant_guarded(
+        tmp_path, "root", "L2", 5_000, L3_CONFIG, interactive=False, confirm="beef4242"
+    )
+    assert exact.status == "approved"
+    assert policy.active_grant(tmp_path, "root") == policy.Grant(level="L2", token_budget=5_000)

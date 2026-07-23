@@ -9,6 +9,7 @@ falls back to the manual handoff runner, which never shells out.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -476,8 +477,11 @@ def test_run_injects_bot_identity_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert env["EXISTING_VAR"] == "kept"  # overlay, not replacement
 
 
-def test_run_leaves_env_untouched_without_identity(monkeypatch: pytest.MonkeyPatch) -> None:
-    """No bot identity -> env stays None so the child inherits unchanged (basicly-smzg)."""
+def test_run_without_identity_adds_only_attribution(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without a bot identity only the br attribution overlay is added.
+
+    The basicly-smzg inherit-unchanged contract, extended by basicly-kjc5.3.
+    """
     captured: dict[str, object] = {}
 
     class _Proc:
@@ -493,7 +497,18 @@ def test_run_leaves_env_untouched_without_identity(monkeypatch: pytest.MonkeyPat
     spec = RunnerSpec("claude", HEADLESS, ("claude", "-p", PROMPT_PLACEHOLDER))
     runner.run(spec, "go", Path("/work"))
 
-    assert captured["env"] is None
+    env = captured["env"]
+    assert isinstance(env, dict)
+    assert env["BR_AGENT_NAME"] == "claude"
+
+    def strip(mapping: dict) -> dict:
+        return {
+            k: v for k, v in mapping.items() if k not in ("BR_AGENT_NAME", "BR_HARNESS", "BR_MODEL")
+        }
+
+    # Everything but the attribution overlay is the inherited environment,
+    # including the absence of any GIT_AUTHOR/COMMITTER identity override.
+    assert strip(env) == strip(dict(os.environ))
 
 
 # --- usage capture + extraction (basicly-kjc5.1) -----------------------------
@@ -716,3 +731,40 @@ def test_context_occupancy_none_when_nothing_executed() -> None:
     """A handoff or dry run occupies no window."""
     handoff = RunResult(MANUAL_RUNNER, (), executed=False, handoff=True)
     assert runner.context_occupancy(RunnerSpec(MANUAL_RUNNER, HANDOFF), handoff) is None
+
+
+# --- br attribution env (basicly-kjc5.3, D3) ----------------------------------
+
+
+def test_br_attribution_env_names_agent_harness_and_model() -> None:
+    """Dispatched agents carry br tier-1 attribution; model only when pinned."""
+    spec = RunnerSpec("claude", HEADLESS, ("claude", "-p", PROMPT_PLACEHOLDER), model="opus")
+    assert runner.br_attribution_env(spec) == {
+        "BR_AGENT_NAME": "claude",
+        "BR_HARNESS": "basicly-loop",
+        "BR_MODEL": "opus",
+    }
+    unpinned = RunnerSpec("codex", HEADLESS, ("codex", PROMPT_PLACEHOLDER))
+    assert "BR_MODEL" not in runner.br_attribution_env(unpinned)
+
+
+def test_run_overlays_br_attribution_on_the_child_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The dispatched subprocess sees the attribution overlay on the inherited env."""
+    captured: dict = {}
+
+    def fake_run(_argv, **kwargs):
+        captured["env"] = kwargs.get("env")
+
+        class _P:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        return _P()
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    runner.run(_claude_spec(), "go", Path("/work"))
+    assert captured["env"]["BR_AGENT_NAME"] == "claude"
+    assert captured["env"]["BR_HARNESS"] == "basicly-loop"

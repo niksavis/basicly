@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from basicly import cli, policy
+from basicly.config import PolicyConfig
 
 
 class _Proc:
@@ -34,6 +35,10 @@ class _FakeBr:
         if args[:2] == ["comments", "add"]:
             self.comments.append(args[-1])
             return _Proc("")
+        if args[:1] == ["show"]:
+            # An open, childless session root — enough for active_grant's
+            # expiry check and the grant-approval session walk.
+            return _Proc(json.dumps([{"status": "open", "dependents": []}]))
         raise AssertionError(f"unexpected br call: {args}")
 
 
@@ -79,3 +84,58 @@ def test_checkpoint_approve_with_valid_code_succeeds(
     ])
     assert rc == 0
     assert "APPROVED" in capsys.readouterr().out
+
+
+# --- basicly policy grant (basicly-kjc5.3, design D3) --------------------------
+
+
+def _tty(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True)
+
+
+def _allow_autonomy(monkeypatch: pytest.MonkeyPatch, level: str = "L3") -> None:
+    config = PolicyConfig(required_gates=("verify",), max_rework=2, autonomy=level)
+    monkeypatch.setattr(cli, "load_policy_config", lambda _r: config)
+
+
+def test_grant_issue_interactive_then_show_and_revoke(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A TTY caller issues under the ceiling; show reports it; revoke clears it."""
+    _tty(monkeypatch)
+    _allow_autonomy(monkeypatch)
+    assert cli.main(["policy", "grant", "root", "--level", "L2", "--token-budget", "5000"]) == 0
+    assert "ISSUED L2" in capsys.readouterr().out
+
+    assert cli.main(["policy", "grant", "root"]) == 0
+    out = capsys.readouterr().out
+    assert "grant: L2" in out and "token budget 5000" in out
+
+    assert cli.main(["policy", "grant", "root", "--revoke"]) == 0
+    capsys.readouterr()
+    assert cli.main(["policy", "grant", "root"]) == 1
+    assert "grant: NONE" in capsys.readouterr().out
+
+
+def test_grant_issue_non_interactive_challenges(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An agent without a TTY cannot self-issue: it gets a relay code and exit 1."""
+    _no_tty(monkeypatch)
+    _allow_autonomy(monkeypatch)
+    monkeypatch.setattr(policy, "_new_code", lambda: "feed5678")
+    rc = cli.main(["policy", "grant", "root", "--level", "L1"])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "CONFIRMATION REQUIRED" in err
+    assert "--confirm feed5678" in err
+
+
+def test_grant_issue_refused_at_default_ceiling(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With the default [policy] autonomy = L0 every issuance is refused."""
+    _tty(monkeypatch)
+    rc = cli.main(["policy", "grant", "root", "--level", "L1"])
+    assert rc == 1
+    assert "autonomy ceiling" in capsys.readouterr().err

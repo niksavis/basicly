@@ -612,3 +612,23 @@ def test_sizing_config_context_ceiling_unusable_values_fall_back(tmp_path: Path)
             f"[policy.sizing]\ncontext_ceiling = {value}\n", encoding="utf-8"
         )
         assert load_sizing_config(tmp_path).context_ceiling == 0.6
+
+
+# --- [policy] autonomy ceiling (basicly-kjc5.3, D3) ---------------------------
+
+
+def test_policy_config_autonomy_defaults_to_l0(tmp_path: Path) -> None:
+    """Factory autonomy is opt-in: the default ceiling keeps grants unissuable."""
+    assert load_policy_config(tmp_path).autonomy == "L0"
+
+
+def test_policy_config_autonomy_parses_valid_levels(tmp_path: Path) -> None:
+    """A configured ceiling in the L0-L3 vocabulary lands on the config."""
+    (tmp_path / CONFIG_FILE).write_text('[policy]\nautonomy = "L2"\n', encoding="utf-8")
+    assert load_policy_config(tmp_path).autonomy == "L2"
+
+
+def test_policy_config_autonomy_unknown_value_falls_back(tmp_path: Path) -> None:
+    """A typo must fail closed to L0, never open autonomy by accident."""
+    (tmp_path / CONFIG_FILE).write_text('[policy]\nautonomy = "L9"\n', encoding="utf-8")
+    assert load_policy_config(tmp_path).autonomy == "L0"

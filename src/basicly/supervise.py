@@ -50,7 +50,7 @@ from concurrent.futures import ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import decompose, loop, loop_state, needs_input, runner, worktree
+from . import decompose, loop, loop_state, needs_input, policy, runner, worktree
 from .br import run_br as _run_br
 from .config import (
     SizingConfig,
@@ -745,6 +745,10 @@ def _dispatch_lane(
             detail="handoff runner: work left to the driving agent",
         )
     needs = needs_input.take(cwd)
+    if needs is not None:
+        # Durable trace (basicly-kjc5.3): the L3 lights-out precondition counts
+        # these markers after the sentinel file is consumed (D3).
+        policy.record_needs_input(repo_root, lane.issue_id, needs.fact)
     occupancy = runner.context_occupancy(spec, result)
     ceiling = ceiling_tokens(spec, sizing)
     overrun = occupancy is not None and occupancy >= ceiling

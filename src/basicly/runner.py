@@ -431,6 +431,20 @@ def git_identity_env(spec: RunnerSpec) -> dict[str, str] | None:
     }
 
 
+def br_attribution_env(spec: RunnerSpec) -> dict[str, str]:
+    """The BR_* attribution overlay for a dispatched agent (basicly-kjc5.3, D3).
+
+    br's tier-1 attribution env vars, so every tracker write the dispatched
+    agent makes (comments, gates, created beads) is attributed to the agent —
+    the audit trail delegated decisions under an autonomy grant rely on.
+    ``BR_MODEL`` is set only when the spec pins a model.
+    """
+    env = {"BR_AGENT_NAME": spec.name, "BR_HARNESS": "basicly-loop"}
+    if spec.model is not None:
+        env["BR_MODEL"] = spec.model
+    return env
+
+
 def run(
     spec: RunnerSpec, prompt: str, cwd: Path, *, dry_run: bool = False, capture_usage: bool = False
 ) -> RunResult:
@@ -448,10 +462,10 @@ def run(
     if dry_run:
         return RunResult(spec.name, tuple(argv), executed=False)
     stdin = prompt if spec.prompt_via == "stdin" else None
-    # Overlay the bot git identity on the inherited environment when configured
-    # (basicly-smzg); None leaves the child env untouched — the default.
+    # Overlay br attribution (basicly-kjc5.3) and, when configured, the bot git
+    # identity (basicly-smzg) on the inherited environment.
     identity = git_identity_env(spec)
-    env = {**os.environ, **identity} if identity else None
+    env = {**os.environ, **br_attribution_env(spec), **(identity or {})}
     start = time.perf_counter()
     proc = subprocess.run(  # nosec B603
         argv, cwd=cwd, input=stdin, capture_output=True, text=True, check=False, env=env
