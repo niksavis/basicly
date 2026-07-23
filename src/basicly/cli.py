@@ -9,8 +9,9 @@ import re
 import shlex
 import shutil
 import sys
+import time
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ from . import (
     catalog_lint,
     catalog_verify,
     claude_settings,
+    decisions,
     decompose,
     fleet,
     health,
@@ -2126,12 +2128,16 @@ def cmd_decompose(args: argparse.Namespace) -> int:
 
 
 def cmd_loop(args: argparse.Namespace) -> int:
-    """Dispatch the ``loop`` subcommands (status / advance / run / supervise)."""
+    """Dispatch the ``loop`` subcommands (status/advance/run/supervise/decisions...)."""
     handlers = {
         "status": _cmd_loop_status,
         "advance": _cmd_loop_advance,
         "run": _cmd_loop_run,
         "supervise": _cmd_loop_supervise,
+        "decisions": _cmd_loop_decisions,
+        "answer": _cmd_loop_answer,
+        "decide": _cmd_loop_decide,
+        "watch": _cmd_loop_watch,
     }
     handler = handlers.get(args.loop_command)
     return handler(args) if handler else 0
@@ -2250,6 +2256,80 @@ def _cmd_loop_supervise(args: argparse.Namespace) -> int:
     finally:
         supervise.release(lock, session_id)
     return 0
+
+
+def _format_decision(item: decisions.DecisionItem) -> str:
+    line = f"{item.decision_id}  [{item.kind}]  {item.question}"
+    if item.detail:
+        line += f"\n    {item.detail}"
+    if not item.pending:
+        line += f"\n    answered by {item.answered_by}: {item.answer}"
+    return line
+
+
+def _cmd_loop_decisions(args: argparse.Namespace) -> int:
+    """List the session's pending decisions — a pure read over br (design 7.3)."""
+    repo_root = _repo_root()
+    items = decisions.pending(repo_root, args.issue)
+    if args.json:
+        print(json.dumps([asdict(item) for item in items], indent=2, sort_keys=True))
+        return 0
+    if not items:
+        print(f"decisions: none pending ({args.issue})")
+        return 0
+    for item in items:
+        print(_format_decision(item))
+    return 1  # pending decisions mean the session is blocked on judgment
+
+
+def _cmd_loop_answer(args: argparse.Namespace) -> int:
+    """Record a human answer on a queued decision, with attribution."""
+    repo_root = _repo_root()
+    by = args.by or "human"
+    try:
+        item = decisions.answer(repo_root, args.decision_id, args.text, by=by)
+    except ValueError as exc:
+        print(f"answer: refused - {exc}", file=sys.stderr)
+        return 1
+    print(f"answered {item.decision_id} by {by}")
+    return 0
+
+
+def _cmd_loop_decide(args: argparse.Namespace) -> int:
+    """Invoke the decider agent on one decision (corpus-bounded, design 7.1)."""
+    repo_root = _repo_root()
+    already = decisions.get(repo_root, args.decision_id)
+    if already is not None and not already.pending:
+        print(f"decide: already answered by {already.answered_by}: {already.answer}")
+        return 0
+    try:
+        outcome = decisions.invoke_decider(repo_root, args.decision_id, args.root)
+    except ValueError as exc:
+        print(f"decide: refused - {exc}", file=sys.stderr)
+        return 1
+    if isinstance(outcome, decisions.DecisionItem):
+        print(f"decided {outcome.decision_id} by {outcome.answered_by}: {outcome.answer}")
+        return 0
+    print(f"decide: abstained - {outcome.rationale or 'not derivable from the corpus'}")
+    return 1
+
+
+def _cmd_loop_watch(args: argparse.Namespace) -> int:
+    """Poll the queue and print newly pending decisions until interrupted."""
+    repo_root = _repo_root()
+    seen: set[str] = set()
+    try:
+        while True:
+            for item in decisions.pending(repo_root, args.issue):
+                if item.decision_id not in seen:
+                    seen.add(item.decision_id)
+                    print(_format_decision(item))
+            if args.once:
+                return 1 if seen else 0
+            time.sleep(args.interval)
+    except KeyboardInterrupt:
+        # Ctrl-C can land inside the br-subprocess scan, not just the sleep.
+        return 0
 
 
 def cmd_runner(args: argparse.Namespace) -> int:
@@ -2773,6 +2853,24 @@ def _add_loop_parser(subparsers: argparse._SubParsersAction) -> None:
         "(lock/lifecycle core; the standing dispatch loop lands with kjc5.6)",
     )
     l_supervise.add_argument("issue", help="Root issue (feature or epic) the session is bound to")
+    l_dec = loop_sub.add_parser(
+        "decisions", help="List the session's pending decisions (pure read over br)"
+    )
+    l_dec.add_argument("issue", help="Session root issue")
+    l_dec.add_argument("--json", action="store_true", help="Machine-readable output")
+    l_ans = loop_sub.add_parser("answer", help="Record a human answer on a queued decision")
+    l_ans.add_argument("decision_id", help="Decision id as printed by loop decisions")
+    l_ans.add_argument("text", help="The answer")
+    l_ans.add_argument("--by", metavar="NAME", help="Answerer attribution (default: human)")
+    l_dcd = loop_sub.add_parser(
+        "decide", help="Invoke the decider agent on one decision (corpus-bounded)"
+    )
+    l_dcd.add_argument("decision_id", help="Decision id as printed by loop decisions")
+    l_dcd.add_argument("--root", required=True, help="Session root issue (the intake corpus)")
+    l_watch = loop_sub.add_parser("watch", help="Poll and print newly pending decisions")
+    l_watch.add_argument("issue", help="Session root issue")
+    l_watch.add_argument("--interval", type=float, default=15.0, help="Poll seconds")
+    l_watch.add_argument("--once", action="store_true", help="One pass, then exit")
 
 
 _HELP_EPILOG = """\

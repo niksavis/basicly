@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import cli, policy
+from basicly import cli, decisions, loop_state, policy
 from basicly.config import PolicyConfig
 
 
@@ -139,3 +139,38 @@ def test_grant_issue_refused_at_default_ceiling(
     rc = cli.main(["policy", "grant", "root", "--level", "L1"])
     assert rc == 1
     assert "autonomy ceiling" in capsys.readouterr().err
+
+
+# --- basicly loop decisions / answer (basicly-kjc5.4) ---------------------------
+
+
+def _install_decisions_fake(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Reuse the fixture-installed checkpoint fake: it serves comments and show.
+    monkeypatch.setattr(decisions, "_run_br", policy._run_br)
+    monkeypatch.setattr(loop_state, "_run_br", policy._run_br)
+
+
+def test_loop_decisions_and_answer_round_trip(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An enqueued item is listed, answerable with attribution, then gone."""
+    _install_decisions_fake(monkeypatch)
+    item = decisions.enqueue(Path(), "basicly-x", "needs-input", "which db?")
+
+    assert cli.main(["loop", "decisions", "basicly-x"]) == 1
+    out = capsys.readouterr().out
+    assert item.decision_id in out and "which db?" in out
+
+    assert cli.main(["loop", "answer", item.decision_id, "postgres", "--by", "niksa"]) == 0
+    capsys.readouterr()
+    assert cli.main(["loop", "decisions", "basicly-x"]) == 0
+    assert "none pending" in capsys.readouterr().out
+
+
+def test_loop_answer_refuses_unknown_id(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Answering a decision that was never asked is an error, not a silent write."""
+    _install_decisions_fake(monkeypatch)
+    assert cli.main(["loop", "answer", "basicly-x#abcdef", "yes"]) == 1
+    assert "refused" in capsys.readouterr().err

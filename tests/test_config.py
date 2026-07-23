@@ -632,3 +632,33 @@ def test_policy_config_autonomy_unknown_value_falls_back(tmp_path: Path) -> None
     """A typo must fail closed to L0, never open autonomy by accident."""
     (tmp_path / CONFIG_FILE).write_text('[policy]\nautonomy = "L9"\n', encoding="utf-8")
     assert load_policy_config(tmp_path).autonomy == "L0"
+
+
+# --- decision-queue knobs (basicly-kjc5.4, design 7.1/7.3/§6) ------------------
+
+
+def test_policy_config_notify_command_parses_argv_list(tmp_path: Path) -> None:
+    """notify_command is an argv list; disabled by default; malformed fails closed."""
+    assert load_policy_config(tmp_path).notify_command == ()
+    (tmp_path / CONFIG_FILE).write_text(
+        '[policy]\nnotify_command = ["notify-send", "basicly"]\n', encoding="utf-8"
+    )
+    assert load_policy_config(tmp_path).notify_command == ("notify-send", "basicly")
+    (tmp_path / CONFIG_FILE).write_text(
+        '[policy]\nnotify_command = "notify-send basicly"\n', encoding="utf-8"
+    )
+    assert load_policy_config(tmp_path).notify_command == ()  # a string is not an argv
+
+
+def test_policy_config_decider_max_decisions(tmp_path: Path) -> None:
+    """The runaway-loop guard defaults to 50 and takes positive overrides."""
+    assert load_policy_config(tmp_path).decider_max_decisions == 50
+    (tmp_path / CONFIG_FILE).write_text("[policy]\ndecider_max_decisions = 5\n", encoding="utf-8")
+    assert load_policy_config(tmp_path).decider_max_decisions == 5
+
+
+def test_runner_config_decider_selection(tmp_path: Path) -> None:
+    """[runner] decider names the decider agent; absent falls back to the default."""
+    assert load_runner_config(tmp_path).decider is None
+    (tmp_path / CONFIG_FILE).write_text('[runner]\ndecider = "claude"\n', encoding="utf-8")
+    assert load_runner_config(tmp_path).decider == "claude"
