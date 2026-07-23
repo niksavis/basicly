@@ -38,6 +38,7 @@ from pathlib import Path
 
 from . import (
     classify,
+    decisions,
     decompose,
     loop_state,
     merge,
@@ -299,6 +300,9 @@ def _dispatch_runner(ctx: _Ctx, name: str, cwd: Path) -> AdvanceResult:
         # Durable trace (basicly-kjc5.3): the sentinel is consumed here, so the
         # marker comment is what the L3 lights-out precondition counts (D3).
         policy.record_needs_input(ctx.repo_root, ctx.issue_id, needs.fact)
+        # And one queue item (basicly-kjc5.4): answerable via `loop answer`,
+        # notified to the human, decidable by the decider under a grant.
+        decisions.enqueue(ctx.repo_root, ctx.issue_id, "needs-input", needs.fact, needs.detail)
         reason = (
             f"runner {spec.name!r} needs input in worktree {name!r}: {needs.detail or needs.fact}"
         )
@@ -414,9 +418,21 @@ def _record_verify(ctx: _Ctx, detail: str) -> AdvanceResult:
 
 
 def _rework(ctx: _Ctx, gate: str, reason: str) -> AdvanceResult:
-    """Record a rework attempt for *gate* and block, escalating at the cap."""
+    """Record a rework attempt for *gate* and block, escalating at the cap.
+
+    An escalation is a human judgment call, so it also enters the decision
+    queue (basicly-kjc5.4) — one surface for everything blocked on a decision.
+    """
     attempts = policy.record_rework(ctx.repo_root, ctx.issue_id, gate)
     action = "escalated" if attempts >= ctx.config.max_rework else "blocked"
+    if action == "escalated":
+        decisions.enqueue(
+            ctx.repo_root,
+            ctx.issue_id,
+            "escalation",
+            f"rework cap reached on gate {gate}: retry, re-dispatch, or park?",
+            reason,
+        )
     return _blocked(ctx, f"{reason} (rework {attempts}/{ctx.config.max_rework})", action=action)
 
 

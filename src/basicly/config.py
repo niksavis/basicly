@@ -353,6 +353,10 @@ CHECKPOINTS = ("classify", "decompose", "ship")
 AUTONOMY_LEVELS = ("L0", "L1", "L2", "L3")
 DEFAULT_AUTONOMY = "L0"
 
+# Runaway-loop guard for the decider agent (factory design §6, basicly-kjc5.4):
+# delegated answers per session beyond this are human-only.
+DEFAULT_DECIDER_MAX_DECISIONS = 50
+
 # The fixed br work classes the classifier may assign (architecture §12.1).
 # bug/chore are leaf tracks; task/feature/epic nest fractally.
 WORK_TYPES = ("bug", "chore", "task", "feature", "epic")
@@ -518,6 +522,11 @@ class PolicyConfig:
     # The highest grant level this repo allows issuing (factory design D3);
     # autonomy is opt-in, so the default ceiling makes grants unissuable.
     autonomy: str = DEFAULT_AUTONOMY
+    # Consumer command fired per new human-required decision (design 7.3), as
+    # an argv list — the decision id and question are appended. Empty: disabled.
+    notify_command: tuple[str, ...] = ()
+    # Delegated decider answers allowed per session (design §6).
+    decider_max_decisions: int = DEFAULT_DECIDER_MAX_DECISIONS
 
 
 def load_policy_config(repo_root: Path) -> PolicyConfig:
@@ -542,7 +551,24 @@ def load_policy_config(repo_root: Path) -> PolicyConfig:
     else:
         autonomy = autonomy.strip()
 
-    return PolicyConfig(required_gates=required_gates, max_rework=max_rework, autonomy=autonomy)
+    raw_notify = section.get("notify_command")
+    notify_command: tuple[str, ...] = ()
+    if (
+        isinstance(raw_notify, list)
+        and raw_notify
+        and all(isinstance(a, str) and a.strip() for a in raw_notify)
+    ):
+        notify_command = tuple(raw_notify)
+
+    return PolicyConfig(
+        required_gates=required_gates,
+        max_rework=max_rework,
+        autonomy=autonomy,
+        notify_command=notify_command,
+        decider_max_decisions=_positive_int(
+            section.get("decider_max_decisions"), DEFAULT_DECIDER_MAX_DECISIONS
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -707,6 +733,9 @@ class RunnerConfig:
 
     specs: tuple[RunnerSpec, ...]
     default: str
+    # Runner used for decider invocations (design 7.1); None falls back to the
+    # session default.
+    decider: str | None = None
 
 
 def load_runner_config(repo_root: Path) -> RunnerConfig:
@@ -732,7 +761,10 @@ def load_runner_config(repo_root: Path) -> RunnerConfig:
     default = section.get("default")
     default = default.strip() if isinstance(default, str) and default.strip() else AUTO
 
-    return RunnerConfig(specs=tuple(specs.values()), default=default)
+    decider = section.get("decider")
+    decider = decider.strip() if isinstance(decider, str) and decider.strip() else None
+
+    return RunnerConfig(specs=tuple(specs.values()), default=default, decider=decider)
 
 
 def _inject_copilot_deny_tools(specs: dict[str, RunnerSpec]) -> None:

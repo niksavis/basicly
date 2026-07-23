@@ -261,6 +261,12 @@ def test_dispatch_blocks_on_needs_input_sentinel(
     monkeypatch.setattr(
         policy, "record_needs_input", lambda _r, issue, fact: traced.append((issue, fact))
     )
+    queued: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(
+        loop.decisions,
+        "enqueue",
+        lambda _r, issue, kind, question, _detail="", **_k: queued.append((issue, kind, question)),
+    )
     result = _advance(tmp_path)
     assert result.blocked
     assert result.needs_input == "prod db dialect"
@@ -270,6 +276,8 @@ def test_dispatch_blocks_on_needs_input_sentinel(
     assert not sentinel.exists()
     # ...which makes the durable marker the L3 audit trace (basicly-kjc5.3).
     assert traced == [("i", "prod db dialect")]
+    # And the same event enters the one decision queue (basicly-kjc5.4).
+    assert queued == [("i", "needs-input", "prod db dialect")]
 
 
 def test_dispatch_writes_a_run_record_keyed_by_bead(
@@ -610,8 +618,16 @@ def test_build_leaf_reworks_on_failed_merge(
         lambda *_a, **_k: merge.MergeResult("i", "merge-conflicts", "conflicts in x.py"),
     )
     monkeypatch.setattr(policy, "record_rework", lambda *_a: 2)  # at the default cap
+    queued: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        loop.decisions,
+        "enqueue",
+        lambda _r, issue, kind, *_a, **_k: queued.append((issue, kind)),
+    )
     result = _advance(tmp_path)
     assert result.action == "escalated" and "merge failed" in result.detail
+    # An escalation is a judgment call: it enters the decision queue (kjc5.4).
+    assert queued == [("i", "escalation")]
 
 
 # --- verify / ship / done ---------------------------------------------------

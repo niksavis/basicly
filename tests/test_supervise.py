@@ -804,11 +804,18 @@ def test_dispatch_lane_surfaces_the_needs_input_sentinel(
         "record_needs_input",
         lambda _r, issue, fact: traced.append((issue, fact)),
     )
+    queued: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        supervise.decisions,
+        "enqueue",
+        lambda _r, issue, kind, *_a, **_k: queued.append((issue, kind)),
+    )
     outcome = supervise._dispatch_lane(
         tmp_path, _session(_lane("epic.1")), _lane("epic.1"), codex, _sizing()
     )
 
     assert traced == [("epic.1", "which API version")]
+    assert queued == [("epic.1", "needs-input")]
     assert outcome.needs_fact == "which API version"
     assert "docs conflict" in outcome.detail
     assert not sentinel.exists()  # consumed so a re-dispatch starts clean

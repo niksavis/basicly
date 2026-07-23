@@ -178,6 +178,25 @@ def read_node_state(
 # --- Ready / blocked sets ---------------------------------------------------
 
 
+def session_issue_ids(repo_root: Path, root_issue: str) -> tuple[str, ...]:
+    """The session's bead ids: the root plus its parent-child tree, transitively.
+
+    The shared walk for session-scoped consumers (the decision queue, grant
+    accounting): the tree nests fractally, so depth-1 reads would silently
+    miss grandchildren. Insertion-ordered BFS, root first.
+    """
+    seen: dict[str, None] = {root_issue: None}
+    queue = [root_issue]
+    while queue:
+        record = _show(repo_root, queue.pop(0))
+        for dep in record.get("dependents") or []:
+            is_child = isinstance(dep, dict) and dep.get("dependency_type") == "parent-child"
+            if is_child and "id" in dep and str(dep["id"]) not in seen:
+                seen[str(dep["id"])] = None
+                queue.append(str(dep["id"]))
+    return tuple(seen)
+
+
 @dataclass(frozen=True)
 class RankedNode:
     """A ready issue with its ``br scheduler`` rank and explainable score."""
