@@ -2143,11 +2143,12 @@ def _cmd_loop_run(args: argparse.Namespace) -> int:
 
 
 def _cmd_loop_supervise(args: argparse.Namespace) -> int:
-    """Acquire the singleton supervisor lock and derive the session from ``br``.
+    """One lock-guarded supervisor pass: derive the session, dispatch ready lanes.
 
-    Part 1 of the supervisor (basicly-kjc5.5): one lock-guarded derivation pass
-    reporting the adopted session state. The standing event loop that dispatches
-    and lands lanes under this lock arrives with concurrent dispatch (kjc5.6).
+    Parts 1+2 of the supervisor (basicly-kjc5.5/.6): derivation from ``br``,
+    then a concurrent dispatch pass over the session's ready live lanes —
+    heartbeating the singleton lock while runners execute. Outcome routing and
+    the standing merge queue arrive with kjc5.7.
     """
     repo_root = _repo_root()
     session_id = supervise.new_session_id(args.issue)
@@ -2171,7 +2172,27 @@ def _cmd_loop_supervise(args: argparse.Namespace) -> int:
                 )
         else:
             print("adopted:  (no in-flight lanes)")
-        print(f"done:     {'yes' if state.done else 'no'}")
+        if state.done:
+            print("done:     yes")
+            return 0
+        try:
+            outcomes = supervise.dispatch_lanes(
+                repo_root, state, beat=lambda: supervise.heartbeat(lock, session_id)
+            )
+        except supervise.LockLostError as exc:
+            print(f"supervise: stopped - {exc}", file=sys.stderr)
+            return 1
+        if not outcomes:
+            print("dispatch: (no ready live lanes)")
+        for outcome in outcomes:
+            occupancy = (
+                f", context {outcome.occupancy} tokens" if outcome.occupancy is not None else ""
+            )
+            print(
+                f"dispatch: {outcome.issue_id} via {outcome.runner_name} - "
+                f"{outcome.detail}{occupancy}"
+            )
+        print("done:     no")
     finally:
         supervise.release(lock, session_id)
     return 0

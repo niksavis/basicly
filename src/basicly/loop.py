@@ -273,8 +273,8 @@ def _dispatch_runner(ctx: _Ctx, name: str, cwd: Path) -> AdvanceResult:
     """Run the selected agent headless in the worktree; a handoff just blocks."""
     config = load_runner_config(ctx.repo_root)
     spec = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
-    result = runner.run(spec, _dispatch_prompt(ctx.issue_id), cwd, capture_usage=True)
-    _record_run(ctx, spec, result)
+    result = runner.run(spec, dispatch_prompt(ctx.issue_id), cwd, capture_usage=True)
+    record_run(ctx.repo_root, ctx.issue_id, spec, result)
     if result.handoff:
         return _blocked(ctx, f"worktree {name!r} provisioned; awaiting the agent's work")
     if result.returncode != 0:
@@ -305,7 +305,9 @@ def _dispatch_runner(ctx: _Ctx, name: str, cwd: Path) -> AdvanceResult:
     )
 
 
-def _record_run(ctx: _Ctx, spec: runner.RunnerSpec, result: runner.RunResult) -> None:
+def record_run(
+    repo_root: Path, issue_id: str, spec: runner.RunnerSpec, result: runner.RunResult
+) -> None:
     """Persist a metadata-only run-record for this dispatch, keyed by the bead.
 
     The command is redacted here (the prompt argument elided) before it is
@@ -314,6 +316,8 @@ def _record_run(ctx: _Ctx, spec: runner.RunnerSpec, result: runner.RunResult) ->
     CLI emits it, a flagged chars/4 estimate otherwise. Best-effort:
     a write failure must not fail the loop landing (same stance as the
     ``tool-usage`` telemetry hook), so an OS error is tolerated, not fatal.
+    Shared with the supervisor's concurrent dispatch (basicly-kjc5.6) so both
+    dispatch paths feed the one telemetry stream.
     """
     command: tuple[str, ...] = ()
     if not result.handoff:
@@ -331,10 +335,10 @@ def _record_run(ctx: _Ctx, spec: runner.RunnerSpec, result: runner.RunResult) ->
         estimated=usage.estimated if usage else None,
     )
     with contextlib.suppress(OSError):
-        run_record.record(ctx.repo_root, ctx.issue_id, entry)
+        run_record.record(repo_root, issue_id, entry)
 
 
-def _dispatch_prompt(issue_id: str) -> str:
+def dispatch_prompt(issue_id: str) -> str:
     """The agent-neutral dispatch prompt: point at the tracker, not at an agent."""
     return (
         f"You are in a git worktree dedicated to the tracked issue {issue_id}. "

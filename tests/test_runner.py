@@ -670,3 +670,49 @@ def test_builtin_usage_formats_pin_the_probed_capabilities() -> None:
     assert by_name["codex"] == CODEX_JSONL
     assert by_name["copilot"] is None
     assert by_name[MANUAL_RUNNER] is None
+
+
+# --- Context windows and occupancy (basicly-kjc5.6, factory design D8) -------
+
+
+def test_builtin_context_windows_follow_the_design_defaults() -> None:
+    """Per-adapter windows from design §6; unknown agents get the smallest big-3."""
+    by_name = {s.name: s.context_window for s in BUILTIN_RUNNERS}
+    assert by_name["claude"] == 200_000
+    assert by_name["codex"] == 400_000
+    assert by_name["copilot"] == 128_000
+    assert runner.DEFAULT_CONTEXT_WINDOW == 128_000
+
+
+def test_context_occupancy_claude_json_is_unknowable() -> None:
+    """The claude result usage block is session-cumulative (probed 2026-07-23).
+
+    Treating it as occupancy would cross any ceiling on every healthy
+    multi-turn run, so the meter must report unknowable, never that sum.
+    """
+    occupancy = runner.context_occupancy(_claude_spec(), _executed(_claude_spec(), _CLAUDE_RESULT))
+    assert occupancy is None
+
+
+def test_context_occupancy_codex_reads_last_turn_only() -> None:
+    """Codex occupancy is the last turn's tokens; summing turns is the cost view."""
+    occupancy = runner.context_occupancy(_codex_spec(), _executed(_codex_spec(), _CODEX_EVENTS))
+    assert occupancy == 100 + 7
+
+
+def test_context_occupancy_never_falls_back_to_the_transcript_estimate() -> None:
+    """No usage format or a parse miss yields None, never an estimate.
+
+    Stdout length says nothing about window occupancy, and a false trigger
+    would spin a phantom follow-up bead.
+    """
+    copilot = next(s for s in BUILTIN_RUNNERS if s.name == "copilot")
+    assert runner.context_occupancy(copilot, _executed(copilot, "x" * 4000)) is None
+    stdout = '{"type":"thread.started","thread_id":"t1"}\n'
+    assert runner.context_occupancy(_codex_spec(), _executed(_codex_spec(), stdout)) is None
+
+
+def test_context_occupancy_none_when_nothing_executed() -> None:
+    """A handoff or dry run occupies no window."""
+    handoff = RunResult(MANUAL_RUNNER, (), executed=False, handoff=True)
+    assert runner.context_occupancy(RunnerSpec(MANUAL_RUNNER, HANDOFF), handoff) is None

@@ -7,7 +7,15 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from . import permissions
-from .runner import AUTO, BUILTIN_RUNNERS, HEADLESS, PROMPT_VIA, USAGE_FORMATS, RunnerSpec
+from .runner import (
+    AUTO,
+    BUILTIN_RUNNERS,
+    DEFAULT_CONTEXT_WINDOW,
+    HEADLESS,
+    PROMPT_VIA,
+    USAGE_FORMATS,
+    RunnerSpec,
+)
 from .schema import TECHNOLOGIES
 
 COPILOT_RUNNER = "copilot"
@@ -331,6 +339,10 @@ DEFAULT_BUILD_FACTOR_SEEDS = {"task": 3.0, "bug": 2.0, "chore": 1.5}
 DEFAULT_BUILD_FACTOR = 3.0
 DEFAULT_CALIBRATION_MIN_SAMPLES = 10
 DEFAULT_CALIBRATION_WINDOW = 50
+# Fraction of the runner's context window at which the finalize protocol fires
+# (basicly-kjc5.6): a behavioral anxiety guard below the real window, never a
+# fill target (design D8 — models cut corners near the perceived limit).
+DEFAULT_CONTEXT_CEILING = 0.6
 
 # The three human checkpoints the loop enforces (architecture §12.2).
 CHECKPOINTS = ("classify", "decompose", "ship")
@@ -528,6 +540,9 @@ class SizingConfig:
     build_factors: dict[str, float]
     calibration_min_samples: int
     calibration_window: int
+    # Fraction of the runner's context window that triggers the finalize
+    # protocol at run time (basicly-kjc5.6, design D8).
+    context_ceiling: float = DEFAULT_CONTEXT_CEILING
 
 
 def load_sizing_config(repo_root: Path) -> SizingConfig:
@@ -566,7 +581,20 @@ def load_sizing_config(repo_root: Path) -> SizingConfig:
         calibration_window=_positive_int(
             section.get("calibration_window"), DEFAULT_CALIBRATION_WINDOW
         ),
+        context_ceiling=_window_fraction(section.get("context_ceiling")),
     )
+
+
+def _window_fraction(value: object) -> float:
+    """*value* when it is a usable ceiling fraction (0 < x <= 1), else the default.
+
+    Zero or negative would finalize every run before it starts; above 1 can
+    never trigger — both are config mistakes, so they fall back rather than
+    silently disabling or wedging the meter (same stance as the sizing band).
+    """
+    if isinstance(value, int | float) and not isinstance(value, bool) and 0 < value <= 1:
+        return float(value)
+    return DEFAULT_CONTEXT_CEILING
 
 
 def _positive_int(value: object, default: int) -> int:
@@ -780,7 +808,24 @@ def _parse_runner_agent(entry: object) -> RunnerSpec:
         git_name=git_name,
         git_email=git_email,
         usage_format=usage_format,
+        context_window=_context_window(entry, name),
     )
+
+
+def _context_window(entry: dict, name: str) -> int:
+    """The entry's ``context_window`` for the ceiling meter (basicly-kjc5.6).
+
+    Same replaces-wholesale stance as ``usage_format``: an override of a builtin
+    must restate its window or it falls to the conservative default. Malformed
+    values raise — a silently shrunken window would mis-trigger the finalize
+    protocol on every long run.
+    """
+    value = entry.get("context_window", DEFAULT_CONTEXT_WINDOW)
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValueError(f"runner agent {name!r} has a 'context_window' that must be an integer")
+    if value <= 0:
+        raise ValueError(f"runner agent {name!r} has a 'context_window' that must be positive")
+    return value
 
 
 def load_project_paths(repo_root: Path) -> ProjectPaths:

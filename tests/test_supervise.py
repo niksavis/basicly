@@ -1,20 +1,25 @@
-"""Tests for the supervisor core: lock, session, crash recovery (basicly-kjc5.5).
+"""Tests for the supervisor: lock, session, recovery, and concurrent dispatch.
 
-The singleton lock is the load-bearing piece: exactly one supervisor may own a
-repo, a crashed holder's lock is taken over atomically by exactly one
-contender, and a restart re-derives the whole session from ``br`` — no side
-state anywhere. These tests pin those three properties.
+Part 1 (basicly-kjc5.5) pins the three lock/session properties: exactly one
+supervisor may own a repo, a crashed holder's lock is taken over atomically by
+exactly one contender, and a restart re-derives the whole session from ``br``.
+Part 2 (basicly-kjc5.6) pins the dispatch layer: bundles are pure functions of
+``br`` state at dispatch time with found-info folding, lanes fan out
+concurrently up to the cap under a heartbeating lock, and the usage meter
+spins an idempotent follow-up bead when a run crosses the context ceiling.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import threading
 from pathlib import Path
 
 import pytest
 
-from basicly import loop_state, supervise
+from basicly import loop, loop_state, needs_input, runner, supervise
+from basicly.config import SizingConfig
 from basicly.supervise import LOCK_FILE, STALE_AFTER_S, LockHeldError, LockLostError
 
 
@@ -282,3 +287,592 @@ def test_new_session_id_binds_root_and_varies() -> None:
     second = supervise.new_session_id("epic")
     assert first.startswith("epic:")
     assert first != second
+
+
+# --- Found-info records (basicly-kjc5.6, design 7.4/D6) ------------------------
+
+
+class _FakeBr:
+    """br stand-in serving show/comments/create/dep from seeded state."""
+
+    def __init__(self, issues: dict[str, dict], comments: dict[str, list[str]] | None = None):
+        self.issues = issues
+        self.comments: dict[str, list[str]] = comments or {}
+        self.created: list[list[str]] = []
+        self.deps: list[tuple[str, ...]] = []
+        self._next_id = 0
+
+    def __call__(self, _repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
+        if args[:1] == ["show"]:
+            return _Proc(json.dumps([self.issues[args[1]]]))
+        if args[:2] == ["comments", "list"]:
+            texts = self.comments.get(args[2], [])
+            return _Proc(json.dumps([{"text": text} for text in texts]))
+        if args[:2] == ["comments", "add"]:
+            self.comments.setdefault(args[2], []).append(args[3])
+            return _Proc("{}")
+        if args[:1] == ["create"]:
+            self._next_id += 1
+            self.created.append(args)
+            return _Proc(json.dumps({"id": f"new-{self._next_id}"}))
+        if args[:2] == ["dep", "add"]:
+            self.deps.append(tuple(args[2:]))
+            return _Proc("{}")
+        raise AssertionError(f"unexpected br call: {args}")
+
+
+def test_parse_found_info_round_trips_the_marker() -> None:
+    """A marker comment written by record_found_info parses back identically."""
+    br = _FakeBr({})
+    info = supervise.FoundInfo(
+        kind="coupling",
+        summary="config loader also reads runner windows",
+        detail="split touched both",
+        affects=("src/basicly/config.py", "epic.2"),
+    )
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(supervise, "_run_br", br)
+        supervise.record_found_info(Path(), "epic.1", info)
+        records = supervise.found_info_records(Path(), ["epic.1"])
+    assert records == (
+        supervise.FoundInfo(
+            kind="coupling",
+            summary="config loader also reads runner windows",
+            detail="split touched both",
+            affects=("src/basicly/config.py", "epic.2"),
+            source="epic.1",
+        ),
+    )
+
+
+def test_record_found_info_rejects_unknown_kind() -> None:
+    """The vocabulary is closed (design 7.4); a typo must not silently vanish."""
+    with pytest.raises(ValueError, match="unknown found-info kind"):
+        supervise.record_found_info(
+            Path(), "epic.1", supervise.FoundInfo(kind="rumor", summary="s")
+        )
+
+
+def test_parse_found_info_skips_malformed_records() -> None:
+    """Bad JSON, unknown kind, or an empty summary are advisory noise, never fatal."""
+    assert supervise.parse_found_info("a plain comment", "x") is None
+    assert supervise.parse_found_info("[harness-info] not json", "x") is None
+    assert supervise.parse_found_info('[harness-info] {"kind":"rumor","summary":"s"}', "x") is None
+    assert supervise.parse_found_info('[harness-info] {"kind":"fact","summary":" "}', "x") is None
+    assert supervise.parse_found_info('[harness-info] ["not","object"]', "x") is None
+
+
+# --- Dispatch bundles: pure functions of br state at dispatch time (D6) --------
+
+
+def _bundle_issues() -> dict[str, dict]:
+    return {
+        "epic": _issue("epic", children=(("epic.1", "in_progress"), ("epic.2", "in_progress"))),
+        "epic.1": {
+            "id": "epic.1",
+            "status": "in_progress",
+            "description": "Do the work.\n\n## Scope\n\n- `src/a/**`\n",
+        },
+        "epic.2": _issue("epic.2", "in_progress"),
+    }
+
+
+def _fold_marker(kind: str, summary: str, affects: list[str]) -> str:
+    payload = json.dumps({"kind": kind, "summary": summary, "detail": "", "affects": affects})
+    return f"{supervise.INFO_MARKER} {payload}"
+
+
+def test_build_bundle_folds_records_by_id_and_scope_overlap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Records naming the lane or overlapping its declared scope fold into the prompt."""
+    br = _FakeBr(
+        _bundle_issues(),
+        comments={
+            "epic": [_fold_marker("decision", "keep the loader split", ["epic.1"])],
+            "epic.2": [
+                _fold_marker("coupling", "core file is shared", ["src/a/core.py"]),
+                _fold_marker("fact", "docs only", ["docs/**"]),
+            ],
+        },
+    )
+    monkeypatch.setattr(supervise, "_run_br", br)
+
+    bundle = supervise.build_bundle(Path(), "epic.1", known_ids=frozenset({"epic", "epic.2"}))
+
+    assert [info.summary for info in bundle.folded] == [
+        "keep the loader split",
+        "core file is shared",
+    ]
+    assert bundle.prompt.startswith(loop.dispatch_prompt("epic.1"))
+    assert "keep the loader split" in bundle.prompt
+    assert "docs only" not in bundle.prompt
+
+
+def test_build_bundle_treats_session_bead_ids_as_ids_not_globs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A session-bead id in affects is never glob-tested.
+
+    A broad scope like `**` must not false-fold records addressed to a
+    different lane.
+    """
+    issues = _bundle_issues()
+    issues["epic.1"]["description"] = "Broad.\n\n## Scope\n\n- `**`\n"
+    br = _FakeBr(
+        issues,
+        comments={"epic": [_fold_marker("fact", "for the other lane", ["epic.2"])]},
+    )
+    monkeypatch.setattr(supervise, "_run_br", br)
+
+    bundle = supervise.build_bundle(Path(), "epic.1", known_ids=frozenset({"epic", "epic.2"}))
+
+    assert bundle.folded == ()
+
+
+def test_build_bundle_sees_records_published_after_planning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Assembly reads br at call time (fresh at boundaries, never mid-flight — D6).
+
+    A record landing between dispatches folds into the later bundle.
+    """
+    br = _FakeBr(_bundle_issues())
+    monkeypatch.setattr(supervise, "_run_br", br)
+    known = frozenset({"epic", "epic.2"})
+
+    before = supervise.build_bundle(Path(), "epic.1", known_ids=known)
+    br.comments["epic"] = [_fold_marker("constraint", "landed meanwhile", ["epic.1"])]
+    after = supervise.build_bundle(Path(), "epic.1", known_ids=known)
+
+    assert before.folded == ()
+    assert [info.summary for info in after.folded] == ["landed meanwhile"]
+
+
+# --- Usage meter: ceiling + finalize protocol (D8, design 7.6) -----------------
+
+
+def _sizing(ceiling: float = 0.6) -> SizingConfig:
+    return SizingConfig(
+        working_set_min=8_000,
+        working_set_max=64_000,
+        build_factors={},
+        calibration_min_samples=10,
+        calibration_window=50,
+        context_ceiling=ceiling,
+    )
+
+
+def test_ceiling_tokens_is_the_window_fraction() -> None:
+    """The finalize trigger is context_ceiling of the runner's window."""
+    claude = next(s for s in runner.BUILTIN_RUNNERS if s.name == "claude")
+    assert supervise.ceiling_tokens(claude, _sizing(0.6)) == 120_000
+
+
+def _overrun_issues() -> dict[str, dict]:
+    return {
+        "epic": _issue("epic", children=(("epic.1", "in_progress"),)),
+        "epic.1": {
+            "id": "epic.1",
+            "status": "in_progress",
+            "title": "Build the parser",
+            "issue_type": "task",
+            "acceptance_criteria": "- parses all three formats",
+            "description": "Work.\n\n## Scope\n\n- `src/a/**`\n",
+        },
+    }
+
+
+def test_finalize_followup_spins_a_gated_top_level_package(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The remainder becomes a sibling lane under the root (design 7.6).
+
+    Gated on the overrun bead's landing, carrying the acceptance criteria
+    and scope.
+    """
+    br = _FakeBr(_overrun_issues())
+    monkeypatch.setattr(supervise, "_run_br", br)
+
+    followup = supervise.finalize_followup(
+        Path(), "epic", "epic.1", occupancy=130_000, ceiling=120_000
+    )
+
+    assert followup == "new-1"
+    create = br.created[0]
+    assert create[1] == "Follow-up: Build the parser (context-ceiling overrun)"
+    parent_at = create.index("--parent")
+    assert tuple(create[parent_at : parent_at + 2]) == ("--parent", "epic")
+    body = create[create.index("-d") + 1]
+    assert "- parses all three formats" in body
+    assert "- `src/a/**`" in body
+    assert ("new-1", "epic.1", "-t", "blocks") in br.deps
+    marker = br.comments["epic.1"][-1]
+    assert marker.startswith(supervise.OVERRUN_MARKER)
+    assert "followup=new-1" in marker
+
+
+def test_finalize_followup_is_idempotent_via_the_overrun_marker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A re-metered overrun returns the recorded follow-up instead of a duplicate."""
+    br = _FakeBr(_overrun_issues())
+    monkeypatch.setattr(supervise, "_run_br", br)
+
+    first = supervise.finalize_followup(
+        Path(), "epic", "epic.1", occupancy=130_000, ceiling=120_000
+    )
+    second = supervise.finalize_followup(
+        Path(), "epic", "epic.1", occupancy=131_000, ceiling=120_000
+    )
+
+    assert first == second == "new-1"
+    assert len(br.created) == 1
+
+
+def test_finalize_followup_leaf_root_creates_without_parent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the overrun lane is the session root itself there is no parent to nest under."""
+    issues = _overrun_issues()
+    issues["epic.1"]["issue_type"] = "feature"  # non-leaf type falls back to task
+    br = _FakeBr(issues)
+    monkeypatch.setattr(supervise, "_run_br", br)
+
+    supervise.finalize_followup(Path(), "epic.1", "epic.1", occupancy=1, ceiling=1)
+
+    create = br.created[0]
+    assert "--parent" not in create
+    assert create[create.index("-t") + 1] == "task"
+
+
+# --- Ready lanes and concurrent dispatch ---------------------------------------
+
+
+def _lane(issue_id: str, live: bool = True) -> supervise.AdoptedLane:
+    return supervise.AdoptedLane(
+        issue_id=issue_id,
+        status="in_progress",
+        binding=loop_state.WorktreeBinding(issue_id, f"harness/{issue_id}"),
+        live=live,
+    )
+
+
+def _session(*lanes: supervise.AdoptedLane) -> supervise.SessionState:
+    return supervise.SessionState(
+        root_issue="epic",
+        root_status="open",
+        children=tuple((lane.issue_id, lane.status) for lane in lanes),
+        adopted=lanes,
+    )
+
+
+def _patch_readiness(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    blocked: frozenset[str] | set[str] = frozenset(),
+    ranked: tuple[tuple[int, str], ...] = (),
+) -> None:
+    monkeypatch.setattr(supervise.loop_state, "blocked_ids", lambda _r: tuple(blocked))
+    monkeypatch.setattr(
+        supervise.loop_state,
+        "ready_ranked",
+        lambda _r: tuple(
+            loop_state.RankedNode(rank=rank, score=0, issue_id=iid, title="")
+            for rank, iid in ranked
+        ),
+    )
+
+
+def test_ready_lanes_filters_blocked_and_dead_and_orders_by_rank(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Blocked-ness gates (claimed lanes leave the ready list); rank orders the rest."""
+    lanes = (_lane("epic.1"), _lane("epic.2"), _lane("epic.3", live=False), _lane("epic.4"))
+    _patch_readiness(monkeypatch, blocked={"epic.2"}, ranked=((1, "epic.4"),))
+
+    ready = supervise.ready_lanes(Path(), _session(*lanes))
+
+    assert [lane.issue_id for lane in ready] == ["epic.4", "epic.1"]
+
+
+def test_dispatch_lanes_runs_concurrently_up_to_the_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Four ready lanes under cap 2 overlap two at a time, never more.
+
+    The outcomes come back in dispatch (scheduler-rank) order.
+    """
+    lanes = tuple(_lane(f"epic.{n}") for n in (1, 2, 3, 4))
+    _patch_readiness(monkeypatch, ranked=tuple((n, f"epic.{n}") for n in (1, 2, 3, 4)))
+    monkeypatch.setattr(supervise.runner, "select_runner", lambda *_a, **_k: _MANUAL_SPEC)
+    barrier = threading.Barrier(2, timeout=5)
+    gauge = {"current": 0, "max": 0}
+    gauge_lock = threading.Lock()
+
+    def fake_dispatch(_repo, _session, lane, _spec, _sizing) -> supervise.LaneOutcome:
+        with gauge_lock:
+            gauge["current"] += 1
+            gauge["max"] = max(gauge["max"], gauge["current"])
+        barrier.wait()  # both slots must be occupied at once to pass
+        with gauge_lock:
+            gauge["current"] -= 1
+        return _outcome(lane.issue_id)
+
+    outcomes = supervise.dispatch_lanes(Path(), _session(*lanes), cap=2, dispatch_one=fake_dispatch)
+
+    assert gauge["max"] == 2
+    assert [o.issue_id for o in outcomes] == ["epic.1", "epic.2", "epic.3", "epic.4"]
+
+
+def _outcome(issue_id: str) -> supervise.LaneOutcome:
+    return supervise.LaneOutcome(
+        issue_id=issue_id,
+        runner_name="manual",
+        result=None,
+        needs_fact=None,
+        occupancy=None,
+        overrun=False,
+        followup_id=None,
+        detail="test",
+    )
+
+
+_MANUAL_SPEC = runner.RunnerSpec("manual", runner.HANDOFF)
+
+
+def test_dispatch_lanes_heartbeats_while_runners_execute(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The holder beats the lock between completions so a long pass never goes stale."""
+    _patch_readiness(monkeypatch)
+    monkeypatch.setattr(supervise.runner, "select_runner", lambda *_a, **_k: _MANUAL_SPEC)
+    monkeypatch.setattr(supervise, "HEARTBEAT_INTERVAL_S", 0.01)
+    release = threading.Event()
+    beats = []
+
+    def beat() -> None:
+        beats.append(1)
+        release.set()
+
+    def fake_dispatch(_repo, _session, lane, _spec, _sizing) -> supervise.LaneOutcome:
+        assert release.wait(timeout=5)
+        return _outcome(lane.issue_id)
+
+    outcomes = supervise.dispatch_lanes(
+        Path(), _session(_lane("epic.1")), beat=beat, cap=1, dispatch_one=fake_dispatch
+    )
+
+    assert len(outcomes) == 1
+    assert beats  # at least one beat fired while the lane ran
+
+
+def test_dispatch_lanes_lock_lost_cancels_lanes_not_yet_started(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A lost lock stops the pass immediately: the queued lane never dispatches."""
+    _patch_readiness(monkeypatch)
+    monkeypatch.setattr(supervise.runner, "select_runner", lambda *_a, **_k: _MANUAL_SPEC)
+    monkeypatch.setattr(supervise, "HEARTBEAT_INTERVAL_S", 0.01)
+    release = threading.Event()
+    started: list[str] = []
+
+    def fake_dispatch(_repo, _session, lane, _spec, _sizing) -> supervise.LaneOutcome:
+        started.append(lane.issue_id)
+        assert release.wait(timeout=5)
+        return _outcome(lane.issue_id)
+
+    def beat() -> None:
+        raise LockLostError("successor took over")
+
+    try:
+        with pytest.raises(LockLostError):
+            supervise.dispatch_lanes(
+                Path(),
+                _session(_lane("epic.1"), _lane("epic.2")),
+                beat=beat,
+                cap=1,
+                dispatch_one=fake_dispatch,
+            )
+    finally:
+        release.set()  # let the in-flight worker finish
+    assert started == ["epic.1"]
+
+
+def test_dispatch_lanes_without_ready_lanes_is_a_no_op(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every lane blocked means nothing dispatches and nothing loads."""
+    _patch_readiness(monkeypatch, blocked={"epic.1"})
+    assert supervise.dispatch_lanes(Path(), _session(_lane("epic.1"))) == ()
+
+
+# --- The lane worker: bundle, run, record, meter --------------------------------
+
+
+def _codex_events(tokens: int) -> str:
+    event = {"type": "turn.completed", "usage": {"input_tokens": tokens, "output_tokens": 0}}
+    return json.dumps(event)
+
+
+def _codex() -> runner.RunnerSpec:
+    return next(s for s in runner.BUILTIN_RUNNERS if s.name == "codex")
+
+
+def _worker_fixture(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, stdout: str, returncode: int = 0
+) -> tuple[_FakeBr, dict]:
+    br = _FakeBr(_overrun_issues())
+    monkeypatch.setattr(supervise, "_run_br", br)
+    seen: dict = {}
+
+    class _WtSession:
+        worktree_path = str(tmp_path / "wt")
+
+    (tmp_path / "wt").mkdir(exist_ok=True)
+    monkeypatch.setattr(supervise.worktree, "load_session", lambda *_a, **_k: _WtSession())
+
+    def fake_run(spec, prompt, cwd, **_kw):
+        seen["prompt"] = prompt
+        seen["cwd"] = cwd
+        return runner.RunResult(
+            spec.name,
+            (spec.name,),
+            executed=True,
+            returncode=returncode,
+            stdout=stdout,
+            duration_s=0.1,
+        )
+
+    monkeypatch.setattr(supervise.runner, "run", fake_run)
+    monkeypatch.setattr(
+        supervise.loop, "record_run", lambda *a, **_k: seen.setdefault("recorded", a[1])
+    )
+    return br, seen
+
+
+def test_dispatch_lane_green_path_meters_and_records(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A clean run records telemetry by bead, meters occupancy, and lands green."""
+    codex = _codex()
+    br, seen = _worker_fixture(monkeypatch, tmp_path, stdout=_codex_events(50_000))
+
+    outcome = supervise._dispatch_lane(
+        tmp_path, _session(_lane("epic.1")), _lane("epic.1"), codex, _sizing()
+    )
+
+    assert seen["recorded"] == "epic.1"  # telemetry keyed by the bead
+    assert "epic.1" in seen["prompt"]
+    assert outcome.occupancy == 50_000
+    assert outcome.overrun is False
+    assert outcome.followup_id is None
+    assert outcome.detail == "finished; ready to land"
+    assert br.created == []
+
+
+def test_dispatch_lane_overrun_triggers_the_finalize_protocol(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Crossing the ceiling spins the remainder into a follow-up bead (D8/7.6)."""
+    codex = _codex()
+    br, _seen = _worker_fixture(monkeypatch, tmp_path, stdout=_codex_events(250_000))
+
+    outcome = supervise._dispatch_lane(
+        tmp_path, _session(_lane("epic.1")), _lane("epic.1"), codex, _sizing()
+    )
+
+    assert outcome.overrun is True
+    assert outcome.followup_id == "new-1"
+    assert "new-1" in outcome.detail
+    assert len(br.created) == 1
+
+
+def test_dispatch_lane_surfaces_the_needs_input_sentinel(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The agent's missing-fact signal is consumed and carried on the outcome."""
+    codex = _codex()
+    _br, _seen = _worker_fixture(monkeypatch, tmp_path, stdout=_codex_events(10))
+    sentinel = tmp_path / "wt" / needs_input.SENTINEL_FILE
+    sentinel.parent.mkdir(parents=True, exist_ok=True)
+    sentinel.write_text('{"fact": "which API version", "detail": "docs conflict"}')
+
+    outcome = supervise._dispatch_lane(
+        tmp_path, _session(_lane("epic.1")), _lane("epic.1"), codex, _sizing()
+    )
+
+    assert outcome.needs_fact == "which API version"
+    assert "docs conflict" in outcome.detail
+    assert not sentinel.exists()  # consumed so a re-dispatch starts clean
+
+
+def test_dispatch_lane_without_worktree_record_asks_for_reprovision(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A bound lane whose worktree record vanished must not dispatch blind."""
+    codex = _codex()
+    monkeypatch.setattr(supervise.worktree, "load_session", lambda *_a, **_k: None)
+
+    outcome = supervise._dispatch_lane(
+        tmp_path, _session(_lane("epic.1")), _lane("epic.1"), codex, _sizing()
+    )
+
+    assert outcome.result is None
+    assert "re-provision" in outcome.detail
+
+
+def test_dispatch_lane_failed_run_never_spins_a_followup(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A crashed runner with high usage never spins a follow-up bead.
+
+    It lands nothing coherent and the routing layer re-dispatches it, so no
+    remainder may be pinned by the idempotence marker (design 7.6).
+    """
+    br, _seen = _worker_fixture(monkeypatch, tmp_path, stdout=_codex_events(250_000), returncode=3)
+
+    outcome = supervise._dispatch_lane(
+        tmp_path, _session(_lane("epic.1")), _lane("epic.1"), _codex(), _sizing()
+    )
+
+    assert outcome.overrun is True  # the metered truth is still reported
+    assert outcome.followup_id is None
+    assert br.created == []
+    assert outcome.detail == "runner exited 3"
+
+
+def test_dispatch_lanes_contains_a_lane_failure_to_its_outcome(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One lane's br hiccup must not discard the other lanes' outcomes."""
+    _patch_readiness(monkeypatch)
+    monkeypatch.setattr(supervise.runner, "select_runner", lambda *_a, **_k: _MANUAL_SPEC)
+
+    def flaky_dispatch(_repo, _session, lane, _spec, _sizing) -> supervise.LaneOutcome:
+        if lane.issue_id == "epic.1":
+            raise RuntimeError("br: database is locked")
+        return _outcome(lane.issue_id)
+
+    outcomes = supervise.dispatch_lanes(
+        Path(),
+        _session(_lane("epic.1"), _lane("epic.2")),
+        cap=2,
+        dispatch_one=flaky_dispatch,
+    )
+
+    assert [o.issue_id for o in outcomes] == ["epic.1", "epic.2"]
+    assert "lane dispatch failed: br: database is locked" in outcomes[0].detail
+    assert outcomes[1].detail == "test"
+
+
+def test_parse_found_info_bounds_summary_and_detail() -> None:
+    """Agent-authored record fields are truncated at parse time.
+
+    A runaway comment must not bloat every later lane's dispatch prompt.
+    """
+    payload = json.dumps({"kind": "fact", "summary": "s" * 1000, "detail": "d" * 5000})
+    info = supervise.parse_found_info(f"{supervise.INFO_MARKER} {payload}", "epic.1")
+    assert info is not None
+    assert len(info.summary) == 200
+    assert len(info.detail) == 500
