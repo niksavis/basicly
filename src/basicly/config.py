@@ -736,6 +736,9 @@ class RunnerConfig:
     # Runner used for decider invocations (design 7.1); None falls back to the
     # session default.
     decider: str | None = None
+    # Hard kill per dispatch, in seconds (design section 6, basicly-kjc5.7); a
+    # timed-out lane routes to the decision queue as a stall flag.
+    runner_timeout: float = 3600.0
 
 
 def load_runner_config(repo_root: Path) -> RunnerConfig:
@@ -764,7 +767,18 @@ def load_runner_config(repo_root: Path) -> RunnerConfig:
     decider = section.get("decider")
     decider = decider.strip() if isinstance(decider, str) and decider.strip() else None
 
-    return RunnerConfig(specs=tuple(specs.values()), default=default, decider=decider)
+    raw_timeout = section.get("runner_timeout")
+    if (
+        not isinstance(raw_timeout, int | float)
+        or isinstance(raw_timeout, bool)
+        or raw_timeout <= 0
+    ):
+        raw_timeout = 3600.0
+    timeout = float(raw_timeout)
+
+    return RunnerConfig(
+        specs=tuple(specs.values()), default=default, decider=decider, runner_timeout=timeout
+    )
 
 
 def _inject_copilot_deny_tools(specs: dict[str, RunnerSpec]) -> None:

@@ -183,6 +183,10 @@ class RunResult:
     # Wall-clock seconds around the subprocess; None when nothing executed
     # (a handoff or a dry run). Feeds the loop's run-record (basicly-z6dh).
     duration_s: float | None = None
+    # The dispatch hit [runner] runner_timeout and was hard-killed
+    # (basicly-kjc5.7, design section 6): the supervisor routes this to the
+    # decision queue as a stall flag. returncode is None on a timeout.
+    timed_out: bool = False
 
 
 def format_command(spec: RunnerSpec, prompt: str, *, capture_usage: bool = False) -> list[str]:
@@ -445,8 +449,14 @@ def br_attribution_env(spec: RunnerSpec) -> dict[str, str]:
     return env
 
 
-def run(
-    spec: RunnerSpec, prompt: str, cwd: Path, *, dry_run: bool = False, capture_usage: bool = False
+def run(  # noqa: PLR0913 — mirrors the CLI surface
+    spec: RunnerSpec,
+    prompt: str,
+    cwd: Path,
+    *,
+    dry_run: bool = False,
+    capture_usage: bool = False,
+    timeout: float | None = None,
 ) -> RunResult:
     """Invoke *spec* on *prompt* in *cwd*, capturing output.
 
@@ -454,7 +464,12 @@ def run(
     surfaces the prompt and leaves the work to the driving agent/human. A dry run
     returns the exact argv without executing it. *capture_usage* asks the CLI to
     report token usage (see :func:`format_command`); parse the result with
-    :func:`extract_usage`.
+    :func:`extract_usage`. *timeout* hard-kills the dispatch after that many
+    seconds (basicly-kjc5.7): the result comes back ``timed_out`` with whatever
+    output was captured, so the caller can route the stall instead of hanging.
+    Known limitation: only the direct child is killed — an agent CLI's own
+    subprocess tree (test runs, shells) may survive the timeout; portable
+    group-kill (killpg / Job objects) is tracked as follow-up hardening.
     """
     if spec.kind == HANDOFF:
         return RunResult(spec.name, (), executed=False, handoff=True)
@@ -467,9 +482,33 @@ def run(
     identity = git_identity_env(spec)
     env = {**os.environ, **br_attribution_env(spec), **(identity or {})}
     start = time.perf_counter()
-    proc = subprocess.run(  # nosec B603
-        argv, cwd=cwd, input=stdin, capture_output=True, text=True, check=False, env=env
-    )
+    timed_out = False
+    try:
+        proc = subprocess.run(  # nosec B603
+            argv,
+            cwd=cwd,
+            input=stdin,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+            timeout=timeout,
+        )
+        returncode: int | None = proc.returncode
+        stdout, stderr = proc.stdout, proc.stderr
+    except subprocess.TimeoutExpired as exc:
+        timed_out = True
+        returncode = None
+        stdout = (
+            exc.stdout.decode(errors="replace")
+            if isinstance(exc.stdout, bytes)
+            else (exc.stdout or "")
+        )
+        stderr = (
+            exc.stderr.decode(errors="replace")
+            if isinstance(exc.stderr, bytes)
+            else (exc.stderr or "")
+        )
     duration_s = time.perf_counter() - start
     # Redact secrets at the source so no downstream surface (CLI print, loop log)
     # can leak a credential the agent echoed (basicly-3p2i). Network egress is not
@@ -479,10 +518,11 @@ def run(
         spec.name,
         tuple(argv),
         executed=True,
-        returncode=proc.returncode,
-        stdout=redact_secrets(proc.stdout),
-        stderr=redact_secrets(proc.stderr),
+        returncode=returncode,
+        stdout=redact_secrets(stdout),
+        stderr=redact_secrets(stderr),
         duration_s=duration_s,
+        timed_out=timed_out,
     )
 
 
