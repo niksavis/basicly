@@ -275,8 +275,8 @@ def test_parse_scope_section_round_trips_child_body() -> None:
     """The calibration scope parser reads exactly what _child_body records."""
     spec = _child("t", "src/**/*.py", "tests/test_x.py")
     body = decompose._child_body(spec)
-    assert decompose._parse_scope_section(body) == ("src/**/*.py", "tests/test_x.py")
-    assert decompose._parse_scope_section("no scope section here") == ()
+    assert decompose.parse_scope_section(body) == ("src/**/*.py", "tests/test_x.py")
+    assert decompose.parse_scope_section("no scope section here") == ()
 
 
 class _FakeBrShow:

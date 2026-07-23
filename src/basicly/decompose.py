@@ -305,7 +305,7 @@ def estimate_cost(
     )
 
 
-def _parse_scope_section(description: str) -> tuple[str, ...]:
+def parse_scope_section(description: str) -> tuple[str, ...]:
     """The scope globs recorded under a ``## Scope`` heading, as _child_body writes them."""
     scope: list[str] = []
     in_scope = False
@@ -335,7 +335,7 @@ def _bead_class_and_scope(repo_root: Path, bead_id: str) -> tuple[str, tuple[str
     description = issue.get("description")
     if not (isinstance(task_class, str) and task_class and isinstance(description, str)):
         return None
-    scope = _parse_scope_section(description)
+    scope = parse_scope_section(description)
     return (task_class, scope) if scope else None
 
 

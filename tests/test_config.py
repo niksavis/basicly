@@ -554,3 +554,61 @@ def test_sizing_config_ignores_wrong_typed_values(tmp_path: Path) -> None:
     assert sizing.calibration_window == 50
     assert sizing.build_factors["task"] == 3.0  # bad value keeps the seed
     assert sizing.build_factors["bug"] == 4.0
+
+
+# --- context_window / context_ceiling (basicly-kjc5.6, D8) --------------------
+
+
+def test_runner_config_parses_context_window(tmp_path: Path) -> None:
+    """An [[runner.agents]] entry may restate its window for the ceiling meter."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[runner.agents]]\nname = "claude"\n'
+        'command = ["claude", "-p", "{prompt}"]\ncontext_window = 1000000\n',
+        encoding="utf-8",
+    )
+    by_name = {spec.name: spec for spec in load_runner_config(tmp_path).specs}
+    assert by_name["claude"].context_window == 1_000_000
+
+
+def test_runner_config_context_window_defaults_for_override(tmp_path: Path) -> None:
+    """An override omitting context_window gets the conservative default.
+
+    Not the builtin's value — the same replaces-wholesale stance as
+    usage_format.
+    """
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[runner.agents]]\nname = "claude"\ncommand = ["claude", "-p", "{prompt}"]\n',
+        encoding="utf-8",
+    )
+    by_name = {spec.name: spec for spec in load_runner_config(tmp_path).specs}
+    assert by_name["claude"].context_window == 128_000
+
+
+def test_runner_config_rejects_malformed_context_window(tmp_path: Path) -> None:
+    """A non-integer or non-positive window is a config error, not a silent shrink."""
+    for value in ('"big"', "0", "true"):
+        (tmp_path / CONFIG_FILE).write_text(
+            f'[[runner.agents]]\nname = "x"\ncommand = ["x", "{{prompt}}"]\n'
+            f"context_window = {value}\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="context_window"):
+            load_runner_config(tmp_path)
+
+
+def test_sizing_config_context_ceiling_defaults_and_overrides(tmp_path: Path) -> None:
+    """context_ceiling defaults to 0.6 and accepts a fraction in (0, 1]."""
+    assert load_sizing_config(tmp_path).context_ceiling == 0.6
+    (tmp_path / CONFIG_FILE).write_text(
+        "[policy.sizing]\ncontext_ceiling = 0.5\n", encoding="utf-8"
+    )
+    assert load_sizing_config(tmp_path).context_ceiling == 0.5
+
+
+def test_sizing_config_context_ceiling_unusable_values_fall_back(tmp_path: Path) -> None:
+    """Zero, negative, above-1, or bool ceilings would wedge or disable the meter."""
+    for value in ("0", "-0.2", "1.5", "true"):
+        (tmp_path / CONFIG_FILE).write_text(
+            f"[policy.sizing]\ncontext_ceiling = {value}\n", encoding="utf-8"
+        )
+        assert load_sizing_config(tmp_path).context_ceiling == 0.6

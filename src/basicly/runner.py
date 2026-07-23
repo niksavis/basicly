@@ -69,6 +69,13 @@ CLAUDE_JSON = "claude-json"  # `--output-format json`: one result object with a 
 CODEX_JSONL = "codex-jsonl"  # `--json`: JSONL event stream with turn.completed usage
 USAGE_FORMATS = (CLAUDE_JSON, CODEX_JSONL)
 
+# Context-window defaults per adapter (factory design §6, basicly-kjc5.6): the
+# denominator for the context-ceiling meter. Conservative published windows;
+# config-overridable per agent via `context_window`. Unknown agents get the
+# smallest of the big 3 so the ceiling errs toward finalizing early, never late.
+DEFAULT_CONTEXT_WINDOW = 128_000
+_CONTEXT_WINDOWS = {"claude": 200_000, "codex": 400_000, "copilot": 128_000}
+
 # Flags appended for a usage-capturing dispatch. Trailing — after the prompt —
 # so a subcommand invocation like `codex exec` keeps the flag inside the
 # subcommand; both CLIs accept options after positional arguments. Kept out of
@@ -122,6 +129,10 @@ class RunnerSpec:
     # tokens) — makes a usage-capturing dispatch fall back to the chars/4
     # transcript estimate (design 7.5).
     usage_format: str | None = None
+    # The model's context window in tokens (basicly-kjc5.6): the denominator for
+    # the [policy.sizing] context_ceiling meter (design D8). Per-adapter defaults
+    # in _CONTEXT_WINDOWS; config-overridable per agent.
+    context_window: int = DEFAULT_CONTEXT_WINDOW
 
     @property
     def binary(self) -> str | None:
@@ -132,7 +143,13 @@ class RunnerSpec:
 # Built-in adapters. The big-3 command templates are best-effort defaults;
 # they are config-overridable and every one is printable via `runner dry-run`.
 BUILTIN_RUNNERS: tuple[RunnerSpec, ...] = (
-    RunnerSpec("claude", HEADLESS, ("claude", "-p", PROMPT_PLACEHOLDER), usage_format=CLAUDE_JSON),
+    RunnerSpec(
+        "claude",
+        HEADLESS,
+        ("claude", "-p", PROMPT_PLACEHOLDER),
+        usage_format=CLAUDE_JSON,
+        context_window=_CONTEXT_WINDOWS["claude"],
+    ),
     RunnerSpec(
         "codex",
         HEADLESS,
@@ -140,8 +157,14 @@ BUILTIN_RUNNERS: tuple[RunnerSpec, ...] = (
         sandbox="workspace-write",
         approval="on-failure",
         usage_format=CODEX_JSONL,
+        context_window=_CONTEXT_WINDOWS["codex"],
     ),
-    RunnerSpec("copilot", HEADLESS, ("copilot", "-p", PROMPT_PLACEHOLDER)),
+    RunnerSpec(
+        "copilot",
+        HEADLESS,
+        ("copilot", "-p", PROMPT_PLACEHOLDER),
+        context_window=_CONTEXT_WINDOWS["copilot"],
+    ),
     RunnerSpec(MANUAL_RUNNER, HANDOFF),
 )
 
@@ -526,6 +549,17 @@ def _codex_jsonl_usage(stdout: str) -> Usage | None:
     """
     total = 0
     found = False
+    for usage in _codex_turn_usages(stdout):
+        values = [usage[key] for key in _CODEX_TOKEN_KEYS if isinstance(usage.get(key), int)]
+        if values:
+            total += sum(values)
+            found = True
+    return Usage(tokens=total, cost=None, estimated=False) if found else None
+
+
+def _codex_turn_usages(stdout: str) -> list[dict]:
+    """The usage objects of codex's ``turn.completed`` events, in stream order."""
+    usages: list[dict] = []
     for line in stdout.splitlines():
         stripped = line.strip()
         if not stripped:
@@ -537,10 +571,39 @@ def _codex_jsonl_usage(stdout: str) -> Usage | None:
         if not isinstance(event, dict) or event.get("type") != "turn.completed":
             continue
         usage = event.get("usage")
-        if not isinstance(usage, dict):
-            continue
-        values = [usage[key] for key in _CODEX_TOKEN_KEYS if isinstance(usage.get(key), int)]
-        if values:
-            total += sum(values)
-            found = True
-    return Usage(tokens=total, cost=None, estimated=False) if found else None
+        if isinstance(usage, dict):
+            usages.append(usage)
+    return usages
+
+
+def context_occupancy(spec: RunnerSpec, result: RunResult) -> int | None:
+    """The run's final context occupancy in tokens, or None when unknowable.
+
+    The numerator for the context-ceiling meter (basicly-kjc5.6, design D8):
+    how full the model's window was at the *end* of the run — distinct from
+    :func:`extract_usage`, which totals processing for cost telemetry.
+
+    - ``claude-json``: **None.** Probed 2026-07-23: the result object's usage
+      block is session-cumulative — ``cache_read_input_tokens`` re-counts the
+      context every turn (a 2-turn run reported ~43K against a ~24K final
+      context), so the sum would cross any ceiling on every healthy multi-turn
+      run; and its ``iterations`` array omits the final call, so the last-turn
+      view is not recoverable from this envelope. Per-turn usage needs
+      ``--output-format stream-json`` — a follow-up adapter upgrade.
+    - ``codex-jsonl``: the **last** ``turn.completed`` usage; its
+      ``input_tokens`` already carry the whole conversation re-sent that turn,
+      so summing across turns (the cost view) would overstate occupancy.
+    - No usage format, nothing executed, or a parse miss: None. The chars/4
+      transcript estimate is deliberately *not* used here — stdout length says
+      nothing about window occupancy, and a false ceiling trigger would spin a
+      phantom follow-up bead for a healthy run.
+    """
+    if not result.executed:
+        return None
+    if spec.usage_format == CODEX_JSONL:
+        for usage in reversed(_codex_turn_usages(result.stdout)):
+            values = [usage[key] for key in _CODEX_TOKEN_KEYS if isinstance(usage.get(key), int)]
+            if values:
+                return sum(values)
+        return None
+    return None

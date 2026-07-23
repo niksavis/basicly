@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from dataclasses import asdict, dataclass, fields
 from datetime import UTC, datetime
 from pathlib import Path
@@ -106,15 +107,23 @@ def build_record(  # noqa: PLR0913
     )
 
 
+# Serializes same-process writers: the supervisor's concurrent dispatch
+# (basicly-kjc5.6) records lanes from pool threads that share one PID, so both
+# the read-modify-write and the per-process tmp path need a process-local lock.
+# Cross-process safety stays what it was: the atomic tmp-then-replace, with a
+# lost update under a true cross-process race accepted for telemetry.
+_RECORD_LOCK = threading.Lock()
+
+
 def record(repo_root: Path, bead_id: str, run_record: RunRecord) -> None:
     """Append *run_record* under *bead_id*, writing the file atomically.
 
     Creates the self-ignored ``.basicly/usage/`` directory on first write. A
     corrupt, non-dict, or wrong-shaped file restarts that bead's history empty
     rather than raising — the record history is telemetry, not something that
-    should ever fail a loop landing. The tmp file is per-process so concurrent
-    dispatches writing the shared base file cannot corrupt each other's rename
-    (a lost update under a true write-write race is acceptable for telemetry).
+    should ever fail a loop landing. Same-process writers (the supervisor's
+    dispatch pool) are serialized by :data:`_RECORD_LOCK`; the per-process tmp
+    file keeps concurrent *processes* from corrupting each other's rename.
     """
     usage_dir = repo_root / USAGE_DIR
     usage_dir.mkdir(parents=True, exist_ok=True)
@@ -123,16 +132,17 @@ def record(repo_root: Path, bead_id: str, run_record: RunRecord) -> None:
         gitignore.write_text("*\n", encoding="utf-8")
 
     records_file = repo_root / RUN_RECORDS_FILE
-    data = _read(records_file)
-    history = data.get(bead_id)
-    if not isinstance(history, list):  # missing, or an externally-tampered value
-        history = []
-        data[bead_id] = history
-    history.append(asdict(run_record))
+    with _RECORD_LOCK:
+        data = _read(records_file)
+        history = data.get(bead_id)
+        if not isinstance(history, list):  # missing, or an externally-tampered value
+            history = []
+            data[bead_id] = history
+        history.append(asdict(run_record))
 
-    tmp = records_file.with_suffix(f".{os.getpid()}.json.tmp")
-    tmp.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    tmp.replace(records_file)
+        tmp = records_file.with_suffix(f".{os.getpid()}.json.tmp")
+        tmp.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        tmp.replace(records_file)
 
 
 def load_run_records(repo_root: Path) -> dict[str, list[dict]] | None:
