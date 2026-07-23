@@ -14,12 +14,13 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 from pathlib import Path
 
 import pytest
 
-from basicly import loop, loop_state, needs_input, runner, supervise
-from basicly.config import SizingConfig
+from basicly import loop, loop_state, needs_input, policy, runner, supervise
+from basicly.config import PolicyConfig, SizingConfig
 from basicly.supervise import LOCK_FILE, STALE_AFTER_S, LockHeldError, LockLostError
 
 
@@ -582,6 +583,8 @@ def _patch_readiness(
             for rank, iid in ranked
         ),
     )
+    monkeypatch.setattr(supervise.decisions, "has_pending", lambda _r, _i: False)
+    monkeypatch.setattr(supervise, "_phase_of", lambda _r, _i: "build")
 
 
 def test_ready_lanes_filters_blocked_and_dead_and_orders_by_rank(
@@ -890,3 +893,367 @@ def test_parse_found_info_bounds_summary_and_detail() -> None:
     assert info is not None
     assert len(info.summary) == 200
     assert len(info.detail) == 500
+
+
+# --- Outcome routing (basicly-kjc5.7): green lands, everything else queues -----
+
+
+def _executed_outcome(issue_id: str, *, returncode: int | None = 0, **kw) -> supervise.LaneOutcome:
+    result = runner.RunResult(
+        "codex",
+        ("codex",),
+        executed=True,
+        returncode=returncode,
+        timed_out=kw.pop("timed_out", False),
+    )
+    return supervise.LaneOutcome(
+        issue_id=issue_id,
+        runner_name="codex",
+        result=result,
+        needs_fact=kw.pop("needs_fact", None),
+        occupancy=None,
+        overrun=False,
+        followup_id=None,
+        detail=kw.pop("detail", "finished; ready to land"),
+    )
+
+
+def _advance_result(issue_id: str, action: str, to_phase: str, detail: str = ""):
+    return loop.AdvanceResult(issue_id, "build", to_phase, action, detail)
+
+
+def test_route_green_lane_lands_and_ships_under_a_grant(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Green -> loop.advance lands it; a covering grant ships it hands-free."""
+    monkeypatch.setattr(
+        supervise.loop,
+        "advance",
+        lambda _r, issue_id, **_k: _advance_result(issue_id, "merged", "verify", "landed"),
+    )
+    monkeypatch.setattr(
+        supervise.policy,
+        "approve_checkpoint_guarded",
+        lambda *_a, **_k: policy.ApprovalResult("approved", detail="delegated under L3 grant"),
+    )
+    monkeypatch.setattr(
+        supervise.loop,
+        "run_until_blocked",
+        lambda _r, issue_id, **_k: [_advance_result(issue_id, "tore-down", "done", "closed")],
+    )
+
+    routed = supervise.route_outcomes(
+        tmp_path, _session(_lane("epic.1")), (_executed_outcome("epic.1"),)
+    )
+
+    assert [r.route for r in routed] == ["shipped"]
+    assert routed[0].progressed
+
+
+def test_route_green_lane_without_a_grant_queues_the_ship_checkpoint(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No covering grant: the landing sticks, ship waits on a queued human item."""
+    monkeypatch.setattr(
+        supervise.loop,
+        "advance",
+        lambda _r, issue_id, **_k: _advance_result(issue_id, "merged", "verify", "landed"),
+    )
+    monkeypatch.setattr(
+        supervise.policy,
+        "approve_checkpoint_guarded",
+        lambda *_a, **_k: policy.ApprovalResult("challenge", code="abc"),
+    )
+    queued: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        supervise.decisions,
+        "enqueue",
+        lambda _r, issue, kind, *_a, **_k: (
+            queued.append((issue, kind)),
+            decisions_item(issue, kind),
+        )[1],
+    )
+
+    routed = supervise.route_outcomes(
+        tmp_path, _session(_lane("epic.1")), (_executed_outcome("epic.1"),)
+    )
+
+    assert routed[0].route == "merged"
+    assert queued == [("epic.1", "checkpoint")]
+    assert "awaits a human" in routed[0].detail
+
+
+def decisions_item(issue: str, kind: str) -> supervise.decisions.DecisionItem:
+    """A minimal queue item for enqueue fakes."""
+    return supervise.decisions.DecisionItem(
+        decision_id=f"{issue}#abc", issue_id=issue, kind=kind, question="q"
+    )
+
+
+def test_route_failed_dispatch_retries_then_escalates_at_the_cap(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A crashing runner gets the bounded rework loop, not an instant human stop."""
+    attempts = {"n": 0}
+
+    def record(_r, _i, gate):
+        assert gate == supervise.DISPATCH_GATE
+        attempts["n"] += 1
+        return attempts["n"]
+
+    monkeypatch.setattr(supervise.policy, "record_rework", record)
+    monkeypatch.setattr(
+        supervise.policy,
+        "load_policy",
+        lambda _r: PolicyConfig(required_gates=("verify",), max_rework=2),
+    )
+    queued: list[str] = []
+    monkeypatch.setattr(
+        supervise.decisions,
+        "enqueue",
+        lambda _r, issue, kind, *_a, **_k: (queued.append(kind), decisions_item(issue, kind))[1],
+    )
+    failed = _executed_outcome("epic.1", returncode=3, detail="runner exited 3")
+
+    first = supervise.route_outcomes(tmp_path, _session(_lane("epic.1")), (failed,))
+    second = supervise.route_outcomes(tmp_path, _session(_lane("epic.1")), (failed,))
+
+    assert first[0].route == "retry"
+    assert second[0].route == "decision"
+    assert queued == ["escalation"]
+
+
+def test_route_needs_input_and_stall_hold_for_the_queue(tmp_path: Path) -> None:
+    """Items queued at dispatch time just park the lane; nothing lands."""
+    needs = _executed_outcome("epic.1", needs_fact="which db?", detail="needs input")
+    stalled = _executed_outcome("epic.2", returncode=None, timed_out=True, detail="timed out")
+
+    routed = supervise.route_outcomes(
+        tmp_path, _session(_lane("epic.1"), _lane("epic.2")), (needs, stalled)
+    )
+
+    assert [r.route for r in routed] == ["decision", "decision"]
+    assert not any(r.progressed for r in routed)
+
+
+def test_route_handoff_stays_with_the_driving_agent(tmp_path: Path) -> None:
+    """Interactive mode: a handoff lane is not a queue item, it is the human's turn."""
+    handoff = supervise.LaneOutcome(
+        issue_id="epic.1",
+        runner_name="manual",
+        result=runner.RunResult("manual", (), executed=False, handoff=True),
+        needs_fact=None,
+        occupancy=None,
+        overrun=False,
+        followup_id=None,
+        detail="handoff runner: work left to the driving agent",
+    )
+    routed = supervise.route_outcomes(tmp_path, _session(_lane("epic.1")), (handoff,))
+    assert [r.route for r in routed] == ["handoff"]
+
+
+def test_ready_lanes_skip_lanes_waiting_on_a_decision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A queued judgment holds the lane: re-dispatching would only re-block."""
+    _patch_readiness(monkeypatch)
+    monkeypatch.setattr(supervise.decisions, "has_pending", lambda _r, issue: issue == "epic.1")
+    ready = supervise.ready_lanes(Path(), _session(_lane("epic.1"), _lane("epic.2")))
+    assert [lane.issue_id for lane in ready] == ["epic.2"]
+
+
+def test_dispatch_lane_timeout_queues_a_stall(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A hard-killed dispatch routes to the decision queue as a stall flag."""
+    codex = _codex()
+    _br, _seen = _worker_fixture(monkeypatch, tmp_path, stdout="")
+
+    def timed_out_run(spec, _prompt, _cwd, **_k):
+        return runner.RunResult(spec.name, (spec.name,), executed=True, timed_out=True)
+
+    monkeypatch.setattr(supervise.runner, "run", timed_out_run)
+    queued: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        supervise.decisions,
+        "enqueue",
+        lambda _r, issue, kind, *_a, **_k: (
+            queued.append((issue, kind)),
+            decisions_item(issue, kind),
+        )[1],
+    )
+
+    outcome = supervise._dispatch_lane(
+        tmp_path, _session(_lane("epic.1")), _lane("epic.1"), codex, _sizing()
+    )
+
+    assert queued == [("epic.1", "stall")]
+    assert "timed out" in outcome.detail
+    assert outcome.result is not None and outcome.result.timed_out
+
+
+# --- Review hardening (kjc5.7): rework routes, held lanes, parked advance -------
+
+
+def test_route_landing_rework_block_is_retriable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A verify failure under the cap routes 'rework' and keeps the loop running."""
+    monkeypatch.setattr(
+        supervise.loop,
+        "advance",
+        lambda _r, issue_id, **_k: loop.AdvanceResult(
+            issue_id, "build", "build", "blocked", "verify failed: pytest (rework 1/2)"
+        ),
+    )
+    routed = supervise.route_outcomes(
+        tmp_path, _session(_lane("epic.1")), (_executed_outcome("epic.1"),)
+    )
+    assert [r.route for r in routed] == ["rework"]
+    assert supervise.should_continue(routed) is True
+
+
+def test_route_landing_escalation_parks_on_the_queue(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """At the rework cap the landing escalated (item queued); the loop stops."""
+    monkeypatch.setattr(
+        supervise.loop,
+        "advance",
+        lambda _r, issue_id, **_k: loop.AdvanceResult(
+            issue_id, "build", "build", "escalated", "verify failed (rework 2/2)"
+        ),
+    )
+    routed = supervise.route_outcomes(
+        tmp_path, _session(_lane("epic.1")), (_executed_outcome("epic.1"),)
+    )
+    assert [r.route for r in routed] == ["decision"]
+    assert supervise.should_continue(routed) is False
+
+
+def test_route_uncommitted_green_run_is_bounded_by_dispatch_rework(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Merge's not-ready guard must not re-dispatch forever un-counted."""
+    monkeypatch.setattr(
+        supervise.loop,
+        "advance",
+        lambda _r, issue_id, **_k: loop.AdvanceResult(
+            issue_id, "build", "build", "blocked", "commit the work on 'harness/x' before landing"
+        ),
+    )
+    monkeypatch.setattr(supervise.policy, "record_rework", lambda *_a: 1)
+    monkeypatch.setattr(
+        supervise.policy,
+        "load_policy",
+        lambda _r: PolicyConfig(required_gates=("verify",), max_rework=2),
+    )
+    routed = supervise.route_outcomes(
+        tmp_path, _session(_lane("epic.1")), (_executed_outcome("epic.1"),)
+    )
+    assert [r.route for r in routed] == ["retry"]
+
+
+def test_route_holds_later_green_lanes_after_a_blocked_landing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Stop-on-first-failure: matching merge_queue, later lanes wait a pass."""
+    monkeypatch.setattr(
+        supervise.loop,
+        "advance",
+        lambda _r, issue_id, **_k: loop.AdvanceResult(
+            issue_id, "build", "build", "blocked", "verify failed (rework 1/2)"
+        ),
+    )
+    outcomes = (_executed_outcome("epic.1"), _executed_outcome("epic.2"))
+    routed = supervise.route_outcomes(
+        tmp_path, _session(*(_lane(o.issue_id) for o in outcomes)), outcomes
+    )
+    assert [r.route for r in routed] == ["rework", "held"]
+    assert supervise.should_continue(routed) is True
+
+
+def test_route_contains_a_landing_infra_failure_to_its_lane(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """One br hiccup is contained to its lane; later greens hold for next pass.
+
+    The raised pass is gone, but stop-on-first-failure still applies — the
+    held lane re-lands next iteration.
+    """
+
+    def flaky_advance(_r, issue_id, **_k):
+        if issue_id == "epic.1":
+            raise RuntimeError("br: database is locked")
+        return loop.AdvanceResult(issue_id, "build", "verify", "merged", "landed")
+
+    monkeypatch.setattr(supervise.loop, "advance", flaky_advance)
+    outcomes = (_executed_outcome("epic.1"), _executed_outcome("epic.2"))
+
+    routed = supervise.route_outcomes(
+        tmp_path, _session(*(_lane(o.issue_id) for o in outcomes)), outcomes
+    )
+
+    assert [r.route for r in routed] == ["error", "held"]
+    assert "database is locked" in routed[0].detail
+
+
+def test_advance_parked_ships_a_verify_lane_without_a_runner(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An approved parked lane advances through the engine; no fresh dispatch."""
+    phases = {"epic.1": "verify", "epic.2": "build"}
+    monkeypatch.setattr(supervise, "_phase_of", lambda _r, issue: phases[issue])
+    monkeypatch.setattr(supervise.decisions, "has_pending", lambda _r, _issue: False)
+    advanced: list[str] = []
+
+    def fake_run_until_blocked(_r, issue_id, **_k):
+        advanced.append(issue_id)
+        return [loop.AdvanceResult(issue_id, "ship", "done", "tore-down", "closed")]
+
+    monkeypatch.setattr(supervise.loop, "run_until_blocked", fake_run_until_blocked)
+
+    routed = supervise.advance_parked(tmp_path, _session(_lane("epic.1"), _lane("epic.2")))
+
+    assert advanced == ["epic.1"]  # the build lane is dispatch's business
+    assert [r.route for r in routed] == ["shipped"]
+
+
+def test_advance_parked_skips_lanes_waiting_on_a_decision(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A parked lane whose ship request is still queued stays parked."""
+    monkeypatch.setattr(supervise, "_phase_of", lambda _r, _i: "verify")
+    monkeypatch.setattr(supervise.decisions, "has_pending", lambda _r, _i: True)
+    monkeypatch.setattr(
+        supervise.loop,
+        "run_until_blocked",
+        lambda *_a, **_k: pytest.fail("must not advance a lane awaiting judgment"),
+    )
+    assert supervise.advance_parked(tmp_path, _session(_lane("epic.1"))) == ()
+
+
+def test_heartbeat_thread_keeps_the_lock_fresh_and_captures_loss(tmp_path: Path) -> None:
+    """The background beater refreshes mtime and stands down on a takeover."""
+    lock = supervise.acquire(tmp_path, "epic:hb", "epic")
+    hb = supervise.HeartbeatThread(lock, "epic:hb", interval=0.01)
+    hb.start()
+    try:
+        _backdate(lock, STALE_AFTER_S - 1)
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if time.time() - lock.stat().st_mtime < 1:
+                break
+            time.sleep(0.01)
+        hb.check()  # still the holder: nothing lost
+        assert time.time() - lock.stat().st_mtime < STALE_AFTER_S
+
+        lock.write_text('{"session_id": "epic:successor"}', encoding="utf-8")
+        deadline = time.monotonic() + 5
+        while hb.lost is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+        with pytest.raises(LockLostError):
+            hb.check()
+    finally:
+        hb.stop()
+        hb.join(timeout=5)

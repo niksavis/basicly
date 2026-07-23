@@ -206,6 +206,15 @@ def pending(repo_root: Path, root_issue: str) -> tuple[DecisionItem, ...]:
     return tuple(items)
 
 
+def has_pending(repo_root: Path, issue_id: str) -> bool:
+    """True when *issue_id* has an unanswered item.
+
+    The supervisor must not re-dispatch a lane that is waiting on a judgment
+    (basicly-kjc5.7) — the run would only re-block on the same missing answer.
+    """
+    return any(item.pending for item in _items_on(repo_root, issue_id).values())
+
+
 def get(repo_root: Path, decision_id: str) -> DecisionItem | None:
     """The item recorded under *decision_id*, answered or not; None when absent."""
     issue_id, _ = split_decision_id(decision_id)

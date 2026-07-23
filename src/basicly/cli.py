@@ -2203,12 +2203,15 @@ def _cmd_loop_run(args: argparse.Namespace) -> int:
 
 
 def _cmd_loop_supervise(args: argparse.Namespace) -> int:
-    """One lock-guarded supervisor pass: derive the session, dispatch ready lanes.
+    """The standing supervisor loop: derive, dispatch, route, land — until done.
 
-    Parts 1+2 of the supervisor (basicly-kjc5.5/.6): derivation from ``br``,
-    then a concurrent dispatch pass over the session's ready live lanes —
-    heartbeating the singleton lock while runners execute. Outcome routing and
-    the standing merge queue arrive with kjc5.7.
+    The full component-5 composition (basicly-kjc5.5/.6/.7): each iteration
+    re-derives the session from ``br``, dispatches ready lanes concurrently
+    under the heartbeated singleton lock, routes the outcomes (green lanes
+    land through ``loop.advance`` and ship under a covering grant; blocks,
+    stalls, and escalations enter the decision queue), and repeats. It exits 0
+    when the session's work is done, or 1 when an iteration makes no progress
+    — everything remaining waits on a human (see ``loop decisions``).
     """
     repo_root = _repo_root()
     session_id = supervise.new_session_id(args.issue)
@@ -2217,45 +2220,66 @@ def _cmd_loop_supervise(args: argparse.Namespace) -> int:
     except supervise.LockHeldError as exc:
         print(f"supervise: refused - {exc}", file=sys.stderr)
         return 1
+    print(f"session:  {session_id}")
+    # Background beats keep the lock fresh through long landings (verify
+    # suites easily outlast the staleness horizon); hb.check raises promptly
+    # when a contender took over so no two supervisors ever land concurrently.
+    hb = supervise.HeartbeatThread(lock, session_id)
+    hb.start()
     try:
-        state = supervise.derive_session(repo_root, args.issue)
-        print(f"session:  {session_id}")
-        print(f"root:     {state.root_issue} ({state.root_status})")
-        open_children = state.open_children
-        print(f"children: {len(state.children)} total, {len(open_children)} open")
-        if state.adopted:
-            for lane in state.adopted:
-                liveness = "live" if lane.live else "worktree missing"
-                print(
-                    f"adopted:  {lane.issue_id} ({lane.status}) -> "
-                    f"{lane.binding.name} on {lane.binding.branch} [{liveness}]"
+        while True:
+            hb.check()
+            state = supervise.derive_session(repo_root, args.issue)
+            _print_session(state)
+            if state.done:
+                print("done:     yes")
+                return 0
+            outcomes = supervise.dispatch_lanes(repo_root, state, beat=hb.check)
+            if not outcomes:
+                print("dispatch: (no ready build-phase lanes)")
+            for outcome in outcomes:
+                occupancy = (
+                    f", context {outcome.occupancy} tokens" if outcome.occupancy is not None else ""
                 )
-        else:
-            print("adopted:  (no in-flight lanes)")
-        if state.done:
-            print("done:     yes")
-            return 0
-        try:
-            outcomes = supervise.dispatch_lanes(
-                repo_root, state, beat=lambda: supervise.heartbeat(lock, session_id)
-            )
-        except supervise.LockLostError as exc:
-            print(f"supervise: stopped - {exc}", file=sys.stderr)
-            return 1
-        if not outcomes:
-            print("dispatch: (no ready live lanes)")
-        for outcome in outcomes:
-            occupancy = (
-                f", context {outcome.occupancy} tokens" if outcome.occupancy is not None else ""
-            )
-            print(
-                f"dispatch: {outcome.issue_id} via {outcome.runner_name} - "
-                f"{outcome.detail}{occupancy}"
-            )
-        print("done:     no")
+                print(
+                    f"dispatch: {outcome.issue_id} via {outcome.runner_name} - "
+                    f"{outcome.detail}{occupancy}"
+                )
+            routed = supervise.route_outcomes(repo_root, state, outcomes, beat=hb.check)
+            routed += supervise.advance_parked(repo_root, state, beat=hb.check)
+            for routing in routed:
+                print(f"routed:   {routing.issue_id} -> {routing.route} - {routing.detail}")
+            if not supervise.should_continue(routed):
+                pending = decisions.pending(repo_root, args.issue)
+                if pending:
+                    print(
+                        f"blocked:  {len(pending)} decision(s) await a human "
+                        "(basicly loop decisions)"
+                    )
+                else:
+                    print("blocked:  no ready lanes and nothing to land")
+                return 1
+    except supervise.LockLostError as exc:
+        print(f"supervise: stopped - {exc}", file=sys.stderr)
+        return 1
     finally:
+        hb.stop()
         supervise.release(lock, session_id)
-    return 0
+
+
+def _print_session(state: supervise.SessionState) -> None:
+    print(f"root:     {state.root_issue} ({state.root_status})")
+    open_children = state.open_children
+    print(f"children: {len(state.children)} total, {len(open_children)} open")
+    if state.adopted:
+        for lane in state.adopted:
+            liveness = "live" if lane.live else "worktree missing"
+            print(
+                f"adopted:  {lane.issue_id} ({lane.status}) -> "
+                f"{lane.binding.name} on {lane.binding.branch} [{liveness}]"
+            )
+    else:
+        print("adopted:  (no in-flight lanes)")
 
 
 def _format_decision(item: decisions.DecisionItem) -> str:
@@ -2849,8 +2873,8 @@ def _add_loop_parser(subparsers: argparse._SubParsersAction) -> None:
     _add_loop_input_args(l_run)
     l_supervise = loop_sub.add_parser(
         "supervise",
-        help="Acquire the singleton supervisor lock and adopt the session from br "
-        "(lock/lifecycle core; the standing dispatch loop lands with kjc5.6)",
+        help="Run the standing supervisor loop: dispatch ready lanes, route "
+        "outcomes, land green work - until done or blocked on a human",
     )
     l_supervise.add_argument("issue", help="Root issue (feature or epic) the session is bound to")
     l_dec = loop_sub.add_parser(

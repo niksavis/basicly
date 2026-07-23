@@ -274,10 +274,22 @@ def _dispatch_runner(ctx: _Ctx, name: str, cwd: Path) -> AdvanceResult:
     """Run the selected agent headless in the worktree; a handoff just blocks."""
     config = load_runner_config(ctx.repo_root)
     spec = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
-    result = runner.run(spec, dispatch_prompt(ctx.issue_id), cwd, capture_usage=True)
+    result = runner.run(
+        spec,
+        dispatch_prompt(ctx.issue_id),
+        cwd,
+        capture_usage=True,
+        timeout=config.runner_timeout,
+    )
     record_run(ctx.repo_root, ctx.issue_id, spec, result)
     if result.handoff:
         return _blocked(ctx, f"worktree {name!r} provisioned; awaiting the agent's work")
+    if result.timed_out:
+        return _blocked(
+            ctx,
+            f"runner {spec.name!r} hit runner_timeout ({config.runner_timeout:.0f}s) "
+            f"in worktree {name!r}; inspect the worktree and re-dispatch",
+        )
     if result.returncode != 0:
         tail = (result.stderr or result.stdout).strip().splitlines()
         detail = tail[-1] if tail else "no output"

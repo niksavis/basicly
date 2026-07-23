@@ -44,6 +44,7 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import threading
 import time
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor, wait
@@ -221,6 +222,48 @@ def release(lock_path: Path, session_id: str) -> None:
         return
     if isinstance(data, dict) and data.get("session_id") == session_id:
         lock_path.unlink(missing_ok=True)
+
+
+class HeartbeatThread(threading.Thread):
+    """Background heartbeat so long phases never let the lock go stale.
+
+    Dispatch waits beat inline, but routing lands lanes through full verify
+    suites that easily exceed :data:`STALE_AFTER_S` — without a background
+    beat a contender would take the lock over mid-merge, the exact
+    two-supervisors state the lock exists to prevent (basicly-kjc5.7). A lost
+    lock is captured, not raised (threads cannot signal the main loop
+    directly); callers poll :meth:`check` between steps and pass it as the
+    ``beat`` callback so a takeover stops the pass promptly.
+    """
+
+    def __init__(
+        self, lock_path: Path, session_id: str, interval: float = HEARTBEAT_INTERVAL_S
+    ) -> None:
+        """Bind the beater to one lock file and session; daemonized by default."""
+        super().__init__(name="supervisor-heartbeat", daemon=True)
+        self._lock_path = lock_path
+        self._session_id = session_id
+        self._interval = interval
+        self._stopped = threading.Event()
+        self.lost: LockLostError | None = None
+
+    def run(self) -> None:
+        """Beat until stopped; capture (do not raise) a lost lock."""
+        while not self._stopped.wait(self._interval):
+            try:
+                heartbeat(self._lock_path, self._session_id)
+            except LockLostError as exc:
+                self.lost = exc
+                return
+
+    def stop(self) -> None:
+        """Stop beating (idempotent); the holder is releasing or has lost the lock."""
+        self._stopped.set()
+
+    def check(self) -> None:
+        """Raise the captured :class:`LockLostError`, if the lock was taken over."""
+        if self.lost is not None:
+            raise self.lost
 
 
 # --- Session state: derivation from br (recovery = re-reading) ---------------
@@ -632,17 +675,34 @@ def ready_lanes(repo_root: Path, session: SessionState) -> tuple[AdoptedLane, ..
 
     Readiness is re-checked at pass time, because a dependency edge added since
     provisioning (e.g. a found-info coupling) must gate the lane *now*. The gate
-    is blocked-ness, not ready-list membership: a provisioned lane is claimed
-    (in_progress), and ``br scheduler`` recommends only unclaimed work — so the
-    scheduler's rank orders the lanes it does know, and the rest follow in
-    adoption order.
+    is blocked-ness plus an empty decision queue for the lane, not ready-list
+    membership: a provisioned lane is claimed (in_progress), and ``br
+    scheduler`` recommends only unclaimed work — so the scheduler's rank orders
+    the lanes it does know, and the rest follow in adoption order.
     """
     blocked = set(loop_state.blocked_ids(repo_root))
     ranks = {node.issue_id: node.rank for node in loop_state.ready_ranked(repo_root)}
-    live = [lane for lane in session.adopted if lane.live and lane.issue_id not in blocked]
+    live = [
+        lane
+        for lane in session.adopted
+        if lane.live
+        and lane.issue_id not in blocked
+        # A lane waiting on a queued judgment must not burn a dispatch that
+        # will only re-block on the same missing answer (basicly-kjc5.7).
+        and not decisions.has_pending(repo_root, lane.issue_id)
+        # Only build-phase lanes take a runner: a landed lane parked in
+        # verify/ship must be advanced (see advance_parked), never handed a
+        # fresh implement-and-commit run against an already-merged branch.
+        and _phase_of(repo_root, lane.issue_id) == "build"
+    ]
     return tuple(
         sorted(live, key=lambda lane: (ranks.get(lane.issue_id, float("inf")), lane.issue_id))
     )
+
+
+def _phase_of(repo_root: Path, issue_id: str) -> str:
+    """The lane's derived loop phase (pure read; br is the state)."""
+    return loop_state.read_node_state(repo_root, issue_id).phase
 
 
 def dispatch_lanes(
@@ -731,8 +791,32 @@ def _dispatch_lane(
     known = frozenset({session.root_issue, *(cid for cid, _ in session.children)})
     bundle = build_bundle(repo_root, lane.issue_id, known_ids=known)
     cwd = Path(record.worktree_path)
-    result = runner.run(spec, bundle.prompt, cwd, capture_usage=True)
+    timeout = load_runner_config(repo_root).runner_timeout
+    result = runner.run(spec, bundle.prompt, cwd, capture_usage=True, timeout=timeout)
     loop.record_run(repo_root, lane.issue_id, spec, result)
+    if result.timed_out:
+        # Consume any sentinel the killed run managed to write — leaving it
+        # would mis-attribute the fact to the *next* dispatch after triage.
+        stale_needs = needs_input.take(cwd)
+        # Hard-kill stall (design section 6): route to the decision queue and
+        # hold the lane until a human (or the decider) triages it.
+        stall = decisions.enqueue(
+            repo_root,
+            lane.issue_id,
+            "stall",
+            f"runner {spec.name} hit runner_timeout ({timeout:.0f}s): retry, re-dispatch, or park?",
+            stale_needs.fact if stale_needs is not None else "",
+        )
+        return LaneOutcome(
+            issue_id=lane.issue_id,
+            runner_name=spec.name,
+            result=result,
+            needs_fact=None,
+            occupancy=None,
+            overrun=False,
+            followup_id=None,
+            detail=f"timed out after {timeout:.0f}s; stall queued as {stall.decision_id}",
+        )
     if result.handoff:
         return LaneOutcome(
             issue_id=lane.issue_id,
@@ -787,3 +871,228 @@ def _dispatch_lane(
         followup_id=followup_id,
         detail=detail,
     )
+
+
+# --- Outcome routing: green lands, everything else queues (basicly-kjc5.7) ---
+
+
+# Rework gate name for failed dispatches: bounded like merge/verify rework, so
+# a crash-looping runner escalates to the queue instead of retrying forever.
+DISPATCH_GATE = "dispatch"
+
+
+# Routes that keep the standing loop iterating even without a landing: the
+# lane will be re-tried and its termination is bounded elsewhere (the dispatch
+# and verify rework caps both escalate into the decision queue, which then
+# holds the lane via has_pending).
+RETRIABLE_ROUTES = ("retry", "rework", "held")
+
+
+@dataclass(frozen=True)
+class RoutedOutcome:
+    """Where one lane's outcome went after collection (design component 5)."""
+
+    issue_id: str
+    # "shipped" | "merged" | "retry" | "rework" | "held" | "decision"
+    # | "handoff" | "error"
+    route: str
+    detail: str
+
+    @property
+    def progressed(self) -> bool:
+        """True when the session moved (a landing or a ship happened)."""
+        return self.route in ("merged", "shipped")
+
+
+def should_continue(routed: tuple[RoutedOutcome, ...]) -> bool:
+    """True when the standing loop has another useful iteration to run.
+
+    Progress (a landing or ship) obviously continues; so does any retriable
+    route — its termination is guaranteed by the rework caps escalating into
+    the decision queue, which then holds the lane. Everything else means the
+    session waits on a human.
+    """
+    return any(r.progressed or r.route in RETRIABLE_ROUTES for r in routed)
+
+
+def route_outcomes(
+    repo_root: Path,
+    session: SessionState,
+    outcomes: tuple[LaneOutcome, ...],
+    *,
+    beat: Callable[[], None] | None = None,
+) -> tuple[RoutedOutcome, ...]:
+    """Collect dispatch outcomes: green lanes land serially, blocks queue (D5).
+
+    Green lanes go through the single-track engine — ``loop.advance`` is the
+    only landing path, so each landing is serial and re-verifying; outcomes
+    arrive in scheduler-rank order, which is the dependency order among
+    independently-ready lanes. Matching ``merge.merge_queue``'s stop-on-first-
+    failure stance, a landing that blocks holds every later green lane this
+    pass (``held``) — they re-land next iteration on the updated base. Blocked
+    shapes route to the decision queue: a needs-input fact and a timeout stall
+    were queued at dispatch, a failed run retries under the bounded rework cap
+    and escalates at it, and a landed lane whose ship checkpoint no grant
+    covers queues a checkpoint request for the human. *beat* fires between
+    outcomes; per-outcome failures are contained to that lane's route so one
+    br hiccup cannot discard the rest of the pass.
+    """
+    routed: list[RoutedOutcome] = []
+    landing_blocked = False
+    for outcome in outcomes:
+        if beat is not None:
+            beat()
+        is_green = _is_green(outcome)
+        if landing_blocked and is_green:
+            routed.append(
+                RoutedOutcome(
+                    outcome.issue_id,
+                    "held",
+                    "landing paused after an earlier failure this pass",
+                )
+            )
+            continue
+        try:
+            one = _route_one(repo_root, session, outcome)
+        except (RuntimeError, OSError, ValueError) as exc:
+            # Contained like dispatch's guarded(): the lane re-routes next
+            # pass; "error" is non-retriable so a persistent infra failure
+            # ends the loop instead of spinning on it.
+            one = RoutedOutcome(outcome.issue_id, "error", f"routing failed: {exc}")
+        routed.append(one)
+        if is_green and not one.progressed:
+            landing_blocked = True
+    return tuple(routed)
+
+
+def _is_green(outcome: LaneOutcome) -> bool:
+    result = outcome.result
+    return (
+        result is not None
+        and result.executed
+        and result.returncode == 0
+        and not result.timed_out
+        and not result.handoff
+        and outcome.needs_fact is None
+    )
+
+
+def advance_parked(
+    repo_root: Path, session: SessionState, *, beat: Callable[[], None] | None = None
+) -> tuple[RoutedOutcome, ...]:
+    """Advance lanes parked past build (landed, awaiting/holding ship) — no runner.
+
+    A lane routed ``merged`` parks in verify until its ship checkpoint is
+    approved (by a human after the queued request, or by a later grant). Once
+    it is approvable, the only correct move is more ``loop.advance`` — never a
+    fresh dispatch against an already-merged branch. Lanes with a pending
+    judgment stay parked.
+    """
+    routed: list[RoutedOutcome] = []
+    for lane in session.adopted:
+        if not lane.live or decisions.has_pending(repo_root, lane.issue_id):
+            continue
+        if beat is not None:
+            beat()
+        try:
+            if _phase_of(repo_root, lane.issue_id) not in ("verify", "ship"):
+                continue
+            steps = loop.run_until_blocked(repo_root, lane.issue_id)
+        except (RuntimeError, OSError, ValueError) as exc:
+            routed.append(
+                RoutedOutcome(lane.issue_id, "error", f"advancing parked lane failed: {exc}")
+            )
+            continue
+        final = steps[-1] if steps else None
+        if final is None:
+            continue
+        if final.to_phase == "done":
+            routed.append(RoutedOutcome(lane.issue_id, "shipped", final.detail))
+        else:
+            routed.append(RoutedOutcome(lane.issue_id, "merged", final.detail))
+    return tuple(routed)
+
+
+def _route_one(repo_root: Path, session: SessionState, outcome: LaneOutcome) -> RoutedOutcome:
+    issue_id = outcome.issue_id
+    result = outcome.result
+    if result is not None and result.handoff:
+        return RoutedOutcome(issue_id, "handoff", outcome.detail)
+    # Held-by-the-queue shapes come before the failure branch: a nonzero exit
+    # that also wrote the sentinel is waiting on the fact, not on a retry —
+    # burning a dispatch-rework attempt on it would be double jeopardy.
+    if (result is not None and result.timed_out) or outcome.needs_fact is not None:
+        return RoutedOutcome(issue_id, "decision", outcome.detail)
+    if result is None or result.returncode != 0:
+        return _route_failed(repo_root, issue_id, outcome)
+    return _land_green(repo_root, session, outcome)
+
+
+def _route_failed(repo_root: Path, issue_id: str, outcome: LaneOutcome) -> RoutedOutcome:
+    """A failed dispatch retries under the bounded rework cap, then escalates."""
+    config = policy.load_policy(repo_root)
+    attempts = policy.record_rework(repo_root, issue_id, DISPATCH_GATE)
+    if attempts < config.max_rework:
+        return RoutedOutcome(
+            issue_id,
+            "retry",
+            f"{outcome.detail} (dispatch rework {attempts}/{config.max_rework})",
+        )
+    item = decisions.enqueue(
+        repo_root,
+        issue_id,
+        "escalation",
+        f"dispatch failed {attempts} time(s) at the rework cap: retry, re-dispatch, or park?",
+        outcome.detail,
+    )
+    return RoutedOutcome(issue_id, "decision", f"{outcome.detail}; escalated as {item.decision_id}")
+
+
+def _land_green(repo_root: Path, session: SessionState, outcome: LaneOutcome) -> RoutedOutcome:
+    """Land a green lane through the single-track engine, then try to ship it.
+
+    ``loop.advance`` does the build→verify landing (rebase, verify, gate) —
+    the supervisor composes it, never replaces it. The ship checkpoint is then
+    tried non-interactively: an L3 grant with the lights-out preconditions
+    holding approves and the next advance ships; otherwise the request queues
+    for the human and the lane parks in verify.
+    """
+    landing = loop.advance(repo_root, outcome.issue_id)
+    if landing.blocked:
+        if landing.action == "escalated":
+            # loop._rework already queued the escalation (kjc5.4); the pending
+            # item now holds the lane until a human triages it.
+            return RoutedOutcome(outcome.issue_id, "decision", landing.detail)
+        if "commit the work" in landing.detail:
+            # A green run that committed nothing (merge's not-ready guard,
+            # basicly-4psl) would re-dispatch forever un-counted — bound it
+            # with the dispatch rework cap like a failed run.
+            return _route_failed(repo_root, outcome.issue_id, outcome)
+        # A plain rework block (verify/merge failure under the cap): the lane
+        # stays live and re-lands next pass; loop's own counter bounds it.
+        return RoutedOutcome(outcome.issue_id, "rework", landing.detail)
+    approval = policy.approve_checkpoint_guarded(
+        repo_root,
+        outcome.issue_id,
+        "ship",
+        interactive=False,
+        grant_root=session.root_issue,
+    )
+    if approval.status != "approved":
+        item = decisions.enqueue(
+            repo_root,
+            outcome.issue_id,
+            "checkpoint",
+            f"approve the ship checkpoint for {outcome.issue_id}",
+            landing.detail,
+        )
+        return RoutedOutcome(
+            outcome.issue_id,
+            "merged",
+            f"landed; ship awaits a human ({item.decision_id})",
+        )
+    shipped = loop.run_until_blocked(repo_root, outcome.issue_id)
+    final = shipped[-1] if shipped else landing
+    if final.to_phase == "done":
+        return RoutedOutcome(outcome.issue_id, "shipped", final.detail)
+    return RoutedOutcome(outcome.issue_id, "merged", final.detail)

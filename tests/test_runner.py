@@ -768,3 +768,21 @@ def test_run_overlays_br_attribution_on_the_child_env(
     runner.run(_claude_spec(), "go", Path("/work"))
     assert captured["env"]["BR_AGENT_NAME"] == "claude"
     assert captured["env"]["BR_HARNESS"] == "basicly-loop"
+
+
+# --- runner_timeout hard kill (basicly-kjc5.7, design section 6) ----------------
+
+
+def test_run_timeout_returns_a_timed_out_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A hung dispatch is hard-killed and reported, never waited on forever."""
+
+    def hang(argv, **kwargs):
+        raise runner.subprocess.TimeoutExpired(argv, kwargs["timeout"], output=b"partial")
+
+    monkeypatch.setattr(runner.subprocess, "run", hang)
+    result = runner.run(_claude_spec(), "go", Path("/work"), timeout=1.0)
+
+    assert result.timed_out is True
+    assert result.executed is True
+    assert result.returncode is None
+    assert "partial" in result.stdout
