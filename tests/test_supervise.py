@@ -623,7 +623,9 @@ def test_dispatch_lanes_runs_concurrently_up_to_the_cap(
             gauge["current"] -= 1
         return _outcome(lane.issue_id)
 
-    outcomes = supervise.dispatch_lanes(Path(), _session(*lanes), cap=2, dispatch_one=fake_dispatch)
+    monkeypatch.setattr(supervise, "_dispatch_lane", fake_dispatch)
+
+    outcomes = supervise.dispatch_lanes(Path(), _session(*lanes), cap=2)
 
     assert gauge["max"] == 2
     assert [o.issue_id for o in outcomes] == ["epic.1", "epic.2", "epic.3", "epic.4"]
@@ -663,9 +665,9 @@ def test_dispatch_lanes_heartbeats_while_runners_execute(
         assert release.wait(timeout=5)
         return _outcome(lane.issue_id)
 
-    outcomes = supervise.dispatch_lanes(
-        Path(), _session(_lane("epic.1")), beat=beat, cap=1, dispatch_one=fake_dispatch
-    )
+    monkeypatch.setattr(supervise, "_dispatch_lane", fake_dispatch)
+
+    outcomes = supervise.dispatch_lanes(Path(), _session(_lane("epic.1")), beat=beat, cap=1)
 
     assert len(outcomes) == 1
     assert beats  # at least one beat fired while the lane ran
@@ -686,6 +688,8 @@ def test_dispatch_lanes_lock_lost_cancels_lanes_not_yet_started(
         assert release.wait(timeout=5)
         return _outcome(lane.issue_id)
 
+    monkeypatch.setattr(supervise, "_dispatch_lane", fake_dispatch)
+
     def beat() -> None:
         raise LockLostError("successor took over")
 
@@ -696,7 +700,6 @@ def test_dispatch_lanes_lock_lost_cancels_lanes_not_yet_started(
                 _session(_lane("epic.1"), _lane("epic.2")),
                 beat=beat,
                 cap=1,
-                dispatch_one=fake_dispatch,
             )
     finally:
         release.set()  # let the in-flight worker finish
@@ -872,11 +875,12 @@ def test_dispatch_lanes_contains_a_lane_failure_to_its_outcome(
             raise RuntimeError("br: database is locked")
         return _outcome(lane.issue_id)
 
+    monkeypatch.setattr(supervise, "_dispatch_lane", flaky_dispatch)
+
     outcomes = supervise.dispatch_lanes(
         Path(),
         _session(_lane("epic.1"), _lane("epic.2")),
         cap=2,
-        dispatch_one=flaky_dispatch,
     )
 
     assert [o.issue_id for o in outcomes] == ["epic.1", "epic.2"]
@@ -1342,6 +1346,117 @@ def test_landing_order_sorts_the_pass_by_dependency(monkeypatch: pytest.MonkeyPa
 
     assert ordered.index("epic.2") < ordered.index("epic.1")
     assert ordered == ["epic.2", "epic.3", "epic.1"]
+
+
+# --- Carry a held lane to landing instead of re-dispatching it (kjc5.18) ------
+
+
+def test_carried_forward_carries_only_the_held_lanes() -> None:
+    """Held is the one route whose work is done and merely unlanded."""
+    routed = (
+        supervise.RoutedOutcome("epic.1", "merged", ""),
+        supervise.RoutedOutcome("epic.2", "held", ""),
+        supervise.RoutedOutcome("epic.3", "rework", ""),
+        supervise.RoutedOutcome("epic.4", "bounced", ""),
+        supervise.RoutedOutcome("epic.5", "retry", ""),
+    )
+
+    assert supervise.carried_forward(routed) == frozenset({"epic.2"})
+
+
+def test_dispatch_lanes_skips_a_carried_lane(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The carried lane's work is on its branch: no runner may be spent on it again."""
+    _patch_readiness(monkeypatch, ranked=((1, "epic.1"), (2, "epic.2")))
+    monkeypatch.setattr(supervise.runner, "select_runner", lambda *_a, **_k: _MANUAL_SPEC)
+    dispatched: list[str] = []
+
+    def fake_dispatch(_repo, _session, lane, _spec, _sizing) -> supervise.LaneOutcome:
+        dispatched.append(lane.issue_id)
+        return _outcome(lane.issue_id)
+
+    monkeypatch.setattr(supervise, "_dispatch_lane", fake_dispatch)
+
+    outcomes = supervise.dispatch_lanes(
+        Path(),
+        _session(_lane("epic.1"), _lane("epic.2")),
+        cap=2,
+        skip=frozenset({"epic.1"}),
+    )
+
+    assert dispatched == ["epic.2"] and [o.issue_id for o in outcomes] == ["epic.2"]
+
+
+def test_a_carried_lane_lands_first_and_without_a_dispatch(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The pass owes a held lane a landing, not a fresh implement run (kjc5.18)."""
+    _patch_readiness(monkeypatch, ranked=((1, "epic.1"), (2, "epic.2")))
+    monkeypatch.setattr(supervise, "_landing_order", lambda _r, outcomes: list(outcomes))
+    monkeypatch.setattr(supervise.merge, "head_sha", lambda _r: "sha")
+    monkeypatch.setattr(supervise.merge, "changed_paths", lambda _r, _before: ())
+    monkeypatch.setattr(
+        supervise.policy,
+        "approve_checkpoint_guarded",
+        lambda *_a, **_k: policy.ApprovalResult("challenge", code="abc"),
+    )
+    monkeypatch.setattr(
+        supervise.decisions,
+        "enqueue",
+        lambda _r, issue, kind, *_a, **_k: decisions_item(issue, kind),
+    )
+    landed: list[str] = []
+
+    def advance(_r, issue_id, **_k):
+        landed.append(issue_id)
+        return loop.AdvanceResult(issue_id, "build", "verify", "merged", "landed")
+
+    monkeypatch.setattr(supervise.loop, "advance", advance)
+    session = _session(_lane("epic.1"), _lane("epic.2"))
+
+    routed = supervise.route_outcomes(
+        tmp_path, session, (_executed_outcome("epic.2"),), carried=frozenset({"epic.1"})
+    )
+
+    # epic.1 landed without ever being dispatched, and ahead of this pass's run.
+    assert landed == ["epic.1", "epic.2"]
+    assert [(r.issue_id, r.route) for r in routed] == [("epic.1", "merged"), ("epic.2", "merged")]
+
+
+def test_a_carried_lane_that_fails_to_land_is_not_carried_again(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A red landing means the lane's own work needs changing, so dispatch resumes."""
+    _patch_readiness(monkeypatch, ranked=((1, "epic.1"),))
+    monkeypatch.setattr(supervise, "_landing_order", lambda _r, outcomes: list(outcomes))
+    monkeypatch.setattr(
+        supervise.loop,
+        "advance",
+        lambda _r, issue_id, **_k: _blocked_landing(issue_id, "verify-failed"),
+    )
+
+    routed = supervise.route_outcomes(
+        tmp_path, _session(_lane("epic.1")), (), carried=frozenset({"epic.1"})
+    )
+
+    assert [r.route for r in routed] == ["rework"]
+    assert supervise.carried_forward(routed) == frozenset()
+
+
+def test_a_carried_lane_no_longer_ready_is_dropped(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A lane that landed or blocked since the carry must not be landed twice."""
+    _patch_readiness(monkeypatch, ranked=((1, "epic.1"),))
+    monkeypatch.setattr(supervise, "_phase_of", lambda _r, _i: "verify")  # already landed
+    monkeypatch.setattr(
+        supervise.loop, "advance", lambda *_a, **_k: pytest.fail("carried lane was re-landed")
+    )
+
+    routed = supervise.route_outcomes(
+        tmp_path, _session(_lane("epic.1")), (), carried=frozenset({"epic.1"})
+    )
+
+    assert routed == ()
 
 
 def test_advance_parked_ships_a_verify_lane_without_a_runner(

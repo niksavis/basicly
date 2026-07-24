@@ -2226,6 +2226,9 @@ def _cmd_loop_supervise(args: argparse.Namespace) -> int:
     # when a contender took over so no two supervisors ever land concurrently.
     hb = supervise.HeartbeatThread(lock, session_id)
     hb.start()
+    # Lanes the last pass held: already committed and green, so this pass owes
+    # them a landing, not a fresh implement run (basicly-kjc5.18).
+    carried: frozenset[str] = frozenset()
     try:
         while True:
             hb.check()
@@ -2234,8 +2237,10 @@ def _cmd_loop_supervise(args: argparse.Namespace) -> int:
             if state.done:
                 print("done:     yes")
                 return 0
-            outcomes = supervise.dispatch_lanes(repo_root, state, beat=hb.check)
-            if not outcomes:
+            outcomes = supervise.dispatch_lanes(repo_root, state, beat=hb.check, skip=carried)
+            if carried:
+                print(f"carried:  {', '.join(sorted(carried))} - landing without a new dispatch")
+            if not outcomes and not carried:
                 print("dispatch: (no ready build-phase lanes)")
             for outcome in outcomes:
                 occupancy = (
@@ -2245,8 +2250,11 @@ def _cmd_loop_supervise(args: argparse.Namespace) -> int:
                     f"dispatch: {outcome.issue_id} via {outcome.runner_name} - "
                     f"{outcome.detail}{occupancy}"
                 )
-            routed = supervise.route_outcomes(repo_root, state, outcomes, beat=hb.check)
+            routed = supervise.route_outcomes(
+                repo_root, state, outcomes, beat=hb.check, carried=carried
+            )
             routed += supervise.advance_parked(repo_root, state, beat=hb.check)
+            carried = supervise.carried_forward(routed)
             for routing in routed:
                 print(f"routed:   {routing.issue_id} -> {routing.route} - {routing.detail}")
             if not supervise.should_continue(routed):

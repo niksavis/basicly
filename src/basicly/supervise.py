@@ -23,6 +23,13 @@ Outcome routing (green → merge-ready, block → decision queue) and standing
 merge-queue integration are part 3 (kjc5.7); ``basicly loop supervise`` runs
 one derivation + dispatch pass under the lock and reports the outcomes.
 
+A lane the pass **held** (green and committed, but landed after another lane's
+landing failed) is carried into the next pass as a landing-only outcome rather
+than dispatched again (basicly-kjc5.18): its runner already finished and
+committed, so a fresh implement-and-commit dispatch would pay for work that is
+on the branch. The carry lapses the moment the lane's own work needs changing —
+rework, a bounce, a retry — because that is when a dispatch is the right move.
+
 Three rules, all from the design:
 
 - **Lock** — ``.basicly/usage/supervisor.lock`` created with ``O_CREAT|O_EXCL``
@@ -678,9 +685,15 @@ class LaneOutcome:
     overrun: bool
     followup_id: str | None
     detail: str
+    # False for a lane carried into this pass with its work already committed:
+    # no runner ran, so a null result means "nothing to implement", not
+    # "the dispatch failed" (basicly-kjc5.18).
+    dispatched: bool = True
 
 
-def ready_lanes(repo_root: Path, session: SessionState) -> tuple[AdoptedLane, ...]:
+def ready_lanes(
+    repo_root: Path, session: SessionState, *, skip: frozenset[str] = frozenset()
+) -> tuple[AdoptedLane, ...]:
     """The session's dispatchable lanes: adopted, live, and unblocked per ``br``.
 
     Readiness is re-checked at pass time, because a dependency edge added since
@@ -689,6 +702,9 @@ def ready_lanes(repo_root: Path, session: SessionState) -> tuple[AdoptedLane, ..
     membership: a provisioned lane is claimed (in_progress), and ``br
     scheduler`` recommends only unclaimed work — so the scheduler's rank orders
     the lanes it does know, and the rest follow in adoption order.
+
+    *skip* drops lanes the caller is handling without a runner this pass — the
+    ones carried forward to land (basicly-kjc5.18).
     """
     blocked = set(loop_state.blocked_ids(repo_root))
     ranks = {node.issue_id: node.rank for node in loop_state.ready_ranked(repo_root)}
@@ -697,6 +713,7 @@ def ready_lanes(repo_root: Path, session: SessionState) -> tuple[AdoptedLane, ..
         for lane in session.adopted
         if lane.live
         and lane.issue_id not in blocked
+        and lane.issue_id not in skip
         # A lane waiting on a queued judgment must not burn a dispatch that
         # will only re-block on the same missing answer (basicly-kjc5.7).
         and not decisions.has_pending(repo_root, lane.issue_id)
@@ -740,7 +757,7 @@ def dispatch_lanes(
     *,
     beat: Callable[[], None] | None = None,
     cap: int | None = None,
-    dispatch_one: Callable[..., LaneOutcome] | None = None,
+    skip: frozenset[str] = frozenset(),
 ) -> tuple[LaneOutcome, ...]:
     """Dispatch the session's ready lanes concurrently, honoring the cap.
 
@@ -752,14 +769,14 @@ def dispatch_lanes(
     are not killed — their commits and run-records complete on their branches,
     and the successor supervisor re-adopts the lanes from ``br`` (recovery is
     derivation). Outcomes return in dispatch (scheduler-rank) order.
+
+    *skip* excludes lanes the caller lands without a runner (basicly-kjc5.18).
     """
-    lanes = ready_lanes(repo_root, session)
+    lanes = ready_lanes(repo_root, session, skip=skip)
     if not lanes:
         return ()
     if cap is None:
         cap = load_worktree_config(repo_root).concurrency
-    if dispatch_one is None:
-        dispatch_one = _dispatch_lane
     config = load_runner_config(repo_root)
     spec = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
     sizing = load_sizing_config(repo_root)
@@ -769,7 +786,7 @@ def dispatch_lanes(
         # DB under this very concurrency) or an OS hiccup in one lane must not
         # discard every other lane's outcome at collection time.
         try:
-            return dispatch_one(repo_root, session, lane, spec, sizing)
+            return _dispatch_lane(repo_root, session, lane, spec, sizing)
         except (RuntimeError, OSError, ValueError) as exc:
             return LaneOutcome(
                 issue_id=lane.issue_id,
@@ -948,12 +965,50 @@ def should_continue(routed: tuple[RoutedOutcome, ...]) -> bool:
     return any(r.progressed or r.route in RETRIABLE_ROUTES for r in routed)
 
 
+def carried_forward(routed: tuple[RoutedOutcome, ...]) -> frozenset[str]:
+    """The lanes whose landing this pass deferred, for the next pass to land first.
+
+    Only the ``held`` route carries: that lane is green and committed, and the
+    pass simply ran out of a landable base after an earlier failure. Every other
+    route either progressed or means the lane's own work needs changing (rework,
+    bounced, retry), which is exactly when a fresh dispatch *is* the right move —
+    so the carry lapses and the lane re-enters dispatch normally.
+
+    The carry is an in-process optimization, not state: a supervisor that
+    restarts mid-session simply re-dispatches the lane, which is the behavior
+    before this existed. Correctness still derives from ``br`` alone.
+    """
+    return frozenset(r.issue_id for r in routed if r.route == "held")
+
+
+def _carried_outcome(issue_id: str) -> LaneOutcome:
+    """The landing-only outcome for a lane whose work is already committed.
+
+    A lane held by an earlier failed landing (see :func:`carried_forward`) has
+    already finished its run and committed on its branch, so the next pass owes
+    it a *landing*, not a fresh implement-and-commit dispatch — that would spend
+    a full run re-doing work already on the branch (basicly-kjc5.18).
+    """
+    return LaneOutcome(
+        issue_id=issue_id,
+        runner_name="(none)",
+        result=None,
+        needs_fact=None,
+        occupancy=None,
+        overrun=False,
+        followup_id=None,
+        detail="work already committed on the branch; landing without a fresh dispatch",
+        dispatched=False,
+    )
+
+
 def route_outcomes(
     repo_root: Path,
     session: SessionState,
     outcomes: tuple[LaneOutcome, ...],
     *,
     beat: Callable[[], None] | None = None,
+    carried: Iterable[str] = (),
 ) -> tuple[RoutedOutcome, ...]:
     """Collect dispatch outcomes: land green lanes as they can, bounce collisions (D5).
 
@@ -973,6 +1028,11 @@ def route_outcomes(
       holds the later green lanes (``held``) — that is a signal about the base,
       and they re-land next iteration on top of whatever fix lands first.
 
+    *carried* names the lanes the previous pass held: their work is committed
+    already, so they are landed here **without** a dispatch having run for them
+    this pass (basicly-kjc5.18), ahead of freshly dispatched lanes at equal
+    dependency rank because their work is the older of the two.
+
     Blocked shapes route to the decision queue: a needs-input fact and a timeout
     stall were queued at dispatch, a failed run retries under the bounded rework
     cap and escalates at it, and a landed lane whose ship checkpoint no grant
@@ -986,7 +1046,8 @@ def route_outcomes(
     # (bead, paths its landing added to the base) per landing this pass — the
     # evidence a collision is attributed against (merge.missed_couplings).
     landed: list[tuple[str, tuple[str, ...]]] = []
-    for outcome in _landing_order(repo_root, outcomes):
+    pass_outcomes = _carried_outcomes(repo_root, session, carried, outcomes) + outcomes
+    for outcome in _landing_order(repo_root, pass_outcomes):
         if beat is not None:
             beat()
         is_green = _is_green(outcome)
@@ -1015,6 +1076,26 @@ def route_outcomes(
     return tuple(routed)
 
 
+def _carried_outcomes(
+    repo_root: Path,
+    session: SessionState,
+    carried: Iterable[str],
+    outcomes: tuple[LaneOutcome, ...],
+) -> tuple[LaneOutcome, ...]:
+    """Landing-only outcomes for the still-eligible lanes carried into this pass.
+
+    Eligibility is :func:`ready_lanes` membership, so a carried lane that has
+    since landed, blocked on a dependency, or picked up a pending decision is
+    dropped rather than landed twice; a lane that somehow also got dispatched
+    this pass is left to its dispatch outcome.
+    """
+    wanted = frozenset(carried) - {outcome.issue_id for outcome in outcomes}
+    if not wanted:
+        return ()
+    eligible = {lane.issue_id for lane in ready_lanes(repo_root, session)}
+    return tuple(_carried_outcome(issue_id) for issue_id in sorted(wanted & eligible))
+
+
 def _landing_order(repo_root: Path, outcomes: tuple[LaneOutcome, ...]) -> list[LaneOutcome]:
     """Order this pass's outcomes so a lane lands before the lanes depending on it.
 
@@ -1029,6 +1110,10 @@ def _landing_order(repo_root: Path, outcomes: tuple[LaneOutcome, ...]) -> list[L
 
 
 def _is_green(outcome: LaneOutcome) -> bool:
+    if not outcome.dispatched:
+        # A carried lane never ran this pass; its work is committed and was
+        # already green when it was held (basicly-kjc5.18).
+        return True
     result = outcome.result
     return (
         result is not None
@@ -1095,6 +1180,9 @@ def _route_one(
 ) -> RoutedOutcome:
     issue_id = outcome.issue_id
     result = outcome.result
+    if not outcome.dispatched:
+        # Carried lane: nothing ran, so there is no run to triage — land it.
+        return _land_green(repo_root, session, outcome, landed or [])
     if result is not None and result.handoff:
         return RoutedOutcome(issue_id, "handoff", outcome.detail)
     # Held-by-the-queue shapes come before the failure branch: a nonzero exit
