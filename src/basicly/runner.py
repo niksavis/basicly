@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import signal
 import subprocess
 import time
 from collections.abc import Callable
@@ -449,6 +450,76 @@ def br_attribution_env(spec: RunnerSpec) -> dict[str, str]:
     return env
 
 
+# --- Timeout kill: the dispatch's whole tree, portably (basicly-kjc5.15) ------
+
+# Grace between the tree's terminate and its hard kill, and the ceiling on
+# draining a killed dispatch's pipes. Fixed semantics, not config: long enough
+# for an agent's children to release a worktree lock, short enough that a
+# stalled pass is not held up by them.
+KILL_GRACE_S = 5.0
+
+# subprocess exposes this flag only on Windows, so a POSIX interpreter cannot
+# name the attribute at all; the fallback is the documented CreateProcess value.
+CREATE_NEW_PROCESS_GROUP = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
+
+
+def _kill_tree(proc: subprocess.Popen[str]) -> None:
+    """Kill the timed-out dispatch *and every process it spawned*.
+
+    ``Popen.kill`` signals only the direct child, so an agent CLI's own tree —
+    test runs, shells, MCP servers — survives the timeout and keeps mutating the
+    lane's worktree after the stall was already queued for a human
+    (basicly-kjc5.15). Terminate first so children can release what they hold,
+    then hard-kill whatever is still standing after :data:`KILL_GRACE_S`.
+
+    Best-effort by construction: a process that exited between the timeout and
+    the signal is not an error, and neither is a Windows box without
+    ``taskkill`` — the dispatch itself is already being abandoned.
+    """
+    if os.name == "nt":
+        _taskkill_tree(proc.pid)
+        return
+    for signum in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(os.getpgid(proc.pid), signum)
+        except OSError:
+            return  # already gone, or never had a group of its own
+        if signum == signal.SIGKILL:
+            return
+        try:
+            proc.wait(timeout=KILL_GRACE_S)
+            return  # the group went down on the polite signal
+        except subprocess.TimeoutExpired:
+            continue
+
+
+def _taskkill_tree(pid: int) -> None:
+    """Windows tree kill: ``taskkill /T`` walks the child chain from *pid*."""
+    try:
+        subprocess.run(  # nosec B603 B607 — fixed argv, no shell, system tool
+            ["taskkill", "/F", "/T", "/PID", str(pid)],
+            capture_output=True,
+            check=False,
+            timeout=KILL_GRACE_S,
+        )
+    except OSError, subprocess.SubprocessError:
+        return
+
+
+def _drain(proc: subprocess.Popen[str]) -> tuple[str, str]:
+    """Collect whatever a killed dispatch had buffered, without hanging on it.
+
+    ``communicate`` raises before returning output on a timeout, so the output
+    is read here — after the tree is down, which is what makes the read finite.
+    A descendant still holding the pipe open past the grace is abandoned rather
+    than waited on: the stall is already being routed.
+    """
+    try:
+        return proc.communicate(timeout=KILL_GRACE_S)
+    except subprocess.TimeoutExpired, ValueError:
+        return "", ""
+
+
 def run(  # noqa: PLR0913 — mirrors the CLI surface
     spec: RunnerSpec,
     prompt: str,
@@ -467,9 +538,9 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     :func:`extract_usage`. *timeout* hard-kills the dispatch after that many
     seconds (basicly-kjc5.7): the result comes back ``timed_out`` with whatever
     output was captured, so the caller can route the stall instead of hanging.
-    Known limitation: only the direct child is killed — an agent CLI's own
-    subprocess tree (test runs, shells) may survive the timeout; portable
-    group-kill (killpg / Job objects) is tracked as follow-up hardening.
+    The kill takes the dispatch's **whole process tree** with it — see
+    :func:`_kill_tree`; an agent CLI's children must not outlive the stall that
+    was queued for it (basicly-kjc5.15).
     """
     if spec.kind == HANDOFF:
         return RunResult(spec.name, (), executed=False, handoff=True)
@@ -483,32 +554,40 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     env = {**os.environ, **br_attribution_env(spec), **(identity or {})}
     start = time.perf_counter()
     timed_out = False
+    # Popen, not subprocess.run: run's timeout kills only the direct child, and
+    # the dispatch must be started in its own process group to be killable as a
+    # tree at all (basicly-kjc5.15). POSIX gets a new session, whose id is the
+    # child's pid — that is what lets os.killpg reach every descendant. Windows
+    # has no equivalent for signalling a tree (taskkill /T walks it instead); it
+    # gets its own group only so a stray Ctrl-C cannot cross over. Each flag is
+    # inert on the other platform.
+    proc = subprocess.Popen(  # nosec B603
+        argv,
+        cwd=cwd,
+        stdin=subprocess.PIPE if stdin is not None else None,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+        start_new_session=os.name != "nt",
+        creationflags=CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
+    )
     try:
-        proc = subprocess.run(  # nosec B603
-            argv,
-            cwd=cwd,
-            input=stdin,
-            capture_output=True,
-            text=True,
-            check=False,
-            env=env,
-            timeout=timeout,
-        )
+        stdout, stderr = proc.communicate(input=stdin, timeout=timeout)
         returncode: int | None = proc.returncode
-        stdout, stderr = proc.stdout, proc.stderr
-    except subprocess.TimeoutExpired as exc:
+    except subprocess.TimeoutExpired:
         timed_out = True
         returncode = None
-        stdout = (
-            exc.stdout.decode(errors="replace")
-            if isinstance(exc.stdout, bytes)
-            else (exc.stdout or "")
-        )
-        stderr = (
-            exc.stderr.decode(errors="replace")
-            if isinstance(exc.stderr, bytes)
-            else (exc.stderr or "")
-        )
+        _kill_tree(proc)
+        stdout, stderr = _drain(proc)
+    except KeyboardInterrupt:
+        # Its own session means the dispatch no longer shares the terminal's
+        # signals, so an interrupted operator would otherwise leave the agent and
+        # its children running against the worktree. Take the tree down here
+        # instead, then let the interrupt propagate.
+        _kill_tree(proc)
+        _drain(proc)
+        raise
     duration_s = time.perf_counter() - start
     # Redact secrets at the source so no downstream surface (CLI print, loop log)
     # can leak a credential the agent echoed (basicly-3p2i). Network egress is not
