@@ -10,7 +10,12 @@ from __future__ import annotations
 
 import json
 import os
+import signal
+import subprocess
+import sys
+import time
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -354,22 +359,40 @@ def test_run_handoff_never_executes(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.duration_s is None  # nothing ran, so no wall-clock
 
 
-def test_run_executes_and_captures(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A live run passes the argv/cwd to subprocess and captures the result."""
+def _patch_popen(
+    monkeypatch: pytest.MonkeyPatch, *, stdout: str = "", stderr: str = "", returncode: int = 0
+) -> dict[str, object]:
+    """Fake the dispatch subprocess, recording the argv, the Popen kwargs and the input.
+
+    ``run`` drives ``Popen`` rather than ``subprocess.run`` so a timed-out
+    dispatch can be killed as a whole process group (basicly-kjc5.15); the prompt
+    therefore arrives through ``communicate(input=...)`` instead of a kwarg.
+    """
     captured: dict[str, object] = {}
 
     class _Proc:
-        returncode = 0
-        stdout = "done"
-        stderr = ""
+        pid = 1234
 
-    def fake_run(argv, **kwargs):
+        def __init__(self) -> None:
+            self.returncode = returncode
+
+        def communicate(self, input=None, timeout=None):
+            captured["input"] = input
+            captured["timeout"] = timeout
+            return stdout, stderr
+
+    def fake_popen(argv, **kwargs):
         captured["argv"] = argv
-        captured["cwd"] = kwargs.get("cwd")
-        captured["input"] = kwargs.get("input")
+        captured.update(kwargs)
         return _Proc()
 
-    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    monkeypatch.setattr(runner.subprocess, "Popen", fake_popen)
+    return captured
+
+
+def test_run_executes_and_captures(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A live run passes the argv/cwd to subprocess and captures the result."""
+    captured = _patch_popen(monkeypatch, stdout="done")
     spec = RunnerSpec("claude", HEADLESS, ("claude", "-p", PROMPT_PLACEHOLDER))
     result = runner.run(spec, "build it", Path("/work"))
 
@@ -385,13 +408,7 @@ def test_run_executes_and_captures(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_run_redacts_secrets_from_captured_output(monkeypatch: pytest.MonkeyPatch) -> None:
     """A secret an agent echoes on stdout/stderr is redacted at the source (basicly-3p2i)."""
     token = "ghp_" + "a" * 30
-
-    class _Proc:
-        returncode = 0
-        stdout = f"pushed with {token}"
-        stderr = f"warning near {token}"
-
-    monkeypatch.setattr(runner.subprocess, "run", lambda _argv, **_kw: _Proc())
+    _patch_popen(monkeypatch, stdout=f"pushed with {token}", stderr=f"warning near {token}")
     spec = RunnerSpec("claude", HEADLESS, ("claude", "-p", PROMPT_PLACEHOLDER))
     result = runner.run(spec, "go", Path("/work"))
 
@@ -401,24 +418,13 @@ def test_run_redacts_secrets_from_captured_output(monkeypatch: pytest.MonkeyPatc
 
 def test_run_stdin_injection_passes_prompt_on_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
     """A stdin runner sends the prompt via subprocess input, not argv."""
-    captured: dict[str, object] = {}
-
-    class _Proc:
-        returncode = 0
-        stdout = ""
-        stderr = ""
-
-    def fake_run(argv, **kwargs):
-        captured["argv"] = argv
-        captured["input"] = kwargs.get("input")
-        return _Proc()
-
-    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    captured = _patch_popen(monkeypatch)
     spec = RunnerSpec("x", HEADLESS, ("x", "--headless"), prompt_via="stdin")
     runner.run(spec, "prompt on stdin", Path("/work"))
 
     assert captured["argv"] == ["x", "--headless"]
     assert captured["input"] == "prompt on stdin"
+    assert captured["stdin"] is subprocess.PIPE  # a prompt needs a writable pipe
 
 
 def test_git_identity_env_none_without_identity() -> None:
@@ -446,18 +452,7 @@ def test_git_identity_env_pins_all_four_vars() -> None:
 
 def test_run_injects_bot_identity_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """run() overlays the bot identity on the inherited env, not replacing it (basicly-smzg)."""
-    captured: dict[str, object] = {}
-
-    class _Proc:
-        returncode = 0
-        stdout = ""
-        stderr = ""
-
-    def fake_run(_argv, **kwargs):
-        captured["env"] = kwargs.get("env")
-        return _Proc()
-
-    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    captured = _patch_popen(monkeypatch)
     monkeypatch.setenv("EXISTING_VAR", "kept")
     spec = RunnerSpec(
         "bot",
@@ -482,18 +477,7 @@ def test_run_without_identity_adds_only_attribution(monkeypatch: pytest.MonkeyPa
 
     The basicly-smzg inherit-unchanged contract, extended by basicly-kjc5.3.
     """
-    captured: dict[str, object] = {}
-
-    class _Proc:
-        returncode = 0
-        stdout = ""
-        stderr = ""
-
-    def fake_run(_argv, **kwargs):
-        captured["env"] = kwargs.get("env")
-        return _Proc()
-
-    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    captured = _patch_popen(monkeypatch)
     spec = RunnerSpec("claude", HEADLESS, ("claude", "-p", PROMPT_PLACEHOLDER))
     runner.run(spec, "go", Path("/work"))
 
@@ -598,18 +582,7 @@ def test_usage_format_does_not_affect_capability_probe() -> None:
 
 def test_run_capture_usage_executes_with_usage_flags(monkeypatch: pytest.MonkeyPatch) -> None:
     """run(capture_usage=True) invokes the argv with the usage-report flags."""
-    captured: dict[str, object] = {}
-
-    class _Proc:
-        returncode = 0
-        stdout = ""
-        stderr = ""
-
-    def fake_run(argv, **_k):
-        captured["argv"] = argv
-        return _Proc()
-
-    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    captured = _patch_popen(monkeypatch)
     runner.run(_claude_spec(), "go", Path("/work"), capture_usage=True)
     assert captured["argv"] == ["claude", "-p", "go", "--output-format", "json"]
 
@@ -752,37 +725,227 @@ def test_run_overlays_br_attribution_on_the_child_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The dispatched subprocess sees the attribution overlay on the inherited env."""
-    captured: dict = {}
-
-    def fake_run(_argv, **kwargs):
-        captured["env"] = kwargs.get("env")
-
-        class _P:
-            returncode = 0
-            stdout = ""
-            stderr = ""
-
-        return _P()
-
-    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    captured = _patch_popen(monkeypatch)
     runner.run(_claude_spec(), "go", Path("/work"))
-    assert captured["env"]["BR_AGENT_NAME"] == "claude"
-    assert captured["env"]["BR_HARNESS"] == "basicly-loop"
+    env = captured["env"]
+    assert isinstance(env, dict)
+    assert env["BR_AGENT_NAME"] == "claude"
+    assert env["BR_HARNESS"] == "basicly-loop"
 
 
 # --- runner_timeout hard kill (basicly-kjc5.7, design section 6) ----------------
 
 
+class _HungProc:
+    """A dispatch that blows the timeout, then yields its buffered output once killed."""
+
+    def __init__(self) -> None:
+        self.pid = 4242
+        self.returncode: int | None = None
+        self.communicated = 0
+
+    def communicate(self, timeout=None, **_kwargs):
+        self.communicated += 1
+        if self.communicated == 1:
+            raise subprocess.TimeoutExpired(("claude",), timeout or 0)
+        return "partial", ""
+
+
 def test_run_timeout_returns_a_timed_out_result(monkeypatch: pytest.MonkeyPatch) -> None:
     """A hung dispatch is hard-killed and reported, never waited on forever."""
+    hung = _HungProc()
+    monkeypatch.setattr(runner.subprocess, "Popen", lambda *_a, **_k: hung)
+    killed: list[int] = []
+    monkeypatch.setattr(runner, "_kill_tree", lambda proc: killed.append(proc.pid))
 
-    def hang(argv, **kwargs):
-        raise runner.subprocess.TimeoutExpired(argv, kwargs["timeout"], output=b"partial")
-
-    monkeypatch.setattr(runner.subprocess, "run", hang)
     result = runner.run(_claude_spec(), "go", Path("/work"), timeout=1.0)
 
     assert result.timed_out is True
     assert result.executed is True
     assert result.returncode is None
-    assert "partial" in result.stdout
+    assert "partial" in result.stdout  # drained after the kill, not before it
+    assert killed == [hung.pid]
+
+
+# --- Portable process-tree kill on timeout (basicly-kjc5.15) -------------------
+
+
+def test_run_starts_the_dispatch_in_its_own_session_on_posix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without its own session there is no group to kill: the flag is not optional."""
+    monkeypatch.setattr(runner.os, "name", "posix")
+    captured = _patch_popen(monkeypatch)
+    runner.run(_claude_spec(), "go", Path("/work"))
+
+    assert captured["start_new_session"] is True
+    assert captured["creationflags"] == 0  # inert off Windows
+
+
+def test_run_starts_a_windows_dispatch_in_its_own_process_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The Windows branch is unreachable on POSIX CI, so pin it directly."""
+    monkeypatch.setattr(runner.os, "name", "nt")
+    captured = _patch_popen(monkeypatch)
+    runner.run(_claude_spec(), "go", Path("/work"))
+
+    assert captured["creationflags"] == runner.CREATE_NEW_PROCESS_GROUP
+    assert captured["start_new_session"] is False
+
+
+class _Stubborn:
+    """A tree that ignores the polite signal."""
+
+    pid = 99
+
+    def wait(self, timeout=None):
+        raise subprocess.TimeoutExpired(("agent",), timeout or 0)
+
+
+class _Polite:
+    """A tree that exits on the polite signal."""
+
+    pid = 99
+
+    def wait(self, **_kwargs):
+        return -15
+
+
+def _record_signals(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    monkeypatch.setattr(runner.os, "name", "posix")
+    monkeypatch.setattr(runner.os, "getpgid", lambda pid: pid)
+    signalled: list[int] = []
+    monkeypatch.setattr(runner.os, "killpg", lambda _pgid, signum: signalled.append(signum))
+    return signalled
+
+
+def test_kill_tree_signals_the_group_then_hard_kills_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A tree that ignores the polite signal is killed outright after the grace."""
+    monkeypatch.setattr(runner, "KILL_GRACE_S", 0.01)
+    signalled = _record_signals(monkeypatch)
+
+    runner._kill_tree(cast("subprocess.Popen[str]", _Stubborn()))
+
+    assert signalled == [signal.SIGTERM, signal.SIGKILL]
+
+
+def test_kill_tree_stops_at_the_polite_signal_when_the_group_goes_down(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A tree that exits on SIGTERM is never SIGKILLed — children get to clean up."""
+    signalled = _record_signals(monkeypatch)
+
+    runner._kill_tree(cast("subprocess.Popen[str]", _Polite()))
+
+    assert signalled == [signal.SIGTERM]
+
+
+def test_kill_tree_tolerates_a_dispatch_that_already_exited(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Racing the process's own exit is not an error worth propagating."""
+    monkeypatch.setattr(runner.os, "name", "posix")
+    monkeypatch.setattr(runner.os, "getpgid", lambda pid: pid)
+
+    def gone(_pgid, _signum):
+        raise ProcessLookupError("no such process")
+
+    monkeypatch.setattr(runner.os, "killpg", gone)
+
+    class _Gone:
+        pid = 99
+
+        def wait(self, **_kwargs):
+            raise AssertionError("must not wait on a process already gone")
+
+    runner._kill_tree(cast("subprocess.Popen[str]", _Gone()))  # no raise
+
+
+def test_kill_tree_on_windows_walks_the_child_chain_with_taskkill(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Windows has no killpg: the tree comes down via taskkill /T."""
+    monkeypatch.setattr(runner.os, "name", "nt")
+    calls: list[list[str]] = []
+
+    def fake_run(argv, **_kwargs):
+        calls.append(list(argv))
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+
+    class _Proc:
+        pid = 777
+
+    runner._kill_tree(cast("subprocess.Popen[str]", _Proc()))
+
+    assert calls == [["taskkill", "/F", "/T", "/PID", "777"]]
+
+
+def test_an_interrupted_dispatch_takes_its_tree_down_before_propagating(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Its own session means Ctrl-C no longer reaches the agent: kill it explicitly."""
+
+    class _Interrupted:
+        pid = 31337
+
+        def communicate(self, **_kwargs):
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(runner.subprocess, "Popen", lambda *_a, **_k: _Interrupted())
+    killed: list[int] = []
+    monkeypatch.setattr(runner, "_kill_tree", lambda proc: killed.append(proc.pid))
+    monkeypatch.setattr(runner, "_drain", lambda _proc: ("", ""))
+
+    with pytest.raises(KeyboardInterrupt):
+        runner.run(_claude_spec(), "go", Path("/work"))
+
+    assert killed == [31337]
+
+
+def test_drain_gives_up_on_a_pipe_a_survivor_still_holds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The stall is already routed: a held pipe must not hang the supervisor pass."""
+    monkeypatch.setattr(runner, "KILL_GRACE_S", 0.01)
+
+    class _Holder:
+        def communicate(self, timeout=None):
+            raise subprocess.TimeoutExpired(("agent",), timeout or 0)
+
+    assert runner._drain(cast("subprocess.Popen[str]", _Holder())) == ("", "")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process-group semantics")
+def test_timeout_kills_a_grandchild_the_dispatch_spawned(tmp_path: Path) -> None:
+    """The real thing: an agent's own child must not outlive the killed dispatch.
+
+    The dispatch prints the pid of a process it spawned and then hangs. After the
+    timeout that pid must be gone — before the group kill it survived, kept
+    changing the lane's worktree, and was invisible to the queued stall.
+    """
+    child = (
+        "import subprocess, sys, time\n"
+        "kid = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])\n"
+        "print(kid.pid, flush=True)\n"
+        "time.sleep(30)\n"
+    )
+    spec = RunnerSpec("spawner", HEADLESS, (sys.executable, "-c", child, PROMPT_PLACEHOLDER))
+
+    result = runner.run(spec, "go", tmp_path, timeout=2.0)
+
+    assert result.timed_out is True
+    grandchild = int(result.stdout.strip().splitlines()[-1])
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        try:
+            os.kill(grandchild, 0)
+        except OSError:
+            break  # reaped: the group kill reached it
+        time.sleep(0.05)
+    else:  # pragma: no cover - only reached on a regression
+        os.kill(grandchild, signal.SIGKILL)
+        pytest.fail(f"grandchild {grandchild} survived the dispatch timeout")
