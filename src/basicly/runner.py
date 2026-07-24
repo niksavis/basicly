@@ -67,8 +67,12 @@ AUTO_ORDER = ("claude", "codex", "copilot")
 # extract_usage parses the captured output. None means the CLI reports no
 # usage, so the chars/4 transcript estimate applies.
 CLAUDE_JSON = "claude-json"  # `--output-format json`: one result object with a usage block
+# `--output-format stream-json --verbose`: JSONL events, one per turn, ending in
+# the same result object. The only claude envelope that carries *per-turn* usage,
+# which is what the context-ceiling meter needs (basicly-kjc5.14).
+CLAUDE_STREAM_JSON = "claude-stream-json"
 CODEX_JSONL = "codex-jsonl"  # `--json`: JSONL event stream with turn.completed usage
-USAGE_FORMATS = (CLAUDE_JSON, CODEX_JSONL)
+USAGE_FORMATS = (CLAUDE_JSON, CLAUDE_STREAM_JSON, CODEX_JSONL)
 
 # Context-window defaults per adapter (factory design §6, basicly-kjc5.6): the
 # denominator for the context-ceiling meter. Conservative published windows;
@@ -84,6 +88,8 @@ _CONTEXT_WINDOWS = {"claude": 200_000, "codex": 400_000, "copilot": 128_000}
 # sandbox/approval).
 _USAGE_FLAGS = {
     CLAUDE_JSON: ("--output-format", "json"),
+    # claude refuses stream-json under -p without --verbose.
+    CLAUDE_STREAM_JSON: ("--output-format", "stream-json", "--verbose"),
     CODEX_JSONL: ("--json",),
 }
 
@@ -148,7 +154,7 @@ BUILTIN_RUNNERS: tuple[RunnerSpec, ...] = (
         "claude",
         HEADLESS,
         ("claude", "-p", PROMPT_PLACEHOLDER),
-        usage_format=CLAUDE_JSON,
+        usage_format=CLAUDE_STREAM_JSON,
         context_window=_CONTEXT_WINDOWS["claude"],
     ),
     RunnerSpec(
@@ -641,6 +647,8 @@ def extract_usage(spec: RunnerSpec, result: RunResult) -> Usage | None:
     reported: Usage | None = None
     if spec.usage_format == CLAUDE_JSON:
         reported = _claude_json_usage(result.stdout)
+    elif spec.usage_format == CLAUDE_STREAM_JSON:
+        reported = _claude_json_usage(_claude_result_event(result.stdout))
     elif spec.usage_format == CODEX_JSONL:
         reported = _codex_jsonl_usage(result.stdout)
     if reported is not None:
@@ -671,6 +679,57 @@ def _claude_json_usage(stdout: str) -> Usage | None:
         cost=float(cost) if isinstance(cost, int | float) else None,
         estimated=False,
     )
+
+
+def _claude_stream_events(stdout: str) -> list[dict]:
+    """The parseable JSON objects in a claude ``stream-json`` transcript, in order.
+
+    Unparseable lines are skipped rather than failing the whole read: the stream
+    is interleaved with whatever the CLI writes around it, and a truncated final
+    line is normal for a killed dispatch.
+    """
+    events: list[dict] = []
+    for line in stdout.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("{"):
+            continue
+        try:
+            obj = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict):
+            events.append(obj)
+    return events
+
+
+def _claude_result_event(stdout: str) -> str:
+    """The stream's terminating ``result`` event, re-serialized, or an empty string.
+
+    Lets the cumulative cost/token view reuse :func:`_claude_json_usage`: the
+    stream ends in the very same result object the non-streaming envelope emits,
+    so there is one parser for it and no second definition of "total".
+    """
+    for event in reversed(_claude_stream_events(stdout)):
+        if event.get("type") == "result":
+            return json.dumps(event)
+    return ""
+
+
+def _claude_last_turn_usage(stdout: str) -> dict | None:
+    """The usage block of the stream's **last assistant message**.
+
+    That is the occupancy view (design D8): what the window held on the final
+    call. The cumulative result-event sum is not — ``cache_read_input_tokens``
+    re-counts the context every turn, so it exceeds the window on any healthy
+    multi-turn run.
+    """
+    for event in reversed(_claude_stream_events(stdout)):
+        if event.get("type") != "assistant":
+            continue
+        message = event.get("message")
+        if isinstance(message, dict) and isinstance(message.get("usage"), dict):
+            return message["usage"]
+    return None
 
 
 def _codex_jsonl_usage(stdout: str) -> Usage | None:
@@ -716,13 +775,17 @@ def context_occupancy(spec: RunnerSpec, result: RunResult) -> int | None:
     how full the model's window was at the *end* of the run — distinct from
     :func:`extract_usage`, which totals processing for cost telemetry.
 
+    - ``claude-stream-json``: the **last assistant message's** usage. Each
+      streamed turn reports the window it actually worked in, so the final one
+      is the occupancy (basicly-kjc5.14).
     - ``claude-json``: **None.** Probed 2026-07-23: the result object's usage
       block is session-cumulative — ``cache_read_input_tokens`` re-counts the
       context every turn (a 2-turn run reported ~43K against a ~24K final
       context), so the sum would cross any ceiling on every healthy multi-turn
       run; and its ``iterations`` array omits the final call, so the last-turn
-      view is not recoverable from this envelope. Per-turn usage needs
-      ``--output-format stream-json`` — a follow-up adapter upgrade.
+      view is not recoverable from this envelope. This is why the built-in
+      claude adapter meters through the streaming format instead; a consumer who
+      pins ``claude-json`` keeps exact cost telemetry and an inert ceiling.
     - ``codex-jsonl``: the **last** ``turn.completed`` usage; its
       ``input_tokens`` already carry the whole conversation re-sent that turn,
       so summing across turns (the cost view) would overstate occupancy.
@@ -733,6 +796,12 @@ def context_occupancy(spec: RunnerSpec, result: RunResult) -> int | None:
     """
     if not result.executed:
         return None
+    if spec.usage_format == CLAUDE_STREAM_JSON:
+        usage = _claude_last_turn_usage(result.stdout)
+        if usage is None:
+            return None
+        values = [usage[key] for key in _CLAUDE_TOKEN_KEYS if isinstance(usage.get(key), int)]
+        return sum(values) if values else None
     if spec.usage_format == CODEX_JSONL:
         for usage in reversed(_codex_turn_usages(result.stdout)):
             values = [usage[key] for key in _CODEX_TOKEN_KEYS if isinstance(usage.get(key), int)]
