@@ -585,6 +585,7 @@ def _patch_readiness(
     )
     monkeypatch.setattr(supervise.decisions, "has_pending", lambda _r, _i: False)
     monkeypatch.setattr(supervise, "_phase_of", lambda _r, _i: "build")
+    monkeypatch.setattr(supervise, "_has_subtasks", lambda _r, _i: False)
 
 
 def test_ready_lanes_filters_blocked_and_dead_and_orders_by_rank(
@@ -1204,6 +1205,7 @@ def test_advance_parked_ships_a_verify_lane_without_a_runner(
     """An approved parked lane advances through the engine; no fresh dispatch."""
     phases = {"epic.1": "verify", "epic.2": "build"}
     monkeypatch.setattr(supervise, "_phase_of", lambda _r, issue: phases[issue])
+    monkeypatch.setattr(supervise, "_has_subtasks", lambda _r, _i: False)
     monkeypatch.setattr(supervise.decisions, "has_pending", lambda _r, _issue: False)
     advanced: list[str] = []
 
@@ -1217,6 +1219,70 @@ def test_advance_parked_ships_a_verify_lane_without_a_runner(
 
     assert advanced == ["epic.1"]  # the build lane is dispatch's business
     assert [r.route for r in routed] == ["shipped"]
+
+
+def test_ready_lanes_skip_a_lane_with_subtask_beads(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A mini-loop lane is driven by loop.advance, never by a top-level dispatch (D7)."""
+    _patch_readiness(monkeypatch, ranked=((1, "epic.1"), (2, "epic.2")))
+    monkeypatch.setattr(supervise, "_has_subtasks", lambda _r, issue: issue == "epic.1")
+
+    ready = supervise.ready_lanes(Path(), _session(_lane("epic.1"), _lane("epic.2")))
+
+    assert [lane.issue_id for lane in ready] == ["epic.2"]
+
+
+def test_has_subtasks_counts_closed_subtasks_too(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A lane whose sub-tasks all closed is waiting to integrate, not to be re-run."""
+    issues = {
+        "epic.1": _issue("epic.1", children=(("epic.1.1", "closed"),)),
+        "epic.2": _issue("epic.2"),
+    }
+    monkeypatch.setattr(supervise, "_run_br", _FakeBrShow(issues))
+    assert supervise._has_subtasks(Path(), "epic.1") is True
+    assert supervise._has_subtasks(Path(), "epic.2") is False
+
+
+def test_advance_parked_drives_a_mini_loop_lane(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A build-phase lane with sub-tasks advances here; a closed sub-task keeps the loop going."""
+    monkeypatch.setattr(supervise, "_phase_of", lambda _r, _i: "build")
+    monkeypatch.setattr(supervise, "_has_subtasks", lambda _r, _i: True)
+    monkeypatch.setattr(supervise.decisions, "has_pending", lambda _r, _i: False)
+    monkeypatch.setattr(
+        supervise.loop,
+        "run_until_blocked",
+        lambda _r, issue_id, **_k: [
+            loop.AdvanceResult(issue_id, "build", "build", "sub-task", "1/2 closed"),
+            loop.AdvanceResult(issue_id, "build", "build", "blocked", "awaiting the agent's work"),
+        ],
+    )
+
+    routed = supervise.advance_parked(tmp_path, _session(_lane("epic.1")))
+
+    assert [r.route for r in routed] == ["lane-step"]
+    assert supervise.should_continue(routed)
+
+
+def test_advance_parked_stops_on_a_mini_loop_lane_that_made_no_progress(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A lane blocked on its agent ends the pass like a handoff — it is not retriable."""
+    monkeypatch.setattr(supervise, "_phase_of", lambda _r, _i: "build")
+    monkeypatch.setattr(supervise, "_has_subtasks", lambda _r, _i: True)
+    monkeypatch.setattr(supervise.decisions, "has_pending", lambda _r, _i: False)
+    monkeypatch.setattr(
+        supervise.loop,
+        "run_until_blocked",
+        lambda _r, issue_id, **_k: [
+            loop.AdvanceResult(issue_id, "build", "build", "blocked", "awaiting the agent's work")
+        ],
+    )
+
+    routed = supervise.advance_parked(tmp_path, _session(_lane("epic.1")))
+
+    assert [r.route for r in routed] == ["lane-blocked"]
+    assert not supervise.should_continue(routed)
 
 
 def test_advance_parked_skips_lanes_waiting_on_a_decision(

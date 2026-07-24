@@ -694,6 +694,11 @@ def ready_lanes(repo_root: Path, session: SessionState) -> tuple[AdoptedLane, ..
         # verify/ship must be advanced (see advance_parked), never handed a
         # fresh implement-and-commit run against an already-merged branch.
         and _phase_of(repo_root, lane.issue_id) == "build"
+        # A lane carrying sub-task beads is excluded for the mirror-image reason
+        # (basicly-kjc5.9, D7): the loop's lane mini-loop drives it, dispatching
+        # one fresh runner per sub-task inside the lane worktree, so dispatching
+        # the lane bead itself would re-implement the whole package in one run.
+        and not _has_subtasks(repo_root, lane.issue_id)
     ]
     return tuple(
         sorted(live, key=lambda lane: (ranks.get(lane.issue_id, float("inf")), lane.issue_id))
@@ -703,6 +708,20 @@ def ready_lanes(repo_root: Path, session: SessionState) -> tuple[AdoptedLane, ..
 def _phase_of(repo_root: Path, issue_id: str) -> str:
     """The lane's derived loop phase (pure read; br is the state)."""
     return loop_state.read_node_state(repo_root, issue_id).phase
+
+
+def _has_subtasks(repo_root: Path, issue_id: str) -> bool:
+    """True when *issue_id* was split into sub-task beads (a mini-loop lane, D7).
+
+    Status-agnostic on purpose: a lane whose sub-tasks have all closed is waiting
+    to integrate, not to be re-implemented, so it must stay out of the top-level
+    dispatch set as much as one still working through them.
+    """
+    record = _show_issue(repo_root, issue_id) or {}
+    return any(
+        isinstance(dep, dict) and dep.get("dependency_type") == "parent-child"
+        for dep in record.get("dependents") or []
+    )
 
 
 def dispatch_lanes(
@@ -884,8 +903,11 @@ DISPATCH_GATE = "dispatch"
 # Routes that keep the standing loop iterating even without a landing: the
 # lane will be re-tried and its termination is bounded elsewhere (the dispatch
 # and verify rework caps both escalate into the decision queue, which then
-# holds the lane via has_pending).
-RETRIABLE_ROUTES = ("retry", "rework", "held")
+# holds the lane via has_pending). "lane-step" is a mini-loop lane that closed a
+# sub-task this pass — bounded by max_subtasks_per_lane plus those same caps;
+# "lane-blocked" is deliberately absent, because such a lane waits on an agent
+# or a human exactly like a handoff.
+RETRIABLE_ROUTES = ("retry", "rework", "held", "lane-step")
 
 
 @dataclass(frozen=True)
@@ -894,7 +916,7 @@ class RoutedOutcome:
 
     issue_id: str
     # "shipped" | "merged" | "retry" | "rework" | "held" | "decision"
-    # | "handoff" | "error"
+    # | "handoff" | "lane-step" | "lane-blocked" | "error"
     route: str
     detail: str
 
@@ -980,13 +1002,16 @@ def _is_green(outcome: LaneOutcome) -> bool:
 def advance_parked(
     repo_root: Path, session: SessionState, *, beat: Callable[[], None] | None = None
 ) -> tuple[RoutedOutcome, ...]:
-    """Advance lanes parked past build (landed, awaiting/holding ship) — no runner.
+    """Advance lanes the engine drives without a top-level runner dispatch.
 
-    A lane routed ``merged`` parks in verify until its ship checkpoint is
-    approved (by a human after the queued request, or by a later grant). Once
-    it is approvable, the only correct move is more ``loop.advance`` — never a
-    fresh dispatch against an already-merged branch. Lanes with a pending
-    judgment stay parked.
+    Two shapes qualify. A lane routed ``merged`` parks in verify until its ship
+    checkpoint is approved (by a human after the queued request, or by a later
+    grant); once approvable, the only correct move is more ``loop.advance`` —
+    never a fresh dispatch against an already-merged branch. A lane still in
+    build that carries sub-task beads is a mini-loop lane (basicly-kjc5.9): its
+    sub-tasks are dispatched one at a time from inside ``loop.advance``, so the
+    supervisor advances it here instead of dispatching the lane bead itself.
+    Lanes with a pending judgment stay parked.
     """
     routed: list[RoutedOutcome] = []
     for lane in session.adopted:
@@ -995,7 +1020,9 @@ def advance_parked(
         if beat is not None:
             beat()
         try:
-            if _phase_of(repo_root, lane.issue_id) not in ("verify", "ship"):
+            phase = _phase_of(repo_root, lane.issue_id)
+            mini_loop = phase == "build" and _has_subtasks(repo_root, lane.issue_id)
+            if phase not in ("verify", "ship") and not mini_loop:
                 continue
             steps = loop.run_until_blocked(repo_root, lane.issue_id)
         except (RuntimeError, OSError, ValueError) as exc:
@@ -1008,6 +1035,12 @@ def advance_parked(
             continue
         if final.to_phase == "done":
             routed.append(RoutedOutcome(lane.issue_id, "shipped", final.detail))
+        elif final.to_phase == "build":
+            # Still building: report whether the pass closed a sub-task (the loop
+            # keeps iterating) or the lane is now waiting on an agent/human.
+            progressed = any(step.progressed for step in steps)
+            route = "lane-step" if progressed else "lane-blocked"
+            routed.append(RoutedOutcome(lane.issue_id, route, final.detail))
         else:
             routed.append(RoutedOutcome(lane.issue_id, "merged", final.detail))
     return tuple(routed)
