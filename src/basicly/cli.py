@@ -2472,12 +2472,22 @@ def _cmd_worktree_merge_queue(args: argparse.Namespace) -> int:
     for queued in results:
         outcome = queued.result
         line = f"  {outcome.name}: {outcome.status.upper()} — {outcome.detail}"
-        if not outcome.merged:
+        if queued.bounced:
+            coupling = (
+                f"; coupling recorded on {', '.join(queued.couplings)}" if queued.couplings else ""
+            )
+            line += f"  [bounced back to the lane{coupling}]"
+        if not outcome.merged and not queued.deferred:
             line += f"  [rework {queued.attempts}: {'ESCALATE' if queued.escalate else 'retry'}]"
         print(line)
 
     merged = sum(1 for queued in results if queued.result.merged)
-    print(f"merge-queue: {merged}/{len(items)} merged")
+    summary = f"merge-queue: {merged}/{len(items)} merged"
+    bounced = sum(1 for queued in results if queued.bounced)
+    deferred = sum(1 for queued in results if queued.deferred)
+    if bounced or deferred:
+        summary += f" ({bounced} bounced, {deferred} deferred)"
+    print(summary)
     return 0 if merged == len(items) else 1
 
 

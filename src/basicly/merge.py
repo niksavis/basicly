@@ -1,16 +1,39 @@
 """Merge orchestrator: parallel-build, serial-merge for harness worktrees.
 
-Lands finished worktree branches back onto their base one at a time, in the
-caller-supplied (topological) order, re-verifying after each. Conflicts are
-detected non-destructively with ``git merge-tree`` before any working tree is
-touched; the queue bounds residual conflicts with the rework policy (onb.3) and
-then escalates to a human. Tracker state (``.beads/issues.jsonl``) is reconciled
-with ``br sync --merge``, never by hand-editing conflict markers.
+Lands finished worktree branches back onto their base one at a time, in
+dependency order, re-verifying after each. Conflicts are detected
+non-destructively with ``git merge-tree`` before any working tree is touched;
+the queue bounds residual conflicts with the rework policy (onb.3) and then
+escalates to a human.
 
 Merge runs from the base checkout — git refuses to update a branch that is
-checked out in another worktree. Topological ordering is the caller's
-responsibility (the decomposer/loop engine supplies it); the queue lands the
-given order serially and stops at the first node that does not cleanly merge.
+checked out in another worktree.
+
+Queue v2 — consume-as-ready with bounce-back (factory design D5,
+basicly-kjc5.10). The queue is the standing consumer the supervisor drives, so
+one lane's state must not hold the others hostage:
+
+- **Dependency order, computed here.** :func:`landing_order` sorts the queued
+  items so a lane lands before the lanes that depend on it, read from ``br``
+  rather than trusted from the caller.
+- **Consume as ready.** A lane whose work is not committed yet is *deferred*,
+  not fatal: it stays queued for a later pass while the lanes that are ready
+  land now.
+- **Conflicts bounce back to the owning lane.** A conflict means the
+  decomposition's declared scopes missed a coupling — the graph was wrong, not
+  the merge — so there is **never a merge-time AI resolution and never a
+  hand-edited conflict marker**. The lane keeps its own commits, a rework
+  attempt is recorded against its bead (bounded by ``[policy] max_rework``,
+  escalating at the cap), the missed coupling is recorded as a ``blocks``
+  dependency edge on the lane that landed the conflicting paths so the graph
+  learns, and the lane's own agent re-applies its intent on the new base at the
+  next dispatch.
+- **A red suite or a rejected merge commit still stops the pass**: unlike a
+  scope collision, that is a signal about the base itself, and stacking more
+  landings on top of it only compounds the damage.
+
+Tracker state (``.beads/issues.jsonl``) is reconciled with ``br sync --merge``,
+never by hand-editing conflict markers.
 """
 
 from __future__ import annotations
@@ -24,6 +47,15 @@ from .config import PolicyConfig, load_policy_config
 from .worktree import current_branch, git, load_session
 
 MERGE_GATE = "merge"
+
+# Landing failures that are scope collisions rather than gate or state problems.
+# These bounce back to the owning lane (D5); everything else keeps its old stance.
+CONFLICT_STATUSES = ("rebase-conflicts", "merge-conflicts")
+
+# Path prefixes the harness rewrites on every landing (the tracker it reconciles
+# with `br sync --merge`). A collision here is engine bookkeeping, never evidence
+# of a coupling the decomposition missed.
+ENGINE_PATHS = (".beads/",)
 
 
 @dataclass(frozen=True)
@@ -43,11 +75,20 @@ class MergeResult:
     # | "merge-conflicts" | "merge-failed"
     status: str
     detail: str
+    # Paths that collided, for a conflict status. Carried as data (not only in
+    # the message) because the queue attributes the missed coupling from them
+    # (D5); empty when git reported none.
+    conflicts: tuple[str, ...] = ()
 
     @property
     def merged(self) -> bool:
         """True when the worktree landed cleanly on its base."""
         return self.status == "merged"
+
+    @property
+    def conflicted(self) -> bool:
+        """True when the landing failed on a collision, not on a gate or a state."""
+        return self.status in CONFLICT_STATUSES
 
 
 def probe_merge(repo_root: Path, base: str, branch: str) -> ProbeResult:
@@ -220,9 +261,17 @@ def merge_worktree(
     # 1. Rebase onto the *current* base so serialized merges stay conflict-free.
     rebase = git(["rebase", base, branch], cwd=worktree_path, check=False)
     if rebase.returncode != 0:
+        # Read the collided paths out of the stopped rebase before aborting: the
+        # queue needs them to attribute the missed coupling (D5), and they are
+        # gone once the rebase state is discarded.
+        conflicts = unmerged_paths(worktree_path)
         git(["rebase", "--abort"], cwd=worktree_path, check=False)
+        where = f" in: {', '.join(conflicts)}" if conflicts else ""
         return MergeResult(
-            name, "rebase-conflicts", f"rebase of {branch} onto {base} hit conflicts"
+            name,
+            "rebase-conflicts",
+            f"rebase of {branch} onto {base} hit conflicts{where}",
+            conflicts=conflicts,
         )
 
     # 2. Re-verify in the worktree after the rebase.
@@ -235,7 +284,12 @@ def merge_worktree(
     # 3. Non-destructive conflict probe before touching the base tree.
     probe = probe_merge(repo_root, base, branch)
     if not probe.safe:
-        return MergeResult(name, "merge-conflicts", f"conflicts in: {', '.join(probe.conflicts)}")
+        return MergeResult(
+            name,
+            "merge-conflicts",
+            f"conflicts in: {', '.join(probe.conflicts)}",
+            conflicts=probe.conflicts,
+        )
 
     # 4. Local --no-ff merge into the base from the base checkout. A failure
     # (e.g. a commit-msg hook rejection) must not strand MERGE_HEAD. Attribute the
@@ -265,6 +319,129 @@ class QueueResult:
     result: MergeResult
     attempts: int = 0
     escalate: bool = False
+    # Conflict handed back to the owning lane instead of stopping the pass (D5).
+    bounced: bool = False
+    # Beads whose landing this pass touched the conflicting paths, now recorded
+    # as ``blocks`` dependency edges so the graph learns the missed coupling.
+    couplings: tuple[str, ...] = ()
+
+    @property
+    def deferred(self) -> bool:
+        """True when the lane was not landable yet and simply stays queued."""
+        return self.result.status == "not-ready"
+
+
+def unmerged_paths(cwd: Path) -> tuple[str, ...]:
+    """Paths git currently reports as unmerged in *cwd* (empty when none/unknown)."""
+    proc = git(["diff", "--name-only", "--diff-filter=U"], cwd=cwd, check=False)
+    if proc.returncode != 0:
+        return ()
+    return tuple(line.strip() for line in proc.stdout.splitlines() if line.strip())
+
+
+def blocking_dependencies(repo_root: Path, bead: str) -> frozenset[str]:
+    """Ids *bead* is blocked by, per ``br``; empty when unreadable.
+
+    ``br`` renders a dependency two ways — ``br show --json`` gives
+    ``id``/``dependency_type`` while the ``create``/``dep add`` echo gives
+    ``depends_on_id``/``type`` — so both spellings are read. (Trusting only the
+    echo's spelling silently returned no dependencies at all, which degraded
+    every landing order to the caller's.)
+
+    Best-effort by design: ordering is an optimization over an already-correct
+    serial landing, so an unreachable tracker degrades to the caller's order
+    instead of refusing to land anything.
+    """
+    proc = br.try_run_br(repo_root, ["show", bead, "--json"])
+    if proc is None or proc.returncode != 0:
+        return frozenset()
+    try:
+        data = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return frozenset()
+    record = data[0] if isinstance(data, list) and data else data
+    if not isinstance(record, dict):
+        return frozenset()
+    blocking: set[str] = set()
+    for dep in record.get("dependencies") or []:
+        if not isinstance(dep, dict):
+            continue
+        if (dep.get("dependency_type") or dep.get("type")) != "blocks":
+            continue
+        dep_id = dep.get("depends_on_id") or dep.get("id")
+        if isinstance(dep_id, str) and dep_id:
+            blocking.add(dep_id)
+    return frozenset(blocking)
+
+
+def landing_order(repo_root: Path, items: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """Sort queued items so a lane lands before the lanes that depend on it (D5).
+
+    The dependency order is read from ``br`` rather than trusted from the caller,
+    restricted to the queued beads — a dependency outside the queue is either
+    already landed or not this pass's business. The sort is stable, so
+    independent lanes keep the caller's (scheduler-rank) order, and an
+    unresolvable remainder (a cycle, or an unreadable tracker) keeps it too
+    rather than dropping a lane on the floor.
+    """
+    queued = {bead for _, bead in items}
+    blocked_by = {bead: blocking_dependencies(repo_root, bead) & queued for _, bead in items}
+    ordered: list[tuple[str, str]] = []
+    landed: set[str] = set()
+    remaining = list(items)
+    while remaining:
+        ready = [item for item in remaining if blocked_by[item[1]] <= landed]
+        if not ready:
+            ordered.extend(remaining)
+            break
+        for item in ready:
+            ordered.append(item)
+            landed.add(item[1])
+            remaining.remove(item)
+    return ordered
+
+
+def missed_couplings(
+    conflicts: tuple[str, ...], landed: list[tuple[str, tuple[str, ...]]]
+) -> tuple[str, ...]:
+    """Beads landed this pass whose changes touched *conflicts* (pure).
+
+    The conflicting paths are the evidence of the coupling the decomposition
+    missed: whoever landed them is who this lane should have been serialized
+    after. Paths the engine owns are excluded — **every** landing rewrites the
+    tracker, so counting it would blame every lane for a collision the engine
+    reconciles itself. With no evidence left, nothing is attributed: a wrong
+    dependency edge would teach the graph a coupling that does not exist.
+    """
+    collided = {path for path in conflicts if not _engine_owned(path)}
+    if not collided:
+        return ()
+    return tuple(bead for bead, changed in landed if collided & set(changed))
+
+
+def _engine_owned(path: str) -> bool:
+    """True for a path the harness itself rewrites on every landing.
+
+    Only a literal ``./`` prefix is stripped: a bare ``lstrip("./")`` eats the
+    leading dot of a dot-directory and would never match ``.beads/`` again (the
+    same trap the scope estimator documents).
+    """
+    normalized = path.strip().replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    return any(normalized.lstrip("/").startswith(prefix) for prefix in ENGINE_PATHS)
+
+
+def record_coupling(repo_root: Path, bead: str, blocks_on: str) -> None:
+    """Record *bead* as blocked by *blocks_on* — the missed coupling, in ``br`` (D5).
+
+    A ``blocks`` edge onto an already-landed lane gates nothing now (that lane is
+    done); its job is to make the coupling part of the graph, so the next
+    decomposition serializes the two instead of declaring them parallel-safe.
+    Best-effort: a rejected edge (already present, or a cycle ``br`` refuses)
+    must not turn a bounced lane into a crash.
+    """
+    br.try_run_br(repo_root, ["dep", "add", bead, blocks_on, "-t", "blocks"])
 
 
 def merge_queue(
@@ -274,27 +451,79 @@ def merge_queue(
     config: PolicyConfig | None = None,
     verify_mode: str = "full",
 ) -> list[QueueResult]:
-    """Land ``(name, bead)`` worktrees serially in the given (topological) order.
+    """Land ``(name, bead)`` worktrees as they turn ready, in dependency order (D5).
 
-    Re-verifies after each merge. Stops at the first node that does not cleanly
-    merge: records a rework attempt against that node's bead (policy, onb.3) and
-    flags escalation once the rework cap is reached, so a human resolves the
-    conflict before the queue is re-run. No conflict markers are hand-edited.
+    Re-verifies after each merge. A lane that is not committed yet is deferred
+    and the pass continues; a lane that *conflicts* is bounced back to its owner
+    (rework recorded, missed coupling written to the graph) and the pass
+    continues with the lanes that can still land. A failed verify or a rejected
+    merge commit still stops the pass — that is a signal about the base, not
+    about one lane's scope.
     """
     config = config or load_policy_config(repo_root)
     results: list[QueueResult] = []
-    for name, bead in items:
+    landed: list[tuple[str, tuple[str, ...]]] = []
+    for name, bead in landing_order(repo_root, items):
+        before = _head_sha(repo_root)
         result = merge_worktree(repo_root, name, bead=bead, verify_mode=verify_mode)
         if result.merged:
+            landed.append((bead, _changed_paths(repo_root, before)))
             results.append(QueueResult(result))
             continue
         if result.status == "not-ready":
-            # Operator-fixable (work not committed on the branch): stop the queue
-            # so it is resolved, but do not spend a rework attempt on it.
+            # Operator-fixable (work not committed on the branch), and nothing
+            # this pass can resolve: leave it queued, spend no rework attempt on
+            # it, and let the lanes behind it land.
             results.append(QueueResult(result))
-            break
+            continue
+        if result.conflicted:
+            results.append(_bounce_back(repo_root, bead, result, landed, config))
+            continue
         attempts = policy.record_rework(repo_root, bead, MERGE_GATE)
         escalate = attempts >= config.max_rework
         results.append(QueueResult(result, attempts=attempts, escalate=escalate))
-        break  # serial, human-gated: stop so the failure is resolved before continuing
+        break  # a bad base, not a bad lane: stop before stacking more on it
     return results
+
+
+def _bounce_back(
+    repo_root: Path,
+    bead: str,
+    result: MergeResult,
+    landed: list[tuple[str, tuple[str, ...]]],
+    config: PolicyConfig,
+) -> QueueResult:
+    """Hand a conflicting lane back to its owner, recording what the graph missed.
+
+    No merge-time resolution of any kind (D5): the base was left untouched by
+    :func:`merge_worktree`, the lane keeps its own commits, and re-applying the
+    intent on the new base is the lane agent's job at its next dispatch — bounded
+    by the rework cap, escalating to a human at it.
+    """
+    couplings = missed_couplings(result.conflicts, landed)
+    for culprit in couplings:
+        record_coupling(repo_root, bead, culprit)
+    attempts = policy.record_rework(repo_root, bead, MERGE_GATE)
+    return QueueResult(
+        result,
+        attempts=attempts,
+        escalate=attempts >= config.max_rework,
+        bounced=True,
+        couplings=couplings,
+    )
+
+
+def _head_sha(repo_root: Path) -> str:
+    """The base checkout's HEAD, or "" when it cannot be read (never fatal)."""
+    proc = git(["rev-parse", "HEAD"], cwd=repo_root, check=False)
+    return proc.stdout.strip() if proc.returncode == 0 else ""
+
+
+def _changed_paths(repo_root: Path, before: str) -> tuple[str, ...]:
+    """Paths a landing added to the base since *before* (empty when unknown)."""
+    if not before:
+        return ()
+    proc = git(["diff", "--name-only", f"{before}..HEAD"], cwd=repo_root, check=False)
+    if proc.returncode != 0:
+        return ()
+    return tuple(line.strip() for line in proc.stdout.splitlines() if line.strip())

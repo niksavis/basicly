@@ -949,9 +949,11 @@ def route_outcomes(
     Green lanes go through the single-track engine — ``loop.advance`` is the
     only landing path, so each landing is serial and re-verifying; outcomes
     arrive in scheduler-rank order, which is the dependency order among
-    independently-ready lanes. Matching ``merge.merge_queue``'s stop-on-first-
-    failure stance, a landing that blocks holds every later green lane this
-    pass (``held``) — they re-land next iteration on the updated base. Blocked
+    independently-ready lanes. A landing that blocks holds every later green lane
+    this pass (``held``) — they re-land next iteration on the updated base. (The
+    batch queue, ``merge.merge_queue``, is consume-as-ready since kjc5.10: it
+    defers and bounces instead of stopping. Routing the supervisor's own
+    per-lane landings through it is basicly-kjc5.20.) Blocked
     shapes route to the decision queue: a needs-input fact and a timeout stall
     were queued at dispatch, a failed run retries under the bounded rework cap
     and escalates at it, and a landed lane whose ship checkpoint no grant
