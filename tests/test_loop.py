@@ -608,6 +608,38 @@ def test_landing_gate_is_attributed_to_the_runner(
     assert captured.get("actor") == "claude"
 
 
+def test_blocked_landing_carries_the_merge_attempt(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A blocked landing exposes the merge result, so a driver need not parse text.
+
+    The supervisor routes a scope collision differently from a red gate or an
+    uncommitted worktree (basicly-kjc5.20) and reads the shape off this field.
+    """
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    attempt = merge.MergeResult("i", "merge-conflicts", "conflicts in: x.py", conflicts=("x.py",))
+    monkeypatch.setattr(merge, "merge_worktree", lambda *_a, **_k: attempt)
+    monkeypatch.setattr(policy, "record_rework", lambda *_a: 1)
+
+    result = _advance(tmp_path)
+
+    assert result.blocked and result.landing is attempt
+    assert attempt.conflicted and attempt.conflicts == ("x.py",)
+
+
+def test_not_ready_landing_carries_the_merge_attempt(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An uncommitted worktree is identifiable as such without reading the message."""
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    attempt = merge.MergeResult("i", "not-ready", "commit the work on 'harness/i' before landing")
+    monkeypatch.setattr(merge, "merge_worktree", lambda *_a, **_k: attempt)
+
+    result = _advance(tmp_path)
+
+    assert result.blocked and result.landing is attempt and not attempt.conflicted
+
+
 def test_build_leaf_reworks_on_failed_merge(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

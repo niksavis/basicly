@@ -102,6 +102,10 @@ class AdvanceResult:
     action: str
     detail: str = ""
     needs_input: str | None = None
+    # The landing attempt behind this step, when one ran. Carried as data so a
+    # driver can tell a scope collision from a red gate or an uncommitted
+    # worktree without parsing the message (basicly-kjc5.20).
+    landing: merge.MergeResult | None = None
 
     @property
     def advanced(self) -> bool:
@@ -135,10 +139,15 @@ class _Ctx:
 
 
 def _blocked(
-    ctx: _Ctx, reason: str, *, action: str = "blocked", needs_input: str | None = None
+    ctx: _Ctx,
+    reason: str,
+    *,
+    action: str = "blocked",
+    needs_input: str | None = None,
+    landing: merge.MergeResult | None = None,
 ) -> AdvanceResult:
     return AdvanceResult(
-        ctx.issue_id, ctx.state.phase, ctx.state.phase, action, reason, needs_input
+        ctx.issue_id, ctx.state.phase, ctx.state.phase, action, reason, needs_input, landing
     )
 
 
@@ -451,9 +460,9 @@ def _verify_and_land(
     if result.status == "not-ready":
         # The build's work is not committed on the branch: block with guidance,
         # do not burn a rework attempt on an operator-fixable state (basicly-4psl).
-        return _blocked(ctx, result.detail)
+        return _blocked(ctx, result.detail, landing=result)
     if not result.merged:
-        return _rework(ctx, merge.MERGE_GATE, f"merge failed: {result.detail}")
+        return _rework(ctx, merge.MERGE_GATE, f"merge failed: {result.detail}", landing=result)
     return _record_verify(ctx, result.detail, verify_mode=mode)
 
 
@@ -720,14 +729,23 @@ def _record_verify(ctx: _Ctx, detail: str, *, verify_mode: str | None = None) ->
     return _moved(ctx, "verify", "merged", detail)
 
 
-def _rework(ctx: _Ctx, gate: str, reason: str, *, issue_id: str | None = None) -> AdvanceResult:
+def _rework(
+    ctx: _Ctx,
+    gate: str,
+    reason: str,
+    *,
+    issue_id: str | None = None,
+    landing: merge.MergeResult | None = None,
+) -> AdvanceResult:
     """Record a rework attempt for *gate* and block, escalating at the cap.
 
     An escalation is a human judgment call, so it also enters the decision
     queue (basicly-kjc5.4) — one surface for everything blocked on a decision.
     *issue_id* attributes the attempt to a bead other than the node itself: a
     lane's sub-task is bounded on its own record, so one bad sub-task escalates
-    rather than spending the whole lane's rework budget.
+    rather than spending the whole lane's rework budget. *landing* carries the
+    merge attempt that failed, so a driver can route a scope collision
+    differently from a red gate (basicly-kjc5.20).
     """
     target = issue_id or ctx.issue_id
     attempts = policy.record_rework(ctx.repo_root, target, gate)
@@ -740,7 +758,12 @@ def _rework(ctx: _Ctx, gate: str, reason: str, *, issue_id: str | None = None) -
             f"rework cap reached on gate {gate}: retry, re-dispatch, or park?",
             reason,
         )
-    return _blocked(ctx, f"{reason} (rework {attempts}/{ctx.config.max_rework})", action=action)
+    return _blocked(
+        ctx,
+        f"{reason} (rework {attempts}/{ctx.config.max_rework})",
+        action=action,
+        landing=landing,
+    )
 
 
 def _ensure_child_worktrees(ctx: _Ctx, children: list[tuple[str, str]]) -> None:
