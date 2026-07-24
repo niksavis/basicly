@@ -381,7 +381,9 @@ def test_dispatch_record_captures_token_telemetry(
     _ready_leaf(at, monkeypatch)
     _pin_runner(monkeypatch, "claude")
     stdout = (
-        '{"result": "ok", "total_cost_usd": 0.25,'
+        '{"type":"assistant","message":{"usage":'
+        '{"input_tokens": 100, "output_tokens": 40}}}\n'
+        '{"type": "result", "result": "ok", "total_cost_usd": 0.25,'
         ' "usage": {"input_tokens": 100, "output_tokens": 40}}'
     )
     seen = {}
@@ -401,7 +403,7 @@ def test_dispatch_record_captures_token_telemetry(
     entry = records["i"][0]
     assert (entry["tokens"], entry["cost"], entry["estimated"]) == (140, 0.25, False)
     # The redacted command reflects the usage-capturing argv actually dispatched.
-    assert entry["command"][-2:] == ["--output-format", "json"]
+    assert entry["command"][-3:] == ["--output-format", "stream-json", "--verbose"]
 
 
 def test_classify_leaf_reports_failed_runner(

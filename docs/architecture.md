@@ -854,13 +854,18 @@ metadata-only **run-record** keyed by bead id into the self-ignored `.basicly/us
 (`run_record.py`, same atomic tmp-write pattern as `tool-usage`): wall-clock duration, exit
 outcome (executed/handoff/failed), agent, the pinned model when the runner sets one, and
 token/cost telemetry (`basicly-kjc5.1`, factory design §7.5). For telemetry, a loop dispatch
-appends the adapter's usage-report flags (claude `--output-format json`, codex `--json`;
+appends the adapter's usage-report flags (claude `--output-format stream-json --verbose`, codex `--json`;
 opt-in per call site — rubric judging and catalog review parse plain-text answers and stay
 unflagged) and `runner.extract_usage` parses reported tokens/cost from the captured output;
 when a CLI reports no usage (copilot, probed 2026-07) or the output does not parse, it falls
 back to a chars/4 transcript estimate flagged `estimated` so calibration can down-weight it.
-A `[[runner.agents]]` override sets `usage_format` (`claude-json`/`codex-jsonl`) to keep
-exact extraction on a custom command. Only metadata is persisted — the command is stored with the prompt argument
+A `[[runner.agents]]` override sets `usage_format`
+(`claude-stream-json`/`claude-json`/`codex-jsonl`) to keep exact extraction on a custom
+command. The claude default is the **streaming** envelope because it is the only one carrying
+per-turn usage: `runner.context_occupancy` reads the last assistant turn for the D8
+context-ceiling meter, while the stream's terminating result event still supplies the
+cumulative cost view (`basicly-kjc5.14`). A consumer pinning `claude-json` keeps exact cost
+telemetry and an inert ceiling. Only metadata is persisted — the command is stored with the prompt argument
 elided, never the prompt body or captured output. This is the correlation foundation for
 agent attribution, model provenance, and the cross-repo fleet rollup.
 

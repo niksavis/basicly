@@ -23,6 +23,7 @@ from basicly import runner
 from basicly.runner import (
     BUILTIN_RUNNERS,
     CLAUDE_JSON,
+    CLAUDE_STREAM_JSON,
     CODEX_JSONL,
     HANDOFF,
     HEADLESS,
@@ -502,6 +503,13 @@ def _claude_spec() -> RunnerSpec:
     return next(s for s in BUILTIN_RUNNERS if s.name == "claude")
 
 
+def _claude_json_spec() -> RunnerSpec:
+    """A consumer pinning the older single-object envelope (still supported)."""
+    return _claude_spec().__class__(
+        "claude", HEADLESS, ("claude", "-p", PROMPT_PLACEHOLDER), usage_format=CLAUDE_JSON
+    )
+
+
 def _codex_spec() -> RunnerSpec:
     return next(s for s in BUILTIN_RUNNERS if s.name == "codex")
 
@@ -531,6 +539,36 @@ _CLAUDE_RESULT = json.dumps({
 
 # The documented `codex exec --json` JSONL event stream: usage rides on
 # turn.completed events; cached_input_tokens is a subset of input_tokens.
+# Shape of `claude -p ... --output-format stream-json --verbose`, pinned against a
+# live probe (2026-07-25): a plain-text warning line, then one event per turn
+# carrying that turn's usage, then the same result object the non-streaming
+# envelope emits. Event kinds beyond assistant/result appear (system,
+# rate_limit_event) and a non-JSON line can precede the stream, so the reader must
+# skip what it does not recognise. The second assistant turn is the occupancy
+# view; the result event's cache_read re-count is the cumulative cost view
+# (basicly-kjc5.14).
+_CLAUDE_STREAM = "\n".join([
+    "Warning: no stdin data received in 3s, proceeding without it.",
+    '{"type":"system","subtype":"init","tools":[]}',
+    '{"type":"rate_limit_event","rate_limit_info":{"status":"allowed"}}',
+    '{"type":"assistant","message":{"usage":{"input_tokens":4,'
+    '"cache_creation_input_tokens":5960,"cache_read_input_tokens":0,"output_tokens":91}}}',
+    '{"type":"user","message":{"content":"tool result"}}',
+    '{"type":"assistant","message":{"usage":{"input_tokens":2,'
+    '"cache_creation_input_tokens":40,"cache_read_input_tokens":15496,"output_tokens":17}}}',
+    json.dumps({
+        "type": "result",
+        "subtype": "success",
+        "total_cost_usd": 0.136147,
+        "usage": {
+            "input_tokens": 6,
+            "cache_creation_input_tokens": 6000,
+            "cache_read_input_tokens": 15496,
+            "output_tokens": 108,
+        },
+    }),
+])
+
 _CODEX_EVENTS = "\n".join([
     '{"type":"thread.started","thread_id":"t1"}',
     '{"type":"item.completed","item":{"type":"agent_message","text":"ok"}}',
@@ -547,8 +585,18 @@ def test_format_command_default_omits_usage_flags() -> None:
 
 
 def test_format_command_capture_usage_appends_claude_flags() -> None:
-    """A usage-capturing claude dispatch asks for the JSON result object."""
+    """A usage-capturing claude dispatch asks for the per-turn stream.
+
+    stream-json is refused under -p without --verbose, so the flag is part of
+    the contract, not decoration (basicly-kjc5.14).
+    """
     argv = runner.format_command(_claude_spec(), "go", capture_usage=True)
+    assert argv == ["claude", "-p", "go", "--output-format", "stream-json", "--verbose"]
+
+
+def test_format_command_capture_usage_keeps_the_pinned_json_envelope() -> None:
+    """A consumer pinned to claude-json still gets the single-object flags."""
+    argv = runner.format_command(_claude_json_spec(), "go", capture_usage=True)
     assert argv == ["claude", "-p", "go", "--output-format", "json"]
 
 
@@ -584,12 +632,13 @@ def test_run_capture_usage_executes_with_usage_flags(monkeypatch: pytest.MonkeyP
     """run(capture_usage=True) invokes the argv with the usage-report flags."""
     captured = _patch_popen(monkeypatch)
     runner.run(_claude_spec(), "go", Path("/work"), capture_usage=True)
-    assert captured["argv"] == ["claude", "-p", "go", "--output-format", "json"]
+    assert captured["argv"] == ["claude", "-p", "go", "--output-format", "stream-json", "--verbose"]
 
 
 def test_extract_usage_claude_reads_tokens_and_cost() -> None:
     """The claude result object yields summed usage tokens plus total_cost_usd."""
-    usage = runner.extract_usage(_claude_spec(), _executed(_claude_spec(), _CLAUDE_RESULT))
+    spec = _claude_json_spec()
+    usage = runner.extract_usage(spec, _executed(spec, _CLAUDE_RESULT))
     assert usage is not None
     assert usage.tokens == 2 + 5960 + 15496 + 17
     assert usage.cost == pytest.approx(0.136147)
@@ -599,7 +648,8 @@ def test_extract_usage_claude_reads_tokens_and_cost() -> None:
 def test_extract_usage_claude_without_cost_field() -> None:
     """A usage block without total_cost_usd still reports tokens, cost null."""
     stdout = json.dumps({"usage": {"input_tokens": 10, "output_tokens": 5}})
-    usage = runner.extract_usage(_claude_spec(), _executed(_claude_spec(), stdout))
+    spec = _claude_json_spec()
+    usage = runner.extract_usage(spec, _executed(spec, stdout))
     assert usage == runner.Usage(tokens=15, cost=None, estimated=False)
 
 
@@ -654,7 +704,7 @@ def test_extract_usage_none_when_nothing_executed() -> None:
 def test_builtin_usage_formats_pin_the_probed_capabilities() -> None:
     """The claude and codex builtins report usage; copilot does not (probed 2026-07-22)."""
     by_name = {s.name: s.usage_format for s in BUILTIN_RUNNERS}
-    assert by_name["claude"] == CLAUDE_JSON
+    assert by_name["claude"] == CLAUDE_STREAM_JSON
     assert by_name["codex"] == CODEX_JSONL
     assert by_name["copilot"] is None
     assert by_name[MANUAL_RUNNER] is None
@@ -678,8 +728,63 @@ def test_context_occupancy_claude_json_is_unknowable() -> None:
     Treating it as occupancy would cross any ceiling on every healthy
     multi-turn run, so the meter must report unknowable, never that sum.
     """
-    occupancy = runner.context_occupancy(_claude_spec(), _executed(_claude_spec(), _CLAUDE_RESULT))
+    spec = _claude_json_spec()
+    occupancy = runner.context_occupancy(spec, _executed(spec, _CLAUDE_RESULT))
     assert occupancy is None
+
+
+def test_extract_usage_claude_stream_reads_the_result_event() -> None:
+    """The cost view stays cumulative: it comes from the stream's result event."""
+    spec = _claude_spec()
+    usage = runner.extract_usage(spec, _executed(spec, _CLAUDE_STREAM))
+
+    assert usage is not None
+    assert usage.tokens == 6 + 6000 + 15496 + 108
+    assert usage.cost == pytest.approx(0.136147)
+    assert usage.estimated is False
+
+
+def test_context_occupancy_claude_stream_reads_the_last_assistant_turn() -> None:
+    """Occupancy is the final turn's window, not the cumulative cache re-count.
+
+    The result event totals 21610 tokens against a ~15.5K final context; metering
+    that sum would trip any ceiling on a healthy multi-turn run (basicly-kjc5.14).
+    """
+    spec = _claude_spec()
+    occupancy = runner.context_occupancy(spec, _executed(spec, _CLAUDE_STREAM))
+
+    assert occupancy == 2 + 40 + 15496 + 17
+    cumulative = runner.extract_usage(spec, _executed(spec, _CLAUDE_STREAM))
+    assert cumulative is not None and occupancy < cumulative.tokens
+
+
+def test_context_occupancy_claude_stream_ignores_noise_and_partial_lines() -> None:
+    """A killed dispatch leaves a truncated tail; the last whole turn still reads."""
+    stdout = (
+        "Reading prompt from stdin\n"
+        '{"type":"assistant","message":{"usage":{"input_tokens":10,"output_tokens":5}}}\n'
+        '{"type":"assistant","message":{"usage":{"input_tok'
+    )
+    spec = _claude_spec()
+
+    assert runner.context_occupancy(spec, _executed(spec, stdout)) == 15
+
+
+def test_context_occupancy_claude_stream_is_none_without_a_turn() -> None:
+    """No assistant turn parsed means unknowable — never a guess from stdout length."""
+    spec = _claude_spec()
+    stdout = '{"type":"system","subtype":"init"}'
+
+    assert runner.context_occupancy(spec, _executed(spec, stdout)) is None
+
+
+def test_extract_usage_claude_stream_without_a_result_event_estimates() -> None:
+    """A stream cut off before its result event has no reported total to trust."""
+    spec = _claude_spec()
+    stdout = '{"type":"assistant","message":{"usage":{"input_tokens":10,"output_tokens":5}}}'
+    usage = runner.extract_usage(spec, _executed(spec, stdout))
+
+    assert usage is not None and usage.estimated is True
 
 
 def test_context_occupancy_codex_reads_last_turn_only() -> None:
