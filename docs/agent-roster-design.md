@@ -18,10 +18,12 @@ The three objectives, in the order they conflict:
   diff for security weaknesses at trust boundaries, read-only, report findings with
   evidence" outperforms the same model told "review this change", because the second prompt
   makes the model choose its own success criterion.
-- **Cost** — routing is the lever, not headcount. Most spend is implementation tokens; the
-  savings come from paying a cheap model for bounded mechanical work, paying an expensive
-  one only where a wrong answer is costly and the token volume is small, and paying *no*
-  model where deterministic code suffices.
+- **Cost** — routing is the lever, not headcount, and the unit of cost is **total tokens,
+  wall-clock, and human interventions per landed, correct package** — never the price of a
+  single dispatch (R5). The savings come from paying *no* model where deterministic code
+  suffices, and from routing every judgment to the cheapest tier that can be *relied on*
+  for it — which, for consequential outputs, is an expensive tier that one-shots rather
+  than a cheap one that reworks.
 - **Speed** — every persona is a dispatch, and every dispatch pays fresh context priming
   (deliberate, per factory D6). More roles is more latency unless the roles run
   concurrently or shrink the work of a slower role downstream.
@@ -61,7 +63,7 @@ A persona is five fields:
 | --- | --- |
 | role prompt | the projected instructions defining the job and its success criterion |
 | tool policy | the allow/deny overlay at invocation (read-only vs write, `br` access) |
-| model tier | cheap / mid / high, resolved to a concrete model by config |
+| model tier | low / medium / high / maximum (R5), resolved to a concrete model by config |
 | gate authority | what it may record — see R4 |
 | output contract | the structured artifact the engine validates (plan, commit, verdicts) |
 
@@ -108,22 +110,56 @@ passes having checked nothing. Three options:
 
 Recommended: **(b)**. An unsatisfied acceptance criterion is a decision, not a test failure.
 
-### R5 — Model tier per persona is where "lowest cost" actually comes from
+### R5 — Four model tiers, routed by reliability and priced per landed package
 
-Assign the cheapest tier that clears the role's bar:
+Providers ship three-to-four capability classes, so the roster uses **four tiers — low,
+medium, high, maximum** — as the portable abstraction; the concrete model behind each tier
+is config (R2). The Claude family is the worked example, cheapest to most expensive: haiku,
+sonnet, opus, fable. Notably **opus, not sonnet, is the actual workhorse**, and **fable is
+the designer / architect / thinker**; sonnet covers daily tasks and haiku covers simple
+mechanical work. The GPT classes are luna, terra, sol — luna cheapest, sol the most
+powerful — and a three-class ladder simply resolves high and maximum to the same top class:
 
-- **cheap** — bounded, verifiable, high-volume work: locating files, extracting a symbol
-  list, classifying a failure. A wrong answer is cheap to detect and cheap to redo.
-- **mid** — implementation and code-level review. Volume is high and quality matters, so
-  this tier dominates spend; it is the tier to *shrink the input of*, not to upgrade.
-- **high** — decisions that are small in tokens and expensive to get wrong: a decomposition
-  plan (a bad split poisons every lane under it), an acceptance verdict, an architecture
-  review, a delegated decision.
+| Tier | What it carries | Claude | GPT class |
+| --- | --- | --- | --- |
+| low | bounded, mechanically verifiable micro-work: a commit message, a tool call, finding a named thing in files | haiku | luna |
+| medium | daily tasks whose output is cheap to check and cheap to redo | sonnet | terra |
+| high | the workhorse: implementation, and judgments whose output is expensive to be wrong | opus | sol |
+| maximum | design, architecture, decomposition — the thinking everything downstream inherits | fable | sol |
 
-Two structural corollaries. First, the single biggest cost win is **not paying a model at
-all** for merge, verify, and release mechanics (R6/§4). Second, the next biggest is
-shrinking the implementer's input — which is what the Scout persona exists to do, and why
-it must be measured rather than assumed (§7, open question 3).
+The routing rule is **not** "cheapest sufficient model". That framing prices a single
+dispatch, and a dispatch is the wrong unit: the unit of cost is **total tokens — plus
+wall-clock and human interventions — per landed, correct package**. Priced in that unit,
+the economics invert:
+
+- A cheaper model is a weaker model, and its mistakes are not free. They come back as
+  rework dispatches, bug-fix beads, extra reviewer and validator cycles, bounced merges,
+  and human attention — all charged to the same package. The cheap dispatch routinely
+  produces the expensive package, in tokens and in wall-clock alike.
+- A frontier model one-shots the same work and needs barely any rework — *provided the
+  design, the requirements, and the implementation plan are clear*. That proviso is
+  exactly what the factory supplies: deterministic gates, bounded rework, structured
+  acceptance criteria, scope declarations, and the loop's phase discipline. Inside the
+  harness a frontier model makes close to zero mistakes; the harness turns its one-shot
+  rate from a good day into a property the budget can rely on.
+- So the rule is: **route each role to the cheapest tier that can be relied on for that
+  role.** For any role whose output is expensive to be wrong — implementation,
+  decomposition, acceptance judgment, architecture — the reliable tier *is* the expensive
+  one, and it is the cheaper choice in the only metric that matters.
+
+The low tier keeps the work that genuinely belongs to it: bounded, mechanically
+verifiable, hard-to-get-wrong steps — writing a commit message, tool-call glue, finding a
+named thing in files. The qualifying property is that a wrong answer is detected
+mechanically and redone cheaply; work whose errors propagate silently never qualifies,
+however simple it looks. No roster persona runs at the low tier — work that bounded is
+either a deterministic engine step already or a micro-step inside another persona's
+dispatch, not a role.
+
+Two structural corollaries. First, the single biggest cost win is still **not paying a
+model at all** for merge, verify, and release mechanics (§4). Second, the next biggest is
+shrinking the implementer's input — but that is Dana's scope declarations and the engine's
+deterministic bundle assembly (D6/D8) doing the shrinking, not a cheap pre-reading persona
+(see the Scout, §4).
 
 ### R6 — Review is one persona with lenses, not one reviewer of everything
 
@@ -133,12 +169,14 @@ to pick which level to work at and will pick inconsistently. Instead one **Revie
 parameterised by **lens**, each lens a separate dispatch with its own tier, run at the level
 where its artifact exists:
 
-- `correctness` — mid tier, at lane integrate, over the lane's diff.
-- `security` — mid tier, at lane integrate, only when the diff touches a trust boundary
+- `correctness` — high tier, at lane integrate, over the lane's diff.
+- `security` — high tier, at lane integrate, only when the diff touches a trust boundary
   (input handling, credentials, subprocess, network) — otherwise skipped, deterministically.
-- `architecture` — high tier, at session level over the landed set, not per lane. Reviewing
-  architecture inside a lane is reviewing a keyhole.
+- `architecture` — maximum tier, at session level over the landed set, not per lane.
+  Reviewing architecture inside a lane is reviewing a keyhole.
 
+No lens runs below the high tier: a reviewer's failure mode is the miss, not the false
+alarm, and an advisory green from a weak reviewer confers confidence no one earned (R5).
 Diverse lenses find failure modes that redundant reviewers cannot. All lens output is
 advisory (non-required gate) per R4; findings become `br` comments and, where they imply a
 missed coupling, a found-info record (factory §7.4).
@@ -167,8 +205,8 @@ be a rule an observer could see being followed or broken:
 
 - Vera refuses to credit an acceptance criterion the diff does not evidence, and never
   infers intent that the criterion does not state.
-- Sol returns paths and ranges, never an opinion about the design.
-- Ivo commits before it reports, always referencing its bead.
+- Remo attaches `path:line` evidence to every finding, and never proposes the rewrite.
+- Ivo commits before they report, always referencing their bead.
 
 Personality that does not change behavior is tokens with no return, and anthropomorphism
 has one specific failure mode worth naming: trusting a persona's judgment over a gate. The
@@ -179,17 +217,16 @@ engine output.
 
 ## 3. The roster
 
-Six personas, plus one that lands with release automation. Every one clears R3.
+Five personas, plus one that lands with release automation. Every one clears R3.
 
 | Name | Role | Runs at | Tier | Tools | Output contract |
 | --- | --- | --- | --- | --- | --- |
-| **Dex** | Decomposer | session, and lane sub-task split | high | read-only + `br` propose | a child plan: beads, scope globs, acceptance criteria |
-| **Sol** | Scout | lane, before each implementation dispatch | cheap | read-only, no write | the files, symbols and ranges that matter — nothing else |
-| **Ivo** | Implementer | lane sub-task | mid | full write inside the lane worktree | a committed change on the harness branch, tests included |
+| **Dana** | Decomposer | session, and lane sub-task split | maximum | read-only + `br` propose | a child plan: beads, scope globs, acceptance criteria |
+| **Ivo** | Implementer | lane sub-task | high | full write inside the lane worktree | a committed change on the harness branch, tests included |
 | **Vera** | Validator | lane integrate, session ship | high | read-only | judged rubric verdicts against the acceptance criteria, with evidence |
-| **Rune** | Reviewer (lens: correctness \| security \| architecture) | lane integrate, session | mid / high by lens | read-only | advisory findings with `path:line` evidence |
+| **Remo** | Reviewer (lens: correctness \| security \| architecture) | lane integrate, session | high / maximum by lens | read-only | advisory findings with `path:line` evidence |
 | **Juno** | Decider | session, per decision item | high | read-only, corpus-bounded | `{decision, rationale, confidence, abstain}` |
-| **Cleo** | Curator *(provisional — lands with `basicly-kjc5.12`)* | ship | mid | read + changelog write | curated release notes from the generated changelog |
+| **Cleo** | Curator *(provisional — lands with `basicly-kjc5.12`)* | ship | medium | read + changelog write | curated release notes from the generated changelog |
 
 Notes on the roster as proposed versus the request:
 
@@ -199,30 +236,50 @@ Notes on the roster as proposed versus the request:
   is the highest-leverage persona in the system for *speed*, because it is the only one that
   removes human stops.
 - **Ivo was absent from the requested roster too**, and it is where nearly all tokens go.
-  The Implementer is the workhorse; getting its contract right (one sub-task at a time,
-  fresh context, commit before reporting, tests as part of the change) matters more to
-  quality and cost than every other persona combined.
-- **Sol is the cost play.** Cheap tokens replacing expensive ones: localise first, then hand
-  the implementer a short list instead of a repository. Factory D7 already permits read-only
-  helpers inside a lane, counted against the one global `max_agent_processes` budget.
+  The Implementer runs at the high tier — the workhorse class — because implementation is
+  the output most expensive to be wrong (R5); getting the contract right (one sub-task at
+  a time, fresh context, commit before reporting, tests as part of the change) matters
+  more to quality and cost than every other persona combined.
+- **Dana runs at the maximum tier** because decomposition is the design work everything
+  downstream inherits: a bad split poisons every lane under it, and a clear plan is the
+  stated precondition for the high tier's one-shot rate (R5). The output is small in
+  tokens and the most consequential in the system.
+- **The Scout is cut.** An earlier draft carried a low-tier Scout (then named Sol) as the
+  cost play; priced per landed package the play inverts — see §4.
 - **Cleo is provisional** but likely justified: the release process has repeatedly needed the
   generated changelog reordered and curated by hand, which is judgment with a checkable
-  output.
+  output. They are also the only persona below the high tier: a curation error is visible
+  on one read of the notes and cheap to redo, which is the medium-tier criterion (R5).
 
 ### Naming convention
 
-Single given name, no surname; pronoun-neutral; alliterative with the role id
-(`decomposer`→Dex, `scout`→Sol, `validator`→Vera, `reviewer`→Rune, `curator`→Cleo);
+Single given name, no surname; pronoun-neutral; **pronounceable by non-English speakers** —
+short, open syllables, phonetically transparent. A name fails the bar if it needs an
+English-specific vowel, a consonant cluster that is hard outside English, or a reading that
+only English orthography teaches (a silent e). Alliterative with the role id where it
+survives that bar (`decomposer`→Dana, `validator`→Vera, `reviewer`→Remo, `curator`→Cleo);
 `decider`→Juno for *judge*, since D-names were taken. Names are display-only (R2), so this
 slate is the cheapest thing in the design to change.
 
+Applying the pronounceability bar to the earlier slate: **Dex** fails (closed syllable
+ending in a /ks/ cluster) and becomes **Dana**; **Rune** fails (its reading depends on the
+English silent e — everywhere else it reads as two syllables) and becomes **Remo**; **Sol**
+goes with the scout role (§4) and needed renaming regardless, since it now collides with a
+GPT model-class name. **Ivo**, **Vera**, and **Cleo** pass — open syllables, pure vowels,
+and /kl/ is among the most widely shared clusters. **Juno** passes with a note: the initial
+letter reads /j/ or /dʒ/ depending on language, but both readings are two open syllables
+anyone can produce — the bar is that everyone can say the name, not that everyone says it
+identically.
+
 Rejected naming variants: model-suffixed identities (`Vera-7`) leak the model into the
-identity, which R2 makes config; and job-title names (`ReviewerBot`) give up the legibility
-that made naming worth doing.
+identity, which R2 makes config; job-title names (`ReviewerBot`) give up the legibility
+that made naming worth doing; and anything that collides with a provider's model or class
+name (Sol vs the GPT `sol` class) — a display name must never read as a model claim.
 
 ## 4. Roles that must not be personas
 
-Each of these was proposed; each is refused by a factory decision, not by preference.
+Each of these was proposed; each is refused by a factory decision or by the cost model
+(R5), not by preference.
 
 - **Merge agent** — refused by **D5** and §4 of the factory design: "no merge-time AI
   resolution… A conflict means the decomposition's scope declarations missed a coupling —
@@ -234,9 +291,25 @@ Each of these was proposed; each is refused by a factory decision, not by prefer
 - **Tester / verifier** — refused by **D4**: verify is deterministic gates (tests, lint,
   type, build). Making a model run the tests adds cost, latency, and nondeterminism to the
   one part of the system that is trustworthy precisely because it is mechanical. The real
-  agent work nearby is *authoring* tests, which belongs to **Ivo** as part of its change,
+  agent work nearby is *authoring* tests, which belongs to **Ivo** as part of their change,
   and *diagnosing* a red gate — a triage capability worth adding to Ivo's rework dispatch
   before it is worth a persona (R3 condition 3).
+- **Scout** — a low-tier pre-reader that localises files and symbols for the implementer.
+  Refused by the cost model (R5), not by a factory decision: an earlier draft of this
+  roster carried it (as "Sol") justified as cheap tokens replacing expensive ones, which
+  prices the dispatch instead of the landed package. The scout's output sits upstream of
+  the most expensive dispatch, and its characteristic error — a slightly wrong or
+  incomplete file list — is exactly what the low tier must never be handed: nothing
+  mechanical detects the omission, and it silently narrows Ivo's view until the damage
+  surfaces as rework or a bounced merge, making the implementer's job harder rather than
+  cheaper. The localisation it would provide is also already supplied: Dana declares scope
+  globs per child bead (D8 sizes from them), the dispatch bundle is a deterministic
+  function of `br` state (D6), and a high-tier implementer localises competently on their
+  own inside the D8 working-set band. If telemetry ever shows Ivo's self-localisation
+  dominating lane spend, a scout can be reintroduced behind a config flag under D7's
+  read-only-helper allowance and priced per landed package like everything else (§7,
+  question 3). Its old name was untenable anyway: "Sol" now collides with a GPT
+  model-class name, which R2's model-free identities cannot tolerate.
 - **Shipper** — mostly deterministic: version bump, changelog generation, tag, push are a
   command (`basicly-kjc5.12`) gated behind an L3 grant with hard preconditions. The judged
   residue is changelog curation, which is **Cleo**, not a shipper.
@@ -248,10 +321,10 @@ Each of these was proposed; each is refused by a factory decision, not by prefer
 | --- | --- | --- |
 | intake | record work type, run DoR | none — the human's interactive session is the client |
 | classify | checkpoint + DoR gate | human at L0/L1; **Juno** at L2+ |
-| decompose | sizing governor, scope-disjointness, plan validation, checkpoint | **Dex** proposes |
-| build — sub-task | worktree binding, dispatch, commit-presence probe | **Sol** then **Ivo** |
+| decompose | sizing governor, scope-disjointness, plan validation, checkpoint | **Dana** proposes |
+| build — sub-task | worktree binding, dispatch, commit-presence probe | **Ivo** |
 | build — sub-task verify | `fast` gates | none (D4) |
-| build — lane integrate | `full` gates, rubric gate record | **Vera** validates; **Rune** reviews (correctness, security-when-relevant) |
+| build — lane integrate | `full` gates, rubric gate record | **Vera** validates; **Remo** reviews (correctness, security-when-relevant) |
 | landing | merge queue, dependency order, bounce-back, coupling edges | none (D5); a bounce returns the work to **Ivo** |
 | verify / ship | gate inspection, checkpoint, teardown, close | human; **Juno** at L3 with preconditions green |
 | release | version, changelog, tag | **Cleo** curates |
@@ -263,36 +336,45 @@ not.
 
 ## 6. Cost and speed model
 
-Per landed package, dispatch counts scale like: one Dex plan per lane, one Sol + one Ivo
-per sub-task, one Vera plus one-to-two Rune lenses per lane, plus Juno per decision. Ivo
+Per landed package, dispatch counts scale like: one Dana plan per lane, one Ivo per
+sub-task, one Vera plus one-to-two Remo lenses per lane, plus Juno per decision. Ivo
 therefore dominates token spend, and the levers in priority order are:
 
 1. **Never dispatch where code decides** (§4) — removes whole classes of spend.
-2. **Shrink Ivo's input** with Sol, and keep sub-tasks inside the D8 working-set band so no
-   dispatch approaches the context ceiling.
-3. **Tier discipline** (R5) — high tier only for small, consequential outputs.
-4. **Concurrency, not sequence** — Vera and the Rune lenses are read-only and independent,
+2. **Keep every dispatch inside the D8 working-set band**, with tight scope declarations
+   from Dana, so no dispatch approaches the context ceiling — a clear, right-sized bundle
+   is the stated precondition for the reliable tier's one-shot rate (R5).
+3. **Tier reliability discipline** (R5) — the tempting economy is down-tiering Ivo or
+   Vera, and it is a false one: a cheap dispatch that buys a rework cycle, an extra Remo
+   pass, and a human intervention costs more per landed package than the high-tier
+   dispatch it replaced. Down-tier only work whose errors are mechanically caught.
+4. **Concurrency, not sequence** — Vera and the Remo lenses are read-only and independent,
    so they run concurrently at integrate and cost latency once, not three times.
 
-None of these are worth asserting without measurement. Component 1 telemetry already
-records per-run tokens and cost, R7 makes every run attributable to a role, and
-`basicly-7bur` reports cost per landed package — so **the roster's claim is falsifiable**:
-if a lens or a Scout does not pay for itself, the numbers will say so and the role gets
-cut. That evaluation, not this document, is what should decide the final roster.
+None of these are worth asserting without measurement — and the corrected cost model is
+exactly what makes measurement decisive. Component 1 telemetry records per-run tokens and
+cost, R7 attribution (`br --agent-name`, `--model`) pins every run to a role and a model,
+and `basicly-7bur` reports **cost per landed package** — the precise unit R5 argues in. So
+**the roster's claims are falsifiable end to end**: if down-tiering a role genuinely lands
+packages cheaper, the numbers will say so and the tier drops; if a lens does not pay for
+itself, it gets cut. That evaluation, not this document, is what should decide the final
+roster.
 
 ## 7. Open questions for the design review
 
 1. **Judged-verdict authority** — adopt R4 option (b), or (a) / (c)?
-2. **Lens budget** — do the Rune lenses run on every lane, or only above a diff-size or
+2. **Lens budget** — do the Remo lenses run on every lane, or only above a diff-size or
    risk threshold? Every-lane is simpler; thresholded is cheaper.
-3. **Is Sol worth it?** It trades one cheap dispatch for a smaller expensive one. Plausible,
-   unproven. Ship it behind a config flag and measure, or leave it out of v1?
+3. **Scout reintroduction threshold** — §4 cuts the scout. What measured signal would
+   justify bringing it back behind a config flag — a threshold share of Ivo's spend going
+   to self-localisation? And at which tier, given that a scout's errors are not
+   mechanically caught?
 4. **A retro persona?** Turning a rejection into a concrete fragment/skill change is the
    highest-leverage work for the *long-run* quality of every lane, and today it is the
    interactive session's job. Worth a persona, or worth keeping human?
 5. **One Implementer or one per task class?** Recommended: one Ivo whose prompt is
    conditioned on the bead's class, since the tool policy and tier do not differ (R3).
-6. **The name slate** — accept Dex / Sol / Ivo / Vera / Rune / Juno / Cleo, or re-cast?
+6. **The name slate** — accept Dana / Ivo / Vera / Remo / Juno / Cleo, or re-cast?
 
 ## 8. Implementation shape (not yet decomposed)
 
