@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import loop, loop_state, needs_input, policy, runner, supervise
+from basicly import loop, loop_state, merge, needs_input, policy, runner, supervise
 from basicly.config import PolicyConfig, SizingConfig
 from basicly.supervise import LOCK_FILE, STALE_AFTER_S, LockHeldError, LockLostError
 
@@ -1135,12 +1135,21 @@ def test_route_landing_escalation_parks_on_the_queue(
 def test_route_uncommitted_green_run_is_bounded_by_dispatch_rework(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Merge's not-ready guard must not re-dispatch forever un-counted."""
+    """Merge's not-ready guard must not re-dispatch forever un-counted.
+
+    The shape is read off the landing result (basicly-kjc5.20), not sniffed out
+    of the message text.
+    """
     monkeypatch.setattr(
         supervise.loop,
         "advance",
         lambda _r, issue_id, **_k: loop.AdvanceResult(
-            issue_id, "build", "build", "blocked", "commit the work on 'harness/x' before landing"
+            issue_id,
+            "build",
+            "build",
+            "blocked",
+            "commit the work on 'harness/x' before landing",
+            landing=merge.MergeResult("x", "not-ready", "commit the work"),
         ),
     )
     monkeypatch.setattr(supervise.policy, "record_rework", lambda *_a: 1)
@@ -1197,6 +1206,142 @@ def test_route_contains_a_landing_infra_failure_to_its_lane(
 
     assert [r.route for r in routed] == ["error", "held"]
     assert "database is locked" in routed[0].detail
+
+
+# --- Consume-as-ready routing: bounce a collision, keep landing (kjc5.20) ------
+
+
+def _blocked_landing(
+    issue_id: str, status: str, conflicts: tuple[str, ...] = (), *, escalated: bool = False
+) -> loop.AdvanceResult:
+    """A blocked landing carrying the merge attempt behind it, as the loop does."""
+    return loop.AdvanceResult(
+        issue_id,
+        "build",
+        "build",
+        "escalated" if escalated else "blocked",
+        f"merge failed: {status}",
+        landing=merge.MergeResult(issue_id, status, status, conflicts=conflicts),
+    )
+
+
+def test_route_bounces_a_collided_lane_and_lands_the_rest(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A scope collision is the lane's problem, not the pass's (D5/kjc5.20)."""
+
+    def advance(_r, issue_id, **_k):
+        if issue_id == "epic.2":
+            return _blocked_landing(issue_id, "merge-conflicts", ("src/shared.py",))
+        return loop.AdvanceResult(issue_id, "build", "verify", "merged", "landed")
+
+    monkeypatch.setattr(supervise.loop, "advance", advance)
+    monkeypatch.setattr(supervise, "_landing_order", lambda _r, outcomes: list(outcomes))
+    monkeypatch.setattr(supervise.merge, "head_sha", lambda _r: "sha")
+    monkeypatch.setattr(supervise.merge, "changed_paths", lambda _r, _before: ("src/shared.py",))
+    monkeypatch.setattr(
+        supervise.policy,
+        "approve_checkpoint_guarded",
+        lambda *_a, **_k: policy.ApprovalResult("challenge", code="abc"),
+    )
+    monkeypatch.setattr(
+        supervise.decisions,
+        "enqueue",
+        lambda _r, issue, kind, *_a, **_k: decisions_item(issue, kind),
+    )
+    couplings: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        supervise.merge, "record_coupling", lambda _r, bead, on: couplings.append((bead, on))
+    )
+
+    outcomes = tuple(_executed_outcome(f"epic.{n}") for n in (1, 2, 3))
+    routed = supervise.route_outcomes(
+        tmp_path, _session(*(_lane(o.issue_id) for o in outcomes)), outcomes
+    )
+
+    assert [r.route for r in routed] == ["merged", "bounced", "merged"]  # epic.3 not held
+    assert couplings == [("epic.2", "epic.1")]  # epic.1 landed the colliding path
+    assert "coupling recorded on epic.1" in routed[1].detail
+    assert supervise.should_continue(routed) is True
+
+
+def test_route_bounce_records_no_coupling_when_nothing_landed_the_paths(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """With no landing this pass to blame, the bounce records no edge."""
+    monkeypatch.setattr(
+        supervise.loop,
+        "advance",
+        lambda _r, issue_id, **_k: _blocked_landing(issue_id, "rebase-conflicts", ("src/a.py",)),
+    )
+    monkeypatch.setattr(supervise, "_landing_order", lambda _r, outcomes: list(outcomes))
+    couplings: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        supervise.merge, "record_coupling", lambda _r, bead, on: couplings.append((bead, on))
+    )
+
+    routed = supervise.route_outcomes(
+        tmp_path, _session(_lane("epic.1")), (_executed_outcome("epic.1"),)
+    )
+
+    assert [r.route for r in routed] == ["bounced"] and couplings == []
+
+
+def test_route_bounce_at_the_rework_cap_parks_on_the_decision_queue(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """At the cap the loop already escalated: the lane waits for a human, not a re-dispatch."""
+    monkeypatch.setattr(
+        supervise.loop,
+        "advance",
+        lambda _r, issue_id, **_k: _blocked_landing(
+            issue_id, "merge-conflicts", ("src/a.py",), escalated=True
+        ),
+    )
+    monkeypatch.setattr(supervise, "_landing_order", lambda _r, outcomes: list(outcomes))
+    monkeypatch.setattr(supervise.merge, "record_coupling", lambda *_a: None)
+
+    routed = supervise.route_outcomes(
+        tmp_path, _session(_lane("epic.1")), (_executed_outcome("epic.1"),)
+    )
+
+    assert [r.route for r in routed] == ["decision"]
+    assert supervise.should_continue(routed) is False
+
+
+def test_route_still_holds_later_lanes_when_a_gate_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A red suite is not a scope collision: the later green lanes still wait a pass."""
+    monkeypatch.setattr(
+        supervise.loop,
+        "advance",
+        lambda _r, issue_id, **_k: _blocked_landing(issue_id, "verify-failed"),
+    )
+    monkeypatch.setattr(supervise, "_landing_order", lambda _r, outcomes: list(outcomes))
+    outcomes = (_executed_outcome("epic.1"), _executed_outcome("epic.2"))
+
+    routed = supervise.route_outcomes(
+        tmp_path, _session(*(_lane(o.issue_id) for o in outcomes)), outcomes
+    )
+
+    assert [r.route for r in routed] == ["rework", "held"]
+
+
+def test_landing_order_sorts_the_pass_by_dependency(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The pass lands a lane before the lanes that depend on it (kjc5.20).
+
+    Unblocked lanes go first in arrival order, blocked ones follow once their
+    dependency is placed — a valid dependency order, not the arrival order.
+    """
+    deps = {"epic.1": frozenset({"epic.2"}), "epic.2": frozenset(), "epic.3": frozenset()}
+    monkeypatch.setattr(supervise.merge, "blocking_dependencies", lambda _r, bead: deps[bead])
+    outcomes = tuple(_executed_outcome(f"epic.{n}") for n in (1, 2, 3))
+
+    ordered = [o.issue_id for o in supervise._landing_order(Path(), outcomes)]
+
+    assert ordered.index("epic.2") < ordered.index("epic.1")
+    assert ordered == ["epic.2", "epic.3", "epic.1"]
 
 
 def test_advance_parked_ships_a_verify_lane_without_a_runner(

@@ -51,7 +51,17 @@ from concurrent.futures import ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import decisions, decompose, loop, loop_state, needs_input, policy, runner, worktree
+from . import (
+    decisions,
+    decompose,
+    loop,
+    loop_state,
+    merge,
+    needs_input,
+    policy,
+    runner,
+    worktree,
+)
 from .br import run_br as _run_br
 from .config import (
     SizingConfig,
@@ -905,9 +915,10 @@ DISPATCH_GATE = "dispatch"
 # and verify rework caps both escalate into the decision queue, which then
 # holds the lane via has_pending). "lane-step" is a mini-loop lane that closed a
 # sub-task this pass — bounded by max_subtasks_per_lane plus those same caps;
-# "lane-blocked" is deliberately absent, because such a lane waits on an agent
-# or a human exactly like a handoff.
-RETRIABLE_ROUTES = ("retry", "rework", "held", "lane-step")
+# "bounced" is a collided lane whose agent re-applies its intent next pass,
+# bounded by the same merge rework cap. "lane-blocked" is deliberately absent,
+# because such a lane waits on an agent or a human exactly like a handoff.
+RETRIABLE_ROUTES = ("retry", "rework", "held", "lane-step", "bounced")
 
 
 @dataclass(frozen=True)
@@ -916,7 +927,7 @@ class RoutedOutcome:
 
     issue_id: str
     # "shipped" | "merged" | "retry" | "rework" | "held" | "decision"
-    # | "handoff" | "lane-step" | "lane-blocked" | "error"
+    # | "handoff" | "lane-step" | "lane-blocked" | "bounced" | "error"
     route: str
     detail: str
 
@@ -944,26 +955,38 @@ def route_outcomes(
     *,
     beat: Callable[[], None] | None = None,
 ) -> tuple[RoutedOutcome, ...]:
-    """Collect dispatch outcomes: green lanes land serially, blocks queue (D5).
+    """Collect dispatch outcomes: land green lanes as they can, bounce collisions (D5).
 
-    Green lanes go through the single-track engine — ``loop.advance`` is the
-    only landing path, so each landing is serial and re-verifying; outcomes
-    arrive in scheduler-rank order, which is the dependency order among
-    independently-ready lanes. A landing that blocks holds every later green lane
-    this pass (``held``) — they re-land next iteration on the updated base. (The
-    batch queue, ``merge.merge_queue``, is consume-as-ready since kjc5.10: it
-    defers and bounces instead of stopping. Routing the supervisor's own
-    per-lane landings through it is basicly-kjc5.20.) Blocked
-    shapes route to the decision queue: a needs-input fact and a timeout stall
-    were queued at dispatch, a failed run retries under the bounded rework cap
-    and escalates at it, and a landed lane whose ship checkpoint no grant
+    Green lanes go through the single-track engine — ``loop.advance`` is the only
+    landing path, so each landing is serial and re-verifying — and they are
+    landed in the **dependency order** :func:`merge.landing_order` computes from
+    ``br``, not merely in the scheduler rank the outcomes arrive in
+    (basicly-kjc5.20). The queue's consume-as-ready stance (kjc5.10) holds here
+    too:
+
+    - A **scope collision** bounces back to the owning lane and the pass keeps
+      going: the missed coupling is recorded as a dependency edge on whichever
+      lane landed the colliding paths this pass, and the remaining green lanes
+      still land. A lane's wrong scope declaration is its own problem, not a
+      reason to stall everyone.
+    - Any **other** blocked landing (a red gate, an uncommitted worktree) still
+      holds the later green lanes (``held``) — that is a signal about the base,
+      and they re-land next iteration on top of whatever fix lands first.
+
+    Blocked shapes route to the decision queue: a needs-input fact and a timeout
+    stall were queued at dispatch, a failed run retries under the bounded rework
+    cap and escalates at it, and a landed lane whose ship checkpoint no grant
     covers queues a checkpoint request for the human. *beat* fires between
-    outcomes; per-outcome failures are contained to that lane's route so one
-    br hiccup cannot discard the rest of the pass.
+    outcomes; per-outcome failures are contained to that lane's route so one br
+    hiccup cannot discard the rest of the pass. Outcomes are returned in the
+    order they were processed (landing order), not in the order they came in.
     """
     routed: list[RoutedOutcome] = []
     landing_blocked = False
-    for outcome in outcomes:
+    # (bead, paths its landing added to the base) per landing this pass — the
+    # evidence a collision is attributed against (merge.missed_couplings).
+    landed: list[tuple[str, tuple[str, ...]]] = []
+    for outcome in _landing_order(repo_root, outcomes):
         if beat is not None:
             beat()
         is_green = _is_green(outcome)
@@ -976,17 +999,33 @@ def route_outcomes(
                 )
             )
             continue
+        before = merge.head_sha(repo_root) if is_green else ""
         try:
-            one = _route_one(repo_root, session, outcome)
+            one = _route_one(repo_root, session, outcome, landed)
         except (RuntimeError, OSError, ValueError) as exc:
             # Contained like dispatch's guarded(): the lane re-routes next
             # pass; "error" is non-retriable so a persistent infra failure
             # ends the loop instead of spinning on it.
             one = RoutedOutcome(outcome.issue_id, "error", f"routing failed: {exc}")
         routed.append(one)
-        if is_green and not one.progressed:
+        if one.progressed:
+            landed.append((outcome.issue_id, merge.changed_paths(repo_root, before)))
+        elif is_green and one.route != "bounced":
             landing_blocked = True
     return tuple(routed)
+
+
+def _landing_order(repo_root: Path, outcomes: tuple[LaneOutcome, ...]) -> list[LaneOutcome]:
+    """Order this pass's outcomes so a lane lands before the lanes depending on it.
+
+    Reuses the merge queue's dependency sort (kjc5.10) on the beads in hand, so
+    both landing paths agree on what "topo order" means. Non-green outcomes ride
+    along in the same sort — they do not land, so their position only affects
+    reporting — and an unreadable tracker degrades to the arrival order.
+    """
+    by_id = {outcome.issue_id: outcome for outcome in outcomes}
+    items = [(outcome.issue_id, outcome.issue_id) for outcome in outcomes]
+    return [by_id[bead] for _, bead in merge.landing_order(repo_root, items)]
 
 
 def _is_green(outcome: LaneOutcome) -> bool:
@@ -1048,7 +1087,12 @@ def advance_parked(
     return tuple(routed)
 
 
-def _route_one(repo_root: Path, session: SessionState, outcome: LaneOutcome) -> RoutedOutcome:
+def _route_one(
+    repo_root: Path,
+    session: SessionState,
+    outcome: LaneOutcome,
+    landed: list[tuple[str, tuple[str, ...]]] | None = None,
+) -> RoutedOutcome:
     issue_id = outcome.issue_id
     result = outcome.result
     if result is not None and result.handoff:
@@ -1060,7 +1104,63 @@ def _route_one(repo_root: Path, session: SessionState, outcome: LaneOutcome) -> 
         return RoutedOutcome(issue_id, "decision", outcome.detail)
     if result is None or result.returncode != 0:
         return _route_failed(repo_root, issue_id, outcome)
-    return _land_green(repo_root, session, outcome)
+    return _land_green(repo_root, session, outcome, landed or [])
+
+
+def _route_blocked_landing(
+    repo_root: Path,
+    outcome: LaneOutcome,
+    landing: loop.AdvanceResult,
+    landed: list[tuple[str, tuple[str, ...]]],
+) -> RoutedOutcome:
+    """Where a blocked landing goes, read off the merge attempt behind it.
+
+    The shape decides: a scope collision bounces back to the lane (and does not
+    hold the pass), a rework cap already escalated into the decision queue, an
+    uncommitted worktree is bounded by the dispatch cap like a failed run, and
+    anything else is a plain rework block the loop's own counter bounds.
+    """
+    attempt = landing.landing
+    if attempt is not None and attempt.conflicted:
+        return _bounce_lane(repo_root, outcome.issue_id, landing, attempt, landed)
+    if landing.action == "escalated":
+        # loop._rework already queued the escalation (kjc5.4); the pending item
+        # now holds the lane until a human triages it.
+        return RoutedOutcome(outcome.issue_id, "decision", landing.detail)
+    if attempt is not None and attempt.status == "not-ready":
+        # A green run that committed nothing (merge's not-ready guard,
+        # basicly-4psl) would re-dispatch forever un-counted — bound it with the
+        # dispatch rework cap like a failed run.
+        return _route_failed(repo_root, outcome.issue_id, outcome)
+    return RoutedOutcome(outcome.issue_id, "rework", landing.detail)
+
+
+def _bounce_lane(
+    repo_root: Path,
+    issue_id: str,
+    landing: loop.AdvanceResult,
+    attempt: merge.MergeResult,
+    landed: list[tuple[str, tuple[str, ...]]],
+) -> RoutedOutcome:
+    """Bounce a collided lane back to its owner and record the missed coupling (D5).
+
+    The rework attempt was already recorded by the loop's own landing (and it
+    escalated into the decision queue if that hit the cap); what the supervisor
+    adds is the graph edge — the lane that landed the colliding paths this pass —
+    so the next decomposition serializes what it wrongly called parallel-safe.
+    There is no resolution of any kind here: the base was left untouched and the
+    lane keeps its commits for its agent to re-apply on the new base.
+    """
+    couplings = merge.missed_couplings(attempt.conflicts, landed)
+    for culprit in couplings:
+        merge.record_coupling(repo_root, issue_id, culprit)
+    detail = f"bounced back to the lane: {landing.detail}"
+    if couplings:
+        detail += f"; coupling recorded on {', '.join(couplings)}"
+    # At the rework cap the loop already queued the escalation, so the lane is
+    # held by a pending decision rather than re-dispatched — say so.
+    route = "decision" if landing.action == "escalated" else "bounced"
+    return RoutedOutcome(issue_id, route, detail)
 
 
 def _route_failed(repo_root: Path, issue_id: str, outcome: LaneOutcome) -> RoutedOutcome:
@@ -1083,29 +1183,25 @@ def _route_failed(repo_root: Path, issue_id: str, outcome: LaneOutcome) -> Route
     return RoutedOutcome(issue_id, "decision", f"{outcome.detail}; escalated as {item.decision_id}")
 
 
-def _land_green(repo_root: Path, session: SessionState, outcome: LaneOutcome) -> RoutedOutcome:
+def _land_green(
+    repo_root: Path,
+    session: SessionState,
+    outcome: LaneOutcome,
+    landed: list[tuple[str, tuple[str, ...]]],
+) -> RoutedOutcome:
     """Land a green lane through the single-track engine, then try to ship it.
 
-    ``loop.advance`` does the build→verify landing (rebase, verify, gate) —
-    the supervisor composes it, never replaces it. The ship checkpoint is then
-    tried non-interactively: an L3 grant with the lights-out preconditions
-    holding approves and the next advance ships; otherwise the request queues
-    for the human and the lane parks in verify.
+    ``loop.advance`` does the build→verify landing (rebase, verify, gate) — the
+    supervisor composes it, never replaces it. A blocked landing is triaged by
+    :func:`_route_blocked_landing` against *landed* (this pass's landings, which
+    a collision is attributed against). The ship checkpoint is then tried
+    non-interactively: an L3 grant with the lights-out preconditions holding
+    approves and the next advance ships; otherwise the request queues for the
+    human and the lane parks in verify.
     """
     landing = loop.advance(repo_root, outcome.issue_id)
     if landing.blocked:
-        if landing.action == "escalated":
-            # loop._rework already queued the escalation (kjc5.4); the pending
-            # item now holds the lane until a human triages it.
-            return RoutedOutcome(outcome.issue_id, "decision", landing.detail)
-        if "commit the work" in landing.detail:
-            # A green run that committed nothing (merge's not-ready guard,
-            # basicly-4psl) would re-dispatch forever un-counted — bound it
-            # with the dispatch rework cap like a failed run.
-            return _route_failed(repo_root, outcome.issue_id, outcome)
-        # A plain rework block (verify/merge failure under the cap): the lane
-        # stays live and re-lands next pass; loop's own counter bounds it.
-        return RoutedOutcome(outcome.issue_id, "rework", landing.detail)
+        return _route_blocked_landing(repo_root, outcome, landing, landed)
     approval = policy.approve_checkpoint_guarded(
         repo_root,
         outcome.issue_id,

@@ -464,10 +464,10 @@ def merge_queue(
     results: list[QueueResult] = []
     landed: list[tuple[str, tuple[str, ...]]] = []
     for name, bead in landing_order(repo_root, items):
-        before = _head_sha(repo_root)
+        before = head_sha(repo_root)
         result = merge_worktree(repo_root, name, bead=bead, verify_mode=verify_mode)
         if result.merged:
-            landed.append((bead, _changed_paths(repo_root, before)))
+            landed.append((bead, changed_paths(repo_root, before)))
             results.append(QueueResult(result))
             continue
         if result.status == "not-ready":
@@ -513,14 +513,19 @@ def _bounce_back(
     )
 
 
-def _head_sha(repo_root: Path) -> str:
+def head_sha(repo_root: Path) -> str:
     """The base checkout's HEAD, or "" when it cannot be read (never fatal)."""
     proc = git(["rev-parse", "HEAD"], cwd=repo_root, check=False)
     return proc.stdout.strip() if proc.returncode == 0 else ""
 
 
-def _changed_paths(repo_root: Path, before: str) -> tuple[str, ...]:
-    """Paths a landing added to the base since *before* (empty when unknown)."""
+def changed_paths(repo_root: Path, before: str) -> tuple[str, ...]:
+    """Paths a landing added to the base since *before* (empty when unknown).
+
+    Public because coupling attribution needs it wherever landings happen: the
+    supervisor lands lane by lane through the loop engine rather than through
+    :func:`merge_queue`, and must attribute a conflict the same way (kjc5.20).
+    """
     if not before:
         return ()
     proc = git(["diff", "--name-only", f"{before}..HEAD"], cwd=repo_root, check=False)
