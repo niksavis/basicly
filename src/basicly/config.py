@@ -357,6 +357,11 @@ DEFAULT_AUTONOMY = "L0"
 # delegated answers per session beyond this are human-only.
 DEFAULT_DECIDER_MAX_DECISIONS = 50
 
+# Sanity bound on a lane's sequential sub-task beads (factory design §6/D7,
+# basicly-kjc5.9). The sizing governor is the real limit; this only stops a
+# runaway lane decomposition from turning one package into dozens of dispatches.
+DEFAULT_MAX_SUBTASKS_PER_LANE = 10
+
 # The fixed br work classes the classifier may assign (architecture §12.1).
 # bug/chore are leaf tracks; task/feature/epic nest fractally.
 WORK_TYPES = ("bug", "chore", "task", "feature", "epic")
@@ -527,6 +532,8 @@ class PolicyConfig:
     notify_command: tuple[str, ...] = ()
     # Delegated decider answers allowed per session (design §6).
     decider_max_decisions: int = DEFAULT_DECIDER_MAX_DECISIONS
+    # Sanity bound on the sub-task beads one lane may run in sequence (D7).
+    max_subtasks_per_lane: int = DEFAULT_MAX_SUBTASKS_PER_LANE
 
 
 def load_policy_config(repo_root: Path) -> PolicyConfig:
@@ -567,6 +574,9 @@ def load_policy_config(repo_root: Path) -> PolicyConfig:
         notify_command=notify_command,
         decider_max_decisions=_positive_int(
             section.get("decider_max_decisions"), DEFAULT_DECIDER_MAX_DECISIONS
+        ),
+        max_subtasks_per_lane=_positive_int(
+            section.get("max_subtasks_per_lane"), DEFAULT_MAX_SUBTASKS_PER_LANE
         ),
     )
 

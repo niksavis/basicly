@@ -657,6 +657,15 @@ def test_policy_config_decider_max_decisions(tmp_path: Path) -> None:
     assert load_policy_config(tmp_path).decider_max_decisions == 5
 
 
+def test_policy_config_max_subtasks_per_lane(tmp_path: Path) -> None:
+    """The lane sub-task bound defaults to 10; positive overrides land, junk falls back."""
+    assert load_policy_config(tmp_path).max_subtasks_per_lane == 10
+    (tmp_path / CONFIG_FILE).write_text("[policy]\nmax_subtasks_per_lane = 3\n", encoding="utf-8")
+    assert load_policy_config(tmp_path).max_subtasks_per_lane == 3
+    (tmp_path / CONFIG_FILE).write_text("[policy]\nmax_subtasks_per_lane = 0\n", encoding="utf-8")
+    assert load_policy_config(tmp_path).max_subtasks_per_lane == 10
+
+
 def test_runner_config_decider_selection(tmp_path: Path) -> None:
     """[runner] decider names the decider agent; absent falls back to the default."""
     assert load_runner_config(tmp_path).decider is None

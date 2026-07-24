@@ -27,12 +27,22 @@ out one worktree per ready child and lands them through the serial merge queue
 once they close; child tracks are advanced by re-invoking :func:`advance` per
 child (the CLI/driver, onb.6.4, iterates them). Leaf types (bug/chore/task) skip
 decomposition and build in their own worktree.
+
+Lane mini-loop (factory design D7, basicly-kjc5.9): a *lane* is a build-phase
+node that also has sub-task beads — write parallelism stops at depth 1, so a
+lane never provisions worktrees of its own. Its sub-tasks are worked strictly in
+sequence inside the lane's single worktree (one fresh runner dispatch each,
+``fast`` verify each), and the lane signals merge-ready only once its
+integration passes ``full`` verify plus the required validate gate. The lane's
+own split into sub-tasks is engine-governed (the sizing governor plus
+``[policy] max_subtasks_per_lane``), never a fourth human checkpoint.
 """
 
 from __future__ import annotations
 
 import contextlib
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -44,6 +54,7 @@ from . import (
     merge,
     needs_input,
     policy,
+    rubrics,
     run_record,
     runner,
     verify,
@@ -63,6 +74,12 @@ _LEAF_TYPES = ("bug", "chore", "task")
 # stranded a commit (child closed but unmerged) — the loop now refuses instead.
 _BASE_CHECKOUT_PHASES = ("build", "ship")
 
+# Verify modes chosen deterministically by change class (factory design D4): a
+# sub-task inside a lane runs the fast suite, the lane's own integration runs the
+# full one. Never an agent's judgment call, so neither reads Inputs.verify_mode.
+_SUBTASK_VERIFY_MODE = "fast"
+_LANE_VERIFY_MODE = "full"
+
 
 @dataclass(frozen=True)
 class Inputs:
@@ -81,7 +98,7 @@ class AdvanceResult:
     from_phase: str
     to_phase: str
     # "classified"|"decomposed"|"built"|"merged"|"shipped"|"tore-down"
-    # |"done"|"blocked"|"escalated"
+    # |"done"|"sub-task"|"blocked"|"escalated"
     action: str
     detail: str = ""
     needs_input: str | None = None
@@ -90,6 +107,17 @@ class AdvanceResult:
     def advanced(self) -> bool:
         """True when the track moved to a new phase."""
         return self.to_phase != self.from_phase
+
+    @property
+    def progressed(self) -> bool:
+        """True when the step did useful work, even without changing phase.
+
+        A lane mini-loop step closes one sub-task and stays in ``build`` (the
+        phase is derived, and the lane is still building) — real progress that
+        neither :attr:`advanced` nor :attr:`blocked` captures, so drivers can
+        keep iterating instead of mistaking it for a stall.
+        """
+        return self.advanced or self.action == "sub-task"
 
     @property
     def blocked(self) -> bool:
@@ -166,9 +194,18 @@ def _on_decompose(ctx: _Ctx) -> AdvanceResult:
 
 
 def _on_build(ctx: _Ctx) -> AdvanceResult:
-    """A leaf worktree is bound: verify and land it (rework on failure)."""
+    """A worktree is bound: run the lane's next mini-loop step, or verify and land.
+
+    A node whose package was split into sub-task beads is a lane (D7): its
+    sub-tasks run in sequence inside this one worktree before it may land. A plain
+    leaf has no sub-tasks and lands whatever its own dispatch committed.
+    """
     if ctx.state.worktree is None:
         return _blocked(ctx, "build phase without a bound worktree")
+    if ctx.inputs.children and not ctx.state.has_children:
+        return _decompose_lane(ctx, ctx.inputs.children)
+    if ctx.state.has_children:
+        return _run_lane(ctx, ctx.state.worktree)
     return _verify_and_land(ctx, ctx.state.worktree.name)
 
 
@@ -272,23 +309,62 @@ def _start_build_leaf(ctx: _Ctx) -> AdvanceResult:
 
 def _dispatch_runner(ctx: _Ctx, name: str, cwd: Path) -> AdvanceResult:
     """Run the selected agent headless in the worktree; a handoff just blocks."""
+    dispatch = _run_agent(ctx, ctx.issue_id, cwd)
+    if dispatch.result.handoff:
+        return _blocked(ctx, f"worktree {name!r} provisioned; awaiting the agent's work")
+    held = _runner_block(ctx, dispatch, issue_id=ctx.issue_id, target=f"worktree {name!r}")
+    return held or _blocked(
+        ctx,
+        f"runner {dispatch.spec.name!r} finished in worktree {name!r}; advance again to land it",
+    )
+
+
+@dataclass(frozen=True)
+class _Dispatch:
+    """One finished runner dispatch: what ran, where, and under which timeout."""
+
+    spec: runner.RunnerSpec
+    result: runner.RunResult
+    cwd: Path
+    timeout: float
+
+
+def _run_agent(ctx: _Ctx, issue_id: str, cwd: Path) -> _Dispatch:
+    """Dispatch *issue_id*'s prompt through the configured runner in *cwd*, recorded.
+
+    The prompt is assembled per dispatch, so a lane's sequential sub-tasks each
+    start from a fresh context that already sees the commits their predecessors
+    made (D6/D7).
+    """
     config = load_runner_config(ctx.repo_root)
     spec = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
     result = runner.run(
         spec,
-        dispatch_prompt(ctx.issue_id),
+        dispatch_prompt(issue_id),
         cwd,
         capture_usage=True,
         timeout=config.runner_timeout,
     )
-    record_run(ctx.repo_root, ctx.issue_id, spec, result)
-    if result.handoff:
-        return _blocked(ctx, f"worktree {name!r} provisioned; awaiting the agent's work")
+    record_run(ctx.repo_root, issue_id, spec, result)
+    return _Dispatch(spec=spec, result=result, cwd=cwd, timeout=config.runner_timeout)
+
+
+def _runner_block(
+    ctx: _Ctx, dispatch: _Dispatch, *, issue_id: str, target: str
+) -> AdvanceResult | None:
+    """The blocked outcome of a finished dispatch, or None when it ran cleanly.
+
+    One triage for both dispatch paths — a leaf's own worktree and a lane's
+    sequential sub-tasks — so the hard-kill, failure, and needs-input contracts
+    cannot drift apart. *issue_id* is the bead the outcome is attributed to
+    (a sub-task, not its lane); *target* names where it ran, for the message.
+    """
+    spec, result = dispatch.spec, dispatch.result
     if result.timed_out:
         return _blocked(
             ctx,
-            f"runner {spec.name!r} hit runner_timeout ({config.runner_timeout:.0f}s) "
-            f"in worktree {name!r}; inspect the worktree and re-dispatch",
+            f"runner {spec.name!r} hit runner_timeout ({dispatch.timeout:.0f}s) "
+            f"in {target}; inspect the worktree and re-dispatch",
         )
     if result.returncode != 0:
         tail = (result.stderr or result.stdout).strip().splitlines()
@@ -298,30 +374,24 @@ def _dispatch_runner(ctx: _Ctx, name: str, cwd: Path) -> AdvanceResult:
         if len(detail) > 200:
             detail = detail[:200] + "…"
         return _blocked(
-            ctx,
-            f"runner {spec.name!r} failed in worktree {name!r} "
-            f"(exit {result.returncode}): {detail}",
+            ctx, f"runner {spec.name!r} failed in {target} (exit {result.returncode}): {detail}"
         )
     # The agent finished cleanly but may have signalled it could not resolve a
     # required fact (basicly-o774): a needs-input sentinel maps to the loop's
     # block-and-resume contract so the missing fact is surfaced instead of the
     # loop landing a confident wrong answer. Consumed here so a re-dispatch (once
     # the fact is supplied) starts clean.
-    needs = needs_input.take(cwd)
+    needs = needs_input.take(dispatch.cwd)
     if needs is not None:
         # Durable trace (basicly-kjc5.3): the sentinel is consumed here, so the
         # marker comment is what the L3 lights-out precondition counts (D3).
-        policy.record_needs_input(ctx.repo_root, ctx.issue_id, needs.fact)
+        policy.record_needs_input(ctx.repo_root, issue_id, needs.fact)
         # And one queue item (basicly-kjc5.4): answerable via `loop answer`,
         # notified to the human, decidable by the decider under a grant.
-        decisions.enqueue(ctx.repo_root, ctx.issue_id, "needs-input", needs.fact, needs.detail)
-        reason = (
-            f"runner {spec.name!r} needs input in worktree {name!r}: {needs.detail or needs.fact}"
-        )
+        decisions.enqueue(ctx.repo_root, issue_id, "needs-input", needs.fact, needs.detail)
+        reason = f"runner {spec.name!r} needs input in {target}: {needs.detail or needs.fact}"
         return _blocked(ctx, reason, needs_input=needs.fact)
-    return _blocked(
-        ctx, f"runner {spec.name!r} finished in worktree {name!r}; advance again to land it"
-    )
+    return None
 
 
 def record_run(
@@ -372,18 +442,239 @@ def dispatch_prompt(issue_id: str) -> str:
     )
 
 
-def _verify_and_land(ctx: _Ctx, worktree_name: str) -> AdvanceResult:
+def _verify_and_land(
+    ctx: _Ctx, worktree_name: str, *, verify_mode: str | None = None
+) -> AdvanceResult:
     """Land the worktree (merge re-verifies internally), then record the required gate."""
-    result = merge.merge_worktree(
-        ctx.repo_root, worktree_name, bead=ctx.issue_id, verify_mode=ctx.inputs.verify_mode
-    )
+    mode = verify_mode or ctx.inputs.verify_mode
+    result = merge.merge_worktree(ctx.repo_root, worktree_name, bead=ctx.issue_id, verify_mode=mode)
     if result.status == "not-ready":
         # The build's work is not committed on the branch: block with guidance,
         # do not burn a rework attempt on an operator-fixable state (basicly-4psl).
         return _blocked(ctx, result.detail)
     if not result.merged:
         return _rework(ctx, merge.MERGE_GATE, f"merge failed: {result.detail}")
-    return _record_verify(ctx, result.detail)
+    return _record_verify(ctx, result.detail, verify_mode=mode)
+
+
+# --- Lane mini-loop: sequential sub-tasks in one worktree (basicly-kjc5.9) ----
+
+
+def _run_lane(ctx: _Ctx, binding: loop_state.WorktreeBinding) -> AdvanceResult:
+    """Run one step of the lane's mini-loop inside the lane's own worktree (D7).
+
+    One advance = one step (run the next sub-task, or integrate), so the phase
+    stays ``build`` throughout and a crash resumes mid-package straight from
+    ``br`` like every other phase. Sub-tasks in a lane overlap by construction —
+    a package splittable into disjoint scopes should have been split into
+    top-level lanes — so they run strictly in sequence in this one worktree; the
+    lane never provisions worktrees or spawns write-agents of its own.
+    """
+    subtasks = _child_states(ctx)
+    cap = ctx.config.max_subtasks_per_lane
+    if len(subtasks) > cap:
+        return _blocked(
+            ctx,
+            f"lane carries {len(subtasks)} sub-task beads, over the [policy] "
+            f"max_subtasks_per_lane bound ({cap}); flatten the extra work into more "
+            "top-level packages instead of deepening this lane, or raise the bound",
+        )
+    session = worktree.load_session(binding.name, ctx.repo_root)
+    if session is None:
+        return _blocked(
+            ctx, f"worktree {binding.name!r} has no session record; re-provision the lane"
+        )
+
+    open_ids = [cid for cid, status in subtasks if status != "closed"]
+    if not open_ids:
+        return _integrate_lane(ctx, binding, Path(session.worktree_path))
+    blocked_ids = set(loop_state.blocked_ids(ctx.repo_root))
+    runnable = [
+        cid
+        for cid in open_ids
+        # A sub-task waiting on a queued judgment must not burn a dispatch that
+        # would only re-block on the same missing answer (same stance as the
+        # supervisor's readiness gate).
+        if cid not in blocked_ids and not decisions.has_pending(ctx.repo_root, cid)
+    ]
+    if not runnable:
+        return _blocked(
+            ctx,
+            f"lane sub-task(s) {', '.join(open_ids)} are all waiting on a dependency or a "
+            "queued decision; answer the decision or unblock the graph, then advance again",
+        )
+    ordered = [cid for cid, _ in subtasks]
+    return _run_subtask(
+        ctx,
+        runnable[0],
+        session,
+        position=ordered.index(runnable[0]) + 1,
+        total=len(subtasks),
+    )
+
+
+def _decompose_lane(ctx: _Ctx, children: tuple[ChildSpec, ...]) -> AdvanceResult:
+    """Record the agent-proposed sub-task plan for a lane already in build (D7).
+
+    The same decompose engine the session level uses — so the sizing governor,
+    scope-overlap grouping, and DoR-satisfying child bodies all apply — bounded
+    additionally by ``max_subtasks_per_lane``. Recording sub-tasks does not move
+    the derived phase (the lane stays in ``build``), so this step blocks; the next
+    advance runs the first sub-task.
+    """
+    cap = ctx.config.max_subtasks_per_lane
+    if len(children) > cap:
+        return _blocked(
+            ctx,
+            f"lane plan proposes {len(children)} sub-tasks, over the [policy] "
+            f"max_subtasks_per_lane bound ({cap}); propose more top-level packages "
+            "instead of a deeper lane, or raise the bound",
+        )
+    result = decompose.decompose(ctx.repo_root, ctx.issue_id, children)
+    return _blocked(
+        ctx,
+        f"recorded {len(result.children)} lane sub-task(s); advance again to run them in sequence",
+    )
+
+
+def _run_subtask(
+    ctx: _Ctx, subtask_id: str, session: worktree.Session, *, position: int, total: int
+) -> AdvanceResult:
+    """Dispatch one sub-task fresh in the lane worktree, then ``fast``-verify it.
+
+    A fresh dispatch per sub-task is the point (D7/D8): the prompt is rebuilt from
+    ``br`` and the runner starts on a clean context that already sees the commits
+    its predecessors made. The commit-presence check makes the step idempotent —
+    a handoff runner blocks for the driving agent, and the next advance verifies
+    the commit rather than re-dispatching the same sub-task. A passing ``fast``
+    verify closes the sub-task, which is what advances the lane; a failure is
+    bounded on the sub-task's own rework record, so one bad sub-task escalates
+    instead of consuming the whole lane's budget.
+    """
+    cwd = Path(session.worktree_path)
+    where = f"sub-task {position}/{total} ({subtask_id})"
+    if not _subtask_committed(subtask_id, session):
+        dispatch = _run_agent(ctx, subtask_id, cwd)
+        if dispatch.result.handoff:
+            return _blocked(
+                ctx,
+                f"{where} dispatched in worktree {session.name!r}; awaiting the agent's work",
+            )
+        held = _runner_block(ctx, dispatch, issue_id=subtask_id, target=where)
+        if held is not None:
+            return held
+        if not _subtask_committed(subtask_id, session):
+            return _rework(
+                ctx,
+                verify.DEFAULT_GATE,
+                f"{where}: runner {dispatch.spec.name!r} finished without committing anything "
+                f"referencing {subtask_id} on {session.branch}",
+                issue_id=subtask_id,
+            )
+    report = verify.run_verify(cwd, _SUBTASK_VERIFY_MODE)
+    record = run_record.latest_record(ctx.repo_root, subtask_id)
+    verify.report_gate(ctx.repo_root, subtask_id, report, actor=record.agent if record else None)
+    if not report.passed:
+        return _rework(
+            ctx,
+            verify.DEFAULT_GATE,
+            f"{where}: verify {_SUBTASK_VERIFY_MODE} failed: {', '.join(report.failures)}",
+            issue_id=subtask_id,
+        )
+    _run_br(
+        ctx.repo_root,
+        ["close", subtask_id, "--reason", f"lane sub-task verified in {ctx.issue_id}"],
+    )
+    return AdvanceResult(
+        ctx.issue_id,
+        ctx.state.phase,
+        ctx.state.phase,
+        "sub-task",
+        f"{where} verified and closed; advance again for the next lane step",
+    )
+
+
+def references_bead(message: str, bead_id: str) -> bool:
+    """True when *message* references *bead_id* as a whole id, not as a prefix.
+
+    Bead ids nest by suffix (``x.1`` and ``x.10``), so a plain substring test
+    would read ``x.10``'s commit as proof that ``x.1`` was done — enough to close
+    a sub-task nobody worked on. The id must therefore not be followed by another
+    id character.
+    """
+    return re.search(rf"{re.escape(bead_id)}(?![0-9A-Za-z._-])", message) is not None
+
+
+def _subtask_committed(subtask_id: str, session: worktree.Session) -> bool:
+    """True when the lane branch carries a commit referencing *subtask_id*.
+
+    The deterministic "did this sub-task's work actually happen" signal, and the
+    reason the step is safe to re-enter: every dispatch prompt (and this repo's
+    commit-msg gate) requires a commit to reference its bead id, so a commit
+    naming the sub-task since the lane forked is proof of work — the same stance
+    as the merge queue's not-ready guard, with no extra state to keep. ``git
+    grep``'s fixed-string match is only a prefilter; :func:`references_bead`
+    decides, so a sibling id that merely starts with this one cannot pass.
+    """
+    proc = worktree.git(
+        [
+            "log",
+            f"{session.base_head}..HEAD",
+            "--fixed-strings",
+            f"--grep={subtask_id}",
+            "--format=%B%x00",
+        ],
+        cwd=Path(session.worktree_path),
+        check=False,
+    )
+    if proc.returncode != 0:
+        return False
+    return any(references_bead(message, subtask_id) for message in proc.stdout.split("\0"))
+
+
+def _integrate_lane(ctx: _Ctx, binding: loop_state.WorktreeBinding, cwd: Path) -> AdvanceResult:
+    """Every sub-task closed: validate the lane, then land it under ``full`` verify.
+
+    Order matters. Validate (D4: the behavioral ``rubric`` gate, advisory at
+    sub-task level and **required** here) runs on the lane's own tree *before* the
+    landing, because the landing merges the moment its verify passes — a validate
+    failure has to stop the lane while its work is still unmerged. Integration
+    itself is that landing: it rebases the lane onto the current base, re-runs the
+    deterministic suite in ``full`` mode, and records the required verify gate.
+    Nothing records a passing verify gate ahead of the merge, which would derive
+    the phase past ``build`` and strand the branch.
+    """
+    validate = _validate_lane(ctx, cwd)
+    if validate is not None:
+        return validate
+    return _verify_and_land(ctx, binding.name, verify_mode=_LANE_VERIFY_MODE)
+
+
+def _validate_lane(ctx: _Ctx, cwd: Path) -> AdvanceResult | None:
+    """Evaluate the lane's behavioral rubrics; None when validate passes.
+
+    D4: validate is acceptance-criteria satisfaction — the ``rubric`` gate
+    promoted from advisory to **required** at lane level. The promotion belongs to
+    the level, not to ``[policy] required_gates``, so a consumer's gate list
+    cannot silently drop it. Judged checks stay advisory inside
+    :func:`rubrics.gate_status` (a subjective verdict never blocks a merge on its
+    own), and a work class no rubric covers has nothing to validate.
+    """
+    selected = rubrics.select_rubrics(rubrics.load_rubrics(), ctx.state.issue_type)
+    if not selected:
+        return None
+    verdicts = [
+        verdict for rubric in selected for verdict in rubrics.evaluate(ctx.issue_id, rubric, cwd)
+    ]
+    rubrics.report_gate(ctx.repo_root, ctx.issue_id, verdicts)
+    if rubrics.gate_status(verdicts) != "fail":
+        return None
+    failed = ", ".join(
+        verdict.check_id
+        for verdict in verdicts
+        if verdict.kind == rubrics.DETERMINISTIC and verdict.answer == rubrics.NO
+    )
+    return _rework(ctx, rubrics.RUBRIC_GATE, f"lane validate failed: {failed}")
 
 
 def _build_children(ctx: _Ctx) -> AdvanceResult:
@@ -419,9 +710,9 @@ def _build_children(ctx: _Ctx) -> AdvanceResult:
     return _record_verify(ctx, detail)
 
 
-def _record_verify(ctx: _Ctx, detail: str) -> AdvanceResult:
+def _record_verify(ctx: _Ctx, detail: str, *, verify_mode: str | None = None) -> AdvanceResult:
     """Run verify + record the required gate so the derived phase becomes verify."""
-    report = verify.run_verify(ctx.repo_root, ctx.inputs.verify_mode)
+    report = verify.run_verify(ctx.repo_root, verify_mode or ctx.inputs.verify_mode)
     record = run_record.latest_record(ctx.repo_root, ctx.issue_id)
     verify.report_gate(ctx.repo_root, ctx.issue_id, report, actor=record.agent if record else None)
     if not report.passed:
@@ -429,18 +720,22 @@ def _record_verify(ctx: _Ctx, detail: str) -> AdvanceResult:
     return _moved(ctx, "verify", "merged", detail)
 
 
-def _rework(ctx: _Ctx, gate: str, reason: str) -> AdvanceResult:
+def _rework(ctx: _Ctx, gate: str, reason: str, *, issue_id: str | None = None) -> AdvanceResult:
     """Record a rework attempt for *gate* and block, escalating at the cap.
 
     An escalation is a human judgment call, so it also enters the decision
     queue (basicly-kjc5.4) — one surface for everything blocked on a decision.
+    *issue_id* attributes the attempt to a bead other than the node itself: a
+    lane's sub-task is bounded on its own record, so one bad sub-task escalates
+    rather than spending the whole lane's rework budget.
     """
-    attempts = policy.record_rework(ctx.repo_root, ctx.issue_id, gate)
+    target = issue_id or ctx.issue_id
+    attempts = policy.record_rework(ctx.repo_root, target, gate)
     action = "escalated" if attempts >= ctx.config.max_rework else "blocked"
     if action == "escalated":
         decisions.enqueue(
             ctx.repo_root,
-            ctx.issue_id,
+            target,
             "escalation",
             f"rework cap reached on gate {gate}: retry, re-dispatch, or park?",
             reason,
@@ -549,7 +844,9 @@ def run_until_blocked(
 
     A thin driver over :func:`advance`; each step re-reads ``br`` so the loop
     stays resumable. Stops as soon as a step blocks or reaches ``done`` — a
-    human/agent then resolves the block and re-invokes.
+    human/agent then resolves the block and re-invokes. A lane mini-loop step
+    neither blocks nor changes phase, so a headless lane runs its sub-tasks in
+    sequence within one call (bounded by *max_steps*).
     """
     results: list[AdvanceResult] = []
     for _ in range(max_steps):

@@ -20,6 +20,7 @@ from basicly import (
     merge,
     needs_input,
     policy,
+    rubrics,
     run_record,
     runner,
     verify,
@@ -848,6 +849,362 @@ def test_classify_leaf_forks_from_the_configured_base(
     )
     _advance(tmp_path)
     assert created["base"] == "main"
+
+
+# --- lane mini-loop (basicly-kjc5.9, factory design D4/D7) ------------------
+
+
+def _lane(has_children: bool = True) -> NodeState:
+    """A lane: a build-phase node bound to its own worktree, with sub-task beads."""
+    return _state("build", worktree=WorktreeBinding("i", "harness/i"), has_children=has_children)
+
+
+def _pin_lane(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    subtasks: list[tuple[str, str]],
+    committed: tuple[str, ...] = (),
+    blocked: tuple[str, ...] = (),
+    pending: tuple[str, ...] = (),
+) -> dict:
+    """Pin a lane's worktree, sub-task states, and its git/decision/verify reads."""
+    calls: dict[str, list] = {"closed": [], "gates": [], "verify": []}
+    monkeypatch.setattr(worktree, "load_session", lambda *_a, **_k: _session("i"))
+    monkeypatch.setattr(loop, "_child_states", lambda _ctx: list(subtasks))
+    monkeypatch.setattr(loop.loop_state, "blocked_ids", lambda *_a: tuple(blocked))
+    monkeypatch.setattr(loop.decisions, "has_pending", lambda _r, issue: issue in pending)
+    monkeypatch.setattr(loop, "_subtask_committed", lambda sid, _s: sid in committed)
+
+    def _br(_root, args, **_k):
+        if args and args[0] == "close":
+            calls["closed"].append(args[1])
+        return SimpleNamespace(stdout="{}")
+
+    monkeypatch.setattr(loop, "_run_br", _br)
+
+    def _run_verify(_root, mode, *_a, **_k):
+        calls["verify"].append(mode)
+        return verify.VerifyReport(mode, ())
+
+    monkeypatch.setattr(verify, "run_verify", _run_verify)
+
+    def _report(_root, issue_id, report, **_k):
+        calls["gates"].append((issue_id, report.mode))
+        return True, "ok"
+
+    monkeypatch.setattr(verify, "report_gate", _report)
+    return calls
+
+
+def _no_rubrics(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No rubric covers the lane's work class: validate has nothing to check."""
+    monkeypatch.setattr(loop.rubrics, "load_rubrics", lambda *_a, **_k: [])
+
+
+def test_lane_records_its_subtask_plan_then_blocks(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A bound node with a sub-task plan decomposes in place and stays in build."""
+    at(_lane(has_children=False))
+    planned = {}
+
+    def _decompose(_root, feature_id, children):
+        planned["feature"], planned["n"] = feature_id, len(children)
+        return decompose.DecomposeResult(feature_id, (), (("i.1",),))
+
+    monkeypatch.setattr(decompose, "decompose", _decompose)
+    child = decompose.ChildSpec("t", ("ac",), ("src/x.py",))
+    result = _advance(tmp_path, children=(child, child))
+    assert planned == {"feature": "i", "n": 2}
+    assert result.to_phase == "build" and result.blocked
+    assert "advance again to run them in sequence" in result.detail
+
+
+def test_lane_plan_over_the_subtask_bound_is_refused(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """max_subtasks_per_lane bounds the plan before anything is recorded (design §6)."""
+    at(_lane(has_children=False))
+
+    def _no_decompose(*_a, **_k):
+        raise AssertionError("an over-bound plan must not be recorded")
+
+    monkeypatch.setattr(decompose, "decompose", _no_decompose)
+    config = PolicyConfig(required_gates=("verify",), max_rework=2, max_subtasks_per_lane=2)
+    child = decompose.ChildSpec("t", ("ac",), ("src/x.py",))
+    result = loop.advance(
+        tmp_path, "i", config=config, inputs=loop.Inputs(children=(child, child, child))
+    )
+    assert result.blocked and "max_subtasks_per_lane bound (2)" in result.detail
+
+
+def test_lane_with_too_many_subtask_beads_blocks(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Sub-task beads created out of band are bounded too, before any dispatch."""
+    at(_lane())
+    _pin_lane(monkeypatch, subtasks=[(f"i.{n}", "open") for n in range(3)])
+    config = PolicyConfig(required_gates=("verify",), max_rework=2, max_subtasks_per_lane=2)
+    result = loop.advance(tmp_path, "i", config=config)
+    assert result.blocked and "over the [policy] max_subtasks_per_lane bound (2)" in result.detail
+
+
+def test_lane_dispatches_the_next_subtask_fresh_and_fast_verifies_it(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """One fresh dispatch per sub-task in the lane worktree, then a fast verify (D4/D7)."""
+    at(_lane())
+    calls = _pin_lane(monkeypatch, subtasks=[("i.1", "open"), ("i.2", "open")])
+    _pin_runner(monkeypatch, "claude")
+    dispatched = {}
+
+    def _run(spec, prompt, cwd, **_k):
+        dispatched["prompt"], dispatched["cwd"] = prompt, cwd
+        # The commit lands during the run, as a real dispatch would.
+        monkeypatch.setattr(loop, "_subtask_committed", lambda *_a: True)
+        return runner.RunResult(spec.name, tuple(spec.command), executed=True, returncode=0)
+
+    monkeypatch.setattr(runner, "run", _run)
+    result = loop.advance(tmp_path, "i", config=CONFIG)
+
+    assert "i.1" in dispatched["prompt"] and dispatched["cwd"] == Path("/tmp/i")
+    assert calls["verify"] == ["fast"] and calls["gates"] == [("i.1", "fast")]
+    assert calls["closed"] == ["i.1"]
+    assert result.action == "sub-task" and result.progressed and not result.blocked
+    assert result.to_phase == "build" and "sub-task 1/2 (i.1)" in result.detail
+
+
+def test_lane_runs_subtasks_in_order_skipping_closed_ones(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A resumed lane picks up at the first still-open sub-task, never re-running one."""
+    at(_lane())
+    calls = _pin_lane(
+        monkeypatch,
+        subtasks=[("i.1", "closed"), ("i.2", "open"), ("i.3", "open")],
+        committed=("i.2",),
+    )
+    _pin_runner(monkeypatch, "claude")
+    monkeypatch.setattr(
+        runner, "run", lambda *_a, **_k: pytest.fail("a committed sub-task must not re-dispatch")
+    )
+    result = loop.advance(tmp_path, "i", config=CONFIG)
+    assert calls["closed"] == ["i.2"] and calls["gates"] == [("i.2", "fast")]
+    assert "sub-task 2/3 (i.2)" in result.detail
+
+
+def test_lane_handoff_blocks_for_the_driving_agent(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A handoff runner leaves the sub-task to the driving agent and blocks."""
+    at(_lane())
+    calls = _pin_lane(monkeypatch, subtasks=[("i.1", "open")])
+    _pin_runner(monkeypatch, "manual")
+    result = loop.advance(tmp_path, "i", config=CONFIG)
+    assert result.blocked and "awaiting the agent's work" in result.detail
+    assert "sub-task 1/1 (i.1)" in result.detail
+    assert calls["closed"] == [] and calls["verify"] == []
+
+
+def test_lane_subtask_without_a_commit_reworks_the_subtask(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A clean run that committed nothing is bounded on the sub-task's own record."""
+    at(_lane())
+    _pin_lane(monkeypatch, subtasks=[("i.1", "open")])
+    _pin_runner(monkeypatch, "claude")
+    monkeypatch.setattr(
+        runner,
+        "run",
+        lambda spec, *_a, **_k: runner.RunResult(
+            spec.name, tuple(spec.command), executed=True, returncode=0
+        ),
+    )
+    reworked: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        policy, "record_rework", lambda _r, issue, gate: reworked.append((issue, gate)) or 1
+    )
+    result = loop.advance(tmp_path, "i", config=CONFIG)
+    assert reworked == [("i.1", "verify")]
+    assert result.blocked and "without committing anything referencing i.1" in result.detail
+
+
+def test_lane_subtask_verify_failure_reworks_the_subtask_not_the_lane(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A failed fast verify bounds the sub-task, so one bad step cannot burn the lane."""
+    at(_lane())
+    _pin_lane(monkeypatch, subtasks=[("i.1", "open")], committed=("i.1",))
+    monkeypatch.setattr(
+        verify,
+        "run_verify",
+        lambda _r, mode, *_a, **_k: verify.VerifyReport(
+            mode, (verify.CheckResult("pytest", "fail", 1),)
+        ),
+    )
+    reworked: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        policy, "record_rework", lambda _r, issue, gate: reworked.append((issue, gate)) or 1
+    )
+    result = loop.advance(tmp_path, "i", config=CONFIG)
+    assert reworked == [("i.1", "verify")]
+    assert result.blocked and "verify fast failed: pytest" in result.detail
+
+
+def test_lane_follows_the_dependency_chain_not_the_tracker_order(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The blocks chain decides what runs next, not the order br lists dependents in.
+
+    Same-scope sub-tasks are serialized by a ``blocks`` chain at decompose time, so
+    the chain head is the only unblocked one — that is what makes the sequence
+    strict (D7), not the order the tracker happens to return.
+    """
+    at(_lane())
+    calls = _pin_lane(
+        monkeypatch,
+        subtasks=[("i.2", "open"), ("i.1", "open")],
+        committed=("i.1",),
+        blocked=("i.2",),
+    )
+    result = loop.advance(tmp_path, "i", config=CONFIG)
+    assert calls["closed"] == ["i.1"]
+    assert result.action == "sub-task" and "(i.1)" in result.detail
+
+
+def test_lane_holds_a_subtask_waiting_on_a_decision(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A sub-task with a queued judgment is not re-dispatched into the same block."""
+    at(_lane())
+    _pin_lane(monkeypatch, subtasks=[("i.1", "open")], pending=("i.1",))
+    monkeypatch.setattr(
+        runner, "run", lambda *_a, **_k: pytest.fail("a held sub-task must not dispatch")
+    )
+    result = loop.advance(tmp_path, "i", config=CONFIG)
+    assert result.blocked and "waiting on a dependency or a queued decision" in result.detail
+
+
+def test_lane_integrates_with_full_verify_once_every_subtask_closes(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """All sub-tasks closed: the lane lands under full verify and moves to verify (D4)."""
+    at(_lane())
+    calls = _pin_lane(monkeypatch, subtasks=[("i.1", "closed"), ("i.2", "closed")])
+    _no_rubrics(monkeypatch)
+    landed = {}
+
+    def _merge(_root, name, *, bead, verify_mode):
+        landed["name"], landed["bead"], landed["mode"] = name, bead, verify_mode
+        return merge.MergeResult(name, "merged", "landed")
+
+    monkeypatch.setattr(merge, "merge_worktree", _merge)
+    # Even a `fast` mode asked for on the command line cannot downgrade a lane
+    # integration: the change class picks the mode, not the caller.
+    result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(verify_mode="fast"))
+    assert landed == {"name": "i", "bead": "i", "mode": "full"}
+    assert calls["verify"] == ["full"] and calls["gates"] == [("i", "full")]
+    assert result.to_phase == "verify" and result.action == "merged"
+
+
+def test_lane_validate_gate_blocks_the_landing_when_it_fails(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Validate is required at lane level: a failing rubric stops the merge (D4)."""
+    at(_lane())
+    _pin_lane(monkeypatch, subtasks=[("i.1", "closed")])
+    rubric = rubrics.Rubric(
+        id="r",
+        description="d",
+        applies_to=("task",),
+        checks=(
+            rubrics.RubricCheck("acceptance", "does it?", rubrics.DETERMINISTIC, command="false"),
+        ),
+    )
+    monkeypatch.setattr(loop.rubrics, "load_rubrics", lambda *_a, **_k: [rubric])
+    monkeypatch.setattr(
+        loop.rubrics,
+        "evaluate",
+        lambda *_a, **_k: [
+            rubrics.CheckVerdict("acceptance", rubrics.DETERMINISTIC, rubrics.NO, "exit 1")
+        ],
+    )
+    recorded: list[str] = []
+    monkeypatch.setattr(
+        loop.rubrics,
+        "report_gate",
+        lambda _r, issue, _v: recorded.append(issue) or (True, "ok"),
+    )
+    monkeypatch.setattr(
+        merge, "merge_worktree", lambda *_a, **_k: pytest.fail("validate must gate the landing")
+    )
+    monkeypatch.setattr(policy, "record_rework", lambda *_a: 1)
+    result = loop.advance(tmp_path, "i", config=CONFIG)
+    assert recorded == ["i"]
+    assert result.blocked and "lane validate failed: acceptance" in result.detail
+
+
+def test_lane_validate_evaluates_in_the_lane_worktree(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Validate judges the lane's own tree, before its work is merged anywhere."""
+    at(_lane())
+    _pin_lane(monkeypatch, subtasks=[("i.1", "closed")])
+    rubric = rubrics.Rubric(
+        id="r",
+        description="d",
+        applies_to=("task",),
+        checks=(rubrics.RubricCheck("tests", "tested?", rubrics.JUDGED),),
+    )
+    monkeypatch.setattr(loop.rubrics, "load_rubrics", lambda *_a, **_k: [rubric])
+    seen = {}
+
+    def _evaluate(issue_id, _rubric, repo_root, *_a, **_k):
+        seen["issue"], seen["cwd"] = issue_id, repo_root
+        # A judged NO stays advisory: it must not block the landing.
+        return [rubrics.CheckVerdict("tests", rubrics.JUDGED, rubrics.NO, "no tests")]
+
+    monkeypatch.setattr(loop.rubrics, "evaluate", _evaluate)
+    monkeypatch.setattr(loop.rubrics, "report_gate", lambda *_a, **_k: (True, "ok"))
+    monkeypatch.setattr(
+        merge, "merge_worktree", lambda *_a, **_k: merge.MergeResult("i", "merged", "landed")
+    )
+    result = loop.advance(tmp_path, "i", config=CONFIG)
+    assert seen == {"issue": "i", "cwd": Path("/tmp/i")}
+    assert result.to_phase == "verify" and result.action == "merged"
+
+
+def test_references_bead_requires_a_whole_id_not_a_prefix() -> None:
+    """A sibling id sharing a prefix is not proof of work (i.1 vs i.10)."""
+    assert loop.references_bead("fix(loop): do it (basicly-i.1)", "basicly-i.1")
+    assert loop.references_bead("basicly-i.1 leads the subject", "basicly-i.1")
+    assert not loop.references_bead("fix(loop): do it (basicly-i.10)", "basicly-i.1")
+    assert not loop.references_bead("nothing to see here", "basicly-i.1")
+
+
+def test_lane_blocks_when_its_worktree_session_is_gone(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A lane whose worktree record vanished is re-provisioned, not dispatched blind."""
+    at(_lane())
+    _pin_lane(monkeypatch, subtasks=[("i.1", "open")])
+    monkeypatch.setattr(worktree, "load_session", lambda *_a, **_k: None)
+    result = loop.advance(tmp_path, "i", config=CONFIG)
+    assert result.blocked and "no session record" in result.detail
+
+
+def test_plain_leaf_build_is_unchanged_by_the_lane_path(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A leaf with no sub-task beads still lands its own dispatch directly."""
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    monkeypatch.setattr(loop, "_run_lane", lambda *_a: pytest.fail("a leaf has no lane mini-loop"))
+    monkeypatch.setattr(
+        merge, "merge_worktree", lambda *_a, **_k: merge.MergeResult("i", "merged", "landed")
+    )
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
+    monkeypatch.setattr(verify, "report_gate", lambda *_a, **_k: (True, "ok"))
+    assert _advance(tmp_path).action == "merged"
 
 
 def test_classify_leaf_blocks_at_the_concurrency_cap(
