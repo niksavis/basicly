@@ -34,6 +34,7 @@ import hashlib
 import json
 import re
 import subprocess
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -52,6 +53,14 @@ MARKER = "[harness-decision]"
 # What kind of judgment the item asks for. All are human-required by default;
 # the supervisor may route delegable kinds through the decider first (7.1).
 KINDS = ("needs-input", "escalation", "checkpoint", "stall", "validate")
+
+# Enqueue and delegated-answer recording are read-then-write over br comments, so
+# the supervisor's concurrent lanes (basicly-kjc5.6) could double-enqueue the same
+# fact — two notifications for one decision — or overshoot decider_max_decisions by
+# reading the count before another thread recorded its answer. Serialize
+# same-process writers here; cross-process races stay accepted, matching the
+# run-record stance (basicly-kjc5.17).
+_QUEUE_LOCK = threading.Lock()
 
 # Separator between the bead id and the content hash in a decision id. A dot
 # would be ambiguous — bead ids contain dots (basicly-kjc5.4).
@@ -116,33 +125,41 @@ def enqueue(  # noqa: PLR0913 — mirrors the CLI surface
     existing item without a duplicate marker or a duplicate notification. The
     notify hook fires only for *human_required* items (design 7.3) — the
     supervisor passes False when it will try the decider first.
+
+    The scan-then-write is guarded by :data:`_QUEUE_LOCK`, so the idempotence
+    above holds under the supervisor's concurrent lanes: without it two threads
+    both read "not queued" and both write, producing one duplicate marker and two
+    notifications for a single fact (basicly-kjc5.17).
     """
     if kind not in KINDS:
         raise ValueError(f"unknown decision kind {kind!r}; expected one of {KINDS}")
-    items = _items_on(repo_root, issue_id)
-    generation = 1
-    while True:
-        decision_id = decision_id_for(issue_id, kind, question, generation)
-        existing = items.get(decision_id)
-        if existing is None:
-            break
-        if existing.pending:
-            # Idempotent: the same blocked fact is already queued and notified.
-            return existing
-        # Answered, yet the fact blocked again (wrong answer, or it never
-        # reached a re-dispatch): re-open under the next generation instead of
-        # silently reporting an empty queue while the loop stays wedged.
-        generation += 1
-    payload = json.dumps({"question": question, "detail": detail}, sort_keys=True)
-    header = f"{MARKER} id={decision_id} kind={kind}"
-    _run_br(repo_root, ["comments", "add", issue_id, f"{header}\n{payload}"])
-    item = DecisionItem(
-        decision_id=decision_id,
-        issue_id=issue_id,
-        kind=kind,
-        question=question,
-        detail=detail,
-    )
+    with _QUEUE_LOCK:
+        items = _items_on(repo_root, issue_id)
+        generation = 1
+        while True:
+            decision_id = decision_id_for(issue_id, kind, question, generation)
+            existing = items.get(decision_id)
+            if existing is None:
+                break
+            if existing.pending:
+                # Idempotent: the same blocked fact is already queued and notified.
+                return existing
+            # Answered, yet the fact blocked again (wrong answer, or it never
+            # reached a re-dispatch): re-open under the next generation instead of
+            # silently reporting an empty queue while the loop stays wedged.
+            generation += 1
+        payload = json.dumps({"question": question, "detail": detail}, sort_keys=True)
+        header = f"{MARKER} id={decision_id} kind={kind}"
+        _run_br(repo_root, ["comments", "add", issue_id, f"{header}\n{payload}"])
+        item = DecisionItem(
+            decision_id=decision_id,
+            issue_id=issue_id,
+            kind=kind,
+            question=question,
+            detail=detail,
+        )
+    # Notify outside the lock: the hook is a user-configured subprocess, so a slow
+    # or hanging notifier must not stall every other lane's enqueue.
     if human_required:
         _notify(repo_root, item)
     return item
@@ -483,23 +500,38 @@ def invoke_decider(
         timeout=runner_config.runner_timeout,
     )
     runner.record_dispatch(repo_root, item.issue_id, spec, result)
-    if result.timed_out:
-        return DeciderVerdict(
-            "",
-            f"decider hit runner_timeout ({runner_config.runner_timeout:.0f}s)",
-            0.0,
-            abstain=True,
+    if result.timed_out or result.handoff or result.returncode != 0:
+        # One outcome, three causes: nothing usable came back, so the item stays
+        # with the human. Naming the timeout distinctly matters for triage — a
+        # hung decider is an operational problem, not a missing CLI.
+        why = (
+            f"decider hit runner_timeout ({runner_config.runner_timeout:.0f}s)"
+            if result.timed_out
+            else "decider runner unavailable or failed"
         )
-    if result.handoff or result.returncode != 0:
-        return DeciderVerdict("", "decider runner unavailable or failed", 0.0, abstain=True)
+        return DeciderVerdict("", why, 0.0, abstain=True)
     verdict = parse_verdict(result.stdout)
     if verdict.abstain or not verdict.decision:
         return verdict
-    return answer(
-        repo_root,
-        decision_id,
-        verdict.decision,
-        by=f"{DECIDER_BY_PREFIX}{spec.name}",
-        rationale=verdict.rationale,
-        confidence=verdict.confidence,
-    )
+    # Re-check the cap inside the lock before recording. The check above ran before
+    # a dispatch that takes minutes, during which concurrent lanes may have
+    # recorded their own delegated answers — without this, N threads each pass a
+    # stale check and the session overshoots decider_max_decisions (kjc5.17). The
+    # dispatch itself stays outside the lock; only the count-and-record is atomic.
+    with _QUEUE_LOCK:
+        if decider_answers_count(repo_root, root_issue) >= config.decider_max_decisions:
+            return DeciderVerdict(
+                "",
+                f"decider_max_decisions ({config.decider_max_decisions}) reached while "
+                "this decision was being judged; it stays human-only",
+                0.0,
+                abstain=True,
+            )
+        return answer(
+            repo_root,
+            decision_id,
+            verdict.decision,
+            by=f"{DECIDER_BY_PREFIX}{spec.name}",
+            rationale=verdict.rationale,
+            confidence=verdict.confidence,
+        )
