@@ -274,7 +274,10 @@ def evaluate(
         config = load_runner_config(repo_root)
         spec = runner.select_runner(config.specs, runner_name or config.default)
         prompt = build_judge_prompt(issue_id, rubric, judged)
-        result = runner.run(spec, prompt, repo_root, timeout=config.runner_timeout)
+        # The judge is a read-only helper: it queues on the best-effort remainder
+        # rather than taking a slot a lane or the decider is reserved.
+        with runner.process_budget().slot(runner.HELPER):
+            result = runner.run(spec, prompt, repo_root, timeout=config.runner_timeout)
         runner.record_dispatch(repo_root, issue_id, spec, result, prompt=prompt, phase="validate")
         if result.handoff or result.timed_out:
             why = (

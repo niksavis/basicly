@@ -527,7 +527,10 @@ def invoke_decider(  # noqa: PLR0911 — one return per distinct drop-to-human c
     # timeout a hung decider hangs the pass forever, and without the run-record its
     # tokens never count against the session's D3 grant ceiling.
     prompt = decider_prompt(item, intake_corpus(repo_root, root_issue))
-    result = runner.run(spec, prompt, repo_root, timeout=runner_config.runner_timeout)
+    # The decider's own reserved slot: it must be dispatchable even with every
+    # lane slot busy, because those lanes are what wait on its answers.
+    with runner.process_budget().slot(runner.DECIDER):
+        result = runner.run(spec, prompt, repo_root, timeout=runner_config.runner_timeout)
     runner.record_dispatch(repo_root, item.issue_id, spec, result, prompt=prompt, phase="decide")
     if result.timed_out or result.handoff or result.returncode != 0:
         # One outcome, three causes: nothing usable came back, so the item stays

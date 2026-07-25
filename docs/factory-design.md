@@ -450,7 +450,7 @@ New parameters (all in the overridable sections per the dual-use constraint):
 
 | Section           | Parameter                 | Default            | Rationale                                                              |
 | ----------------- | ------------------------- | ------------------ | ---------------------------------------------------------------------- |
-| `[runner]`        | `max_agent_processes`     | `8`                | Rule `2 × concurrency`: one avg helper per lane; API/RAM-bound, not CPU. **Not yet accounted (`basicly-kjc5.11`)** |
+| `[runner]`        | `max_agent_processes`     | `8`                | Rule `2 × concurrency`: one avg helper per lane; API/RAM-bound, not CPU                  |
 | `[runner]`        | `runner_timeout`          | `3600` s           | Hard kill per dispatch → decision queue                                 |
 | `[runner]`        | `stall_after`             | `900` s            | No output/commit activity → flagged possibly-stuck to decision queue. **Not implemented (`basicly-kjc5.25`); only the 3600 s hard kill exists** |
 | `[runner]`        | `decider`                 | session default    | Runner/agent used for decider invocations (§7.1)                        |
@@ -471,7 +471,16 @@ New parameters (all in the overridable sections per the dual-use constraint):
 
 Process-budget reservation classes (fixed semantics, not config): `concurrency` slots
 reserved for lane runners, 1 slot reserved for the decider (prevents decision-queue
-deadlock), remainder best-effort for read-only helpers. Instruction overhead for the
+deadlock), remainder best-effort for read-only helpers. Built in `basicly-kjc5.11` as
+`runner.ProcessBudget`, which every engine-initiated dispatch acquires a slot from: lane
+runners and lane sub-task runners as `lane`, `invoke_decider` as `decider`, the validate
+judge and `basicly review` as `helper`. A helper never blocks a lane, so queueing for a
+helper slot cannot deadlock a pass. The decider's slot is carved out *before* the lane
+reservation — a ceiling too small for both narrows the lanes rather than dropping the
+reservation that exists to keep the queue workable — and a ceiling below "decider plus one
+lane" is raised to that minimum instead of overcommitting the machine. `basicly runner
+dry-run`/`run` are deliberately unbudgeted: a human running one command by hand is not the
+factory allocating machine capacity. Instruction overhead for the
 sizing estimator is computed by tokenizing the projected instructions, never configured.
 
 ## 7. Resolved mechanics
@@ -653,7 +662,6 @@ The gaps that matter most, because a reader would otherwise believe the decision
 - **`stall_after` does not exist** — only the hard kill (`kjc5.25`).
 - **No model is pinned on any adapter**, so R5's tier economics rest on an unpinned mapping
   and dispatch is not reproducible in its inputs as D9 requires (`kjc5.29`, `kjc5.28`).
-- **`max_agent_processes` is not accounted** (`kjc5.11`).
 - **Coupling attribution depends on intra-pass landing order** (`kjc5.32`), which D9 forbids.
 
 **Dogfooding status.** Every landed component was built through the single-track loop on

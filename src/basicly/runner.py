@@ -32,6 +32,7 @@ import os
 import shutil
 import signal
 import subprocess
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
@@ -1022,3 +1023,148 @@ def record_dispatch(  # noqa: PLR0913 — one parameter per recorded dispatch in
     # must never fail a landing.
     with contextlib.suppress(OSError, RuntimeError):
         run_record.record_marker(repo_root, issue_id, entry)
+
+
+# --- Global agent-process budget (component 8, design section 6) --------------
+
+# Reservation classes. Fixed semantics, deliberately not config (design section
+# 6): `lane_slots` reserved for lane runners, exactly one reserved for the
+# decider, and the remainder best-effort for read-only helpers.
+LANE = "lane"
+DECIDER = "decider"
+HELPER = "helper"
+PROCESS_CLASSES = (LANE, DECIDER, HELPER)
+
+# The decider's reservation. One, and one is the point: a decision queue that
+# cannot be worked because every process slot went to lanes is a deadlock, and
+# the lanes are exactly what is waiting on those decisions.
+DECIDER_SLOTS = 1
+
+# Ceiling on concurrently live agent processes when nothing configures one
+# (`[runner] max_agent_processes`). Owned here beside the other runner defaults;
+# config re-exports it, because config imports this module and not the reverse.
+DEFAULT_MAX_AGENT_PROCESSES = 8
+
+
+class BudgetExhaustedError(RuntimeError):
+    """A helper slot was asked for from a budget that reserves none for helpers."""
+
+
+class ProcessBudget:
+    """Accounting for concurrently live agent processes, by reservation class.
+
+    One global ceiling (``[runner] max_agent_processes``) split into three
+    classes rather than multiplicative per-level caps. Lane runners and the
+    decider draw on reservations, so a burst of read-only helpers can never
+    starve them — and, critically, a helper never blocks a lane, so waiting for a
+    helper slot cannot deadlock the pass.
+
+    Helpers queue on the best-effort remainder. When the configured total leaves
+    no remainder at all, a helper request is *refused* rather than queued:
+    blocking on a queue that can never drain is a hang, and a clear refusal is
+    the fail-closed behaviour (D9).
+    """
+
+    def __init__(self, total: int, lane_slots: int) -> None:
+        """Split *total* slots into the three classes, reserving *lane_slots* for lanes."""
+        # A ceiling below "the decider plus one lane" cannot run the factory at
+        # all, so it is raised to that minimum rather than silently overcommitting
+        # the machine (reservations summing past the ceiling) or refusing every
+        # lane dispatch.
+        self.total = max(DECIDER_SLOTS + 1, total)
+        # The decider's slot is carved out *first*, before lanes. Its whole purpose
+        # is to keep the decision queue workable, and the lanes are what wait on
+        # those decisions — so a ceiling too small to hold both must narrow the
+        # lane reservation, never drop the decider's. Reservations therefore never
+        # exceed the ceiling, so the machine is never overcommitted.
+        self.decider_slots = min(DECIDER_SLOTS, self.total)
+        self.lane_slots = max(1, min(lane_slots, self.total - self.decider_slots))
+        self.helper_slots = max(0, self.total - self.lane_slots - self.decider_slots)
+        self._live: dict[str, int] = dict.fromkeys(PROCESS_CLASSES, 0)
+        self._lock = threading.Lock()
+        self._freed = threading.Condition(self._lock)
+
+    def capacity(self, kind: str) -> int:
+        """Slots reserved for *kind*."""
+        if kind == LANE:
+            return self.lane_slots
+        if kind == DECIDER:
+            return self.decider_slots
+        if kind == HELPER:
+            return self.helper_slots
+        raise ValueError(f"unknown process class {kind!r}; expected one of {PROCESS_CLASSES}")
+
+    def live(self, kind: str) -> int:
+        """Processes of *kind* currently holding a slot."""
+        self.capacity(kind)  # validates the class name
+        with self._lock:
+            return self._live[kind]
+
+    @contextlib.contextmanager
+    def slot(self, kind: str, *, timeout: float | None = None):
+        """Hold one slot of *kind* for the duration of the block.
+
+        Lane and decider acquisitions draw on their own reservations and so never
+        wait on a helper. A helper waits for another helper to finish, up to
+        *timeout* (None waits indefinitely — the queueing the design asks for).
+        """
+        capacity = self.capacity(kind)
+        if capacity == 0:
+            raise BudgetExhaustedError(
+                f"max_agent_processes ({self.total}) reserves no slot for a {kind} process "
+                f"(lane {self.lane_slots} + decider {self.decider_slots}); "
+                "raise [runner] max_agent_processes to admit one"
+            )
+        deadline = None if timeout is None else time.monotonic() + timeout
+        with self._freed:
+            while self._live[kind] >= capacity:
+                remaining = None if deadline is None else deadline - time.monotonic()
+                if remaining is not None and remaining <= 0:
+                    raise TimeoutError(
+                        f"waited {timeout:.0f}s for a {kind} process slot "
+                        f"({self._live[kind]}/{capacity} live)"
+                    )
+                self._freed.wait(remaining)
+            self._live[kind] += 1
+        try:
+            yield
+        finally:
+            with self._freed:
+                self._live[kind] -= 1
+                self._freed.notify_all()
+
+
+_BUDGET_LOCK = threading.Lock()
+# A one-slot mapping rather than a rebound module global: same single instance,
+# without a `global` statement in every accessor.
+_BUDGET: dict[str, ProcessBudget] = {}
+
+
+def configure_process_budget(total: int, lane_slots: int) -> ProcessBudget:
+    """Install the process-wide budget; the first caller's numbers win.
+
+    D1 puts one supervisor process in charge of the machine's concurrency, so it
+    configures this at session start. First-caller-wins rather than
+    last-caller-wins on purpose: re-deriving the ceiling while slots are held
+    would let the live count exceed a shrunken capacity. Tests reset it.
+    """
+    with _BUDGET_LOCK:
+        return _BUDGET.setdefault("current", ProcessBudget(total, lane_slots))
+
+
+def process_budget() -> ProcessBudget:
+    """The process-wide budget, built from the built-in defaults if unconfigured.
+
+    A single-track session never configures one, so the defaults stand in — the
+    accounting is still correct, just not the repo's numbers. The lane reservation
+    follows the design's own rule of thumb (``max_agent_processes`` is about twice
+    the worktree concurrency), so it cannot drift from the ceiling.
+    """
+    total = DEFAULT_MAX_AGENT_PROCESSES
+    return configure_process_budget(total, max(1, total // 2))
+
+
+def reset_process_budget() -> None:
+    """Drop the configured budget (tests; never called in a real session)."""
+    with _BUDGET_LOCK:
+        _BUDGET.clear()

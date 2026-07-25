@@ -376,13 +376,16 @@ def _run_agent(ctx: _Ctx, issue_id: str, cwd: Path) -> _Dispatch:
     spec = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
     prompt = dispatch_prompt(issue_id)
     scope_tokens = _scope_cost_at_dispatch(ctx.repo_root, issue_id)
-    result = runner.run(
-        spec,
-        prompt,
-        cwd,
-        capture_usage=True,
-        timeout=config.runner_timeout,
-    )
+    # A sub-task runner is the lane's own write agent (D7), so it draws on the
+    # lane reservation like any lane dispatch (component 8, basicly-kjc5.11).
+    with runner.process_budget().slot(runner.LANE):
+        result = runner.run(
+            spec,
+            prompt,
+            cwd,
+            capture_usage=True,
+            timeout=config.runner_timeout,
+        )
     record_run(
         ctx.repo_root,
         issue_id,
