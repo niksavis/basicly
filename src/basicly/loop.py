@@ -40,6 +40,7 @@ own split into sub-tasks is engine-governed (the sizing governor plus
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 from collections.abc import Mapping
@@ -365,10 +366,16 @@ def _run_agent(ctx: _Ctx, issue_id: str, cwd: Path) -> _Dispatch:
     The prompt is assembled per dispatch, so a lane's sequential sub-tasks each
     start from a fresh context that already sees the commits their predecessors
     made (D6/D7).
+
+    The scope read-cost is measured *before* the agent runs and recorded with the
+    dispatch (basicly-kjc5.30). It is the denominator of every calibration sample,
+    so measuring it later — against a tree this very dispatch is about to
+    change — is what let the build factors drift.
     """
     config = load_runner_config(ctx.repo_root)
     spec = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
     prompt = dispatch_prompt(issue_id)
+    scope_tokens = _scope_cost_at_dispatch(ctx.repo_root, issue_id)
     result = runner.run(
         spec,
         prompt,
@@ -376,8 +383,30 @@ def _run_agent(ctx: _Ctx, issue_id: str, cwd: Path) -> _Dispatch:
         capture_usage=True,
         timeout=config.runner_timeout,
     )
-    record_run(ctx.repo_root, issue_id, spec, result, prompt=prompt, phase="build")
+    record_run(
+        ctx.repo_root,
+        issue_id,
+        spec,
+        result,
+        prompt=prompt,
+        phase="build",
+        scope_tokens=scope_tokens,
+    )
     return _Dispatch(spec=spec, result=result, cwd=cwd, timeout=config.runner_timeout)
+
+
+def _scope_cost_at_dispatch(repo_root: Path, issue_id: str) -> int | None:
+    """The bead's declared-scope read cost right now, or None when it has no scope.
+
+    Telemetry on the critical path, so it never raises: a bead with no readable
+    ``## Scope`` section simply records nothing and calibration falls back to
+    measuring the tree, exactly as it did before.
+    """
+    with contextlib.suppress(RuntimeError, ValueError, OSError):
+        info = decompose.bead_class_and_scope(repo_root, issue_id)
+        if info is not None:
+            return decompose.scope_read_cost(repo_root, info[1])
+    return None
 
 
 def _runner_block(
