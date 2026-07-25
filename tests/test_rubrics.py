@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -93,8 +94,17 @@ def test_load_rubrics_rejects_malformed_top_level(tmp_path: Path, text: str, mat
     ("check", "match"),
     [
         ("{id: a, question: q, kind: bogus}", "unknown kind"),
-        ("{id: a, question: q, kind: deterministic}", "has no 'command'"),
+        ("{id: a, question: q, kind: deterministic}", "exactly one of 'command'"),
+        (
+            "{id: a, question: q, kind: deterministic, command: x, verify_mode: full}",
+            "exactly one of 'command'",
+        ),
+        (
+            "{id: a, question: q, kind: deterministic, verify_mode: bogus}",
+            "unknown verify_mode",
+        ),
         ("{id: a, question: q, kind: judged, command: x}", "must not carry a 'command'"),
+        ("{id: a, question: q, kind: judged, verify_mode: full}", "must not carry a 'command'"),
         ("{id: a, kind: judged}", "missing a non-empty 'question'"),
     ],
 )
@@ -106,6 +116,14 @@ def test_load_rubrics_rejects_malformed_check(tmp_path: Path, check: str, match:
         rubrics.load_rubrics(rubric_dir)
 
 
+def test_load_rubrics_rejects_a_judged_only_rubric(tmp_path: Path) -> None:
+    """A rubric with no deterministic check could never fail its gate."""
+    text = f"id: s\ndescription: d\napplies_to:\n  - bug\n{_ONE_CHECK}"
+    rubric_dir = _write(tmp_path, "s.rubric.yaml", text)
+    with pytest.raises(ValueError, match="no deterministic check"):
+        rubrics.load_rubrics(rubric_dir)
+
+
 def test_bundled_sample_rubrics_load() -> None:
     """The shipped sample rubrics load and cover both check kinds."""
     loaded = rubrics.load_rubrics()
@@ -114,6 +132,37 @@ def test_bundled_sample_rubrics_load() -> None:
     assert "feature-behaviors" in by_id
     kinds = {c.kind for c in by_id["bug-behaviors"].checks}
     assert kinds == {JUDGED, DETERMINISTIC}  # bug rubric exercises both paths
+
+
+def test_every_leaf_work_type_has_a_rubric_with_teeth() -> None:
+    """Each work type the loop can build selects a rubric that can actually fail.
+
+    A lane's validate gate is required (D4), and gate_status is
+    deterministic-first, so a work type with no rubric — or one carrying only
+    judged checks — passes having evaluated nothing (basicly-kjc5.19).
+    """
+    loaded = rubrics.load_rubrics()
+    for work_type in ("bug", "task", "chore", "feature"):
+        selected = rubrics.select_rubrics(loaded, work_type)
+        assert selected, f"no rubric selected for work type {work_type!r}"
+        for rubric in selected:
+            assert any(c.kind == DETERMINISTIC for c in rubric.checks), (
+                f"rubric {rubric.id!r} has no deterministic check"
+            )
+
+
+def test_shipped_deterministic_checks_are_toolchain_portable() -> None:
+    """A shipped rubric delegates to the repo's verify config, not a fixed command.
+
+    Rubrics ship in the core catalog to every consumer repo, so a hardcoded
+    `uv run pytest` would answer "no" in any repo that is not this one.
+    """
+    for rubric in rubrics.load_rubrics():
+        for check in rubric.checks:
+            if check.kind == DETERMINISTIC:
+                assert check.verify_mode and not check.command, (
+                    f"{rubric.id}/{check.id} hardcodes a command instead of a verify_mode"
+                )
 
 
 # --- evaluation (basicly-0122.2) --------------------------------------------
@@ -145,6 +194,30 @@ def test_evaluate_deterministic_maps_exit_code(tmp_path: Path) -> None:
     assert ok.answer == YES and ok.kind == DETERMINISTIC
     fail_cmd = _det(f'{python} -c "import sys;sys.exit(1)"')
     assert rubrics.evaluate_deterministic(fail_cmd, tmp_path).answer == NO
+
+
+def test_evaluate_deterministic_verify_mode_delegates_to_the_repo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A verify_mode check answers from the repo's own configured verify run."""
+    check = RubricCheck(id="gates", question="q", kind=DETERMINISTIC, verify_mode="full")
+    seen: dict[str, object] = {}
+
+    def _run_verify(repo_root: Path, mode: str):
+        seen["repo_root"], seen["mode"] = repo_root, mode
+        return SimpleNamespace(passed=False, failures=["ruff", "pytest"])
+
+    monkeypatch.setattr(rubrics.verify, "run_verify", _run_verify)
+    verdict = rubrics.evaluate_deterministic(check, tmp_path)
+
+    assert (seen["repo_root"], seen["mode"]) == (tmp_path, "full")
+    assert verdict.answer == NO
+    assert "ruff" in verdict.evidence and "pytest" in verdict.evidence
+
+    monkeypatch.setattr(
+        rubrics.verify, "run_verify", lambda *_a: SimpleNamespace(passed=True, failures=[])
+    )
+    assert rubrics.evaluate_deterministic(check, tmp_path).answer == YES
 
 
 def test_parse_judged_reads_yes_no_and_defaults_unknown() -> None:

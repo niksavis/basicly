@@ -83,9 +83,8 @@ per-criterion table and the arm totals; do not collapse to a single number.
 
 C1/C2/C5 are machine-checkable (reuse `rubrics` deterministic checks + the loop
 rework counter). C3/C4 are judged by the strong model (reuse the `rubrics`
-judged-check prompt shape). This mirrors the existing bug/feature rubrics
-(`suite-passes` deterministic; `regression-test-added`, `root-cause-not-symptom`
-judged).
+judged-check prompt shape). This mirrors the shipped rubrics (`gates-green`
+deterministic; `regression-test-added`, `root-cause-not-symptom` judged).
 
 ## Pilot
 
