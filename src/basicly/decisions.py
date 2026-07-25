@@ -51,7 +51,7 @@ MARKER = "[harness-decision]"
 
 # What kind of judgment the item asks for. All are human-required by default;
 # the supervisor may route delegable kinds through the decider first (7.1).
-KINDS = ("needs-input", "escalation", "checkpoint", "stall")
+KINDS = ("needs-input", "escalation", "checkpoint", "stall", "validate")
 
 # Separator between the bead id and the content hash in a decision id. A dot
 # would be ambiguous — bead ids contain dots (basicly-kjc5.4).

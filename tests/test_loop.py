@@ -1199,8 +1199,7 @@ def test_lane_validate_evaluates_in_the_lane_worktree(
 
     def _evaluate(issue_id, _rubric, repo_root, *_a, **_k):
         seen["issue"], seen["cwd"] = issue_id, repo_root
-        # A judged NO stays advisory: it must not block the landing.
-        return [rubrics.CheckVerdict("tests", rubrics.JUDGED, rubrics.NO, "no tests")]
+        return [rubrics.CheckVerdict("tests", rubrics.JUDGED, rubrics.YES, "tests present")]
 
     monkeypatch.setattr(loop.rubrics, "evaluate", _evaluate)
     monkeypatch.setattr(loop.rubrics, "report_gate", lambda *_a, **_k: (True, "ok"))
@@ -1210,6 +1209,88 @@ def test_lane_validate_evaluates_in_the_lane_worktree(
     result = loop.advance(tmp_path, "i", config=CONFIG)
     assert seen == {"issue": "i", "cwd": Path("/tmp/i")}
     assert result.to_phase == "verify" and result.action == "merged"
+
+
+def _judged_no_lane(monkeypatch: pytest.MonkeyPatch, answer: str = rubrics.NO) -> None:
+    """Pin a lane whose only rubric check is judged and answers *answer*."""
+    rubric = rubrics.Rubric(
+        id="r",
+        description="d",
+        applies_to=("task",),
+        checks=(rubrics.RubricCheck("acceptance", "met?", rubrics.JUDGED),),
+    )
+    monkeypatch.setattr(loop.rubrics, "load_rubrics", lambda *_a, **_k: [rubric])
+    monkeypatch.setattr(
+        loop.rubrics,
+        "evaluate",
+        lambda *_a, **_k: [
+            rubrics.CheckVerdict("acceptance", rubrics.JUDGED, answer, "criterion 2 unevidenced")
+        ],
+    )
+    monkeypatch.setattr(loop.rubrics, "report_gate", lambda *_a, **_k: (True, "ok"))
+
+
+def test_judged_no_queues_a_decision_and_holds_the_lane(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A judged NO is a decision, not a test failure (D4 amended, roster R4)."""
+    at(_lane())
+    _pin_lane(monkeypatch, subtasks=[("i.1", "closed")])
+    _judged_no_lane(monkeypatch)
+    queued: list[tuple[str, str, str, str]] = []
+
+    def _enqueue(_repo, issue, kind, question, detail="", **_kwargs):
+        queued.append((issue, kind, question, detail))
+
+    monkeypatch.setattr(loop.decisions, "enqueue", _enqueue)
+    merged: list[str] = []
+
+    def _merge(*_args, **_kwargs):
+        merged.append("merged")
+        return merge.MergeResult("i", "merged", "landed")
+
+    monkeypatch.setattr(merge, "merge_worktree", _merge)
+    result = loop.advance(tmp_path, "i", config=CONFIG)
+
+    assert len(queued) == 1
+    issue, kind, question, detail = queued[0]
+    assert (issue, kind) == ("i", "validate")
+    assert "acceptance" in question
+    assert detail == "acceptance: criterion 2 unevidenced"
+    assert merged == []  # the lane holds: it neither lands nor bounces
+    assert result.blocked and result.action == "decision"
+    assert "acceptance" in result.detail
+
+
+def test_judged_no_does_not_spend_a_rework_attempt(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A false NO from a model must not consume the budget kept for real defects."""
+    at(_lane())
+    _pin_lane(monkeypatch, subtasks=[("i.1", "closed")])
+    _judged_no_lane(monkeypatch)
+    monkeypatch.setattr(loop.decisions, "enqueue", lambda *_a, **_k: None)
+    attempts: list[str] = []
+    monkeypatch.setattr(policy, "record_rework", lambda _r, _i, gate: attempts.append(gate) or 1)
+    loop.advance(tmp_path, "i", config=CONFIG)
+    assert attempts == []
+
+
+def test_judged_unknown_is_not_a_dispute(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An UNKNOWN verdict means no agent answered (handoff) — it must not hold the lane."""
+    at(_lane())
+    _pin_lane(monkeypatch, subtasks=[("i.1", "closed")])
+    _judged_no_lane(monkeypatch, answer=rubrics.UNKNOWN)
+    queued: list[str] = []
+    monkeypatch.setattr(loop.decisions, "enqueue", lambda *_a, **_k: queued.append("q"))
+    monkeypatch.setattr(
+        merge, "merge_worktree", lambda *_a, **_k: merge.MergeResult("i", "merged", "landed")
+    )
+    result = loop.advance(tmp_path, "i", config=CONFIG)
+    assert queued == []
+    assert result.action == "merged"
 
 
 def test_references_bead_requires_a_whole_id_not_a_prefix() -> None:

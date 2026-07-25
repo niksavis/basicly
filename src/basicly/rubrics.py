@@ -283,6 +283,17 @@ def gate_status(verdicts: list[CheckVerdict]) -> str:
     return "fail" if any(v.kind == DETERMINISTIC and v.answer == NO for v in verdicts) else "pass"
 
 
+def judged_failures(verdicts: list[CheckVerdict]) -> list[CheckVerdict]:
+    """The judged checks that answered no.
+
+    These never fail the gate (:func:`gate_status` stays deterministic-first), but
+    D4 as amended routes them to the decision queue rather than discarding them:
+    an unsatisfied acceptance criterion is a decision, not a test failure. An
+    UNKNOWN verdict is not a failure — it means no agent answered (a handoff).
+    """
+    return [v for v in verdicts if v.kind == JUDGED and v.answer == NO]
+
+
 def report_gate(repo_root: Path, issue_id: str, verdicts: list[CheckVerdict]) -> tuple[bool, str]:
     """Record the advisory ``rubric`` gate via ``br gate report`` (degrades gracefully)."""
     status = gate_status(verdicts)
