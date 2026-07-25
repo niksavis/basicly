@@ -105,7 +105,7 @@ basicly-managed repo needs [uv](https://docs.astral.sh/uv/) on `PATH` and
 Python 3.14+ — not just the person who ran install. `basicly hooks-check`
 diagnoses a missing uv before it bites at commit time. Using the harness loop
 (`basicly loop`, shared worktree tracker) additionally needs a
-redirect-capable [beads (`br`)](https://github.com/steveyegge/beads) CLI —
+redirect-capable [beads (`br`)](https://github.com/Dicklesworthstone/beads_rust) CLI —
 0.2.16 is the known-good floor, and worktree provisioning verifies it.
 
 ## How it works
