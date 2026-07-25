@@ -793,9 +793,16 @@ def finalize_followup(
     issue_type = record.get("issue_type")
     if issue_type not in ("bug", "chore", "task"):
         issue_type = "task"
-    create_args = ["create", title, "-t", str(issue_type), "-d", body, "--json"]
+    # Assembled in order rather than spliced by index: the previous form
+    # inserted the parent at position 3, which is the *value* of ``-t``, so a
+    # child lane's follow-up went out as ``-t --parent <root> <type>`` and br
+    # rejected it for a missing type (basicly-jr0l.11). Appending each flag with
+    # its value keeps the pairing local and removes the index arithmetic that
+    # made the two separable at all.
+    create_args = ["create", title, "-t", str(issue_type)]
     if root_issue != issue_id:
-        create_args[3:3] = ["--parent", root_issue]
+        create_args += ["--parent", root_issue]
+    create_args += ["-d", body, "--json"]
     proc = _run_br(repo_root, create_args)
     followup_id = str(json.loads(proc.stdout)["id"])
     _run_br(repo_root, ["dep", "add", followup_id, issue_id, "-t", "blocks"])
