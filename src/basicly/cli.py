@@ -1960,6 +1960,32 @@ def _cmd_policy_checkpoint(args: argparse.Namespace) -> int:
     return 0 if approved else 1
 
 
+def _print_challenge(label: str, issue: str, rerun: str) -> int:
+    """Print the one-time-code challenge and return the caller's non-zero exit.
+
+    The wording is load-bearing (basicly-kjc5.34). This gate exists to force a
+    deliberate human *decision*; it was never about whose fingers type the
+    command. An earlier message said "a human must re-run with the one-time
+    code", which an agent reasonably read as "hand this over and wait" — so it
+    did, wasting a round trip and racing the code's TTL. A ship code really did
+    expire between the ask and the paste. Say plainly that the caller may run it
+    once approval is given, and name the protocol and the deadline.
+    """
+    minutes = int(policy.CONFIRM_TTL_SECONDS // 60)
+    print(
+        f"{label}: CONFIRMATION REQUIRED ({issue})\n"
+        "  A human must approve this decision. The gate protects the decision, not the\n"
+        "  keystrokes, so whoever is driving may run the command themselves once approval\n"
+        "  is given: present it, say what approving it does, get an explicit yes, then\n"
+        "  run it.\n"
+        f"  Ask now — the one-time code expires in {minutes} minutes, whether or not you\n"
+        "  are ready for it.\n"
+        f"  {rerun}",
+        file=sys.stderr,
+    )
+    return 1
+
+
 def _approve_checkpoint(repo_root: Path, args: argparse.Namespace) -> int:
     """Approve a checkpoint, gated on an interactive TTY or a one-time confirm code."""
     result = policy.approve_checkpoint_guarded(
@@ -1977,13 +2003,7 @@ def _approve_checkpoint(repo_root: Path, args: argparse.Namespace) -> int:
         rerun = (
             f"basicly policy checkpoint {args.issue} {args.name} --approve --confirm {result.code}"
         )
-        print(
-            f"checkpoint {args.name}: CONFIRMATION REQUIRED ({args.issue})\n"
-            "  no interactive terminal detected; a human must re-run with the one-time code:\n"
-            f"  {rerun}",
-            file=sys.stderr,
-        )
-        return 1
+        return _print_challenge(f"checkpoint {args.name}", args.issue, rerun)
     print(f"checkpoint {args.name}: REFUSED ({args.issue}) - {result.detail}", file=sys.stderr)
     return 1
 
@@ -2028,13 +2048,7 @@ def _cmd_policy_grant(args: argparse.Namespace) -> int:
             + (f" --token-budget {args.token_budget}" if args.token_budget is not None else "")
             + f" --confirm {result.code}"
         )
-        print(
-            f"grant: CONFIRMATION REQUIRED ({args.issue})\n"
-            "  no interactive terminal detected; a human must re-run with the one-time code:\n"
-            f"  {rerun}",
-            file=sys.stderr,
-        )
-        return 1
+        return _print_challenge("grant", args.issue, rerun)
     print(f"grant: REFUSED ({args.issue}) - {result.detail}", file=sys.stderr)
     return 1
 
@@ -2257,13 +2271,7 @@ def _cmd_loop_run(args: argparse.Namespace) -> int:
     sys.stdout.flush()
     if result.challenge is not None:
         name, code = result.challenge
-        print(
-            f"checkpoint {name}: CONFIRMATION REQUIRED ({args.issue})\n"
-            "  no interactive terminal detected; a human must re-run with the one-time code:\n"
-            f"  {_ceremony_rerun(args, code)}",
-            file=sys.stderr,
-        )
-        return 1
+        return _print_challenge(f"checkpoint {name}", args.issue, _ceremony_rerun(args, code))
     if result.refused is not None:
         name, why = result.refused
         print(f"checkpoint {name}: REFUSED ({args.issue}) - {why}", file=sys.stderr)
