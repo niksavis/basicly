@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import permissions
+from basicly import permissions, runner
 from basicly.config import (
     CONFIG_FILE,
     DEFAULT_CONFIG_TOML,
@@ -359,6 +359,34 @@ def test_runner_config_usage_format_defaults_none_for_override(tmp_path: Path) -
     )
     by_name = {spec.name: spec for spec in load_runner_config(tmp_path).specs}
     assert by_name["claude"].usage_format is None
+
+
+def test_runner_config_parses_deny_style(tmp_path: Path) -> None:
+    """A custom agent may declare its family's deny wire form (basicly-kjc5.16).
+
+    This is what keeps the decider usable behind a wrapper: with no deny_style the
+    confinement overlay has no flag to emit, so invoke_decider refuses to dispatch.
+    """
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[runner.agents]]\nname = "myclaude"\n'
+        'command = ["myclaude", "-p", "{prompt}"]\ndeny_style = "disallowed-tools"\n',
+        encoding="utf-8",
+    )
+    by_name = {spec.name: spec for spec in load_runner_config(tmp_path).specs}
+    spec = by_name["myclaude"]
+    assert spec.deny_style == "disallowed-tools"
+    confined = runner.confine_for_decider(spec)
+    assert confined is not None and "Bash" in confined.deny_tools
+
+
+def test_runner_config_rejects_unknown_deny_style(tmp_path: Path) -> None:
+    """An unknown deny_style is a config error, not a flag the binary cannot read."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[runner.agents]]\nname = "x"\ncommand = ["x", "{prompt}"]\ndeny_style = "bogus"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="deny_style"):
+        load_runner_config(tmp_path)
 
 
 def test_runner_config_rejects_unknown_usage_format(tmp_path: Path) -> None:

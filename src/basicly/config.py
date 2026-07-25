@@ -11,6 +11,7 @@ from .runner import (
     AUTO,
     BUILTIN_RUNNERS,
     DEFAULT_CONTEXT_WINDOW,
+    DENY_STYLES,
     HEADLESS,
     PROMPT_VIA,
     USAGE_FORMATS,
@@ -843,6 +844,17 @@ def _parse_runner_agent(entry: object) -> RunnerSpec:
     sandbox = sandbox.strip() if isinstance(sandbox, str) else None
     approval = approval.strip() if isinstance(approval, str) else None
 
+    # Optional tool-deny wire form (basicly-kjc5.16). Needed by a custom agent
+    # that wraps one of the big-3 CLIs: without it the decider has no confinement
+    # overlay for that agent and refuses to dispatch it, so this is the escape
+    # hatch that keeps autonomous deciding reachable behind a wrapper.
+    deny_style = entry.get("deny_style")
+    if deny_style is not None and deny_style not in DENY_STYLES:
+        raise ValueError(
+            f"runner agent {name!r} has unknown deny_style {deny_style!r}; "
+            f"allowed: {list(DENY_STYLES)}"
+        )
+
     # Optional opt-in bot git identity (basicly-smzg): both keys or neither.
     git_name = entry.get("git_name")
     git_email = entry.get("git_email")
@@ -874,6 +886,7 @@ def _parse_runner_agent(entry: object) -> RunnerSpec:
         command=tuple(command),
         prompt_via=prompt_via,
         model=model,
+        deny_style=deny_style,
         sandbox=sandbox,
         approval=approval,
         git_name=git_name,

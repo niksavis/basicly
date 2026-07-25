@@ -130,6 +130,7 @@ def test_format_command_injects_deny_tool_flags_after_binary() -> None:
         HEADLESS,
         ("copilot", "-p", PROMPT_PLACEHOLDER),
         deny_tools=("shell(rm -rf)", "shell(git push --force)"),
+        deny_style=runner.DENY_TOOL_FLAG,
     )
     assert runner.format_command(spec, "go") == [
         "copilot",
@@ -148,6 +149,7 @@ def test_format_command_deny_tools_compose_after_model() -> None:
         ("copilot", "-p", PROMPT_PLACEHOLDER),
         model="fast",
         deny_tools=("write",),
+        deny_style=runner.DENY_TOOL_FLAG,
     )
     assert runner.format_command(spec, "go") == [
         "copilot",
@@ -217,6 +219,100 @@ def test_sandbox_approval_do_not_affect_capability_probe() -> None:
     # `workspace-write`/`on-failure` values — must still confirm the runner.
     cap = runner.probe_capability(codex, run=lambda _binary: "usage: codex exec [prompt]")
     assert cap.flag_ok is True
+
+
+# --- decider confinement (basicly-kjc5.16) ----------------------------------
+#
+# One case per supported agent family, asserted on the rendered argv rather than
+# on the field: what confines the decider is the flag the CLI actually receives.
+
+
+def _builtin(name: str) -> RunnerSpec:
+    return next(s for s in runner.BUILTIN_RUNNERS if s.name == name)
+
+
+def test_confine_for_decider_denies_claudes_whole_tool_surface() -> None:
+    """Claude gets one --disallowedTools naming every read, write, exec and network tool."""
+    confined = runner.confine_for_decider(_builtin("claude"))
+    assert confined is not None
+    argv = runner.format_command(confined, "judge")
+    assert argv[0] == "claude"
+    assert argv[1] == "--disallowedTools"
+    denied = set(argv[2 : argv.index("-p")])
+    # The three that matter: no shell (so it cannot run br), no write, no read
+    # beyond the corpus already in its prompt.
+    assert {"Bash", "Write", "Read"} <= denied
+    assert "judge" in argv
+
+
+def test_confine_for_decider_denies_copilot_shell_and_write() -> None:
+    """Copilot gets one --deny-tool= per class, in its own vocabulary."""
+    confined = runner.confine_for_decider(_builtin("copilot"))
+    assert confined is not None
+    argv = runner.format_command(confined, "judge")
+    assert argv[:3] == ["copilot", "--deny-tool=shell", "--deny-tool=write"]
+
+
+def test_confine_for_decider_puts_codex_in_a_read_only_sandbox() -> None:
+    """Codex has no tool-deny flag, so it is confined by sandbox instead of blocklist.
+
+    ``never`` rather than the builtin ``on-failure``: headless exec has no
+    approver, so an escalation must fail closed instead of waiting for one.
+    """
+    confined = runner.confine_for_decider(_builtin("codex"))
+    assert confined is not None
+    assert confined.deny_tools == ()
+    assert runner.format_command(confined, "judge") == [
+        "codex",
+        "--sandbox",
+        "read-only",
+        "-a",
+        "never",
+        "exec",
+        "judge",
+    ]
+
+
+def test_confine_for_decider_adds_to_existing_denials_never_replaces_them() -> None:
+    """Confinement only ever subtracts capability, so a baseline deny survives it.
+
+    Copilot's builtin is loaded with the permissions.yaml deny-list, which can name
+    a class this overlay does not — replacing it would hand the decider *more* than
+    a normal lane gets.
+    """
+    baseline = RunnerSpec(
+        "copilot",
+        HEADLESS,
+        ("copilot", "-p", PROMPT_PLACEHOLDER),
+        deny_tools=("fetch", "shell"),
+        deny_style=runner.DENY_TOOL_FLAG,
+    )
+    confined = runner.confine_for_decider(baseline)
+    assert confined is not None
+    assert confined.deny_tools == ("fetch", "shell", "write")
+
+
+def test_confine_for_decider_refuses_an_unconfinable_family() -> None:
+    """A headless agent with neither a deny style nor a sandbox cannot be bounded.
+
+    None is the signal decisions.invoke_decider turns into an abstention — better
+    a human answers than an unconfined agent does.
+    """
+    unknown = RunnerSpec("mystery", HEADLESS, ("mystery", PROMPT_PLACEHOLDER))
+    assert runner.confine_for_decider(unknown) is None
+
+
+def test_confine_for_decider_leaves_a_handoff_unchanged() -> None:
+    """A handoff has no argv to carry flags and executes nothing, so there is nothing to confine."""
+    handoff = RunnerSpec(MANUAL_RUNNER, HANDOFF)
+    assert runner.confine_for_decider(handoff) is handoff
+
+
+def test_deny_tools_without_a_style_raises_rather_than_emitting_a_flag() -> None:
+    """Denials the binary cannot read must not be silently dropped onto its argv."""
+    spec = RunnerSpec("mystery", HEADLESS, ("mystery", PROMPT_PLACEHOLDER), deny_tools=("write",))
+    with pytest.raises(ValueError, match="deny_style"):
+        runner.format_command(spec, "go")
 
 
 # --- availability + selection ----------------------------------------------
