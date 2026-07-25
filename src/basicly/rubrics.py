@@ -253,6 +253,16 @@ def evaluate(
     Judged checks dispatch one prompt through the agent-agnostic runner; when no
     agent CLI is available (a handoff) they resolve to UNKNOWN so the caller can
     surface them for a human, never silently passing or failing.
+
+    The judged dispatch obeys ``[runner] runner_timeout`` and writes a run-record
+    like every other dispatch (basicly-kjc5.31): a hung judge used to hang the
+    whole pass, and its tokens never reached the session's spend. It deliberately
+    does *not* set ``capture_usage`` — that switches some adapters' stdout to JSON,
+    which :func:`parse_judged` cannot read — so the record carries the flagged
+    chars/4 estimate instead, the same honest fallback the copilot arm uses.
+
+    A timed-out judge resolves every judged check to UNKNOWN rather than NO: no
+    agent answered, and inventing a failure would enqueue a dispute nobody made.
     """
     verdicts = [
         evaluate_deterministic(check, repo_root)
@@ -263,12 +273,20 @@ def evaluate(
     if judged:
         config = load_runner_config(repo_root)
         spec = runner.select_runner(config.specs, runner_name or config.default)
-        result = runner.run(spec, build_judge_prompt(issue_id, rubric, judged), repo_root)
-        if result.handoff:
-            verdicts += [
-                CheckVerdict(check.id, JUDGED, UNKNOWN, "handoff: no agent CLI — judge manually")
-                for check in judged
-            ]
+        result = runner.run(
+            spec,
+            build_judge_prompt(issue_id, rubric, judged),
+            repo_root,
+            timeout=config.runner_timeout,
+        )
+        runner.record_dispatch(repo_root, issue_id, spec, result)
+        if result.handoff or result.timed_out:
+            why = (
+                f"timed out after {config.runner_timeout:.0f}s — judge manually"
+                if result.timed_out
+                else "handoff: no agent CLI — judge manually"
+            )
+            verdicts += [CheckVerdict(check.id, JUDGED, UNKNOWN, why) for check in judged]
         else:
             verdicts += parse_judged(result.stdout, judged)
     return verdicts
