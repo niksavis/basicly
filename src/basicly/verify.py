@@ -7,6 +7,11 @@ via ``br gate report``. The block-vs-advise policy (which gates are required,
 the rework rule) lives in the gate/checkpoint engine, not here — this runner
 only produces and records the verdict.
 
+A check may declare a ``fix_command`` — a deterministic, lossless repair such as
+a formatter's write mode. ``apply_fixes`` runs those and nothing else; it is
+never part of a plain verify run, so the verdict a consumer (or CI) gets from
+``run_verify`` is unchanged.
+
 Check subprocess output streams straight to the terminal (it is not captured),
 so the consumer sees each tool's own output live.
 """
@@ -113,25 +118,43 @@ def staged_files(repo_root: Path, suffix: str) -> list[str] | None:
 
 def run_check(check: VerifyCheck, repo_root: Path, mode: str) -> CheckResult:
     """Run a single check, filtering to staged files in ``staged`` mode."""
-    command = list(check.command)
-    if mode == "staged" and check.staged_suffix:
-        files = staged_files(repo_root, check.staged_suffix)
+    return _run(check.name, list(check.command), repo_root, mode, check.staged_suffix)
+
+
+def run_fix(check: VerifyCheck, repo_root: Path, mode: str) -> CheckResult:
+    """Apply *check*'s mechanical repair; skip when it declares no ``fix_command``.
+
+    A fix is never a verdict: the check that follows is what decides pass/fail,
+    so a failing fixer is reported (status ``fail``) but does not stand in for
+    the gate.
+    """
+    if not check.fix_command:
+        return CheckResult(check.name, "skip", 0)
+    return _run(check.name, list(check.fix_command), repo_root, mode, check.staged_suffix)
+
+
+def _run(
+    name: str, command: list[str], repo_root: Path, mode: str, staged_suffix: str | None
+) -> CheckResult:
+    """Run one check-or-fix command, filtering to staged files in ``staged`` mode."""
+    if mode == "staged" and staged_suffix:
+        files = staged_files(repo_root, staged_suffix)
         if files is None:
             return CheckResult(
-                check.name,
+                name,
                 "fail",
                 1,
                 "git diff --cached failed — cannot determine staged files, "
                 "refusing to skip the check",
             )
         if not files:
-            return CheckResult(check.name, "skip", 0)
+            return CheckResult(name, "skip", 0)
         command += files
     try:
         proc = subprocess.run(command, cwd=repo_root, check=False)  # nosec B603
     except FileNotFoundError:
         return CheckResult(
-            check.name,
+            name,
             "fail",
             127,
             f"command not found: {command[0]} — install it or edit "
@@ -142,19 +165,32 @@ def run_check(check: VerifyCheck, repo_root: Path, mode: str) -> CheckResult:
         # (common on WSL with Windows mounts on PATH). Same contract: a failed
         # check with a one-line reason, never a traceback.
         return CheckResult(
-            check.name,
+            name,
             "fail",
             126,
             f"cannot run {command[0]} ({exc.strerror or exc}) — check "
             f"[[verify.checks]] in basicly.toml",
         )
-    return CheckResult(check.name, "pass" if proc.returncode == 0 else "fail", proc.returncode)
+    return CheckResult(name, "pass" if proc.returncode == 0 else "fail", proc.returncode)
 
 
 def run_verify(repo_root: Path, mode: str, config: VerifyConfig | None = None) -> VerifyReport:
     """Run every check configured for *mode* and collect the results."""
     config = config or load_verify_config(repo_root)
     results = tuple(run_check(check, repo_root, mode) for check in config.for_mode(mode))
+    return VerifyReport(mode=mode, results=results)
+
+
+def apply_fixes(repo_root: Path, mode: str, config: VerifyConfig | None = None) -> VerifyReport:
+    """Apply the ``fix_command`` of every *mode* check that declares one.
+
+    Deliberately separate from ``run_verify``: a plain verify run stays a pure
+    verdict, so CI still fails on unformatted input from outside the harness. The
+    fix step is opt-in (``basicly verify --fix``, the pre-commit hook) and its
+    results are advisory — the checks that follow produce the gate.
+    """
+    config = config or load_verify_config(repo_root)
+    results = tuple(run_fix(check, repo_root, mode) for check in config.for_mode(mode))
     return VerifyReport(mode=mode, results=results)
 
 

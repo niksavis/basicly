@@ -2093,6 +2093,15 @@ def cmd_verify(args: argparse.Namespace) -> int:
     if not config.for_mode(args.mode):
         print(f"No verify checks configured for mode '{args.mode}' in {CONFIG_FILE}.")
 
+    if args.fix:
+        fixes = verify.apply_fixes(repo_root, args.mode, config)
+        for result in fixes.results:
+            if result.status == "pass":
+                print(f"[fix] applied {result.name}")
+            elif result.status == "fail":
+                detail = f" — {result.detail}" if result.detail else ""
+                print(f"[fix] {result.name} failed{detail}", file=sys.stderr)
+
     report = verify.run_verify(repo_root, args.mode, config)
 
     print("\n" + "=" * 60)
@@ -2966,6 +2975,11 @@ def _add_verify_parser(subparsers: argparse._SubParsersAction) -> None:
         choices=VERIFY_MODES,
         default="full",
         help="Which configured check set to run (default: full)",
+    )
+    verify_parser.add_argument(
+        "--fix",
+        action="store_true",
+        help="Apply each check's declared fix_command (mechanical repairs only) before checking",
     )
     verify_parser.add_argument("--issue", help="Record the verdict as a br gate on this issue id")
     verify_parser.add_argument(
