@@ -200,3 +200,65 @@ def test_loop_answer_refuses_unknown_id(
     _install_decisions_fake(monkeypatch)
     assert cli.main(["loop", "answer", "basicly-x#abcdef", "yes"]) == 1
     assert "refused" in capsys.readouterr().err
+
+
+# --- policy scaffold / the DoR refusal's own remedy (basicly-kjc5.44) --------
+
+
+def test_policy_scaffold_prints_the_body_for_the_work_type(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The command emits the DoR structure on stdout, ready to pipe into br create."""
+    assert cli.main(["policy", "scaffold", "--type", "bug"]) == 0
+    out = capsys.readouterr().out
+    assert out == policy.compose_body("bug")
+    assert "## Steps to Reproduce" in out and "## Acceptance Criteria" in out
+
+
+def test_policy_scaffold_rejects_a_type_outside_the_br_taxonomy() -> None:
+    """An unknown type is a parser error, not a body missing its template sections."""
+    with pytest.raises(SystemExit):
+        cli.main(["policy", "scaffold", "--type", "nonsense"])
+
+
+def test_dor_refusal_names_the_scaffold_command_for_the_issues_own_type(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A refusal must hand back the fix, typed for the bead (basicly-kjc5.44).
+
+    Learning the required sections by being refused cost a read, an edit and a
+    re-check twice in one run; the refusal now prints the command that emits them.
+    """
+    monkeypatch.setattr(
+        policy,
+        "_run_br",
+        lambda _root, args, **_kw: _Proc(
+            json.dumps({"results": [{"missing": ["## Steps to Reproduce"]}]})
+            if args[:1] == ["lint"]
+            else json.dumps([{"description": "## Acceptance Criteria\n\nx"}])
+        ),
+    )
+    bug = _Proc(json.dumps([{"type": "bug"}]))
+    monkeypatch.setattr(cli.br, "try_run_br", lambda _root, _args: bug)
+
+    assert cli.main(["policy", "dor", "basicly-x"]) == 1
+    err = capsys.readouterr().err
+    assert "## Steps to Reproduce" in err
+    assert "basicly policy scaffold --type bug" in err
+
+
+def test_dor_refusal_still_offers_the_scaffold_when_the_type_is_unreadable(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A tracker read that fails must not swallow the remedy — it degrades to a placeholder."""
+    monkeypatch.setattr(
+        policy,
+        "_run_br",
+        lambda _root, args, **_kw: _Proc(
+            json.dumps({"results": [{"missing": []}]}) if args[:1] == ["lint"] else json.dumps([{}])
+        ),
+    )
+    monkeypatch.setattr(cli.br, "try_run_br", lambda _root, _args: None)
+
+    assert cli.main(["policy", "dor", "basicly-x"]) == 1
+    assert "basicly policy scaffold --type <work-type>" in capsys.readouterr().err

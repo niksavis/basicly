@@ -56,6 +56,7 @@ from .config import (
     OVERLAY_FRAGMENT_STUBS,
     VERIFY_MODES,
     VSCODE_TASKS_JSON,
+    WORK_TYPES,
     ProjectPaths,
     load_policy_config,
     load_project_paths,
@@ -1923,9 +1924,10 @@ def _cmd_catalog_list(args: argparse.Namespace) -> int:
 
 
 def cmd_policy(args: argparse.Namespace) -> int:
-    """Dispatch the ``policy`` subcommands (dor / gate / checkpoint / rework)."""
+    """Dispatch the ``policy`` subcommands (dor / scaffold / gate / checkpoint / rework)."""
     handlers = {
         "dor": _cmd_policy_dor,
+        "scaffold": _cmd_policy_scaffold,
         "gate": _cmd_policy_gate,
         "checkpoint": _cmd_policy_checkpoint,
         "grant": _cmd_policy_grant,
@@ -1937,12 +1939,32 @@ def cmd_policy(args: argparse.Namespace) -> int:
 
 def _cmd_policy_dor(args: argparse.Namespace) -> int:
     """Report Definition-of-Ready; exit 1 (blocking) when sections are missing."""
-    result = policy.definition_of_ready(_repo_root(), args.issue)
+    repo_root = _repo_root()
+    result = policy.definition_of_ready(repo_root, args.issue)
     if result.ready:
         print(f"DoR: READY ({args.issue})")
         return 0
-    print(f"DoR: NOT READY ({args.issue}) — missing: {', '.join(result.missing)}", file=sys.stderr)
+    # Name the fix, with the issue's own type filled in: a refusal is exactly when
+    # the agent needs the scaffold, and an unreadable type must not swallow it.
+    work_type = _issue_work_type(repo_root, args.issue) or "<work-type>"
+    print(
+        f"DoR: NOT READY ({args.issue}) — missing: {', '.join(result.missing)}\n"
+        f"  Emit the required structure: basicly policy scaffold --type {work_type}",
+        file=sys.stderr,
+    )
     return 1
+
+
+def _cmd_policy_scaffold(args: argparse.Namespace) -> int:
+    """Print a bead body carrying every section the DoR requires for a work type.
+
+    Structure is derivable from the work type, so it is emitted rather than
+    discovered when the classify gate refuses. Prints to stdout so the caller can
+    fill the sections in and hand the result to ``br create -d`` (or ``br update
+    -d``) — this command never writes to the tracker itself.
+    """
+    print(policy.compose_body(args.type), end="")
+    return 0
 
 
 def _cmd_policy_gate(args: argparse.Namespace) -> int:
@@ -3066,6 +3088,15 @@ def _add_policy_parser(subparsers: argparse._SubParsersAction) -> None:
     policy_sub = policy_parser.add_subparsers(dest="policy_command", required=True)
     p_dor = policy_sub.add_parser("dor", help="Check Definition-of-Ready via br lint")
     p_dor.add_argument("issue")
+    p_scaffold = policy_sub.add_parser(
+        "scaffold", help="Print a bead body with every section the DoR requires for a work type"
+    )
+    p_scaffold.add_argument(
+        "--type",
+        required=True,
+        choices=WORK_TYPES,
+        help="br work type whose required sections to emit",
+    )
     p_gate = policy_sub.add_parser(
         "gate", help="Show required/advisory gate status and the advance decision"
     )
@@ -3130,7 +3161,7 @@ def _add_loop_input_args(parser: argparse.ArgumentParser) -> None:
     """Add the shared agent-input flags that map onto a ``loop.Inputs``."""
     parser.add_argument(
         "--work-type",
-        choices=("bug", "chore", "task", "feature", "epic"),
+        choices=WORK_TYPES,
         help="Agent-proposed br work type, consumed by the classify phase",
     )
     parser.add_argument(

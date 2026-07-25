@@ -203,7 +203,16 @@ def _on_classify(ctx: _Ctx) -> AdvanceResult:
     """
     dor = policy.definition_of_ready(ctx.repo_root, ctx.issue_id)
     if not dor.ready:
-        return _blocked(ctx, f"definition of ready incomplete: {', '.join(dor.missing)}")
+        # Hand back the remedy, not just the complaint. This refusal is where an
+        # agent used to *discover* the required sections — a read, an edit and a
+        # re-check each time — even though the set is derivable from the work
+        # type the engine already recorded (basicly-kjc5.44).
+        return _blocked(
+            ctx,
+            f"definition of ready incomplete: {', '.join(dor.missing)}"
+            f" — emit the required structure with `basicly policy scaffold"
+            f" --type {ctx.state.issue_type}`",
+        )
     if ctx.state.issue_type in _LEAF_TYPES:
         return _start_build_leaf(ctx)
     if not ctx.inputs.children:

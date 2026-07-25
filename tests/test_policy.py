@@ -184,6 +184,57 @@ def test_dor_empty_or_absent_acceptance_field_still_requires_the_section(
     assert policy.definition_of_ready(tmp_path, "i").ready is False
 
 
+def test_required_sections_derives_the_set_from_the_work_type() -> None:
+    """Per-type template sections, plus the AC every bead owes (basicly-kjc5.44)."""
+    assert policy.required_sections("bug") == ("## Steps to Reproduce", "## Acceptance Criteria")
+    assert policy.required_sections("epic") == ("## Success Criteria", "## Acceptance Criteria")
+    for work_type in ("task", "chore", "feature"):
+        assert policy.required_sections(work_type) == ("## Acceptance Criteria",)
+
+
+def test_required_sections_of_an_unknown_type_still_owes_acceptance_criteria() -> None:
+    """An unmapped type must not scaffold an empty body — the AC rule is type-blind."""
+    assert policy.required_sections("docs") == ("## Acceptance Criteria",)
+
+
+def test_compose_body_emits_every_required_section_with_a_placeholder() -> None:
+    """The scaffold names the structure; the TODO marks the judgment left to do."""
+    body = policy.compose_body("bug")
+    assert body.startswith("## Steps to Reproduce\n\n")
+    assert "## Acceptance Criteria\n\n" in body
+    assert body.count("TODO") == 2
+
+
+def test_compose_body_uses_supplied_content_instead_of_the_placeholder() -> None:
+    """A caller with real content gets it under the heading, and no stray TODO."""
+    body = policy.compose_body("task", {"## Acceptance Criteria": "- Given x when y then z"})
+    assert body == "## Acceptance Criteria\n\n- Given x when y then z\n"
+
+
+def test_compose_body_appends_a_non_required_section_rather_than_dropping_it() -> None:
+    """``## Scope`` is not a DoR section, but a caller that supplies it must keep it.
+
+    Dropping a heading the caller declared would silently lose a child's scope,
+    which the calibration reader then sees as an unreadable bead.
+    """
+    body = policy.compose_body("bug", {"## Scope": "- `src/basicly/cli.py`"})
+    headings = [line for line in body.splitlines() if line.startswith("## ")]
+    assert headings == ["## Steps to Reproduce", "## Acceptance Criteria", "## Scope"]
+    assert "- `src/basicly/cli.py`" in body
+
+
+def test_compose_body_never_duplicates_a_required_heading() -> None:
+    """Supplying content for an already-required section must not repeat the heading."""
+    body = policy.compose_body("task", {"## Acceptance Criteria": "- given x then y"})
+    assert body.count("## Acceptance Criteria") == 1
+
+
+def test_compose_body_puts_a_preamble_above_the_first_heading() -> None:
+    """An engine-composed body may carry context; it must not displace the structure."""
+    body = policy.compose_body("task", preamble="Continues basicly-x: it overran.")
+    assert body.startswith("Continues basicly-x: it overran.\n\n## Acceptance Criteria\n\n")
+
+
 def test_gate_status_advances_when_required_pass(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

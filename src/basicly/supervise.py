@@ -783,16 +783,24 @@ def finalize_followup(
     scope_lines = "\n".join(f"- `{glob}`" for glob in scope)
     if not scope_lines:
         scope_lines = f"- (inherits the declared scope of {issue_id})"
-    body = (
-        f"Continues {issue_id}: its run crossed the context ceiling "
-        f"({occupancy} >= {ceiling} tokens), so the lane finalized early (factory design "
-        "D8/7.6). Check which acceptance criteria the partial landing already satisfied "
-        "before redoing work.\n\n"
-        f"## Acceptance Criteria\n\n{acceptance}\n\n## Scope\n\n{scope_lines}\n"
-    )
     issue_type = record.get("issue_type")
     if issue_type not in ("bug", "chore", "task"):
         issue_type = "task"
+    # A follow-up is a new top-level package driven through its own loop, so it
+    # meets its own DoR gate. Compose the body from the required-section set for
+    # the type it inherits rather than the task set: a hand-written body here
+    # dropped a bug follow-up's ``## Steps to Reproduce`` and the gate then
+    # refused a bead the engine itself had created (basicly-kjc5.44).
+    body = policy.compose_body(
+        str(issue_type),
+        {"## Acceptance Criteria": acceptance, "## Scope": scope_lines},
+        preamble=(
+            f"Continues {issue_id}: its run crossed the context ceiling "
+            f"({occupancy} >= {ceiling} tokens), so the lane finalized early (factory design "
+            "D8/7.6). Check which acceptance criteria the partial landing already satisfied "
+            "before redoing work."
+        ),
+    )
     # Assembled in order rather than spliced by index: the previous form
     # inserted the parent at position 3, which is the *value* of ``-t``, so a
     # child lane's follow-up went out as ``-t --parent <root> <type>`` and br

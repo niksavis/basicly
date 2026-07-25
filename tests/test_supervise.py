@@ -552,6 +552,32 @@ def test_finalize_followup_is_idempotent_via_the_overrun_marker(
     assert len(br.created) == 1
 
 
+def test_finalize_followup_body_carries_the_inherited_types_sections(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A bug follow-up owes Steps to Reproduce, or the engine creates a bead its own gate refuses.
+
+    The body used to be hand-written with the task section set, so a bug lane's
+    overrun produced a top-level package that `policy.definition_of_ready` then
+    blocked at classify (basicly-kjc5.44).
+    """
+    issues = _overrun_issues()
+    issues["epic.1"]["issue_type"] = "bug"
+    br = _FakeBr(issues)
+    _install_br(monkeypatch, br)
+
+    supervise.finalize_followup(Path(), "epic", "epic.1", occupancy=130_000, ceiling=120_000)
+
+    create = br.created[0]
+    assert create[create.index("-t") + 1] == "bug"
+    body = create[create.index("-d") + 1]
+    headings = [line for line in body.splitlines() if line.startswith("## ")]
+    assert headings == ["## Steps to Reproduce", "## Acceptance Criteria", "## Scope"]
+    # The carried-over context still leads, above the structure.
+    assert body.startswith("Continues epic.1:")
+    assert "- parses all three formats" in body and "- `src/a/**`" in body
+
+
 def test_finalize_followup_leaf_root_creates_without_parent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
