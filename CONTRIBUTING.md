@@ -87,8 +87,9 @@ Two `commit-msg` hooks gate every commit:
    ```
 
 Create the issue first with `br create "Title" --type task` (the
-[beads](https://github.com/steveyegge/beads) CLI, installed with the dev
-environment) and use the id it prints — ids cannot be invented.
+[beads (`br`)](https://github.com/Dicklesworthstone/beads_rust) CLI — install it
+yourself; it is not a project dependency) and use the id it prints — ids cannot
+be invented.
 
 ## Catalog authoring
 
