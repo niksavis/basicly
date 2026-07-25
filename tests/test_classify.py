@@ -76,8 +76,13 @@ def test_classify_rejects_unknown_type_before_touching_br(
 
 
 def test_classify_reports_ready_dor(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """A ready issue can leave classify (DoR satisfied)."""
-    _install(monkeypatch, _FakeBr(lint_missing=[]))
+    """A ready issue can leave classify (DoR satisfied).
+
+    The criteria are set explicitly because DoR requires them on every bead
+    whatever its work type, so a silent lint alone no longer makes an issue ready
+    (basicly-kjc5.36).
+    """
+    _install(monkeypatch, _FakeBr(lint_missing=[], acceptance_criteria="given x then y"))
     result = classify.classify(tmp_path, "i", "feature")
     assert result.dor.ready is True
     assert result.can_leave_classify is True

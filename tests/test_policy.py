@@ -31,6 +31,7 @@ class _FakeBr:
         lint_missing: list[str] | None = None,
         gates: list[dict] | None = None,
         acceptance_criteria: str | None = None,
+        description: str | None = None,
         dependents: list[dict] | None = None,
         status: str = "open",
         records: dict[str, dict] | None = None,
@@ -38,6 +39,7 @@ class _FakeBr:
         self.lint_missing = lint_missing or []
         self.gates = gates or []
         self.acceptance_criteria = acceptance_criteria
+        self.description = description
         self.dependents = dependents or []
         self.status = status
         self.records = records or {}
@@ -51,6 +53,7 @@ class _FakeBr:
                 return _Proc(json.dumps([self.records[args[1]]]))
             record = {
                 "acceptance_criteria": self.acceptance_criteria,
+                "description": self.description,
                 "dependents": self.dependents,
                 "status": self.status,
             }
@@ -74,14 +77,63 @@ def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
 
 
 def test_definition_of_ready(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """DoR is ready only when br lint reports no missing sections."""
-    _install(monkeypatch, _FakeBr(lint_missing=[]))
+    """DoR is ready when lint reports nothing missing and criteria are recorded."""
+    _install(monkeypatch, _FakeBr(lint_missing=[], acceptance_criteria="given x then y"))
     assert policy.definition_of_ready(tmp_path, "i").ready is True
 
     _install(monkeypatch, _FakeBr(lint_missing=["## Acceptance Criteria"]))
     result = policy.definition_of_ready(tmp_path, "i")
     assert result.ready is False
     assert result.missing == ("## Acceptance Criteria",)
+
+
+def test_dor_requires_acceptance_criteria_even_when_lint_never_asks(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A silent lint is not evidence the criteria exist (basicly-kjc5.36).
+
+    ``br lint`` derives required sections from the per-type template, and a chore
+    is never asked for acceptance criteria — so a chore carrying none used to pass
+    DoR vacuously and then meet a required validate gate with nothing to judge.
+    """
+    _install(monkeypatch, _FakeBr(lint_missing=[], acceptance_criteria=None))
+    result = policy.definition_of_ready(tmp_path, "i")
+    assert result.ready is False
+    assert result.missing == ("## Acceptance Criteria",)
+
+
+def test_dor_accepts_criteria_from_the_description_body(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Either carrier satisfies the requirement: the body section, or the field."""
+    _install(
+        monkeypatch,
+        _FakeBr(
+            lint_missing=[],
+            acceptance_criteria=None,
+            description="## Acceptance Criteria\n\n- given x then y\n",
+        ),
+    )
+    assert policy.definition_of_ready(tmp_path, "i").ready is True
+
+
+def test_dor_added_requirement_does_not_duplicate_the_section(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """When lint already reports AC missing, the rule must not list it twice."""
+    _install(
+        monkeypatch, _FakeBr(lint_missing=["## Acceptance Criteria"], acceptance_criteria=None)
+    )
+    assert policy.definition_of_ready(tmp_path, "i").missing == ("## Acceptance Criteria",)
+
+
+def test_dor_keeps_other_missing_sections_when_adding_the_requirement(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Adding the AC requirement never drops a section lint did report."""
+    _install(monkeypatch, _FakeBr(lint_missing=["## Steps to Reproduce"], acceptance_criteria=None))
+    result = policy.definition_of_ready(tmp_path, "i")
+    assert result.missing == ("## Steps to Reproduce", "## Acceptance Criteria")
 
 
 def test_dor_structured_acceptance_field_satisfies_the_section(
