@@ -1228,14 +1228,18 @@ class StallWatchdog:
 
     def _watch(self) -> None:
         last = self._fingerprint()
-        idle = 0.0
+        # Idle time is measured against a monotonic clock, not accumulated from
+        # the nominal poll interval: `Event.wait(poll)` and the probe itself can
+        # both overrun their budget on a loaded machine, and summing the nominal
+        # figure would then need far more than `after` real seconds to fire — so
+        # the flag on the very host most likely to wedge would arrive latest.
+        quiet_since = time.monotonic()
         while not self._stop.wait(self._poll):
             current = self._fingerprint()
             if current != last:
-                last, idle = current, 0.0
+                last, quiet_since = current, time.monotonic()
                 continue
-            idle += self._poll
-            if idle < self.after or self.flagged:
+            if self.flagged or time.monotonic() - quiet_since < self.after:
                 continue
             self.flagged = True
             # Contained: a failing notifier must not kill the watcher thread and

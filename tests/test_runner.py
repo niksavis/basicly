@@ -16,6 +16,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
@@ -1413,13 +1414,29 @@ def test_every_engine_dispatch_site_declares_a_class() -> None:
 # --- Stall detection (component 6 mechanic, basicly-kjc5.25) ------------------
 
 
+def _wait_until(predicate: Callable[[], bool], *, timeout: float) -> None:
+    """Poll *predicate* until true or *timeout*; keeps timing tests off wall-clock sleeps.
+
+    A fixed sleep long enough for a loaded CI runner would be far too long for a
+    laptop, and one short enough for a laptop goes red on CI — this waits for the
+    condition instead of for a duration.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(0.01)
+
+
 def test_stall_watchdog_flags_an_unchanging_dispatch_exactly_once() -> None:
     """One queue item per wedged lane, not one per poll."""
     fired: list[float] = []
     with runner.StallWatchdog(
-        0.15, probe=lambda: "frozen", on_stall=lambda: fired.append(time.monotonic()), poll=0.02
+        0.05, probe=lambda: "frozen", on_stall=lambda: fired.append(time.monotonic()), poll=0.01
     ):
-        time.sleep(0.7)  # several windows' worth
+        # Many windows' worth of headroom: the assertion is "once", not "fast".
+        _wait_until(lambda: len(fired) == 1, timeout=10)
+        time.sleep(0.3)
     assert len(fired) == 1
 
 
@@ -1428,9 +1445,9 @@ def test_stall_watchdog_stays_quiet_while_the_lane_makes_progress() -> None:
     counter = itertools.count()
     fired: list[int] = []
     with runner.StallWatchdog(
-        0.15, probe=lambda: str(next(counter)), on_stall=lambda: fired.append(1), poll=0.02
+        0.5, probe=lambda: str(next(counter)), on_stall=lambda: fired.append(1), poll=0.01
     ):
-        time.sleep(0.7)
+        time.sleep(0.3)  # well inside the window, and the probe moves every poll
     assert fired == []
 
 
@@ -1446,13 +1463,12 @@ def test_stall_watchdog_flags_a_lane_that_goes_quiet_after_working() -> None:
         return moving["value"]
 
     with runner.StallWatchdog(
-        0.15, probe=probe, on_stall=lambda: fired.append(1), poll=0.02
+        0.5, probe=probe, on_stall=lambda: fired.append(1), poll=0.01
     ) as watchdog:
-        time.sleep(0.25)
+        time.sleep(0.2)  # inside the window while the probe keeps moving
         assert fired == [], "working lane flagged"
         moving["frozen"] = True
-        time.sleep(0.5)
-        assert watchdog.flagged is True
+        _wait_until(lambda: watchdog.flagged, timeout=10)
     assert fired == [1]
 
 
@@ -1468,9 +1484,9 @@ def test_stall_watchdog_never_lets_a_failing_probe_or_notifier_escape() -> None:
     # A probe that always raises reads as unchanged, so it still reaches the
     # notifier — and the notifier's own failure is contained too.
     with runner.StallWatchdog(
-        0.1, probe=exploding_probe, on_stall=exploding_notifier, poll=0.02
+        0.05, probe=exploding_probe, on_stall=exploding_notifier, poll=0.01
     ) as watchdog:
-        time.sleep(0.4)
+        _wait_until(lambda: watchdog.flagged, timeout=10)
     assert watchdog.flagged is True  # it tried, and survived
 
 
