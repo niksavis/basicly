@@ -521,11 +521,17 @@ identified by the session id in the lock file. Grant expiry and `token_budget` a
 Three layers, built in order:
 
 1. **CLI primitives** (agent-agnostic base): `basicly loop decisions [--json]`,
-   `basicly loop answer <decision-id> ...`, `basicly loop watch`.
+   `basicly loop answer <decision-id> ...`, `basicly loop watch`, and
+   `basicly loop session <root> [--json]` — the status read: lock holder plus heartbeat
+   age, each in-flight lane and what it last ran, the queue depth, and grant spend
+   against the D3 budget. It takes no lock and writes nothing, so any number of clients
+   may attach at once, and attaching to an unsupervised root is a valid read.
 2. **Notify hook**: a consumer-configured command (`[policy] notify_command`) fired on
    each new human-required decision — desktop toast, Slack webhook, anything; no default.
-3. **Agent client skill**: a projected catalog skill so an interactive session presents
-   pending decisions conversationally and records answers via the CLI primitives.
+3. **Agent client skill**: the projected `harness-client` catalog skill, so an interactive
+   session presents pending decisions conversationally and records answers via the CLI
+   primitives — and knows what a client must *not* do (take the lock from a live holder,
+   answer on the human's behalf, approve a checkpoint for the supervisor).
 
 Queue items persist as `[harness-decision]` comment markers on the affected bead (same
 durable, attributable pattern as `[harness-policy]` and `[harness-info]`), each with a

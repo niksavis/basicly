@@ -67,6 +67,7 @@ from . import (
     merge,
     needs_input,
     policy,
+    run_record,
     runner,
     worktree,
 )
@@ -388,6 +389,109 @@ def _binding_of(
         if record is None:
             return None
     return loop_state.parse_worktree_ref(record.get("external_ref"))
+
+
+# --- Client attach: read-only observation (design 7.3 layer 3) ---------------
+
+
+@dataclass(frozen=True)
+class LaneView:
+    """One in-flight lane as an attached client sees it.
+
+    :class:`AdoptedLane` plus what that lane last *ran* — the supervisor itself
+    never needs the run history to decide anything, but a client asking "is this
+    lane working or wedged?" cannot answer from the ``br`` binding alone.
+    """
+
+    issue_id: str
+    status: str
+    worktree: str
+    branch: str
+    live: bool
+    last_agent: str | None = None
+    last_outcome: str | None = None
+    last_run_at: str | None = None
+    last_tokens: int | None = None
+
+
+@dataclass(frozen=True)
+class Observation:
+    """A second session's read-only view of one supervisor session (design 7.3)."""
+
+    root_issue: str
+    root_status: str
+    children_total: int
+    children_open: int
+    done: bool
+    lanes: tuple[LaneView, ...]
+    pending_decisions: tuple[decisions.DecisionItem, ...]
+    # The recorded lock holder, or None when nobody is supervising this repo. A
+    # holder past the staleness horizon is reported rather than hidden: "crashed
+    # holder, takeover allowed" and "working" are exactly what a client attaches
+    # to find out apart.
+    holder: LockInfo | None = None
+    holder_stale: bool = False
+    # False when the holder is supervising a *different* root — the lock is a
+    # repo singleton, so an attached client can be looking at an unsupervised
+    # session while another one runs.
+    holder_on_this_root: bool = False
+    grant_level: str | None = None
+    token_budget: int | None = None
+    spent_tokens: int = 0
+
+    @property
+    def supervised(self) -> bool:
+        """True when a live supervisor is bound to this session's root."""
+        return self.holder is not None and self.holder_on_this_root and not self.holder_stale
+
+
+def observe(repo_root: Path, root_issue: str) -> Observation:
+    """Snapshot the session a client just attached to — a pure read (design 7.3).
+
+    Layer 3's status half. It is the same derivation the supervisor runs on
+    every tick (:func:`derive_session`), plus the four facts a client cannot get
+    from the tracker alone: who holds the lock and how fresh their heartbeat is,
+    what each in-flight lane last ran, and how much of the grant's token budget
+    (D3) the session has spent.
+
+    Takes no lock and writes nothing, so any number of clients may attach while
+    the supervisor works — and attaching to an *unsupervised* root is a valid
+    read, not an error: ``holder`` is then None.
+    """
+    state = derive_session(repo_root, root_issue)
+    holder = read_holder(repo_root)
+    grant = policy.active_grant(repo_root, root_issue)
+    return Observation(
+        root_issue=state.root_issue,
+        root_status=state.root_status,
+        children_total=len(state.children),
+        children_open=len(state.open_children),
+        done=state.done,
+        lanes=tuple(_lane_view(repo_root, lane) for lane in state.adopted),
+        pending_decisions=decisions.pending(repo_root, root_issue),
+        holder=holder,
+        holder_stale=holder is not None and holder.age_s >= STALE_AFTER_S,
+        holder_on_this_root=holder is not None and holder.root_issue == root_issue,
+        grant_level=grant.level if grant is not None else None,
+        token_budget=grant.token_budget if grant is not None else None,
+        spent_tokens=policy.session_spend_tokens(repo_root, root_issue),
+    )
+
+
+def _lane_view(repo_root: Path, lane: AdoptedLane) -> LaneView:
+    """Widen one adopted lane with its most recent run-record, if it has one."""
+    latest = run_record.latest_record(repo_root, lane.issue_id)
+    return LaneView(
+        issue_id=lane.issue_id,
+        status=lane.status,
+        worktree=lane.binding.name,
+        branch=lane.binding.branch,
+        live=lane.live,
+        last_agent=latest.agent if latest is not None else None,
+        last_outcome=latest.outcome if latest is not None else None,
+        last_run_at=latest.timestamp if latest is not None else None,
+        last_tokens=latest.tokens if latest is not None else None,
+    )
 
 
 # --- Found-info records: cross-lane discoveries via br (design 7.4, D6) ------

@@ -19,7 +19,17 @@ from pathlib import Path
 
 import pytest
 
-from basicly import loop, loop_state, merge, needs_input, policy, runner, supervise
+from basicly import (
+    decisions,
+    loop,
+    loop_state,
+    merge,
+    needs_input,
+    policy,
+    run_record,
+    runner,
+    supervise,
+)
 from basicly.config import PolicyConfig, SizingConfig
 from basicly.supervise import LOCK_FILE, STALE_AFTER_S, LockHeldError, LockLostError
 
@@ -1583,3 +1593,146 @@ def test_heartbeat_thread_keeps_the_lock_fresh_and_captures_loss(tmp_path: Path)
     finally:
         hb.stop()
         hb.join(timeout=5)
+
+
+# --- Client attach: observe (basicly-kjc5.8, design 7.3 layer 3) --------------
+
+
+def _attach_br(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
+    """Route every module observe() reads br through to one fake.
+
+    Each module owns its own ``_run_br`` alias — that alias is the test seam, so
+    the fake has to be installed per module rather than in one shared place.
+    """
+    for module in (supervise, policy, decisions, loop_state):
+        monkeypatch.setattr(module, "_run_br", fake)
+
+
+def _grant_comment(level: str, budget: int | None = None) -> str:
+    """A durable grant marker as ``policy`` records and re-reads it."""
+    text = f"{policy.MARKER} grant level={level}"
+    return text if budget is None else f"{text} budget={budget}"
+
+
+def test_observe_reports_the_holder_lanes_decisions_and_spend(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The attach surface: who supervises, what each lane last ran, queue, grant spend."""
+    br = _FakeBr(
+        {
+            "epic": _issue("epic", children=(("epic.1", "in_progress"), ("epic.2", "closed"))),
+            "epic.1": _issue(
+                "epic.1", "in_progress", external_ref="worktree:epic-1:harness/epic-1"
+            ),
+            "epic.2": _issue("epic.2", "closed"),
+        },
+        comments={"epic": [_grant_comment("L2", 5000)]},
+    )
+    _attach_br(monkeypatch, br)
+    _fake_sessions(monkeypatch, {"epic-1"})
+    run_record.record(
+        tmp_path,
+        "epic.1",
+        run_record.build_record(
+            agent="claude",
+            handoff=False,
+            returncode=0,
+            duration_s=12.5,
+            command=("claude", "-p", "<prompt>"),
+            tokens=1200,
+        ),
+    )
+    queued = decisions.enqueue(tmp_path, "epic.1", "validate", "ship without the migration?")
+    supervise.acquire(tmp_path, "epic:live", "epic")
+
+    view = supervise.observe(tmp_path, "epic")
+
+    assert view.root_issue == "epic"
+    assert (view.children_total, view.children_open) == (2, 1)
+    assert view.done is False
+    assert view.holder is not None
+    assert view.holder.session_id == "epic:live"
+    assert (view.holder_on_this_root, view.holder_stale, view.supervised) == (True, False, True)
+    assert view.lanes == (
+        supervise.LaneView(
+            issue_id="epic.1",
+            status="in_progress",
+            worktree="epic-1",
+            branch="harness/epic-1",
+            live=True,
+            last_agent="claude",
+            last_outcome=run_record.EXECUTED,
+            last_run_at=view.lanes[0].last_run_at,  # stamped at record time
+            last_tokens=1200,
+        ),
+    )
+    assert [item.decision_id for item in view.pending_decisions] == [queued.decision_id]
+    assert (view.grant_level, view.token_budget, view.spent_tokens) == ("L2", 5000, 1200)
+
+
+def test_observe_an_unsupervised_root_is_a_valid_read(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No lock, no grant, no lanes is a state to report — not an error to raise."""
+    br = _FakeBr({"task": _issue("task")})
+    _attach_br(monkeypatch, br)
+    _fake_sessions(monkeypatch, set())
+
+    view = supervise.observe(tmp_path, "task")
+
+    assert view.holder is None
+    assert view.supervised is False
+    assert view.lanes == ()
+    assert view.pending_decisions == ()
+    assert (view.grant_level, view.token_budget, view.spent_tokens) == (None, None, 0)
+
+
+def test_observe_flags_a_stale_holder_as_not_supervising(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A crashed holder still shows up — the client must tell it apart from working."""
+    br = _FakeBr({"epic": _issue("epic")})
+    _attach_br(monkeypatch, br)
+    _fake_sessions(monkeypatch, set())
+    lock = supervise.acquire(tmp_path, "epic:crashed", "epic")
+    _backdate(lock, STALE_AFTER_S + 1)
+
+    view = supervise.observe(tmp_path, "epic")
+
+    assert view.holder is not None
+    assert view.holder.session_id == "epic:crashed"
+    assert (view.holder_stale, view.holder_on_this_root, view.supervised) == (True, True, False)
+
+
+def test_observe_flags_a_holder_bound_to_another_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The lock is a repo singleton: a live holder may be supervising someone else."""
+    br = _FakeBr({"epic": _issue("epic")})
+    _attach_br(monkeypatch, br)
+    _fake_sessions(monkeypatch, set())
+    supervise.acquire(tmp_path, "other:live", "other-epic")
+
+    view = supervise.observe(tmp_path, "epic")
+
+    assert view.holder is not None
+    assert view.holder.root_issue == "other-epic"
+    assert (view.holder_on_this_root, view.holder_stale, view.supervised) == (False, False, False)
+
+
+def test_observe_never_touches_the_lock(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Attaching is a pure read: it must not beat, claim, or age the holder's lock."""
+    br = _FakeBr({"epic": _issue("epic")})
+    _attach_br(monkeypatch, br)
+    _fake_sessions(monkeypatch, set())
+    lock = supervise.acquire(tmp_path, "epic:live", "epic")
+    before = (lock.read_text(encoding="utf-8"), lock.stat().st_mtime)
+
+    supervise.observe(tmp_path, "epic")
+
+    assert (lock.read_text(encoding="utf-8"), lock.stat().st_mtime) == before
+    # And observing an unlocked repo does not create one, so the next supervisor
+    # to start is never refused by its own client.
+    lock.unlink()
+    supervise.observe(tmp_path, "epic")
+    assert not lock.exists()
