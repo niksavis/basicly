@@ -266,6 +266,47 @@ Rejected alternatives:
   unbounded, and authoritative** agent judgment — not exploration. Constraining a capable
   model's method raises cost per landed package (D8, §5).
 
+### D10 — Zero-token operation: deterministic work is a command, not a procedure
+
+Settled 2026-07-25. **Anything fully deterministic must be executable as one command that an
+agent triggers and waits on.** If an agent has to perform a *sequence* of deterministic steps,
+the engine is missing a command — and the tokens, the latency, and the chance of getting a
+mechanical step wrong are all pure waste.
+
+This is not a restatement of R3.1 ("if code can decide it, code decides it") or of §6's "never
+dispatch where code decides". Those govern the *decision* to spend a model at all, and the
+engine already obeys them: merge, verify, sizing, mode selection, and scheduling are all code.
+D10 governs the **operator interface**, which did not obey them. The evidence is the
+2026-07-25 dogfood run: driving one leaf bead end to end took about six agent-issued commands,
+all deterministic, and the driving agent wrote a throwaway shell wrapper mid-session to survive
+the repetition. A harness whose own operation needs a hand-rolled wrapper has misplaced the
+boundary.
+
+The test to apply to any step: *could a script do this without judgment?* If yes, an agent
+performing it is a defect, whether or not the step is "cheap". Three consequences:
+
+- **Ceremony collapses into phase-boundary commands.** One command takes a track from intake to
+  the point where agent work is required; one takes committed work to shipped
+  (`basicly-kjc5.41`).
+- **Mechanical repair is applied, not reported.** A check whose fix is lossless and derivable
+  (formatting) is applied by the engine, not handed back as a failure for an agent to repair
+  (`basicly-kjc5.43`).
+- **Structure is emitted, never guessed.** The template sections a work type requires, and the
+  envelope of a commit message, are derived from state; only the judgment inside them is
+  authored (`basicly-kjc5.42`, `basicly-kjc5.44`).
+
+Rejected alternatives:
+
+- **"Teach the agent the sequence in a skill."** Prose cannot make a deterministic procedure
+  reliable — it re-derives the same steps every session at full token cost and fails silently
+  when an agent misreads it. Skills should carry judgment, not procedure a command could own.
+- **"It is only a few commands."** The measured cost is not the keystrokes: it is the context
+  spent re-deriving the sequence, the round trips lost to mechanical rejections, and the
+  divergence between what each agent does. Cost per landed package (§6) charges all three.
+- **Scripting it outside the engine.** A wrapper in a scratch directory is not distributable and
+  does not survive `basicly install`; the dual-use constraint requires it to be engine code
+  every consumer gets.
+
 ## 3. Components to build
 
 Ordered roughly by dependency; each builds on named existing modules.
@@ -329,6 +370,8 @@ consumer changes survive `basicly install` via the current three-tree ownership 
   class (D4).
 - **Pinned sampling parameters, consensus voting, and prose-free agent output** — three ways to
   chase determinism in the wrong layer; see D9's rejected alternatives.
+- **Teaching a deterministic procedure to an agent in prose** — re-derived every session at full
+  token cost and silently fragile; it belongs in a command (D10).
 
 ## 5. Literature grounding for D8
 
