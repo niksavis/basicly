@@ -1,9 +1,13 @@
 # Parallel Factory Design — Orchestrated Lanes on the Harness Loop
 
-Status: **agreed design, not yet implemented**. Decisions below were settled in a design
-session on 2026-07-22. This document is the implementation reference; `docs/architecture.md`
-remains authoritative for everything already built and absorbs the relevant sections as the
-pieces land.
+Status: **agreed design, largely implemented — see §9 for what has landed.** Decisions D1–D8
+were settled on 2026-07-22; D9 and the D4 amendment on 2026-07-25. This document is the
+implementation reference; `docs/architecture.md` remains authoritative for everything already
+built and absorbs the relevant sections as the pieces land (`basicly-kjc5.13`).
+
+A decision recorded here is not evidence that it is enforced in code. §9 is the reconciliation,
+and every gap named there has an open bead — treat a decision without a landed bead as a
+statement of intent.
 
 ## 1. Vision
 
@@ -19,11 +23,13 @@ Extend the harness loop from a single-track driver into a parallel software fact
 - Sessions run **interactive** (human at checkpoints) or **autonomous** (a decider agent
   resolves delegable decisions under an explicit, auditable grant).
 
-Roughly 70% of this exists today (architecture §12): the phase engine, `br`-native
-dependency graph with deterministic scope-overlap serialization, worktree fan-out with
-runner dispatch, the serial merge function, gates/checkpoints/bounded rework, and the
-needs-input protocol. This design adds the concurrent supervisor, the autonomy model, the
-lane mini-loop, a standing merge queue, and context-budget sizing.
+At the time of writing roughly 70% of this existed (architecture §12): the phase engine,
+`br`-native dependency graph with deterministic scope-overlap serialization, worktree fan-out
+with runner dispatch, the serial merge function, gates/checkpoints/bounded rework, and the
+needs-input protocol. This design added the concurrent supervisor, the autonomy model, the lane
+mini-loop, a standing merge queue, and context-budget sizing — all of which have since landed
+(§9). What remains is the client surface, process budgeting, release automation, and the
+evaluation instruments.
 
 **Dual-use constraint (load-bearing):** the factory is a distributed product consumed by
 other repos via `basicly install`, *and* the process basicly uses to develop itself. Every
@@ -92,6 +98,19 @@ in lieu of a TTY when the level covers the checkpoint and preconditions hold. Gr
 at session end; revocation is a comment. The supervisor enforces the grant's
 `token_budget`: once run-record spend for the session reaches it, no new dispatches or
 delegated decisions occur — the session drops to human-only until re-granted.
+
+> **Not yet enforced where this says it is** (`basicly-kjc5.23`). The spend ceiling is
+> consulted only inside `policy._grant_approval`, i.e. when a checkpoint is approved — never at
+> dispatch admission. So the ceiling does not bound the largest spender it exists to bound. D9
+> requires it at admission.
+>
+> Two further gaps in this ladder, found 2026-07-25: an **L3 ship delegation can never fire for
+> a child** while its session root is open, because `lights_out_violations` requires every
+> required gate green on the *root* and an epic's verify gate is missing until the epic itself
+> closes — so L3 silently degrades to L2 for exactly the multi-lane sessions it was written for
+> (`basicly-kjc5.39`). And R9 (roster) needs a decision class this ladder cannot express: one
+> that **no** level auto-disposes, an exception to the L0–L3 progression rather than a rung in
+> it, so an autonomy grant can never hand the catalog to the decider.
 
 ### D4 — Verify vs. validate
 
@@ -348,11 +367,12 @@ New parameters (all in the overridable sections per the dual-use constraint):
 
 | Section           | Parameter                 | Default            | Rationale                                                              |
 | ----------------- | ------------------------- | ------------------ | ---------------------------------------------------------------------- |
-| `[runner]`        | `max_agent_processes`     | `8`                | Rule `2 × concurrency`: one avg helper per lane; API/RAM-bound, not CPU |
+| `[runner]`        | `max_agent_processes`     | `8`                | Rule `2 × concurrency`: one avg helper per lane; API/RAM-bound, not CPU. **Not yet accounted (`basicly-kjc5.11`)** |
 | `[runner]`        | `runner_timeout`          | `3600` s           | Hard kill per dispatch → decision queue                                 |
-| `[runner]`        | `stall_after`             | `900` s            | No output/commit activity → flagged possibly-stuck to decision queue    |
+| `[runner]`        | `stall_after`             | `900` s            | No output/commit activity → flagged possibly-stuck to decision queue. **Not implemented (`basicly-kjc5.25`); only the 3600 s hard kill exists** |
 | `[runner]`        | `decider`                 | session default    | Runner/agent used for decider invocations (§7.1)                        |
 | `[[runner.agents]]` | `context_window`        | per adapter        | claude 200K (1M where known), codex 400K, copilot 128K, unknown 128K    |
+| `[[runner.agents]]` | `model`               | **unset**          | No built-in spec pins one, so R5's tier economics rest on an unpinned mapping and `BR_MODEL` attribution is usually blank. **`basicly-kjc5.29` makes it required** |
 | `[policy]`        | `autonomy`                | `"L0"`             | Factory autonomy is opt-in; default preserves today's behavior          |
 | `[policy]`        | `decider_max_decisions`   | `50` / session     | Runaway-loop guard for the decider agent                                |
 | `[policy]`        | `notify_command`          | none (disabled)    | Consumer-supplied command fired per new human-required decision (§7.3)  |
@@ -390,6 +410,14 @@ questions **only when the answer is derivable from the intake corpus** — a fac
 the corpus goes to the human even in autonomous mode. This preserves block-don't-guess
 while eliminating stops the human's own documents could answer. The decider runs as a
 `[runner]`-configured agent (`decider` key, defaulting to the session's default runner).
+
+> **Built, but not yet reached autonomously.** `decisions.invoke_decider` exists with the
+> corpus bound, the structured verdict, the abstain path, and fail-closed parsing — but its only
+> caller is `basicly loop decide`, a human-triggered command. The supervisor never invokes it, so
+> "autonomous mode invokes the decider agent per decision" describes an intended wiring, not
+> current behavior: a pending item simply holds the lane (`basicly-kjc5.40`). The corpus bound
+> is also still contract-level — the decider runs with full tool access and could write tracker
+> state directly, which `basicly-kjc5.16` closes with an invocation-time deny-tools overlay.
 
 ### 7.2 Supervisor lock and crash recovery
 
@@ -438,10 +466,29 @@ edge. No new state store.
 
 ### 7.5 Token-usage extraction fallback
 
-Exact per-adapter extraction (claude `-p --output-format json` usage block; codex event
-stream; copilot to be probed) is pinned during component 1 implementation. The design
-rule: when an adapter reports nothing, fall back to a chars/4 transcript estimate flagged
-`estimated: true`, so calibration can down-weight estimated samples.
+The design rule: when an adapter reports nothing, fall back to a chars/4 transcript estimate
+flagged `estimated: true`, so calibration can down-weight estimated samples.
+
+Probed live and pinned during components 1 and `basicly-kjc5.14`:
+
+- **claude** — meters through `--output-format stream-json --verbose` (stream-json is refused
+  under `-p` without `--verbose`). Cumulative tokens and cost come from the terminating `result`
+  event; `context_occupancy` is the *last assistant message's* usage. The plain
+  `-p --output-format json` usage block was rejected: it is session-**cumulative**, so
+  `cache_read` re-counts the whole context every turn. The reader must skip unrecognized lines —
+  the stream can open with a plain-text warning and carries `system` and `rate_limit_event`
+  kinds, and a killed dispatch leaves a truncated tail.
+- **copilot** — reports **no token counts at all** (probed 1.0.73; only `premiumRequests`), so
+  copilot lanes always meter by estimate. Calibration and any cross-arm cost comparison must
+  down-weight them.
+- **codex** — extraction is fixture-based (`turn.completed`, with `cached_input_tokens` excluded
+  as an input subset); the CLI is not on this machine's PATH, so it is unverified live
+  (`basicly-0jiq`, deferred). A mismatch degrades to the estimate rather than failing.
+
+Usage capture is opt-in per call site (`capture_usage`), and deliberately so: it switches some
+adapters' stdout to JSON, which the rubric judge's plain-text line parser cannot read. The judge
+and the catalog review therefore meter by estimate rather than setting the flag
+(`basicly-kjc5.31`).
 
 ### 7.6 Finalize-protocol follow-up placement
 
@@ -477,3 +524,49 @@ left as unrelated backlog:
 Sequencing: neither blocks the engine build order; both run as parallel tracks (and are
 themselves good early dogfooding lanes). The A/B driver waits only for component 1;
 skill evals have no prerequisite.
+
+## 9. Implementation reconciliation
+
+Reviewed against the code 2026-07-25. This section is the honest answer to "is the design
+real?" — a decision above without a landed bead here is intent, not behavior.
+
+**Landed.** Components 1–7 of §3, plus the hardening beads that followed:
+
+| Component | Bead(s) | Note |
+| --- | --- | --- |
+| 1 Run-record token telemetry | `kjc5.1`, `kjc5.14` | claude meters via stream-json; copilot has no counts (§7.5) |
+| 2 Sizing estimator + DoR governor | `kjc5.2` | estimate still drifts across invocations (`kjc5.30`) |
+| 3 Autonomy grant ledger | `kjc5.3` | ledger exists; enforcement gaps below |
+| 4 Decision queue | `kjc5.4`, `kjc5.17` | writes serialized; decider not yet auto-invoked (`kjc5.40`) |
+| 5 Supervisor core / dispatch / routing | `kjc5.5`, `.6`, `.7`, `.18`, `.20` | client commands still open (`kjc5.8`) |
+| 6 Lane mini-loop | `kjc5.9` | |
+| 7 Merge queue v2 | `kjc5.10` | attribution is landing-order dependent (`kjc5.32`) |
+| D4 amendment (validate has teeth) | `kjc5.19`, `kjc5.35` | every rubric now carries a deterministic check, enforced at load; a judged NO enqueues a decision and holds the lane |
+| Portable worktree provisioning | `kjc5.27` | `repo_root` threaded; was resolving from process cwd |
+| Process-tree kill on timeout | `kjc5.15` | |
+| Judge + decider bounded and metered | `kjc5.31` | |
+| Acceptance criteria required on every bead | `kjc5.36` | `br lint` never asks a chore, so the rule lives in the harness gate |
+
+**Open, and named where the decision claims otherwise.** §3 components 8–11 remain
+(`kjc5.11` process budget, `kjc5.12` release automation, `7bur` A/B eval, `4t9z` skill evals),
+plus the client surface (`kjc5.8`), the integration test (`kjc5.21`), the dogfood run
+(`kjc5.22`), and the architecture absorption (`kjc5.13`).
+
+The gaps that matter most, because a reader would otherwise believe the decision is enforced:
+
+- **D3's spend ceiling is not checked at dispatch** — only at checkpoint approval
+  (`kjc5.23`). The largest spender is unbounded.
+- **L3 cannot delegate a child's ship** while the session root is open (`kjc5.39`).
+- **No autonomous path exists**: the supervisor never invokes the decider (`kjc5.40`), and the
+  decider's corpus bound is prose rather than a tool policy (`kjc5.16`).
+- **`stall_after` does not exist** — only the hard kill (`kjc5.25`).
+- **No model is pinned on any adapter**, so R5's tier economics rest on an unpinned mapping
+  and dispatch is not reproducible in its inputs as D9 requires (`kjc5.29`, `kjc5.28`).
+- **`max_agent_processes` is not accounted** (`kjc5.11`).
+- **Coupling attribution depends on intra-pass landing order** (`kjc5.32`), which D9 forbids.
+
+**Dogfooding status.** Every landed component was built through the single-track loop on
+basicly itself, which satisfies §1's constraint for those components — but the *supervisor* path
+(concurrent lanes, autonomy, the standing queue) has never run on real work. `kjc5.22` is that
+test, and it is the honest gate on calling the factory done. Note also that `[policy] autonomy`
+is `L0` in this repo, so the grant ladder has never been exercised here at all.
