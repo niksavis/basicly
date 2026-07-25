@@ -8,10 +8,13 @@ rubric is a catalog source (``*.rubric.yaml``) shaped like the other lightweight
 catalog manifests (``hooks.yaml``/``permissions.yaml`` — imperative validation,
 no JSON schema), selected for a bead by its work type.
 
-Each rubric lists yes/no ``checks``; a check is either ``deterministic`` (a
-command whose exit code answers it — evaluated via the verify runner) or
-``judged`` (an agent answers yes/no with evidence — one prompt dispatched through
-the agent-agnostic runner). :func:`evaluate` runs both kinds and
+Each rubric lists yes/no ``checks``; a check is either ``deterministic`` —
+answered mechanically, either by a ``verify_mode`` (the consumer repo's own
+configured verify checks, the portable form a shipped rubric uses) or by an
+explicit ``command``'s exit code — or ``judged`` (an agent answers yes/no with
+evidence — one prompt dispatched through the agent-agnostic runner). Every
+rubric must carry at least one deterministic check, or its gate could never fail
+(basicly-kjc5.19). :func:`evaluate` runs both kinds and
 :func:`report_gate` records the outcome as an advisory ``rubric`` gate:
 deterministic-first, so a subjective judged verdict is surfaced but never fails
 the gate, and the gate is non-required (advisory) until a consumer promotes it.
@@ -38,6 +41,9 @@ DETERMINISTIC = "deterministic"
 JUDGED = "judged"
 CHECK_KINDS = (DETERMINISTIC, JUDGED)
 
+# Verify modes a deterministic check may delegate to (mirrors [verify] config).
+VERIFY_MODES = ("fast", "full", "staged")
+
 # The advisory gate this framework reports; non-required by default (the gate
 # ledger treats any gate outside [policy] required_gates as advisory), so a
 # consumer promotes it by adding "rubric" to required_gates.
@@ -60,6 +66,11 @@ class RubricCheck:
     # For a deterministic check: the command whose exit code answers the question
     # (0 = yes/pass). Empty for a judged check.
     command: str = ""
+    # The portable alternative to ``command`` for a deterministic check: run the
+    # *consumer's* configured verify checks for this mode. A rubric ships in the
+    # core catalog to every consumer repo, so a hardcoded command would bind the
+    # check to one toolchain; a mode binds it to whatever that repo configured.
+    verify_mode: str = ""
 
 
 @dataclass(frozen=True)
@@ -88,15 +99,28 @@ def _parse_check(entry: object, where: str) -> RubricCheck:
     command = entry.get("command", "")
     if not isinstance(command, str):
         raise ValueError(f"{where} 'command' must be a string")
-    if kind == DETERMINISTIC and not command.strip():
-        raise ValueError(f"{where} is deterministic but has no 'command' to run")
-    if kind == JUDGED and command.strip():
-        raise ValueError(f"{where} is judged, so it must not carry a 'command'")
+    verify_mode = entry.get("verify_mode", "")
+    if not isinstance(verify_mode, str):
+        raise ValueError(f"{where} 'verify_mode' must be a string")
+    command, verify_mode = command.strip(), verify_mode.strip()
+    if kind == DETERMINISTIC:
+        if bool(command) == bool(verify_mode):
+            raise ValueError(
+                f"{where} is deterministic, so it needs exactly one of 'command' or "
+                f"'verify_mode' (got {'both' if command else 'neither'})"
+            )
+        if verify_mode and verify_mode not in VERIFY_MODES:
+            raise ValueError(
+                f"{where} has unknown verify_mode {verify_mode!r}; allowed: {list(VERIFY_MODES)}"
+            )
+    if kind == JUDGED and (command or verify_mode):
+        raise ValueError(f"{where} is judged, so it must not carry a 'command' or a 'verify_mode'")
     return RubricCheck(
         id=entry["id"].strip(),
         question=entry["question"].strip(),
         kind=kind,
-        command=command.strip(),
+        command=command,
+        verify_mode=verify_mode,
     )
 
 
@@ -117,6 +141,14 @@ def _parse_rubric(data: object, path: Path) -> Rubric:
     checks = tuple(
         _parse_check(entry, f"{path}: check[{index}]") for index, entry in enumerate(raw_checks)
     )
+    # A judged-only rubric cannot fail its gate (gate_status is deterministic-first),
+    # so promoting it to required buys nothing and reads as green having proved
+    # nothing — worse than staying advisory. Refuse it at authoring time.
+    if not any(check.kind == DETERMINISTIC for check in checks):
+        raise ValueError(
+            f"{path}: rubric has no deterministic check, so its gate could never fail; "
+            "add one (a 'verify_mode' check is the portable form)"
+        )
     return Rubric(
         id=data["id"].strip(),
         description=data["description"].strip(),
@@ -160,7 +192,14 @@ class CheckVerdict:
 
 
 def evaluate_deterministic(check: RubricCheck, repo_root: Path) -> CheckVerdict:
-    """Answer a deterministic check by running its command via the verify runner."""
+    """Answer a deterministic check: the repo's verify checks, or an explicit command."""
+    if check.verify_mode:
+        report = verify.run_verify(repo_root, check.verify_mode)
+        answer = YES if report.passed else NO
+        detail = "all checks passed" if report.passed else f"failed: {', '.join(report.failures)}"
+        return CheckVerdict(
+            check.id, DETERMINISTIC, answer, f"verify {check.verify_mode}: {detail}"
+        )
     vcheck = VerifyCheck(
         name=check.id, command=tuple(shlex.split(check.command)), modes=frozenset({"full"})
     )
