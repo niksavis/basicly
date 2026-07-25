@@ -1,7 +1,7 @@
 # Specialist Agent Roster — Named Roles Inside the Factory
 
-Status: **proposed design, open for revision. No implementation until `basicly-kjc5` (the
-parallel factory) is complete.** `docs/factory-design.md` is the authoritative factory
+Status: **agreed design — reviewed 2026-07-25 (§7). No implementation until `basicly-kjc5`
+(the parallel factory) is complete.** `docs/factory-design.md` is the authoritative factory
 design and constrains everything below; where this document and the factory design appear
 to disagree, the factory design wins until it is amended. Tracking bead: `basicly-eqp6`.
 
@@ -29,7 +29,7 @@ The three objectives, in the order they conflict:
   concurrently or shrink the work of a slower role downstream.
 
 A roster that adds roles without changing the model tier or the tool policy adds cost and
-latency for the illusion of specialization. §3 is the admission test that keeps that from
+latency for the illusion of specialization. R3 is the admission test that keeps that from
 happening.
 
 ## 2. Decisions
@@ -97,18 +97,20 @@ There is a real tension here that this design must resolve rather than inherit. 
 the `rubric` gate to **required** at lane and session level, but a rubric's judged checks
 cannot fail a gate today — so a lane's validate gate is only as strong as its deterministic
 checks, and with the task/chore rubrics still unwritten (`basicly-kjc5.19`) it currently
-passes having checked nothing. Three options:
+passes having checked nothing.
 
-- **(a) Judged NO fails the lane** once two or more independent judged verdicts agree.
-  Strongest, but hands a model the power to block, and a false NO burns a rework attempt.
-- **(b) Judged NO routes a decision-queue item** (recommended). The lane does not land, but
-  a human — or the Decider under an L2+ grant — disposes of it. Preserves
-  engine-disposes/agent-proposes, makes a disputed verdict visible and attributable, and
-  costs one decision instead of one wasted rework cycle.
-- **(c) Keep judged advisory** and put the teeth in deterministic rubric checks only.
-  Cheapest and weakest; validate stays a formality for anything not mechanically checkable.
+**Decided: a judged NO routes a decision-queue item.** The lane does not land, and a human —
+or the Decider under an L2+ grant — disposes of it. That preserves
+engine-disposes/agent-proposes, makes a disputed verdict visible and attributable, and costs
+one decision instead of one wasted rework cycle. An unsatisfied acceptance criterion is a
+decision, not a test failure.
 
-Recommended: **(b)**. An unsatisfied acceptance criterion is a decision, not a test failure.
+Rejected alternatives:
+
+- **Judged NO fails the lane** once two or more independent judged verdicts agree. Strongest,
+  but it hands a model the power to block, and a false NO burns a rework attempt.
+- **Keep judged advisory**, with the teeth in deterministic rubric checks only. Cheapest and
+  weakest; validate stays a formality for anything not mechanically checkable.
 
 ### R5 — Four model tiers, routed by reliability and priced per landed package
 
@@ -175,6 +177,14 @@ where its artifact exists:
 - `architecture` — maximum tier, at session level over the landed set, not per lane.
   Reviewing architecture inside a lane is reviewing a keyhole.
 
+**Decided: the lenses run on every lane**, not above a diff-size or risk threshold. The
+per-lens skip conditions above are the only gating, and they are deterministic — the
+`security` lens is skipped by inspecting the diff for trust-boundary paths, not by asking a
+model whether the change looks risky. A tuned diff-size or risk threshold is cheaper but
+buys that saving exactly where it is least affordable: a reviewer's failure mode is the miss,
+and a small diff is not a safe diff. If measurement (§6) shows a lens not paying for itself,
+it gets cut wholesale rather than sampled.
+
 No lens runs below the high tier: a reviewer's failure mode is the miss, not the false
 alarm, and an advisory green from a weak reviewer confers confidence no one earned (R5).
 Diverse lenses find failure modes that redundant reviewers cannot. All lens output is
@@ -206,7 +216,9 @@ be a rule an observer could see being followed or broken:
 - Vera refuses to credit an acceptance criterion the diff does not evidence, and never
   infers intent that the criterion does not state.
 - Remo attaches `path:line` evidence to every finding, and never proposes the rewrite.
-- Ivo commits before they report, always referencing their bead.
+- Kai commits before they report, always referencing their bead.
+- Lumi never proposes "be more careful" — every retro proposal is a concrete diff to a named
+  fragment, skill, or hook, or it is not filed.
 
 Personality that does not change behavior is tokens with no return, and anthropomorphism
 has one specific failure mode worth naming: trusting a persona's judgment over a gate. The
@@ -215,18 +227,44 @@ roster is a routing device, not a team of colleagues with standing.
 Prose rule: personas are referred to as **they/them** everywhere, in projected prose and in
 engine output.
 
+### R9 — The retro is a persona, but the harness's own guidance is never agent-writable
+
+Turning a rejection into a concrete fragment/skill change is the highest-leverage work for
+the long-run quality of every lane, and it clears R3: the input (a rejection plus its cause)
+is bounded, the output (a diff to a named catalog source) is checkable, and it is judgment no
+gate can derive. So it earns a persona — **Lumi**, the Retrospector, at the maximum tier,
+read-only over the session record.
+
+**Decided: Lumi proposes, a human disposes — always.** The proposal is enqueued as a decision
+item whose disposition is **human-only at every grant level, including L3**. This is the one
+decision class the Decider may never take, and the reason is structural rather than cautious:
+the catalog is the layer that constrains every future dispatch, so an agent that can amend it
+under an autonomy grant can widen its own constraints, and the next session inherits the
+widening as ground truth. A wrong implementation is caught by a gate and bounces; a wrong
+fragment is *absorbed* — it silently degrades every lane afterwards, and nothing mechanical
+detects it. The asymmetry, not the risk of a bad suggestion, is what keeps the human in this
+loop.
+
+Two consequences. The engine needs a decision class that the grant ladder cannot escalate —
+an exception to the L0-L3 progression rather than a rung in it (`basicly-kjc5.3`'s ledger has
+to express "never auto-dispose" for this class). And Lumi's output must be a diff against
+catalog YAML, not prose advice, so the existing projection gates (`basicly catalog lint`,
+`check`, `skills-check`, `agents-check`) mechanically bound what a human is being asked to
+approve.
+
 ## 3. The roster
 
-Five personas, plus one that lands with release automation. Every one clears R3.
+Six personas, plus one that lands with release automation. Every one clears R3.
 
 | Name | Role | Runs at | Tier | Tools | Output contract |
 | --- | --- | --- | --- | --- | --- |
 | **Dana** | Decomposer | session, and lane sub-task split | maximum | read-only + `br` propose | a child plan: beads, scope globs, acceptance criteria |
-| **Ivo** | Implementer | lane sub-task | high | full write inside the lane worktree | a committed change on the harness branch, tests included |
+| **Kai** | Implementer | lane sub-task | high | full write inside the lane worktree | a committed change on the harness branch, tests included |
 | **Vera** | Validator | lane integrate, session ship | high | read-only | judged rubric verdicts against the acceptance criteria, with evidence |
 | **Remo** | Reviewer (lens: correctness \| security \| architecture) | lane integrate, session | high / maximum by lens | read-only | advisory findings with `path:line` evidence |
 | **Juno** | Decider | session, per decision item | high | read-only, corpus-bounded | `{decision, rationale, confidence, abstain}` |
-| **Cleo** | Curator *(provisional — lands with `basicly-kjc5.12`)* | ship | medium | read + changelog write | curated release notes from the generated changelog |
+| **Lumi** | Retrospector | session close, after a rejection | maximum | read-only | a proposed diff to a named catalog source, as a human-only decision item (R9) |
+| **Tala** | Curator *(provisional — lands with `basicly-kjc5.12`)* | ship | medium | read + changelog write | curated release notes from the generated changelog |
 
 Notes on the roster as proposed versus the request:
 
@@ -235,7 +273,7 @@ Notes on the roster as proposed versus the request:
   adopts and names it rather than inventing it. It was absent from the requested roster and
   is the highest-leverage persona in the system for *speed*, because it is the only one that
   removes human stops.
-- **Ivo was absent from the requested roster too**, and it is where nearly all tokens go.
+- **Kai was absent from the requested roster too**, and it is where nearly all tokens go.
   The Implementer runs at the high tier — the workhorse class — because implementation is
   the output most expensive to be wrong (R5); getting the contract right (one sub-task at
   a time, fresh context, commit before reporting, tests as part of the change) matters
@@ -246,35 +284,66 @@ Notes on the roster as proposed versus the request:
   tokens and the most consequential in the system.
 - **The Scout is cut.** An earlier draft carried a low-tier Scout (then named Sol) as the
   cost play; priced per landed package the play inverts — see §4.
-- **Cleo is provisional** but likely justified: the release process has repeatedly needed the
+- **Lumi is the one persona whose proposals a grant can never auto-approve** (R9). They are
+  also the only persona that runs after the work has already landed, which is why the retro
+  is worth a role at all: it is the only step whose output improves *future* lanes rather
+  than the current one.
+- **Tala is provisional** but likely justified: the release process has repeatedly needed the
   generated changelog reordered and curated by hand, which is judgment with a checkable
   output. They are also the only persona below the high tier: a curation error is visible
   on one read of the notes and cheap to redo, which is the medium-tier criterion (R5).
+- **One Implementer, not one per task class.** Kai's prompt is conditioned on the bead's
+  class (bug / task / chore), but the tool policy and tier do not differ by class, so R3
+  condition 3 is not met for a split — a conditioned prompt is a parameter, not a role. Same
+  reasoning as R6's lenses, applied in the opposite direction: Remo's lenses differ in tier
+  and in the artifact they read, so they split; Kai's classes differ in neither, so they
+  do not.
 
 ### Naming convention
 
 Single given name, no surname; pronoun-neutral; **pronounceable by non-English speakers** —
-short, open syllables, phonetically transparent. A name fails the bar if it needs an
-English-specific vowel, a consonant cluster that is hard outside English, or a reading that
-only English orthography teaches (a silent e). Alliterative with the role id where it
-survives that bar (`decomposer`→Dana, `validator`→Vera, `reviewer`→Remo, `curator`→Cleo);
-`decider`→Juno for *judge*, since D-names were taken. Names are display-only (R2), so this
-slate is the cheapest thing in the design to change.
+short, open syllables, phonetically transparent. Four ways a name fails the bar:
 
-Applying the pronounceability bar to the earlier slate: **Dex** fails (closed syllable
-ending in a /ks/ cluster) and becomes **Dana**; **Rune** fails (its reading depends on the
-English silent e — everywhere else it reads as two syllables) and becomes **Remo**; **Sol**
-goes with the scout role (§4) and needed renaming regardless, since it now collides with a
-GPT model-class name. **Ivo**, **Vera**, and **Cleo** pass — open syllables, pure vowels,
-and /kl/ is among the most widely shared clusters. **Juno** passes with a note: the initial
-letter reads /j/ or /dʒ/ depending on language, but both readings are two open syllables
-anyone can produce — the bar is that everyone can say the name, not that everyone says it
-identically.
+1. it needs an **English-specific vowel** or a reading only English orthography teaches (a
+   silent e);
+2. it needs a **consonant cluster** that is hard outside English;
+3. its **first letter is read differently across languages** in a way that changes the whole
+   name, not just its accent;
+4. it **collides** with a provider's model or class name.
+
+Alliteration with the role id is a tiebreak, not a requirement — it applies only where the
+name already clears the bar (`decomposer`→Dana, `validator`→Vera, `reviewer`→Remo). Names are
+display-only (R2), so this slate is the cheapest thing in the design to change.
+
+One operational rule beyond phonetics: **every name starts with a distinct letter** (D, K, V,
+R, J, L, T). Role attribution is read in logs, `br` comments, and decision items, where a
+one-letter prefix is often all the eye takes in.
+
+How the slate got here, applying the bar to earlier drafts:
+
+- **Dex** → **Dana** (rule 2: closed syllable ending in a /ks/ cluster).
+- **Rune** → **Remo** (rule 1: the reading depends on the English silent e — everywhere else
+  it reads as two syllables).
+- **Sol** → cut with the scout role (§4), and untenable regardless under rule 4: it now names
+  a GPT model class.
+- **Ivo** → **Kai** (rule 3: the initial I reads /i/ in most languages but /aɪ/ in English, so
+  the name splits into "EE-vo" and "EYE-vo" — two different names in the same log). **Kai** is
+  a single open syllable, /k/ and the /ai/ diphthong are near-universal, and it reads
+  identically wherever it is spoken.
+- **Cleo** → **Tala** (rule 3: an initial C before a vowel is read /k/, /s/ or /ts/ depending
+  on the language — the /kl/ cluster was never the problem, the C was). **Tala** is two open
+  syllables of pure /a/, built from two of the most widely shared consonants.
+- **Lumi** (new, R9): two open syllables, pure vowels, /l/ and /m/ universal, and no reading
+  ambiguity in any of the four rules.
+- **Vera**, **Juno**, **Dana**, **Remo** stand. **Juno** passes with a note: its initial reads
+  /j/ or /dʒ/ by language, but both readings are two open syllables anyone can produce and
+  both name the same person — the bar is that everyone can say the name, not that everyone
+  says it identically.
 
 Rejected naming variants: model-suffixed identities (`Vera-7`) leak the model into the
 identity, which R2 makes config; job-title names (`ReviewerBot`) give up the legibility
-that made naming worth doing; and anything that collides with a provider's model or class
-name (Sol vs the GPT `sol` class) — a display name must never read as a model claim.
+that made naming worth doing; and anything that trips rule 4 — a display name must never read
+as a model claim.
 
 ## 4. Roles that must not be personas
 
@@ -285,14 +354,14 @@ Each of these was proposed; each is refused by a factory decision or by the cost
   resolution… A conflict means the decomposition's scope declarations missed a coupling —
   the graph was wrong, not the merge." A merge specialist resolves with neither lane's
   context at the point of weakest verification. The merge queue is code; a conflict bounces
-  back to the owning lane, where **Ivo** re-applies the intent with full context, bounded by
+  back to the owning lane, where **Kai** re-applies the intent with full context, bounded by
   the rework cap. The only sanctioned automation is *deterministic* resolution of mechanical
   classes (lockfiles, generated files) — never semantic ones.
 - **Tester / verifier** — refused by **D4**: verify is deterministic gates (tests, lint,
   type, build). Making a model run the tests adds cost, latency, and nondeterminism to the
   one part of the system that is trustworthy precisely because it is mechanical. The real
-  agent work nearby is *authoring* tests, which belongs to **Ivo** as part of their change,
-  and *diagnosing* a red gate — a triage capability worth adding to Ivo's rework dispatch
+  agent work nearby is *authoring* tests, which belongs to **Kai** as part of their change,
+  and *diagnosing* a red gate — a triage capability worth adding to Kai's rework dispatch
   before it is worth a persona (R3 condition 3).
 - **Scout** — a low-tier pre-reader that localises files and symbols for the implementer.
   Refused by the cost model (R5), not by a factory decision: an earlier draft of this
@@ -300,19 +369,19 @@ Each of these was proposed; each is refused by a factory decision or by the cost
   prices the dispatch instead of the landed package. The scout's output sits upstream of
   the most expensive dispatch, and its characteristic error — a slightly wrong or
   incomplete file list — is exactly what the low tier must never be handed: nothing
-  mechanical detects the omission, and it silently narrows Ivo's view until the damage
+  mechanical detects the omission, and it silently narrows Kai's view until the damage
   surfaces as rework or a bounced merge, making the implementer's job harder rather than
   cheaper. The localisation it would provide is also already supplied: Dana declares scope
   globs per child bead (D8 sizes from them), the dispatch bundle is a deterministic
   function of `br` state (D6), and a high-tier implementer localises competently on their
-  own inside the D8 working-set band. If telemetry ever shows Ivo's self-localisation
+  own inside the D8 working-set band. If telemetry ever shows Kai's self-localisation
   dominating lane spend, a scout can be reintroduced behind a config flag under D7's
   read-only-helper allowance and priced per landed package like everything else (§7,
   question 3). Its old name was untenable anyway: "Sol" now collides with a GPT
   model-class name, which R2's model-free identities cannot tolerate.
 - **Shipper** — mostly deterministic: version bump, changelog generation, tag, push are a
   command (`basicly-kjc5.12`) gated behind an L3 grant with hard preconditions. The judged
-  residue is changelog curation, which is **Cleo**, not a shipper.
+  residue is changelog curation, which is **Tala**, not a shipper.
 - **Conductor** — R1.
 
 ## 5. Mapping to the loop
@@ -322,13 +391,13 @@ Each of these was proposed; each is refused by a factory decision or by the cost
 | intake | record work type, run DoR | none — the human's interactive session is the client |
 | classify | checkpoint + DoR gate | human at L0/L1; **Juno** at L2+ |
 | decompose | sizing governor, scope-disjointness, plan validation, checkpoint | **Dana** proposes |
-| build — sub-task | worktree binding, dispatch, commit-presence probe | **Ivo** |
+| build — sub-task | worktree binding, dispatch, commit-presence probe | **Kai** |
 | build — sub-task verify | `fast` gates | none (D4) |
 | build — lane integrate | `full` gates, rubric gate record | **Vera** validates; **Remo** reviews (correctness, security-when-relevant) |
-| landing | merge queue, dependency order, bounce-back, coupling edges | none (D5); a bounce returns the work to **Ivo** |
+| landing | merge queue, dependency order, bounce-back, coupling edges | none (D5); a bounce returns the work to **Kai** |
 | verify / ship | gate inspection, checkpoint, teardown, close | human; **Juno** at L3 with preconditions green |
-| release | version, changelog, tag | **Cleo** curates |
-| session close | retro prompt | open question 4 |
+| release | version, changelog, tag | **Tala** curates |
+| session close | retro prompt, rejection record | **Lumi** proposes; human disposes at every level (R9) |
 
 Read the table as the answer to "which expert owns which part of the loop": the engine owns
 every step where the right answer is derivable, and a persona owns every step where it is
@@ -336,15 +405,16 @@ not.
 
 ## 6. Cost and speed model
 
-Per landed package, dispatch counts scale like: one Dana plan per lane, one Ivo per
-sub-task, one Vera plus one-to-two Remo lenses per lane, plus Juno per decision. Ivo
-therefore dominates token spend, and the levers in priority order are:
+Per landed package, dispatch counts scale like: one Dana plan per lane, one Kai per
+sub-task, one Vera plus one-to-two Remo lenses per lane, plus Juno per decision, plus at most
+one Lumi per session — and only after a rejection. Kai therefore dominates token spend, and
+the levers in priority order are:
 
 1. **Never dispatch where code decides** (§4) — removes whole classes of spend.
 2. **Keep every dispatch inside the D8 working-set band**, with tight scope declarations
    from Dana, so no dispatch approaches the context ceiling — a clear, right-sized bundle
    is the stated precondition for the reliable tier's one-shot rate (R5).
-3. **Tier reliability discipline** (R5) — the tempting economy is down-tiering Ivo or
+3. **Tier reliability discipline** (R5) — the tempting economy is down-tiering Kai or
    Vera, and it is a false one: a cheap dispatch that buys a rework cycle, an extra Remo
    pass, and a human intervention costs more per landed package than the high-tier
    dispatch it replaced. Down-tier only work whose errors are mechanically caught.
@@ -360,21 +430,29 @@ packages cheaper, the numbers will say so and the tier drops; if a lens does not
 itself, it gets cut. That evaluation, not this document, is what should decide the final
 roster.
 
-## 7. Open questions for the design review
+## 7. Design review — resolved
 
-1. **Judged-verdict authority** — adopt R4 option (b), or (a) / (c)?
-2. **Lens budget** — do the Remo lenses run on every lane, or only above a diff-size or
-   risk threshold? Every-lane is simpler; thresholded is cheaper.
-3. **Scout reintroduction threshold** — §4 cuts the scout. What measured signal would
-   justify bringing it back behind a config flag — a threshold share of Ivo's spend going
-   to self-localisation? And at which tier, given that a scout's errors are not
-   mechanically caught?
-4. **A retro persona?** Turning a rejection into a concrete fragment/skill change is the
-   highest-leverage work for the *long-run* quality of every lane, and today it is the
-   interactive session's job. Worth a persona, or worth keeping human?
-5. **One Implementer or one per task class?** Recommended: one Ivo whose prompt is
-   conditioned on the bead's class, since the tool policy and tier do not differ (R3).
-6. **The name slate** — accept Dana / Ivo / Vera / Remo / Juno / Cleo, or re-cast?
+Reviewed 2026-07-25. Five questions were settled and are folded into the decisions above;
+one is deferred to measurement rather than to opinion.
+
+| Question | Resolution | Recorded in |
+| --- | --- | --- |
+| Judged-verdict authority | a judged NO routes a decision-queue item; it neither fails the lane nor stays advisory | R4 |
+| Lens budget | lenses run on every lane; the only skips are deterministic per-lens conditions | R6 |
+| A retro persona? | yes — Lumi proposes, a human disposes at every grant level | R9 |
+| One Implementer or one per class? | one Kai, prompt conditioned on the bead's class | §3 |
+| The name slate | Dana / **Kai** / Vera / Remo / Juno / **Lumi** / **Tala**; Ivo and Cleo re-cast under naming rule 3 | §3 naming convention |
+
+**Deferred to measurement — scout reintroduction.** §4 cuts the scout on the cost model, not
+on a factory decision, so the cut is falsifiable and the honest answer is a number this repo
+does not have yet. The signal to watch is the share of a lane's tokens that Kai spends
+*before* their first edit — reading and localising rather than changing. There is no defensible
+threshold to write down today: it needs `basicly-7bur`'s cost-per-landed-package baseline
+first, because the only comparison that decides the question is total package cost with and
+without the scout, not the share itself. If it is reintroduced it goes behind a config flag
+under D7's read-only-helper allowance, and its tier is an open sub-question — the cheap tier
+is the whole point of the role and is also what makes its characteristic error undetectable
+(§4). Revisit when 7bur has a baseline; until then the scout stays cut.
 
 ## 8. Implementation shape (not yet decomposed)
 
@@ -386,3 +464,10 @@ projection gates, tool-policy overlays at invocation (the confinement mechanism
 `basicly-kjc5.16` builds for Juno generalises to every read-only role), per-role attribution
 plumbed into `br`, and eval cases per role prompt under `basicly-4t9z` as the regression
 gate for the prose layer.
+
+Two pieces do not fall out of that shape and need their own beads. R4's disposition path is a
+new producer for the decision queue (`basicly-kjc5.4`) — a judged NO has to enqueue an item
+carrying the failing criterion and Vera's evidence, and the lane has to hold rather than land
+or bounce. R9 needs the grant ledger (`basicly-kjc5.3`) to express a decision class that no
+level auto-disposes, which is an exception to the L0-L3 progression rather than a rung in it;
+without it, an L3 grant would quietly hand the catalog to the Decider.
