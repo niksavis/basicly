@@ -48,6 +48,7 @@ Three rules, all from the design:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import secrets
@@ -421,6 +422,19 @@ class FoundInfo:
     # The bead the record was found on (the discovering lane); stamped by the
     # parser — a record being written does not carry it.
     source: str = ""
+
+
+def _folded_ref(info: FoundInfo) -> str:
+    """A stable reference to one folded found-info record, for the run-record.
+
+    ``FoundInfo`` carries no id of its own, so identify it by its source bead,
+    its kind, and a digest of its summary. That is enough to locate the exact
+    comment again when diffing why two attempts on one node saw different
+    prompts (D9) — bundle assembly truncates to the newest few, so without this
+    the difference is unexplainable.
+    """
+    digest = hashlib.sha256(info.summary.encode("utf-8")).hexdigest()[:8]
+    return f"{info.source or '?'}#{info.kind}-{digest}"
 
 
 def record_found_info(repo_root: Path, issue_id: str, info: FoundInfo) -> None:
@@ -839,7 +853,15 @@ def _dispatch_lane(
     cwd = Path(record.worktree_path)
     timeout = load_runner_config(repo_root).runner_timeout
     result = runner.run(spec, bundle.prompt, cwd, capture_usage=True, timeout=timeout)
-    loop.record_run(repo_root, lane.issue_id, spec, result)
+    loop.record_run(
+        repo_root,
+        lane.issue_id,
+        spec,
+        result,
+        prompt=bundle.prompt,
+        phase="lane",
+        folded_info=tuple(_folded_ref(info) for info in bundle.folded),
+    )
     if result.timed_out:
         # Consume any sentinel the killed run managed to write — leaving it
         # would mis-attribute the fact to the *next* dispatch after triage.

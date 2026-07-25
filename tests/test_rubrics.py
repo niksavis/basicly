@@ -259,16 +259,25 @@ def test_evaluate_judged_is_bounded_and_metered(
         seen["capture_usage"] = kwargs.get("capture_usage", False)
         return runner.RunResult("x", (), executed=True, returncode=0, stdout="q1: yes - ok\n")
 
-    recorded: list[str] = []
+    recorded: list[tuple[str, object, str]] = []
+
+    def _record(_repo, issue, _spec, _result, **inputs):
+        recorded.append((issue, inputs.get("phase"), str(inputs.get("prompt"))))
+
     monkeypatch.setattr(runner, "run", _run)
-    monkeypatch.setattr(runner, "record_dispatch", lambda _r, issue, *_a: recorded.append(issue))
+    monkeypatch.setattr(runner, "record_dispatch", _record)
     rubrics.evaluate("i", _judged_rubric(), tmp_path)
 
     assert seen["timeout"] == 3600.0  # the [runner] runner_timeout default
     # capture_usage would flip some adapters' stdout to JSON, which parse_judged
     # cannot read — the record falls back to the flagged estimate instead.
     assert seen["capture_usage"] is False
-    assert recorded == ["i"]
+    # The recorded inputs identify the dispatch (D9): the phase it ran in and the
+    # exact prompt, which the record keeps only as a digest.
+    assert len(recorded) == 1
+    issue, phase, prompt = recorded[0]
+    assert (issue, phase) == ("i", "validate")
+    assert prompt and "q1" in prompt
 
 
 def test_evaluate_judged_timeout_is_unknown_not_no(

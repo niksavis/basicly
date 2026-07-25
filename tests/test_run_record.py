@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from basicly import run_record
 from basicly.run_record import (
@@ -255,3 +258,108 @@ def test_latest_record_tolerates_an_unknown_key(tmp_path: Path) -> None:
     records_file.write_text(json.dumps(data), encoding="utf-8")
     latest = run_record.latest_record(tmp_path, "i")
     assert latest is not None and latest.agent == "claude"
+
+
+# --- shared evidence marker (D11, basicly-kjc5.28) ---------------------------
+
+
+def test_marker_id_is_content_derived_and_attempt_aware() -> None:
+    """Same inputs give the same id; a later attempt gets a distinct one."""
+    first = run_record.marker_id("basicly-x", "abc", "build")
+    assert first == run_record.marker_id("basicly-x", "abc", "build")
+    assert run_record.marker_id("basicly-x", "abc", "build", 2) != first
+    assert run_record.marker_id("basicly-x", "abc", "validate") != first
+    assert first.startswith("basicly-x#run-")
+
+
+def _entry(**kw) -> run_record.RunRecord:
+    return run_record.build_record(
+        agent="claude",
+        handoff=False,
+        returncode=0,
+        duration_s=1.5,
+        command=("claude",),
+        **kw,
+    )
+
+
+def test_record_marker_writes_one_marker_carrying_the_dispatch_inputs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The marker records the inputs that make a dispatch reproducible (D9)."""
+    calls: list[list[str]] = []
+
+    def _try_run_br(_repo, args):
+        calls.append(args)
+        if args[:2] == ["comments", "list"]:
+            return SimpleNamespace(returncode=0, stdout="[]")
+        return SimpleNamespace(returncode=0, stdout="")
+
+    monkeypatch.setattr(run_record.br, "try_run_br", _try_run_br)
+    entry = _entry(
+        model="claude-opus-5",
+        adapter_version="2.1.4",
+        prompt_sha256="deadbeef",
+        phase="build",
+        scope_tokens=8123,
+        forecast_tokens=24000,
+        folded_info=("basicly-y#coupling-1234abcd",),
+        tokens=21300,
+        cost=0.42,
+    )
+    ident = run_record.record_marker(tmp_path, "basicly-x", entry)
+
+    assert ident == run_record.marker_id("basicly-x", "deadbeef", "build")
+    add = next(c for c in calls if c[:2] == ["comments", "add"])
+    header, payload = add[3].split("\n", 1)
+    assert header == f"{run_record.MARKER} id={ident} phase=build"
+    body = json.loads(payload)
+    assert body["adapter_version"] == "2.1.4"
+    assert body["prompt_sha256"] == "deadbeef"
+    assert body["scope_tokens"] == 8123
+    assert body["forecast_tokens"] == 24000
+    assert body["folded_info"] == ["basicly-y#coupling-1234abcd"]
+    assert body["cost"] == 0.42
+    # The prompt itself is never persisted — only its digest.
+    assert "prompt" not in body
+
+
+def test_record_marker_is_idempotent_but_counts_a_real_rerun(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A re-record of the same dispatch takes the next attempt id, never a duplicate."""
+    recorded: list[str] = []
+
+    def _try_run_br(_repo, args):
+        if args[:2] == ["comments", "list"]:
+            texts = [{"text": t} for t in recorded]
+            return SimpleNamespace(returncode=0, stdout=json.dumps(texts))
+        if args[:2] == ["comments", "add"]:
+            recorded.append(args[3])
+        return SimpleNamespace(returncode=0, stdout="")
+
+    monkeypatch.setattr(run_record.br, "try_run_br", _try_run_br)
+    entry = _entry(prompt_sha256="cafe", phase="build")
+    first = run_record.record_marker(tmp_path, "basicly-x", entry)
+    second = run_record.record_marker(tmp_path, "basicly-x", entry)
+
+    assert first != second, "a second run must not collapse into the first"
+    assert second is not None and second.endswith("-2")
+    assert len(recorded) == 2
+
+
+def test_record_marker_skips_when_there_is_no_prompt_digest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without a digest there is nothing to key on, so nothing is written."""
+    monkeypatch.setattr(run_record.br, "try_run_br", lambda *_a: pytest.fail("must not call br"))
+    assert run_record.record_marker(tmp_path, "basicly-x", _entry()) is None
+
+
+def test_record_marker_tolerates_br_being_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Evidence is best-effort: no br means no marker, never an exception."""
+    monkeypatch.setattr(run_record.br, "try_run_br", lambda *_a: None)
+    entry = _entry(prompt_sha256="cafe", phase="build")
+    assert run_record.record_marker(tmp_path, "basicly-x", entry) is None
