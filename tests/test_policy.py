@@ -559,6 +559,70 @@ def test_grant_spend_halt_drops_delegation_to_human(
     assert not policy.checkpoint_approved(tmp_path, "root", "classify")
 
 
+def test_spend_status_is_the_one_halt_predicate(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """D3's ceiling as a value, so approval, dispatch, and delegation share one rule."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    fake.comments.append("[harness-policy] grant level=L2 budget=100")
+    for tokens in (60, 30):
+        run_record.record(
+            tmp_path,
+            "root",
+            run_record.build_record(
+                agent="t",
+                handoff=False,
+                returncode=0,
+                duration_s=1.0,
+                command=("t",),
+                tokens=tokens,
+            ),
+        )
+
+    under = policy.spend_status(tmp_path, "root")
+    assert (under.spent_tokens, under.halted, under.detail) == (90, False, "")
+
+    run_record.record(
+        tmp_path,
+        "root",
+        run_record.build_record(
+            agent="t", handoff=False, returncode=0, duration_s=1.0, command=("t",), tokens=10
+        ),
+    )
+    at_budget = policy.spend_status(tmp_path, "root")
+    assert (at_budget.spent_tokens, at_budget.halted) == (100, True)
+    assert "100/100 tokens" in at_budget.detail
+    assert "until re-granted" in at_budget.detail
+
+
+def test_spend_status_without_a_budget_is_never_halted(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No grant, and an L1 grant with no budget, mean no ceiling - not a halt.
+
+    A halt-by-default would freeze every ungranted (human-driven) session the
+    moment any run recorded a token.
+    """
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    run_record.record(
+        tmp_path,
+        "root",
+        run_record.build_record(
+            agent="t", handoff=False, returncode=0, duration_s=1.0, command=("t",), tokens=999_999
+        ),
+    )
+
+    ungranted = policy.spend_status(tmp_path, "root")
+    assert (ungranted.grant, ungranted.halted) == (None, False)
+
+    fake.comments.append("[harness-policy] grant level=L1")
+    unbudgeted = policy.spend_status(tmp_path, "root")
+    assert unbudgeted.grant is not None
+    assert (unbudgeted.grant.level, unbudgeted.halted) == ("L1", False)
+
+
 def test_session_spend_sums_the_children_too(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

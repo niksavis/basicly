@@ -99,10 +99,13 @@ at session end; revocation is a comment. The supervisor enforces the grant's
 `token_budget`: once run-record spend for the session reaches it, no new dispatches or
 delegated decisions occur — the session drops to human-only until re-granted.
 
-> **Not yet enforced where this says it is** (`basicly-kjc5.23`). The spend ceiling is
-> consulted only inside `policy._grant_approval`, i.e. when a checkpoint is approved — never at
-> dispatch admission. So the ceiling does not bound the largest spender it exists to bound. D9
-> requires it at admission.
+> **Enforced at admission since `basicly-kjc5.23`.** `policy.spend_status` is the single halt
+> predicate, consulted at all three places a grant can spend: delegated checkpoint approval
+> (`policy._grant_approval`), lane dispatch admission (`supervise.dispatch_lanes`), and decider
+> delegation (`decisions.invoke_decider`, so the human's `loop decide` and the supervisor's
+> autonomous pass are bound alike). A halted pass starts nothing new, lets in-flight lanes land,
+> and enqueues an `escalation` item on the session root so the halt is not read as an idle pass.
+> No grant, or an L1 grant with no budget, means no ceiling — not a halt.
 >
 > Two further gaps in this ladder, found 2026-07-25: an **L3 ship delegation can never fire for
 > a child** while its session root is open, because `lights_out_violations` requires every
@@ -633,16 +636,15 @@ real?" — a decision above without a landed bead here is intent, not behavior.
 
 **Open, and named where the decision claims otherwise.** §3 components 8–11 remain
 (`kjc5.11` process budget, `kjc5.12` release automation, `7bur` A/B eval, `4t9z` skill evals),
-plus the client surface (`kjc5.8`), the integration test (`kjc5.21`), the dogfood run
-(`kjc5.22`), and the architecture absorption (`kjc5.13`).
+plus the integration test (`kjc5.21`), the dogfood run (`kjc5.22`), and the architecture
+absorption (`kjc5.13`). The client surface (`kjc5.8`) is built: `loop session` observes and the
+`harness-client` skill drives it.
 
 The gaps that matter most, because a reader would otherwise believe the decision is enforced:
 
-- **D3's spend ceiling is not checked at dispatch** — only at checkpoint approval
-  (`kjc5.23`). The largest spender is unbounded.
 - **L3 cannot delegate a child's ship** while the session root is open (`kjc5.39`).
-- **No autonomous path exists**: the supervisor never invokes the decider (`kjc5.40`), and the
-  decider's corpus bound is prose rather than a tool policy (`kjc5.16`).
+- **No autonomous path exists**: the supervisor never invokes the decider (`kjc5.40`). The
+  decider is at least confined at invocation now (`kjc5.16`) and halts on the spend ceiling.
 - **`stall_after` does not exist** — only the hard kill (`kjc5.25`).
 - **No model is pinned on any adapter**, so R5's tier economics rest on an unpinned mapping
   and dispatch is not reproducible in its inputs as D9 requires (`kjc5.29`, `kjc5.28`).

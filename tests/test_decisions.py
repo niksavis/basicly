@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import decisions, loop_state, runner
+from basicly import decisions, loop_state, policy, run_record, runner
 from basicly.config import PolicyConfig, RunnerConfig
 
 
@@ -50,6 +50,9 @@ class _FakeBr:
 def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
     monkeypatch.setattr(decisions, "_run_br", fake)
     monkeypatch.setattr(loop_state, "_run_br", fake)
+    # invoke_decider consults D3's spend ceiling (basicly-kjc5.23), and policy
+    # reads br through its own alias — each module's alias is the seam.
+    monkeypatch.setattr(policy, "_run_br", fake)
 
 
 def _no_notify(monkeypatch: pytest.MonkeyPatch) -> list:
@@ -363,6 +366,58 @@ def test_decider_dispatches_a_confined_spec_not_the_selected_one(
 
     assert len(dispatched) == 1
     assert dispatched[0].deny_tools, "the decider was dispatched unconfined"
+
+
+def test_decider_abstains_when_the_grant_budget_is_spent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """D3 halts delegated decisions on the same ceiling as dispatch (basicly-kjc5.23).
+
+    The halt lives at this entry point rather than at each caller, so a human's
+    ``loop decide`` and the supervisor's autonomous pass are bound by one rule.
+    """
+    fake, item = _decider_setup(monkeypatch, tmp_path, '{"decision": "postgres", "abstain": false}')
+    fake.comments.setdefault("epic", []).append("[harness-policy] grant level=L2 budget=100")
+    run_record.record(
+        tmp_path,
+        "epic",
+        run_record.build_record(
+            agent="t", handoff=False, returncode=0, duration_s=1.0, command=("t",), tokens=100
+        ),
+    )
+    monkeypatch.setattr(
+        decisions.runner,
+        "run",
+        lambda *_a, **_k: pytest.fail("must not delegate past the spend ceiling"),
+    )
+
+    outcome = decisions.invoke_decider(tmp_path, item.decision_id, "epic")
+
+    assert isinstance(outcome, decisions.DeciderVerdict)
+    assert outcome.abstain is True
+    assert "token_budget spent" in outcome.rationale
+    stored = decisions.get(tmp_path, item.decision_id)
+    assert stored is not None and stored.pending  # still the human's to answer
+
+
+def test_decider_runs_while_the_grant_is_inside_its_budget(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A funded grant still delegates - the ceiling must not disable the decider."""
+    fake, item = _decider_setup(monkeypatch, tmp_path, '{"decision": "postgres", "abstain": false}')
+    fake.comments.setdefault("epic", []).append("[harness-policy] grant level=L2 budget=100")
+    run_record.record(
+        tmp_path,
+        "epic",
+        run_record.build_record(
+            agent="t", handoff=False, returncode=0, duration_s=1.0, command=("t",), tokens=99
+        ),
+    )
+
+    outcome = decisions.invoke_decider(tmp_path, item.decision_id, "epic")
+
+    assert isinstance(outcome, decisions.DecisionItem)
+    assert outcome.answer == "postgres"
 
 
 def test_decider_abstains_when_the_runner_cannot_be_confined(

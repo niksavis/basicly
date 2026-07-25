@@ -2315,19 +2315,14 @@ def _cmd_loop_supervise(args: argparse.Namespace) -> int:
             if state.done:
                 print("done:     yes")
                 return 0
-            outcomes = supervise.dispatch_lanes(repo_root, state, beat=hb.check, skip=carried)
-            if carried:
-                print(f"carried:  {', '.join(sorted(carried))} - landing without a new dispatch")
-            if not outcomes and not carried:
-                print("dispatch: (no ready build-phase lanes)")
-            for outcome in outcomes:
-                occupancy = (
-                    f", context {outcome.occupancy} tokens" if outcome.occupancy is not None else ""
-                )
-                print(
-                    f"dispatch: {outcome.issue_id} via {outcome.runner_name} - "
-                    f"{outcome.detail}{occupancy}"
-                )
+            # Read the spend ceiling once per pass and hand it to the dispatcher,
+            # so the halt is printed with its numbers instead of looking like an
+            # idle pass (basicly-kjc5.23).
+            admission = policy.spend_status(repo_root, args.issue)
+            outcomes = supervise.dispatch_lanes(
+                repo_root, state, beat=hb.check, skip=carried, admission=admission
+            )
+            _print_dispatch(outcomes, carried=carried, admission=admission)
             routed = supervise.route_outcomes(
                 repo_root, state, outcomes, beat=hb.check, carried=carried
             )
@@ -2351,6 +2346,28 @@ def _cmd_loop_supervise(args: argparse.Namespace) -> int:
     finally:
         hb.stop()
         supervise.release(lock, session_id)
+
+
+def _print_dispatch(
+    outcomes: tuple[supervise.LaneOutcome, ...],
+    *,
+    carried: frozenset[str],
+    admission: policy.SpendStatus,
+) -> None:
+    """Report one pass's dispatch: carried lanes, a spend halt, or each runner."""
+    if carried:
+        print(f"carried:  {', '.join(sorted(carried))} - landing without a new dispatch")
+    if admission.halted:
+        # Distinct from an idle pass on purpose: the lanes were ready and the
+        # ceiling stopped them (basicly-kjc5.23).
+        print(f"halted:   {admission.detail}")
+    elif not outcomes and not carried:
+        print("dispatch: (no ready build-phase lanes)")
+    for outcome in outcomes:
+        occupancy = f", context {outcome.occupancy} tokens" if outcome.occupancy is not None else ""
+        print(
+            f"dispatch: {outcome.issue_id} via {outcome.runner_name} - {outcome.detail}{occupancy}"
+        )
 
 
 def _print_session(state: supervise.SessionState) -> None:

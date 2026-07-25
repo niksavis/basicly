@@ -544,10 +544,8 @@ def _grant_approval(
         # session, so approving a foreign issue would also check the wrong one).
         return None
     config = load_policy_config(repo_root)
-    if grant.token_budget is not None:
-        spent = session_spend_tokens(repo_root, root_issue, ids=session_ids)
-        if spent >= grant.token_budget:
-            return None  # spend halt: human-only until re-granted
+    if spend_status(repo_root, root_issue, grant=grant, ids=session_ids).halted:
+        return None  # spend halt: human-only until re-granted
     if name == "ship":
         violations = lights_out_violations(repo_root, root_issue, config, ids=session_ids)
         if violations:
@@ -582,6 +580,56 @@ def _session_issue_ids(repo_root: Path, root_issue: str) -> tuple[str, ...]:
                 seen[str(dep["id"])] = None
                 queue.append(str(dep["id"]))
     return tuple(seen)
+
+
+@dataclass(frozen=True)
+class SpendStatus:
+    """The session's standing against its grant's D3 token ceiling."""
+
+    grant: Grant | None
+    spent_tokens: int
+    # True only when a grant with a budget has had that budget reached. No grant
+    # (or an L1 grant with no budget) means there is no ceiling to enforce, not
+    # that everything is halted — the session is simply human-driven already.
+    halted: bool
+    detail: str = ""
+
+
+def spend_status(
+    repo_root: Path,
+    root_issue: str,
+    *,
+    grant: Grant | None = None,
+    ids: tuple[str, ...] | None = None,
+) -> SpendStatus:
+    """Where the session stands against D3's spend ceiling — the one halt predicate.
+
+    D3: once run-record spend for the session reaches the grant's
+    ``token_budget``, *no new dispatches or delegated decisions occur* and the
+    session drops to human-only until re-granted. Three call sites enforce that
+    one rule — delegated checkpoint approval (:func:`_grant_approval`), lane
+    dispatch admission, and decider delegation — so the comparison itself lives
+    here rather than being re-derived at each of them.
+
+    *grant* and *ids* let a caller that already read them skip the re-walk.
+    """
+    if grant is None:
+        grant = active_grant(repo_root, root_issue)
+    spent = session_spend_tokens(repo_root, root_issue, ids=ids)
+    if grant is None or grant.token_budget is None:
+        return SpendStatus(grant=grant, spent_tokens=spent, halted=False)
+    budget = grant.token_budget
+    if spent < budget:
+        return SpendStatus(grant=grant, spent_tokens=spent, halted=False)
+    return SpendStatus(
+        grant=grant,
+        spent_tokens=spent,
+        halted=True,
+        detail=(
+            f"{grant.level} grant token_budget spent ({spent}/{budget} tokens); "
+            "the session is human-only until re-granted"
+        ),
+    )
 
 
 def session_spend_tokens(

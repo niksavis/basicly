@@ -596,6 +596,13 @@ def _patch_readiness(
     monkeypatch.setattr(supervise.decisions, "has_pending", lambda _r, _i: False)
     monkeypatch.setattr(supervise, "_phase_of", lambda _r, _i: "build")
     monkeypatch.setattr(supervise, "_has_subtasks", lambda _r, _i: False)
+    # Ungranted sessions have no ceiling to enforce, which is the state these
+    # tests are about; the halt itself is pinned separately, below.
+    monkeypatch.setattr(supervise.policy, "spend_status", lambda *_a, **_k: _UNGRANTED)
+
+
+# No grant, so no D3 ceiling: dispatch admission is not what is under test here.
+_UNGRANTED = policy.SpendStatus(grant=None, spent_tokens=0, halted=False)
 
 
 def test_ready_lanes_filters_blocked_and_dead_and_orders_by_rank(
@@ -1736,3 +1743,106 @@ def test_observe_never_touches_the_lock(monkeypatch: pytest.MonkeyPatch, tmp_pat
     lock.unlink()
     supervise.observe(tmp_path, "epic")
     assert not lock.exists()
+
+
+# --- D3 dispatch admission: the spend ceiling (basicly-kjc5.23) ---------------
+
+
+def _granted(level: str, budget: int | None, spent: int) -> policy.SpendStatus:
+    """A SpendStatus as policy.spend_status derives it for this grant and spend."""
+    halted = budget is not None and spent >= budget
+    return policy.SpendStatus(
+        grant=policy.Grant(level=level, token_budget=budget),
+        spent_tokens=spent,
+        halted=halted,
+        detail=f"{level} grant token_budget spent ({spent}/{budget} tokens)" if halted else "",
+    )
+
+
+def test_dispatch_lanes_halts_when_the_grant_budget_is_spent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D3: a spent budget starts no new lane runner, however ready the lanes are."""
+    _patch_readiness(monkeypatch, ranked=((1, "epic.1"),))
+    monkeypatch.setattr(supervise.runner, "select_runner", lambda *_a, **_k: _MANUAL_SPEC)
+    monkeypatch.setattr(
+        supervise,
+        "_dispatch_lane",
+        lambda *_a, **_k: pytest.fail("must not dispatch past the spend ceiling"),
+    )
+    queued: list[tuple[str, str]] = []
+
+    def fake_enqueue(
+        _repo: Path, issue: str, kind: str, question: str, detail: str = "", **_kw: object
+    ) -> decisions.DecisionItem:
+        queued.append((issue, kind))
+        return decisions.DecisionItem("epic#h", issue, kind, question, detail)
+
+    monkeypatch.setattr(supervise.decisions, "enqueue", fake_enqueue)
+
+    outcomes = supervise.dispatch_lanes(
+        Path(), _session(_lane("epic.1")), admission=_granted("L2", 5000, 5000)
+    )
+
+    assert outcomes == ()
+    # And the halt is surfaced, or the pass reads as an ordinary idle one.
+    assert queued == [("epic", "escalation")]
+
+
+def test_dispatch_lanes_admits_a_grant_still_inside_its_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Under budget is not halted — the ceiling must not stop a funded session."""
+    _patch_readiness(monkeypatch, ranked=((1, "epic.1"),))
+    monkeypatch.setattr(supervise.runner, "select_runner", lambda *_a, **_k: _MANUAL_SPEC)
+    monkeypatch.setattr(
+        supervise, "_dispatch_lane", lambda _r, _s, lane, *_a: _outcome(lane.issue_id)
+    )
+    monkeypatch.setattr(
+        supervise.decisions,
+        "enqueue",
+        lambda *_a, **_k: pytest.fail("nothing to escalate while inside the budget"),
+    )
+
+    outcomes = supervise.dispatch_lanes(
+        Path(), _session(_lane("epic.1")), admission=_granted("L2", 5000, 4999)
+    )
+
+    assert [o.issue_id for o in outcomes] == ["epic.1"]
+
+
+def test_dispatch_lanes_reads_the_ceiling_when_no_admission_is_passed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Omitting *admission* must re-read it, or a caller bypasses D3 by forgetting."""
+    _patch_readiness(monkeypatch, ranked=((1, "epic.1"),))
+    monkeypatch.setattr(supervise.runner, "select_runner", lambda *_a, **_k: _MANUAL_SPEC)
+    monkeypatch.setattr(
+        supervise.policy, "spend_status", lambda *_a, **_k: _granted("L3", 100, 100)
+    )
+    monkeypatch.setattr(
+        supervise,
+        "_dispatch_lane",
+        lambda *_a, **_k: pytest.fail("must not dispatch past the spend ceiling"),
+    )
+    monkeypatch.setattr(supervise.decisions, "enqueue", lambda *_a, **_k: None)
+
+    assert supervise.dispatch_lanes(Path(), _session(_lane("epic.1"))) == ()
+
+
+def test_dispatch_halt_is_one_idempotent_queue_item(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Every halted pass re-surfaces the same item, not a fresh notification each time."""
+    br = _FakeBr({"epic": _issue("epic")})
+    monkeypatch.setattr(decisions, "_run_br", br)
+    monkeypatch.setattr(loop_state, "_run_br", br)
+    monkeypatch.setattr(decisions, "_notify", lambda *_a, **_k: None)
+    admission = _granted("L2", 5000, 6000)
+
+    first = supervise.record_dispatch_halt(tmp_path, "epic", admission)
+    second = supervise.record_dispatch_halt(tmp_path, "epic", admission)
+
+    assert first.decision_id == second.decision_id
+    assert first.kind == "escalation"
+    assert len(br.comments["epic"]) == 1
