@@ -42,8 +42,31 @@ staged_suffix = ".py"
 [[verify.checks]]
 name = "pyright"
 command = ["pyright"]
-modes = ["fast", "full", "staged"]
+modes = ["fast", "staged"]
 staged_suffix = ".py"
+
+# Cross-platform type resolution (basicly-kjc5.55). pyright resolves per platform
+# and ignores skipif markers, so a POSIX-only name (os.getpgid, signal.SIGKILL)
+# type-checks clean on Linux and fails only on the Windows CI runner — which is
+# how basicly-kjc5.54 shipped. The host-only `pyright` above stays for fast
+# feedback; `full` checks every supported platform explicitly so the defect is
+# caught before the push instead of by CI. One run each, ~3s per non-host
+# platform. There is no single-invocation form: `--pythonplatform All` is not a
+# valid value (pyright exits 4).
+[[verify.checks]]
+name = "pyright-linux"
+command = ["pyright", "--pythonplatform", "Linux"]
+modes = ["full"]
+
+[[verify.checks]]
+name = "pyright-darwin"
+command = ["pyright", "--pythonplatform", "Darwin"]
+modes = ["full"]
+
+[[verify.checks]]
+name = "pyright-windows"
+command = ["pyright", "--pythonplatform", "Windows"]
+modes = ["full"]
 
 [[verify.checks]]
 name = "bandit"
