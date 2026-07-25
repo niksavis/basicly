@@ -361,6 +361,28 @@ def test_none_choice_behaves_like_auto() -> None:
     assert spec.name == "claude"
 
 
+def test_auto_resolves_ambiently_to_the_handoff_on_every_machine() -> None:
+    """`auto` resolves the same here as on CI — through the real PATH, not a stub.
+
+    This is the check behind the conftest fixture (basicly-kjc5.55), and the only
+    one in the suite that would answer differently on a developer box: with
+    ``claude`` on PATH and the fixture removed, ``auto`` picks the claude adapter
+    and this fails. Its neighbours above pin the same logic through an injected
+    ``which``, which by construction cannot notice the machine at all — that is
+    exactly how the local/CI split stayed invisible long enough to hide
+    basicly-kjc5.53.
+    """
+    spec = runner.select_runner(BUILTIN_RUNNERS, "auto")
+    assert spec.name == MANUAL_RUNNER
+    assert spec.kind == HANDOFF
+    # And the dispatch path taken from that resolution: a handoff runs nothing, so
+    # anything downstream reading a run result must cope with executed=False.
+    result = runner.run(spec, "do the work", Path())
+    assert result.handoff is True
+    assert result.executed is False
+    assert result.returncode is None
+
+
 # --- capability probe (basicly-bveo) ----------------------------------------
 
 
