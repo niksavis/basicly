@@ -1045,6 +1045,11 @@ DECIDER_SLOTS = 1
 # config re-exports it, because config imports this module and not the reverse.
 DEFAULT_MAX_AGENT_PROCESSES = 8
 
+# Seconds of no observed activity before a dispatch is flagged possibly-stuck
+# (`[runner] stall_after`, design section 6). Distinct from `runner_timeout`
+# (3600s): this one only raises a flag, it never kills.
+DEFAULT_STALL_AFTER = 900.0
+
 
 class BudgetExhaustedError(RuntimeError):
     """A helper slot was asked for from a budget that reserves none for helpers."""
@@ -1168,3 +1173,93 @@ def reset_process_budget() -> None:
     """Drop the configured budget (tests; never called in a real session)."""
     with _BUDGET_LOCK:
         _BUDGET.clear()
+
+
+# --- Stall detection: flag a wedged dispatch without killing it ---------------
+
+
+class StallWatchdog:
+    """Flag a dispatch that shows no activity for *after* seconds (design section 6).
+
+    A *flag*, not a kill. ``runner_timeout`` stays the only terminal action, so a
+    slow-but-working run is never cut short — this exists so a human learns about
+    a wedge in minutes instead of at the hard kill an hour later, while the wedged
+    lane is still holding a concurrency slot.
+
+    Activity is whatever *probe* returns: any change in that fingerprint counts as
+    progress and restarts the clock. The supervisor fingerprints the lane's commits
+    and worktree dirtiness, which is the real progress signal for a lane — it has
+    to commit its work — and is far cheaper to sample than the agent's stdout,
+    which the runner does not read incrementally.
+
+    *on_stall* fires **once** per dispatch: the point is one queue item per wedged
+    lane, not one per poll.
+    """
+
+    def __init__(
+        self,
+        after: float,
+        probe: Callable[[], str],
+        on_stall: Callable[[], object],
+        *,
+        poll: float | None = None,
+    ) -> None:
+        """Watch for *after* seconds of an unchanged *probe*, then call *on_stall* once."""
+        self.after = after
+        self._probe = probe
+        self._on_stall = on_stall
+        # Sample several times per window so the flag lands close to the deadline
+        # rather than up to a whole window late.
+        self._poll = poll if poll is not None else max(0.01, after / 4)
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self.flagged = False
+
+    def _fingerprint(self) -> str:
+        """The probe's reading, or a sentinel when probing itself fails.
+
+        A probe that raises (a locked index, a vanished worktree) must never take
+        down the dispatch it is only observing.
+        """
+        try:
+            return self._probe()
+        except OSError, RuntimeError, ValueError:
+            return "<probe-failed>"
+
+    def _watch(self) -> None:
+        last = self._fingerprint()
+        idle = 0.0
+        while not self._stop.wait(self._poll):
+            current = self._fingerprint()
+            if current != last:
+                last, idle = current, 0.0
+                continue
+            idle += self._poll
+            if idle < self.after or self.flagged:
+                continue
+            self.flagged = True
+            # Contained: a failing notifier must not kill the watcher thread and
+            # must never propagate into the dispatch.
+            with contextlib.suppress(Exception):
+                self._on_stall()
+
+    def start(self) -> None:
+        """Begin watching in a daemon thread."""
+        self._thread = threading.Thread(target=self._watch, daemon=True)
+        self._thread.start()
+
+    def stop(self, timeout: float = 5.0) -> None:
+        """Stop watching and join the thread."""
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout)
+            self._thread = None
+
+    def __enter__(self) -> StallWatchdog:
+        """Start watching; the dispatch runs inside the block."""
+        self.start()
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        """Stop watching, however the dispatch ended."""
+        self.stop()

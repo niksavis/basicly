@@ -8,6 +8,7 @@ falls back to the manual handoff runner, which never shells out.
 
 from __future__ import annotations
 
+import itertools
 import json
 import os
 import signal
@@ -1407,3 +1408,79 @@ def test_every_engine_dispatch_site_declares_a_class() -> None:
             if ".slot(runner." not in window:
                 unbudgeted.append(f"{path.name}:{number + 1}: {line.strip()}")
     assert not unbudgeted, "unbudgeted agent dispatch site(s): " + "; ".join(unbudgeted)
+
+
+# --- Stall detection (component 6 mechanic, basicly-kjc5.25) ------------------
+
+
+def test_stall_watchdog_flags_an_unchanging_dispatch_exactly_once() -> None:
+    """One queue item per wedged lane, not one per poll."""
+    fired: list[float] = []
+    with runner.StallWatchdog(
+        0.15, probe=lambda: "frozen", on_stall=lambda: fired.append(time.monotonic()), poll=0.02
+    ):
+        time.sleep(0.7)  # several windows' worth
+    assert len(fired) == 1
+
+
+def test_stall_watchdog_stays_quiet_while_the_lane_makes_progress() -> None:
+    """Any change in the fingerprint restarts the clock, so slow work is not a stall."""
+    counter = itertools.count()
+    fired: list[int] = []
+    with runner.StallWatchdog(
+        0.15, probe=lambda: str(next(counter)), on_stall=lambda: fired.append(1), poll=0.02
+    ):
+        time.sleep(0.7)
+    assert fired == []
+
+
+def test_stall_watchdog_flags_a_lane_that_goes_quiet_after_working() -> None:
+    """The real shape of a wedge: progress, then nothing."""
+    moving = {"value": "a", "frozen": False}
+    fired: list[int] = []
+
+    def probe() -> str:
+        if moving["frozen"]:
+            return moving["value"]
+        moving["value"] += "a"
+        return moving["value"]
+
+    with runner.StallWatchdog(
+        0.15, probe=probe, on_stall=lambda: fired.append(1), poll=0.02
+    ) as watchdog:
+        time.sleep(0.25)
+        assert fired == [], "working lane flagged"
+        moving["frozen"] = True
+        time.sleep(0.5)
+        assert watchdog.flagged is True
+    assert fired == [1]
+
+
+def test_stall_watchdog_never_lets_a_failing_probe_or_notifier_escape() -> None:
+    """It only observes a dispatch; it must never be able to break one."""
+
+    def exploding_probe() -> str:
+        raise OSError("worktree vanished")
+
+    def exploding_notifier() -> None:
+        raise RuntimeError("tracker down")
+
+    # A probe that always raises reads as unchanged, so it still reaches the
+    # notifier — and the notifier's own failure is contained too.
+    with runner.StallWatchdog(
+        0.1, probe=exploding_probe, on_stall=exploding_notifier, poll=0.02
+    ) as watchdog:
+        time.sleep(0.4)
+    assert watchdog.flagged is True  # it tried, and survived
+
+
+def test_stall_watchdog_stops_cleanly_before_it_ever_fires() -> None:
+    """A dispatch that finishes quickly leaves no watcher thread behind."""
+    fired: list[int] = []
+    watchdog = runner.StallWatchdog(
+        60.0, probe=lambda: "x", on_stall=lambda: fired.append(1), poll=0.02
+    )
+    with watchdog:
+        time.sleep(0.05)
+    assert fired == []
+    assert watchdog.flagged is False

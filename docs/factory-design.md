@@ -452,7 +452,7 @@ New parameters (all in the overridable sections per the dual-use constraint):
 | ----------------- | ------------------------- | ------------------ | ---------------------------------------------------------------------- |
 | `[runner]`        | `max_agent_processes`     | `8`                | Rule `2 × concurrency`: one avg helper per lane; API/RAM-bound, not CPU                  |
 | `[runner]`        | `runner_timeout`          | `3600` s           | Hard kill per dispatch → decision queue                                 |
-| `[runner]`        | `stall_after`             | `900` s            | No output/commit activity → flagged possibly-stuck to decision queue. **Not implemented (`basicly-kjc5.25`); only the 3600 s hard kill exists** |
+| `[runner]`        | `stall_after`             | `900` s            | No commit/file activity → flagged possibly-stuck to the decision queue; a flag, never a kill |
 | `[runner]`        | `decider`                 | session default    | Runner/agent used for decider invocations (§7.1)                        |
 | `[[runner.agents]]` | `context_window`        | per adapter        | claude 200K (1M where known), codex 400K, copilot 128K, unknown 128K    |
 | `[[runner.agents]]` | `model`               | **unset**          | No built-in spec pins one, so R5's tier economics rest on an unpinned mapping and `BR_MODEL` attribution is usually blank. **`basicly-kjc5.29` makes it required** |
@@ -468,6 +468,14 @@ New parameters (all in the overridable sections per the dual-use constraint):
 | `[policy.sizing]` | `calibration_window`      | `50` runs          | Rolling window per task class                                           |
 | `[policy]`        | `max_subtasks_per_lane`   | `10`               | Sanity bound; sizing governor is the real limit                         |
 | `[verify]`        | level→mode mapping        | sub-task `fast`; lane `full`+validate; ship `full`+validate; merge re-verify `full` | D4: deterministic by change class |
+
+Stall detection (`basicly-kjc5.25`) is `runner.StallWatchdog`, started around each lane
+dispatch: it samples `supervise.lane_activity` — a digest of the lane's HEAD plus its dirty
+tree — and enqueues one `stall` decision item when that fingerprint holds still for
+`stall_after`. It never kills; `runner_timeout` stays the only terminal action, so a
+slow-but-working run is not cut short. Commits and file writes are the sampled signal rather
+than agent stdout, because the runner drains its pipes only after the process is down
+(`basicly-kjc5.15`) and so has nothing incremental to read.
 
 Process-budget reservation classes (fixed semantics, not config): `concurrency` slots
 reserved for lane runners, 1 slot reserved for the decider (prevents decision-queue
@@ -659,7 +667,6 @@ absorption (`kjc5.13`). The client surface (`kjc5.8`) is built: `loop session` o
 
 The gaps that matter most, because a reader would otherwise believe the decision is enforced:
 
-- **`stall_after` does not exist** — only the hard kill (`kjc5.25`).
 - **No model is pinned on any adapter**, so R5's tier economics rest on an unpinned mapping
   and dispatch is not reproducible in its inputs as D9 requires (`kjc5.29`, `kjc5.28`).
 - **Coupling attribution depends on intra-pass landing order** (`kjc5.32`), which D9 forbids.
