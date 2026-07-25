@@ -104,6 +104,20 @@ delegated decisions occur — the session drops to human-only until re-granted.
   `[policy]`. Skipping is never an agent's judgment call. Supervisor-level verify/validate
   are never skippable; sub-task-level runs in `fast` mode rather than being skipped.
 
+**Amended 2026-07-25 — what a judged NO does.** Promoting `rubric` to required is only as
+strong as the checks the rubric carries, and a *judged* check cannot fail a gate (D9: no agent
+output records a required gate). Two consequences, which together make the roster's R4
+operative rather than aspirational:
+
+- **Every shipped rubric must carry at least one deterministic check**, so a required validate
+  gate can fail on evidence. A rubric with only judged checks passes having proved nothing,
+  which is worse than an advisory gate because it reads as green.
+- **A judged NO routes a decision-queue item**, carrying the failing criterion and the
+  validator's evidence. The lane holds — it neither lands nor bounces — until a human, or the
+  decider under an L2+ grant, disposes of it. An unsatisfied acceptance criterion is a
+  decision, not a test failure: failing the lane on a judged verdict would hand a model
+  blocking power and spend a rework attempt on a possible false NO.
+
 ### D5 — Merge queue: standing consumer, conflicts bounce back to the lane
 
 The one-shot `merge_queue` function becomes a standing consumer inside the supervisor:
@@ -187,6 +201,52 @@ by the factory's own telemetry. Bootstrap note: the governor (component 2) does 
 when this plan itself is first decomposed — the first decomposition applies the band
 manually.
 
+### D9 — Determinism is a property of the engine and of dispatch inputs, never of agent output
+
+Settled 2026-07-25. The loop must be **deterministic in the engine and reproducible in its
+inputs**, and it must leave the agent's *method* free. Three clauses:
+
+- **The engine is deterministic.** Every engine step is a pure, idempotent function of `br`
+  state plus pinned configuration, with a total order over every set it iterates, and no
+  dependence on wall-clock, randomness, or completion order for any outcome that outlives the
+  pass. Re-entering a step either blocks or produces a new `br` signal — never a different
+  answer to the same question.
+- **Dispatch inputs are reproducible; dispatch outputs are recorded.** Every dispatch persists
+  the resolved runner, the resolved model, the adapter version, a hash of the exact prompt, and
+  the ids of the found-info records folded into it. Two runs of the same node are then
+  *diffable*: when attempt 2 behaves differently from attempt 1, the record says whether the
+  input changed.
+- **Agent output is never required to be repeatable.** It is required to be schema-valid,
+  fail-closed, non-authoritative, timed out, and metered. An unparseable output is an
+  abstention, not a pass (§7.1 already does this for the decider). Where the *repeatability* of
+  a judgment actually matters, the judgment moves into code — a deterministic rubric check, a
+  deterministic lens skip — not into a more tightly worded prompt.
+
+**Latitude is granted by the rejector, not by the prompt.** An agent gets freedom of method
+exactly where the answer is not derivable from recorded state **and** a deterministic rejector
+catches a wrong exploration cheaply. Implementation has the strongest rejectors in the system
+(commit-presence probe, `fast`/`full` verify, rebase + re-verify + merge-tree, bounded rework),
+so implementation gets the widest latitude: a wrong exploration there costs one bounded cycle
+and nothing else. Where no such rejector exists, the correct move is to **build one, or route
+the item to a human** — never to constrain the agent's method and hope. This is the same
+economics as D8 and R5: what buys reliability is a clear, right-sized, reproducible *input*,
+not a narrower method.
+
+Rejected alternatives:
+
+- **Pin temperature and seed and call the loop deterministic.** No shipped coding CLI exposes a
+  seed; tool use over a live tree and vendor-side model updates defeat it regardless, so the
+  claim would be false in the very run-record that is supposed to be evidence.
+- **Majority or consensus voting across N dispatches per judgment.** Triples spend on exactly
+  the judgments D8/R5 route to a reliable tier instead, and buys agreement rather than
+  correctness. It is also the blocking-model shape R4 rejects.
+- **Forbid free-form prose output.** A reviewer's `path:line` findings and a retro's catalog
+  diff *are* the product; schematizing them into enums destroys the evidence they exist to
+  carry. Structure the *envelope*, not the finding.
+- **"Reduce agent experimentation."** Refused as a goal. What is reduced is **unrecorded,
+  unbounded, and authoritative** agent judgment — not exploration. Constraining a capable
+  model's method raises cost per landed package (D8, §5).
+
 ## 3. Components to build
 
 Ordered roughly by dependency; each builds on named existing modules.
@@ -248,6 +308,8 @@ consumer changes survive `basicly install` via the current three-tree ownership 
   fresh-at-boundaries (D6).
 - **Agent-discretion gate skipping** — replaced by deterministic mode selection per change
   class (D4).
+- **Pinned sampling parameters, consensus voting, and prose-free agent output** — three ways to
+  chase determinism in the wrong layer; see D9's rejected alternatives.
 
 ## 5. Literature grounding for D8
 

@@ -99,7 +99,9 @@ cannot fail a gate today — so a lane's validate gate is only as strong as its 
 checks, and with the task/chore rubrics still unwritten (`basicly-kjc5.19`) it currently
 passes having checked nothing.
 
-**Decided: a judged NO routes a decision-queue item.** The lane does not land, and a human —
+**Decided: a judged NO routes a decision-queue item**, and D4 was amended on 2026-07-25 to
+provide the disposition path, so this is a standing decision rather than a proposal the factory
+design does not know about. The lane does not land, and a human —
 or the Decider under an L2+ grant — disposes of it. That preserves
 engine-disposes/agent-proposes, makes a disputed verdict visible and attributable, and costs
 one decision instead of one wasted rework cycle. An unsatisfied acceptance criterion is a
