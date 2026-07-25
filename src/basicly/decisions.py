@@ -38,7 +38,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import loop_state, runner
+from . import loop_state, policy, runner
 from .br import run_br as _run_br
 from .config import (
     PolicyConfig,
@@ -489,6 +489,13 @@ def invoke_decider(  # noqa: PLR0911 — one return per distinct drop-to-human c
             0.0,
             abstain=True,
         )
+    # D3 halts *delegated decisions* on the same spend ceiling as dispatch
+    # (basicly-kjc5.23), and this is the delegation entry point for every caller —
+    # the human's `loop decide` and the supervisor's autonomous pass alike — so the
+    # check belongs here rather than being re-derived at each of them.
+    spend = policy.spend_status(repo_root, root_issue)
+    if spend.halted:
+        return DeciderVerdict("", spend.detail, 0.0, abstain=True)
     runner_config = load_runner_config(repo_root)
     selected = runner.select_runner(
         runner_config.specs, runner_config.decider or runner_config.default

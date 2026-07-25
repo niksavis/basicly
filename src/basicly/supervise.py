@@ -869,13 +869,33 @@ def _has_subtasks(repo_root: Path, issue_id: str) -> bool:
     )
 
 
-def dispatch_lanes(
+def record_dispatch_halt(
+    repo_root: Path, root_issue: str, admission: policy.SpendStatus
+) -> decisions.DecisionItem:
+    """Surface a spend halt to the human as a queue item on the session root.
+
+    D3's halt is silent otherwise: the pass would simply stop dispatching and a
+    client would read it as "no ready lanes". The item is idempotent per
+    (issue, kind, question), so every subsequent halted pass re-enqueues the
+    same one rather than piling up notifications.
+    """
+    return decisions.enqueue(
+        repo_root,
+        root_issue,
+        "escalation",
+        "re-grant autonomy or continue by hand: the session's token budget is spent",
+        admission.detail,
+    )
+
+
+def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped input
     repo_root: Path,
     session: SessionState,
     *,
     beat: Callable[[], None] | None = None,
     cap: int | None = None,
     skip: frozenset[str] = frozenset(),
+    admission: policy.SpendStatus | None = None,
 ) -> tuple[LaneOutcome, ...]:
     """Dispatch the session's ready lanes concurrently, honoring the cap.
 
@@ -888,10 +908,25 @@ def dispatch_lanes(
     and the successor supervisor re-adopts the lanes from ``br`` (recovery is
     derivation). Outcomes return in dispatch (scheduler-rank) order.
 
+    Dispatch is *admitted* only while the session is inside D3's spend ceiling
+    (basicly-kjc5.23). A halted session starts nothing new — in-flight lanes
+    still land through the routing layer — and the halt is enqueued on the root
+    so the human learns that re-granting is required. *admission* lets a caller
+    that already read the status pass it in; omitting it re-reads here, so no
+    dispatch path can bypass the ceiling by forgetting to check.
+
     *skip* excludes lanes the caller lands without a runner (basicly-kjc5.18).
     """
     lanes = ready_lanes(repo_root, session, skip=skip)
     if not lanes:
+        return ()
+    # Readiness first, then admission: the queue item records a *refusal*, so a
+    # halted session with nothing ready has nothing to escalate yet. It escalates
+    # on the first pass where the ceiling actually stops ready work.
+    if admission is None:
+        admission = policy.spend_status(repo_root, session.root_issue)
+    if admission.halted:
+        record_dispatch_halt(repo_root, session.root_issue, admission)
         return ()
     if cap is None:
         cap = load_worktree_config(repo_root).concurrency
