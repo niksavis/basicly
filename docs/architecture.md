@@ -528,7 +528,7 @@ the former `init`/`update` staging pair, `uninstall`, and the read-only
 `hooks-build`/`hooks-check`, `permissions-build`/`permissions-check`, `usage`,
 plus the contributor authoring group
 `catalog` with the verbs `lint`, `verify`, `review`, `new`, `list`), and harness
-(`worktree`, `verify`, `policy`, `decompose`, `loop`, `runner`, `rubric`). The authoring
+(`worktree`, `verify`, `commit`, `policy`, `decompose`, `loop`, `runner`, `rubric`). The authoring
 and inspection verbs moved under `basicly catalog <verb>` (a breaking change:
 the old flat `list`/`skills-list`/`agents-list`/`*-new`/`catalog-lint`/`catalog-verify`/`review`
 names were removed, not aliased).
@@ -571,6 +571,7 @@ names were removed, not aliased).
 | `basicly policy ...`                        | DoR/gate/rework/checkpoint checks; `policy checkpoint --approve` needs an interactive TTY or a one-time `--confirm` code (§12.2)             |
 | `basicly decompose`                         | Turns a feature into child `br` issues + a computed dependency graph (§12.2)                                                                 |
 | `basicly loop status\|advance\|run <issue>` | Drives an issue through the harness loop; a blocked step exits non-zero and names the input it needs (§12.2)                                 |
+| `basicly commit <description>`              | Assembles the conventional-commit envelope from engine state — type from the bead's work class (refined by an all-docs/all-test/all-ci diff), scope from the staged paths weighted by churn, trailing bead id from the branch's worktree binding — and commits the staged change with it. Only the description (and an optional `--body`) is authored; a description the charset rules reject names the offending character before any commit is attempted. `--type`/`--scope`/`--issue` override a derived part, `--dry-run` prints the message only. The `commit-msg`/`beads-commit-msg` hooks stay the gate (design D10, `basicly-kjc5.42`) |
 | `basicly runner list\|dry-run\|run`         | Agent-agnostic headless runner adapters (claude/codex/copilot + `manual` handoff); the loop build phase auto-dispatches through them (§12.8) |
 
 The formerly planned `basicly conflicts`/`basicly overrides` reporting views are
