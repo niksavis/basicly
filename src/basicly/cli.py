@@ -2501,8 +2501,9 @@ def _cmd_worktree_merge_queue(args: argparse.Namespace) -> int:
 
 def _cmd_worktree_create(args: argparse.Namespace) -> int:
     """Create + provision a worktree, honoring the configured base and cap."""
-    config = load_worktree_config(_repo_root())
-    active = len(worktree.list_sessions())
+    repo_root = _repo_root()
+    config = load_worktree_config(repo_root)
+    active = len(worktree.list_sessions(repo_root))
     if active >= config.concurrency:
         print(
             f"Error: worktree concurrency cap reached ({active}/{config.concurrency}). "
@@ -2510,19 +2511,19 @@ def _cmd_worktree_create(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 1
-    worktree.create(args.name, base=args.base or config.base_branch)
+    worktree.create(args.name, base=args.base or config.base_branch, repo_root=repo_root)
     return 0
 
 
 def _cmd_worktree_cleanup(args: argparse.Namespace) -> int:
     """Remove a worktree and delete its merged branch."""
-    worktree.cleanup(args.name, force=args.force)
+    worktree.cleanup(args.name, force=args.force, repo_root=_repo_root())
     return 0
 
 
 def _cmd_worktree_list(_args: argparse.Namespace) -> int:
     """List worktree sessions, marking any whose directory has vanished."""
-    sessions = worktree.list_sessions()
+    sessions = worktree.list_sessions(_repo_root())
     if not sessions:
         print("No worktree sessions.")
         return 0

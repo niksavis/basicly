@@ -26,10 +26,8 @@ def _git(cwd: Path, *args: str) -> None:
     )
 
 
-@pytest.fixture
-def git_repo(tmp_path: Path) -> Path:
-    """A real git repo (named ``repo``) with one commit on ``main``."""
-    repo = tmp_path / "repo"
+def _init_repo(repo: Path) -> Path:
+    """Initialize *repo* as a git repo with one commit on ``main``."""
     repo.mkdir()
     _git(repo, "init", "-b", "main")
     _git(repo, "config", "user.name", "Test")
@@ -38,6 +36,18 @@ def git_repo(tmp_path: Path) -> Path:
     _git(repo, "add", "README.md")
     _git(repo, "commit", "-m", "init")
     return repo
+
+
+@pytest.fixture
+def git_repo(tmp_path: Path) -> Path:
+    """A real git repo (named ``repo``) with one commit on ``main``."""
+    return _init_repo(tmp_path / "repo")
+
+
+@pytest.fixture
+def other_repo(tmp_path: Path) -> Path:
+    """A second repo, standing in for the checkout the process happens to be in."""
+    return _init_repo(tmp_path / "elsewhere")
 
 
 @pytest.fixture(autouse=True)
@@ -225,6 +235,44 @@ def test_create_rejects_duplicate_name(git_repo: Path, monkeypatch: pytest.Monke
     worktree.create("dup")
     with pytest.raises(SystemExit, match="already exists"):
         worktree.create("dup")
+
+
+def test_create_provisions_against_repo_root_not_process_cwd(
+    git_repo: Path, other_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``create`` provisions into *repo_root*, never the repo the process stands in.
+
+    Regression: a driver run from another checkout provisioned its worktrees and
+    ``harness/*`` branches there, silently ignoring the repo root it was handed.
+    """
+    monkeypatch.chdir(other_repo)
+    session = worktree.create("lane-1", repo_root=git_repo)
+
+    assert session.path == git_repo.parent / "repo.worktrees" / "lane-1"
+    assert session.path.is_dir()
+    assert _branches(git_repo) == {"main", "harness/lane-1"}
+    assert [s.name for s in worktree.list_sessions(git_repo)] == ["lane-1"]
+
+    # The repo the process was standing in gained nothing.
+    assert _branches(other_repo) == {"main"}
+    assert set(worktree.registered_worktrees(other_repo)) == {other_repo}
+    assert not (other_repo.parent / "elsewhere.worktrees").exists()
+    assert worktree.list_sessions(other_repo) == []
+
+
+def test_cleanup_targets_repo_root_not_process_cwd(
+    git_repo: Path, other_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``cleanup`` tears down in *repo_root* while the process stands elsewhere."""
+    monkeypatch.chdir(other_repo)
+    session = worktree.create("lane-1", repo_root=git_repo)
+
+    worktree.cleanup("lane-1", repo_root=git_repo)
+
+    assert not session.path.exists()
+    assert _branches(git_repo) == {"main"}
+    assert worktree.load_session("lane-1", git_repo) is None
+    assert _branches(other_repo) == {"main"}
 
 
 def _branches(repo: Path) -> set[str]:

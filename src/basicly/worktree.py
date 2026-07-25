@@ -217,7 +217,7 @@ def _probe_redirect(name: str, worktree: Path, base_beads: Path) -> None:
         )
 
 
-def create(name: str, base: str | None = None) -> Session:
+def create(name: str, base: str | None = None, repo_root: Path | str | None = None) -> Session:
     """Create and provision a sibling worktree for *name*.
 
     Adds ``<repo>.worktrees/<name>`` on a new ``harness/<name>`` branch off
@@ -230,24 +230,31 @@ def create(name: str, base: str | None = None) -> Session:
     ``issues.jsonl`` is deliberately left untouched; overwriting it with the
     base working-tree version would leave the worktree permanently dirty and
     block the landing rebase.
+
+    *repo_root* names the repository to operate on, like every other engine
+    module; it defaults to the process cwd, which is where the CLI always runs.
+    Passing it is what keeps a caller that stands somewhere else — a driver, an
+    integration test against a fixture repo — from provisioning into whichever
+    checkout the process happens to be in.
     """
-    base = base or current_branch()
+    base = base or current_branch(repo_root)
     branch = f"{BRANCH_PREFIX}{name}"
-    worktree = worktrees_root() / name
+    worktree = worktrees_root(repo_root) / name
 
     if worktree.exists():
         raise SystemExit(f"worktree path already exists: {worktree}")
-    if load_session(name) is not None:
+    if load_session(name, repo_root) is not None:
         raise SystemExit(f"a worktree named {name!r} already exists; clean it up first")
 
-    base_head = git(["rev-parse", "--short", base]).stdout.strip()
+    base_head = git(["rev-parse", "--short", base], cwd=repo_root).stdout.strip()
     worktree.parent.mkdir(parents=True, exist_ok=True)
-    git(["worktree", "add", str(worktree), "-b", branch, base])
+    git(["worktree", "add", str(worktree), "-b", branch, base], cwd=repo_root)
 
     # Tracker sharing first (before the slow dep install), so a br that cannot
     # follow the redirect fails the provisioning fast.
     notes: list[str] = []
-    base_beads = main_checkout() / ".beads"
+    main = main_checkout(repo_root)
+    base_beads = main / ".beads"
     if base_beads.is_dir():
         target_beads = worktree / ".beads"
         target_beads.mkdir(parents=True, exist_ok=True)
@@ -259,7 +266,7 @@ def create(name: str, base: str | None = None) -> Session:
 
     notes += provision_deps(worktree)
 
-    env_local = main_checkout() / ".env.local"
+    env_local = main / ".env.local"
     if env_local.exists():
         (worktree / ".env.local").write_text(
             env_local.read_text(encoding="utf-8"), encoding="utf-8"
@@ -276,7 +283,7 @@ def create(name: str, base: str | None = None) -> Session:
         worktree_path=str(worktree),
         created_at=now_iso(),
     )
-    save_session(session)
+    save_session(session, repo_root)
 
     print(f"Created worktree {name!r}")
     print(f"  path:   {worktree}")
@@ -304,7 +311,9 @@ def registered_worktrees(cwd: Path | str | None = None) -> dict[Path, str | None
     return out
 
 
-def _resolve_worktree(name: str, main: Path) -> tuple[Path, str | None]:
+def _resolve_worktree(
+    name: str, main: Path, repo_root: Path | str | None = None
+) -> tuple[Path, str | None]:
     """Return ``(worktree_path, branch)`` for *name*.
 
     Prefers the session record; falls back to ``git worktree list`` so a
@@ -312,7 +321,7 @@ def _resolve_worktree(name: str, main: Path) -> tuple[Path, str | None]:
     still be cleaned up safely. *name* matches a registered path or its
     directory basename.
     """
-    session = load_session(name)
+    session = load_session(name, repo_root)
     if session is not None:
         return session.path, session.branch
 
@@ -357,7 +366,7 @@ def _uncommitted_changes(worktree: Path) -> str:
     return "\n".join(lines)
 
 
-def cleanup(name: str, *, force: bool = False) -> None:
+def cleanup(name: str, *, force: bool = False, repo_root: Path | str | None = None) -> None:
     """Remove worktree *name* and delete its merged branch.
 
     Removes the worktree directory (``git worktree remove --force`` — the
@@ -374,9 +383,12 @@ def cleanup(name: str, *, force: bool = False) -> None:
     common ``.git/hooks`` dir, so the shims installed during provisioning can
     embed the worktree venv's pre-commit path, which dangles once that venv is
     deleted (every base-checkout commit would fail until hooks are reinstalled).
+
+    *repo_root* selects the repository, as in :func:`create`; it defaults to the
+    process cwd.
     """
-    main = main_checkout()
-    worktree, branch = _resolve_worktree(name, main)
+    main = main_checkout(repo_root)
+    worktree, branch = _resolve_worktree(name, main, repo_root)
 
     if worktree.exists():
         pending = _uncommitted_changes(worktree)
@@ -413,7 +425,9 @@ def cleanup(name: str, *, force: bool = False) -> None:
     # Keep the record when an unmerged branch survives, so `cleanup --force`
     # can still find and reclaim it once the worktree dir is already gone.
     if branch_removed:
-        session_file(name).unlink(missing_ok=True)
+        # Resolve the record against the primary checkout, not *repo_root*: the
+        # worktree dir is gone by now, so a cwd pointing into it cannot answer.
+        session_file(name, main).unlink(missing_ok=True)
         print(f"Cleaned up worktree {name!r} (worktree + branch + metadata).")
     else:
         print(

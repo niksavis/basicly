@@ -154,9 +154,10 @@ def _ready_leaf(at, monkeypatch: pytest.MonkeyPatch) -> dict:
     monkeypatch.setattr(policy, "definition_of_ready", lambda *_a: DoRResult(True, ()))
     created = {}
 
-    def _create(name: str, base: str | None = None) -> Session:
+    def _create(name: str, base: str | None = None, repo_root: Path | str | None = None) -> Session:
         created["n"] = name
         created["base"] = base
+        created["repo_root"] = repo_root
         return _session(name)
 
     monkeypatch.setattr(worktree, "create", _create)
@@ -873,7 +874,7 @@ def test_ensure_child_worktrees_publishes_claims_first(
 def test_classify_leaf_forks_from_the_configured_base(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The loop passes [worktree].base_branch to create, like the CLI path."""
+    """The loop passes [worktree].base_branch and its repo root to create."""
     created = _ready_leaf(at, monkeypatch)
     _pin_runner(monkeypatch, "manual")
     monkeypatch.setattr(
@@ -883,6 +884,9 @@ def test_classify_leaf_forks_from_the_configured_base(
     )
     _advance(tmp_path)
     assert created["base"] == "main"
+    # The node's repo root, not the process cwd: provisioning must follow the
+    # repository the advance was handed (basicly-kjc5.27).
+    assert created["repo_root"] == tmp_path
 
 
 # --- lane mini-loop (basicly-kjc5.9, factory design D4/D7) ------------------

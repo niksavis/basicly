@@ -274,7 +274,7 @@ def _on_ship(ctx: _Ctx) -> AdvanceResult:
                 "into its base — the build->verify landing was skipped (was the verify gate "
                 "recorded out-of-band?); re-run the build->verify advance to land it first",
             )
-        worktree.cleanup(binding.name, force=False)
+        worktree.cleanup(binding.name, force=False, repo_root=ctx.repo_root)
     _run_br(ctx.repo_root, ["close", ctx.issue_id, "--reason", "shipped by the harness loop"])
     committed = merge.commit_tracker_state(
         ctx.repo_root, ctx.issue_id, action="close the shipped track"
@@ -297,7 +297,7 @@ def _start_build_leaf(ctx: _Ctx) -> AdvanceResult:
     agent committed.
     """
     wt_config = load_worktree_config(ctx.repo_root)
-    active = len(worktree.list_sessions())
+    active = len(worktree.list_sessions(ctx.repo_root))
     if active >= wt_config.concurrency:
         return _blocked(
             ctx,
@@ -311,7 +311,7 @@ def _start_build_leaf(ctx: _Ctx) -> AdvanceResult:
         ctx.repo_root, ctx.issue_id, action="record the claim before provisioning"
     )
     name = _worktree_name(ctx.issue_id)
-    session = worktree.create(name, base=wt_config.base_branch)
+    session = worktree.create(name, base=wt_config.base_branch, repo_root=ctx.repo_root)
     _bind_worktree(ctx, name, session.branch)
     return _dispatch_runner(ctx, name, Path(session.worktree_path))
 
@@ -702,7 +702,7 @@ def _build_children(ctx: _Ctx) -> AdvanceResult:
         return _blocked(ctx, f"building: {len(still_open)} child track(s) still open")
 
     items = [(_worktree_name(cid), cid) for cid, _ in children]
-    live = {session.name for session in worktree.list_sessions()}
+    live = {session.name for session in worktree.list_sessions(ctx.repo_root)}
     pending = [(name, cid) for name, cid in items if name in live]
     if pending:
         results = merge.merge_queue(
@@ -769,7 +769,7 @@ def _rework(
 def _ensure_child_worktrees(ctx: _Ctx, children: list[tuple[str, str]]) -> None:
     """Provision a worktree for each dependency-unblocked, still-open child, up to the cap."""
     wt_config = load_worktree_config(ctx.repo_root)
-    existing = {session.name for session in worktree.list_sessions()}
+    existing = {session.name for session in worktree.list_sessions(ctx.repo_root)}
     room = wt_config.concurrency - len(existing)
     ready = {node.issue_id for node in loop_state.ready_ranked(ctx.repo_root)}
     # Publish the fan-out claims the same way a leaf publishes its own.
@@ -782,7 +782,7 @@ def _ensure_child_worktrees(ctx: _Ctx, children: list[tuple[str, str]]) -> None:
         name = _worktree_name(cid)
         if status == "closed" or name in existing or cid not in ready:
             continue
-        session = worktree.create(name, base=wt_config.base_branch)
+        session = worktree.create(name, base=wt_config.base_branch, repo_root=ctx.repo_root)
         _bind_worktree(ctx, name, session.branch, issue_id=cid)
         existing.add(name)
         room -= 1
