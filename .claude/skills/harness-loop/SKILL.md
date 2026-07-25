@@ -68,22 +68,45 @@ choice is purely about who is watching the remote:
   races that still slip through are caught by `br scheduler
   --stale-claim-hours` and `br coordination`.
 
-## Advancing the loop
+## Advancing the loop — one command per phase boundary
 
-Each step is one resumable transition: the engine re-reads the phase from `br`,
-does the phase's action (or blocks waiting on an input, a checkpoint, or a gate),
-and returns the outcome. A blocked step exits non-zero so scripts and CI can
-branch on it.
+Drive the loop with `basicly loop run`. It is one command per *boundary*, not per
+step: it advances until it needs an agent or a human, resolving every checkpoint
+it is authorized to resolve on the way. A leaf bead therefore takes two
+invocations, one at each boundary, plus one relay of the confirm code each:
+
+```sh
+basicly loop run <issue> --work-type task   # intake -> awaiting the agent's work
+#   ... do the coding in the worktree and COMMIT it on the harness branch ...
+basicly loop run <issue>                    # land, verify, ship, close
+```
+
+Without an interactive terminal it stops once per boundary with a one-time
+confirm code and reprints the whole command to re-run — relay the code on *that*
+command, not on a bare `policy checkpoint --approve`, or the checkpoint is
+approved and the loop stays parked. A covering autonomy grant (`basicly policy
+grant`, with `--root <epic>` on the run) resolves the checkpoint with no relay at
+all. Nothing here widens what may be self-approved: a TTY, a covering grant, or a
+relayed code are still the only three ways past a checkpoint.
 
 ```sh
 basicly loop advance <issue> [--work-type T] [--children plan.toml] [--mode M]
-basicly loop run <issue> [flags]   # advance repeatedly until it blocks or finishes
 ```
+
+`loop advance` is the single-step form — reach for it to inspect one transition
+in isolation, or when a boundary stopped somewhere you want to step through by
+hand. Both exit non-zero when the track stopped short, so scripts and CI can
+branch on it.
 
 The flags are the agent-supplied inputs a phase needs; pass the one the current
 phase is asking for (`basicly loop status`/`advance` names it as `needs input`).
 
 ## Phases and what each one needs
+
+A reference for what each phase is waiting on — not a checklist to type out.
+`loop run` performs every engine step in this table itself; what it cannot do is
+the agent's own column: propose the work type, write the child plan, do the
+coding, and commit it.
 
 | Phase | What advances it | Command |
 | --- | --- | --- |

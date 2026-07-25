@@ -4,7 +4,7 @@ The CLI is a thin driver over the loop state machine (onb.6.3) and the resumable
 state model (onb.6.1): it maps the shared agent-input flags onto a
 :class:`loop.Inputs`, prints the transition/state, and turns ``blocked`` into a
 non-zero exit so scripts and CI can branch on it. These tests fake ``advance`` /
-``run_until_blocked`` / ``read_node_state`` and assert only that wiring.
+``run_ceremony`` / ``read_node_state`` and assert only that wiring.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from __future__ import annotations
 import pytest
 
 from basicly import cli, decompose, loop, loop_state
+from basicly.config import CHECKPOINTS
 from basicly.decompose import ChildSpec
 from basicly.loop import AdvanceResult, Inputs
 from basicly.loop_state import NodeState, RankedNode, WorktreeBinding
@@ -93,28 +94,107 @@ def test_loop_advance_exits_nonzero_when_blocked(
 # --- run --------------------------------------------------------------------
 
 
-def test_loop_run_prints_each_step_and_blocks(
+def _ceremony(monkeypatch: pytest.MonkeyPatch, result: loop.CeremonyResult) -> dict[str, object]:
+    """Make ``loop.run_ceremony`` return *result*, capturing the kwargs it got."""
+    seen: dict[str, object] = {}
+
+    def fake_ceremony(_repo: object, issue: str, **kwargs: object) -> loop.CeremonyResult:
+        seen.update(kwargs, issue=issue)
+        return result
+
+    monkeypatch.setattr(loop, "run_ceremony", fake_ceremony)
+    return seen
+
+
+def test_loop_run_prints_each_step_and_the_approvals_between_them(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Run prints every step and exits non-zero when the last one is blocked."""
-    steps = [
-        AdvanceResult("basicly-x", "intake", "classify", "classified"),
-        AdvanceResult("basicly-x", "classify", "classify", "blocked", "awaiting approval"),
-    ]
-    monkeypatch.setattr(loop, "run_until_blocked", lambda *_a, **_k: steps)
+    """Run renders the boundary in order: steps, with each approval where it happened."""
+    _ceremony(
+        monkeypatch,
+        loop.CeremonyResult((
+            AdvanceResult("basicly-x", "intake", "intake", "blocked", checkpoint="classify"),
+            loop.CheckpointApproval("classify", "delegated under L2 grant"),
+            AdvanceResult("basicly-x", "classify", "classify", "blocked", "awaiting the agent"),
+        )),
+    )
 
     assert cli.main(["loop", "run", "basicly-x"]) == 1
     out = capsys.readouterr().out
-    assert "intake -> classify" in out
+    assert "checkpoint classify: APPROVED (basicly-x) - delegated under L2 grant" in out
+    assert out.index("intake -> intake") < out.index("checkpoint classify: APPROVED")
     assert "[blocked]" in out
 
 
-def test_loop_run_exits_zero_when_done(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A run that reaches a non-blocked terminal step exits 0."""
-    steps = [AdvanceResult("basicly-x", "ship", "done", "tore-down")]
-    monkeypatch.setattr(loop, "run_until_blocked", lambda *_a, **_k: steps)
+def test_loop_run_exits_zero_when_the_track_shipped(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A boundary that reached done exits 0."""
+    _ceremony(
+        monkeypatch,
+        loop.CeremonyResult((AdvanceResult("basicly-x", "ship", "done", "tore-down"),)),
+    )
 
     assert cli.main(["loop", "run", "basicly-x"]) == 0
+
+
+def test_loop_run_challenge_reprints_the_whole_command_to_rerun(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The relayed code has to come back on the *same* command, flags and all.
+
+    Printing a bare ``policy checkpoint --approve`` line would approve the
+    checkpoint and leave the loop parked, which is the ceremony this command
+    exists to collapse (basicly-kjc5.41).
+    """
+    _ceremony(
+        monkeypatch,
+        loop.CeremonyResult(
+            (AdvanceResult("basicly-x", "intake", "intake", "blocked", checkpoint="classify"),),
+            challenge=("classify", "c0ffee"),
+        ),
+    )
+
+    exit_code = cli.main(["loop", "run", "basicly-x", "--work-type", "task", "--mode", "fast"])
+    assert exit_code == 1
+    err = capsys.readouterr().err
+    assert "checkpoint classify: CONFIRMATION REQUIRED (basicly-x)" in err
+    assert "basicly loop run basicly-x --work-type task --mode fast --confirm c0ffee" in err
+
+
+def test_loop_run_reports_a_refusal_on_stderr(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A refused checkpoint exits non-zero and says why."""
+    _ceremony(
+        monkeypatch,
+        loop.CeremonyResult(
+            (AdvanceResult("basicly-x", "verify", "verify", "blocked", checkpoint="ship"),),
+            refused=("ship", "invalid or expired confirm code"),
+        ),
+    )
+
+    assert cli.main(["loop", "run", "basicly-x", "--confirm", "nope"]) == 1
+    assert "checkpoint ship: REFUSED (basicly-x) - invalid or expired" in capsys.readouterr().err
+
+
+def test_loop_run_passes_the_confirm_code_and_grant_root_through(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``--confirm name=CODE`` targets one checkpoint; ``--root`` scopes the grant."""
+    seen = _ceremony(monkeypatch, loop.CeremonyResult())
+
+    cli.main(["loop", "run", "basicly-x", "--confirm", "ship=c0ffee", "--root", "basicly-epic"])
+    assert seen["confirms"] == {"ship": "c0ffee"}
+    assert seen["grant_root"] == "basicly-epic"
+
+
+def test_loop_run_bare_confirm_code_is_offered_to_every_checkpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A bare code needs no checkpoint name — codes only validate where they were minted."""
+    seen = _ceremony(monkeypatch, loop.CeremonyResult())
+
+    cli.main(["loop", "run", "basicly-x", "--confirm", "c0ffee"])
+    assert seen["confirms"] == dict.fromkeys(CHECKPOINTS, "c0ffee")
 
 
 # --- status -----------------------------------------------------------------

@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -105,6 +106,11 @@ class AdvanceResult:
     # driver can tell a scope collision from a red gate or an uncommitted
     # worktree without parsing the message (basicly-kjc5.20).
     landing: merge.MergeResult | None = None
+    # The human checkpoint this step is waiting on, when the block is a
+    # checkpoint block. Same stance as ``landing``: a ceremony driver resolves
+    # the checkpoint from data, never by sniffing the detail string
+    # (basicly-kjc5.41).
+    checkpoint: str | None = None
 
     @property
     def advanced(self) -> bool:
@@ -143,16 +149,24 @@ class _Ctx:
     inputs: Inputs
 
 
-def _blocked(
+def _blocked(  # noqa: PLR0913 — one keyword per block shape, all mutually exclusive
     ctx: _Ctx,
     reason: str,
     *,
     action: str = "blocked",
     needs_input: str | None = None,
     landing: merge.MergeResult | None = None,
+    checkpoint: str | None = None,
 ) -> AdvanceResult:
     return AdvanceResult(
-        ctx.issue_id, ctx.state.phase, ctx.state.phase, action, reason, needs_input, landing
+        ctx.issue_id,
+        ctx.state.phase,
+        ctx.state.phase,
+        action,
+        reason,
+        needs_input,
+        landing,
+        checkpoint,
     )
 
 
@@ -173,7 +187,9 @@ def _on_intake(ctx: _Ctx) -> AdvanceResult:
         return _blocked(ctx, "classify needs an agent-proposed work type", needs_input="work_type")
     result = classify.classify(ctx.repo_root, ctx.issue_id, ctx.inputs.work_type)
     return _blocked(
-        ctx, f"recorded work type {result.work_type!r}; classify checkpoint awaiting approval"
+        ctx,
+        f"recorded work type {result.work_type!r}; classify checkpoint awaiting approval",
+        checkpoint="classify",
     )
 
 
@@ -203,7 +219,7 @@ def _on_classify(ctx: _Ctx) -> AdvanceResult:
 def _on_decompose(ctx: _Ctx) -> AdvanceResult:
     """Children exist: gate the decompose checkpoint, then fan out and land them."""
     if not policy.checkpoint_approved(ctx.repo_root, ctx.issue_id, "decompose"):
-        return _blocked(ctx, "decompose checkpoint awaiting human approval")
+        return _blocked(ctx, "decompose checkpoint awaiting human approval", checkpoint="decompose")
     return _build_children(ctx)
 
 
@@ -226,7 +242,7 @@ def _on_build(ctx: _Ctx) -> AdvanceResult:
 def _on_verify(ctx: _Ctx) -> AdvanceResult:
     """Required gate is green (that is why we are here): gate the ship checkpoint."""
     if not policy.checkpoint_approved(ctx.repo_root, ctx.issue_id, "ship"):
-        return _blocked(ctx, "ship checkpoint awaiting human approval")
+        return _blocked(ctx, "ship checkpoint awaiting human approval", checkpoint="ship")
     return _moved(ctx, "ship", "shipped", "ship checkpoint satisfied")
 
 
@@ -908,3 +924,125 @@ def run_until_blocked(
         if result.blocked or result.to_phase == "done":
             break
     return results
+
+
+# --- The whole-boundary ceremony (basicly-kjc5.41, design D10) ---------------
+#
+# :func:`run_until_blocked` stops dead at a checkpoint, and the checkpoint
+# cannot be answered from inside it — so an agent driving one leaf bead had to
+# interleave `policy dor`, `policy checkpoint --approve` (twice: mint, then
+# confirm) and `loop advance` by hand, about six deterministic commands per
+# bead. D10 says a deterministic *sequence* an agent performs by hand means the
+# engine is missing a command. :func:`run_ceremony` is that command's engine
+# half: it drives the loop across a whole phase boundary, resolving each
+# checkpoint it is authorized to resolve and stopping cleanly on the ones it is
+# not. It never widens authorization — resolution goes through
+# :func:`policy.approve_checkpoint_guarded`, so a TTY, a covering autonomy
+# grant, or a relayed one-time code are still the only three ways in.
+
+
+@dataclass(frozen=True)
+class CheckpointApproval:
+    """A human checkpoint the ceremony resolved itself, between two loop steps."""
+
+    checkpoint: str
+    detail: str = ""
+
+
+# One ceremony event, in the order it happened: a loop step, or the checkpoint
+# approval that unblocked the next one.
+CeremonyEvent = AdvanceResult | CheckpointApproval
+
+
+@dataclass(frozen=True)
+class CeremonyResult:
+    """The outcome of one :func:`run_ceremony` call."""
+
+    events: tuple[CeremonyEvent, ...] = ()
+    # The checkpoint that challenged, with the one-time code a human must relay
+    # back. Set only when the ceremony stopped for want of authorization.
+    challenge: tuple[str, str] | None = None
+    # The checkpoint that refused, with why — a bad or expired code, or a grant
+    # precondition that does not hold.
+    refused: tuple[str, str] | None = None
+
+    @property
+    def steps(self) -> tuple[AdvanceResult, ...]:
+        """Just the loop steps, dropping the approvals the ceremony interleaved."""
+        return tuple(event for event in self.events if isinstance(event, AdvanceResult))
+
+    @property
+    def approvals(self) -> tuple[CheckpointApproval, ...]:
+        """Just the checkpoints this call resolved."""
+        return tuple(event for event in self.events if isinstance(event, CheckpointApproval))
+
+    @property
+    def blocked(self) -> bool:
+        """True when the ceremony stopped short of shipping the track.
+
+        Waiting on the agent's work is the *expected* end of the opening
+        boundary, so this is not "something went wrong" — it means the track
+        needs a human or an agent before the loop moves again.
+        """
+        steps = self.steps
+        if self.challenge is not None or self.refused is not None:
+            return True
+        return not steps or steps[-1].to_phase != "done"
+
+
+def run_ceremony(  # noqa: PLR0913 — mirrors the CLI surface
+    repo_root: Path,
+    issue_id: str,
+    *,
+    config: PolicyConfig | None = None,
+    inputs: Inputs | None = None,
+    interactive: bool = False,
+    confirms: Mapping[str, str] | None = None,
+    grant_root: str | None = None,
+    max_steps: int = 20,
+) -> CeremonyResult:
+    """Advance across a whole phase boundary, resolving the checkpoints it may.
+
+    Drives :func:`advance` like :func:`run_until_blocked`, except that a block on
+    a human checkpoint is not the end: the checkpoint is put through
+    :func:`policy.approve_checkpoint_guarded` (TTY, a covering grant on
+    *grant_root*, or a matching one-time code from *confirms*) and, when that
+    approves, the loop keeps going. Stops on a challenge or a refusal — carrying
+    the code to relay, or the reason — and on any block that is not a checkpoint:
+    a missing input, a red gate, or the handoff that awaits the agent's work.
+
+    Never mints more than one challenge per call: a challenged checkpoint blocks
+    the loop, so there is nothing further to drive until a human answers it.
+    """
+    config = config or load_policy_config(repo_root)
+    inputs = inputs or Inputs()
+    codes = dict(confirms or {})
+    events: list[CeremonyEvent] = []
+    resolved: set[str] = set()
+    for _ in range(max_steps):
+        result = advance(repo_root, issue_id, config=config, inputs=inputs)
+        events.append(result)
+        if result.to_phase == "done":
+            break
+        if not result.blocked:
+            continue  # real progress — keep driving toward the boundary
+        name = result.checkpoint
+        # Not a checkpoint block, or one this call already approved (which would
+        # spin): the boundary ends here.
+        if name is None or name in resolved:
+            break
+        approval = policy.approve_checkpoint_guarded(
+            repo_root,
+            issue_id,
+            name,
+            interactive=interactive,
+            confirm=codes.pop(name, None),
+            grant_root=grant_root,
+        )
+        if approval.status == "challenge":
+            return CeremonyResult(tuple(events), challenge=(name, approval.code or ""))
+        if approval.status != "approved":
+            return CeremonyResult(tuple(events), refused=(name, approval.detail))
+        resolved.add(name)
+        events.append(CheckpointApproval(name, approval.detail))
+    return CeremonyResult(tuple(events))
