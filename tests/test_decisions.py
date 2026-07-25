@@ -237,7 +237,15 @@ def _decider_setup(
     _install(monkeypatch, fake)
     _no_notify(monkeypatch)
     item = decisions.enqueue(tmp_path, "epic", "needs-input", "which db?")
-    spec = runner.RunnerSpec("fake", runner.HEADLESS, ("fake", runner.PROMPT_PLACEHOLDER))
+    # deny_style is what makes the fake confinable; without one, invoke_decider
+    # refuses to dispatch it at all (basicly-kjc5.16) - which every decider path
+    # here assumes it got past. The unconfinable case has its own test.
+    spec = runner.RunnerSpec(
+        "fake",
+        runner.HEADLESS,
+        ("fake", runner.PROMPT_PLACEHOLDER),
+        deny_style=runner.DENY_TOOL_FLAG,
+    )
     monkeypatch.setattr(
         decisions,
         "load_runner_config",
@@ -322,6 +330,62 @@ def test_decider_timeout_abstains(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
 
     assert isinstance(outcome, decisions.DeciderVerdict)
     assert outcome.abstain is True and "runner_timeout" in outcome.rationale
+    stored = decisions.get(tmp_path, item.decision_id)
+    assert stored is not None and stored.pending
+
+
+def test_decider_dispatches_a_confined_spec_not_the_selected_one(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The spec that reaches runner.run carries the confinement overlay (basicly-kjc5.16).
+
+    Selecting the runner and dispatching it are two different specs on purpose: a
+    decider holding a shell tool could record its own answer with `br comments
+    add`, straight past decider_max_decisions and the abstain contract.
+    """
+    verdict = json.dumps({
+        "decision": "postgres",
+        "rationale": "corpus",
+        "confidence": 0.9,
+        "abstain": False,
+    })
+    _fake, item = _decider_setup(monkeypatch, tmp_path, verdict)
+    dispatched: list[runner.RunnerSpec] = []
+
+    def capturing_run(spec, _prompt, _cwd, **_k):
+        dispatched.append(spec)
+        return runner.RunResult("fake", ("fake",), executed=True, returncode=0, stdout=verdict)
+
+    monkeypatch.setattr(decisions.runner, "run", capturing_run)
+    monkeypatch.setattr(decisions.runner, "record_dispatch", lambda *_a, **_k: None)
+
+    decisions.invoke_decider(tmp_path, item.decision_id, "epic")
+
+    assert len(dispatched) == 1
+    assert dispatched[0].deny_tools, "the decider was dispatched unconfined"
+
+
+def test_decider_abstains_when_the_runner_cannot_be_confined(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An agent family with no confinement overlay is not dispatched at all.
+
+    D3's drop-to-human stance: the corpus bound is the decider's whole authority,
+    so running one that cannot be bounded is worse than waiting for a human.
+    """
+    _fake, item = _decider_setup(monkeypatch, tmp_path, "")
+    bare = runner.RunnerSpec("mystery", runner.HEADLESS, ("mystery", runner.PROMPT_PLACEHOLDER))
+    monkeypatch.setattr(decisions.runner, "select_runner", lambda *_a, **_k: bare)
+    monkeypatch.setattr(
+        decisions.runner,
+        "run",
+        lambda *_a, **_k: pytest.fail("an unconfinable decider must never be dispatched"),
+    )
+
+    outcome = decisions.invoke_decider(tmp_path, item.decision_id, "epic")
+
+    assert isinstance(outcome, decisions.DeciderVerdict)
+    assert outcome.abstain is True and "confinement" in outcome.rationale
     stored = decisions.get(tmp_path, item.decision_id)
     assert stored is not None and stored.pending
 
@@ -537,7 +601,15 @@ def test_decider_counts_and_records_under_one_lock(
         "abstain": False,
     })
     item = decisions.enqueue(tmp_path, "epic", "needs-input", "which db?")
-    spec = runner.RunnerSpec("fake", runner.HEADLESS, ("fake", runner.PROMPT_PLACEHOLDER))
+    # deny_style is what makes the fake confinable; without one, invoke_decider
+    # refuses to dispatch it at all (basicly-kjc5.16) - which every decider path
+    # here assumes it got past. The unconfinable case has its own test.
+    spec = runner.RunnerSpec(
+        "fake",
+        runner.HEADLESS,
+        ("fake", runner.PROMPT_PLACEHOLDER),
+        deny_style=runner.DENY_TOOL_FLAG,
+    )
     monkeypatch.setattr(
         decisions,
         "load_runner_config",

@@ -458,7 +458,7 @@ def decider_answers_count(repo_root: Path, root_issue: str) -> int:
     return count
 
 
-def invoke_decider(
+def invoke_decider(  # noqa: PLR0911 — one return per distinct drop-to-human cause
     repo_root: Path,
     decision_id: str,
     root_issue: str,
@@ -470,9 +470,10 @@ def invoke_decider(
     Returns the answered :class:`DecisionItem` when the decider decided, or
     the abstaining :class:`DeciderVerdict` when the item stays with the human
     — because the decider abstained (fact not derivable from the corpus), its
-    output did not parse, or the session already spent its
+    output did not parse, the session already spent its
     ``decider_max_decisions`` budget (the runaway-loop guard; D3's
-    drop-to-human stance).
+    drop-to-human stance), or the selected runner family has no confinement
+    overlay to bound it with (basicly-kjc5.16).
     """
     config = config or load_policy_config(repo_root)
     item = get(repo_root, decision_id)
@@ -489,7 +490,22 @@ def invoke_decider(
             abstain=True,
         )
     runner_config = load_runner_config(repo_root)
-    spec = runner.select_runner(runner_config.specs, runner_config.decider or runner_config.default)
+    selected = runner.select_runner(
+        runner_config.specs, runner_config.decider or runner_config.default
+    )
+    # Confined at invocation (basicly-kjc5.16): the corpus bound and the answer cap
+    # are contract text, and a decider holding a shell or write tool can simply
+    # record its own answer around them. A family with no known overlay is not
+    # dispatched at all — an unconfined decider is worse than a slower human.
+    spec = runner.confine_for_decider(selected)
+    if spec is None:
+        return DeciderVerdict(
+            "",
+            f"runner {selected.name!r} has no known tool-confinement overlay, so the decider "
+            "cannot be bounded to the intake corpus; this decision stays human-only",
+            0.0,
+            abstain=True,
+        )
     # Bounded and metered like every other dispatch (basicly-kjc5.31): without the
     # timeout a hung decider hangs the pass forever, and without the run-record its
     # tokens never count against the session's D3 grant ceiling.

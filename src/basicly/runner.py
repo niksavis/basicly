@@ -34,7 +34,7 @@ import signal
 import subprocess
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from . import run_record
@@ -57,6 +57,13 @@ HELP_FLAG = "--help"
 
 # How the prompt reaches the agent.
 PROMPT_VIA = ("arg", "stdin")
+
+# How a family spells a tool denial on its argv (RunnerSpec.deny_style).
+# `--deny-tool=<spec>` once per entry (copilot, verified against its --help),
+# versus a single `--disallowedTools` taking every name after it (claude).
+DENY_TOOL_FLAG = "deny-tool"
+DISALLOWED_TOOLS_FLAG = "disallowed-tools"
+DENY_STYLES = (DENY_TOOL_FLAG, DISALLOWED_TOOLS_FLAG)
 
 # The name of the built-in handoff fallback runner.
 MANUAL_RUNNER = "manual"
@@ -111,10 +118,18 @@ class RunnerSpec:
     # `{model}` placeholder is substituted, otherwise `--model <value>` is
     # injected right after the binary. None leaves the argv unchanged.
     model: str | None = None
-    # Invocation-time tool-deny specs (basicly-lqz5). format_command emits one
-    # `--deny-tool=<spec>` per entry after the binary. Populated for the copilot
-    # runner from permissions.yaml at config load; empty leaves the argv unchanged.
+    # Invocation-time tool-deny specs (basicly-lqz5). format_command emits them
+    # after the binary in this family's `deny_style` wire form. Populated for the
+    # copilot runner from permissions.yaml at config load, and for any family by
+    # confine_for_decider; empty leaves the argv unchanged.
     deny_tools: tuple[str, ...] = ()
+    # How this family spells a tool denial on its argv (basicly-kjc5.16). The
+    # flag shapes differ — copilot takes one `--deny-tool=<spec>` per entry,
+    # claude takes a single `--disallowedTools` with the names after it — so the
+    # style travels with the spec and `deny_tools` stays the family's own
+    # vocabulary. None means the family has no known tool-deny flag (codex
+    # confines with its sandbox instead), and `deny_tools` is then unusable.
+    deny_style: str | None = None
     # Invocation-time sandbox/approval guardrails (basicly-t0kt). Codex forbids
     # overriding approval_policy/sandbox_mode at repo scope in .codex/config.toml
     # by design, so safe defaults cannot be projected as committed catalog output;
@@ -157,6 +172,7 @@ BUILTIN_RUNNERS: tuple[RunnerSpec, ...] = (
         "claude",
         HEADLESS,
         ("claude", "-p", PROMPT_PLACEHOLDER),
+        deny_style=DISALLOWED_TOOLS_FLAG,
         usage_format=CLAUDE_STREAM_JSON,
         context_window=_CONTEXT_WINDOWS["claude"],
     ),
@@ -173,6 +189,7 @@ BUILTIN_RUNNERS: tuple[RunnerSpec, ...] = (
         "copilot",
         HEADLESS,
         ("copilot", "-p", PROMPT_PLACEHOLDER),
+        deny_style=DENY_TOOL_FLAG,
         context_window=_CONTEXT_WINDOWS["copilot"],
     ),
     RunnerSpec(MANUAL_RUNNER, HANDOFF),
@@ -281,15 +298,27 @@ def _apply_model(spec: RunnerSpec, argv: list[str]) -> list[str]:
 
 
 def _apply_deny_tools(spec: RunnerSpec, argv: list[str]) -> list[str]:
-    """Inject one ``--deny-tool=<spec>`` per entry after the binary (basicly-lqz5).
+    """Inject the family's tool-deny flags after the binary (basicly-lqz5).
 
-    Empty ``deny_tools`` leaves the argv unchanged. The ``--deny-tool=`` (single
-    token) form is used so a spec containing spaces — e.g. ``shell(git push
-    --force)`` — stays one argv element and is never mis-parsed as the next flag.
+    Empty ``deny_tools`` leaves the argv unchanged. ``deny_style`` picks the wire
+    form (basicly-kjc5.16): copilot's ``--deny-tool=<spec>`` is emitted once per
+    entry, and the ``=`` (single token) form is used so a spec containing
+    spaces — e.g. ``shell(git push --force)`` — stays one argv element and is
+    never mis-parsed as the next flag; claude's ``--disallowedTools`` takes every
+    name as a following argument instead. Denials with no style would be silently
+    dropped onto an argv the binary cannot read, so that raises.
     """
     if not spec.deny_tools:
         return argv
-    flags = [f"--deny-tool={tool}" for tool in spec.deny_tools]
+    if spec.deny_style == DENY_TOOL_FLAG:
+        flags = [f"--deny-tool={tool}" for tool in spec.deny_tools]
+    elif spec.deny_style == DISALLOWED_TOOLS_FLAG:
+        flags = ["--disallowedTools", *spec.deny_tools]
+    else:
+        raise ValueError(
+            f"runner {spec.name!r} sets deny_tools but has deny_style "
+            f"{spec.deny_style!r}; known: {list(DENY_STYLES)}"
+        )
     return [argv[0], *flags, *argv[1:]]
 
 
@@ -310,6 +339,82 @@ def _apply_sandbox(spec: RunnerSpec, argv: list[str]) -> list[str]:
     if not flags:
         return argv
     return [argv[0], *flags, *argv[1:]]
+
+
+# --- Decider confinement (basicly-kjc5.16, design 7.1) -----------------------
+#
+# The decider resolves one queued decision from the intake corpus already
+# embedded in its prompt (decisions.decider_prompt), so it needs no tools at
+# all. Every tool it could reach is a way around its documented contract: a
+# shell or write tool lets it record tracker state directly, bypassing
+# decider_max_decisions and the abstain path, and a file-read tool lets it
+# answer from outside the corpus it is bounded to.
+#
+# Enumerated per family because the vocabularies and the flag shapes differ, and
+# neither claude nor copilot documents a deny-all wildcard. So claude and copilot
+# get a blocklist over the tool surface as verified 2026-07-25 — a mitigation of
+# the same kind as the policy tripwires, not a boundary, and a tool added to
+# either CLI later is allowed until it is listed here. Codex has no tool-deny
+# flag but does have a real one: its read-only sandbox cannot write at all.
+#
+# A family with no known confinement is never dispatched — invoke_decider
+# abstains to the human rather than run an unconfined agent (D3's drop-to-human
+# stance). That is why this returns None instead of the spec unchanged.
+
+# Claude's built-in tool surface: read, write, execute, delegate, and network.
+_DECIDER_DENY_CLAUDE: tuple[str, ...] = (
+    "Bash",
+    "BashOutput",
+    "KillShell",
+    "Edit",
+    "Write",
+    "NotebookEdit",
+    "Read",
+    "Glob",
+    "Grep",
+    "Task",
+    "TodoWrite",
+    "WebFetch",
+    "WebSearch",
+)
+# Every name above is one claude accepts: it warns on stderr for a name matching
+# no known tool ("SlashCommand" did, and was dropped after a live probe on
+# 2026-07-25), so a typo here would silently leave that tool allowed.
+
+# Copilot names a shell class and a write class; it has no deny spec for reads
+# (permissions.yaml records the same gap), so its corpus bound stays
+# contract-level while writing tracker state is genuinely blocked.
+_DECIDER_DENY_COPILOT: tuple[str, ...] = ("shell", "write")
+
+
+def confine_for_decider(spec: RunnerSpec) -> RunnerSpec | None:
+    """The decider-confined form of *spec*, or None when this family cannot be confined.
+
+    Applies the family's most restrictive invocation-time overlay: a tool
+    blocklist where the CLI has one, and codex's ``read-only`` sandbox with
+    approvals off — headless exec has no approver, so ``never`` fails closed on
+    an escalation instead of waiting for one. A handoff runner is returned
+    unchanged: it has no argv to carry flags and executes nothing.
+
+    The blocklist is added to whatever the spec already denies, never substituted
+    for it: copilot's builtin carries the permissions.yaml baseline, which may
+    name a class this overlay does not, and confinement must only ever subtract
+    capability.
+    """
+    if spec.kind == HANDOFF:
+        return spec
+    if spec.deny_style == DISALLOWED_TOOLS_FLAG:
+        return replace(spec, deny_tools=_denied_with(spec, _DECIDER_DENY_CLAUDE))
+    if spec.deny_style == DENY_TOOL_FLAG:
+        return replace(spec, deny_tools=_denied_with(spec, _DECIDER_DENY_COPILOT))
+    if spec.sandbox is not None:
+        return replace(spec, sandbox="read-only", approval="never")
+    return None
+
+
+def _denied_with(spec: RunnerSpec, extra: tuple[str, ...]) -> tuple[str, ...]:
+    """The spec's denials plus *extra*, order-stable and without duplicates."""
+    return (*spec.deny_tools, *(t for t in extra if t not in spec.deny_tools))
 
 
 def is_available(spec: RunnerSpec, *, which: Callable[[str], str | None] | None = None) -> bool:
