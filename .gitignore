@@ -40,6 +40,14 @@ htmlcov/
 # Local environment
 .env
 .env.local
+# The machine-local half of the harness config surface: host-specific runner,
+# model and policy overrides, key-merged over basicly.toml. Ignored so a
+# developer's own settings never reach a commit — and because the harness
+# refuses to land a worktree while the base checkout carries dirt outside
+# .beads/, so an untracked one would block every landing (basicly-jr0l.7).
+# Note .basicly-local/fragments/ is deliberately *tracked*: catalog overlay
+# prose is shared, only this config file is per-machine.
+basicly.local.toml
 
 # Node.js
 node_modules/

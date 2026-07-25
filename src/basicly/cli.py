@@ -969,6 +969,17 @@ def _report_missing_config_sections(repo_root: Path) -> None:
     )
 
 
+def ignore_covers_local_config(ignore_text: str) -> bool:
+    """True when *ignore_text* already excludes the per-machine config overlay.
+
+    Public because the property is dual-use: ``basicly install`` scaffolds it
+    into a consumer, and basicly's own repo has to satisfy it too — a guarantee
+    the harness gives consumers and not itself is exactly the gap dogfooding
+    exists to catch (basicly-jr0l.7). One predicate, so the two cannot drift.
+    """
+    return any(line.strip().lstrip("/") == LOCAL_CONFIG_FILE for line in ignore_text.splitlines())
+
+
 def _scaffold_local_config_ignore(repo_root: Path) -> None:
     """Ensure .gitignore covers the per-machine config overlay (append-only).
 
@@ -977,7 +988,7 @@ def _scaffold_local_config_ignore(repo_root: Path) -> None:
     """
     ignore_path = repo_root / ".gitignore"
     text = ignore_path.read_text(encoding="utf-8") if ignore_path.exists() else ""
-    if any(line.strip().lstrip("/") == LOCAL_CONFIG_FILE for line in text.splitlines()):
+    if ignore_covers_local_config(text):
         return
     prefix = "" if not text or text.endswith("\n") else "\n"
     entry = f"# Per-machine basicly overrides; harness keys win over {CONFIG_FILE}.\n"
