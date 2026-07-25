@@ -35,3 +35,31 @@ reviewing any automated test, in any language.
   test — fix or quarantine it, never mask it with a blind retry.
 - When you fix a bug, add the regression test that would have caught it first, and
   watch it fail before the fix so you know it exercises the defect.
+
+## Set up the condition the code actually reads
+
+- When the code under test loads its own configuration, settings, or environment,
+  put those values where that code reads them from — the file, the directory, the
+  environment variable. A config object built in the test and handed to a helper
+  never reaches a function that calls its own loader, so the test exercises the
+  defaults and passes whatever you changed.
+- Then prove the condition is live rather than merely arranged: assert that the
+  input you set up actually moves the value the code branches on. A threshold left
+  at its default, a window too small to trigger, a flag read from somewhere else —
+  each leaves a test that stages a scenario the code never sees.
+- The tell is a test that passes with the fix removed. Whenever a test is written
+  after the fix it pins, delete the fix and watch it fail for the stated reason
+  before trusting it.
+
+## A seam is not duplication
+
+- A module-level alias or thin wrapper around an external dependency — a CLI, a
+  clock, an HTTP client — is usually a deliberate test seam: it is the thing tests
+  replace. Several modules each holding their own is not accidental repetition.
+- So before consolidating duplicated access behind one shared helper, look at what
+  the tests patch. Moving the call behind a new module silently bypasses every patch
+  of the old alias, and the suite fails en masse for a reason unrelated to the
+  refactor's intent.
+- If the consolidation is still right, migrate the seam deliberately: move the patch
+  points in the same commit, and keep one seam per module rather than one for the
+  whole codebase.
