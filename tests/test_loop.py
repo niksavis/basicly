@@ -139,6 +139,24 @@ def test_classify_blocks_when_dor_incomplete(
     assert result.blocked and "definition of ready" in result.detail
 
 
+def test_classify_dor_block_names_the_scaffold_for_the_recorded_type(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The refusal hands back the remedy, typed (basicly-kjc5.44).
+
+    This message is where an agent used to *discover* the required sections — a
+    read, an edit and a re-check each time — though the engine already recorded
+    the work type the whole set derives from.
+    """
+    at(_state("classify", issue_type="bug"))
+    monkeypatch.setattr(
+        policy, "definition_of_ready", lambda *_a: DoRResult(False, ("## Steps to Reproduce",))
+    )
+    detail = _advance(tmp_path).detail
+    assert "## Steps to Reproduce" in detail
+    assert "basicly policy scaffold --type bug" in detail
+
+
 def _pin_runner(monkeypatch: pytest.MonkeyPatch, default: str) -> None:
     """Pin the loop's runner selection to a built-in adapter by name."""
     monkeypatch.setattr(

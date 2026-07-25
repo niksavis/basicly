@@ -19,6 +19,7 @@ import json
 import os
 import secrets
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -108,6 +109,73 @@ def _has_acceptance_criteria(repo_root: Path, issue_id: str) -> bool:
         return True
     body = issue.get("description")
     return isinstance(body, str) and _ACCEPTANCE_CRITERIA_SECTION in body
+
+
+# --- Body scaffolding (basicly-kjc5.44) -------------------------------------
+
+# Every template section ``br lint`` requires *beyond* the acceptance criteria
+# every bead needs, per work type. ``br``'s templates are built into the binary
+# and no read-only command reports them, so the set is stated here and pinned to
+# the installed ``br`` by a real-tracker integration test — a template change
+# upstream fails that test rather than silently under-scaffolding a body. A work
+# type absent from the map (chore, task, feature) has no extra section.
+_TYPE_SECTIONS: dict[str, tuple[str, ...]] = {
+    "bug": ("## Steps to Reproduce",),
+    "epic": ("## Success Criteria",),
+}
+
+# The placeholder a scaffolded section carries when the caller supplies no
+# content. It has to read as unfinished: an empty heading passes both ``br lint``
+# and :func:`definition_of_ready` (each only looks for the heading), so a body
+# nobody filled in would otherwise clear the gate having stated nothing.
+_TODO = "TODO"
+_SECTION_HINTS: dict[str, str] = {
+    "## Steps to Reproduce": (
+        f"{_TODO}: the exact commands run, the observed result, and the expected one."
+    ),
+    "## Success Criteria": f"{_TODO}: the high-level outcomes that close this epic.",
+    _ACCEPTANCE_CRITERIA_SECTION: (
+        f"- {_TODO}: Given <starting state> when <action> then <observable result>"
+    ),
+}
+
+
+def required_sections(work_type: str) -> tuple[str, ...]:
+    """Every body section the Definition-of-Ready requires for *work_type*.
+
+    The set is fully derivable from the work type, so an agent never has to learn
+    it by having the classify gate refuse: it is ``br lint``'s per-type template
+    sections plus the acceptance criteria :func:`definition_of_ready` requires of
+    every bead whatever its type. Ordered as ``br lint`` reports them, so a
+    scaffolded body reads in the same order as the refusal it prevents.
+    """
+    return (*_TYPE_SECTIONS.get(work_type, ()), _ACCEPTANCE_CRITERIA_SECTION)
+
+
+def compose_body(
+    work_type: str, content: Mapping[str, str] | None = None, *, preamble: str = ""
+) -> str:
+    """A bead body carrying every DoR-required section for *work_type*.
+
+    *content* maps a heading to the text under it. A required section it omits
+    gets a ``TODO`` placeholder for the agent to replace; a heading it carries
+    that the Definition-of-Ready does *not* require (``## Scope``, which
+    decompose records) is appended after the required ones rather than dropped —
+    silently losing a caller's declared section would be the worse failure.
+    *preamble* is prose emitted above the first heading, for a caller that has
+    context to hand the reader.
+
+    The structure is emitted, never guessed — the judgment stays the agent's.
+    """
+    content = content or {}
+    headings = list(required_sections(work_type))
+    headings += [heading for heading in content if heading not in headings]
+    default = f"{_TODO}: fill this in."
+    sections = (
+        f"{heading}\n\n{content.get(heading) or _SECTION_HINTS.get(heading, default)}"
+        for heading in headings
+    )
+    return (f"{preamble.strip()}\n\n" if preamble.strip() else "") + "\n\n".join(sections) + "\n"
 
 
 # --- Working-set sizing governor (basicly-kjc5.2, factory design D8) ---------

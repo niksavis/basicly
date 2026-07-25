@@ -568,7 +568,7 @@ names were removed, not aliased).
 | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `basicly worktree ...`                      | Sibling git-worktree lifecycle: create + provision (deps, hooks), list, cleanup (§12.5)                                                      |
 | `basicly verify [--gate] [--fix]`           | Runs the consumer's `[[verify.checks]]` per mode and optionally records a `br` gate; `--fix` applies mechanical repairs first (§12.3–12.4)   |
-| `basicly policy ...`                        | DoR/gate/rework/checkpoint checks; `policy checkpoint --approve` needs an interactive TTY or a one-time `--confirm` code (§12.2)             |
+| `basicly policy ...`                        | DoR/gate/rework/checkpoint/`scaffold` checks; `policy checkpoint --approve` needs an interactive TTY or a one-time `--confirm` code (§12.2)  |
 | `basicly decompose`                         | Turns a feature into child `br` issues + a computed dependency graph (§12.2)                                                                 |
 | `basicly loop status\|advance\|run <issue>` | Drives an issue through the harness loop; a blocked step exits non-zero and names the input it needs (§12.2)                                 |
 | `basicly commit <description>`              | Assembles the conventional-commit envelope from engine state — type from the bead's work class (refined by an all-docs/all-test/all-ci diff), scope from the staged paths weighted by churn, trailing bead id from the branch's worktree binding — and commits the staged change with it. Only the description (and an optional `--body`) is authored; a description the charset rules reject names the offending character before any commit is attempted. `--type`/`--scope`/`--issue` override a derived part, `--dry-run` prints the message only. The `commit-msg`/`beads-commit-msg` hooks stay the gate (design D10, `basicly-kjc5.42`) |
@@ -762,6 +762,17 @@ confirm code that a human must echo back with `--confirm`, so a subagent driving
 cannot self-approve ship autonomously. This mitigates the shared-identity gap (a fork and its
 human share one OS/git identity); it does not defeat a process deliberately re-running with
 the code.
+
+The DoR's required section set is derivable from the work type, so it is **emitted rather than
+discovered**: `basicly policy scaffold --type <t>` prints a body with every required heading
+present and a `TODO` under each, and both refusal paths (`policy dor` and the classify gate in
+`loop._on_classify`) name that command typed for the bead instead of only listing what is
+missing. `policy.compose_body` is the single source — `decompose._child_body` and
+`supervise.finalize_followup` compose engine-created bead bodies through it, so a `bug`-typed
+child or follow-up carries `## Steps to Reproduce` too. `br`'s per-type templates are compiled
+into its binary and no read-only `br` command reports them, so `policy._TYPE_SECTIONS` states
+the set and `tests/test_integration_dor_scaffold.py` pins it against the installed `br`
+(basicly-kjc5.44).
 
 **12.3 Components — build vs reuse.** The engine we build is thin: worktree lifecycle; merge
 orchestrator + serial merge queue + conflict-resolver; a **verify runner** (runs the

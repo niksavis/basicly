@@ -581,10 +581,26 @@ def govern_working_set(
 
 
 def _child_body(spec: ChildSpec) -> str:
-    """Build a child issue body with the sections ``br lint`` DoR requires."""
-    acceptance = "\n".join(f"- {item}" for item in spec.acceptance)
-    scope = "\n".join(f"- `{glob}`" for glob in spec.scope)
-    return f"## Acceptance Criteria\n\n{acceptance}\n\n## Scope\n\n{scope}\n"
+    """Build a child issue body with the sections the DoR requires, plus ``## Scope``.
+
+    Delegates the required-section set to :func:`policy.compose_body` rather than
+    spelling out headings: the plan chooses the child's type, and a ``bug`` child
+    also owes ``## Steps to Reproduce``. Hard-coding the ``task`` set here left a
+    bug-typed child refused by its own classify gate (basicly-kjc5.44).
+
+    A plan carries no reproduction steps, so a ``bug`` child's section arrives as
+    a ``TODO`` for its lane agent to fill from the parent's context. That is the
+    deliberate trade: the placeholder satisfies the gate structurally, so the
+    fan-out proceeds and the bead says out loud what is still owed, where omitting
+    the heading would instead wedge the child before anyone could supply it.
+    """
+    return policy.compose_body(
+        spec.type,
+        {
+            "## Acceptance Criteria": "\n".join(f"- {item}" for item in spec.acceptance),
+            "## Scope": "\n".join(f"- `{glob}`" for glob in spec.scope),
+        },
+    )
 
 
 @dataclass(frozen=True)

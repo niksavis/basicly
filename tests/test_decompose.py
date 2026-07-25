@@ -287,6 +287,21 @@ def test_parse_scope_section_round_trips_child_body() -> None:
     assert decompose.parse_scope_section("no scope section here") == ()
 
 
+def test_child_body_carries_the_sections_the_childs_own_type_requires() -> None:
+    """A bug child owes Steps to Reproduce too, or it blocks at its own classify gate.
+
+    The body used to hard-code the ``task`` section set, so a plan that typed a
+    child ``bug`` produced a child the DoR gate then refused (basicly-kjc5.44).
+    """
+    bug = ChildSpec(title="b", acceptance=("given x then y",), scope=("src/a.py",), type="bug")
+    body = decompose._child_body(bug)
+    headings = [line for line in body.splitlines() if line.startswith("## ")]
+    assert headings == ["## Steps to Reproduce", "## Acceptance Criteria", "## Scope"]
+    # The supplied content survives; only the unfilled section carries a placeholder.
+    assert "- given x then y" in body
+    assert decompose.parse_scope_section(body) == ("src/a.py",)
+
+
 class _FakeBrShow:
     """br stand-in for calibration: serves `show --json` for seeded beads."""
 
