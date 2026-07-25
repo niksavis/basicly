@@ -98,7 +98,7 @@ class AdvanceResult:
     from_phase: str
     to_phase: str
     # "classified"|"decomposed"|"built"|"merged"|"shipped"|"tore-down"
-    # |"done"|"sub-task"|"blocked"|"escalated"
+    # |"done"|"sub-task"|"blocked"|"escalated"|"decision"
     action: str
     detail: str = ""
     needs_input: str | None = None
@@ -125,8 +125,14 @@ class AdvanceResult:
 
     @property
     def blocked(self) -> bool:
-        """True when the track is waiting on an input, a checkpoint, or a gate."""
-        return self.action in ("blocked", "escalated")
+        """True when the track is waiting on an input, a checkpoint, or a gate.
+
+        ``decision`` counts: a lane holding on a queued validate dispute (D4
+        amended) is waiting on a human exactly like an escalation, and if it were
+        neither blocked nor progressed the CLI would exit 0 on a lane that did not
+        land — a silent stall.
+        """
+        return self.action in ("blocked", "escalated", "decision")
 
 
 @dataclass(frozen=True)
@@ -665,9 +671,18 @@ def _validate_lane(ctx: _Ctx, cwd: Path) -> AdvanceResult | None:
     D4: validate is acceptance-criteria satisfaction — the ``rubric`` gate
     promoted from advisory to **required** at lane level. The promotion belongs to
     the level, not to ``[policy] required_gates``, so a consumer's gate list
-    cannot silently drop it. Judged checks stay advisory inside
-    :func:`rubrics.gate_status` (a subjective verdict never blocks a merge on its
+    cannot silently drop it. Judged checks never fail the gate inside
+    :func:`rubrics.gate_status` (a subjective verdict must not block a merge on its
     own), and a work class no rubric covers has nothing to validate.
+
+    Two failure shapes, deliberately different (D4 as amended 2026-07-25):
+
+    - a **deterministic** no is a test failure — spend a bounded rework attempt;
+    - a **judged** no is a *decision* — enqueue it with its evidence and hold the
+      lane. It does not land, does not bounce, and does not spend a rework
+      attempt, because a false NO from a model must not consume the budget that
+      exists for real defects. A human, or the decider under an L2+ grant,
+      disposes of it.
     """
     selected = rubrics.select_rubrics(rubrics.load_rubrics(), ctx.state.issue_type)
     if not selected:
@@ -676,14 +691,45 @@ def _validate_lane(ctx: _Ctx, cwd: Path) -> AdvanceResult | None:
         verdict for rubric in selected for verdict in rubrics.evaluate(ctx.issue_id, rubric, cwd)
     ]
     rubrics.report_gate(ctx.repo_root, ctx.issue_id, verdicts)
-    if rubrics.gate_status(verdicts) != "fail":
-        return None
-    failed = ", ".join(
-        verdict.check_id
-        for verdict in verdicts
-        if verdict.kind == rubrics.DETERMINISTIC and verdict.answer == rubrics.NO
+    if rubrics.gate_status(verdicts) == "fail":
+        failed = ", ".join(
+            verdict.check_id
+            for verdict in verdicts
+            if verdict.kind == rubrics.DETERMINISTIC and verdict.answer == rubrics.NO
+        )
+        return _rework(ctx, rubrics.RUBRIC_GATE, f"lane validate failed: {failed}")
+    disputed = rubrics.judged_failures(verdicts)
+    if disputed:
+        return _hold_for_validate_decision(ctx, disputed)
+    return None
+
+
+def _hold_for_validate_decision(ctx: _Ctx, disputed: list[rubrics.CheckVerdict]) -> AdvanceResult:
+    """Enqueue the disputed acceptance criteria and hold the lane (D4 amended, R4).
+
+    The item carries the failing criterion ids and the validator's evidence, so
+    whoever disposes of it can see what was claimed and on what basis without
+    re-reading the lane. ``enqueue`` is idempotent per (issue, kind, question), so
+    re-advancing a held lane re-reports the same item instead of flooding.
+    """
+    criteria = ", ".join(verdict.check_id for verdict in disputed)
+    evidence = "; ".join(f"{verdict.check_id}: {verdict.evidence}" for verdict in disputed)
+    decisions.enqueue(
+        ctx.repo_root,
+        ctx.issue_id,
+        "validate",
+        f"acceptance criteria unmet per the validator ({criteria}): accept, rework, or amend?",
+        evidence,
     )
-    return _rework(ctx, rubrics.RUBRIC_GATE, f"lane validate failed: {failed}")
+    return _blocked(
+        ctx,
+        f"lane validate disputed: {criteria} — queued as a decision, lane holds "
+        "(dispose of it with `basicly loop answer`)",
+        # "decision", not "held": a held lane is *carried* and landed dispatch-less
+        # on the next supervisor pass (kjc5.18), which would defeat the hold. The
+        # "decision" route is outside RETRIABLE_ROUTES, so the lane waits.
+        action="decision",
+    )
 
 
 def _build_children(ctx: _Ctx) -> AdvanceResult:
