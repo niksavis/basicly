@@ -547,7 +547,14 @@ def _grant_approval(
     if spend_status(repo_root, root_issue, grant=grant, ids=session_ids).halted:
         return None  # spend halt: human-only until re-granted
     if name == "ship":
-        violations = lights_out_violations(repo_root, root_issue, config, ids=session_ids)
+        # Gates are checked on the node being shipped, not on the grant root
+        # (basicly-kjc5.39): an epic's verify gate cannot exist until the epic
+        # closes, so a root-scoped check refused every child ship unconditionally
+        # and L3 silently degraded to L2. The session-wide preconditions below it
+        # are unchanged, so any wrinkle anywhere still drops ship to a human.
+        violations = lights_out_violations(
+            repo_root, root_issue, config, ids=session_ids, shipping=issue_id
+        )
         if violations:
             return None
     marker = f"{_checkpoint_marker(name)} under grant {grant.level}"
@@ -670,18 +677,29 @@ def lights_out_violations(
     config: PolicyConfig,
     *,
     ids: tuple[str, ...] | None = None,
+    shipping: str | None = None,
 ) -> tuple[str, ...]:
     """The deterministic reasons an L3 ship delegation must refuse (D3).
 
-    All three preconditions are session-wide: every required gate green on the
-    root, zero rework escalations on any session bead, and zero needs-input
-    events recorded anywhere in the session.
+    Two preconditions are session-wide — zero rework escalations and zero
+    needs-input events on *any* session bead — so any wrinkle anywhere drops ship
+    back to a human. The gate check is scoped to *shipping*, the node actually
+    being shipped (default: the root, for a single-node session).
+
+    Scoping that one check is deliberate (basicly-kjc5.39, owner decision
+    2026-07-25). Checking the root's gates could never hold mid-session: an
+    epic's own verify gate is missing until the epic closes, so an L3 grant
+    refused every child ship and degraded to L2 for exactly the long multi-lane
+    sessions lights-out exists for. It was an accident of scoping, not a safety
+    property — the safety comes from the node's own gates being green plus a
+    session with no escalations and no missing facts anywhere.
     """
     violations: list[str] = []
-    status = gate_status(repo_root, root_issue, config)
+    gated = shipping or root_issue
+    status = gate_status(repo_root, gated, config)
     if not status.can_advance:
         pending = ", ".join((*status.required_failed, *status.required_missing))
-        violations.append(f"required gates not green on {root_issue}: {pending}")
+        violations.append(f"required gates not green on {gated}: {pending}")
     for issue_id in ids if ids is not None else _session_issue_ids(repo_root, root_issue):
         texts = _comment_texts(repo_root, issue_id)
         needs = sum(1 for text in texts if _marker_matches(text, _NEEDS_INPUT_MARKER))
