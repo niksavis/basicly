@@ -492,6 +492,62 @@ def freeze_estimate(repo_root: Path, feature_id: str, key: str, estimate: CostEs
         )
 
 
+@dataclass(frozen=True)
+class PlanVerdict:
+    """What the sizing governor makes of a plan, without acting on it (D8: estimate).
+
+    Separated from :func:`govern_working_set` so the dry-run and the real run
+    read the same numbers from the same code. Previously ``--dry-run`` called
+    ``preview`` alone, so a plan could preview clean and then be refused on the
+    real run — the preview was not a predictor of the thing it previews
+    (basicly-u6tw).
+    """
+
+    estimates: tuple[CostEstimate, ...]
+    # One guidance message per out-of-band child; empty when the plan is accepted.
+    violations: tuple[str, ...]
+    # Per-child sizing keys, and the frozen estimates that were reused, so the
+    # governor can record only what it newly computed.
+    keys: tuple[str, ...]
+    frozen: dict[str, CostEstimate]
+
+    @property
+    def refused(self) -> bool:
+        """True when the real run would refuse this plan."""
+        return bool(self.violations)
+
+
+def estimate_plan(
+    repo_root: Path, children: tuple[ChildSpec, ...], *, feature_id: str | None = None
+) -> PlanVerdict:
+    """Estimate every child and report band violations **without raising or recording**.
+
+    The read-only half of the governor: same estimates, same band checks, same
+    guidance strings as the real run, but nothing is refused and nothing is
+    frozen. That makes it safe for ``--dry-run`` and makes divergence between the
+    preview and the run impossible by construction rather than by discipline.
+    """
+    sizing = load_sizing_config(repo_root)
+    frozen = frozen_estimates(repo_root, feature_id) if feature_id is not None else {}
+    factors = calibrated_build_factors(repo_root, sizing)
+    overhead = instruction_overhead(repo_root)
+    keys = tuple(sizing_key(spec) for spec in children)
+    estimates = tuple(
+        frozen.get(key) or estimate_cost(repo_root, spec, factors, overhead)
+        for spec, key in zip(children, keys, strict=True)
+    )
+    violations = tuple(
+        message
+        for spec, estimate in zip(children, estimates, strict=True)
+        if (
+            message := policy.check_working_set(
+                spec.title, estimate.total, estimate.scope_tokens, sizing
+            )
+        )
+    )
+    return PlanVerdict(estimates=estimates, violations=violations, keys=keys, frozen=frozen)
+
+
 def govern_working_set(
     repo_root: Path, children: tuple[ChildSpec, ...], *, feature_id: str | None = None
 ) -> tuple[CostEstimate, ...]:
@@ -507,33 +563,18 @@ def govern_working_set(
     that has no bead yet — nothing is read or written and the estimate is a
     snapshot of this moment, as before.
     """
-    sizing = load_sizing_config(repo_root)
-    frozen = frozen_estimates(repo_root, feature_id) if feature_id is not None else {}
-    factors = calibrated_build_factors(repo_root, sizing)
-    overhead = instruction_overhead(repo_root)
-    keys = tuple(sizing_key(spec) for spec in children)
-    estimates = tuple(
-        frozen.get(key) or estimate_cost(repo_root, spec, factors, overhead)
-        for spec, key in zip(children, keys, strict=True)
-    )
-    violations = [
-        message
-        for spec, estimate in zip(children, estimates, strict=True)
-        if (
-            message := policy.check_working_set(
-                spec.title, estimate.total, estimate.scope_tokens, sizing
-            )
+    verdict = estimate_plan(repo_root, children, feature_id=feature_id)
+    if verdict.refused:
+        raise ValueError(
+            "sizing governor refused the decomposition:\n" + "\n".join(verdict.violations)
         )
-    ]
-    if violations:
-        raise ValueError("sizing governor refused the decomposition:\n" + "\n".join(violations))
     # Only an accepted plan is frozen: a refusal is the agent's cue to re-propose,
     # and freezing the numbers behind it would pin a verdict nothing acted on.
     if feature_id is not None:
-        for key, estimate in zip(keys, estimates, strict=True):
-            if key not in frozen:
+        for key, estimate in zip(verdict.keys, verdict.estimates, strict=True):
+            if key not in verdict.frozen:
                 freeze_estimate(repo_root, feature_id, key, estimate)
-    return estimates
+    return verdict.estimates
 
 
 # --- Recording in br --------------------------------------------------------

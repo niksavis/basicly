@@ -513,6 +513,55 @@ def test_govern_refuses_underfloor_child_with_merge_guidance(
     assert fake.created == []
 
 
+def test_dry_run_estimate_refuses_exactly_what_the_real_run_refuses(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The preview has to predict the run: same plan, same refusal, same guidance.
+
+    ``--dry-run`` used to call :func:`decompose.preview` alone, which knows
+    nothing about the sizing band — so an oversized plan previewed clean and was
+    then refused on the real run, and the preview predicted nothing about the
+    thing it previewed (basicly-u6tw).
+
+    Pinned as an equivalence rather than against a message, so the two paths
+    cannot drift: whatever the governor refuses, the estimate must refuse, with
+    the identical guidance strings.
+    """
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _write(tmp_path, "src/big.py", 400_000)  # 100k tokens x 3.0 >> 64k
+    children = (_child("huge", "src/big.py"),)
+
+    verdict = decompose.estimate_plan(tmp_path, children)
+
+    assert verdict.refused
+    assert verdict.estimates[0].total > 0
+    # Estimating is read-only: it creates no children and freezes no verdict.
+    assert fake.created == []
+    assert fake.comments == {}
+
+    with pytest.raises(ValueError) as excinfo:
+        decompose.decompose(tmp_path, "feat", children)
+    for message in verdict.violations:
+        assert message in str(excinfo.value)
+
+
+def test_dry_run_estimate_accepts_what_the_real_run_accepts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """And the in-band case agrees too, so the check is not vacuously strict."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    children = (_child("greenfield", "src/new-a.py"), _child("other", "src/new-b.py"))
+
+    verdict = decompose.estimate_plan(tmp_path, children)
+
+    assert not verdict.refused
+    assert verdict.violations == ()
+    assert len(verdict.estimates) == 2
+    assert fake.created == []
+
+
 def test_govern_passes_greenfield_plan(tmp_path: Path) -> None:
     """A plan whose scopes match no existing files estimates overhead-only and fits."""
     estimates = decompose.govern_working_set(tmp_path, (_child("a"), _child("b")))
