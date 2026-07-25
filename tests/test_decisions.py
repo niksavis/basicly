@@ -292,13 +292,18 @@ def test_decider_dispatch_is_bounded_and_metered(
         return runner.RunResult("fake", ("fake",), executed=True, returncode=0, stdout=verdict)
 
     monkeypatch.setattr(decisions.runner, "run", _run)
-    monkeypatch.setattr(
-        decisions.runner, "record_dispatch", lambda _r, issue, *_a: recorded.append(issue)
-    )
+    phases: list[object] = []
+
+    def _record(_repo, issue, _spec, _result, **inputs):
+        recorded.append(issue)
+        phases.append(inputs.get("phase"))
+
+    monkeypatch.setattr(decisions.runner, "record_dispatch", _record)
     decisions.invoke_decider(tmp_path, item.decision_id, "epic")
 
     assert seen["timeout"] == 3600.0  # the [runner] runner_timeout default
     assert recorded == [item.issue_id]
+    assert phases == ["decide"]
 
 
 def test_decider_timeout_abstains(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

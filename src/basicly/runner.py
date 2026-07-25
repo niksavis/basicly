@@ -26,6 +26,7 @@ one before a live run with ``basicly runner dry-run``.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import os
 import shutil
@@ -813,7 +814,50 @@ def context_occupancy(spec: RunnerSpec, result: RunResult) -> int | None:
     return None
 
 
-def record_dispatch(repo_root: Path, issue_id: str, spec: RunnerSpec, result: RunResult) -> None:
+_VERSION_CACHE: dict[str, str | None] = {}
+
+
+def adapter_version(spec: RunnerSpec) -> str | None:
+    """The dispatched CLI's own version string, cached per process.
+
+    D9 wants a dispatch reproducible in its inputs, and the adapter's version is
+    one of them: the same prompt to a different CLI build is a different input.
+    Probed once per spec — a probe failure records unknown rather than raising,
+    since telemetry must never fail a dispatch.
+    """
+    if spec.name in _VERSION_CACHE:
+        return _VERSION_CACHE[spec.name]
+    version: str | None = None
+    executable = spec.command[0] if spec.command else None
+    if executable and shutil.which(executable):
+        with contextlib.suppress(OSError, subprocess.SubprocessError):
+            proc = subprocess.run(  # nosec B603
+                [executable, "--version"],
+                check=False,
+                text=True,
+                encoding="utf-8",
+                capture_output=True,
+                timeout=15,
+            )
+            if proc.returncode == 0:
+                first = (proc.stdout or proc.stderr).strip().splitlines()
+                version = first[0][:120] if first else None
+    _VERSION_CACHE[spec.name] = version
+    return version
+
+
+def record_dispatch(  # noqa: PLR0913 — one parameter per recorded dispatch input
+    repo_root: Path,
+    issue_id: str,
+    spec: RunnerSpec,
+    result: RunResult,
+    *,
+    prompt: str | None = None,
+    phase: str | None = None,
+    scope_tokens: int | None = None,
+    forecast_tokens: int | None = None,
+    folded_info: tuple[str, ...] = (),
+) -> None:
     """Persist a metadata-only run-record for one dispatch, keyed by the bead.
 
     Shared by every dispatch site — the loop's build dispatch, the supervisor's
@@ -831,6 +875,7 @@ def record_dispatch(repo_root: Path, issue_id: str, spec: RunnerSpec, result: Ru
     if not result.handoff:
         command = tuple(format_command(spec, run_record.REDACTED_PROMPT, capture_usage=True))
     usage = extract_usage(spec, result)
+    digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest() if prompt is not None else None
     entry = run_record.build_record(
         agent=spec.name,
         handoff=result.handoff,
@@ -841,6 +886,17 @@ def record_dispatch(repo_root: Path, issue_id: str, spec: RunnerSpec, result: Ru
         tokens=usage.tokens if usage else None,
         cost=usage.cost if usage else None,
         estimated=usage.estimated if usage else None,
+        adapter_version=adapter_version(spec),
+        prompt_sha256=digest,
+        phase=phase,
+        scope_tokens=scope_tokens,
+        forecast_tokens=forecast_tokens,
+        folded_info=folded_info,
     )
     with contextlib.suppress(OSError):
         run_record.record(repo_root, issue_id, entry)
+    # The marker is the shared half: .basicly/usage/ never leaves this machine,
+    # while br comments travel in issues.jsonl (D11). Best-effort — evidence
+    # must never fail a landing.
+    with contextlib.suppress(OSError, RuntimeError):
+        run_record.record_marker(repo_root, issue_id, entry)

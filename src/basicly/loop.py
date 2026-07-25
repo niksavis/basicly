@@ -352,14 +352,15 @@ def _run_agent(ctx: _Ctx, issue_id: str, cwd: Path) -> _Dispatch:
     """
     config = load_runner_config(ctx.repo_root)
     spec = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
+    prompt = dispatch_prompt(issue_id)
     result = runner.run(
         spec,
-        dispatch_prompt(issue_id),
+        prompt,
         cwd,
         capture_usage=True,
         timeout=config.runner_timeout,
     )
-    record_run(ctx.repo_root, issue_id, spec, result)
+    record_run(ctx.repo_root, issue_id, spec, result, prompt=prompt, phase="build")
     return _Dispatch(spec=spec, result=result, cwd=cwd, timeout=config.runner_timeout)
 
 
@@ -409,15 +410,20 @@ def _runner_block(
 
 
 def record_run(
-    repo_root: Path, issue_id: str, spec: runner.RunnerSpec, result: runner.RunResult
+    repo_root: Path,
+    issue_id: str,
+    spec: runner.RunnerSpec,
+    result: runner.RunResult,
+    **inputs: object,
 ) -> None:
     """Persist a metadata-only run-record for this dispatch, keyed by the bead.
 
     Thin alias for :func:`runner.record_dispatch`, which every dispatch site now
     shares (the loop, the supervisor, the rubric judge, and the decider) so all of
-    them feed the one telemetry stream.
+    them feed the one telemetry stream. *inputs* forwards the recorded dispatch
+    inputs (prompt, phase, sizing, folded record ids) unchanged.
     """
-    runner.record_dispatch(repo_root, issue_id, spec, result)
+    runner.record_dispatch(repo_root, issue_id, spec, result, **inputs)  # type: ignore[arg-type]
 
 
 def dispatch_prompt(issue_id: str) -> str:

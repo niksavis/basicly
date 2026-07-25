@@ -493,13 +493,9 @@ def invoke_decider(
     # Bounded and metered like every other dispatch (basicly-kjc5.31): without the
     # timeout a hung decider hangs the pass forever, and without the run-record its
     # tokens never count against the session's D3 grant ceiling.
-    result = runner.run(
-        spec,
-        decider_prompt(item, intake_corpus(repo_root, root_issue)),
-        repo_root,
-        timeout=runner_config.runner_timeout,
-    )
-    runner.record_dispatch(repo_root, item.issue_id, spec, result)
+    prompt = decider_prompt(item, intake_corpus(repo_root, root_issue))
+    result = runner.run(spec, prompt, repo_root, timeout=runner_config.runner_timeout)
+    runner.record_dispatch(repo_root, item.issue_id, spec, result, prompt=prompt, phase="decide")
     if result.timed_out or result.handoff or result.returncode != 0:
         # One outcome, three causes: nothing usable came back, so the item stays
         # with the human. Naming the timeout distinctly matters for triage — a

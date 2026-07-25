@@ -273,13 +273,9 @@ def evaluate(
     if judged:
         config = load_runner_config(repo_root)
         spec = runner.select_runner(config.specs, runner_name or config.default)
-        result = runner.run(
-            spec,
-            build_judge_prompt(issue_id, rubric, judged),
-            repo_root,
-            timeout=config.runner_timeout,
-        )
-        runner.record_dispatch(repo_root, issue_id, spec, result)
+        prompt = build_judge_prompt(issue_id, rubric, judged)
+        result = runner.run(spec, prompt, repo_root, timeout=config.runner_timeout)
+        runner.record_dispatch(repo_root, issue_id, spec, result, prompt=prompt, phase="validate")
         if result.handoff or result.timed_out:
             why = (
                 f"timed out after {config.runner_timeout:.0f}s — judge manually"

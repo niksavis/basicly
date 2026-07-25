@@ -21,12 +21,15 @@ bead id, so a re-dispatched (reworked) node keeps its run history.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import threading
 from dataclasses import asdict, dataclass, fields
 from datetime import UTC, datetime
 from pathlib import Path
+
+from . import br
 
 USAGE_DIR = Path(".basicly/usage")
 RUN_RECORDS_FILE = USAGE_DIR / "run-records.json"
@@ -61,6 +64,20 @@ class RunRecord:
     tokens: int | None = None
     cost: float | None = None
     estimated: bool | None = None
+    # --- Reproducible dispatch inputs (D9, basicly-kjc5.28) ------------------
+    # What the dispatch actually ran, so two attempts on one node are diffable:
+    # when attempt 2 behaves differently, these say whether the *input* changed.
+    # The prompt itself is never persisted — only its digest.
+    adapter_version: str | None = None
+    prompt_sha256: str | None = None
+    phase: str | None = None
+    # Sizing inputs frozen at dispatch, so a later calibration cannot silently
+    # re-derive them against a changed tree (D8 drift, basicly-kjc5.30).
+    scope_tokens: int | None = None
+    forecast_tokens: int | None = None
+    # Ids of the found-info records folded into the bundle. Bundle assembly
+    # truncates to the newest N, so without this the prompt is unexplainable.
+    folded_info: tuple[str, ...] = ()
 
 
 def outcome_of(*, handoff: bool, returncode: int | None) -> str:
@@ -84,6 +101,12 @@ def build_record(  # noqa: PLR0913
     tokens: int | None = None,
     cost: float | None = None,
     estimated: bool | None = None,
+    adapter_version: str | None = None,
+    prompt_sha256: str | None = None,
+    phase: str | None = None,
+    scope_tokens: int | None = None,
+    forecast_tokens: int | None = None,
+    folded_info: tuple[str, ...] = (),
 ) -> RunRecord:
     """Assemble a :class:`RunRecord`, deriving the outcome and stamping the time.
 
@@ -104,6 +127,12 @@ def build_record(  # noqa: PLR0913
         tokens=tokens,
         cost=cost,
         estimated=estimated,
+        adapter_version=adapter_version,
+        prompt_sha256=prompt_sha256,
+        phase=phase,
+        scope_tokens=scope_tokens,
+        forecast_tokens=forecast_tokens,
+        folded_info=tuple(folded_info),
     )
 
 
@@ -183,3 +212,72 @@ def _read(records_file: Path) -> dict[str, list]:
     except OSError, json.JSONDecodeError:
         return {}
     return data if isinstance(data, dict) else {}
+
+
+# --- Shared evidence ledger (D11, basicly-kjc5.28) ---------------------------
+
+# Marker family carrying one dispatch's evidence on the bead it ran for. The
+# fourth alongside [harness-policy], [harness-decision] and [harness-info], and
+# for the same reason: br exports comments in issues.jsonl, so a marker travels
+# with a clone while .basicly/usage/ does not. That makes this the only carrier
+# a teammate's calibration can read (D11).
+MARKER = "[harness-run]"
+
+
+def marker_id(bead_id: str, prompt_sha256: str, phase: str, attempt: int = 1) -> str:
+    """The content-derived id for one dispatch's marker.
+
+    Derived rather than sequential so re-recording the same dispatch is
+    idempotent instead of duplicated — the decision-queue pattern
+    (``decisions.decision_id_for``). *attempt* distinguishes a genuine re-run
+    whose prompt and phase happened to be identical, which is how rework shows
+    up in the ledger rather than collapsing into one entry.
+    """
+    digest = hashlib.sha256(f"{phase}:{prompt_sha256}".encode()).hexdigest()[:10]
+    suffix = digest if attempt == 1 else f"{digest}-{attempt}"
+    return f"{bead_id}#run-{suffix}"
+
+
+def _recorded_marker_ids(repo_root: Path, bead_id: str) -> set[str]:
+    """Marker ids already recorded on *bead_id*; empty when br cannot answer."""
+    proc = br.try_run_br(repo_root, ["comments", "list", bead_id, "--json"])
+    if proc is None or proc.returncode != 0:
+        return set()
+    try:
+        comments = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return set()
+    if not isinstance(comments, list):
+        return set()
+    found: set[str] = set()
+    for comment in comments:
+        text = comment.get("text", "") if isinstance(comment, dict) else ""
+        for line in text.splitlines():
+            if line.startswith(f"{MARKER} id="):
+                found.add(line[len(f"{MARKER} id=") :].split()[0])
+    return found
+
+
+def record_marker(repo_root: Path, bead_id: str, run_record: RunRecord) -> str | None:
+    """Persist *run_record* as a ``[harness-run]`` marker on *bead_id*.
+
+    Returns the marker id, or None when there is nothing to key on (no prompt
+    digest) or br is unavailable. Best-effort like :func:`record`: the ledger is
+    evidence, and a write failure must never fail a landing.
+
+    A handoff is recorded too — that nothing executed is itself evidence, and
+    omitting it would make the dispatch count understate the attempts.
+    """
+    if not run_record.prompt_sha256:
+        return None
+    phase = run_record.phase or "dispatch"
+    existing = _recorded_marker_ids(repo_root, bead_id)
+    attempt = 1
+    while marker_id(bead_id, run_record.prompt_sha256, phase, attempt) in existing:
+        attempt += 1
+    ident = marker_id(bead_id, run_record.prompt_sha256, phase, attempt)
+    payload = {k: v for k, v in asdict(run_record).items() if v not in (None, (), [])}
+    body = f"{MARKER} id={ident} phase={phase}\n{json.dumps(payload, sort_keys=True)}"
+    if br.try_run_br(repo_root, ["comments", "add", bead_id, body]) is None:
+        return None
+    return ident
