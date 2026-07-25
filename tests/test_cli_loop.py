@@ -158,6 +158,9 @@ def test_loop_run_challenge_reprints_the_whole_command_to_rerun(
     err = capsys.readouterr().err
     assert "checkpoint classify: CONFIRMATION REQUIRED (basicly-x)" in err
     assert "basicly loop run basicly-x --work-type task --mode fast --confirm c0ffee" in err
+    # The ceremony shares the challenge wording with policy checkpoint/grant
+    # (basicly-kjc5.34): the caller may run it once a human approves.
+    assert "may run the command themselves" in err
 
 
 def test_loop_run_reports_a_refusal_on_stderr(

@@ -89,6 +89,26 @@ grant`, with `--root <epic>` on the run) resolves the checkpoint with no relay a
 all. Nothing here widens what may be self-approved: a TTY, a covering grant, or a
 relayed code are still the only three ways past a checkpoint.
 
+### Answering a confirm-code challenge
+
+The challenge protects the human **decision**, not the keystrokes. So do not hand
+the command over and wait for someone to type it — that wastes a round trip and
+races the code's 15-minute TTL, and a ship code has expired mid-ask before. The
+protocol is:
+
+1. **Show the exact command**, including the code.
+2. **Say what approving it does** in one line — which bead, which checkpoint, and
+   what happens next (a classify approval provisions a worktree; a ship approval
+   merges, closes and tears down).
+3. **Get an explicit yes.** Silence, "sounds good" about something else, or an
+   earlier approval of a different checkpoint is not one. Approval covers the one
+   checkpoint in front of you, never the next.
+4. **Then run it yourself.**
+
+Ask when the challenge appears, not after finishing other work — the code expires
+whether or not you are ready for it. If it has expired, re-run the command with no
+`--confirm` to mint a fresh one and ask again.
+
 ```sh
 basicly loop advance <issue> [--work-type T] [--children plan.toml] [--mode M]
 ```

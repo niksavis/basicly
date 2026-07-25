@@ -65,6 +65,30 @@ def test_checkpoint_approve_non_interactive_challenges(
     assert "--confirm cafe1234" in err
 
 
+def test_challenge_says_the_caller_may_run_it_once_a_human_approves(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The challenge must not read as "hand this over and wait" (basicly-kjc5.34).
+
+    The gate forces a human *decision*; it never cared whose fingers type the
+    command. The old wording said "a human must re-run with the one-time code",
+    so an agent handed the command over and waited — a wasted round trip that
+    raced the code's TTL, and a ship code did expire mid-ask.
+    """
+    _no_tty(monkeypatch)
+    monkeypatch.setattr(policy, "_new_code", lambda: "cafe1234")
+    assert cli.main(["policy", "checkpoint", "basicly-x", "ship", "--approve"]) == 1
+    err = capsys.readouterr().err
+    assert "A human must approve this decision" in err
+    assert "may run the command themselves" in err
+    # The protocol, so an agent knows what "approval" has to look like.
+    assert "get an explicit yes" in err
+    # The deadline, since queueing the ask behind other work is how a code expires.
+    assert f"expires in {policy.CONFIRM_TTL_SECONDS // 60} minutes" in err
+    # The regression pin: the phrasing that caused the hand-off is gone.
+    assert "must re-run" not in err
+
+
 def test_checkpoint_approve_with_valid_code_succeeds(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -129,6 +153,8 @@ def test_grant_issue_non_interactive_challenges(
     err = capsys.readouterr().err
     assert "CONFIRMATION REQUIRED" in err
     assert "--confirm feed5678" in err
+    # Grant issuance shares the challenge wording with checkpoint approval.
+    assert "may run the command themselves" in err
 
 
 def test_grant_issue_refused_at_default_ceiling(
