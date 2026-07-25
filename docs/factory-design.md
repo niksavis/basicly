@@ -89,9 +89,12 @@ Levels:
 - **L2 — autonomous build**: classify + decompose delegable to a decider agent; every
   delegated decision logged as an attributed `br` comment (agent/model/run-id — plumb the
   existing `br create --agent-name/--harness/--model` attribution flags). Ship stays human.
-- **L3 — lights-out**: ship delegable **only** when deterministic preconditions hold — all
-  required gates green, zero rework escalations, zero needs-input events in the session.
-  Any wrinkle drops ship back to human.
+- **L3 — lights-out**: ship delegable **only** when deterministic preconditions hold — every
+  required gate green **on the node being shipped**, zero rework escalations and zero
+  needs-input events **anywhere in the session**. Any wrinkle drops ship back to human. The
+  gate check is scoped to the shipped node rather than the session root because a root that is
+  still open cannot have its own gates green (owner decision 2026-07-25, `basicly-kjc5.39`);
+  the two session-wide preconditions carry the "any wrinkle" stance.
 
 Enforcement stays in `policy.approve_checkpoint_guarded`, extended to accept a valid grant
 in lieu of a TTY when the level covers the checkpoint and preconditions hold. Grants expire
@@ -107,11 +110,10 @@ delegated decisions occur — the session drops to human-only until re-granted.
 > and enqueues an `escalation` item on the session root so the halt is not read as an idle pass.
 > No grant, or an L1 grant with no budget, means no ceiling — not a halt.
 >
-> Two further gaps in this ladder, found 2026-07-25: an **L3 ship delegation can never fire for
-> a child** while its session root is open, because `lights_out_violations` requires every
-> required gate green on the *root* and an epic's verify gate is missing until the epic itself
-> closes — so L3 silently degrades to L2 for exactly the multi-lane sessions it was written for
-> (`basicly-kjc5.39`). And R9 (roster) needs a decision class this ladder cannot express: one
+> **L3 reaches a child's ship since `basicly-kjc5.39`.** `lights_out_violations` takes the node
+> being shipped and checks *its* required gates; the root-scoped check it replaced could never
+> hold mid-session, so it refused every child ship unconditionally. Still open: R9 (roster) needs
+> a decision class this ladder cannot express: one
 > that **no** level auto-disposes, an exception to the L0–L3 progression rather than a rung in
 > it, so an autonomy grant can never hand the catalog to the decider.
 
@@ -648,7 +650,6 @@ absorption (`kjc5.13`). The client surface (`kjc5.8`) is built: `loop session` o
 
 The gaps that matter most, because a reader would otherwise believe the decision is enforced:
 
-- **L3 cannot delegate a child's ship** while the session root is open (`kjc5.39`).
 - **`stall_after` does not exist** — only the hard kill (`kjc5.25`).
 - **No model is pinned on any adapter**, so R5's tier economics rest on an unpinned mapping
   and dispatch is not reproducible in its inputs as D9 requires (`kjc5.29`, `kjc5.28`).

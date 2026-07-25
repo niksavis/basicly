@@ -35,6 +35,7 @@ class _FakeBr:
         dependents: list[dict] | None = None,
         status: str = "open",
         records: dict[str, dict] | None = None,
+        gates_by_issue: dict[str, list[dict]] | None = None,
     ):
         self.lint_missing = lint_missing or []
         self.gates = gates or []
@@ -43,6 +44,9 @@ class _FakeBr:
         self.dependents = dependents or []
         self.status = status
         self.records = records or {}
+        # Per-issue gates, for the checks that must tell one bead's gates from
+        # another's (lights-out scoping, basicly-kjc5.39); falls back to `gates`.
+        self.gates_by_issue = gates_by_issue or {}
         self.comments: list[str] = []
 
     def __call__(self, _repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
@@ -59,7 +63,8 @@ class _FakeBr:
             }
             return _Proc(json.dumps([record]))
         if args[:2] == ["gate", "list"]:
-            return _Proc(json.dumps({"results": self.gates}))
+            results = self.gates_by_issue.get(args[2], self.gates)
+            return _Proc(json.dumps({"results": results}))
         if args[:2] == ["comments", "list"]:
             return _Proc(json.dumps([{"text": t} for t in self.comments]))
         if args[:2] == ["comments", "add"]:
@@ -676,6 +681,91 @@ def test_l3_ship_refuses_on_any_wrinkle(monkeypatch: pytest.MonkeyPatch, tmp_pat
     fake.comments.append("[harness-policy] grant level=L3 budget=1000000")
     result = policy.approve_checkpoint_guarded(tmp_path, "root", "ship", interactive=False)
     assert result.status == "challenge"
+
+
+def _open_epic_with_green_child(**gates: object) -> _FakeBr:
+    """An open epic root whose own verify gate is missing, and a green child.
+
+    The shape every real multi-lane session has mid-run: the epic cannot have a
+    verify gate until it closes, so it is the child that is shippable.
+    """
+    child = {"id": "root.1", "dependency_type": "parent-child", "status": "open"}
+    return _FakeBr(
+        dependents=[child],
+        gates_by_issue={"root": [], "root.1": _VERIFY_GREEN},
+        **gates,  # type: ignore[arg-type]
+    )
+
+
+def test_l3_delegates_a_green_childs_ship_while_the_root_is_open(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The case lights-out exists for (basicly-kjc5.39, owner decision 2026-07-25).
+
+    Scoped to the grant root's gates this refused unconditionally - an epic's own
+    verify gate is missing until the epic closes - so L3 degraded to L2 for every
+    multi-lane session.
+    """
+    fake = _open_epic_with_green_child()
+    _install(monkeypatch, fake)
+    fake.comments.append("[harness-policy] grant level=L3 budget=1000000")
+
+    result = policy.approve_checkpoint_guarded(
+        tmp_path, "root.1", "ship", interactive=False, grant_root="root"
+    )
+
+    assert result.status == "approved"
+    assert "delegated under L3 grant" in result.detail
+    assert policy.checkpoint_approved(tmp_path, "root.1", "ship")
+
+
+def test_l3_still_refuses_a_child_whose_own_gates_are_not_green(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Scoping the check moved it to the shipped node; it did not remove it."""
+    fake = _FakeBr(
+        dependents=[{"id": "root.1", "dependency_type": "parent-child", "status": "open"}],
+        gates_by_issue={"root": _VERIFY_GREEN, "root.1": []},
+    )
+    _install(monkeypatch, fake)
+    fake.comments.append("[harness-policy] grant level=L3 budget=1000000")
+
+    result = policy.approve_checkpoint_guarded(
+        tmp_path, "root.1", "ship", interactive=False, grant_root="root"
+    )
+
+    assert result.status == "challenge"
+    assert not policy.checkpoint_approved(tmp_path, "root.1", "ship")
+
+
+def test_l3_child_ship_still_refuses_on_a_session_wide_wrinkle(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The other two preconditions stay session-wide: a wrinkle anywhere drops ship."""
+    fake = _open_epic_with_green_child()
+    _install(monkeypatch, fake)
+    fake.comments.append("[harness-policy] grant level=L3 budget=1000000")
+    # Recorded on the ROOT, not on the child being shipped.
+    policy.record_needs_input(tmp_path, "root", "which API version")
+
+    result = policy.approve_checkpoint_guarded(
+        tmp_path, "root.1", "ship", interactive=False, grant_root="root"
+    )
+
+    assert result.status == "challenge"
+
+
+def test_lights_out_gate_check_defaults_to_the_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Omitting *shipping* keeps the old single-node behaviour: the root is the node."""
+    _install(monkeypatch, _FakeBr(gates_by_issue={"root": [], "root.1": _VERIFY_GREEN}))
+
+    violations = policy.lights_out_violations(tmp_path, "root", CONFIG)
+    assert any("required gates not green on root" in v for v in violations)
+
+    scoped = policy.lights_out_violations(tmp_path, "root", CONFIG, shipping="root.1")
+    assert not any("required gates not green" in v for v in scoped)
 
 
 def test_lights_out_violations_name_each_reason(
