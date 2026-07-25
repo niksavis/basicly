@@ -271,6 +271,33 @@ The distinction our own usage has already taught us:
 And no slugs in ids. `br create --slug` embeds hyphens that read as a prefix boundary, which
 breaks the commit-message gate — a shipped defect we worked around rather than a hypothetical.
 
+### 9.5 Time — a timestamp is evidence, never a constraint
+
+Ordering comes from the log, not from the clock. Each appended event carries a **sequence
+number**, monotonic per ledger and assigned by the single writer (§9.3); the fold reads events in
+sequence order and nothing else. Two events with equal or out-of-order timestamps are a normal
+occurrence, not a conflict to resolve.
+
+A wall-clock timestamp goes on an event as **evidence** — "when did this happen, roughly" — and
+nothing branches on it. Specifically:
+
+- **A write is never refused because of timestamp ordering.** Beads validates `updated_at >=
+  created_at` and hard-errors when the machine's clock steps backwards between two writes, which
+  an unconverged NTP resync does routinely. That turns a host's clock into a source of tracker
+  failures during a long run, in the middle of a landing or a close. We record what the clock
+  said and move on.
+- **No derived value is a function of a timestamp.** Ranking already drops `created_at` for a
+  different reason (§9.2); the same rule holds for staleness, dedup and idempotence, which key on
+  sequence and content (§9.4), never on time.
+- **Durations are measured on a monotonic clock.** Anything the tracker times itself uses
+  `perf_counter`/`monotonic`; the wall clock is only ever *recorded*. The engine already obeys
+  this, and a guard test in `tests/test_runner.py` fails on any new wall-clock interval, listing
+  the two cross-process exemptions with their reasons.
+
+The general form: **the ledger must be totally ordered by something we assign, so that a
+misbehaving host clock degrades the quality of our evidence and never the correctness of our
+state.**
+
 ## 10. Speed and scaling — measured, not assumed
 
 Measured 2026-07-25 against the live 749 KB / 332-record ledger:

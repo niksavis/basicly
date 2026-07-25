@@ -1411,6 +1411,63 @@ def test_every_engine_dispatch_site_declares_a_class() -> None:
     assert not unbudgeted, "unbudgeted agent dispatch site(s): " + "; ".join(unbudgeted)
 
 
+# --- No engine interval is measured on a wall clock (basicly-jr0l.5) ---------
+#
+# A wall clock can step backwards — an unconverged NTP resync does it routinely
+# — so any duration, timeout or deadline derived from one can come out negative
+# or short. Every such measurement in the engine already uses perf_counter or
+# monotonic, which are immune by construction; this keeps that a gate rather
+# than a convention nobody can see.
+#
+# The exemptions are the sites where a monotonic reading would be *meaningless*,
+# not merely inconvenient: both compare against a value produced outside this
+# process, and monotonic clocks share no origin across a reboot or a file's
+# mtime. Each is one `_now()` indirection, which is also the tests' clock seam.
+
+WALL_CLOCK_EXEMPT = {
+    "supervise.py": "lock staleness subtracts a filesystem mtime, not a reading of ours",
+    "policy.py": "the confirm-code TTL is persisted to disk and read back by another process",
+}
+
+
+def test_no_engine_interval_is_measured_on_a_wall_clock() -> None:
+    """``time.time()`` appears only in the two exempt ``_now()`` seams, and nowhere else.
+
+    Also bans ``.total_seconds()``, the other way an interval sneaks onto the
+    wall clock: subtracting two ``datetime.now()`` readings. Scope is deliberate
+    and narrow — this pins where the *clock* comes from, not every arithmetic
+    shape — so a violation is always a real one rather than a heuristic to
+    suppress.
+    """
+    src = Path(__file__).resolve().parents[1] / "src" / "basicly"
+    offenders: list[str] = []
+    seen_exempt: set[str] = set()
+    for path in sorted(src.glob("*.py")):
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for number, line in enumerate(lines):
+            if ".total_seconds()" in line:
+                offenders.append(f"{path.name}:{number + 1}: duration from a datetime difference")
+                continue
+            if "time.time()" not in line:
+                continue
+            if path.name not in WALL_CLOCK_EXEMPT:
+                offenders.append(f"{path.name}:{number + 1}: {line.strip()}")
+                continue
+            # An exemption covers the `_now()` seam it was granted for, not the
+            # whole module: anything else in the file is still a violation.
+            window = "\n".join(lines[max(0, number - 3) : number + 1])
+            if "def _now(" not in window:
+                offenders.append(f"{path.name}:{number + 1}: outside the exempt _now() seam")
+            else:
+                seen_exempt.add(path.name)
+    assert not offenders, "wall-clock interval(s) in the engine: " + "; ".join(offenders)
+    # Keep the exemption list honest: a site that stopped needing it must be
+    # removed, or the next reader treats a dead entry as licence.
+    assert seen_exempt == set(WALL_CLOCK_EXEMPT), (
+        f"stale wall-clock exemption(s): {sorted(set(WALL_CLOCK_EXEMPT) - seen_exempt)}"
+    )
+
+
 # --- Stall detection (component 6 mechanic, basicly-kjc5.25) ------------------
 
 
