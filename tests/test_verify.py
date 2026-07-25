@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -156,6 +157,65 @@ def test_run_verify_filters_by_mode_and_aggregates(
     assert report.failures == ("b",)
 
 
+def test_run_fix_skips_a_check_without_a_fix_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only checks that declare a mechanical repair are ever fixed."""
+    monkeypatch.setattr(
+        verify.subprocess, "run", lambda *_a, **_k: pytest.fail("no fixer is configured")
+    )
+    assert verify.run_fix(_check("ruff", ("full",)), tmp_path, "full").status == "skip"
+
+
+def test_apply_fixes_runs_the_fix_commands_not_the_checks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """apply_fixes invokes each declared fix_command and nothing else."""
+    seen: list[list[str]] = []
+    monkeypatch.setattr(
+        verify.subprocess, "run", lambda command, **_kw: (seen.append(command), _Proc(0))[1]
+    )
+    config = VerifyConfig((
+        _check("pytest", ("full",)),
+        VerifyCheck(
+            name="ruff-format",
+            command=("ruff", "format", "--check"),
+            modes=frozenset({"full"}),
+            fix_command=("ruff", "format"),
+        ),
+    ))
+
+    report = verify.apply_fixes(tmp_path, "full", config)
+
+    assert seen == [["ruff", "format"]]
+    assert [(r.name, r.status) for r in report.results] == [
+        ("pytest", "skip"),
+        ("ruff-format", "pass"),
+    ]
+
+
+def test_apply_fixes_scopes_to_staged_files_in_staged_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """In staged mode a fix touches the staged files only, like the check does."""
+    monkeypatch.setattr(verify, "staged_files", lambda _root, _suffix: ["a.py"])
+    captured: list[str] = []
+    monkeypatch.setattr(
+        verify.subprocess, "run", lambda command, **_kw: (captured.extend(command), _Proc(0))[1]
+    )
+    check = VerifyCheck(
+        name="ruff-format",
+        command=("ruff", "format", "--check"),
+        modes=frozenset({"staged"}),
+        staged_suffix=".py",
+        fix_command=("ruff", "format"),
+    )
+
+    verify.run_fix(check, tmp_path, "staged")
+
+    assert captured == ["ruff", "format", "a.py"]
+
+
 def test_report_gate_without_br(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """When br is absent, reporting degrades gracefully instead of raising."""
     monkeypatch.setattr(verify.br, "try_run_br", lambda *_a, **_kw: None)
@@ -305,3 +365,53 @@ def test_cli_verify_returns_nonzero_on_failure(
         lambda *_a, **_k: verify.VerifyReport("full", (verify.CheckResult("x", "pass", 0),)),
     )
     assert cli.main(["verify", "--mode", "full"]) == 0
+
+
+def test_cli_verify_fix_repairs_before_checking(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """--fix applies the declared repair first; a plain run stays a pure verdict.
+
+    The plain run is what CI executes, so unformatted input from outside the
+    harness must still fail there (basicly-kjc5.43).
+    """
+    monkeypatch.chdir(tmp_path)
+    python = Path(sys.executable).as_posix()
+    (tmp_path / "basicly.toml").write_text(
+        "[[verify.checks]]\n"
+        'name = "fmt"\n'
+        f"command = ['{python}', '-c', "
+        """'import pathlib, sys; sys.exit(0 if pathlib.Path("formatted").exists() else 1)']\n"""
+        f"fix_command = ['{python}', '-c', "
+        """'import pathlib; pathlib.Path("formatted").write_text("x")']\n"""
+        'modes = ["full"]\n',
+        encoding="utf-8",
+    )
+
+    assert cli.main(["verify", "--mode", "full"]) == 1
+    assert not (tmp_path / "formatted").exists()
+
+    assert cli.main(["verify", "--mode", "full", "--fix"]) == 0
+    assert (tmp_path / "formatted").exists()
+    assert "[fix] applied fmt" in capsys.readouterr().out
+
+
+def test_cli_verify_fix_reports_a_broken_fixer_without_hiding_the_verdict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A fixer that cannot run is named on stderr and the check still decides."""
+    monkeypatch.chdir(tmp_path)
+    empty_bin = tmp_path / "bin"
+    empty_bin.mkdir()
+    monkeypatch.setenv("PATH", str(empty_bin))
+    (tmp_path / "basicly.toml").write_text(
+        '[[verify.checks]]\nname = "fmt"\ncommand = ["ghost-tool"]\n'
+        'fix_command = ["ghost-tool", "--write"]\nmodes = ["full"]\n',
+        encoding="utf-8",
+    )
+
+    assert cli.main(["verify", "--mode", "full", "--fix"]) == 1
+    captured = capsys.readouterr()
+    assert "[fix] fmt failed" in captured.err
+    assert "command not found: ghost-tool" in captured.err
+    assert "[verify] FAIL: fmt" in captured.err

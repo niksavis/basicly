@@ -567,7 +567,7 @@ names were removed, not aliased).
 | Command                                     | Behavior                                                                                                                                     |
 | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `basicly worktree ...`                      | Sibling git-worktree lifecycle: create + provision (deps, hooks), list, cleanup (§12.5)                                                      |
-| `basicly verify [--gate]`                   | Runs the consumer's `[[verify.checks]]` from `basicly.toml` per mode and optionally records a `br` gate (§12.3–12.4)                         |
+| `basicly verify [--gate] [--fix]`           | Runs the consumer's `[[verify.checks]]` per mode and optionally records a `br` gate; `--fix` applies mechanical repairs first (§12.3–12.4)   |
 | `basicly policy ...`                        | DoR/gate/rework/checkpoint checks; `policy checkpoint --approve` needs an interactive TTY or a one-time `--confirm` code (§12.2)             |
 | `basicly decompose`                         | Turns a feature into child `br` issues + a computed dependency graph (§12.2)                                                                 |
 | `basicly loop status\|advance\|run <issue>` | Drives an issue through the harness loop; a blocked step exits non-zero and names the input it needs (§12.2)                                 |
@@ -778,7 +778,12 @@ type, build; the existing commit-msg/identity/beads hooks) report a **required**
 `br gate report --status pass|fail`; a failed required gate blocks loop advancement.
 AI-semantic verification reports a **non-required** gate — advisory, never blocking (§3.3
 deterministic-first, semantic-second, applied to the loop). The block-vs-advise policy and
-the n=2 rework rule live in the harness engine; `br gate` only stores the verdicts.
+the n=2 rework rule live in the harness engine; `br gate` only stores the verdicts. A check
+whose repair is purely mechanical and lossless also declares a **`fix_command`** (a
+formatter's write mode): the pre-commit hook applies it to the staged files and re-stages
+them, so the commit carries the fixed bytes and no agent cycle is ever spent re-running a
+repair a script can make. The check itself is unchanged, so unformatted input from outside
+the harness still fails in CI, and a non-mechanical failure (lint, type, test) still blocks.
 
 **12.5 Work isolation.** Non-trivial work runs in a **sibling** git worktree
 `<repo>.worktrees/<name>` on branch `harness/<name>` (never in-repo `.claude/worktrees/`,

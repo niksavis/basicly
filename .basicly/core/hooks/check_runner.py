@@ -33,10 +33,10 @@ def project_root() -> Path:
     return cwd
 
 
-def load_checks(repo_root: Path, mode: str) -> list[tuple[str, list[str]]]:
-    """Return ``(name, command)`` pairs configured for *mode*.
+def _mode_entries(repo_root: Path, mode: str) -> list[dict]:
+    """Return the validated ``[[verify.checks]]`` entries declared for *mode*.
 
-    A missing file or section yields no checks. A malformed check entry is a
+    A missing file or section yields no entries. A malformed check entry is a
     loud error (SystemExit) — a lost gate must never pass unnoticed.
     """
     config_path = repo_root / CONFIG_FILE
@@ -49,22 +49,146 @@ def load_checks(repo_root: Path, mode: str) -> list[tuple[str, list[str]]]:
     if not isinstance(raw_checks, list):
         return []
 
-    checks: list[tuple[str, list[str]]] = []
+    entries: list[dict] = []
     for entry in raw_checks:
         if not isinstance(entry, dict):
             raise SystemExit(f"{CONFIG_FILE}: [[verify.checks]] entry must be a table")
         name = entry.get("name")
         command = entry.get("command")
         modes = entry.get("modes")
+        fix_command = entry.get("fix_command")
         if not (isinstance(name, str) and name.strip()):
             raise SystemExit(f"{CONFIG_FILE}: a [[verify.checks]] entry is missing 'name'")
         if not (isinstance(command, list) and command and all(isinstance(a, str) for a in command)):
             raise SystemExit(f"{CONFIG_FILE}: check {name!r} needs a 'command' list of strings")
         if not (isinstance(modes, list) and all(isinstance(m, str) for m in modes)):
             raise SystemExit(f"{CONFIG_FILE}: check {name!r} needs a 'modes' list of strings")
+        if fix_command is not None and not (
+            isinstance(fix_command, list)
+            and fix_command
+            and all(isinstance(a, str) for a in fix_command)
+        ):
+            raise SystemExit(
+                f"{CONFIG_FILE}: check {name!r} 'fix_command' must be a list of strings"
+            )
         if mode in modes:
-            checks.append((name.strip(), list(command)))
-    return checks
+            entries.append(entry)
+    return entries
+
+
+def load_checks(repo_root: Path, mode: str) -> list[tuple[str, list[str]]]:
+    """Return ``(name, command)`` pairs configured for *mode*."""
+    return [
+        (str(entry["name"]).strip(), list(entry["command"]))
+        for entry in _mode_entries(repo_root, mode)
+    ]
+
+
+def load_fixes(repo_root: Path, mode: str) -> list[tuple[str, list[str], str | None]]:
+    """Return ``(name, fix_command, staged_suffix)`` for *mode* checks that declare a fix.
+
+    ``fix_command`` is the deterministic, lossless repair for a check (a
+    formatter's write mode); ``staged_suffix`` scopes it to the staged files of
+    that suffix so a commit-time fix never reformats files the commit doesn't
+    touch.
+    """
+    fixes: list[tuple[str, list[str], str | None]] = []
+    for entry in _mode_entries(repo_root, mode):
+        fix_command = entry.get("fix_command")
+        if not fix_command:
+            continue
+        suffix = entry.get("staged_suffix")
+        fixes.append((
+            str(entry["name"]).strip(),
+            list(fix_command),
+            suffix if isinstance(suffix, str) and suffix else None,
+        ))
+    return fixes
+
+
+def _git_lines(repo_root: Path, *args: str) -> list[str] | None:
+    """Non-empty output lines of a ``git`` call; None when the call itself failed."""
+    try:
+        proc = subprocess.run(  # nosec B603 B607
+            ["git", *args],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    if proc.returncode != 0:
+        return None
+    return [line for line in proc.stdout.splitlines() if line]
+
+
+def apply_fixes(repo_root: Path, mode: str) -> None:
+    """Apply the declared mechanical repairs to the staged files and re-stage them.
+
+    Repairs the classes of failure a script can fix losslessly (formatting), so
+    the commit carries the fixed bytes and the check that follows passes without
+    anyone hand-running the formatter. Never a verdict: a fixer that cannot run
+    is reported and the checks still decide the outcome.
+
+    Only files that were fully staged (no unstaged changes of their own) are
+    re-staged — re-adding a partially staged file would silently commit work the
+    author left out of the index. Those keep their staged bytes and the check
+    reports them as it did before.
+    """
+    fixes = load_fixes(repo_root, mode)
+    if not fixes:
+        return
+
+    staged = _git_lines(repo_root, "diff", "--cached", "--name-only", "--diff-filter=ACM")
+    dirty_before = _git_lines(repo_root, "diff", "--name-only")
+    if staged is None or dirty_before is None:
+        print("skipping auto-fix: cannot read the git index", file=sys.stderr)
+        return
+    if not staged:
+        return
+
+    applied = _run_fixers(repo_root, fixes, staged)
+    if applied:
+        _restage_fixed(repo_root, staged, dirty_before, applied)
+
+
+def _run_fixers(
+    repo_root: Path, fixes: list[tuple[str, list[str], str | None]], staged: list[str]
+) -> list[str]:
+    """Run each fixer over its staged targets; return the names that ran clean."""
+    applied: list[str] = []
+    for name, command, suffix in fixes:
+        targets = [path for path in staged if path.endswith(suffix)] if suffix else []
+        if suffix and not targets:
+            continue
+        try:
+            result = subprocess.run(command + targets, cwd=repo_root, check=False)  # nosec B603
+        except OSError as exc:
+            print(f"auto-fix {name} could not run: {exc.strerror or exc}", file=sys.stderr)
+            continue
+        if result.returncode != 0:
+            print(f"auto-fix {name} exited {result.returncode}", file=sys.stderr)
+            continue
+        applied.append(name)
+    return applied
+
+
+def _restage_fixed(
+    repo_root: Path, staged: list[str], dirty_before: list[str], applied: list[str]
+) -> None:
+    """Stage the files a fixer rewrote, excluding any that were already dirty."""
+    dirty_after = _git_lines(repo_root, "diff", "--name-only")
+    if dirty_after is None:
+        print("skipping re-stage: cannot read the git working tree", file=sys.stderr)
+        return
+    restage = sorted((set(dirty_after) - set(dirty_before)) & set(staged))
+    if not restage:
+        return
+    if _git_lines(repo_root, "add", "--", *restage) is None:
+        print(f"auto-fix changed {', '.join(restage)} but re-staging failed", file=sys.stderr)
+        return
+    print(f"auto-fixed and re-staged ({', '.join(applied)}): {', '.join(restage)}")
 
 
 def run_checks(repo_root: Path, mode: str) -> int:

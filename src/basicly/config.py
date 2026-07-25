@@ -68,11 +68,25 @@ concurrency = 4
 # check with staged_suffix runs only against staged files of that suffix.
 # No checks are enabled by default — declare the ones your stack actually has
 # (an empty config passes vacuously; a configured command missing from PATH
-# fails the run with a one-line message). Python examples:
+# fails the run with a one-line message).
+#
+# A check may also declare fix_command — a deterministic, lossless repair the
+# pre-commit hook applies to the staged files before gating (and that
+# `basicly verify --fix` applies before the checks), so a mechanical repair like
+# reformatting never costs a review cycle. The check still runs either way.
+#
+# Python examples:
 #
 # [[verify.checks]]
 # name = "ruff"
 # command = ["ruff", "check"]
+# modes = ["fast", "full", "staged"]
+# staged_suffix = ".py"
+#
+# [[verify.checks]]
+# name = "ruff-format"
+# command = ["ruff", "format", "--check"]
+# fix_command = ["ruff", "format"]
 # modes = ["fast", "full", "staged"]
 # staged_suffix = ".py"
 #
@@ -461,6 +475,12 @@ class VerifyCheck:
     # When set and running in "staged" mode, run only against staged files with
     # this suffix (and skip when none are staged).
     staged_suffix: str | None = None
+    # Deterministic, lossless repair for this check (e.g. a formatter's write
+    # mode). Declared only where the repair is purely mechanical: the pre-commit
+    # hook applies it to the staged files, and `basicly verify --fix` applies it
+    # before the checks, so no cycle is ever spent on a repair a script can make.
+    # The check itself always still runs — the fix never replaces the verdict.
+    fix_command: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -517,11 +537,20 @@ def _parse_verify_check(entry: object) -> VerifyCheck:
     if staged_suffix is not None and not isinstance(staged_suffix, str):
         raise ValueError(f"verify check {name!r} 'staged_suffix' must be a string")
 
+    fix_command = entry.get("fix_command")
+    if fix_command is not None and not (
+        isinstance(fix_command, list)
+        and fix_command
+        and all(isinstance(a, str) for a in fix_command)
+    ):
+        raise ValueError(f"verify check {name!r} 'fix_command' must be a non-empty list of strings")
+
     return VerifyCheck(
         name=name.strip(),
         command=tuple(command),
         modes=frozenset(modes),
         staged_suffix=staged_suffix or None,
+        fix_command=tuple(fix_command) if fix_command else None,
     )
 
 

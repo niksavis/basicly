@@ -26,7 +26,10 @@ base_branch = ""
 concurrency = 4
 
 # Deterministic verify gate. Each check runs in the listed modes; a "staged"
-# check with staged_suffix runs only against staged files of that suffix.
+# check with staged_suffix runs only against staged files of that suffix. A check
+# whose repair is purely mechanical also declares fix_command: the pre-commit
+# hook applies it to the staged files (and `basicly verify --fix` before the
+# checks), so the check never reports a failure a script could have fixed.
 [[verify.checks]]
 name = "ruff"
 command = ["ruff", "check"]
@@ -36,6 +39,7 @@ staged_suffix = ".py"
 [[verify.checks]]
 name = "ruff-format"
 command = ["ruff", "format", "--check"]
+fix_command = ["ruff", "format"]
 modes = ["fast", "full", "staged"]
 staged_suffix = ".py"
 

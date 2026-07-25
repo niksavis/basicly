@@ -178,6 +178,30 @@ def test_verify_config_rejects_malformed_check(tmp_path: Path) -> None:
         load_verify_config(tmp_path)
 
 
+def test_verify_config_reads_the_optional_fix_command(tmp_path: Path) -> None:
+    """A check may declare a mechanical repair; absent means there is none."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[verify.checks]]\nname = "ruff-format"\ncommand = ["ruff", "format", "--check"]\n'
+        'fix_command = ["ruff", "format"]\nmodes = ["fast"]\n'
+        '[[verify.checks]]\nname = "ruff"\ncommand = ["ruff", "check"]\nmodes = ["fast"]\n',
+        encoding="utf-8",
+    )
+    checks = load_verify_config(tmp_path).checks
+    assert checks[0].fix_command == ("ruff", "format")
+    assert checks[1].fix_command is None
+
+
+def test_verify_config_rejects_malformed_fix_command(tmp_path: Path) -> None:
+    """A fix_command that is not a list of strings is a loud error."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[verify.checks]]\nname = "x"\ncommand = ["true"]\n'
+        'fix_command = "true"\nmodes = ["fast"]\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="'fix_command'"):
+        load_verify_config(tmp_path)
+
+
 def test_verify_config_rejects_unknown_mode(tmp_path: Path) -> None:
     """An unknown mode is rejected so a typo never quietly disables a check."""
     (tmp_path / CONFIG_FILE).write_text(
