@@ -333,6 +333,28 @@ def test_scaffold_local_config_ignore_accepts_rooted_entry(tmp_path: Path) -> No
     assert ignore_path.read_text(encoding="utf-8") == f"/{LOCAL_CONFIG_FILE}\n"
 
 
+def test_this_repo_satisfies_the_local_config_ignore_it_scaffolds() -> None:
+    """This repo carries the local-config ignore entry that `basicly install` scaffolds.
+
+    The dual-use constraint (factory design §1) says every guarantee ships as
+    engine behaviour a consumer gets — so a property the harness scaffolds for
+    everyone else and does not hold for itself is a real gap, and this one bit:
+    basicly is never installed into basicly, so it was the only repo whose
+    local override file was still tracked. It is not cosmetic. A landing
+    refuses any dirt outside `.beads/`, so an untracked `basicly.local.toml`
+    blocks every landing in the very repo that ships the override mechanism.
+
+    Asserted through the engine's own predicate rather than a copy of it, so
+    the check cannot drift from the scaffold it mirrors.
+    """
+    repo_root = Path(__file__).resolve().parents[1]
+    ignore_text = (repo_root / ".gitignore").read_text(encoding="utf-8")
+    assert cli.ignore_covers_local_config(ignore_text), (
+        f"this repo's .gitignore does not cover {LOCAL_CONFIG_FILE}; "
+        "an untracked local override would block every landing"
+    )
+
+
 def test_install_hints_missing_config_sections_without_editing(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
