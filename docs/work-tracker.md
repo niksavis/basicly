@@ -33,7 +33,7 @@ Stated by the owner, plus what the harness's own use has demonstrated:
 | Requirement | What it means concretely here |
 | --- | --- |
 | **Lives in the repo** | State is committed, diffable, and travels with a clone; no server, no daemon, no external DB |
-| **Cross-repo** | A workspace of independent repos, each owning its ledger; foreign references by qualified id, read-only aggregation across repos |
+| **Cross-repo** | One writer per repo ledger; foreign work moves as *offers* through an append-only exchange in `development`, pulled never pushed (§8) |
 | **Fast** | Sub-100 ms for the reads the loop makes per advance (phase derivation, gates, ready set) — the loop calls the tracker many times per step |
 | **Upgradable** | Schema evolution without a migration ceremony; unknown fields tolerated, never dropped |
 | **Maintainable** | Owned by the same toolchain as the rest of `basicly`; no second language, no separate release train |
@@ -64,8 +64,9 @@ Semantics we depend on, which any replacement must preserve:
 4. **Prefix-anchored commit scanning** for the commit-message gate.
 5. **A dependency graph** with parent-child and blocking edges, and derivation of ready/blocked
    from it.
-6. **Compaction** (`compaction_level`, `original_size`) — records shrink over time, which
-   threatens long-lived evidence (D11 §3).
+6. **Compaction** (`compaction_level`, `original_size`) — present in the schema but dormant
+   here (every record is level 0), and §9.1 declines to reimplement it: it discards evidence to
+   solve a size problem git already solves.
 
 Friction we have already hit — each one is a requirement in disguise:
 
@@ -105,9 +106,9 @@ artifacts: a `--json` CLI surface for machines, a Mermaid or DOT dependency grap
 HTML board emitted by a command, both viewable in any browser or markdown renderer and diffable
 in review. A Textual TUI stays possible later; it is not a first deliverable.
 
-**Cross-repo shape:** each repo owns its ledger under its own prefix; cross-repo references are
-qualified ids (`<prefix>-<id>`), which the workspace already does by convention; an aggregator
-reads N ledgers read-only and never writes across a repo boundary.
+**Cross-repo shape:** each repo owns its ledger under its own prefix and is its only writer;
+cross-repo work moves as offers through the exchange in §8, so no component ever writes across a
+repo boundary.
 
 ## 5. Migration and coexistence
 
@@ -150,14 +151,104 @@ Reading beads_rust and bv sources for reference is explicitly sanctioned while t
 their id derivation, merge baseline, and ready-set ranking are the parts worth studying, and
 their gaps (§3) are the parts worth not copying.
 
-## 8. Open questions
+## 8. Cross-repo work exchange — announce, never push
 
-1. **Compaction** — do we need it at all if the ledger is append-only and git-compressed? If
-   evidence must never be lost (D11), compaction may be a misfeature we should decline to copy.
-2. **Ranking** — `br scheduler`'s ranking is currently an unpinned external input to dispatch
-   order (D9 flags this). Owning the tracker means owning the ranking function; it must be pure,
-   documented, and stable under equal inputs.
-3. **Concurrency** — one writer per repo is the harness's model today (the supervisor is a
-   singleton). Is a second interactive writer supported, and if so with what locking?
-4. **Identity** — content-derived ids are good for idempotence but make renaming impossible. Is
-   the id a hash, a monotonic counter per prefix, or both?
+Settled 2026-07-25 by the owner. Several repos are worked at once, and work is routinely
+*discovered* in the wrong repo: a bug for `basicly` surfaces while working in `terminal`. The
+resolution is Kanban pull semantics, not delivery.
+
+**Each repo's ledger has exactly one writer: that repo.** No repo ever writes into another
+repo's tracker. Cross-repo coordination therefore never needs a cross-tracker write, which is
+what makes the concurrency story trivial rather than distributed (see §9).
+
+The `development` workspace hosts an **exchange**: an append-only log of *offers*, not
+assignments.
+
+- A repo that discovers foreign work **announces** it — an event naming the target repo, the
+  summary, and whatever context exists. It does not create a bead in the target.
+- Design work brainstormed in `development` (design docs that are not yet ready for any repo to
+  implement) is **decomposed in `development`** and its children announced the same way, so the
+  exchange is the single place work becomes available.
+- Consumers **poll at their own cadence**. A repo checks the exchange when *it* is stable enough
+  to take work, pulls an item by creating a bead in its own tracker, and records the offer id as
+  provenance. The claim is written back to the **exchange**, never to another tracker.
+- Event kinds are append-only and total: `announced`, `claimed`, `declined`, `superseded`. An
+  offer's state is a fold over its events, so nothing is mutated and history is the audit trail.
+
+Why offers rather than tasks: an announcement carries no authority. The receiving repo decides
+whether the work fits its own priorities, and a repo that never pulls simply has a growing offer
+list rather than a corrupted backlog. That is the same engine-disposes/agents-propose stance
+(D2) applied across repo boundaries — the announcer proposes, the owner disposes.
+
+Idempotence: an offer id is stable, and the pulled bead records `offer: <exchange-id>`, so a
+double-pull is detectable and a re-poll is free. Provenance runs both ways — the bead names its
+offer, the offer's `claimed` event names the repo and bead that took it.
+
+## 9. The open questions, answered
+
+Researched against the live tracker 2026-07-25 rather than reasoned from memory.
+
+### 9.1 Compaction — decline it
+
+**Evidence:** every one of our 330 records carries `compaction_level: 0` and
+`original_size: 0` — beads' compaction has never run here. The ledger is 761 KB raw, while
+git packs *the entire history of the repo* to 543 KB. Git's delta plus zlib already compresses
+a ledger of near-identical JSON records better than any record-shrinking scheme, and it does so
+losslessly.
+
+So compaction solves a problem we do not have, at a cost that is fatal to D11: it discards
+evidence. **Our tracker will not implement lossy compaction.** Growth is bounded three ways
+instead — git compression, the ship-time rollup (`basicly-kjc5.50`) which summarises a package
+so its cost survives independently of the detail, and, if a single record's line becomes
+unwieldy, moving *detail* to a sibling append-only file while the record keeps the rollup.
+
+The early warning to watch is **maximum line length**, not total size: each issue is one line, so
+appending a comment rewrites that whole line. Our largest record is already 45 KB against a
+median far below that — the `basicly-kjc5` epic, thick with comments. Per-dispatch markers land
+on leaf beads rather than the epic, which keeps the distribution flat, but the metric is worth
+a check in the surface report.
+
+### 9.2 Ranking — record it now, own it purely later
+
+I previously called `br scheduler`'s ranking opaque. That was wrong, and the correction matters:
+it emits `schema: br.scheduler.v1` with a per-item `score`, a `fallback_rank`, and an explicit
+`fallback_policy` of `priority ASC, created_at ASC, id ASC`, plus "if scoring evidence is tied or
+incomplete, preserve fallback rank". It is versioned and explainable.
+
+Two consequences:
+
+- **Now**: the cheap half of D9's requirement is to *record* the score and rank into the
+  dispatch marker, which makes a pass's dispatch order reconstructible without replacing
+  anything (`basicly-vkh0.3`).
+- **When we own it**: the ranking function must be **pure**, and it must drop `created_at`.
+  Age-based ordering makes dispatch order clock-dependent for an unchanged graph, which D9
+  forbids for anything outliving the pass. Our ordering: unblocked only, then priority, then
+  **descending dependent count** (unblock the most work first — the critical path), then id as
+  the final deterministic tie-break. Every term is a pure function of the graph.
+
+### 9.3 Concurrency — single writer per ledger
+
+Answered by §8. One writer per repo ledger; the supervisor is already a singleton per repo (D1),
+and cross-repo work moves as offers rather than writes. The exchange itself has many writers but
+is conflict-free by construction: every event is its own line with a unique id, so concurrent
+appends from different repos touch different lines and merge cleanly.
+
+Within one repo, a second *interactive* writer is permitted: appends are line-oriented, and only
+the derived index needs a lock — and the index is disposable, so a lost update to it is repaired
+by a rebuild rather than reconciled.
+
+### 9.4 Identity — opaque record ids, content-derived evidence ids
+
+The distinction our own usage has already taught us:
+
+- **Records are mutable** — titles, descriptions and criteria are edited constantly. An id
+  derived from content would either drift or lie. So a record id is **opaque and stable**: a
+  short random root token, collision-checked, plus a dotted monotonic child suffix
+  (`<prefix>-<root>.<n>`), which is what we already read comfortably and which sorts naturally.
+  Ids are never reused, and a delete leaves a tombstone.
+- **Evidence is immutable** — a decision, a found-info record, a dispatch marker is a fact about
+  a moment. Those ids **are** content-derived, which is what makes re-recording idempotent
+  (`decisions.decision_id_for`, `run_record.marker_id`).
+
+And no slugs in ids. `br create --slug` embeds hyphens that read as a prefix boundary, which
+breaks the commit-message gate — a shipped defect we worked around rather than a hypothetical.
