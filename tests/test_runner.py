@@ -1054,3 +1054,26 @@ def test_timeout_kills_a_grandchild_the_dispatch_spawned(tmp_path: Path) -> None
     else:  # pragma: no cover - only reached on a regression
         os.kill(grandchild, signal.SIGKILL)
         pytest.fail(f"grandchild {grandchild} survived the dispatch timeout")
+
+
+def test_record_dispatch_never_raises_on_a_spec_result_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A handoff spec with an executed result must record, not crash (basicly-kjc5.53).
+
+    Telemetry sits on the critical path of every dispatch, so a defect in
+    recording must never fail a landing. This mismatch is not hypothetical: on a
+    machine with no agent CLI, ``select_runner`` resolves the handoff ``manual``
+    runner while a caller's result still reports execution — which is exactly how
+    CI reproduced it where a developer machine could not.
+    """
+    spec = runner.select_runner(runner.BUILTIN_RUNNERS, "manual")
+    result = runner.RunResult("manual", (), executed=True, returncode=0, stdout="ok")
+    monkeypatch.setattr(runner.run_record, "record_marker", lambda *_a, **_k: None)
+
+    runner.record_dispatch(tmp_path, "basicly-x", spec, result, prompt="p", phase="validate")
+
+    history = runner.run_record.load_run_records(tmp_path) or {}
+    (entry,) = history["basicly-x"]
+    assert entry["command"] == []  # degraded, not fatal
+    assert entry["agent"] == "manual"

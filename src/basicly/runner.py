@@ -868,12 +868,21 @@ def record_dispatch(  # noqa: PLR0913 — one parameter per recorded dispatch in
 
     The command is redacted (the prompt elided) before it reaches the record, so
     no prompt or secret is persisted. Usage is adapter-reported where the CLI
-    emits it and a flagged chars/4 estimate otherwise. Best-effort: a write
-    failure must never fail the caller, so an OS error is tolerated.
+    emits it and a flagged chars/4 estimate otherwise.
+
+    **Nothing here may raise.** This is telemetry on the critical path of every
+    dispatch, so a defect in recording must never fail a landing. Deriving the
+    command is the one step that can: ``format_command`` rejects a handoff-only
+    spec, and a result can report execution while the resolved spec is a handoff
+    runner — which is not hypothetical, it is what happens on a machine with no
+    agent CLI installed, where ``select_runner`` resolves ``manual``
+    (basicly-kjc5.53). A mismatch degrades to an empty command rather than an
+    exception.
     """
     command: tuple[str, ...] = ()
     if not result.handoff:
-        command = tuple(format_command(spec, run_record.REDACTED_PROMPT, capture_usage=True))
+        with contextlib.suppress(ValueError):
+            command = tuple(format_command(spec, run_record.REDACTED_PROMPT, capture_usage=True))
     usage = extract_usage(spec, result)
     digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest() if prompt is not None else None
     entry = run_record.build_record(
