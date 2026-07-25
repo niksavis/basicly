@@ -2142,12 +2142,13 @@ def cmd_decompose(args: argparse.Namespace) -> int:
 
 
 def cmd_loop(args: argparse.Namespace) -> int:
-    """Dispatch the ``loop`` subcommands (status/advance/run/supervise/decisions...)."""
+    """Dispatch the ``loop`` subcommands (status/advance/run/supervise/session...)."""
     handlers = {
         "status": _cmd_loop_status,
         "advance": _cmd_loop_advance,
         "run": _cmd_loop_run,
         "supervise": _cmd_loop_supervise,
+        "session": _cmd_loop_session,
         "decisions": _cmd_loop_decisions,
         "answer": _cmd_loop_answer,
         "decide": _cmd_loop_decide,
@@ -2365,6 +2366,77 @@ def _print_session(state: supervise.SessionState) -> None:
             )
     else:
         print("adopted:  (no in-flight lanes)")
+
+
+def _cmd_loop_session(args: argparse.Namespace) -> int:
+    """Attach to a supervisor session and print its live status (design 7.3).
+
+    The observe half of the client attach protocol: a pure read, so it never
+    contends for the lock a running supervisor holds and it is equally valid on
+    a root nobody is supervising. Exits 0 whichever it finds — the observation
+    itself succeeded; ``loop decisions`` is the command that signals blocked.
+    """
+    view = supervise.observe(_repo_root(), args.issue)
+    if args.json:
+        # ``supervised`` is a derived property, which asdict drops — and it is the
+        # one question a machine client always asks, so emit it explicitly.
+        payload = asdict(view) | {"supervised": view.supervised}
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+    _print_observation(view)
+    return 0
+
+
+def _supervisor_line(view: supervise.Observation) -> str:
+    """One line naming who is supervising, and whether their heartbeat is fresh."""
+    holder = view.holder
+    if holder is None:
+        return "(none running - basicly loop supervise <root> starts one)"
+    who = f"{holder.session_id or 'unknown'} (pid {holder.pid or '?'})"
+    beat = f"heartbeat {holder.age_s:.0f}s old"
+    if view.holder_stale:
+        beat += f" - STALE (over {supervise.STALE_AFTER_S:.0f}s; a contender may take over)"
+    if not view.holder_on_this_root:
+        # Both facts matter to a foreign holder: this session is unsupervised,
+        # and a stale foreign lock is one a supervisor here could take over.
+        other = holder.root_issue or "an unknown root"
+        return f"{who} - supervising {other}, not this session; {beat}"
+    return f"{who} - {beat}"
+
+
+def _print_observation(view: supervise.Observation) -> None:
+    print(f"root:       {view.root_issue} ({view.root_status})")
+    print(f"supervisor: {_supervisor_line(view)}")
+    print(f"children:   {view.children_total} total, {view.children_open} open")
+    if view.lanes:
+        for lane in view.lanes:
+            liveness = "live" if lane.live else "worktree missing"
+            print(
+                f"lane:       {lane.issue_id} ({lane.status}) -> "
+                f"{lane.worktree} on {lane.branch} [{liveness}]"
+            )
+            if lane.last_outcome is not None:
+                tokens = f", {lane.last_tokens} tokens" if lane.last_tokens is not None else ""
+                print(
+                    f"              last run: {lane.last_agent} {lane.last_outcome} "
+                    f"at {lane.last_run_at}{tokens}"
+                )
+    else:
+        print("lane:       (no in-flight lanes)")
+    pending = view.pending_decisions
+    if pending:
+        print(f"decisions:  {len(pending)} pending - answer with basicly loop answer <id> <text>")
+        for item in pending:
+            print(f"  {_format_decision(item)}")
+    else:
+        print("decisions:  none pending")
+    if view.grant_level is None:
+        print(f"grant:      (none) - {view.spent_tokens} tokens spent this session")
+    else:
+        budget = view.token_budget if view.token_budget is not None else "unbounded"
+        print(f"grant:      {view.grant_level}, {view.spent_tokens}/{budget} tokens spent")
+    if view.done:
+        print("done:       yes")
 
 
 def _format_decision(item: decisions.DecisionItem) -> str:
@@ -2952,7 +3024,8 @@ def _add_runner_parser(subparsers: argparse._SubParsersAction) -> None:
 
 def _add_loop_parser(subparsers: argparse._SubParsersAction) -> None:
     loop_parser = subparsers.add_parser(
-        "loop", help="Drive an issue through the harness loop (status / advance / run)"
+        "loop",
+        help="Drive an issue through the harness loop (status / advance / run / supervise)",
     )
     loop_sub = loop_parser.add_subparsers(dest="loop_command", required=True)
     l_status = loop_sub.add_parser(
@@ -2987,6 +3060,13 @@ def _add_loop_parser(subparsers: argparse._SubParsersAction) -> None:
         "outcomes, land green work - until done or blocked on a human",
     )
     l_supervise.add_argument("issue", help="Root issue (feature or epic) the session is bound to")
+    l_sess = loop_sub.add_parser(
+        "session",
+        help="Attach to a supervisor session and observe its live status "
+        "(read-only; takes no lock)",
+    )
+    l_sess.add_argument("issue", help="Session root issue")
+    l_sess.add_argument("--json", action="store_true", help="Machine-readable output")
     l_dec = loop_sub.add_parser(
         "decisions", help="List the session's pending decisions (pure read over br)"
     )
