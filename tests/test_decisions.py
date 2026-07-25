@@ -271,6 +271,54 @@ def test_decider_records_a_derivable_answer_with_attribution(
     assert outcome.answered_by == "decider:fake"
 
 
+def test_decider_dispatch_is_bounded_and_metered(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The decider obeys runner_timeout and writes a run-record (basicly-kjc5.31)."""
+    verdict = json.dumps({
+        "decision": "postgres",
+        "rationale": "corpus",
+        "confidence": 0.9,
+        "abstain": False,
+    })
+    _fake, item = _decider_setup(monkeypatch, tmp_path, verdict)
+    seen: dict[str, object] = {}
+    recorded: list[str] = []
+
+    def _run(_spec, _prompt, _cwd, **kwargs):
+        seen["timeout"] = kwargs.get("timeout")
+        return runner.RunResult("fake", ("fake",), executed=True, returncode=0, stdout=verdict)
+
+    monkeypatch.setattr(decisions.runner, "run", _run)
+    monkeypatch.setattr(
+        decisions.runner, "record_dispatch", lambda _r, issue, *_a: recorded.append(issue)
+    )
+    decisions.invoke_decider(tmp_path, item.decision_id, "epic")
+
+    assert seen["timeout"] == 3600.0  # the [runner] runner_timeout default
+    assert recorded == [item.issue_id]
+
+
+def test_decider_timeout_abstains(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A hung decider is killed and abstains, leaving the item with the human."""
+    _fake, item = _decider_setup(monkeypatch, tmp_path, "")
+    monkeypatch.setattr(
+        decisions.runner,
+        "run",
+        lambda *_a, **_k: runner.RunResult(
+            "fake", ("fake",), executed=True, returncode=1, timed_out=True
+        ),
+    )
+    monkeypatch.setattr(decisions.runner, "record_dispatch", lambda *_a, **_k: None)
+
+    outcome = decisions.invoke_decider(tmp_path, item.decision_id, "epic")
+
+    assert isinstance(outcome, decisions.DeciderVerdict)
+    assert outcome.abstain is True and "runner_timeout" in outcome.rationale
+    stored = decisions.get(tmp_path, item.decision_id)
+    assert stored is not None and stored.pending
+
+
 def test_decider_abstention_leaves_the_item_with_the_human(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

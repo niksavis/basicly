@@ -40,7 +40,6 @@ own split into sub-tasks is engine-governed (the sizing governor plus
 
 from __future__ import annotations
 
-import contextlib
 import json
 import re
 from dataclasses import dataclass
@@ -414,32 +413,11 @@ def record_run(
 ) -> None:
     """Persist a metadata-only run-record for this dispatch, keyed by the bead.
 
-    The command is redacted here (the prompt argument elided) before it is
-    handed to the record, so no prompt or secret is ever persisted. Token
-    telemetry (basicly-kjc5.1) rides along: adapter-reported usage where the
-    CLI emits it, a flagged chars/4 estimate otherwise. Best-effort:
-    a write failure must not fail the loop landing (same stance as the
-    ``tool-usage`` telemetry hook), so an OS error is tolerated, not fatal.
-    Shared with the supervisor's concurrent dispatch (basicly-kjc5.6) so both
-    dispatch paths feed the one telemetry stream.
+    Thin alias for :func:`runner.record_dispatch`, which every dispatch site now
+    shares (the loop, the supervisor, the rubric judge, and the decider) so all of
+    them feed the one telemetry stream.
     """
-    command: tuple[str, ...] = ()
-    if not result.handoff:
-        command = tuple(runner.format_command(spec, run_record.REDACTED_PROMPT, capture_usage=True))
-    usage = runner.extract_usage(spec, result)
-    entry = run_record.build_record(
-        agent=spec.name,
-        handoff=result.handoff,
-        returncode=result.returncode,
-        duration_s=result.duration_s,
-        command=command,
-        model=spec.model,
-        tokens=usage.tokens if usage else None,
-        cost=usage.cost if usage else None,
-        estimated=usage.estimated if usage else None,
-    )
-    with contextlib.suppress(OSError):
-        run_record.record(repo_root, issue_id, entry)
+    runner.record_dispatch(repo_root, issue_id, spec, result)
 
 
 def dispatch_prompt(issue_id: str) -> str:

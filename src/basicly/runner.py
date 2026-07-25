@@ -25,6 +25,7 @@ one before a live run with ``basicly runner dry-run``.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
@@ -35,6 +36,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import run_record
 from .redact import redact_secrets
 
 # Marker replaced by the prompt when a runner injects it as a command argument.
@@ -809,3 +811,36 @@ def context_occupancy(spec: RunnerSpec, result: RunResult) -> int | None:
                 return sum(values)
         return None
     return None
+
+
+def record_dispatch(repo_root: Path, issue_id: str, spec: RunnerSpec, result: RunResult) -> None:
+    """Persist a metadata-only run-record for one dispatch, keyed by the bead.
+
+    Shared by every dispatch site — the loop's build dispatch, the supervisor's
+    concurrent lanes, the rubric judge, and the decider — so one telemetry stream
+    sees them all. Without this, a judged or decider dispatch spends real tokens
+    that never reach ``run-records.json``, and the D3 grant ceiling under-counts
+    the session (basicly-kjc5.31).
+
+    The command is redacted (the prompt elided) before it reaches the record, so
+    no prompt or secret is persisted. Usage is adapter-reported where the CLI
+    emits it and a flagged chars/4 estimate otherwise. Best-effort: a write
+    failure must never fail the caller, so an OS error is tolerated.
+    """
+    command: tuple[str, ...] = ()
+    if not result.handoff:
+        command = tuple(format_command(spec, run_record.REDACTED_PROMPT, capture_usage=True))
+    usage = extract_usage(spec, result)
+    entry = run_record.build_record(
+        agent=spec.name,
+        handoff=result.handoff,
+        returncode=result.returncode,
+        duration_s=result.duration_s,
+        command=command,
+        model=spec.model,
+        tokens=usage.tokens if usage else None,
+        cost=usage.cost if usage else None,
+        estimated=usage.estimated if usage else None,
+    )
+    with contextlib.suppress(OSError):
+        run_record.record(repo_root, issue_id, entry)

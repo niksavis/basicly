@@ -473,7 +473,23 @@ def invoke_decider(
         )
     runner_config = load_runner_config(repo_root)
     spec = runner.select_runner(runner_config.specs, runner_config.decider or runner_config.default)
-    result = runner.run(spec, decider_prompt(item, intake_corpus(repo_root, root_issue)), repo_root)
+    # Bounded and metered like every other dispatch (basicly-kjc5.31): without the
+    # timeout a hung decider hangs the pass forever, and without the run-record its
+    # tokens never count against the session's D3 grant ceiling.
+    result = runner.run(
+        spec,
+        decider_prompt(item, intake_corpus(repo_root, root_issue)),
+        repo_root,
+        timeout=runner_config.runner_timeout,
+    )
+    runner.record_dispatch(repo_root, item.issue_id, spec, result)
+    if result.timed_out:
+        return DeciderVerdict(
+            "",
+            f"decider hit runner_timeout ({runner_config.runner_timeout:.0f}s)",
+            0.0,
+            abstain=True,
+        )
     if result.handoff or result.returncode != 0:
         return DeciderVerdict("", "decider runner unavailable or failed", 0.0, abstain=True)
     verdict = parse_verdict(result.stdout)
