@@ -40,6 +40,11 @@ dev = [
 [tool.pytest.ini_options]
 pythonpath = ["src", "."]
 addopts = ["--import-mode=importlib"]
+# Keep tmp dirs only where they are still needed — a failing test's artifacts.
+# The default ("all") retains every passing test's tree too, and this suite's
+# work_repo fixture copies the whole repo per test, so a green run left ~2 GB
+# behind. Numbered-run retention stays at pytest's default of 3.
+tmp_path_retention_policy = "failed"
 
 [tool.pyright]
 extraPaths = ["src", "."]
