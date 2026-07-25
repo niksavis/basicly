@@ -852,6 +852,134 @@ def test_run_until_blocked_stops_at_first_block(
     assert len(results) == 1 and results[0].blocked
 
 
+# --- The whole-boundary ceremony (basicly-kjc5.41) ---------------------------
+#
+# These pin the driver, so they script :func:`loop.advance` rather than the
+# tracker: what is under test is which steps the ceremony keeps driving through
+# and which checkpoints it hands back to a human.
+
+
+def _script_advance(
+    monkeypatch: pytest.MonkeyPatch, *results: loop.AdvanceResult
+) -> list[loop.AdvanceResult]:
+    """Make ``loop.advance`` replay *results*, recording the calls it served."""
+    served: list[loop.AdvanceResult] = []
+    pending = list(results)
+
+    def fake_advance(_repo: Path, _issue: str, **_kw: object) -> loop.AdvanceResult:
+        # Repeat the last scripted step forever, so a spinning driver runs to
+        # max_steps instead of raising StopIteration and looking like a failure.
+        result = pending.pop(0) if len(pending) > 1 else pending[0]
+        served.append(result)
+        return result
+
+    monkeypatch.setattr(loop, "advance", fake_advance)
+    return served
+
+
+def _script_approval(
+    monkeypatch: pytest.MonkeyPatch, *approvals: policy.ApprovalResult
+) -> list[str]:
+    """Make checkpoint approval replay *approvals*, recording the names asked for."""
+    asked: list[str] = []
+    pending = list(approvals)
+
+    def fake_guarded(_repo: Path, _issue: str, name: str, **_kw: object) -> policy.ApprovalResult:
+        asked.append(name)
+        return pending.pop(0) if len(pending) > 1 else pending[0]
+
+    monkeypatch.setattr(loop.policy, "approve_checkpoint_guarded", fake_guarded)
+    return asked
+
+
+def test_run_ceremony_keeps_driving_after_a_step_that_did_not_block(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A landing is progress, not a resting point — the ceremony drives on to ship.
+
+    Regression: an early draft ended the boundary on *any* non-blocked step, so
+    ``loop run`` stopped right after ``[merged] build -> verify`` and the ship
+    checkpoint still needed a hand-issued command — exactly the ceremony this
+    command exists to collapse.
+    """
+    _script_advance(
+        monkeypatch,
+        loop.AdvanceResult("i", "build", "verify", "merged"),
+        loop.AdvanceResult("i", "verify", "verify", "blocked", checkpoint="ship"),
+        loop.AdvanceResult("i", "ship", "done", "tore-down"),
+    )
+    asked = _script_approval(monkeypatch, policy.ApprovalResult("approved"))
+    result = loop.run_ceremony(tmp_path, "i", config=CONFIG)
+    assert asked == ["ship"]
+    assert [step.action for step in result.steps] == ["merged", "blocked", "tore-down"]
+    assert [approval.checkpoint for approval in result.approvals] == ["ship"]
+    assert not result.blocked
+
+
+def test_run_ceremony_stops_on_a_challenge_and_carries_the_code(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An unauthorized checkpoint ends the boundary once, with the code to relay."""
+    served = _script_advance(
+        monkeypatch,
+        loop.AdvanceResult("i", "intake", "intake", "blocked", checkpoint="classify"),
+    )
+    _script_approval(monkeypatch, policy.ApprovalResult("challenge", code="c0ffee"))
+    result = loop.run_ceremony(tmp_path, "i", config=CONFIG)
+    assert result.challenge == ("classify", "c0ffee")
+    assert result.blocked
+    # One advance, so exactly one challenge is minted per invocation.
+    assert len(served) == 1
+
+
+def test_run_ceremony_stops_on_a_refused_checkpoint(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A bad code refuses the boundary rather than driving on unapproved."""
+    _script_advance(
+        monkeypatch,
+        loop.AdvanceResult("i", "verify", "verify", "blocked", checkpoint="ship"),
+    )
+    _script_approval(monkeypatch, policy.ApprovalResult("rejected", detail="invalid code"))
+    result = loop.run_ceremony(tmp_path, "i", config=CONFIG, confirms={"ship": "nope"})
+    assert result.refused == ("ship", "invalid code")
+    assert result.approvals == () and result.blocked
+
+
+def test_run_ceremony_leaves_a_non_checkpoint_block_alone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The handoff that awaits the agent's work is the end of the opening boundary.
+
+    It is a block with no checkpoint behind it, so no approval is attempted and
+    no confirm code is minted — the ceremony simply stops.
+    """
+    _script_advance(
+        monkeypatch,
+        loop.AdvanceResult("i", "classify", "classify", "blocked", "awaiting the agent's work"),
+    )
+    asked = _script_approval(monkeypatch, policy.ApprovalResult("approved"))
+    result = loop.run_ceremony(tmp_path, "i", config=CONFIG)
+    assert asked == []
+    assert result.challenge is None and result.refused is None
+    assert result.blocked
+
+
+def test_run_ceremony_does_not_spin_on_a_checkpoint_it_already_approved(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A checkpoint that blocks again after approval stops the boundary, not the clock."""
+    served = _script_advance(
+        monkeypatch,
+        loop.AdvanceResult("i", "verify", "verify", "blocked", checkpoint="ship"),
+    )
+    asked = _script_approval(monkeypatch, policy.ApprovalResult("approved"))
+    result = loop.run_ceremony(tmp_path, "i", config=CONFIG, max_steps=20)
+    assert asked == ["ship"]
+    assert len(served) == 2  # the approval is tried once, then the repeat block ends it
+    assert result.blocked
+
+
 def test_ensure_child_worktrees_publishes_claims_first(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

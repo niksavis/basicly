@@ -2194,12 +2194,81 @@ def _cmd_loop_advance(args: argparse.Namespace) -> int:
     return 1 if result.blocked else 0
 
 
+def _confirm_codes(raw: str | None) -> dict[str, str] | None:
+    """Map one ``--confirm`` value onto the per-checkpoint codes the ceremony consumes.
+
+    ``name=code`` targets one checkpoint; a bare ``code`` is offered to whichever
+    checkpoint challenges. Offering it widely is safe because a code is minted
+    and validated per (issue, checkpoint), so it can only ever satisfy the
+    checkpoint it was minted for.
+    """
+    if not raw:
+        return None
+    name, _, code = raw.partition("=")
+    if code and name in CHECKPOINTS:
+        return {name: code}
+    return dict.fromkeys(CHECKPOINTS, raw)
+
+
+def _ceremony_rerun(args: argparse.Namespace, code: str) -> str:
+    """The full re-invocation of this same command, carrying the relayed code.
+
+    The point of the ceremony is that a human relays one code and the *whole*
+    boundary continues, so the printed line has to be the command they ran plus
+    ``--confirm`` — not a bare checkpoint approval that leaves the loop parked.
+    """
+    parts = ["basicly", "loop", "run", args.issue]
+    if args.work_type:
+        parts += ["--work-type", args.work_type]
+    if args.children:
+        parts += ["--children", args.children]
+    if args.mode != "full":
+        parts += ["--mode", args.mode]
+    if args.root:
+        parts += ["--root", args.root]
+    return " ".join([*parts, "--confirm", code])
+
+
 def _cmd_loop_run(args: argparse.Namespace) -> int:
-    """Advance until the track blocks or finishes; exit non-zero if it ended blocked."""
-    results = loop.run_until_blocked(_repo_root(), args.issue, inputs=_loop_inputs(args))
-    for result in results:
-        print(_format_advance(result))
-    return 1 if results and results[-1].blocked else 0
+    """Drive the loop across a whole phase boundary; exit non-zero if it stopped short.
+
+    One command per boundary (basicly-kjc5.41, design D10): intake through to
+    awaiting-the-agent's-work, and committed work through to shipped. Every
+    checkpoint in between is resolved the way ``policy checkpoint --approve``
+    resolves one — a TTY, a covering grant, or a relayed one-time code — so this
+    collapses the ceremony without widening what may be self-approved.
+    """
+    result = loop.run_ceremony(
+        _repo_root(),
+        args.issue,
+        inputs=_loop_inputs(args),
+        interactive=sys.stdin.isatty(),
+        confirms=_confirm_codes(args.confirm),
+        grant_root=args.root,
+    )
+    for event in result.events:
+        if isinstance(event, loop.CheckpointApproval):
+            detail = f" - {event.detail}" if event.detail else ""
+            print(f"checkpoint {event.checkpoint}: APPROVED ({args.issue}){detail}")
+        else:
+            print(_format_advance(event))
+    # Block-buffered stdout would otherwise let the unbuffered stderr notice
+    # below overtake the step lines it is a footnote to, in any piped output.
+    sys.stdout.flush()
+    if result.challenge is not None:
+        name, code = result.challenge
+        print(
+            f"checkpoint {name}: CONFIRMATION REQUIRED ({args.issue})\n"
+            "  no interactive terminal detected; a human must re-run with the one-time code:\n"
+            f"  {_ceremony_rerun(args, code)}",
+            file=sys.stderr,
+        )
+        return 1
+    if result.refused is not None:
+        name, why = result.refused
+        print(f"checkpoint {name}: REFUSED ({args.issue}) - {why}", file=sys.stderr)
+        return 1
+    return 1 if result.blocked else 0
 
 
 def _cmd_loop_supervise(args: argparse.Namespace) -> int:
@@ -2887,9 +2956,23 @@ def _add_loop_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     l_advance.add_argument("issue")
     _add_loop_input_args(l_advance)
-    l_run = loop_sub.add_parser("run", help="Advance until the track blocks or finishes")
+    l_run = loop_sub.add_parser(
+        "run",
+        help="Drive a whole phase boundary in one command, resolving the "
+        "checkpoints it is authorized to resolve",
+    )
     l_run.add_argument("issue")
     _add_loop_input_args(l_run)
+    l_run.add_argument(
+        "--confirm",
+        metavar="CODE",
+        help="One-time confirm code relayed by a human, optionally 'checkpoint=CODE'",
+    )
+    l_run.add_argument(
+        "--root",
+        help="Session root issue whose autonomy grant may cover the checkpoints "
+        "(default: the issue itself)",
+    )
     l_supervise = loop_sub.add_parser(
         "supervise",
         help="Run the standing supervisor loop: dispatch ready lanes, route "
