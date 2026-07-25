@@ -12,6 +12,7 @@ from .runner import (
     BUILTIN_RUNNERS,
     DEFAULT_CONTEXT_WINDOW,
     DEFAULT_MAX_AGENT_PROCESSES,
+    DEFAULT_STALL_AFTER,
     DENY_STYLES,
     HEADLESS,
     PROMPT_VIA,
@@ -661,6 +662,13 @@ def _positive_int(value: object, default: int) -> int:
     return default
 
 
+def _positive_float(value: object, default: float) -> float:
+    """*value* as a float when it is a positive number (bool excluded), else *default*."""
+    if isinstance(value, int | float) and not isinstance(value, bool) and value > 0:
+        return float(value)
+    return default
+
+
 def load_technology_selection(repo_root: Path) -> frozenset[str] | None:
     """Load the ``[catalog] technologies`` selection from basicly.toml.
 
@@ -760,6 +768,11 @@ class RunnerConfig:
     # multiplicative per-level caps; the rule of thumb is 2x [worktree]
     # concurrency (one average helper per lane) and the bound is API/RAM, not CPU.
     max_agent_processes: int = DEFAULT_MAX_AGENT_PROCESSES
+    # Seconds of no activity before a dispatch is *flagged* possibly-stuck to the
+    # decision queue (design section 6). A flag, not a kill: `runner_timeout`
+    # stays the only terminal action, so a slow-but-working run is never killed
+    # early — the human just learns about a wedge in minutes instead of an hour.
+    stall_after: float = DEFAULT_STALL_AFTER
 
 
 def load_runner_config(repo_root: Path) -> RunnerConfig:
@@ -805,6 +818,7 @@ def load_runner_config(repo_root: Path) -> RunnerConfig:
         max_agent_processes=_positive_int(
             section.get("max_agent_processes"), DEFAULT_MAX_AGENT_PROCESSES
         ),
+        stall_after=_positive_float(section.get("stall_after"), DEFAULT_STALL_AFTER),
     )
 
 

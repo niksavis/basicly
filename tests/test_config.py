@@ -12,6 +12,7 @@ from basicly.config import (
     CONFIG_FILE,
     DEFAULT_CONFIG_TOML,
     DEFAULT_MAX_AGENT_PROCESSES,
+    DEFAULT_STALL_AFTER,
     LOCAL_CONFIG_FILE,
     PolicyConfig,
     WorktreeConfig,
@@ -700,6 +701,19 @@ def test_runner_config_decider_selection(tmp_path: Path) -> None:
     assert load_runner_config(tmp_path).decider is None
     (tmp_path / CONFIG_FILE).write_text('[runner]\ndecider = "claude"\n', encoding="utf-8")
     assert load_runner_config(tmp_path).decider == "claude"
+
+
+def test_runner_config_stall_after(tmp_path: Path) -> None:
+    """stall_after defaults to the documented 900s; positive overrides land, junk falls back."""
+    assert load_runner_config(tmp_path).stall_after == DEFAULT_STALL_AFTER
+    (tmp_path / CONFIG_FILE).write_text("[runner]\nstall_after = 120\n", encoding="utf-8")
+    assert load_runner_config(tmp_path).stall_after == 120.0
+    (tmp_path / CONFIG_FILE).write_text("[runner]\nstall_after = 0.5\n", encoding="utf-8")
+    assert load_runner_config(tmp_path).stall_after == 0.5
+    (tmp_path / CONFIG_FILE).write_text("[runner]\nstall_after = -1\n", encoding="utf-8")
+    assert load_runner_config(tmp_path).stall_after == DEFAULT_STALL_AFTER
+    (tmp_path / CONFIG_FILE).write_text("[runner]\nstall_after = true\n", encoding="utf-8")
+    assert load_runner_config(tmp_path).stall_after == DEFAULT_STALL_AFTER
 
 
 def test_runner_config_max_agent_processes(tmp_path: Path) -> None:

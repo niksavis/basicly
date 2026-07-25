@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -30,7 +31,7 @@ from basicly import (
     runner,
     supervise,
 )
-from basicly.config import PolicyConfig, SizingConfig
+from basicly.config import PolicyConfig, RunnerConfig, SizingConfig
 from basicly.supervise import LOCK_FILE, STALE_AFTER_S, LockHeldError, LockLostError
 
 
@@ -2078,3 +2079,111 @@ def test_build_bundle_omits_the_answers_section_when_there_are_none(
 
     assert bundle.answers == ()
     assert bundle.prompt == loop.dispatch_prompt("epic.1")
+
+
+# --- Stall flagging on a lane dispatch (basicly-kjc5.25, design section 6) -----
+
+
+def test_lane_activity_changes_on_a_commit_and_on_a_file_write(tmp_path: Path) -> None:
+    """The probe tracks the two things a working lane changes: commits and files."""
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.email", "t@t"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "t"], check=True)
+    (tmp_path / "a.txt").write_text("one", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-qm", "first"], check=True)
+
+    idle = supervise.lane_activity(tmp_path)
+    assert supervise.lane_activity(tmp_path) == idle  # stable while nothing happens
+
+    (tmp_path / "b.txt").write_text("two", encoding="utf-8")
+    wrote = supervise.lane_activity(tmp_path)
+    assert wrote != idle  # an uncommitted write is progress
+
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-qm", "second"], check=True)
+    assert supervise.lane_activity(tmp_path) not in (idle, wrote)  # so is the commit
+
+
+def test_lane_activity_never_raises_on_a_path_that_is_not_a_repo(tmp_path: Path) -> None:
+    """The probe observes a dispatch; a bad path must not break the one it watches."""
+    assert supervise.lane_activity(tmp_path / "nope")  # a fingerprint, not an exception
+
+
+def test_flag_stalled_lane_queues_one_item_and_names_the_hard_kill(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A stall is queued once per lane, and says what happens if nobody intervenes."""
+    br = _FakeBr({"epic.1": _issue("epic.1"), "epic.2": _issue("epic.2")})
+    _install_br(monkeypatch, br)
+    monkeypatch.setattr(decisions, "_notify", lambda *_a, **_k: None)
+
+    first = supervise.flag_stalled_lane(tmp_path, "epic.1", 900.0, 3600.0)
+    again = supervise.flag_stalled_lane(tmp_path, "epic.1", 900.0, 3600.0)
+
+    assert first.decision_id == again.decision_id
+    assert len(br.comments["epic.1"]) == 1
+    assert first.kind == "stall"
+    assert "900s" in first.detail
+    assert "3600s" in first.detail  # the run continues to the hard kill
+    # A sub-second window must not render as "0s", which would say the opposite of
+    # what happened (found by exercising it with a tight stall_after).
+    # A different lane: the idempotence key is (issue, kind, question), and the
+    # question is identical here, so re-flagging epic.1 would return the first
+    # item with the first detail.
+    brief = supervise.flag_stalled_lane(tmp_path, "epic.2", 0.2, 3600.0)
+    assert "0.2s" in brief.detail
+    assert "0s;" not in brief.detail
+    assert first.pending  # it is the human's to act on
+
+
+def test_stalled_lane_is_flagged_while_the_dispatch_still_completes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The acceptance criterion: flag a wedged lane, then let the run finish.
+
+    A stall must never shorten a dispatch — ``runner_timeout`` stays the only
+    terminal action, so a slow-but-working run is not killed early.
+    """
+    br = _FakeBr({"epic.1": _issue("epic.1")})
+    _install_br(monkeypatch, br)
+    monkeypatch.setattr(decisions, "_notify", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        supervise,
+        "load_runner_config",
+        lambda _r: RunnerConfig(
+            specs=(_MANUAL_SPEC,), default="manual", stall_after=0.08, runner_timeout=3600.0
+        ),
+    )
+    monkeypatch.setattr(
+        supervise, "build_bundle", lambda *_a, **_k: supervise.DispatchBundle("epic.1", "p", ())
+    )
+
+    class _WtSession:
+        worktree_path = str(tmp_path)
+
+    monkeypatch.setattr(supervise.worktree, "load_session", lambda *_a, **_k: _WtSession())
+    monkeypatch.setattr(supervise.loop, "record_run", lambda *_a, **_k: None)
+    # A dispatch that runs long enough to be sampled and makes no progress.
+    monkeypatch.setattr(supervise, "lane_activity", lambda _cwd: "frozen")
+
+    def slow_run(*_a: object, **_k: object) -> runner.RunResult:
+        time.sleep(0.45)
+        return runner.RunResult(
+            runner="manual", command=(), executed=True, returncode=0, stdout="done"
+        )
+
+    monkeypatch.setattr(supervise.runner, "run", slow_run)
+
+    outcome = supervise._dispatch_lane(
+        tmp_path, _session(_lane("epic.1")), _lane("epic.1"), _MANUAL_SPEC, _sizing()
+    )
+
+    # Flagged...
+    stalls = [i for i in decisions.items_on(tmp_path, "epic.1") if i.kind == "stall"]
+    assert len(stalls) == 1
+    assert "may be stuck" in stalls[0].question
+    # ...and the run was left alone to finish.
+    assert outcome.result is not None
+    assert outcome.result.returncode == 0
+    assert outcome.result.stdout == "done"

@@ -52,6 +52,7 @@ import hashlib
 import json
 import os
 import secrets
+import subprocess
 import threading
 import time
 from collections.abc import Callable, Iterable
@@ -1124,6 +1125,50 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
     return tuple(future.result() for future in futures)
 
 
+def lane_activity(cwd: Path) -> str:
+    """A fingerprint of a lane's visible progress: its commits plus its dirty tree.
+
+    The two things a working lane changes. Reading the agent's stdout would be the
+    other signal, but the runner drains its pipes only after the process is down
+    (basicly-kjc5.15), so there is nothing incremental to sample; commits and file
+    writes are both cheaper and closer to what "progress" means for a lane.
+    """
+    head = subprocess.run(
+        ["git", "-C", str(cwd), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    dirty = subprocess.run(
+        ["git", "-C", str(cwd), "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return hashlib.sha256(f"{head.stdout}\n{dirty.stdout}".encode()).hexdigest()
+
+
+def flag_stalled_lane(
+    repo_root: Path, issue_id: str, stall_after: float, runner_timeout: float
+) -> decisions.DecisionItem:
+    """Queue a lane as possibly-stuck, leaving the run to continue (design section 6).
+
+    Idempotent per (issue, kind, question), so a lane is flagged once however many
+    times it is sampled. The item names the hard kill deliberately: the human's
+    real choice is whether to intervene now or let the timeout arrive.
+    """
+    return decisions.enqueue(
+        repo_root,
+        issue_id,
+        "stall",
+        "lane may be stuck: intervene now or let the hard kill arrive?",
+        # :g rather than :.0f — a sub-second stall_after (tests, tight configs)
+        # otherwise reads as "0s", which says the opposite of what happened.
+        f"no commits and no file changes for {stall_after:g}s; the run continues "
+        f"until runner_timeout ({runner_timeout:g}s), still holding a lane slot",
+    )
+
+
 def _dispatch_lane(
     repo_root: Path,
     session: SessionState,
@@ -1147,11 +1192,21 @@ def _dispatch_lane(
     known = frozenset({session.root_issue, *(cid for cid, _ in session.children)})
     bundle = build_bundle(repo_root, lane.issue_id, known_ids=known)
     cwd = Path(record.worktree_path)
-    timeout = load_runner_config(repo_root).runner_timeout
+    runner_config = load_runner_config(repo_root)
     # A lane draws on the reserved lane slots, so it never waits behind a helper
-    # (component 8, basicly-kjc5.11).
-    with runner.process_budget().slot(runner.LANE):
-        result = runner.run(spec, bundle.prompt, cwd, capture_usage=True, timeout=timeout)
+    # (component 8, basicly-kjc5.11). The watchdog only *flags* a wedge
+    # (basicly-kjc5.25) — the timeout below is still the sole terminal action.
+    watchdog = runner.StallWatchdog(
+        runner_config.stall_after,
+        probe=lambda: lane_activity(cwd),
+        on_stall=lambda: flag_stalled_lane(
+            repo_root, lane.issue_id, runner_config.stall_after, runner_config.runner_timeout
+        ),
+    )
+    with watchdog, runner.process_budget().slot(runner.LANE):
+        result = runner.run(
+            spec, bundle.prompt, cwd, capture_usage=True, timeout=runner_config.runner_timeout
+        )
     loop.record_run(
         repo_root,
         lane.issue_id,
@@ -1171,7 +1226,8 @@ def _dispatch_lane(
             repo_root,
             lane.issue_id,
             "stall",
-            f"runner {spec.name} hit runner_timeout ({timeout:.0f}s): retry, re-dispatch, or park?",
+            f"runner {spec.name} hit runner_timeout "
+            f"({runner_config.runner_timeout:.0f}s): retry, re-dispatch, or park?",
             stale_needs.fact if stale_needs is not None else "",
         )
         return LaneOutcome(
@@ -1182,7 +1238,8 @@ def _dispatch_lane(
             occupancy=None,
             overrun=False,
             followup_id=None,
-            detail=f"timed out after {timeout:.0f}s; stall queued as {stall.decision_id}",
+            detail=f"timed out after {runner_config.runner_timeout:.0f}s; "
+            f"stall queued as {stall.decision_id}",
         )
     if result.handoff:
         return LaneOutcome(
