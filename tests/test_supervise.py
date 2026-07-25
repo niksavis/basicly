@@ -568,6 +568,34 @@ def test_finalize_followup_leaf_root_creates_without_parent(
     assert create[create.index("-t") + 1] == "task"
 
 
+def test_finalize_followup_keeps_every_flag_next_to_its_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A child lane's follow-up must not separate ``-t`` from the type it names.
+
+    The parent used to be spliced in at a fixed index that was the *value* of
+    ``-t``, so a child lane emitted ``-t --parent <root> <type>`` and br refused
+    it for a missing type. The overrun follow-up was never created, the lane
+    reported a failed dispatch, and the work its agent had already committed
+    never landed (basicly-jr0l.11, found by the basicly-kjc5.22 dogfood).
+
+    The sibling leaf-root test above asserts this same pairing — but only on the
+    branch where no parent is inserted, which is the one branch that could not
+    break. This asserts it where the splice actually happened, and over every
+    value-taking flag, so adding the next one here cannot recreate the shape.
+    """
+    br = _FakeBr(_overrun_issues())
+    _install_br(monkeypatch, br)
+
+    supervise.finalize_followup(Path(), "epic", "epic.1", occupancy=130_000, ceiling=120_000)
+
+    create = br.created[0]
+    assert create[create.index("-t") + 1] == "task"
+    for flag in ("-t", "--parent", "-d"):
+        value = create[create.index(flag) + 1]
+        assert not value.startswith("-"), f"{flag} is followed by {value!r}, not a value"
+
+
 # --- Ready lanes and concurrent dispatch ---------------------------------------
 
 
