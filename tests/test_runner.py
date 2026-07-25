@@ -13,6 +13,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import cast
@@ -1214,3 +1215,195 @@ def test_record_dispatch_never_raises_on_a_spec_result_mismatch(
     (entry,) = history["basicly-x"]
     assert entry["command"] == []  # degraded, not fatal
     assert entry["agent"] == "manual"
+
+
+# --- Global agent-process budget (component 8, basicly-kjc5.11) ---------------
+
+
+@pytest.fixture(autouse=True)
+def _clean_process_budget():
+    """The budget is process-wide, so a test must never inherit another's."""
+    runner.reset_process_budget()
+    yield
+    runner.reset_process_budget()
+
+
+def test_budget_splits_the_ceiling_into_reservation_classes() -> None:
+    """The section-6 split: concurrency for lanes, one for the decider, rest helpers."""
+    budget = runner.ProcessBudget(8, 3)
+    assert (budget.lane_slots, budget.decider_slots, budget.helper_slots) == (3, 1, 4)
+    assert budget.capacity(runner.LANE) == 3
+    assert budget.capacity(runner.HELPER) == 4
+
+
+@pytest.mark.parametrize(
+    ("total", "concurrency"),
+    [(8, 4), (8, 3), (4, 4), (2, 8), (1, 4), (0, 1), (-5, 1)],
+)
+def test_budget_reservations_never_overcommit_the_ceiling(total: int, concurrency: int) -> None:
+    """Whatever the config says, the classes sum within the ceiling.
+
+    A ceiling below "the decider plus one lane" is raised to that minimum rather
+    than overcommitting the machine or leaving zero lane slots, which would refuse
+    every dispatch.
+    """
+    budget = runner.ProcessBudget(total, concurrency)
+    assert budget.lane_slots + budget.decider_slots + budget.helper_slots <= budget.total
+    assert budget.lane_slots >= 1
+    assert budget.decider_slots == runner.DECIDER_SLOTS
+
+
+def test_budget_keeps_the_decider_slot_when_the_ceiling_is_tight() -> None:
+    """A tight ceiling narrows the lanes, never the reservation that unwedges them.
+
+    The decider's slot exists to keep the decision queue workable, and the lanes
+    are what wait on those decisions — so dropping it to fit more lanes would
+    recreate the deadlock it was reserved to prevent.
+    """
+    budget = runner.ProcessBudget(4, 8)  # asks for 8 lanes inside a ceiling of 4
+    assert budget.decider_slots == 1
+    assert budget.lane_slots == 3
+
+
+def test_budget_helpers_queue_while_lane_and_decider_slots_stay_free() -> None:
+    """The acceptance criterion: an exhausted remainder queues helpers, not lanes."""
+    budget = runner.ProcessBudget(4, 2)  # lane 2, decider 1, helper 1
+    started = threading.Event()
+    release = threading.Event()
+    second_entered = threading.Event()
+
+    def hold_helper() -> None:
+        with budget.slot(runner.HELPER):
+            started.set()
+            release.wait(5)
+
+    def queued_helper() -> None:
+        with budget.slot(runner.HELPER):
+            second_entered.set()
+
+    first = threading.Thread(target=hold_helper)
+    first.start()
+    assert started.wait(5)
+
+    second = threading.Thread(target=queued_helper)
+    second.start()
+    # The only helper slot is taken, so the second helper is queued...
+    assert not second_entered.wait(0.2)
+    # ...while both reserved classes are still immediately available.
+    with budget.slot(runner.LANE), budget.slot(runner.DECIDER):
+        assert budget.live(runner.LANE) == 1
+        assert budget.live(runner.DECIDER) == 1
+
+    release.set()
+    assert second_entered.wait(5)  # the queued helper runs once the slot frees
+    first.join(5)
+    second.join(5)
+    assert budget.live(runner.HELPER) == 0
+
+
+def test_budget_helper_flood_never_blocks_a_lane() -> None:
+    """A lane must never wait behind helpers, or the pass can deadlock."""
+    budget = runner.ProcessBudget(6, 2)  # lane 2, decider 1, helper 3
+    release = threading.Event()
+    holding = threading.Semaphore(0)
+
+    def hold_helper() -> None:
+        with budget.slot(runner.HELPER):
+            holding.release()
+            release.wait(5)
+
+    threads = [threading.Thread(target=hold_helper) for _ in range(budget.helper_slots)]
+    for thread in threads:
+        thread.start()
+    for _ in threads:
+        assert holding.acquire(timeout=5)
+
+    # Every helper slot is held; a lane still acquires without waiting.
+    with budget.slot(runner.LANE, timeout=1):
+        assert budget.live(runner.LANE) == 1
+
+    release.set()
+    for thread in threads:
+        thread.join(5)
+
+
+def test_budget_releases_a_slot_when_the_dispatch_raises() -> None:
+    """A crashing dispatch must not leak its slot, or the budget bleeds to zero."""
+    budget = runner.ProcessBudget(8, 2)
+    with pytest.raises(RuntimeError, match="boom"), budget.slot(runner.LANE):
+        raise RuntimeError("boom")
+    assert budget.live(runner.LANE) == 0
+
+
+def test_budget_refuses_a_helper_when_no_remainder_exists() -> None:
+    """Queueing on a queue that can never drain is a hang; refuse instead (D9)."""
+    budget = runner.ProcessBudget(3, 2)  # lane 2, decider 1, helper 0
+    assert budget.helper_slots == 0
+    with (
+        pytest.raises(runner.BudgetExhaustedError, match="max_agent_processes"),
+        budget.slot(runner.HELPER),
+    ):
+        pass
+
+
+def test_budget_helper_wait_times_out_rather_than_hanging_forever() -> None:
+    """An explicit timeout is available for a caller that must not block indefinitely."""
+    budget = runner.ProcessBudget(4, 2)  # helper 1
+    with (
+        budget.slot(runner.HELPER),
+        pytest.raises(TimeoutError, match="helper process slot"),
+        budget.slot(runner.HELPER, timeout=0.05),
+    ):
+        pass
+
+
+def test_budget_rejects_an_unknown_process_class() -> None:
+    """The class vocabulary is closed: a typo must not silently go unbudgeted."""
+    budget = runner.ProcessBudget(8, 2)
+    with pytest.raises(ValueError, match="unknown process class"):
+        budget.capacity("vibes")
+
+
+def test_process_budget_is_configured_once_per_process() -> None:
+    """First caller wins: re-deriving the ceiling while slots are held could exceed it."""
+    first = runner.configure_process_budget(8, 2)
+    again = runner.configure_process_budget(64, 32)
+    assert again is first
+    assert first.total == 8
+    assert runner.process_budget() is first
+
+
+def test_process_budget_defaults_when_nothing_configured_it() -> None:
+    """A single-track session never configures one; accounting still happens."""
+    budget = runner.process_budget()
+    assert budget.total == runner.DEFAULT_MAX_AGENT_PROCESSES
+    # Lane slots follow the design rule of thumb (ceiling is ~2x concurrency), so
+    # the fallback cannot drift from the ceiling it is derived from.
+    assert budget.lane_slots == budget.total // 2
+
+
+def test_every_engine_dispatch_site_declares_a_class() -> None:
+    """No engine-initiated agent spawn may go unbudgeted.
+
+    Guards the wiring rather than the accounting: a new `runner.run` call site
+    that forgets its slot spends machine capacity nothing is counting. The two
+    `basicly runner` debugging commands are exempt on purpose — a human running
+    one command by hand is not the factory allocating capacity.
+    """
+    src = Path(__file__).resolve().parents[1] / "src" / "basicly"
+    exempt = {("cli.py", "dry_run=True"), ("cli.py", "args.prompt, cwd")}
+    unbudgeted: list[str] = []
+    for path in sorted(src.glob("*.py")):
+        if path.name == "runner.py":
+            continue
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for number, line in enumerate(lines):
+            if "runner.run(" not in line:
+                continue
+            if any(path.name == name and marker in line for name, marker in exempt):
+                continue
+            # The slot is the enclosing `with`, so look back a few lines for it.
+            window = "\n".join(lines[max(0, number - 4) : number + 1])
+            if ".slot(runner." not in window:
+                unbudgeted.append(f"{path.name}:{number + 1}: {line.strip()}")
+    assert not unbudgeted, "unbudgeted agent dispatch site(s): " + "; ".join(unbudgeted)

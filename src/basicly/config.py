@@ -11,6 +11,7 @@ from .runner import (
     AUTO,
     BUILTIN_RUNNERS,
     DEFAULT_CONTEXT_WINDOW,
+    DEFAULT_MAX_AGENT_PROCESSES,
     DENY_STYLES,
     HEADLESS,
     PROMPT_VIA,
@@ -109,6 +110,10 @@ max_rework = 2
 # with `basicly runner dry-run` before a live run.
 [runner]
 default = "auto"
+# Ceiling on concurrently live agent processes across every class the engine
+# spawns: lane runners draw on [worktree] concurrency reserved slots, the decider
+# on one reserved slot, and read-only helpers queue on the remainder.
+# max_agent_processes = 8
 # [[runner.agents]]
 # name = "opencode"
 # command = ["opencode", "run", "{prompt}"]
@@ -750,6 +755,11 @@ class RunnerConfig:
     # Hard kill per dispatch, in seconds (design section 6, basicly-kjc5.7); a
     # timed-out lane routes to the decision queue as a stall flag.
     runner_timeout: float = 3600.0
+    # Ceiling on concurrently live agent processes across every class the engine
+    # spawns (design section 6, component 8). One global number rather than
+    # multiplicative per-level caps; the rule of thumb is 2x [worktree]
+    # concurrency (one average helper per lane) and the bound is API/RAM, not CPU.
+    max_agent_processes: int = DEFAULT_MAX_AGENT_PROCESSES
 
 
 def load_runner_config(repo_root: Path) -> RunnerConfig:
@@ -788,7 +798,13 @@ def load_runner_config(repo_root: Path) -> RunnerConfig:
     timeout = float(raw_timeout)
 
     return RunnerConfig(
-        specs=tuple(specs.values()), default=default, decider=decider, runner_timeout=timeout
+        specs=tuple(specs.values()),
+        default=default,
+        decider=decider,
+        runner_timeout=timeout,
+        max_agent_processes=_positive_int(
+            section.get("max_agent_processes"), DEFAULT_MAX_AGENT_PROCESSES
+        ),
     )
 
 

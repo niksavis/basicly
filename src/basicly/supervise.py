@@ -894,6 +894,21 @@ def _has_subtasks(repo_root: Path, issue_id: str) -> bool:
     )
 
 
+def configure_budget(repo_root: Path) -> runner.ProcessBudget:
+    """Install the session's global agent-process budget from config (component 8).
+
+    ``[runner] max_agent_processes`` is the ceiling and ``[worktree] concurrency``
+    is the lane reservation, so the two knobs a consumer already sets determine
+    the whole split — there is nothing extra to configure. Called once per
+    supervisor start: D1 makes this process the owner of the machine's
+    concurrency, and the budget must not be re-derived while slots are held.
+    """
+    return runner.configure_process_budget(
+        load_runner_config(repo_root).max_agent_processes,
+        load_worktree_config(repo_root).concurrency,
+    )
+
+
 def record_dispatch_halt(
     repo_root: Path, root_issue: str, admission: policy.SpendStatus
 ) -> decisions.DecisionItem:
@@ -1133,7 +1148,10 @@ def _dispatch_lane(
     bundle = build_bundle(repo_root, lane.issue_id, known_ids=known)
     cwd = Path(record.worktree_path)
     timeout = load_runner_config(repo_root).runner_timeout
-    result = runner.run(spec, bundle.prompt, cwd, capture_usage=True, timeout=timeout)
+    # A lane draws on the reserved lane slots, so it never waits behind a helper
+    # (component 8, basicly-kjc5.11).
+    with runner.process_budget().slot(runner.LANE):
+        result = runner.run(spec, bundle.prompt, cwd, capture_usage=True, timeout=timeout)
     loop.record_run(
         repo_root,
         lane.issue_id,

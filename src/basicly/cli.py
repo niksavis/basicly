@@ -1788,7 +1788,9 @@ def cmd_review(args: argparse.Namespace) -> int:
 
     config = load_runner_config(repo_root)
     spec = runner.select_runner(config.specs, args.runner or config.default)
-    result = runner.run(spec, prompt, repo_root)
+    # Read-only review agent: a helper on the best-effort remainder.
+    with runner.process_budget().slot(runner.HELPER):
+        result = runner.run(spec, prompt, repo_root)
     if result.handoff:
         print(
             f"review [handoff]: no agent CLI available via runner '{spec.name}' — run the "
@@ -2299,6 +2301,13 @@ def _cmd_loop_supervise(args: argparse.Namespace) -> int:
         print(f"supervise: refused - {exc}", file=sys.stderr)
         return 1
     print(f"session:  {session_id}")
+    # D1 puts this one process in charge of the machine's concurrency, so it owns
+    # the global agent-process ceiling for the session (component 8).
+    budget = supervise.configure_budget(repo_root)
+    print(
+        f"budget:   {budget.total} agent processes - {budget.lane_slots} lane, "
+        f"{budget.decider_slots} decider, {budget.helper_slots} helper"
+    )
     # Background beats keep the lock fresh through long landings (verify
     # suites easily outlast the staleness horizon); hb.check raises promptly
     # when a contender took over so no two supervisors ever land concurrently.

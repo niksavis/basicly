@@ -11,6 +11,7 @@ from basicly import permissions, runner
 from basicly.config import (
     CONFIG_FILE,
     DEFAULT_CONFIG_TOML,
+    DEFAULT_MAX_AGENT_PROCESSES,
     LOCAL_CONFIG_FILE,
     PolicyConfig,
     WorktreeConfig,
@@ -699,6 +700,19 @@ def test_runner_config_decider_selection(tmp_path: Path) -> None:
     assert load_runner_config(tmp_path).decider is None
     (tmp_path / CONFIG_FILE).write_text('[runner]\ndecider = "claude"\n', encoding="utf-8")
     assert load_runner_config(tmp_path).decider == "claude"
+
+
+def test_runner_config_max_agent_processes(tmp_path: Path) -> None:
+    """The global process ceiling defaults to 8; positive overrides land, junk falls back."""
+    assert load_runner_config(tmp_path).max_agent_processes == DEFAULT_MAX_AGENT_PROCESSES
+    (tmp_path / CONFIG_FILE).write_text("[runner]\nmax_agent_processes = 16\n", encoding="utf-8")
+    assert load_runner_config(tmp_path).max_agent_processes == 16
+    (tmp_path / CONFIG_FILE).write_text("[runner]\nmax_agent_processes = 0\n", encoding="utf-8")
+    assert load_runner_config(tmp_path).max_agent_processes == DEFAULT_MAX_AGENT_PROCESSES
+    (tmp_path / CONFIG_FILE).write_text(
+        '[runner]\nmax_agent_processes = "lots"\n', encoding="utf-8"
+    )
+    assert load_runner_config(tmp_path).max_agent_processes == DEFAULT_MAX_AGENT_PROCESSES
 
 
 def test_runner_config_runner_timeout(tmp_path: Path) -> None:
