@@ -9,7 +9,9 @@ the per-session decision cap all leave the item with the human.
 
 from __future__ import annotations
 
+import contextlib
 import json
+import threading
 from pathlib import Path
 
 import pytest
@@ -451,3 +453,130 @@ def test_parse_verdict_boolean_confidence_is_not_a_number() -> None:
         '{"decision": "x", "rationale": "", "confidence": true, "abstain": false}'
     )
     assert verdict.confidence == 0.0
+
+
+# --- concurrency (basicly-kjc5.17) ------------------------------------------
+
+
+def test_concurrent_enqueue_of_one_fact_queues_and_notifies_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Concurrent lanes hitting the same fact produce one item and one notification.
+
+    Without the module lock both threads read "not queued" and both write, so the
+    queue grows a duplicate marker and the human is notified twice for one
+    decision. A barrier makes the interleaving deterministic rather than hoping
+    the threads collide.
+    """
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    notified: list[str] = []
+    monkeypatch.setattr(decisions, "_notify", lambda _r, item: notified.append(item.decision_id))
+
+    # Each reader waits for a peer at a *timed* barrier after reading. Unlocked,
+    # both threads reach it, both proceed with the same stale "not queued" read,
+    # and both write. Locked, the second thread cannot enter the critical section
+    # at all, so the first times out (BrokenBarrierError, suppressed) and writes
+    # alone; the second then reads and finds the item. The timeout is what makes
+    # this work in both worlds — a plain barrier inside a critical section can
+    # never be reached by both threads and would deadlock the test.
+    barrier = threading.Barrier(2)
+    real_items_on = decisions._items_on
+
+    def _slow_items_on(repo_root: Path, issue_id: str):
+        result = real_items_on(repo_root, issue_id)
+        with contextlib.suppress(threading.BrokenBarrierError):
+            barrier.wait(timeout=0.3)
+        return result
+
+    monkeypatch.setattr(decisions, "_items_on", _slow_items_on)
+
+    results: list[decisions.DecisionItem] = []
+    threads = [
+        threading.Thread(
+            target=lambda: results.append(
+                decisions.enqueue(tmp_path, "lane", "needs-input", "which db?")
+            )
+        )
+        for _ in range(2)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+
+    assert len({item.decision_id for item in results}) == 1
+    markers = [text for text in fake.comments.get("lane", []) if decisions.MARKER in text]
+    assert len(markers) == 1
+    assert len(notified) == 1
+
+
+def test_decider_counts_and_records_under_one_lock(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The cap re-check and the answer are one atomic section (basicly-kjc5.17).
+
+    A race test cannot prove this: forcing an interleaving *inside* the critical
+    section is precisely what the lock prevents, and a barrier there deadlocks.
+    So assert the contract instead — the count and the write happen while the
+    module lock is held. Without it, N judges each pass a check taken before a
+    dispatch that takes minutes, and the session overshoots the cap.
+    """
+    fake = _FakeBr(records={"epic": {"status": "open", "description": "db is postgres"}})
+    _install(monkeypatch, fake)
+    _no_notify(monkeypatch)
+    verdict = json.dumps({
+        "decision": "postgres",
+        "rationale": "corpus",
+        "confidence": 0.9,
+        "abstain": False,
+    })
+    item = decisions.enqueue(tmp_path, "epic", "needs-input", "which db?")
+    spec = runner.RunnerSpec("fake", runner.HEADLESS, ("fake", runner.PROMPT_PLACEHOLDER))
+    monkeypatch.setattr(
+        decisions,
+        "load_runner_config",
+        lambda _r: RunnerConfig(specs=(spec,), default="fake", decider="fake"),
+    )
+    monkeypatch.setattr(decisions.runner, "select_runner", lambda *_a, **_k: spec)
+    monkeypatch.setattr(decisions.runner, "record_dispatch", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        decisions.runner,
+        "run",
+        lambda *_a, **_k: runner.RunResult(
+            "fake", ("fake",), executed=True, returncode=0, stdout=verdict
+        ),
+    )
+
+    events: list[str] = []
+
+    class _SpyLock:
+        def __enter__(self):
+            events.append("acquire")
+            return self
+
+        def __exit__(self, *_exc):
+            events.append("release")
+            return False
+
+    monkeypatch.setattr(decisions, "_QUEUE_LOCK", _SpyLock())
+    real_count = decisions.decider_answers_count
+    monkeypatch.setattr(
+        decisions,
+        "decider_answers_count",
+        lambda *a, **k: (events.append("count"), real_count(*a, **k))[1],
+    )
+    real_answer = decisions.answer
+    monkeypatch.setattr(
+        decisions,
+        "answer",
+        lambda *a, **k: (events.append("answer"), real_answer(*a, **k))[1],
+    )
+
+    decisions.invoke_decider(tmp_path, item.decision_id, "epic")
+
+    # The pre-dispatch count is outside the lock (a cheap early exit); the
+    # re-check and the write must sit inside one acquire/release pair.
+    guarded = events[events.index("acquire") : events.index("release")]
+    assert guarded == ["acquire", "count", "answer"], events
+    assert decisions.decider_answers_count(tmp_path, "epic") == 1
