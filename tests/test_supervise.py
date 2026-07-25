@@ -332,6 +332,16 @@ class _FakeBr:
         raise AssertionError(f"unexpected br call: {args}")
 
 
+def _install_br(monkeypatch: pytest.MonkeyPatch, fake: object) -> None:
+    """Route both br aliases build_bundle reads through to one fake.
+
+    ``build_bundle`` scans found-info via supervise's alias and the lane's
+    answered decisions via decisions' own — each module's alias is the seam.
+    """
+    monkeypatch.setattr(supervise, "_run_br", fake)
+    monkeypatch.setattr(decisions, "_run_br", fake)
+
+
 def test_parse_found_info_round_trips_the_marker() -> None:
     """A marker comment written by record_found_info parses back identically."""
     br = _FakeBr({})
@@ -342,7 +352,7 @@ def test_parse_found_info_round_trips_the_marker() -> None:
         affects=("src/basicly/config.py", "epic.2"),
     )
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(supervise, "_run_br", br)
+        _install_br(mp, br)
         supervise.record_found_info(Path(), "epic.1", info)
         records = supervise.found_info_records(Path(), ["epic.1"])
     assert records == (
@@ -407,7 +417,7 @@ def test_build_bundle_folds_records_by_id_and_scope_overlap(
             ],
         },
     )
-    monkeypatch.setattr(supervise, "_run_br", br)
+    _install_br(monkeypatch, br)
 
     bundle = supervise.build_bundle(Path(), "epic.1", known_ids=frozenset({"epic", "epic.2"}))
 
@@ -434,7 +444,7 @@ def test_build_bundle_treats_session_bead_ids_as_ids_not_globs(
         issues,
         comments={"epic": [_fold_marker("fact", "for the other lane", ["epic.2"])]},
     )
-    monkeypatch.setattr(supervise, "_run_br", br)
+    _install_br(monkeypatch, br)
 
     bundle = supervise.build_bundle(Path(), "epic.1", known_ids=frozenset({"epic", "epic.2"}))
 
@@ -449,7 +459,7 @@ def test_build_bundle_sees_records_published_after_planning(
     A record landing between dispatches folds into the later bundle.
     """
     br = _FakeBr(_bundle_issues())
-    monkeypatch.setattr(supervise, "_run_br", br)
+    _install_br(monkeypatch, br)
     known = frozenset({"epic", "epic.2"})
 
     before = supervise.build_bundle(Path(), "epic.1", known_ids=known)
@@ -503,7 +513,7 @@ def test_finalize_followup_spins_a_gated_top_level_package(
     and scope.
     """
     br = _FakeBr(_overrun_issues())
-    monkeypatch.setattr(supervise, "_run_br", br)
+    _install_br(monkeypatch, br)
 
     followup = supervise.finalize_followup(
         Path(), "epic", "epic.1", occupancy=130_000, ceiling=120_000
@@ -528,7 +538,7 @@ def test_finalize_followup_is_idempotent_via_the_overrun_marker(
 ) -> None:
     """A re-metered overrun returns the recorded follow-up instead of a duplicate."""
     br = _FakeBr(_overrun_issues())
-    monkeypatch.setattr(supervise, "_run_br", br)
+    _install_br(monkeypatch, br)
 
     first = supervise.finalize_followup(
         Path(), "epic", "epic.1", occupancy=130_000, ceiling=120_000
@@ -548,7 +558,7 @@ def test_finalize_followup_leaf_root_creates_without_parent(
     issues = _overrun_issues()
     issues["epic.1"]["issue_type"] = "feature"  # non-leaf type falls back to task
     br = _FakeBr(issues)
-    monkeypatch.setattr(supervise, "_run_br", br)
+    _install_br(monkeypatch, br)
 
     supervise.finalize_followup(Path(), "epic.1", "epic.1", occupancy=1, ceiling=1)
 
@@ -747,7 +757,7 @@ def _worker_fixture(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, stdout: str, returncode: int = 0
 ) -> tuple[_FakeBr, dict]:
     br = _FakeBr(_overrun_issues())
-    monkeypatch.setattr(supervise, "_run_br", br)
+    _install_br(monkeypatch, br)
     seen: dict = {}
 
     class _WtSession:
@@ -1846,3 +1856,225 @@ def test_dispatch_halt_is_one_idempotent_queue_item(
     assert first.decision_id == second.decision_id
     assert first.kind == "escalation"
     assert len(br.comments["epic"]) == 1
+
+
+# --- Autonomous delegation: the decider in the pass (basicly-kjc5.40) ---------
+
+
+def _delegation_env(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    pending: tuple[decisions.DecisionItem, ...],
+    outcomes: dict[str, object],
+) -> list[str]:
+    """Stub the queue read and the decider, recording which ids were offered."""
+    offered: list[str] = []
+    monkeypatch.setattr(supervise.decisions, "pending", lambda *_a, **_k: pending)
+
+    def fake_invoke(_repo: Path, decision_id: str, _root: str, **_kw: object) -> object:
+        offered.append(decision_id)
+        return outcomes[decision_id]
+
+    monkeypatch.setattr(supervise.decisions, "invoke_decider", fake_invoke)
+    return offered
+
+
+def _item(decision_id: str, kind: str, *, answer: str | None = None) -> decisions.DecisionItem:
+    return decisions.DecisionItem(
+        decision_id=decision_id,
+        issue_id=decision_id.split("#", maxsplit=1)[0],
+        kind=kind,
+        question=f"{kind}?",
+        answer=answer,
+        answered_by="decider:fake" if answer else None,
+    )
+
+
+def test_delegate_decisions_answers_the_delegable_kinds(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The autonomous path: an L2 grant hands needs-input and escalation to the decider."""
+    needs = _item("epic.1#a", "needs-input")
+    esc = _item("epic.1#b", "escalation")
+    offered = _delegation_env(
+        monkeypatch,
+        pending=(needs, esc),
+        outcomes={
+            "epic.1#a": _item("epic.1#a", "needs-input", answer="postgres"),
+            "epic.1#b": _item("epic.1#b", "escalation", answer="retry"),
+        },
+    )
+
+    delegated = supervise.delegate_decisions(
+        Path(), _session(_lane("epic.1")), admission=_granted("L2", 5000, 10)
+    )
+
+    assert offered == ["epic.1#a", "epic.1#b"]
+    assert [(d.decision_id, d.answered) for d in delegated] == [
+        ("epic.1#a", True),
+        ("epic.1#b", True),
+    ]
+    assert "postgres" in delegated[0].detail
+
+
+def test_delegate_decisions_never_offers_a_checkpoint_validate_or_stall(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Three kinds stay human-only, and each for its own reason.
+
+    A ``checkpoint`` item exists *because* the grant already refused the
+    approval, so answering it would clear the lane's hold with the checkpoint
+    still unapproved — around D3's ladder. ``validate`` re-judged by an agent is
+    the consensus-voting shape D9 rejects, and ``stall`` is a fact about a killed
+    process rather than a corpus question.
+    """
+    kinds = ("checkpoint", "validate", "stall")
+    items = tuple(_item(f"epic.1#{n}", kind) for n, kind in enumerate(kinds))
+    offered = _delegation_env(monkeypatch, pending=items, outcomes={})
+
+    delegated = supervise.delegate_decisions(
+        Path(), _session(_lane("epic.1")), admission=_granted("L3", 5000, 10)
+    )
+
+    assert offered == []
+    assert delegated == ()
+
+
+@pytest.mark.parametrize("level", ["L0", "L1"])
+def test_delegate_decisions_needs_an_l2_grant(monkeypatch: pytest.MonkeyPatch, level: str) -> None:
+    """Below L2 nothing delegates: L0 is task-by-task and L1 only pre-approves decompose."""
+    offered = _delegation_env(monkeypatch, pending=(_item("epic.1#a", "needs-input"),), outcomes={})
+
+    assert (
+        supervise.delegate_decisions(
+            Path(), _session(_lane("epic.1")), admission=_granted(level, None, 0)
+        )
+        == ()
+    )
+    assert offered == []
+
+
+def test_delegate_decisions_needs_any_grant_at_all(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An ungranted session is human-driven; the decider must not run unasked."""
+    offered = _delegation_env(monkeypatch, pending=(_item("epic.1#a", "needs-input"),), outcomes={})
+
+    assert (
+        supervise.delegate_decisions(Path(), _session(_lane("epic.1")), admission=_UNGRANTED) == ()
+    )
+    assert offered == []
+
+
+def test_delegate_decisions_stops_at_the_spend_ceiling(monkeypatch: pytest.MonkeyPatch) -> None:
+    """D3 halts delegated decisions on the same ceiling as dispatch (basicly-kjc5.23)."""
+    offered = _delegation_env(monkeypatch, pending=(_item("epic.1#a", "needs-input"),), outcomes={})
+
+    assert (
+        supervise.delegate_decisions(
+            Path(), _session(_lane("epic.1")), admission=_granted("L2", 100, 100)
+        )
+        == ()
+    )
+    assert offered == []
+
+
+def test_delegate_decisions_reports_an_abstention_as_still_the_humans(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An abstention is the correct outcome, reported as such - never retried around."""
+    _delegation_env(
+        monkeypatch,
+        pending=(_item("epic.1#a", "needs-input"),),
+        outcomes={"epic.1#a": decisions.DeciderVerdict("", "not in the corpus", 0.0, abstain=True)},
+    )
+
+    delegated = supervise.delegate_decisions(
+        Path(), _session(_lane("epic.1")), admission=_granted("L2", 5000, 10)
+    )
+
+    assert [(d.answered, d.detail) for d in delegated] == [(False, "not in the corpus")]
+
+
+def test_delegate_decisions_contains_one_broken_invocation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One failed delegation must not strand every other decision in the pass."""
+    first, second = _item("epic.1#a", "needs-input"), _item("epic.2#b", "needs-input")
+    monkeypatch.setattr(supervise.decisions, "pending", lambda *_a, **_k: (first, second))
+
+    def flaky(_repo: Path, decision_id: str, _root: str, **_kw: object) -> object:
+        if decision_id == "epic.1#a":
+            raise RuntimeError("tracker locked")
+        return _item(decision_id, "needs-input", answer="mysql")
+
+    monkeypatch.setattr(supervise.decisions, "invoke_decider", flaky)
+
+    delegated = supervise.delegate_decisions(
+        Path(), _session(_lane("epic.1")), admission=_granted("L2", 5000, 10)
+    )
+
+    assert [(d.decision_id, d.answered) for d in delegated] == [
+        ("epic.1#a", False),
+        ("epic.2#b", True),
+    ]
+    assert "tracker locked" in delegated[0].detail
+
+
+def test_delegate_decisions_beats_the_lock_between_invocations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A slow decider must not let the singleton lock go stale mid-delegation."""
+    items = (_item("epic.1#a", "needs-input"), _item("epic.2#b", "needs-input"))
+    _delegation_env(
+        monkeypatch,
+        pending=items,
+        outcomes={i.decision_id: _item(i.decision_id, i.kind, answer="x") for i in items},
+    )
+    beats = {"n": 0}
+
+    def beat() -> None:
+        beats["n"] += 1
+
+    supervise.delegate_decisions(
+        Path(), _session(_lane("epic.1")), beat=beat, admission=_granted("L2", 5000, 10)
+    )
+
+    assert beats["n"] == 2
+
+
+# --- Answered decisions reach the lane's next dispatch (basicly-kjc5.40) ------
+
+
+def test_build_bundle_folds_the_lanes_answered_questions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An answer that never reaches the prompt is an answer nobody acts on.
+
+    Without this the lane re-dispatches with the prompt it already had and
+    re-blocks on the same fact, so both the human and the decider path deliver
+    their answer to nobody.
+    """
+    br = _FakeBr({"epic.1": _issue("epic.1")})
+    _install_br(monkeypatch, br)
+    monkeypatch.setattr(decisions, "_notify", lambda *_a, **_k: None)
+    item = decisions.enqueue(Path(), "epic.1", "needs-input", "which db?")
+    decisions.answer(Path(), item.decision_id, "postgres", by="human")
+    still_open = decisions.enqueue(Path(), "epic.1", "escalation", "retry or park?")
+
+    bundle = supervise.build_bundle(Path(), "epic.1")
+
+    assert [i.decision_id for i in bundle.answers] == [item.decision_id]
+    assert "which db? → postgres (answered by human)" in bundle.prompt
+    assert "do not re-ask" in bundle.prompt
+    # An unanswered item is not folded: it is the question, not an answer.
+    assert still_open.question not in bundle.prompt
+
+
+def test_build_bundle_omits_the_answers_section_when_there_are_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A lane that never blocked gets the plain dispatch prompt, unchanged."""
+    br = _FakeBr({"epic.1": _issue("epic.1")})
+    _install_br(monkeypatch, br)
+
+    bundle = supervise.build_bundle(Path(), "epic.1")
+
+    assert bundle.answers == ()
+    assert bundle.prompt == loop.dispatch_prompt("epic.1")

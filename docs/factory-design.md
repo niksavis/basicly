@@ -492,13 +492,19 @@ the corpus goes to the human even in autonomous mode. This preserves block-don't
 while eliminating stops the human's own documents could answer. The decider runs as a
 `[runner]`-configured agent (`decider` key, defaulting to the session's default runner).
 
-> **Built, but not yet reached autonomously.** `decisions.invoke_decider` exists with the
-> corpus bound, the structured verdict, the abstain path, and fail-closed parsing — but its only
-> caller is `basicly loop decide`, a human-triggered command. The supervisor never invokes it, so
-> "autonomous mode invokes the decider agent per decision" describes an intended wiring, not
-> current behavior: a pending item simply holds the lane (`basicly-kjc5.40`). The corpus bound
-> is also still contract-level — the decider runs with full tool access and could write tracker
-> state directly, which `basicly-kjc5.16` closes with an invocation-time deny-tools overlay.
+> **Reached autonomously since `basicly-kjc5.40`.** `supervise.delegate_decisions` runs before
+> dispatch in each pass, so an item the decider answers releases its lane in that same pass. It
+> offers only `escalation` and `needs-input` (`DELEGABLE_KINDS`). Three kinds stay human-only:
+> `checkpoint`, because that item exists *because* `policy._grant_approval` already refused and
+> answering it would clear the lane's hold with the checkpoint still unapproved; `validate`,
+> because a judged NO re-judged by an agent is the consensus-voting shape D9 rejects; and `stall`,
+> which is a fact about a killed process rather than a corpus question. Delegation is serial (one
+> reserved decider process), beats the lock between invocations, needs an L2+ grant, and stops at
+> D3's spend ceiling. The corpus bound is tool-level as of `basicly-kjc5.16`.
+>
+> An answer now also *reaches* its lane: `build_bundle` folds the lane's own answered items into
+> the dispatch prompt. Before that, both the human's answer and the decider's went nowhere — the
+> lane re-dispatched with the prompt it already had and re-blocked on the same fact.
 
 ### 7.2 Supervisor lock and crash recovery
 
@@ -643,8 +649,6 @@ absorption (`kjc5.13`). The client surface (`kjc5.8`) is built: `loop session` o
 The gaps that matter most, because a reader would otherwise believe the decision is enforced:
 
 - **L3 cannot delegate a child's ship** while the session root is open (`kjc5.39`).
-- **No autonomous path exists**: the supervisor never invokes the decider (`kjc5.40`). The
-  decider is at least confined at invocation now (`kjc5.16`) and halts on the spend ceiling.
 - **`stall_after` does not exist** — only the hard kill (`kjc5.25`).
 - **No model is pinned on any adapter**, so R5's tier economics rest on an unpinned mapping
   and dispatch is not reproducible in its inputs as D9 requires (`kjc5.29`, `kjc5.28`).

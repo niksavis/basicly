@@ -73,6 +73,7 @@ from . import (
 )
 from .br import run_br as _run_br
 from .config import (
+    AUTONOMY_LEVELS,
     SizingConfig,
     load_runner_config,
     load_sizing_config,
@@ -631,6 +632,10 @@ class DispatchBundle:
     issue_id: str
     prompt: str
     folded: tuple[FoundInfo, ...]
+    # Answered decisions folded into the prompt, newest last. Without these an
+    # answer reaches nobody: the lane that blocked on the question re-dispatches
+    # with the same prompt it had before (basicly-kjc5.40).
+    answers: tuple[decisions.DecisionItem, ...] = ()
 
 
 def build_bundle(
@@ -665,7 +670,27 @@ def build_bundle(
             "\n\nCross-lane findings recorded since this work was planned; "
             "fold them into your approach:\n" + "\n".join(lines)
         )
-    return DispatchBundle(issue_id=issue_id, prompt=prompt, folded=folded)
+    answers = answered_decisions(repo_root, issue_id)
+    if answers:
+        prompt += (
+            "\n\nQuestions this work already blocked on, and the answers on "
+            "record — treat them as decided, do not re-ask:\n"
+            + "\n".join(
+                f"- {item.question} → {item.answer} (answered by {item.answered_by})"
+                for item in answers
+            )
+        )
+    return DispatchBundle(issue_id=issue_id, prompt=prompt, folded=folded, answers=answers)
+
+
+def answered_decisions(repo_root: Path, issue_id: str) -> tuple[decisions.DecisionItem, ...]:
+    """The lane's own answered queue items, newest last and bounded like found-info.
+
+    Only the lane's own items: a sibling lane's answer is that lane's context,
+    and cross-lane facts travel as ``[harness-info]`` records by design (7.4).
+    """
+    items = [item for item in decisions.items_on(repo_root, issue_id) if not item.pending]
+    return tuple(items[-_MAX_FOLDED_RECORDS:])
 
 
 def _info_matches(
@@ -885,6 +910,123 @@ def record_dispatch_halt(
         "escalation",
         "re-grant autonomy or continue by hand: the session's token budget is spent",
         admission.detail,
+    )
+
+
+# --- Autonomous delegation: the decider in the pass (D3 L2+, design 7.1) -----
+
+
+# Decision kinds the decider may take at L2+ (design 7.1: "approve delegable
+# checkpoints, triage escalations, and answer needs-input questions"). The three
+# excluded kinds are excluded on purpose:
+#
+# - ``checkpoint`` — the delegable-checkpoint path *is*
+#   ``policy._grant_approval``, and it already ran and refused before this item
+#   was enqueued. Answering the item would clear the lane's hold without the
+#   checkpoint ever being approved, routing around the ladder and the L3
+#   preconditions D3 makes ship conditional on.
+# - ``validate`` — a judged NO re-judged by another agent is the consensus-voting
+#   shape D9 rejects by name; R4 wants a human on an unmet acceptance criterion.
+# - ``stall`` — a hard-killed runner is an operational fact about a process, not a
+#   question the intake corpus can answer.
+DELEGABLE_KINDS = ("escalation", "needs-input")
+
+# L2 is where delegation begins (D3): L0 is task-by-task and L1 only pre-approves
+# the decompose checkpoint at intake.
+_MIN_DELEGATION_LEVEL = "L2"
+
+
+@dataclass(frozen=True)
+class DelegatedDecision:
+    """One decider invocation's outcome, for the pass report."""
+
+    decision_id: str
+    issue_id: str
+    kind: str
+    # True when the decider decided and the answer is recorded; False when the
+    # item stayed with the human (abstained, unparseable, capped, unconfinable).
+    answered: bool
+    detail: str
+
+
+def _delegation_allowed(grant: policy.Grant | None) -> bool:
+    """True when the grant's level reaches L2, where D3 starts delegating."""
+    if grant is None:
+        return False
+    levels = AUTONOMY_LEVELS
+    if grant.level not in levels:
+        return False
+    return levels.index(grant.level) >= levels.index(_MIN_DELEGATION_LEVEL)
+
+
+def delegate_decisions(
+    repo_root: Path,
+    session: SessionState,
+    *,
+    beat: Callable[[], None] | None = None,
+    admission: policy.SpendStatus | None = None,
+) -> tuple[DelegatedDecision, ...]:
+    """Ask the decider to resolve the session's delegable pending items (D3 L2+).
+
+    This is the autonomous path: without it an L2 grant delegates nothing,
+    because a pending item only ever *holds* its lane
+    (:func:`ready_lanes`). Run before dispatch in a pass, so an item the decider
+    answers releases its lane in that same pass.
+
+    Serial by design — the decider is one reserved process, not a fan-out — and
+    *beat* is invoked between invocations so a slow decider never lets the
+    singleton lock go stale. Every drop-to-human cause (abstention, unparseable
+    verdict, ``decider_max_decisions``, an unconfinable runner family, the spend
+    halt) is decided inside :func:`decisions.invoke_decider`; this layer only
+    chooses *which* items to offer it and reports what came back.
+    """
+    if admission is None:
+        admission = policy.spend_status(repo_root, session.root_issue)
+    # No delegation without a covering grant, and none past D3's spend ceiling —
+    # invoke_decider re-checks the ceiling, but stopping here skips a tracker walk
+    # per item on a session that can no longer delegate anything.
+    if admission.halted or not _delegation_allowed(admission.grant):
+        return ()
+    delegated: list[DelegatedDecision] = []
+    for item in decisions.pending(repo_root, session.root_issue):
+        if item.kind not in DELEGABLE_KINDS:
+            continue
+        if beat is not None:
+            beat()
+        delegated.append(_delegate_one(repo_root, item, session.root_issue))
+    return tuple(delegated)
+
+
+def _delegate_one(
+    repo_root: Path, item: decisions.DecisionItem, root_issue: str
+) -> DelegatedDecision:
+    """Offer one item to the decider; a failed invocation leaves it with the human."""
+    try:
+        outcome = decisions.invoke_decider(repo_root, item.decision_id, root_issue)
+    except (RuntimeError, OSError, ValueError) as exc:
+        # Per-item containment, matching the lane dispatch stance: one broken
+        # delegation must not abort the pass and strand every other decision.
+        return DelegatedDecision(
+            decision_id=item.decision_id,
+            issue_id=item.issue_id,
+            kind=item.kind,
+            answered=False,
+            detail=f"decider invocation failed: {exc}",
+        )
+    if isinstance(outcome, decisions.DecisionItem):
+        return DelegatedDecision(
+            decision_id=outcome.decision_id,
+            issue_id=outcome.issue_id,
+            kind=outcome.kind,
+            answered=not outcome.pending,
+            detail=f"{outcome.answered_by}: {outcome.answer}",
+        )
+    return DelegatedDecision(
+        decision_id=item.decision_id,
+        issue_id=item.issue_id,
+        kind=item.kind,
+        answered=False,
+        detail=outcome.rationale or "not derivable from the corpus",
     )
 
 
