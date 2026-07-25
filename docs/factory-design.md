@@ -307,6 +307,41 @@ Rejected alternatives:
   does not survive `basicly install`; the dual-use constraint requires it to be engine code
   every consumer gets.
 
+### D11 — The bead carries evidence; the usage files carry only what may be lost
+
+Settled 2026-07-25. A bead has two distinct roles, and conflating them is what makes trackers
+rot:
+
+- **State** — authoritative, minimal, and *branched on* by the engine: type, status, gates,
+  checkpoints, dependencies, scope, acceptance criteria, the worktree binding. A stale state
+  field is a correctness bug, so this set stays as small as it can be.
+- **Evidence** — append-only, engine-written, and *branched on by nothing*: what a track cost,
+  how long it waited, which environment produced a gate result. Evidence can be rich precisely
+  because no decision depends on it; the worst outcome of a missing field is a thinner audit
+  trail.
+
+**Cost history is evidence, and it must live on the bead.** `.basicly/usage/` is self-ignored,
+so run-records — the actuals ledger D8's calibration reads — never leave the machine that
+produced them. A fresh clone or a new team member therefore forecasts from the seed build
+factors, and two machines size the same plan differently. Since `.beads/issues.jsonl` is
+committed, the bead is the only carrier that survives a clone: the engine writes a cost
+projection at ship (`basicly-kjc5.50`), and the local usage files keep only the per-dispatch
+detail that is cheap to lose.
+
+Three rules for anything added:
+
+1. **Derived, never authored.** A field the engine writes and an agent may also edit is a second
+   authority; that is why sizing stays in tokens from the governor and never accepts a
+   story point (`basicly-kjc5.48`).
+2. **Keep the forecast next to the actual.** Actuals say what happened; the *pair* says how
+   biased the estimator is, per class, which is the only thing that improves a forecast. The
+   actual must aggregate failed attempts too, or it flatters exactly the packages whose cheap
+   dispatch produced an expensive result (R5, §6).
+3. **Measure the wait, not just the work.** A factory's wall-clock is dominated by waiting on
+   humans at checkpoints and decisions, which no current field records
+   (`basicly-kjc5.51`). A forecast built from dispatch duration alone predicts the compute and
+   misses the bottleneck — and the value of an autonomy grant *is* the wait it removes.
+
 ## 3. Components to build
 
 Ordered roughly by dependency; each builds on named existing modules.
