@@ -2319,6 +2319,15 @@ def _cmd_loop_supervise(args: argparse.Namespace) -> int:
             # so the halt is printed with its numbers instead of looking like an
             # idle pass (basicly-kjc5.23).
             admission = policy.spend_status(repo_root, args.issue)
+            # Delegate before dispatching (basicly-kjc5.40): a pending item only
+            # holds its lane, so an item the decider answers now releases that
+            # lane in this same pass instead of the next one.
+            delegated = supervise.delegate_decisions(
+                repo_root, state, beat=hb.check, admission=admission
+            )
+            for decided in delegated:
+                verb = "decided" if decided.answered else "to human"
+                print(f"decider:  {decided.decision_id} [{decided.kind}] {verb} - {decided.detail}")
             outcomes = supervise.dispatch_lanes(
                 repo_root, state, beat=hb.check, skip=carried, admission=admission
             )

@@ -232,6 +232,16 @@ def has_pending(repo_root: Path, issue_id: str) -> bool:
     return any(item.pending for item in _items_on(repo_root, issue_id).values())
 
 
+def items_on(repo_root: Path, issue_id: str) -> tuple[DecisionItem, ...]:
+    """Every item recorded on one bead, answered or not, in marker (oldest-first) order.
+
+    The session-wide reads (:func:`pending`) walk the tree; this is the per-bead
+    read a caller needs when it is already looking at one lane — e.g. folding the
+    lane's answered questions into its next dispatch prompt.
+    """
+    return tuple(_items_on(repo_root, issue_id).values())
+
+
 def get(repo_root: Path, decision_id: str) -> DecisionItem | None:
     """The item recorded under *decision_id*, answered or not; None when absent."""
     issue_id, _ = split_decision_id(decision_id)
