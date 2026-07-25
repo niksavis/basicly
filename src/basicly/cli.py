@@ -23,6 +23,7 @@ from . import (
     catalog_lint,
     catalog_verify,
     claude_settings,
+    commit,
     decisions,
     decompose,
     fleet,
@@ -2117,6 +2118,40 @@ def cmd_verify(args: argparse.Namespace) -> int:
     return 1
 
 
+def cmd_commit(args: argparse.Namespace) -> int:
+    """Assemble the commit envelope from engine state and commit the staged change."""
+    repo_root = _repo_root()
+    try:
+        envelope = commit.assemble(
+            repo_root,
+            args.description,
+            bead=args.issue,
+            commit_type=args.type,
+            scope=args.scope,
+            breaking=args.breaking,
+            body=args.body or "",
+        )
+    except ValueError as exc:
+        ui.fail(f"[commit] REJECTED: {exc}")
+        return 1
+
+    print(envelope.message)
+    if args.dry_run:
+        return 0
+    if not commit.has_staged_changes(repo_root):
+        ui.fail("[commit] nothing staged to commit; stage the change first (git add ...)")
+        return 1
+
+    result = commit.run_commit(repo_root, envelope)
+    print(result.output)
+    if result.committed:
+        return 0
+    # The hooks are the floor and they just spoke: their output above is the
+    # actionable report, so add nothing but the verdict.
+    ui.fail("[commit] git rejected the commit (see the hook output above)")
+    return 1
+
+
 def _load_decompose_children(args: argparse.Namespace) -> tuple[Any, ...]:
     """Load child specs from --plan (suffix-detected) or JSON on stdin."""
     if args.plan:
@@ -2940,6 +2975,42 @@ def _add_verify_parser(subparsers: argparse._SubParsersAction) -> None:
     )
 
 
+def _add_commit_parser(subparsers: argparse._SubParsersAction) -> None:
+    commit_parser = subparsers.add_parser(
+        "commit",
+        help="Commit the staged change with an envelope derived from engine state",
+        description=(
+            "Assemble a conventional-commit message whose type, scope, and trailing bead "
+            "id come from engine state, and commit with it. Only the description is "
+            "authored input; the commit-msg hooks stay the gate."
+        ),
+    )
+    commit_parser.add_argument(
+        "description",
+        help="The authored part: lowercase letters, digits, spaces, and hyphens only",
+    )
+    commit_parser.add_argument(
+        "--body", help="Free-form commit body (where capitals, dots, and filenames belong)"
+    )
+    commit_parser.add_argument(
+        "--issue", help="Bead id to reference (default: the bead bound to the current branch)"
+    )
+    commit_parser.add_argument(
+        "--type",
+        choices=commit.ALLOWED_TYPES,
+        help="Override the type derived from the bead's work class and the staged paths",
+    )
+    commit_parser.add_argument(
+        "--scope", help="Override the scope derived from the staged paths (lowercase-kebab-case)"
+    )
+    commit_parser.add_argument(
+        "--breaking", action="store_true", help="Mark a breaking change (the '!' before the colon)"
+    )
+    commit_parser.add_argument(
+        "--dry-run", action="store_true", help="Print the assembled message without committing"
+    )
+
+
 def _add_decompose_parser(subparsers: argparse._SubParsersAction) -> None:
     decompose_parser = subparsers.add_parser(
         "decompose",
@@ -3297,6 +3368,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_catalog_parser(subparsers)
     _add_worktree_parser(subparsers)
     _add_verify_parser(subparsers)
+    _add_commit_parser(subparsers)
     _add_policy_parser(subparsers)
     _add_decompose_parser(subparsers)
     _add_loop_parser(subparsers)
@@ -3328,6 +3400,7 @@ def main(argv: list[str] | None = None) -> int:
         "catalog": cmd_catalog,
         "worktree": cmd_worktree,
         "verify": cmd_verify,
+        "commit": cmd_commit,
         "policy": cmd_policy,
         "decompose": cmd_decompose,
         "loop": cmd_loop,

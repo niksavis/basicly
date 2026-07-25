@@ -59,6 +59,17 @@ type(scope)!: description (issue-id[, issue-id...])
 
 ## Workflow
 
+Default to `basicly commit "<description>"`: it derives the type from the bead's work
+class, the scope from the staged paths, and the trailing bead id from the branch's
+worktree binding, then commits — so only the description is yours to write, and a
+description the charset rules reject is refused with the offending character named
+before any commit is attempted. `--body` carries the capitals, dots, and filenames;
+`--type`/`--scope`/`--issue` override one derived part; `--dry-run` prints the message
+without committing.
+
+Compose the subject by hand only when there is no envelope to derive from — a commit
+outside a bead's worktree, or a message the command cannot assemble:
+
 1. Pick the type that matches the change's intent (feat/fix/docs/...).
 2. Resolve or create a beads issue first (see `tool-br`) — never invent an id.
 3. Add `!` only when the change is a breaking API/behavior change.
@@ -115,4 +126,7 @@ This format is mechanically enforced by:
 - `.basicly/core/hooks/beads-commit-msg.py` — issue id presence and existence.
 
 This skill exists to get the message right on the first attempt; the hooks are the
-actual gate.
+actual gate. `basicly commit` (`src/basicly/commit.py`) is the mechanical path to the
+same result: it assembles the derivable envelope and applies the description rules
+above before invoking `git commit`, so the rules below are what to reason about only
+when a message has to be hand-composed.
