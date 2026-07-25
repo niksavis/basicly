@@ -471,6 +471,14 @@ KILL_GRACE_S = 5.0
 # name the attribute at all; the fallback is the documented CreateProcess value.
 CREATE_NEW_PROCESS_GROUP = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
 
+# The mirror image: signal exposes SIGKILL only on POSIX. The Windows branch of
+# _kill_tree returns before reaching it, so the value is never *used* there — but
+# naming the attribute is enough to raise, and a test that fakes ``os.name`` to
+# exercise the POSIX branch does reach this line on Windows (basicly-kjc5.54).
+# 9 is SIGKILL's universal number; it is a placeholder that keeps the module
+# referenceable on any platform, not a signal Windows could deliver.
+SIGKILL = getattr(signal, "SIGKILL", 9)
+
 
 def _kill_tree(proc: subprocess.Popen[str]) -> None:
     """Kill the timed-out dispatch *and every process it spawned*.
@@ -488,12 +496,12 @@ def _kill_tree(proc: subprocess.Popen[str]) -> None:
     if os.name == "nt":
         _taskkill_tree(proc.pid)
         return
-    for signum in (signal.SIGTERM, signal.SIGKILL):
+    for signum in (signal.SIGTERM, SIGKILL):
         try:
             os.killpg(os.getpgid(proc.pid), signum)
         except OSError:
             return  # already gone, or never had a group of its own
-        if signum == signal.SIGKILL:
+        if signum == SIGKILL:
             return
         try:
             proc.wait(timeout=KILL_GRACE_S)

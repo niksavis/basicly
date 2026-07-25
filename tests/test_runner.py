@@ -908,14 +908,10 @@ class _Stubborn:
         raise subprocess.TimeoutExpired(("agent",), timeout or 0)
 
 
-# POSIX-only signal number, referenced by the tests that *simulate* the POSIX
-# branch. Windows' signal module has no SIGKILL and pyright resolves attributes
-# per platform, so a direct reference is an error there even inside a test that
-# skipif already excludes — pyright is static and does not read the marker. The
-# fallback mirrors runner.CREATE_NEW_PROCESS_GROUP. runner.py itself needs no such
-# guard: its POSIX branch sits after an `os.name == "nt"` early return, which
-# pyright narrows (basicly-kjc5.54).
-SIGKILL = getattr(signal, "SIGKILL", 9)
+# Assert against the *source's* portable constant rather than a second definition
+# here: on Windows the two fallbacks could differ and the test would compare a
+# value the code never produced (basicly-kjc5.54).
+SIGKILL = runner.SIGKILL
 
 
 class _Polite:
