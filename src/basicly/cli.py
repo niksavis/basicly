@@ -2185,6 +2185,23 @@ def cmd_decompose(args: argparse.Namespace) -> int:
         groups = 1 + max((c.group for c in planned), default=-1)
         print(f"decompose (dry-run): {len(planned)} children in {groups} parallel group(s)")
         _print_planned(planned)
+        # The band verdict is the whole point of a dry run: a plan that previews
+        # clean and is then refused on the real run is not a preview of anything
+        # (basicly-u6tw). Same estimates and same guidance as `decompose` itself,
+        # because both read decompose.estimate_plan.
+        verdict = decompose.estimate_plan(repo_root, children, feature_id=args.feature)
+        print("sizing (D8 working-set band):")
+        for spec, estimate in zip(children, verdict.estimates, strict=True):
+            print(
+                f"  {spec.title}: {estimate.total} tokens "
+                f"(scope {estimate.scope_tokens} x build factor + overhead)"
+            )
+        if verdict.refused:
+            print("verdict: REFUSED — the real run would not create these children:")
+            for message in verdict.violations:
+                print(f"  {message}")
+            return 1
+        print("verdict: within band")
         return 0
 
     result = decompose.decompose(repo_root, args.feature, children)
