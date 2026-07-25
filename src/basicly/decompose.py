@@ -23,7 +23,9 @@ still compared correctly and the result is fully reproducible.
 
 from __future__ import annotations
 
+import contextlib
 import fnmatch
+import hashlib
 import json
 import re
 import statistics
@@ -321,7 +323,7 @@ def parse_scope_section(description: str) -> tuple[str, ...]:
     return tuple(scope)
 
 
-def _bead_class_and_scope(repo_root: Path, bead_id: str) -> tuple[str, tuple[str, ...]] | None:
+def bead_class_and_scope(repo_root: Path, bead_id: str) -> tuple[str, tuple[str, ...]] | None:
     """The task class and declared scope of *bead_id*, or None when unreadable."""
     try:
         proc = _run_br(repo_root, ["show", bead_id, "--json"])
@@ -350,9 +352,12 @@ def calibrated_build_factors(repo_root: Path, sizing: SizingConfig) -> dict[str,
     ``factor = reported tokens / scope read-cost``, and the median overrides the
     seed only past ``calibration_min_samples``. Best-effort by construction:
     an unreadable bead or malformed record is skipped, never fatal — with few
-    samples the seeds stand. Scope read-cost is recomputed against the current
-    tree (the record does not persist it); an accepted approximation that sample
-    volume averages out.
+    samples the seeds stand.
+
+    Scope read-cost comes from the record's own ``scope_tokens``, persisted by the
+    dispatch that produced the sample (basicly-kjc5.30), so a sample means the same
+    thing whenever it is read. Only a record written before that — which has no
+    ``scope_tokens`` — falls back to measuring the current tree.
     """
     factors = dict(sizing.build_factors)
     records = run_record.load_run_records(repo_root)
@@ -373,14 +378,22 @@ def calibrated_build_factors(repo_root: Path, sizing: SizingConfig) -> dict[str,
         ]
         if not reported:
             continue
-        info = _bead_class_and_scope(repo_root, bead_id)
+        info = bead_class_and_scope(repo_root, bead_id)
         if info is None:
             continue
         task_class, scope = info
-        cost = scope_read_cost(repo_root, scope)
-        if cost <= 0:
-            continue
+        # Fallback only: a record written before the dispatch persisted its own
+        # scope cost has to be measured against the tree as it stands now, which
+        # is the drift basicly-kjc5.30 removes going forward.
+        measured_now = scope_read_cost(repo_root, scope)
         for entry in reported:
+            # The scope cost as it was at dispatch, when that dispatch recorded it
+            # — so a sample keeps meaning what it meant, however the files have
+            # grown since.
+            recorded = entry.get("scope_tokens")
+            cost = recorded if isinstance(recorded, int) and recorded > 0 else measured_now
+            if cost <= 0:
+                continue
             timestamp = str(entry.get("timestamp", ""))
             samples.setdefault(task_class, []).append((timestamp, entry["tokens"] / cost))
 
@@ -391,19 +404,118 @@ def calibrated_build_factors(repo_root: Path, sizing: SizingConfig) -> dict[str,
     return factors
 
 
+# --- Frozen estimates (basicly-kjc5.30, design D9) ---------------------------
+#
+# D8 calls the sizing estimate deterministic, and it is — per invocation. Across
+# invocations it drifts twice over: `calibrated_build_factors` takes a rolling
+# median of the most recent samples, and scope read-cost is measured against the
+# tree as it stands. So `govern_working_set` can refuse today the very plan it
+# accepted last week, with neither the plan nor the code touched. D9 forbids a
+# gate whose verdict depends on when it ran.
+#
+# So the verdict is frozen with the plan that earned it: when the governor accepts
+# a decomposition it records each child's estimate, keyed by the content the
+# estimate is a function of (task class + declared scope). Governing the same plan
+# again reuses those numbers rather than recomputing them, so the answer is stable.
+#
+# Recorded on the *feature*, not the child, because no child exists yet — the
+# governor runs before anything is created, precisely so a refused plan creates
+# nothing. The feature bead is the only carrier in existence at the moment the
+# verdict is made.
+#
+# Evidence, not state (D11): nothing branches on it beyond this reuse, so a
+# missing or malformed marker degrades to recomputing rather than failing.
+
+_SIZING_MARKER = "[harness-sizing]"
+_SIZING_HEADER = re.compile(rf"^{re.escape(_SIZING_MARKER)} key=(\S+)$")
+
+
+def sizing_key(spec: ChildSpec) -> str:
+    """Content key for a spec's frozen estimate.
+
+    Derived from exactly what the estimate is a function of — the task class picks
+    the build factor and the declared scope sets the read cost. Deliberately not
+    the title: retitling a child must not silently re-open a settled verdict.
+    """
+    payload = json.dumps({"type": spec.type, "scope": sorted(spec.scope)}, sort_keys=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
+
+
+def frozen_estimates(repo_root: Path, feature_id: str) -> dict[str, CostEstimate]:
+    """Estimates already frozen on *feature_id*, keyed by :func:`sizing_key`.
+
+    First write wins: the earliest freeze is the verdict of record, so a stray
+    later marker cannot re-open it. Best-effort — an unreadable bead or a
+    malformed payload yields nothing and the caller recomputes.
+    """
+    frozen: dict[str, CostEstimate] = {}
+    try:
+        proc = _run_br(repo_root, ["comments", "list", feature_id, "--json"])
+        comments = json.loads(proc.stdout)
+    except RuntimeError, ValueError, OSError:
+        return frozen
+    if not isinstance(comments, list):
+        return frozen
+    for text in (str(c.get("text", "")) for c in comments if isinstance(c, dict)):
+        head, _, payload = text.partition("\n")
+        match = _SIZING_HEADER.match(head.strip())
+        if match is None:
+            continue
+        try:
+            data = json.loads(payload)
+            estimate = CostEstimate(
+                scope_tokens=int(data["scope_tokens"]),
+                overhead_tokens=int(data["overhead_tokens"]),
+                build_factor=float(data["build_factor"]),
+            )
+        except ValueError, TypeError, KeyError:
+            continue
+        frozen.setdefault(match.group(1), estimate)
+    return frozen
+
+
+def freeze_estimate(repo_root: Path, feature_id: str, key: str, estimate: CostEstimate) -> None:
+    """Record *estimate* under *key* on *feature_id* (best-effort, never fatal)."""
+    payload = json.dumps(
+        {
+            "scope_tokens": estimate.scope_tokens,
+            "overhead_tokens": estimate.overhead_tokens,
+            "build_factor": estimate.build_factor,
+            "total": estimate.total,
+        },
+        sort_keys=True,
+    )
+    with contextlib.suppress(RuntimeError, OSError):
+        _run_br(
+            repo_root,
+            ["comments", "add", feature_id, f"{_SIZING_MARKER} key={key}\n{payload}"],
+        )
+
+
 def govern_working_set(
-    repo_root: Path, children: tuple[ChildSpec, ...]
+    repo_root: Path, children: tuple[ChildSpec, ...], *, feature_id: str | None = None
 ) -> tuple[CostEstimate, ...]:
     """Estimate every child and refuse the plan on any band violation (D8: govern).
 
     Raises ``ValueError`` naming every violating child with its guidance (split
     above the ceiling, merge-with-sibling below the floor) so the agent can
     re-propose the whole plan in one round trip.
+
+    With *feature_id*, the verdict is frozen against drift (basicly-kjc5.30): an
+    estimate already recorded there is reused verbatim, and the ones computed here
+    are recorded once the plan is accepted. Without it — a caller estimating a plan
+    that has no bead yet — nothing is read or written and the estimate is a
+    snapshot of this moment, as before.
     """
     sizing = load_sizing_config(repo_root)
+    frozen = frozen_estimates(repo_root, feature_id) if feature_id is not None else {}
     factors = calibrated_build_factors(repo_root, sizing)
     overhead = instruction_overhead(repo_root)
-    estimates = tuple(estimate_cost(repo_root, spec, factors, overhead) for spec in children)
+    keys = tuple(sizing_key(spec) for spec in children)
+    estimates = tuple(
+        frozen.get(key) or estimate_cost(repo_root, spec, factors, overhead)
+        for spec, key in zip(children, keys, strict=True)
+    )
     violations = [
         message
         for spec, estimate in zip(children, estimates, strict=True)
@@ -415,6 +527,12 @@ def govern_working_set(
     ]
     if violations:
         raise ValueError("sizing governor refused the decomposition:\n" + "\n".join(violations))
+    # Only an accepted plan is frozen: a refusal is the agent's cue to re-propose,
+    # and freezing the numbers behind it would pin a verdict nothing acted on.
+    if feature_id is not None:
+        for key, estimate in zip(keys, estimates, strict=True):
+            if key not in frozen:
+                freeze_estimate(repo_root, feature_id, key, estimate)
     return estimates
 
 
@@ -500,7 +618,7 @@ def decompose(repo_root: Path, feature_id: str, children: tuple[ChildSpec, ...])
     if not children:
         raise ValueError("decompose needs at least one child spec")
 
-    govern_working_set(repo_root, children)
+    govern_working_set(repo_root, children, feature_id=feature_id)
     groups = group_children(children)
     predecessors = chain_predecessors(groups)
 

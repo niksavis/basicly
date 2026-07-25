@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from basicly import decompose, run_record
-from basicly.config import SizingConfig
+from basicly.config import SizingConfig, load_sizing_config
 from basicly.decompose import ChildSpec
 
 
@@ -23,14 +23,16 @@ class _Proc:
 class _FakeBr:
     """Stateful stand-in for the br CLI, routed by subcommand.
 
-    Hands out sequential child ids on create, records dep-add edges, and reports
-    no cycles unless seeded with one, exactly enough to exercise the decomposer.
+    Hands out sequential child ids on create, records dep-add edges, keeps comments
+    per issue (the carrier for frozen sizing markers), and reports no cycles unless
+    seeded with one — exactly enough to exercise the decomposer.
     """
 
     def __init__(self, *, cycles: list[list[str]] | None = None) -> None:
         self.cycles = cycles or []
         self.created: list[tuple[str, str, str]] = []  # (id, title, body)
         self.edges: list[tuple[str, str]] = []  # (issue, depends_on)
+        self.comments: dict[str, list[str]] = {}
         self._counter = 0
 
     def __call__(self, _repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
@@ -41,6 +43,12 @@ class _FakeBr:
             return _Proc("")
         if args[:2] == ["dep", "cycles"]:
             return _Proc(json.dumps({"cycles": self.cycles, "count": len(self.cycles)}))
+        if args[:2] == ["comments", "add"]:
+            self.comments.setdefault(args[2], []).append(args[3])
+            return _Proc("")
+        if args[:2] == ["comments", "list"]:
+            texts = self.comments.get(args[2], [])
+            return _Proc(json.dumps([{"text": text} for text in texts]))
         raise AssertionError(f"unexpected br call: {args}")
 
     def _create(self, args: list[str]) -> _Proc:
@@ -293,7 +301,14 @@ class _FakeBrShow:
         raise AssertionError(f"unexpected br call: {args}")
 
 
-def _record_run_tokens(repo: Path, bead_id: str, tokens: int, *, estimated: bool = False) -> None:
+def _record_run_tokens(
+    repo: Path,
+    bead_id: str,
+    tokens: int,
+    *,
+    estimated: bool = False,
+    scope_tokens: int | None = None,
+) -> None:
     entry = run_record.build_record(
         agent="claude",
         handoff=False,
@@ -302,6 +317,7 @@ def _record_run_tokens(repo: Path, bead_id: str, tokens: int, *, estimated: bool
         command=("claude",),
         tokens=tokens,
         estimated=estimated,
+        scope_tokens=scope_tokens,
     )
     run_record.record(repo, bead_id, entry)
 
@@ -343,6 +359,133 @@ def test_calibration_excludes_estimated_samples(
 
     factors = decompose.calibrated_build_factors(tmp_path, _sizing(calibration_min_samples=1))
     assert factors["task"] == 3.0
+
+
+def test_calibration_uses_the_scope_cost_recorded_at_dispatch(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A sample's denominator is the scope cost persisted with it, not today's tree.
+
+    Regression for basicly-kjc5.30: measuring scope cost at read time makes a
+    sample mean something different once the files it named have grown, so the
+    build factor drifts with the tree and the governor's verdict drifts with it.
+    """
+    _write(tmp_path, "src/a.py", 40_000)  # 10_000 tokens *now* — grown since dispatch
+    body = decompose._child_body(_child("t", "src/a.py"))
+    _install(monkeypatch, _FakeBrShow({"b-1": ("task", body)}))
+    # Each dispatch cost 4_000 tokens against a 1_000-token scope: factor 4.0.
+    for _ in range(3):
+        _record_run_tokens(tmp_path, "b-1", 4_000, scope_tokens=1_000)
+
+    factors = decompose.calibrated_build_factors(tmp_path, _sizing(calibration_min_samples=3))
+    # Recomputing against the grown tree would give 4_000 / 10_000 = 0.4.
+    assert factors["task"] == 4.0
+
+
+def test_calibration_falls_back_to_the_tree_for_a_record_without_scope_tokens(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A record written before scope cost was persisted still calibrates."""
+    _write(tmp_path, "src/a.py", 4_000)  # 1_000 tokens
+    body = decompose._child_body(_child("t", "src/a.py"))
+    _install(monkeypatch, _FakeBrShow({"b-1": ("task", body)}))
+    for _ in range(3):
+        _record_run_tokens(tmp_path, "b-1", 4_000)  # no scope_tokens
+
+    factors = decompose.calibrated_build_factors(tmp_path, _sizing(calibration_min_samples=3))
+    assert factors["task"] == 4.0
+
+
+# --- Frozen estimates (basicly-kjc5.30) -------------------------------------
+
+
+def test_govern_freezes_the_accepted_estimate_on_the_feature(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An accepted plan records each child's estimate against the feature."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _write(tmp_path, "src/a.py", 16_000)  # 4_000 tokens x seed 3.0 = 12_000, inside the band
+    spec = _child("a", "src/a.py")
+
+    estimates = decompose.govern_working_set(tmp_path, (spec,), feature_id="feat")
+
+    frozen = decompose.frozen_estimates(tmp_path, "feat")
+    assert frozen == {decompose.sizing_key(spec): estimates[0]}
+
+
+def test_govern_reuses_a_frozen_estimate_when_calibration_has_moved(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The same plan governs to the same numbers after the window moved (D9).
+
+    The drift has to be real for this to prove anything, and the config it reads
+    has to be the repo's: ``govern_working_set`` calls ``load_sizing_config``
+    itself, so a ``SizingConfig`` handed to a helper here would never reach it —
+    the first version of this test passed with the reuse path deleted for exactly
+    that reason.
+    """
+    # calibration_min_samples = 3 so three landings really do move the factor;
+    # the default is 10, under which nothing would drift and nothing be proven.
+    (tmp_path / "basicly.toml").write_text(
+        "[policy.sizing]\ncalibration_min_samples = 3\n", encoding="utf-8"
+    )
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _write(tmp_path, "src/a.py", 16_000)  # 4_000 scope tokens
+    spec = _child("a", "src/a.py")
+
+    first = decompose.govern_working_set(tmp_path, (spec,), feature_id="feat")
+    assert first[0].build_factor == 3.0  # the seed: no samples yet
+
+    # Unrelated landings fill the calibration window for the task class.
+    _write(tmp_path, "src/other.py", 4_000)
+    body = decompose._child_body(_child("other", "src/other.py"))
+    show = _FakeBrShow({"b-1": ("task", body)})
+    original = fake.__call__
+
+    def routed(repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
+        return show(repo_root, args) if args[:1] == ["show"] else original(repo_root, args)
+
+    _install(monkeypatch, routed)
+    for _ in range(3):
+        _record_run_tokens(tmp_path, "b-1", 9_000, scope_tokens=1_000)  # factor 9.0
+
+    # The drift is now live in the very function under test, not merely available
+    # to a helper: recomputing would triple the estimate from 12_000 to 36_000.
+    drifted = decompose.calibrated_build_factors(tmp_path, load_sizing_config(tmp_path))
+    assert drifted["task"] == 9.0
+
+    second = decompose.govern_working_set(tmp_path, (spec,), feature_id="feat")
+    assert second == first
+    assert second[0].total == 12_000
+
+
+def test_govern_without_a_feature_id_neither_reads_nor_writes_a_freeze(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Estimating a plan that has no bead yet stays a pure snapshot of this moment."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _write(tmp_path, "src/a.py", 16_000)
+
+    decompose.govern_working_set(tmp_path, (_child("a", "src/a.py"),))
+
+    assert fake.comments == {}
+
+
+def test_govern_does_not_freeze_a_refused_plan(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A refusal is the agent's cue to re-propose, so its numbers are not pinned."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _write(tmp_path, "src/big.py", 400_000)
+
+    with pytest.raises(ValueError, match="split"):
+        decompose.govern_working_set(tmp_path, (_child("huge", "src/big.py"),), feature_id="feat")
+
+    assert fake.comments == {}
 
 
 def test_govern_refuses_oversized_child_before_recording(
