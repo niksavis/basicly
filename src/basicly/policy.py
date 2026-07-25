@@ -53,23 +53,47 @@ class DoRResult:
 def definition_of_ready(repo_root: Path, issue_id: str) -> DoRResult:
     """Return the DoR verdict for *issue_id* from ``br lint`` missing sections.
 
-    A non-empty structured ``acceptance_criteria`` field satisfies the
-    ``## Acceptance Criteria`` template section without duplicating it into the
-    description body (basicly-58iu); every other missing section still blocks.
+    Acceptance criteria are required on **every** bead, whatever its work type.
+    They are the only thing validate can judge against: D4 makes the ``rubric``
+    gate required, and the shipped rubrics ask whether the change evidences the
+    criteria recorded on the bead — so a bead carrying none cannot be
+    meaningfully validated, and its gate reads green having proved nothing.
+
+    ``br lint`` cannot express that on its own. It derives required sections from
+    the per-type template, and a ``chore`` is never asked for acceptance criteria,
+    so lint staying silent does not mean the criteria exist — it can mean the
+    template never asked. It also only inspects the description *body*, ignoring
+    ``br``'s structured ``acceptance_criteria`` field. Both directions are
+    reconciled here, in the harness's own gate, which keeps the rule independent
+    of the work type, of ``br``'s template config, and of the ``br`` version a
+    consumer happens to have installed.
+
+    Either carrier satisfies the requirement — the structured field or the body
+    section (basicly-58iu) — but never their absence. Every other missing
+    template section (e.g. a bug's Steps to Reproduce) stays body-checked and
+    still blocks.
     """
     proc = _run_br(repo_root, ["lint", issue_id, "--json"])
     results = json.loads(proc.stdout).get("results", [])
     missing = tuple(results[0].get("missing", [])) if results else ()
-    if _ACCEPTANCE_CRITERIA_SECTION in missing and _has_acceptance_criteria(repo_root, issue_id):
+    if _has_acceptance_criteria(repo_root, issue_id):
         missing = tuple(m for m in missing if m != _ACCEPTANCE_CRITERIA_SECTION)
+    elif _ACCEPTANCE_CRITERIA_SECTION not in missing:
+        # lint did not ask for them (a chore) and they are absent — require them.
+        missing = (*missing, _ACCEPTANCE_CRITERIA_SECTION)
     return DoRResult(ready=not missing, missing=missing)
 
 
 def _has_acceptance_criteria(repo_root: Path, issue_id: str) -> bool:
-    """True when the issue's structured ``acceptance_criteria`` field is non-empty.
+    """True when the issue records acceptance criteria in either carrier.
 
-    Best-effort: a br failure or an unexpected payload shape returns False, so the
-    body-heading requirement stands rather than a lookup error relaxing the gate.
+    Checks ``br``'s structured ``acceptance_criteria`` field first, then the
+    ``## Acceptance Criteria`` heading in the description body — the body is what
+    ``br lint`` inspects, and the harness must reach the same verdict for a work
+    type whose template never asks for the section.
+
+    Best-effort: a br failure or an unexpected payload shape returns False, so a
+    lookup error blocks the track rather than relaxing the gate.
     """
     try:
         proc = _run_br(repo_root, ["show", issue_id, "--json"])
@@ -80,7 +104,10 @@ def _has_acceptance_criteria(repo_root: Path, issue_id: str) -> bool:
     if not isinstance(issue, dict):
         return False
     value = issue.get("acceptance_criteria")
-    return isinstance(value, str) and bool(value.strip())
+    if isinstance(value, str) and value.strip():
+        return True
+    body = issue.get("description")
+    return isinstance(body, str) and _ACCEPTANCE_CRITERIA_SECTION in body
 
 
 # --- Working-set sizing governor (basicly-kjc5.2, factory design D8) ---------
