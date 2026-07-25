@@ -908,6 +908,16 @@ class _Stubborn:
         raise subprocess.TimeoutExpired(("agent",), timeout or 0)
 
 
+# POSIX-only signal number, referenced by the tests that *simulate* the POSIX
+# branch. Windows' signal module has no SIGKILL and pyright resolves attributes
+# per platform, so a direct reference is an error there even inside a test that
+# skipif already excludes — pyright is static and does not read the marker. The
+# fallback mirrors runner.CREATE_NEW_PROCESS_GROUP. runner.py itself needs no such
+# guard: its POSIX branch sits after an `os.name == "nt"` early return, which
+# pyright narrows (basicly-kjc5.54).
+SIGKILL = getattr(signal, "SIGKILL", 9)
+
+
 class _Polite:
     """A tree that exits on the polite signal."""
 
@@ -918,10 +928,22 @@ class _Polite:
 
 
 def _record_signals(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """Fake the POSIX process-group API so the branch is testable on any platform.
+
+    The test already fakes ``os.name``, so it is a simulation rather than a real
+    platform check — but ``os.getpgid``/``os.killpg`` do not exist on Windows and
+    ``monkeypatch.setattr`` refuses to create an absent attribute, so the
+    simulation needs ``raising=False`` to be installable there (basicly-kjc5.54).
+    Keeping the test running on Windows is deliberate: it covers the branch's
+    logic, which is worth checking everywhere even though it only executes on
+    POSIX.
+    """
     monkeypatch.setattr(runner.os, "name", "posix")
-    monkeypatch.setattr(runner.os, "getpgid", lambda pid: pid)
+    monkeypatch.setattr(runner.os, "getpgid", lambda pid: pid, raising=False)
     signalled: list[int] = []
-    monkeypatch.setattr(runner.os, "killpg", lambda _pgid, signum: signalled.append(signum))
+    monkeypatch.setattr(
+        runner.os, "killpg", lambda _pgid, signum: signalled.append(signum), raising=False
+    )
     return signalled
 
 
@@ -934,7 +956,7 @@ def test_kill_tree_signals_the_group_then_hard_kills_it(
 
     runner._kill_tree(cast("subprocess.Popen[str]", _Stubborn()))
 
-    assert signalled == [signal.SIGTERM, signal.SIGKILL]
+    assert signalled == [signal.SIGTERM, SIGKILL]
 
 
 def test_kill_tree_stops_at_the_polite_signal_when_the_group_goes_down(
@@ -953,12 +975,13 @@ def test_kill_tree_tolerates_a_dispatch_that_already_exited(
 ) -> None:
     """Racing the process's own exit is not an error worth propagating."""
     monkeypatch.setattr(runner.os, "name", "posix")
-    monkeypatch.setattr(runner.os, "getpgid", lambda pid: pid)
+    # raising=False for the same reason as _record_signals: absent on Windows.
+    monkeypatch.setattr(runner.os, "getpgid", lambda pid: pid, raising=False)
 
     def gone(_pgid, _signum):
         raise ProcessLookupError("no such process")
 
-    monkeypatch.setattr(runner.os, "killpg", gone)
+    monkeypatch.setattr(runner.os, "killpg", gone, raising=False)
 
     class _Gone:
         pid = 99
@@ -1052,7 +1075,7 @@ def test_timeout_kills_a_grandchild_the_dispatch_spawned(tmp_path: Path) -> None
             break  # reaped: the group kill reached it
         time.sleep(0.05)
     else:  # pragma: no cover - only reached on a regression
-        os.kill(grandchild, signal.SIGKILL)
+        os.kill(grandchild, SIGKILL)
         pytest.fail(f"grandchild {grandchild} survived the dispatch timeout")
 
 
