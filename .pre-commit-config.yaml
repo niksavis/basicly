@@ -5,8 +5,14 @@ repos:
     name: markdownlint
     # Repo-wide run through .markdownlint-cli2.yaml (globs + generated-file
     # ignores) instead of staged filenames, so explicit paths can't bypass the
-    # config's ignore list. npx resolves the local devDependency.
-    entry: npx --no-install markdownlint-cli2
+    # config's ignore list.
+    #
+    # Launched through a script that resolves node itself rather than `npx
+    # --no-install markdownlint-cli2` (basicly-jr0l.14): a hook shell has no
+    # profile, so with nvm off PATH WSL interop resolved npx to the Windows
+    # nodejs, which cannot express the worktree's UNC path. The launcher never
+    # invokes npx and fails in one line when no usable node exists.
+    entry: uv run python .basicly/core/hooks/markdownlint.py
     language: system
     stages:
     - pre-commit
