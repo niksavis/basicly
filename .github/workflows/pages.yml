@@ -20,12 +20,14 @@ permissions:
   pages: write
   id-token: write
 
-# A superseded deploy is cancelled rather than queued: only the newest commit's
-# site is worth publishing, and `cancel-in-progress` on the deployment group is
-# what Pages expects.
+# Queue, never cancel. Cancelling mid-deploy leaves the `github-pages`
+# environment holding a deployment in `error`, which is what happened the first
+# time this workflow ran: a manual dispatch cancelled the push-triggered run
+# while it was deploying. One concurrent deploy, and a superseded run waits its
+# turn rather than killing a live one.
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:
