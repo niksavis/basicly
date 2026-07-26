@@ -229,6 +229,13 @@ preamble, and any globally installed plugins or user-level skills on the runner'
 - The harness **asserts the isolation** — a pre-flight check that reads back what guidance is
   actually live in the cell and fails if it does not match the arm's declaration. Detecting
   contamination must not depend on someone noticing an implausible result.
+- **An elicitation prompt must not name the entity under test.** Naming it measures echo rather than
+  behaviour, and the result arrives looking like a confirmation — which is the dangerous part.
+  Recorded from an incident 2026-07-26: probing whether a description-less skill still loads, the
+  prompt said *"if a skill named `probe-hidden` is available to you, include it"*, so the skill
+  appearing proved nothing. Re-run neutrally, the finding held — but it need not have. The rule
+  generalises past skills: never supply the answer, the entity's name, or the expected direction of
+  the effect in the prompt an arm answers.
 - **Publish contamination bugs when found.** ponytail's disclosure is why the rest of their
   numbers are credible. The same standard applies to us; a quietly fixed benchmark bug makes every
   earlier number unciteable.

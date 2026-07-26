@@ -96,3 +96,25 @@ instructions: |
 `basicly catalog lint` schema-validates every source, forbids `.md`-named
 sources under the catalog, and forbids non-`.yaml` YAML there. It runs on
 commit and in CI — run it locally before committing.
+
+## Verify against what the agent is told, not the file you edited
+
+The projected file is **not** the delivered artifact. A host may substitute or
+fall back, so a change that reads correctly in the projection can land
+differently in the agent's context — and a size claim measured on the source can
+be a fraction of the real one.
+
+The concrete case (`basicly-m4zv.1`): a user-invoked skill projects no
+`description:`, and Claude Code then fills that slot from the **first body
+line**, which is the generated drift marker. The measured 430-character saving
+was really 157, and the entry went on advertising a string — just a useless one.
+It surfaced only because the change showed up in the authoring session's own
+skill list, after the commit.
+
+So when a change alters what an agent is *told*:
+
+- Read it back where the agent reads it — the advertised skill list, the
+  always-on file as loaded, the rule as injected — not the file you edited.
+- Re-measure any size or cost claim on the delivered artifact before writing a
+  figure into a design document. A number measured on the source is a guess
+  about the host.
