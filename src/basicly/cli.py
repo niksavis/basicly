@@ -2082,6 +2082,23 @@ def _approve_checkpoint(repo_root: Path, args: argparse.Namespace) -> int:
     return 1
 
 
+def _report_active_grant(repo_root: Path, issue: str) -> int:
+    """Print the active grant and what it delegates; 1 when there is none.
+
+    Non-zero for "no grant" so a script can branch on it: every checkpoint being
+    human is the safe state, but it is not the state a caller asking for a grant
+    was hoping to find.
+    """
+    grant = policy.active_grant(repo_root, issue)
+    if grant is None:
+        print(f"grant: NONE ({issue}) - every checkpoint is human (L0)")
+        return 1
+    budget = f", token budget {grant.token_budget}" if grant.token_budget is not None else ""
+    covers = ", ".join(policy.GRANT_COVERAGE[grant.level]) or "(nothing)"
+    print(f"grant: {grant.level} ({issue}){budget} - delegable: {covers}")
+    return 0
+
+
 def _cmd_policy_grant(args: argparse.Namespace) -> int:
     """Show, issue, or revoke a session autonomy grant (factory design D3).
 
@@ -2089,21 +2106,32 @@ def _cmd_policy_grant(args: argparse.Namespace) -> int:
     interactive TTY, or a one-time confirm code a human must relay — an agent
     can never self-escalate. With no --level and no --revoke, reports the
     active grant.
+
+    ``--autonomy`` raises the grantable ceiling for this one issuance
+    (basicly-jr0l.15). The session pin ``loop supervise --autonomy`` cannot reach
+    here: a grant is issued by this separate command in a separate process, so
+    without the flag a session could be pinned above L0 and still be unable to
+    obtain the grant it needs — which also means no token budget, since a spend
+    ceiling exists only on a grant.
+
+    It widens nothing the anti-autopilot gate protects: the TTY-or-confirm-code
+    challenge below still applies, so raising the ceiling is not a way to
+    self-escalate — it only decides which level a human may then authorize.
     """
     repo_root = _repo_root()
+    try:
+        overrides = _apply_session_overrides(repo_root, args)
+    except ValueError as exc:
+        print(f"grant: refused - {exc}", file=sys.stderr)
+        return 1
+    if overrides:
+        print(f"override: {', '.join(overrides)}")
     if args.revoke:
         policy.revoke_grant(repo_root, args.issue)
         print(f"grant: REVOKED ({args.issue})")
         return 0
     if args.level is None:
-        grant = policy.active_grant(repo_root, args.issue)
-        if grant is None:
-            print(f"grant: NONE ({args.issue}) - every checkpoint is human (L0)")
-            return 1
-        budget = f", token budget {grant.token_budget}" if grant.token_budget is not None else ""
-        covers = ", ".join(policy.GRANT_COVERAGE[grant.level]) or "(nothing)"
-        print(f"grant: {grant.level} ({args.issue}){budget} - delegable: {covers}")
-        return 0
+        return _report_active_grant(repo_root, args.issue)
     result = policy.issue_grant_guarded(
         repo_root,
         args.issue,
@@ -2117,9 +2145,13 @@ def _cmd_policy_grant(args: argparse.Namespace) -> int:
         print(f"grant: ISSUED {args.level} ({args.issue})")
         return 0
     if result.status == "challenge":
+        # --autonomy has to be carried into the reprinted command: the override is
+        # process-local, so a re-run without it is refused at the committed ceiling
+        # again and the relay protocol dead-ends (basicly-jr0l.15).
         rerun = (
             f"basicly policy grant {args.issue} --level {args.level}"
             + (f" --token-budget {args.token_budget}" if args.token_budget is not None else "")
+            + (f" --autonomy {args.autonomy}" if args.autonomy else "")
             + f" --confirm {result.code}"
         )
         return _print_challenge("grant", args.issue, rerun)
@@ -3295,6 +3327,12 @@ def _add_policy_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Session spend ceiling in run-record tokens (required for L2+)",
     )
     p_gr.add_argument("--revoke", action="store_true", help="Revoke the active grant")
+    p_gr.add_argument(
+        "--autonomy",
+        choices=AUTONOMY_LEVELS,
+        help="Grantable ceiling for this issuance only, overriding [policy] autonomy "
+        "without editing any committed config (still gated by the confirm challenge)",
+    )
     p_gr.add_argument(
         "--confirm",
         metavar="CODE",
