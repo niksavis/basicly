@@ -3,26 +3,42 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>basicly — a harness distribution for coding agents</title>
+    <title>basicly — a coding-agent harness that ships its own SDLC</title>
     <meta
       name="description"
-      content="One command installs a complete coding-agent harness — instructions, skills, and git gates — projected from a single YAML catalog."
+      content="Most agent harnesses ship instructions and skills. basicly also ships the workflow and the state: a deterministic development loop, a work graph it derives phase from, and git gates that block a bad change whether or not the model read the guidance."
     />
     <meta
       name="keywords"
-      content="coding agents, agent harness, YAML catalog, git hooks, developer tooling, CLAUDE.md, AGENTS.md, copilot-instructions"
+      content="coding agents, agent harness, harness engineering, agent SDLC, YAML catalog, git hooks, deterministic gates, worktree isolation, CLAUDE.md, AGENTS.md, copilot-instructions"
     />
     <link rel="icon" type="image/svg+xml" href="assets/logo.svg" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://niksavis.github.io/basicly/" />
+    <meta
+      property="og:title"
+      content="basicly — a coding-agent harness that ships its own SDLC"
+    />
+    <meta
+      property="og:description"
+      content="Guidance, deterministic gates, a development loop, and the work graph it runs on — projected from one catalog by one command."
+    />
+    <meta property="og:image" content="assets/logo.svg" />
+    <meta name="twitter:card" content="summary" />
     <style>
       :root {
         --bg: #0f1117;
         --bg-raise: #171a23;
+        --bg-sunk: #0b0d12;
         --border: #262b38;
+        --border-lit: #333a4d;
         --text: #d7dce6;
+        --text-bright: #f2f5fa;
         --text-dim: #8b93a7;
         --indigo: #818cf8;
         --indigo-deep: #6366f1;
         --amber: #f59e0b;
+        --orange: #fb923c;
         --mono:
           ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
         --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -31,11 +47,22 @@
         box-sizing: border-box;
         margin: 0;
       }
+      html {
+        scroll-behavior: smooth;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+        * {
+          transition: none !important;
+        }
+      }
       body {
         background: var(--bg);
         color: var(--text);
         font-family: var(--sans);
-        line-height: 1.6;
+        line-height: 1.65;
         -webkit-font-smoothing: antialiased;
       }
       a {
@@ -45,48 +72,88 @@
       a:hover {
         text-decoration: underline;
       }
+      code {
+        font-family: var(--mono);
+        font-size: 0.86em;
+        background: var(--bg-sunk);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 0.08em 0.34em;
+      }
       .wrap {
-        max-width: 880px;
+        max-width: 62rem;
         margin: 0 auto;
         padding: 0 1.5rem;
       }
+      .lead {
+        max-width: 46rem;
+        color: var(--text-dim);
+      }
 
+      /* ---------- hero ---------- */
       header.hero {
-        padding: 5rem 0 3.5rem;
+        position: relative;
+        padding: 5.5rem 0 3rem;
         text-align: center;
+        overflow: hidden;
+      }
+      header.hero::before {
+        content: "";
+        position: absolute;
+        inset: -40% 0 auto 50%;
+        width: 46rem;
+        height: 30rem;
+        transform: translateX(-50%);
+        background: radial-gradient(
+          ellipse at center,
+          rgba(99, 102, 241, 0.16),
+          transparent 65%
+        );
+        pointer-events: none;
+      }
+      .hero > .wrap {
+        position: relative;
       }
       .hero img {
-        width: 84px;
-        height: 84px;
+        width: 88px;
+        height: 88px;
       }
       .hero h1 {
-        font-size: 3rem;
-        letter-spacing: -0.03em;
-        margin-top: 1rem;
+        font-size: clamp(2.4rem, 7vw, 3.4rem);
+        letter-spacing: -0.035em;
+        margin-top: 0.75rem;
         font-weight: 700;
+        color: var(--text-bright);
       }
       .hero h1 span {
         color: var(--indigo);
       }
       .hero p.tag {
-        max-width: 40rem;
-        margin: 1rem auto 0;
-        font-size: 1.2rem;
+        max-width: 44rem;
+        margin: 0.9rem auto 0;
+        font-size: 1.18rem;
         color: var(--text-dim);
       }
-      .hero .links {
-        margin-top: 1.75rem;
+      .hero p.tag strong {
+        color: var(--text);
+        font-weight: 600;
+      }
+      .links {
+        margin-top: 1.9rem;
         display: flex;
-        gap: 0.75rem;
+        gap: 0.7rem;
         justify-content: center;
         flex-wrap: wrap;
       }
       .btn {
         display: inline-block;
-        padding: 0.55rem 1.2rem;
+        padding: 0.58rem 1.25rem;
         border-radius: 8px;
         font-weight: 600;
         border: 1px solid var(--border);
+        transition:
+          border-color 0.15s ease,
+          background 0.15s ease;
       }
       .btn.primary {
         background: var(--indigo-deep);
@@ -99,128 +166,258 @@
       }
       .btn.ghost:hover {
         border-color: var(--indigo);
+        background: var(--bg-raise);
         text-decoration: none;
       }
+      /* the four pillars, as a compact anchor under the hero */
+      .pillbar {
+        margin-top: 2.25rem;
+        display: flex;
+        gap: 0.4rem;
+        justify-content: center;
+        flex-wrap: wrap;
+        font-family: var(--mono);
+        font-size: 0.78rem;
+      }
+      .pillbar span {
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 0.28rem 0.8rem;
+        color: var(--text-dim);
+        background: var(--bg-raise);
+      }
+      .pillbar span b {
+        color: var(--indigo);
+        font-weight: 600;
+      }
 
+      /* ---------- sections ---------- */
       section {
-        padding: 2.5rem 0;
+        padding: 3.25rem 0;
         border-top: 1px solid var(--border);
       }
       section h2 {
-        font-size: 1.5rem;
+        font-size: 1.6rem;
         letter-spacing: -0.02em;
-        margin-bottom: 1rem;
+        margin-bottom: 0.75rem;
+        color: var(--text-bright);
       }
-      section h2::before {
-        content: "// ";
-        color: var(--amber);
+      .kicker {
         font-family: var(--mono);
-        font-size: 1.1rem;
+        font-size: 0.76rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--amber);
+        margin-bottom: 0.45rem;
       }
       .muted {
         color: var(--text-dim);
       }
 
       pre {
-        background: var(--bg-raise);
+        background: var(--bg-sunk);
         border: 1px solid var(--border);
         border-radius: 10px;
         padding: 0.9rem 1.1rem;
         overflow-x: auto;
         font-family: var(--mono);
-        font-size: 0.88rem;
+        font-size: 0.86rem;
         line-height: 1.5;
-        margin: 0.9rem 0;
-      }
-      pre .c {
-        color: var(--text-dim);
+        margin: 0.85rem 0;
       }
       pre .p {
         color: var(--amber);
         user-select: none;
       }
 
+      /* ---------- grids: every variant divides evenly ---------- */
       .grid {
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
         gap: 1rem;
-        margin-top: 1.25rem;
+        margin-top: 1.5rem;
       }
-      @media (max-width: 700px) {
-        .grid {
+      /* Two columns for an even card count; four pillars land as a 2x2 with no
+         orphan row. Add a variant only alongside a group that divides into it. */
+      .grid.two {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      @media (max-width: 860px) {
+        .grid.two {
           grid-template-columns: 1fr;
         }
-        .hero h1 {
-          font-size: 2.2rem;
-        }
       }
+
       .card {
         background: var(--bg-raise);
         border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 1.1rem 1.2rem;
+        border-radius: 12px;
+        padding: 1.25rem 1.35rem;
+        transition: border-color 0.15s ease;
+      }
+      .card:hover {
+        border-color: var(--border-lit);
       }
       .card h3 {
-        font-size: 1.02rem;
-        margin-bottom: 0.4rem;
+        font-size: 1.05rem;
+        color: var(--text-bright);
+        margin-bottom: 0.35rem;
+        display: flex;
+        align-items: baseline;
+        gap: 0.55rem;
       }
-      .card h3::before {
-        content: "■ ";
+      .card h3 i {
+        font-family: var(--mono);
+        font-style: normal;
+        font-size: 0.74rem;
         color: var(--indigo);
-        font-size: 0.7rem;
-        vertical-align: 2px;
+        border: 1px solid var(--border-lit);
+        border-radius: 5px;
+        padding: 0.05rem 0.36rem;
+        flex: 0 0 auto;
       }
       .card p {
-        font-size: 0.92rem;
+        font-size: 0.93rem;
         color: var(--text-dim);
       }
+      .card p + p {
+        margin-top: 0.55rem;
+      }
+      .card.accent {
+        border-left: 2px solid var(--indigo-deep);
+      }
 
+      /* ---------- contrast table ---------- */
+      .compare {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 1.5rem;
+        font-size: 0.93rem;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      .compare th,
+      .compare td {
+        text-align: left;
+        padding: 0.7rem 1rem;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+      .compare thead th {
+        background: var(--bg-raise);
+        color: var(--text-bright);
+        font-size: 0.8rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        font-family: var(--mono);
+        font-weight: 600;
+      }
+      .compare tbody tr:last-child th,
+      .compare tbody tr:last-child td {
+        border-bottom: 0;
+      }
+      .compare tbody th {
+        font-weight: 600;
+        color: var(--text);
+        width: 26%;
+      }
+      .compare td.them {
+        color: var(--text-dim);
+      }
+      .compare td.us {
+        color: var(--text);
+        background: rgba(99, 102, 241, 0.05);
+      }
+      @media (max-width: 720px) {
+        .compare thead {
+          display: none;
+        }
+        .compare,
+        .compare tbody,
+        .compare tr,
+        .compare th,
+        .compare td {
+          display: block;
+          width: 100%;
+        }
+        .compare tbody tr {
+          border-bottom: 1px solid var(--border);
+          padding: 0.4rem 0;
+        }
+        .compare td::before {
+          font-family: var(--mono);
+          font-size: 0.72rem;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          color: var(--amber);
+          display: block;
+        }
+        .compare td.them::before {
+          content: "guidance-only harness";
+        }
+        .compare td.us::before {
+          content: "basicly";
+        }
+      }
+
+      /* ---------- diagrams ---------- */
       .diagram {
-        margin-top: 1.25rem;
+        margin-top: 1.5rem;
         background: var(--bg-raise);
         border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 1.4rem 1.2rem;
+        border-radius: 12px;
+        padding: 1.5rem 1.25rem;
         display: flex;
         flex-direction: column;
         align-items: center;
         gap: 0.5rem;
       }
-      .diagram .stage {
+      .diagram figcaption {
+        font-family: var(--mono);
+        font-size: 0.74rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--text-dim);
+        margin-bottom: 0.85rem;
+        align-self: flex-start;
+      }
+      .stage {
         display: flex;
-        gap: 0.75rem;
+        gap: 0.7rem;
         justify-content: center;
         width: 100%;
+        flex-wrap: wrap;
       }
       .node {
         flex: 1 1 0;
-        min-width: 0;
-        background: var(--bg);
+        min-width: 8.5rem;
+        background: var(--bg-sunk);
         border: 1px solid var(--border);
         border-radius: 8px;
-        padding: 0.55rem 0.9rem;
+        padding: 0.55rem 0.85rem;
         text-align: center;
       }
       .node b {
         display: block;
         color: var(--text);
         font-weight: 600;
-        font-size: 0.94rem;
+        font-size: 0.92rem;
       }
       .node span {
         display: block;
         font-family: var(--mono);
-        font-size: 0.74rem;
+        font-size: 0.72rem;
         color: var(--text-dim);
         margin-top: 0.2rem;
       }
-      .node.build {
+      .node.cmd {
         flex: 0 0 auto;
+        min-width: 0;
         font-family: var(--mono);
         font-weight: 600;
         color: var(--amber);
         border-color: var(--amber);
-        padding: 0.5rem 1.1rem;
+        padding: 0.5rem 1.15rem;
       }
       .node.gate {
         flex: 0 0 auto;
@@ -231,33 +428,83 @@
       .node.gate b {
         color: var(--amber);
       }
-      .diagram .arrow {
+      .node.human {
+        border-color: var(--orange);
+      }
+      .node.human span {
+        color: var(--orange);
+      }
+      .arrow {
         color: var(--amber);
         font-size: 0.85rem;
         line-height: 1;
       }
       @media (max-width: 700px) {
-        .diagram .stage {
+        .stage {
           flex-direction: column;
         }
       }
 
       ul.plain {
-        padding-left: 1.2rem;
-      }
-      .diagram + ul.plain {
-        margin-top: 1.25rem;
+        padding-left: 1.15rem;
+        margin-top: 1.35rem;
       }
       ul.plain li {
-        margin: 0.35rem 0;
+        margin: 0.4rem 0;
       }
       ul.plain li::marker {
         color: var(--indigo);
       }
+      ul.plain strong {
+        color: var(--text-bright);
+      }
+
+      /* ---------- status ---------- */
+      .status {
+        margin-top: 1.5rem;
+        display: grid;
+        gap: 0.6rem;
+      }
+      .status div {
+        display: flex;
+        gap: 0.85rem;
+        align-items: baseline;
+        background: var(--bg-raise);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 0.75rem 1rem;
+      }
+      .status em {
+        flex: 0 0 8.5rem;
+        font-family: var(--mono);
+        font-style: normal;
+        font-size: 0.74rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .status .shipped em {
+        color: var(--indigo);
+      }
+      .status .designed em {
+        color: var(--amber);
+      }
+      .status .measuring em {
+        color: var(--orange);
+      }
+      .status p {
+        font-size: 0.93rem;
+        color: var(--text-dim);
+      }
+      @media (max-width: 620px) {
+        .status div {
+          flex-direction: column;
+          gap: 0.25rem;
+        }
+      }
 
       footer {
         border-top: 1px solid var(--border);
-        padding: 2rem 0 3rem;
+        padding: 2.25rem 0 3rem;
         text-align: center;
         color: var(--text-dim);
         font-size: 0.9rem;
@@ -267,16 +514,13 @@
   <body>
     <header class="hero">
       <div class="wrap">
-        <img
-          src="assets/logo.svg"
-          alt="basicly logo"
-          width="112"
-          height="112"
-        />
+        <img src="assets/logo.svg" alt="basicly logo" width="88" height="88" />
         <h1><span>basicly</span></h1>
         <p class="tag">
-          One command installs a complete coding-agent harness — instructions,
-          skills, and git gates — projected from a single YAML catalog.
+          Most agent harnesses ship instructions and skills. basicly also ships
+          <strong>the workflow and the state</strong> — a deterministic
+          development loop, the work graph it derives progress from, and git
+          gates that hold whether or not the model read the guidance.
         </p>
         <div class="links">
           <a class="btn primary" href="#install">Get started</a>
@@ -289,96 +533,205 @@
             >Architecture</a
           >
         </div>
+        <div class="pillbar" aria-label="The four pillars">
+          <span><b>01</b> guidance</span>
+          <span><b>02</b> gates</span>
+          <span><b>03</b> the loop</span>
+          <span><b>04</b> the work graph</span>
+        </div>
       </div>
     </header>
 
-    <section id="why">
+    <section id="pillars">
       <div class="wrap">
-        <h2>Why</h2>
-        <p>
-          Coding agents read guidance from many places — <code>CLAUDE.md</code>,
-          <code>AGENTS.md</code>, <code>copilot-instructions.md</code>, skill
-          folders, hook configs — and keeping them consistent by hand does not
-          scale. basicly keeps <em>one</em> catalog and projects it into every
-          format your agents expect, then guards the result with deterministic
-          gates.
+        <p class="kicker">What it is</p>
+        <h2>Four pillars, not a bundle of files</h2>
+        <p class="lead">
+          Guidance and gates are the classic harness bargain: prose a model may
+          ignore, plus checks that do not care whether it did. The other two are
+          the difference — basicly owns the process the work moves through and
+          the state that process reads.
         </p>
-        <div class="grid">
-          <div class="card">
-            <h3>Instructions</h3>
+        <div class="grid two">
+          <div class="card accent">
+            <h3><i>01</i> Guidance</h3>
             <p>
-              Agent instruction files generated from shared fragments — edit one
-              YAML source, every target regenerates consistently.
+              One versioned YAML catalog, projected into what each tool
+              natively reads: <code>CLAUDE.md</code>, <code>AGENTS.md</code>,
+              <code>copilot-instructions.md</code>, skills, subagents,
+              permissions.
+            </p>
+            <p>
+              Edit one fragment and every target regenerates consistently. Your
+              overrides live in an overlay that upgrades never touch.
             </p>
           </div>
-          <div class="card">
-            <h3>Skills</h3>
+          <div class="card accent">
+            <h3><i>02</i> Gates</h3>
             <p>
-              Reusable runbooks projected to <code>.claude/skills</code> and
-              <code>.agents/skills</code>, discoverable by any agent that reads
-              the SKILL.md convention.
+              Git hooks across pre-commit, commit-msg and pre-push, plus agent
+              hooks for Claude Code and Copilot, and a verify pipeline with
+              <code>fast</code>, <code>full</code> and <code>staged</code>
+              modes.
+            </p>
+            <p>
+              The model choosing to run a formatter is a different thing from
+              the formatter running automatically. Where a hook can enforce a
+              rule, the rule is a hook.
             </p>
           </div>
-          <div class="card">
-            <h3>Gates</h3>
+          <div class="card accent">
+            <h3><i>03</i> The loop</h3>
             <p>
-              Git hooks across pre-commit, commit-msg, and pre-push — plus
-              Claude Code and Copilot agent hooks — that block bad changes
-              whether or not the guidance was followed. Action-boundary
-              guardrails back them up: secret redaction, per-agent deny-tool and
-              sandbox/approval flags, and a generated-file backstop.
+              A development process shipped as commands: intake, classify,
+              decompose, build, verify, ship, teardown, retro — driven the same
+              way under Claude, Codex or Copilot.
+            </p>
+            <p>
+              Work builds in an isolated worktree. Run one track at a time, or
+              fan out parallel lanes behind a supervisor and a serial merge
+              queue.
             </p>
           </div>
-          <div class="card">
-            <h3>Harness</h3>
+          <div class="card accent">
+            <h3><i>04</i> The work graph</h3>
             <p>
-              An agent-agnostic development loop — intake, classify, build,
-              verify, ship — that drives Claude, Codex, or Copilot the same way:
-              isolated worktrees, TTY-gated human checkpoints, a structured
-              block-and-resume protocol, per-agent model pinning with runner
-              attribution, and fleet-wide status and health rollups across
-              repos.
+              Issues, dependencies, gate results, checkpoints and evidence live
+              in a tracked graph. The loop keeps no side-state: the phase a
+              track sits in is <em>derived</em> from that graph.
+            </p>
+            <p>
+              So a session can crash, compact, or hand over to a different
+              agent family mid-track, and the next command picks it up by
+              re-reading the graph.
             </p>
           </div>
         </div>
       </div>
     </section>
 
+    <section id="different">
+      <div class="wrap">
+        <p class="kicker">What makes it different</p>
+        <h2>The process is code, and so is the enforcement</h2>
+        <p class="lead">
+          Plenty of projects ship an agent workflow. What is unusual here is
+          that the workflow is deterministic engine code rather than prose an
+          agent is asked to follow, and that the gates it runs are the same ones
+          your commits already pass.
+        </p>
+        <table class="compare">
+          <thead>
+            <tr>
+              <th scope="col">Concern</th>
+              <th scope="col">A guidance-only harness</th>
+              <th scope="col">basicly</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">The workflow</th>
+              <td class="them">
+                Markdown describing the steps an agent should take
+              </td>
+              <td class="us">
+                Engine code with one command per phase boundary; anything fully
+                deterministic is a command, never a procedure to remember
+              </td>
+            </tr>
+            <tr>
+              <th scope="row">Enforcement</th>
+              <td class="them">
+                Asks the model nicely; compliance depends on the prompt
+              </td>
+              <td class="us">
+                Git hooks and a verify runner. A required gate is never passed
+                by a model, at any autonomy level
+              </td>
+            </tr>
+            <tr>
+              <th scope="row">Progress state</th>
+              <td class="them">
+                Plan files and conversation memory, which compaction loses
+              </td>
+              <td class="us">
+                A dependency graph the phase is derived from, so resume is a
+                read rather than a replay
+              </td>
+            </tr>
+            <tr>
+              <th scope="row">Authority</th>
+              <td class="them">
+                An orchestrator agent decides what happens next
+              </td>
+              <td class="us">
+                Agents propose, the engine disposes. Every agent runs as a pure
+                function of state and returns a proposal the engine validates
+              </td>
+            </tr>
+            <tr>
+              <th scope="row">Autonomy</th>
+              <td class="them">Usually all-or-nothing</td>
+              <td class="us">
+                Opt-in, four levels, granted only from a real terminal and
+                recorded with a spend ceiling. Human checkpoints hold by default
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
     <section id="install">
       <div class="wrap">
-        <h2>Install</h2>
-        <p>
-          Into any git repo, with <a href="https://docs.astral.sh/uv/">uv</a> on
-          the machine:
+        <p class="kicker">Install</p>
+        <h2>One command, into any git repo</h2>
+        <p class="lead">
+          With <a href="https://docs.astral.sh/uv/">uv</a> on the machine:
         </p>
         <pre><span class="p">$ </span>uvx --from git+https://github.com/niksavis/basicly@v0.5.1 basicly install</pre>
-        <p>
+        <p class="muted">
           No uv or Python yet? The bootstrap shim installs uv first, then runs
           the same command:
         </p>
         <pre><span class="p">$ </span>curl -fsSL https://raw.githubusercontent.com/niksavis/basicly/main/.scripts/bootstrap.sh | sh</pre>
-        <p>Windows (PowerShell):</p>
+        <p class="muted">Windows (PowerShell):</p>
         <pre><span class="p">&gt; </span>powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/niksavis/basicly/main/.scripts/bootstrap.ps1 | iex"</pre>
-        <p class="muted">
-          Upgrading is the same command with a newer pin — install is an
-          idempotent converge. <code>basicly uninstall</code> removes everything
-          managed; your overlay survives.
-        </p>
+        <ul class="plain">
+          <li>
+            <strong>Upgrading is the same command</strong> with a newer pin —
+            install is an idempotent converge, not a separate migration path.
+          </li>
+          <li>
+            <strong>Scoped to your stack.</strong>
+            <code>--technologies python,zsh</code> ships only the catalog
+            content that matches.
+          </li>
+          <li>
+            <strong>Reversible.</strong> <code>basicly uninstall</code> removes
+            everything managed; your overlay survives.
+          </li>
+        </ul>
       </div>
     </section>
 
     <section id="how">
       <div class="wrap">
-        <h2>How it works</h2>
-        <p>
-          You author guidance once, as versioned YAML sources. The projector
-          renders what each tool natively reads, and a drift gate keeps it
-          honest.
+        <p class="kicker">How it works</p>
+        <h2>Two planes that meet at the gates</h2>
+        <p class="lead">
+          The distribution plane turns authored sources into the files your
+          agents read. The execution plane drives a unit of work through the
+          loop. They meet in exactly two places: a dispatched agent's context is
+          the projected guidance, and the loop's verify step runs the same
+          checks the hooks run.
         </p>
+
         <figure
           class="diagram"
-          aria-label="basicly projects one catalog and your overlay into instructions, skills, agents, permissions, and hooks, then verifies them with the basicly check drift gate."
+          aria-label="Distribution plane: the managed catalog and your overlay are merged by basicly install or build into instructions, skills, subagents, permissions and hooks, and the basicly check drift gate verifies the result in CI."
         >
+          <figcaption>Distribution plane</figcaption>
           <div class="stage">
             <div class="node">
               <b>.basicly/core/</b><span>managed catalog</span>
@@ -388,7 +741,7 @@
             </div>
           </div>
           <div class="arrow" aria-hidden="true">▼</div>
-          <div class="node build">basicly install / build</div>
+          <div class="node cmd">basicly install / build</div>
           <div class="arrow" aria-hidden="true">▼</div>
           <div class="stage">
             <div class="node">
@@ -398,11 +751,9 @@
             <div class="node">
               <b>skills</b><span>.claude/skills · .agents/skills</span>
             </div>
+            <div class="node"><b>subagents</b><span>.claude/agents</span></div>
             <div class="node">
-              <b>agents</b><span>.claude/agents</span>
-            </div>
-            <div class="node">
-              <b>permissions</b><span>.claude/settings.json deny-list</span>
+              <b>permissions</b><span>settings.json deny-list</span>
             </div>
             <div class="node">
               <b>hooks</b><span>git stages · Claude Code · Copilot</span>
@@ -413,6 +764,35 @@
             <b>basicly check</b><span>drift gate · CI</span>
           </div>
         </figure>
+
+        <figure
+          class="diagram"
+          aria-label="Execution plane: a unit of work moves through intake, classify, decompose, build, verify and ship, then teardown. Classify, decompose and ship are human checkpoints. Build runs in an isolated worktree and verify is the deterministic gate."
+        >
+          <figcaption>Execution plane · one track</figcaption>
+          <div class="stage">
+            <div class="node"><b>intake</b><span>propose type</span></div>
+            <div class="node human">
+              <b>classify</b><span>checkpoint · DoR</span>
+            </div>
+            <div class="node human">
+              <b>decompose</b><span>checkpoint · sizing</span>
+            </div>
+            <div class="node"><b>build</b><span>isolated worktree</span></div>
+            <div class="node"><b>verify</b><span>deterministic gate</span></div>
+            <div class="node human">
+              <b>ship</b><span>checkpoint · merge</span>
+            </div>
+          </div>
+        </figure>
+        <p class="muted">
+          Orange nodes are human checkpoints. Scale out with
+          <code>basicly loop supervise</code>: one worktree per work package,
+          landed serially through a merge queue in dependency order, with
+          conflicts bounced back to the lane that owns them rather than resolved
+          at merge time.
+        </p>
+
         <ul class="plain">
           <li>
             <strong>Yours stays yours.</strong> Overrides and additions live in
@@ -420,43 +800,61 @@
             them.
           </li>
           <li>
-            <strong>Scoped to your stack.</strong>
-            <code>--technologies python,zsh</code> ships only the catalog
-            content that matches.
+            <strong>Deterministic first.</strong> Plain git-tracked files — no
+            daemon, no hidden state, no network calls at build time.
           </li>
           <li>
-            <strong>Deterministic first.</strong> Everything is plain
-            git-tracked files — no daemon, no hidden state, no network calls at
-            build time.
+            <strong>Blocked beats guessing.</strong> An agent that cannot
+            resolve a required fact stops and surfaces the missing fact instead
+            of inventing an answer.
           </li>
         </ul>
-        <p class="muted">
-          With guidance in place, the same catalog drives the harness — an
-          agent-agnostic development loop that carries one unit of work from
-          intake to shipped, the same way under Claude, Codex, or Copilot:
+      </div>
+    </section>
+
+    <section id="status">
+      <div class="wrap">
+        <p class="kicker">Where it stands</p>
+        <h2>Honest about what is built</h2>
+        <p class="lead">
+          The architecture reference separates the system as it exists in code
+          from where it is going, and so does this page.
         </p>
-        <figure
-          class="diagram"
-          aria-label="The basicly harness loop runs a unit of work through five phases in order: intake proposes the work type, classify is a human checkpoint with a Definition-of-Ready gate, build happens in an isolated worktree, verify runs the deterministic gate, and ship merges and closes. Classify and ship are TTY-gated human checkpoints."
-        >
-          <div class="stage">
-            <div class="node"><b>intake</b><span>propose type</span></div>
-            <div class="arrow" aria-hidden="true">▶</div>
-            <div class="node"><b>classify</b><span>checkpoint · DoR</span></div>
-            <div class="arrow" aria-hidden="true">▶</div>
-            <div class="node"><b>build</b><span>isolated worktree</span></div>
-            <div class="arrow" aria-hidden="true">▶</div>
-            <div class="node"><b>verify</b><span>deterministic gate</span></div>
-            <div class="arrow" aria-hidden="true">▶</div>
-            <div class="node"><b>ship</b><span>merge · close</span></div>
+        <div class="status">
+          <div class="shipped">
+            <em>Shipped</em>
+            <p>
+              Catalog and projection with drift gates, the git and agent hook
+              floor, the single-track loop, worktree isolation, parallel lanes
+              with a supervisor and merge queue, autonomy grants, and release
+              automation. All of it developed through the loop itself.
+            </p>
           </div>
-        </figure>
+          <div class="designed">
+            <em>Designed</em>
+            <p>
+              Named roles per judgment step, a gate taxonomy with convergence
+              detection, and owning the work tracker in-process instead of
+              depending on an external binary.
+            </p>
+          </div>
+          <div class="measuring">
+            <em>Being measured</em>
+            <p>
+              Whether each catalog entry earns its context cost. Structural
+              checks prove an entry is well-formed and projected, never that it
+              changes behaviour — so routing and behavioural evals are the
+              current work, and claims stay labelled until they are evidence.
+            </p>
+          </div>
+        </div>
       </div>
     </section>
 
     <section id="more">
       <div class="wrap">
-        <h2>Learn more</h2>
+        <p class="kicker">Learn more</p>
+        <h2>Read the design, not just the pitch</h2>
         <ul class="plain">
           <li>
             <a href="https://github.com/niksavis/basicly#readme">README</a> —
@@ -467,21 +865,35 @@
               href="https://github.com/niksavis/basicly/blob/main/docs/architecture/architecture.md"
               >Architecture</a
             >
-            — the full design, from catalog model to verification pipeline
+            — the authoritative reference: current system, then target state
+          </li>
+          <li>
+            <a
+              href="https://github.com/niksavis/basicly/tree/main/docs/design"
+              >Design documents</a
+            >
+            — the factory, the agent roster, gates and rework, catalog efficacy,
+            steering surfaces, the work tracker
+          </li>
+          <li>
+            <a
+              href="https://github.com/niksavis/basicly/blob/main/docs/research/2026-07-26-sota-review.md"
+              >State-of-the-art review</a
+            >
+            — eleven comparable projects read at pinned revisions, with what was
+            taken and what was refused
           </li>
           <li>
             <a href="https://github.com/niksavis/basicly/blob/main/CHANGELOG.md"
               >Changelog</a
             >
-            and
+            ·
             <a href="https://github.com/niksavis/basicly/releases">releases</a>
-          </li>
-          <li>
+            ·
             <a
               href="https://github.com/niksavis/basicly/blob/main/CONTRIBUTING.md"
-              >Contributing</a
+              >contributing</a
             >
-            — how changes land and which gates they pass
           </li>
         </ul>
       </div>
