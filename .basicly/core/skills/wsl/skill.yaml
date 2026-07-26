@@ -1,6 +1,7 @@
 # yaml-language-server: $schema=../../schemas/skill.schema.json
 schema_version: 1
 name: wsl
+invocation: model
 technologies: [wsl]
 description: >-
   Configure and operate WSL (Windows Subsystem for Linux) — wsl.exe management,

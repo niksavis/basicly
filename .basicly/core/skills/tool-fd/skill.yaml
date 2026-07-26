@@ -1,6 +1,7 @@
 # yaml-language-server: $schema=../../schemas/skill.schema.json
 schema_version: 1
 name: tool-fd
+invocation: model
 description: Use fd or fd-find for fast filename and path discovery with sane defaults. Trigger when file enumeration by pattern is needed without complex find syntax.
 instructions: |
   # tool-fd

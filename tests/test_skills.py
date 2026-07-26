@@ -30,6 +30,7 @@ def _write_skill(
             "# yaml-language-server: $schema=../../schemas/skill.schema.json",
             "schema_version: 1",
             f"name: {name}",
+            "invocation: model",
             f"description: {description}",
             *([f"technologies: {technologies}"] if technologies else []),
             "instructions: |",
@@ -76,7 +77,7 @@ def test_discover_skills_ignores_non_yaml_source(tmp_path: Path) -> None:
 
 def test_render_skill_md_frontmatter_marker_and_body() -> None:
     """render_skill_md emits YAML frontmatter, the generated marker, then the body."""
-    skill = SkillDefinition("s", "s", "A skill.", "# Body\n\ntext\n", Path("skill.yaml"))
+    skill = SkillDefinition("s", "s", "model", "A skill.", "# Body\n\ntext\n", Path("skill.yaml"))
     out = render_skill_md(skill)
 
     assert (
@@ -179,6 +180,7 @@ def test_optional_frontmatter_round_trips(tmp_path: Path) -> None:
         "\n".join([
             "schema_version: 1",
             "name: pdf",
+            "invocation: model",
             "description: Work with PDFs.",
             "license: Apache-2.0",
             "compatibility: Requires Python 3.14+ and uv",
@@ -208,7 +210,7 @@ def test_optional_frontmatter_round_trips(tmp_path: Path) -> None:
 
 def test_minimal_frontmatter_is_unchanged() -> None:
     """Omitting the optional fields yields the exact pre-spec minimal header."""
-    skill = SkillDefinition("s", "s", "A skill.", "# Body\n\ntext\n", Path("skill.yaml"))
+    skill = SkillDefinition("s", "s", "model", "A skill.", "# Body\n\ntext\n", Path("skill.yaml"))
     out = render_skill_md(skill)
     assert out.startswith("---\nname: s\ndescription: A skill.\n---\n")
 
@@ -253,3 +255,55 @@ def test_check_detects_resource_drift_and_orphans(tmp_path: Path) -> None:
     assert orphan in pruned
     assert ref.read_bytes() == b"# Reference\n"
     assert check_synced_skills(tmp_path, roots) == []
+
+
+# --- Invocation axis (basicly-m4zv.1) -----------------------------------------
+
+
+def _definition(invocation: str, description: str) -> SkillDefinition:
+    return SkillDefinition(
+        "s", "s", invocation, description, "# Body\n\ntext\n", Path("skill.yaml")
+    )
+
+
+def test_a_user_invoked_skill_projects_no_description_line() -> None:
+    """The description is the thing the agent reads to route; an unreachable entry owes none."""
+    rendered = render_skill_md(_definition("user", ""))
+
+    frontmatter = rendered.split("---")[1]
+    assert "description:" not in frontmatter
+    assert "name: s" in frontmatter
+
+
+def test_a_model_invoked_skill_still_projects_its_description() -> None:
+    """The default position is unchanged, so nothing silently loses agent reach."""
+    rendered = render_skill_md(_definition("model", "Do a thing."))
+
+    assert "description: Do a thing." in rendered.split("---")[1]
+
+
+def test_loading_rejects_an_unknown_invocation_value(tmp_path: Path) -> None:
+    """A third position on a two-position axis would be unenforceable downstream."""
+    path = tmp_path / SKILLS_SOURCE_DIR / "odd" / "skill.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "schema_version: 1\nname: odd\ninvocation: occasionally\ninstructions: |\n  # x\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError, match="must be one of"):
+        discover_skills(tmp_path)
+
+
+def test_loading_a_user_invoked_skill_needs_no_description(tmp_path: Path) -> None:
+    """The loader cannot require a description it is the point of this entry not to have."""
+    path = tmp_path / SKILLS_SOURCE_DIR / "handrun" / "skill.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "schema_version: 1\nname: handrun\ninvocation: user\ninstructions: |\n  # x\n",
+        encoding="utf-8",
+    )
+
+    (skill,) = discover_skills(tmp_path)
+    assert skill.invocation == "user"
+    assert skill.description == ""

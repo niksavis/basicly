@@ -1,6 +1,7 @@
 # yaml-language-server: $schema=../../schemas/skill.schema.json
 schema_version: 1
 name: python
+invocation: model
 technologies: [python]
 description: >-
   Write and edit Python for this repo — type hints pathlib and cross-platform

@@ -35,6 +35,11 @@ from .schema import ValidationError, technology_selected, validate_technologies
 SKILLS_SOURCE_DIR = Path(".basicly/core/skills")
 SKILL_SOURCE_FILE = "skill.yaml"
 SKILL_FILE_NAME = "SKILL.md"
+
+# The invocation axis (basicly-m4zv.1, catalog-efficacy-design §3.5).
+MODEL_INVOKED = "model"
+USER_INVOKED = "user"
+INVOCATIONS = frozenset({MODEL_INVOKED, USER_INVOKED})
 # .claude/skills is Claude Code's only project root; .agents/skills is the
 # Agent Skills open-standard root Codex reads. Copilot/VS Code reads BOTH (plus
 # .github/skills), so a .github copy would only triple its discovery — it was
@@ -67,6 +72,14 @@ class SkillDefinition:
 
     slug: str
     name: str
+    # The invocation axis (basicly-m4zv.1). A model-invoked entry keeps a
+    # description and is advertised to the agent, paying context load every turn;
+    # a user-invoked entry carries none and is reached by a human typing it.
+    # Declared rather than inferred, because "does this route correctly" is not a
+    # well-posed question until an entry knows whether anything can route to it —
+    # which is why this is the prerequisite for the Tier-2 routing evals.
+    invocation: str
+    # Empty for a user-invoked entry; the pairing is enforced by catalog_lint.
     description: str
     instructions: str
     source_path: Path
@@ -146,11 +159,25 @@ def discover_skills(
 
         technologies = validate_technologies(data.get("technologies") or [], path)
 
+        invocation = _require_str(data.get("invocation"), "invocation", path).strip()
+        if invocation not in INVOCATIONS:
+            raise ValidationError(
+                f"field 'invocation' must be one of {', '.join(sorted(INVOCATIONS))}, "
+                f"got {invocation!r}",
+                path,
+            )
+        # A user-invoked entry legitimately has no description, so this cannot go
+        # through _require_str. The pairing (model needs one, user must not have
+        # one) is a catalog_lint rule so the failure can explain itself.
+        raw_description = data.get("description")
+        description = raw_description.strip() if isinstance(raw_description, str) else ""
+
         skills.append(
             SkillDefinition(
                 slug=slug,
                 name=_require_str(data.get("name"), "name", path).strip(),
-                description=_require_str(data.get("description"), "description", path).strip(),
+                invocation=invocation,
+                description=description,
                 instructions=_require_str(data.get("instructions"), "instructions", path),
                 source_path=path,
                 technologies=tuple(technologies),
@@ -187,11 +214,21 @@ def render_skill_md(skill: SkillDefinition) -> str:
 
     ``name`` and ``description`` are emitted verbatim (byte-identical to the
     pre-spec minimal header); any optional spec fields follow as a YAML block.
+
+    A **user-invoked** entry emits no ``description`` line at all, which is the
+    whole mechanism: the description is what the agent reads to decide whether to
+    route here, and an entry nothing can route to should not be paying for one
+    every turn.
+
+    Measured 2026-07-26, and worth stating because the design overstates it: on
+    Claude Code a description-less skill still *loads* and is still listed by
+    name, so the model can still invoke it. Stripping the description removes
+    ~95% of this repo's skill-index text (6113 of 6412 chars) but not the name —
+    so "user-invoked" delivers a large context saving, not zero context load and
+    not human-only reach.
     """
-    header = (
-        f"---\nname: {skill.name}\ndescription: {skill.description}\n"
-        f"{_optional_frontmatter(skill)}---\n"
-    )
+    description = f"description: {skill.description}\n" if skill.invocation == MODEL_INVOKED else ""
+    header = f"---\nname: {skill.name}\n{description}{_optional_frontmatter(skill)}---\n"
     return f"{header}{GENERATED_MARKER}\n\n{skill.instructions}"
 
 

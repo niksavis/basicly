@@ -1627,10 +1627,16 @@ def cmd_skills_check(args: argparse.Namespace) -> int:
     return 0
 
 
+# `invocation: model` is the scaffold default because it is the reversible mistake:
+# a model-invoked entry that should be user-invoked only wastes a description's
+# worth of context, while the opposite silently removes the entry from the agent's
+# reach. Author it down to `user` — and delete the description — once the entry's
+# audience is settled.
 _SKILL_TEMPLATE = """\
 # yaml-language-server: $schema=../../schemas/skill.schema.json
 schema_version: 1
 name: {slug}
+invocation: model
 description: {description}
 instructions: |
   # {title}

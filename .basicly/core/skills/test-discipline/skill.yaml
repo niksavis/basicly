@@ -1,6 +1,7 @@
 # yaml-language-server: $schema=../../schemas/skill.schema.json
 schema_version: 1
 name: test-discipline
+invocation: model
 description: >-
   Write isolated order-independent automated tests that assert on observable
   behavior rather than private internals. Use when writing reviewing or debugging
