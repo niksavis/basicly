@@ -24,3 +24,326 @@
 {"binary":"br","duration_ms":11.2,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
 {"binary":"br","duration_ms":16.3,"flags":["--json"],"ok":true,"site":"engine","subcommand":"scheduler"}
 {"binary":"br","duration_ms":13.9,"flags":["--json"],"ok":true,"site":"engine","subcommand":"blocked"}
+{"binary":"br","duration_ms":16.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":20.6,"flags":["--robot"],"ok":true,"site":"engine","subcommand":"gate list"}
+{"binary":"br","duration_ms":12.1,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":12.2,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":12.6,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":12.4,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":12.0,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":12.0,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":86.2,"flags":[],"ok":true,"site":"engine","subcommand":"comments add"}
+{"binary":"br","duration_ms":12.4,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":71.2,"flags":[],"ok":true,"site":"engine","subcommand":"comments add"}
+{"binary":"br","duration_ms":16.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":21.4,"flags":["--robot"],"ok":true,"site":"engine","subcommand":"gate list"}
+{"binary":"br","duration_ms":12.1,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":12.2,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":12.0,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":13.3,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":17.9,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":13.7,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":78.2,"flags":[],"ok":true,"site":"engine","subcommand":"comments add"}
+{"binary":"br","duration_ms":100.2,"flags":["--reason"],"ok":true,"site":"engine","subcommand":"close"}
+{"binary":"br","duration_ms":10.4,"flags":["--flush-only"],"ok":true,"site":"engine","subcommand":"sync"}
+{"binary":"br","flags":[],"ok":true,"site":"interactive","subcommand":"scheduler"}
+{"binary":"br","duration_ms":84.4,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":15.6,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":14.7,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":15.6,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":15.1,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":15.7,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":17.1,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":15.2,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":14.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":14.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":14.9,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":14.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":14.3,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":14.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":14.9,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":14.6,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":14.4,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":14.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":14.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":15.4,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":14.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":15.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":15.9,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":14.7,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":16.0,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":16.0,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":16.1,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":15.3,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":14.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":14.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":14.9,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":14.7,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":15.1,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":15.0,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":14.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":14.3,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":14.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":14.4,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":14.7,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":14.7,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":14.7,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":15.1,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":14.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":14.2,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":15.0,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":14.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":15.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":15.1,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":11.1,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.6,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.4,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":10.7,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":10.7,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.0,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":10.7,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":10.4,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":10.6,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":10.7,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":10.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":10.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":10.9,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":10.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":10.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":10.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":10.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":10.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.1,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":10.9,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.0,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":10.6,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":10.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.0,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":10.7,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.0,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.0,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.2,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.3,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":13.3,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":13.3,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":13.2,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.1,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.1,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":10.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.3,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.3,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.2,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.0,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.2,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.0,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.1,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.4,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.4,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.3,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","flags":[],"ok":true,"site":"interactive","subcommand":"comments add"}
+{"binary":"br","flags":["--reason"],"ok":true,"site":"interactive","subcommand":"close"}
+{"binary":"br","flags":[],"ok":true,"site":"interactive","subcommand":"ready"}
+{"binary":"br","flags":["-t"],"ok":true,"site":"interactive","subcommand":"dep add"}
+{"binary":"br","flags":[],"ok":true,"site":"interactive","subcommand":"comments add"}
+{"binary":"br","flags":[],"ok":true,"site":"interactive","subcommand":"ready"}
+{"binary":"br","flags":["--json","--parent","-d","-l","-p","-t"],"ok":true,"site":"interactive","subcommand":"create"}
+{"binary":"br","flags":["--acceptance-criteria"],"ok":true,"site":"interactive","subcommand":"update"}
+{"binary":"br","flags":["--json","--parent","-d","-l","-p","-t"],"ok":true,"site":"interactive","subcommand":"create"}
+{"binary":"br","duration_ms":34.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"lint"}
+{"binary":"br","duration_ms":15.1,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":23.2,"flags":["--json"],"ok":true,"site":"engine","subcommand":"lint"}
+{"binary":"br","duration_ms":15.1,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","flags":["--acceptance-criteria"],"ok":true,"site":"interactive","subcommand":"update"}
+{"binary":"br","flags":["--json","--parent","-d","-l","-p","-t"],"ok":true,"site":"interactive","subcommand":"create"}
+{"binary":"br","duration_ms":26.4,"flags":["--json"],"ok":true,"site":"engine","subcommand":"lint"}
+{"binary":"br","duration_ms":15.6,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","flags":["--acceptance-criteria"],"ok":true,"site":"interactive","subcommand":"update"}
+{"binary":"br","flags":[],"ok":true,"site":"interactive","subcommand":"scheduler"}
+{"binary":"br","duration_ms":108.1,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":33.1,"flags":["--robot"],"ok":true,"site":"engine","subcommand":"gate list"}
+{"binary":"br","duration_ms":11.4,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":10.9,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.2,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":10.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":109.0,"flags":["-t"],"ok":true,"site":"engine","subcommand":"update"}
+{"binary":"br","duration_ms":20.9,"flags":["--json"],"ok":true,"site":"engine","subcommand":"lint"}
+{"binary":"br","duration_ms":14.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":11.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":16.0,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":11.6,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.4,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":71.5,"flags":[],"ok":true,"site":"engine","subcommand":"comments add"}
+{"binary":"br","duration_ms":21.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":23.6,"flags":["--robot"],"ok":true,"site":"engine","subcommand":"gate list"}
+{"binary":"br","duration_ms":11.3,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":10.7,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.0,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.0,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":90.8,"flags":["-t"],"ok":true,"site":"engine","subcommand":"update"}
+{"binary":"br","duration_ms":21.3,"flags":["--json"],"ok":true,"site":"engine","subcommand":"lint"}
+{"binary":"br","duration_ms":16.0,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":11.1,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.1,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":74.9,"flags":[],"ok":true,"site":"engine","subcommand":"comments add"}
+{"binary":"br","duration_ms":11.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":71.3,"flags":[],"ok":true,"site":"engine","subcommand":"comments add"}
+{"binary":"br","duration_ms":15.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":19.8,"flags":["--robot"],"ok":true,"site":"engine","subcommand":"gate list"}
+{"binary":"br","duration_ms":11.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.7,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.6,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":21.1,"flags":["--json"],"ok":true,"site":"engine","subcommand":"lint"}
+{"binary":"br","duration_ms":16.2,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":10.2,"flags":["--flush-only"],"ok":true,"site":"engine","subcommand":"sync"}
+{"binary":"br","duration_ms":427.7,"flags":["--external-ref"],"ok":true,"site":"engine","subcommand":"update"}
+{"binary":"br","duration_ms":16.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":11.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":70.8,"flags":[],"ok":true,"site":"engine","subcommand":"comments add"}
+{"binary":"br","flags":["--help"],"ok":true,"site":"interactive","subcommand":"gate report"}
+{"binary":"br","flags":["--robot"],"ok":true,"site":"interactive","subcommand":"gate list"}
+{"binary":"br","flags":[],"ok":true,"site":"interactive","subcommand":"gate list"}
+{"binary":"br","flags":["--gate","--note","--provider","--status"],"ok":true,"site":"interactive","subcommand":"gate report"}
+{"binary":"br","flags":["--gate","--note","--provider","--status"],"ok":true,"site":"interactive","subcommand":"gate report"}
+{"binary":"br","flags":["--robot"],"ok":true,"site":"interactive","subcommand":"gate list"}
+{"binary":"br","duration_ms":16.9,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":34.6,"flags":["--robot"],"ok":true,"site":"engine","subcommand":"gate list"}
+{"binary":"br","duration_ms":11.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.2,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.7,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":17.6,"flags":["--flush-only"],"ok":true,"site":"engine","subcommand":"sync"}
+{"binary":"br","duration_ms":28.5,"flags":["--merge"],"ok":false,"site":"engine","subcommand":"sync"}
+{"binary":"br","duration_ms":222.7,"flags":["--actor","--gate","--note","--provider","--status"],"ok":true,"site":"engine","subcommand":"gate report"}
+{"binary":"br","duration_ms":17.1,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":21.0,"flags":["--robot"],"ok":true,"site":"engine","subcommand":"gate list"}
+{"binary":"br","duration_ms":11.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.0,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.3,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.9,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":16.2,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":11.7,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.4,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":262.3,"flags":[],"ok":true,"site":"engine","subcommand":"comments add"}
+{"binary":"br","duration_ms":16.4,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":20.6,"flags":["--robot"],"ok":true,"site":"engine","subcommand":"gate list"}
+{"binary":"br","duration_ms":11.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.2,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.4,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":10.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":12.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":12.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":83.4,"flags":[],"ok":true,"site":"engine","subcommand":"comments add"}
+{"binary":"br","duration_ms":13.3,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":68.4,"flags":[],"ok":true,"site":"engine","subcommand":"comments add"}
+{"binary":"br","duration_ms":15.9,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":21.1,"flags":["--robot"],"ok":true,"site":"engine","subcommand":"gate list"}
+{"binary":"br","duration_ms":11.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.3,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.3,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.7,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":14.4,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":18.4,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":12.6,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":77.7,"flags":[],"ok":true,"site":"engine","subcommand":"comments add"}
+{"binary":"br","duration_ms":88.6,"flags":["--reason"],"ok":true,"site":"engine","subcommand":"close"}
+{"binary":"br","duration_ms":10.8,"flags":["--flush-only"],"ok":true,"site":"engine","subcommand":"sync"}
+{"binary":"br","flags":[],"ok":true,"site":"interactive","subcommand":"ready"}
+{"binary":"br","duration_ms":15.6,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":19.9,"flags":["--robot"],"ok":true,"site":"engine","subcommand":"gate list"}
+{"binary":"br","duration_ms":11.6,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.1,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.1,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.2,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":264.6,"flags":["-t"],"ok":true,"site":"engine","subcommand":"update"}
+{"binary":"br","duration_ms":22.3,"flags":["--json"],"ok":true,"site":"engine","subcommand":"lint"}
+{"binary":"br","duration_ms":15.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":11.3,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":16.2,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":11.9,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.9,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":68.5,"flags":[],"ok":true,"site":"engine","subcommand":"comments add"}
+{"binary":"br","duration_ms":16.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":21.8,"flags":["--robot"],"ok":true,"site":"engine","subcommand":"gate list"}
+{"binary":"br","duration_ms":11.6,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.7,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.4,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":86.3,"flags":["-t"],"ok":true,"site":"engine","subcommand":"update"}
+{"binary":"br","duration_ms":21.9,"flags":["--json"],"ok":true,"site":"engine","subcommand":"lint"}
+{"binary":"br","duration_ms":15.9,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":11.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.4,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":72.0,"flags":[],"ok":true,"site":"engine","subcommand":"comments add"}
+{"binary":"br","duration_ms":11.7,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":72.7,"flags":[],"ok":true,"site":"engine","subcommand":"comments add"}
+{"binary":"br","duration_ms":17.4,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":19.9,"flags":["--robot"],"ok":true,"site":"engine","subcommand":"gate list"}
+{"binary":"br","duration_ms":11.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.6,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.0,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.0,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":22.2,"flags":["--json"],"ok":true,"site":"engine","subcommand":"lint"}
+{"binary":"br","duration_ms":16.6,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":10.0,"flags":["--flush-only"],"ok":true,"site":"engine","subcommand":"sync"}
+{"binary":"br","duration_ms":431.4,"flags":["--external-ref"],"ok":true,"site":"engine","subcommand":"update"}
+{"binary":"br","duration_ms":17.2,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":12.2,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":71.2,"flags":[],"ok":true,"site":"engine","subcommand":"comments add"}
+{"binary":"br","duration_ms":71.9,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":23.2,"flags":["--robot"],"ok":true,"site":"engine","subcommand":"gate list"}
+{"binary":"br","duration_ms":11.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.3,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.3,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":9.9,"flags":["--flush-only"],"ok":true,"site":"engine","subcommand":"sync"}
+{"binary":"br","duration_ms":21.3,"flags":["--merge"],"ok":false,"site":"engine","subcommand":"sync"}
+{"binary":"br","duration_ms":222.8,"flags":["--actor","--gate","--note","--provider","--status"],"ok":true,"site":"engine","subcommand":"gate report"}
+{"binary":"br","duration_ms":16.1,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":21.0,"flags":["--robot"],"ok":true,"site":"engine","subcommand":"gate list"}
+{"binary":"br","duration_ms":11.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":12.1,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":12.4,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":12.1,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":12.2,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":16.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":11.6,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.6,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":255.1,"flags":[],"ok":true,"site":"engine","subcommand":"comments add"}
+{"binary":"br","duration_ms":16.2,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":20.4,"flags":["--robot"],"ok":true,"site":"engine","subcommand":"gate list"}
+{"binary":"br","duration_ms":11.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":12.6,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":12.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":12.0,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.9,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":12.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":81.9,"flags":[],"ok":true,"site":"engine","subcommand":"comments add"}
+{"binary":"br","duration_ms":11.8,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":70.1,"flags":[],"ok":true,"site":"engine","subcommand":"comments add"}
+{"binary":"br","duration_ms":16.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":21.3,"flags":["--robot"],"ok":true,"site":"engine","subcommand":"gate list"}
+{"binary":"br","duration_ms":11.7,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":11.6,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":12.7,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":12.0,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":13.3,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":17.4,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","duration_ms":11.7,"flags":["--json"],"ok":true,"site":"engine","subcommand":"comments list"}
+{"binary":"br","duration_ms":76.2,"flags":[],"ok":true,"site":"engine","subcommand":"comments add"}
+{"binary":"br","duration_ms":87.9,"flags":["--reason"],"ok":true,"site":"engine","subcommand":"close"}
+{"binary":"br","duration_ms":10.5,"flags":["--flush-only"],"ok":true,"site":"engine","subcommand":"sync"}
+{"binary":"br","flags":["--json","--parent","-d","-l","-p","-t"],"ok":true,"site":"interactive","subcommand":"create"}
+{"binary":"br","duration_ms":21.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"lint"}
+{"binary":"br","duration_ms":15.5,"flags":["--json"],"ok":true,"site":"engine","subcommand":"show"}
+{"binary":"br","flags":["--acceptance-criteria"],"ok":true,"site":"interactive","subcommand":"update"}
