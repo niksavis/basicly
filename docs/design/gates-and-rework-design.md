@@ -137,17 +137,33 @@ the rubric gate to **required** at lane and session level, which currently means
 whose judged checks cannot fail it, guarding rubrics that in some cases are still unwritten — so
 it can pass having checked nothing.
 
-**Proposed clarification:** the validate step is a **composite** of two gates with different types,
-and they should be recorded separately:
+**Clarification — landed 2026-07-26 (`basicly-imnu.1`).** The validate step is a **composite** of
+two gates with different types, recorded separately:
 
-- a **pre-flight** component — deterministic rubric checks — which *can* fail the lane; and
-- an **escalation** component — judged checks — which never fails the lane and instead enqueues a
-  decision item carrying the failing criterion and its evidence.
+- `rubric` — a **pre-flight** component, deterministic rubric checks, which *can* fail the lane;
+  and
+- `rubric-judged` — an **escalation** component, judged checks, which never fails the lane and
+  instead enqueues a decision item carrying the failing criterion and its evidence.
 
 This keeps "no persona passes a required gate" (R4) intact, gives the required gate real teeth from
 its deterministic half, and stops a judged NO looking like a test failure. **An unsatisfied
 acceptance criterion is a decision, not a red test** — R4's own sentence, now with a gate type
 behind it.
+
+Two implementation notes, because each names a way the split could be undone by accident:
+
+- The escalation gate is **absent from `[policy] required_gates`**, and that absence is the
+  mechanism. `policy.gate_status` treats any gate outside the required set as advisory, so
+  `rubric-judged` may record an honest `fail` without blocking advancement. Adding it to the
+  required list would silently restore the incoherence this section exists to remove.
+- **Both halves are recorded on every validate**, including when a half has no checks of its kind.
+  A gate that appears only when it has something to say cannot be read afterwards: a missing
+  `rubric-judged` would be ambiguous between "no judged checks existed" and "the judged half never
+  ran", and only one of those is acceptable.
+
+What the split fixed in practice: a judged NO previously left the single combined gate reading
+`pass`, surviving only as text in the note — so the gate record could not distinguish a satisfied
+acceptance criterion from a disputed one.
 
 ### 4.2 Adjudicate only at the cap
 
@@ -384,7 +400,9 @@ From CAAF, because a named failure is one a review can look for:
 2. **§5.6's metrics need a window and a threshold**, and neither should be guessed. They need the
    verdict and adjudication history the loop already records, read once, before a number is
    written down.
-3. **§4.1 is an amendment to D4** and needs to land in [`factory-design.md`](factory-design.md)
-   before anything is built against it, since D4 currently makes the rubric gate required in a
-   shape §4.1 argues is incoherent.
+3. ~~**§4.1 is an amendment to D4** and needs to land in
+   [`factory-design.md`](factory-design.md) before anything is built against it.~~ **Closed
+   2026-07-26 (`basicly-imnu.1`)**: the composite is recorded in `factory-design.md` §D4 and
+   implemented as the `rubric` / `rubric-judged` pair, so Phase 2's severity contract and gate
+   taxonomy now have an amended shape to build against.
 4. **§6's claim is unmeasured** and should be micro-tested before it becomes a contract.

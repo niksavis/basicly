@@ -47,7 +47,25 @@ VERIFY_MODES = ("fast", "full", "staged")
 # The advisory gate this framework reports; non-required by default (the gate
 # ledger treats any gate outside [policy] required_gates as advisory), so a
 # consumer promotes it by adding "rubric" to required_gates.
+# Validate is a **composite of two gates with different types**, recorded
+# separately (gates-and-rework-design.md §4.1, amending D4).
+#
+# The pre-flight half keeps the original gate name, because it is the half that
+# behaves the way a gate is assumed to: deterministic, objective, and able to fail
+# the lane. It is what the lane-level promotion to required means.
 RUBRIC_GATE = "rubric"
+# The escalation half. It records a real ``fail`` when a judged check answers no —
+# which the single combined gate could not, since a judged no left the gate
+# reading ``pass`` and survived only as text in the note. What stops that fail
+# from killing the lane is the gate's *type*, not a special case at the call
+# site: an escalation gate enqueues a decision and the lane holds. It is
+# deliberately absent from ``[policy] required_gates``, which is what keeps R4's
+# "no persona passes or fails a required gate" intact while the required
+# pre-flight half still has teeth.
+#
+# Before the split, D4 promoted one gate to required whose judged checks could
+# not fail it — so it could pass having checked nothing.
+RUBRIC_JUDGED_GATE = "rubric-judged"
 GATE_PROVIDER = "basicly-rubric"
 
 # Answers for a check verdict.
@@ -292,12 +310,29 @@ def evaluate(
 
 
 def gate_status(verdicts: list[CheckVerdict]) -> str:
-    """Deterministic-first: fail only when an objective (deterministic) check says no.
+    """The **pre-flight** half's status: fail only when a deterministic check says no.
 
-    A judged verdict — subjective and agent-answered — is surfaced but never fails
-    the gate, honoring "a subjective judged check must not silently block a merge".
+    A judged verdict never fails this gate — it is reported on
+    :data:`RUBRIC_JUDGED_GATE` instead, which is what "a subjective judged check
+    must not silently block a merge" means once the two halves are separated.
     """
     return "fail" if any(v.kind == DETERMINISTIC and v.answer == NO for v in verdicts) else "pass"
+
+
+def escalation_status(verdicts: list[CheckVerdict]) -> str:
+    """The **escalation** half's status: fail when a judged check answers no.
+
+    This is allowed to say ``fail`` precisely because the gate is not required:
+    the fail is the *signal* that a decision was enqueued, not a verdict that the
+    lane is broken. Recording it honestly is the point of the split — a judged no
+    used to leave the combined gate reading ``pass``, so a reader of the gate
+    record could not tell a satisfied acceptance criterion from a disputed one.
+
+    ``UNKNOWN`` is not a failure: it means no agent answered (a handoff, or an
+    unparseable reply), which is an absence of judgment rather than a negative
+    one.
+    """
+    return "fail" if judged_failures(verdicts) else "pass"
 
 
 def judged_failures(verdicts: list[CheckVerdict]) -> list[CheckVerdict]:
@@ -311,28 +346,72 @@ def judged_failures(verdicts: list[CheckVerdict]) -> list[CheckVerdict]:
     return [v for v in verdicts if v.kind == JUDGED and v.answer == NO]
 
 
-def report_gate(repo_root: Path, issue_id: str, verdicts: list[CheckVerdict]) -> tuple[bool, str]:
-    """Record the advisory ``rubric`` gate via ``br gate report`` (degrades gracefully)."""
-    status = gate_status(verdicts)
-    detail = ", ".join(f"{v.check_id}={v.answer}" for v in verdicts) or "no checks"
+def _report_one(
+    repo_root: Path, issue_id: str, gate: str, status: str, note: str
+) -> tuple[bool, str]:
+    """Record one gate via ``br gate report``; degrades gracefully when br is absent."""
     proc = br.try_run_br(
         repo_root,
         [
             "gate",
             "report",
             "--gate",
-            RUBRIC_GATE,
+            gate,
             "--provider",
             GATE_PROVIDER,
             "--status",
             status,
             "--note",
-            f"rubric: {detail}",
+            note,
             issue_id,
         ],
     )
     if proc is None:
-        return False, "br not on PATH; rubric gate not recorded"
+        return False, f"br not on PATH; {gate} gate not recorded"
     if proc.returncode != 0:
-        return False, f"br gate report failed: {(proc.stderr or proc.stdout).strip()}"
-    return True, f"recorded gate {RUBRIC_GATE}={status} on {issue_id}"
+        return False, f"br gate report failed for {gate}: {(proc.stderr or proc.stdout).strip()}"
+    return True, f"{gate}={status}"
+
+
+def report_gate(repo_root: Path, issue_id: str, verdicts: list[CheckVerdict]) -> tuple[bool, str]:
+    """Record validate as its two separately-typed gates (§4.1, amending D4).
+
+    Both halves are always recorded, including when a half has no checks of its
+    kind. A gate that appears only when it has something to say is unreadable
+    after the fact: a missing ``rubric-judged`` would be ambiguous between "no
+    judged checks existed" and "the judged half never ran", and only one of those
+    is fine.
+
+    The pre-flight half is reported first, so if br fails midway the required half
+    is the one that survives. Returns ok=False when *either* report failed, with
+    every outcome in the message — a partial record is worse than a clear failure,
+    because the gate list would then look authoritative while describing half the
+    step.
+    """
+    deterministic = [v for v in verdicts if v.kind == DETERMINISTIC]
+    judged = [v for v in verdicts if v.kind == JUDGED]
+
+    def detail(subset: list[CheckVerdict]) -> str:
+        return ", ".join(f"{v.check_id}={v.answer}" for v in subset) or "no checks"
+
+    preflight_ok, preflight_msg = _report_one(
+        repo_root,
+        issue_id,
+        RUBRIC_GATE,
+        gate_status(verdicts),
+        f"rubric pre-flight (deterministic): {detail(deterministic)}",
+    )
+    escalation = escalation_status(verdicts)
+    escalation_ok, escalation_msg = _report_one(
+        repo_root,
+        issue_id,
+        RUBRIC_JUDGED_GATE,
+        escalation,
+        # Spelled out on the record because a bare `fail` on this gate invites
+        # exactly the misreading the split exists to prevent.
+        f"rubric escalation (judged, never fails the lane): {detail(judged)}"
+        + ("; enqueued as a decision" if escalation == "fail" else ""),
+    )
+    if not (preflight_ok and escalation_ok):
+        return False, f"{preflight_msg}; {escalation_msg}"
+    return True, f"recorded gates {preflight_msg}, {escalation_msg} on {issue_id}"

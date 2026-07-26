@@ -794,14 +794,24 @@ def _integrate_lane(ctx: _Ctx, binding: loop_state.WorktreeBinding, cwd: Path) -
 def _validate_lane(ctx: _Ctx, cwd: Path) -> AdvanceResult | None:
     """Evaluate the lane's behavioral rubrics; None when validate passes.
 
-    D4: validate is acceptance-criteria satisfaction — the ``rubric`` gate
-    promoted from advisory to **required** at lane level. The promotion belongs to
-    the level, not to ``[policy] required_gates``, so a consumer's gate list
-    cannot silently drop it. Judged checks never fail the gate inside
-    :func:`rubrics.gate_status` (a subjective verdict must not block a merge on its
-    own), and a work class no rubric covers has nothing to validate.
+    D4: validate is acceptance-criteria satisfaction. It is a **composite of two
+    gates with different types**, recorded separately by
+    :func:`rubrics.report_gate` (gates-and-rework-design.md §4.1):
 
-    Two failure shapes, deliberately different (D4 as amended 2026-07-25):
+    - ``rubric`` — the **pre-flight** half. Deterministic checks only, promoted
+      from advisory to **required** at lane level. The promotion belongs to the
+      level, not to ``[policy] required_gates``, so a consumer's gate list cannot
+      silently drop it.
+    - ``rubric-judged`` — the **escalation** half. Judged checks only, never
+      required, so it can record an honest ``fail`` without killing the lane.
+
+    Splitting them is what gives the required half teeth: as one gate, D4 promoted
+    to required a gate whose judged checks could not fail it, so it could pass
+    having checked nothing. A work class no rubric covers still has nothing to
+    validate.
+
+    Two failure shapes, deliberately different (D4 as amended 2026-07-25), and now
+    each with a gate type behind it rather than a special case here:
 
     - a **deterministic** no is a test failure — spend a bounded rework attempt;
     - a **judged** no is a *decision* — enqueue it with its evidence and hold the
