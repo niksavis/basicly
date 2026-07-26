@@ -10,7 +10,8 @@
 > the current system in §§0–13 and the agreed direction in §14. A design document is
 > therefore the detail behind a §14 row, never a competing account of how the system
 > works, and it is archived once absorbed. Evidence for the design documents lives in
-> [`docs/research/`](../research/2026-07-26-sota-review.md).
+> [`docs/research/`](../research/2026-07-26-sota-review.md), and the order the §14 rows
+> get built in lives in [`docs/plan/`](../plan/implementation-plan.md).
 >
 > **Status convention — two states, never blurred.** §§0–13 describe the system
 > **as it exists in code today**; deliberate small omissions are marked
@@ -1111,6 +1112,11 @@ the factory are built and dogfooded; the judgment layer is designed and unbuilt;
 the evidence layer barely exists and is the largest gap; the tracker is a dependency
 we intend to own. This section is the map, not the detail — each row points at the
 design document that owns it, and **none of it is running code**.
+
+**The order it gets built in is [`docs/plan/implementation-plan.md`](../plan/implementation-plan.md)**,
+which sequences these rows into phases with dependencies and exit criteria. That file
+is deliberately external to the tracker, because the tracker is itself one of the
+things being replaced (§14.5).
 
 Everything here is grounded in a 2026-07-26 review of eleven comparable projects
 read at pinned revisions ([`research/`](../research/2026-07-26-sota-review.md)),
