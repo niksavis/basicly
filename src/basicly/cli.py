@@ -3500,6 +3500,35 @@ def _tolerate_narrow_consoles() -> None:
             reconfigure(errors="replace")
 
 
+def _line_buffer_stdout() -> None:
+    """Make stdout line-buffered so a long run stays observable through a pipe.
+
+    Python block-buffers a non-TTY stdout, which is exactly the case a long
+    headless run is piped into — a log or a pager. A supervised multi-lane run
+    showed nothing but its lanes' subprocess noise for twelve minutes and then
+    emitted the whole orchestration history at exit (basicly-8veb). The lanes'
+    output was never buffered, because it comes from child processes writing to an
+    inherited descriptor, so the operator saw everything *except* what the
+    supervisor was telling them. That also defeated "watch the run and intervene
+    early" as a cost control: the lanes had finished and spent 3.36M tokens before
+    the first orchestration line was visible.
+
+    Reconfiguring the stream rather than passing ``flush=True`` at each call site
+    is deliberate. Every line the CLI prints is covered by construction, including
+    ones added later, and no call site is left to forget. It sits in process setup
+    rather than inside the supervise command because the buffering is a property of
+    this process's stdout, not of one subcommand — ``loop run`` blocks the same way
+    through a long verify.
+
+    ``stderr`` needs nothing: Python already keeps it unbuffered or line-buffered.
+    A stream some harness replaced without ``reconfigure`` is skipped, which is
+    safe — such a harness collects the output itself.
+    """
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if reconfigure is not None:
+        reconfigure(line_buffering=True)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Construct the full argument parser (also introspected by the docs tripwire)."""
     parser = argparse.ArgumentParser(
@@ -3576,6 +3605,7 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     """Parse arguments and dispatch to the requested command."""
     _tolerate_narrow_consoles()
+    _line_buffer_stdout()
     args = _build_parser().parse_args(argv)
     handlers = {
         "install": cmd_install,

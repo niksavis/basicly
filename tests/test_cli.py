@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import selectors
 import shutil
 import subprocess
 import sys
@@ -1329,3 +1330,98 @@ def test_cli_hooks_check_stays_quiet_when_uv_is_present(
     monkeypatch.chdir(work_repo)
     assert cli.main(["hooks-check"]) == 0
     assert "uv is not on PATH" not in capsys.readouterr().err
+
+
+# --- A long run stays observable through a pipe (basicly-8veb) ----------------
+
+# Printed by the child, which then blocks on stdin. Nothing sleeps: the child
+# cannot reach its own exit until the parent writes to it, so a line the parent
+# manages to read was provably observable *before* exit rather than just soon
+# after. That makes this a state check rather than a race against a duration —
+# the select below returns the moment the data lands.
+_OBSERVABLE_CHILD = (
+    "import sys; from basicly import cli; "
+    "cli._line_buffer_stdout(); "
+    "print('session:  demo'); "
+    "sys.stdin.readline()"
+)
+
+
+def _child_env() -> dict[str, str]:
+    """Environment pinning the child to the same ``basicly`` this test imported.
+
+    A bare ``sys.executable -c "import basicly"`` resolves against whatever
+    interpreter runs pytest, which is not necessarily the source under test: the
+    harness lands a worktree by running verify with the *base* checkout's
+    interpreter, so these tests imported the installed package and failed on a
+    function that existed only on the branch. Pointing PYTHONPATH at the package
+    actually imported here makes the child hermetic wherever pytest is invoked
+    from.
+    """
+    package_parent = Path(cli.__file__).resolve().parent.parent
+    return {**os.environ, "PYTHONPATH": str(package_parent)}
+
+
+def test_a_printed_line_is_observable_before_exit_when_stdout_is_a_pipe() -> None:
+    """The defect: a piped supervised run showed nothing until the process exited.
+
+    The control for this is
+    :func:`test_line_buffer_stdout_sets_line_buffering_on_the_real_stream`, which
+    proves the stream is block-buffered without the call. Asserting the negative
+    *here* would mean waiting out a timeout to prove an absence, which costs
+    seconds of suite time to learn nothing the control does not already give.
+    """
+    proc = subprocess.Popen(  # nosec B603
+        [sys.executable, "-c", _OBSERVABLE_CHILD],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+        env=_child_env(),
+    )
+    assert proc.stdin and proc.stdout
+    try:
+        selector = selectors.DefaultSelector()
+        selector.register(proc.stdout, selectors.EVENT_READ)
+        ready = selector.select(timeout=30)
+        selector.close()
+        assert ready, "nothing readable while the child was still blocked on stdin"
+        assert proc.stdout.readline() == "session:  demo\n"
+    finally:
+        proc.stdin.write("\n")
+        proc.stdin.close()
+        proc.wait(timeout=30)
+
+
+def test_line_buffer_stdout_sets_line_buffering_on_the_real_stream() -> None:
+    """The mechanism, and the control: piped stdout is block-buffered until the call."""
+    proc = subprocess.run(  # nosec B603
+        [
+            sys.executable,
+            "-c",
+            "import sys; from basicly import cli; "
+            "before = sys.stdout.line_buffering; cli._line_buffer_stdout(); "
+            "sys.stderr.write(f'{before} {sys.stdout.line_buffering}')",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        env=_child_env(),
+    )
+    assert proc.stderr == "False True"  # piped: block-buffered before, line after
+
+
+def test_line_buffer_stdout_tolerates_a_stream_without_reconfigure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A harness that replaced stdout collects output itself; skipping is safe."""
+    monkeypatch.setattr(cli.sys, "stdout", object())
+    cli._line_buffer_stdout()  # must not raise
+
+
+def test_main_line_buffers_stdout_before_dispatching(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The setup runs in main(), so every subcommand benefits, not just supervise."""
+    calls: list[str] = []
+    monkeypatch.setattr(cli, "_line_buffer_stdout", lambda: calls.append("buffered"))
+    monkeypatch.setattr(cli, "cmd_status", lambda _a: calls.append("dispatched") or 0)
+    cli.main(["status"])
+    assert calls == ["buffered", "dispatched"]
