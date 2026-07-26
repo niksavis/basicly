@@ -413,7 +413,7 @@ def test_merge_queue_stops_on_a_failed_verify(
 def test_merge_queue_records_the_missed_coupling_as_a_dependency_edge(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The lane that landed the conflicting path becomes a recorded blocks dep (D5)."""
+    """The lane whose declared scope covers the conflicting path gets the edge (D5)."""
     outcomes = {
         "a": merge.MergeResult("a", "merged", "ok"),
         "b": merge.MergeResult("b", "merged", "ok"),
@@ -423,18 +423,11 @@ def test_merge_queue_records_the_missed_coupling_as_a_dependency_edge(
     }
     monkeypatch.setattr(merge, "merge_worktree", lambda _r, name, **_kwargs: outcomes[name])
     monkeypatch.setattr(policy, "record_rework", lambda *_a: 1)
-    # "a" landed src/other.py, "b" landed the path that later collided.
-    changed = {"sha-a": "src/other.py\n", "sha-b": "src/shared.py\n"}
-    heads = iter(["sha-a", "sha-b", "sha-c"])
-
-    def fake_git(args, **_kwargs):
-        if args[0] == "rev-parse":
-            return _Proc(0, next(heads))
-        if args[0] == "diff":
-            return _Proc(0, changed.get(args[-1].split("..")[0], ""))
-        return _Proc(0)
-
-    monkeypatch.setattr(merge, "git", fake_git)
+    # "ba" declared docs, "bb" declared the path that later collided.
+    scopes = {"ba": ("docs/**",), "bb": ("src/shared.py",), "bc": ("src/shared.py",)}
+    monkeypatch.setattr(
+        merge.decompose, "bead_class_and_scope", lambda _r, bead: ("task", scopes[bead])
+    )
     calls: list[list[str]] = []
     monkeypatch.setattr(merge.br, "try_run_br", lambda _r, args: calls.append(args) or _Proc(0))
 
@@ -443,9 +436,88 @@ def test_merge_queue_records_the_missed_coupling_as_a_dependency_edge(
     assert results[2].bounced and results[2].couplings == ("bb",)
     # `related`, never `blocks`: the edge teaches the next decomposition, and a
     # gating edge would hold the bounced lane behind the lane it collided with
-    # until that lane *ships* (basicly-grrb).
-    assert ["dep", "add", "bc", "bb", "-t", "related"] in calls
+    # until that lane *ships* (basicly-grrb). The ids are sorted, so the edge does
+    # not encode which of the pair happened to bounce (basicly-kjc5.32).
+    assert ["dep", "add", "bb", "bc", "-t", "related"] in calls
     assert not any(call[:2] == ["dep", "add"] and call[-1] == "blocks" for call in calls)
+
+
+def test_merge_queue_attributes_a_bounce_against_a_later_landing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Attribution runs over the whole pass, not the prefix before the bounce (D9)."""
+    outcomes = {
+        "a": merge.MergeResult(
+            "a", "merge-conflicts", "conflicts in: src/shared.py", conflicts=("src/shared.py",)
+        ),
+        "b": merge.MergeResult("b", "merged", "ok"),
+    }
+    monkeypatch.setattr(merge, "merge_worktree", lambda _r, name, **_kwargs: outcomes[name])
+    monkeypatch.setattr(policy, "record_rework", lambda *_a: 1)
+    scopes = {"ba": ("src/shared.py",), "bb": ("src/*.py",)}
+    monkeypatch.setattr(
+        merge.decompose, "bead_class_and_scope", lambda _r, bead: ("task", scopes[bead])
+    )
+    calls: list[list[str]] = []
+    monkeypatch.setattr(merge.br, "try_run_br", lambda _r, args: calls.append(args) or _Proc(0))
+
+    results = merge.merge_queue(tmp_path, [("a", "ba"), ("b", "bb")])
+
+    # "bb" landed *after* "ba" bounced, and is still named — an incremental
+    # attribution had nothing to blame at the bounce and recorded no edge.
+    assert results[0].bounced and results[0].couplings == ("bb",)
+    assert ["dep", "add", "ba", "bb", "-t", "related"] in calls
+
+
+def test_merge_queue_records_no_coupling_outside_the_conflicting_scope(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A landing whose declared scope cannot match the conflicting path is not blamed."""
+    outcomes = {
+        "a": merge.MergeResult("a", "merged", "ok"),
+        "b": merge.MergeResult(
+            "b", "rebase-conflicts", "conflicts in: src/shared.py", conflicts=("src/shared.py",)
+        ),
+    }
+    monkeypatch.setattr(merge, "merge_worktree", lambda _r, name, **_kwargs: outcomes[name])
+    monkeypatch.setattr(policy, "record_rework", lambda *_a: 1)
+    scopes = {"ba": ("docs/**",), "bb": ("src/shared.py",)}
+    monkeypatch.setattr(
+        merge.decompose, "bead_class_and_scope", lambda _r, bead: ("task", scopes[bead])
+    )
+    calls: list[list[str]] = []
+    monkeypatch.setattr(merge.br, "try_run_br", lambda _r, args: calls.append(args) or _Proc(0))
+
+    results = merge.merge_queue(tmp_path, [("a", "ba"), ("b", "bb")])
+
+    assert results[1].bounced and results[1].couplings == ()
+    assert not any(call[:2] == ["dep", "add"] for call in calls)
+
+
+def test_merge_queue_records_no_coupling_when_the_scope_is_unreadable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A bead with no declared ``## Scope`` cannot be shown to own the path.
+
+    Attribution costs the graph an edge rather than inventing one — a wrong edge
+    would teach the next decomposition a coupling that does not exist.
+    """
+    outcomes = {
+        "a": merge.MergeResult("a", "merged", "ok"),
+        "b": merge.MergeResult(
+            "b", "rebase-conflicts", "conflicts in: src/shared.py", conflicts=("src/shared.py",)
+        ),
+    }
+    monkeypatch.setattr(merge, "merge_worktree", lambda _r, name, **_kwargs: outcomes[name])
+    monkeypatch.setattr(policy, "record_rework", lambda *_a: 1)
+    monkeypatch.setattr(merge.decompose, "bead_class_and_scope", lambda _r, _bead: None)
+    calls: list[list[str]] = []
+    monkeypatch.setattr(merge.br, "try_run_br", lambda _r, args: calls.append(args) or _Proc(0))
+
+    results = merge.merge_queue(tmp_path, [("a", "ba"), ("b", "bb")])
+
+    assert results[1].bounced and results[1].couplings == ()
+    assert not any(call[:2] == ["dep", "add"] for call in calls)
 
 
 def test_merge_queue_bounce_records_no_coupling_without_paths(
@@ -503,6 +575,63 @@ def test_missed_couplings_ignores_a_tracker_collision() -> None:
     assert merge.missed_couplings((".beads/issues.jsonl",), landed) == ()
     # A real path in the same conflict still attributes, and only to whoever landed it.
     assert merge.missed_couplings((".beads/issues.jsonl", "src/x.py"), landed) == ("b",)
+
+
+def test_coupled_lanes_reads_the_declared_scope_not_the_landed_diff() -> None:
+    """A glob that can match the conflicting path names its lane (kjc5.32)."""
+    scopes = {"wide": ("src/**",), "narrow": ("src/shared.py",), "elsewhere": ("docs/**",)}
+    assert merge.coupled_lanes(("src/shared.py",), scopes, bounced="me") == ("narrow", "wide")
+    assert merge.coupled_lanes(("src/other.py",), scopes, bounced="me") == ("wide",)
+    assert merge.coupled_lanes(("README.md",), scopes, bounced="me") == ()
+    assert merge.coupled_lanes((), scopes, bounced="me") == ()
+
+
+def test_coupled_lanes_is_free_of_dict_order_and_never_self_blames() -> None:
+    """The result is a function of the inputs alone, so no insertion order leaks in."""
+    scopes = {"z": ("src/shared.py",), "a": ("src/shared.py",), "self": ("src/shared.py",)}
+    forward = merge.coupled_lanes(("src/shared.py",), scopes, bounced="self")
+    backward = merge.coupled_lanes(
+        ("src/shared.py",), dict(reversed(list(scopes.items()))), bounced="self"
+    )
+    assert forward == ("a", "z") and backward == forward
+
+
+def test_coupled_lanes_ignores_a_tracker_collision() -> None:
+    """The engine rewrites .beads on every landing, so it evidences no coupling."""
+    scopes = {"a": (".beads/**",), "b": ("src/x.py",)}
+    assert merge.coupled_lanes((".beads/issues.jsonl",), scopes, bounced="me") == ()
+    assert merge.coupled_lanes((".beads/issues.jsonl", "src/x.py"), scopes, bounced="me") == ("b",)
+
+
+def test_attribute_couplings_considers_every_landing_of_the_pass(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Order-free by construction: the whole pass's landings are the candidate set."""
+    scopes = {"early": ("docs/**",), "late": ("src/shared.py",)}
+    monkeypatch.setattr(
+        merge.decompose, "bead_class_and_scope", lambda _r, bead: ("task", scopes[bead])
+    )
+    collisions = [("bounced", ("src/shared.py",))]
+
+    forward = merge.attribute_couplings(tmp_path, collisions, ["early", "late"])
+    backward = merge.attribute_couplings(tmp_path, collisions, ["late", "early"])
+
+    assert forward == {"bounced": ("late",)} and backward == forward
+    # Nothing landed, so there is nothing the pass can attribute against.
+    assert merge.attribute_couplings(tmp_path, collisions, []) == {}
+
+
+def test_record_coupling_writes_the_pair_in_a_canonical_direction(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The edge must not encode which lane bounced (D9, basicly-kjc5.32)."""
+    calls: list[list[str]] = []
+    monkeypatch.setattr(merge.br, "try_run_br", lambda _r, args: calls.append(args) or _Proc(0))
+
+    merge.record_coupling(tmp_path, "epic.2", "epic.1")
+    merge.record_coupling(tmp_path, "epic.1", "epic.2")
+
+    assert calls == [["dep", "add", "epic.1", "epic.2", "-t", "related"]] * 2
 
 
 def test_landing_order_lands_a_dependency_before_its_dependent(

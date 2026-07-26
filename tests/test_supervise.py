@@ -1445,13 +1445,20 @@ def _blocked_landing(
     )
 
 
-def test_route_bounces_a_collided_lane_and_lands_the_rest(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """A scope collision is the lane's problem, not the pass's (D5/kjc5.20)."""
+def _patch_collision_pass(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    collides: str,
+    scopes: dict[str, tuple[str, ...]],
+) -> list[tuple[str, str]]:
+    """A pass where *collides* bounces on ``src/shared.py`` and the rest land.
+
+    Declared scopes come from *scopes*, as ``## Scope`` on each bead would. Returns
+    the list the recorded coupling edges accumulate into.
+    """
 
     def advance(_r, issue_id, **_k):
-        if issue_id == "epic.2":
+        if issue_id == collides:
             return _blocked_landing(issue_id, "merge-conflicts", ("src/shared.py",))
         return loop.AdvanceResult(issue_id, "build", "verify", "merged", "landed")
 
@@ -1459,6 +1466,11 @@ def test_route_bounces_a_collided_lane_and_lands_the_rest(
     monkeypatch.setattr(supervise, "_landing_order", lambda _r, outcomes: list(outcomes))
     monkeypatch.setattr(supervise.merge, "head_sha", lambda _r: "sha")
     monkeypatch.setattr(supervise.merge, "changed_paths", lambda _r, _before: ("src/shared.py",))
+    monkeypatch.setattr(
+        supervise.merge.decompose,
+        "bead_class_and_scope",
+        lambda _r, bead: ("task", scopes[bead]) if bead in scopes else None,
+    )
     monkeypatch.setattr(
         supervise.policy,
         "approve_checkpoint_guarded",
@@ -1470,8 +1482,28 @@ def test_route_bounces_a_collided_lane_and_lands_the_rest(
         lambda _r, issue, kind, *_a, **_k: decisions_item(issue, kind),
     )
     couplings: list[tuple[str, str]] = []
-    monkeypatch.setattr(
-        supervise.merge, "record_coupling", lambda _r, bead, on: couplings.append((bead, on))
+
+    def try_run_br(_r, args):
+        # The edge exactly as `br` receives it, so its *direction* is asserted too.
+        if args[:2] == ["dep", "add"]:
+            couplings.append((args[2], args[3]))
+
+    monkeypatch.setattr(supervise.merge.br, "try_run_br", try_run_br)
+    return couplings
+
+
+def test_route_bounces_a_collided_lane_and_lands_the_rest(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A scope collision is the lane's problem, not the pass's (D5/kjc5.20)."""
+    couplings = _patch_collision_pass(
+        monkeypatch,
+        collides="epic.2",
+        scopes={
+            "epic.1": ("src/shared.py",),
+            "epic.2": ("src/shared.py",),
+            "epic.3": ("docs/**",),
+        },
     )
 
     outcomes = tuple(_executed_outcome(f"epic.{n}") for n in (1, 2, 3))
@@ -1480,9 +1512,80 @@ def test_route_bounces_a_collided_lane_and_lands_the_rest(
     )
 
     assert [r.route for r in routed] == ["merged", "bounced", "merged"]  # epic.3 not held
-    assert couplings == [("epic.2", "epic.1")]  # epic.1 landed the colliding path
+    # epic.1 declared the colliding path; epic.3 landed too but its scope is elsewhere.
+    assert couplings == [("epic.1", "epic.2")]
     assert "coupling recorded on epic.1" in routed[1].detail
     assert supervise.should_continue(routed) is True
+
+
+def test_route_records_the_same_coupling_edge_under_either_completion_order(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """D9: which lane lands first must not decide permanent graph state (kjc5.32).
+
+    Same plan, same declared scopes, the two lanes' completion order reversed — so
+    the other one is the bouncer. The recorded edge must be byte-identical, because
+    it is derived from the scopes and the conflicting path, not from the order.
+    """
+    scopes = {"epic.1": ("src/shared.py",), "epic.2": ("src/*.py",)}
+
+    def run(collides: str, order: tuple[str, ...]) -> list[tuple[str, str]]:
+        couplings = _patch_collision_pass(monkeypatch, collides=collides, scopes=scopes)
+        outcomes = tuple(_executed_outcome(issue_id) for issue_id in order)
+        supervise.route_outcomes(
+            tmp_path, _session(*(_lane(o.issue_id) for o in outcomes)), outcomes
+        )
+        return couplings
+
+    # epic.1 finishes first and lands, so epic.2 bounces — then the reverse.
+    forward = run("epic.2", ("epic.1", "epic.2"))
+    reversed_ = run("epic.1", ("epic.2", "epic.1"))
+
+    assert forward == [("epic.1", "epic.2")]
+    assert reversed_ == forward
+
+
+def test_route_attributes_a_bounce_against_a_lane_that_landed_after_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Attribution is over the whole pass, not the prefix that preceded the bounce.
+
+    The colliding lane routes *second*, so an incremental attribution had nothing
+    to blame and recorded no edge at all (kjc5.32).
+    """
+    couplings = _patch_collision_pass(
+        monkeypatch,
+        collides="epic.1",
+        scopes={"epic.1": ("src/shared.py",), "epic.2": ("src/shared.py",)},
+    )
+
+    outcomes = tuple(_executed_outcome(f"epic.{n}") for n in (1, 2))
+    routed = supervise.route_outcomes(
+        tmp_path, _session(*(_lane(o.issue_id) for o in outcomes)), outcomes
+    )
+
+    assert [r.route for r in routed] == ["bounced", "merged"]
+    assert couplings == [("epic.1", "epic.2")]
+    assert "coupling recorded on epic.2" in routed[0].detail
+
+
+def test_route_records_no_coupling_onto_a_lane_outside_the_conflicting_scope(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A landing whose declared scope cannot match the conflicting path is not blamed."""
+    couplings = _patch_collision_pass(
+        monkeypatch,
+        collides="epic.2",
+        scopes={"epic.1": ("docs/**",), "epic.2": ("src/shared.py",)},
+    )
+
+    outcomes = tuple(_executed_outcome(f"epic.{n}") for n in (1, 2))
+    routed = supervise.route_outcomes(
+        tmp_path, _session(*(_lane(o.issue_id) for o in outcomes)), outcomes
+    )
+
+    assert [r.route for r in routed] == ["merged", "bounced"] and couplings == []
+    assert "coupling recorded" not in routed[1].detail
 
 
 def test_route_bounce_records_no_coupling_when_nothing_landed_the_paths(
