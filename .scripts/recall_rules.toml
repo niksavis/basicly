@@ -1,0 +1,102 @@
+# Rule inventory for the always-on recall measurement (basicly-agzx.1).
+#
+# One entry per bullet in the projected always-on baseline, keyed by
+# `<section-slug>.<n>` as `recall_eval.py --inventory` derives it from the file.
+#
+# `text` is a drift guard, not documentation: the harness re-derives each rule
+# from the live baseline and refuses to score when the stored prefix no longer
+# matches. A reworded rule almost always needs reworded anchors, and silently
+# scoring the old anchors against new text is how a recall number becomes
+# fiction. Re-review the anchors, then update `text`.
+#
+# `anchors` is a list of groups. A rule counts as recalled when EVERY group has
+# at least one of its terms matching the response, each term applied as a
+# case-insensitive regular expression (so `validate.*input` spans a phrase).
+# So a group is "any of these synonyms" and the list is "all of these ideas".
+# Single-group entries are the common case: the question is whether the rule was
+# mentioned at all, not whether it was quoted.
+#
+# Deliberately literal rather than semantic. A judged scorer would cost tokens
+# per run and drift between runs, and Phase 4 has to re-run this to show
+# improvement — so the scorer has to be free and stable. The cost is paraphrase
+# misses, which bias every arm in the same direction and so leave the
+# baseline-versus-control comparison sound.
+
+[rules]
+
+"require-explicit-confirmation.1" = { text = "Force-push, history rewrite, destructive resets", anchors = [["force-push", "force push", "history rewrite", "rm -rf", ".env"]] }
+"require-explicit-confirmation.2" = { text = "Deleting files/branches/data beyond explicit task scope", anchors = [["delet", "remov"], ["scope", "beyond"]] }
+"require-explicit-confirmation.3" = { text = "Editing CI/CD, deployment, infra-as-code, or ignore/secrets", anchors = [["ci/cd", "ci / cd", " ci ", "deployment", "infra"]] }
+"require-explicit-confirmation.4" = { text = "Adding/removing/upgrading dependencies", anchors = [["dependenc", "package"]] }
+"require-explicit-confirmation.5" = { text = "New network calls outside task scope", anchors = [["network"]] }
+"require-explicit-confirmation.6" = { text = "IMPORTANT: never defeat a gate to force success", anchors = [["gate", "--no-verify", "no-verify", "hook"], ["skip", "weaken", "defeat", "bypass", "disabl"]] }
+
+"knowledge-priming.1" = { text = "Before non-trivial work, load repo-specific context", anchors = [["readme", "architecture doc", "repo-specific context", "repo context", "load .*context"]] }
+"knowledge-priming.2" = { text = "If no repo context covers a decision, say so and proceed", anchors = [["stated assumption", "state.*assumption", "proceed on"]] }
+
+"project-defaults.1" = { text = "Platforms: Windows, Linux, macOS", anchors = [["windows"], ["macos", "mac os", "darwin"]] }
+"project-defaults.2" = { text = "Script harness and CI helpers: .scripts/", anchors = [[".scripts"]] }
+"project-defaults.3" = { text = "Shared skills: .claude/skills/", anchors = [[".claude/skills"]] }
+
+"project-overview.1" = { text = "Purpose: harness distribution for coding agents", anchors = [["yaml catalog", "catalog projected", "projected into", "harness distribution"]] }
+"project-overview.2" = { text = "Stack: Python 3.14+, managed with uv", anchors = [["python"], ["uv"]] }
+"project-overview.3" = { text = "Entry point: the basicly CLI", anchors = [[".basicly/core", ".basicly-local", "src/basicly/cli.py"]] }
+"project-overview.4" = { text = "Architecture: docs/architecture/architecture.md", anchors = [["architecture.md", "docs/architecture"]] }
+
+"secure-coding.1" = { text = "Validate and sanitize external input at trust boundaries", anchors = [["trust boundar", "sanitiz", "validate.*input"]] }
+"secure-coding.2" = { text = "Parameterize shell commands and queries", anchors = [["parameteriz", "never concatenat", "concatenat"]] }
+"secure-coding.3" = { text = "Never commit secrets", anchors = [["secret", "credential"]] }
+"secure-coding.4" = { text = "Don't leak internal detail (stack traces, paths)", anchors = [["stack trace", "internal detail", "generic message", "leak"]] }
+"secure-coding.5" = { text = "Never commit user- or machine-specific paths", anchors = [["machine-specific", "machine specific", "hostname", "username", "absolute path"]] }
+
+"git-discipline.1" = { text = "Run git commit as its own command; never chain", anchors = [["own command", "never chain", "chain"], ["commit"]] }
+"git-discipline.2" = { text = "Commits are gated by commit-msg hooks (Conventional Commits", anchors = [["conventional commit"]] }
+"git-discipline.3" = { text = "When a hook rejects a commit, fix the reported cause", anchors = [["hook"], ["reject", "fail"]] }
+
+"decision-protocol.1" = { text = "Decide yourself when grounded in inspected code/docs", anchors = [["decide yourself", "low-impact", "reversible"]] }
+"decision-protocol.2" = { text = "Stop and ask when a needed fact can't be found", anchors = [["stop and ask", "ask when", "sources conflict"]] }
+"decision-protocol.3" = { text = "State exactly what's missing and what answer would unblock", anchors = [["unblock", "what is missing", "what's missing"]] }
+"decision-protocol.4" = { text = "If rules conflict, prefer safety/security boundaries", anchors = [["conflict"], ["safety", "security"]] }
+"decision-protocol.5" = { text = "If repeated attempts at one approach fail, report the pattern", anchors = [["repeated attempt", "different approach", "instead of retrying", "retry"]] }
+
+"core-rules.1" = { text = "Keep diffs minimal; avoid unrelated refactors", anchors = [["diff", "refactor"], ["minimal", "unrelated", "small"]] }
+"core-rules.2" = { text = "Solve the stated requirement only", anchors = [["speculative", "unrequested", "stated requirement", "only what"]] }
+"core-rules.3" = { text = "Reuse before reinventing", anchors = [["reuse", "reinvent", "existing helper"]] }
+"core-rules.4" = { text = "Fix the root cause, not the symptom", anchors = [["root cause"]] }
+"core-rules.5" = { text = "Back claims with evidence", anchors = [["evidence"]] }
+"core-rules.6" = { text = "Keep code clean: no dead code, debug prints", anchors = [["dead code", "debug print", "swallow"]] }
+"core-rules.7" = { text = "Match existing style and naming conventions", anchors = [["existing style", "match.*convention", "naming convention", "surrounding code"]] }
+"core-rules.8" = { text = "Use deterministic tests; add regression tests for bug fixes", anchors = [["regression test", "deterministic test"]] }
+
+"harness-loop.1" = { text = "Drive non-trivial work through the basicly harness loop", anchors = [["harness loop", "harness-loop", "loop"], ["br ", "tracker", "single source of truth"]] }
+
+"quality-gate.1" = { text = "Review the diff before finishing, then exercise the change", anchors = [["exercise", "really be used", "run it"]] }
+"quality-gate.2" = { text = "Run the repo's existing checks on anything touched", anchors = [["re-run", "rerun", "after the final edit", "existing check"]] }
+"quality-gate.3" = { text = "Confirm success from the explicit pass/fail summary line", anchors = [["summary line", "pass/fail", "truncat"]] }
+"quality-gate.4" = { text = "State only the verification scope actually exercised", anchors = [["did not run", "verification scope", "expected to work"]] }
+
+"use.1" = { text = "Read this file before acting; re-read after context resets", anchors = [["context reset", "re-read", "reread"]] }
+"use.2" = { text = "User instructions in the current task override this file", anchors = [["user instruction"], ["override"]] }
+"use.3" = { text = "More specific path-scoped instructions override this file", anchors = [["path-scoped", "path scoped", "more specific"]] }
+
+"catalog-authoring.1" = { text = "Author catalog content as YAML sources, never a discoverable", anchors = [["catalog"], ["yaml"]] }
+
+"claude-specific-notes.1" = { text = "Put reusable skills in .claude/skills/", anchors = [[".claude/skills", "reusable skill"]] }
+"claude-specific-notes.2" = { text = "Put path-scoped rules in .claude/rules/", anchors = [[".claude/rules"]] }
+"claude-specific-notes.3" = { text = "Put Claude-only prompts/commands/runbooks in .claude/", anchors = [["runbook", "claude-only", ".claude/*.md"]] }
+
+# Each family's own section. Only one of these blocks is derivable from any given
+# baseline, so the orphan check runs against the union across measured families.
+"copilot-specific-notes.1" = { text = "Path-scoped rules live in .claude/rules/", anchors = [[".claude/rules"]] }
+"copilot-specific-notes.2" = { text = "Prefer skills over prompt files", anchors = [["prompt file", "\\.prompt\\.md"], ["skill"]] }
+"copilot-specific-notes.3" = { text = "Put custom agents in .github/agents/", anchors = [[".github/agents"]] }
+"copilot-specific-notes.4" = { text = "Shared skills in .claude/skills/ are read by Claude and Copilot alike", anchors = [[".claude/skills"]] }
+
+"self-improvement-retro.1" = { text = "When a session hits a real rejection or user-corrected mistake", anchors = [["retro"]] }
+
+"session-completion.1" = { text = "Before ending, close out per the session-finish skill", anchors = [["pickup-clean", "pickup clean", "session-finish", "session finish"]] }
+
+"non-interactive-shell.1" = { text = "Prefer cross-platform implementations over shell-specific", anchors = [["cross-platform", "cross platform", "shell-specific"]] }
+"non-interactive-shell.2" = { text = "Use non-interactive flags (cp -f, mv -f, rm -f", anchors = [["non-interactive", "noninteractive", "batchmode", "-y"]] }
+
+"tool-usage.1" = { text = "Retrieval ladder: find files by name, localize with focused search", anchors = [["retrieval ladder", "localize", "read only the ranges", "bulk-load"]] }
