@@ -306,11 +306,17 @@ def _on_ship(ctx: _Ctx) -> AdvanceResult:
                 "recorded out-of-band?); re-run the build->verify advance to land it first",
             )
         worktree.cleanup(binding.name, force=False, repo_root=ctx.repo_root)
+    # Before the close, and before the tracker commit that flushes it: a rollup
+    # written after that commit would sit in the local db only, and the whole point
+    # of it is to travel with the clone (basicly-kjc5.50).
+    rolled = _record_cost_rollup(ctx)
     _run_br(ctx.repo_root, ["close", ctx.issue_id, "--reason", "shipped by the harness loop"])
     committed = merge.commit_tracker_state(
         ctx.repo_root, ctx.issue_id, action="close the shipped track"
     )
     detail = "worktree torn down and issue closed"
+    if rolled:
+        detail += "; cost rollup recorded"
     if committed:
         detail += "; tracker state committed"
     else:
@@ -321,6 +327,55 @@ def _on_ship(ctx: _Ctx) -> AdvanceResult:
         # without the tracker state and found out later (basicly-f7li).
         detail += _skipped_tracker_suffix(ctx)
     return _moved(ctx, "done", "tore-down", detail)
+
+
+def _record_cost_rollup(ctx: _Ctx) -> bool:
+    """Write the shipped package's forecast-vs-actual cost onto its bead (kjc5.50).
+
+    The history is machine-local otherwise: run-records live in the self-ignored
+    ``.basicly/usage/``, so a fresh clone would forecast this package's class from
+    the seed factors and never learn what the package actually cost. The bead is
+    the only carrier that survives a clone, so the rollup goes there — the forecast
+    that was made beside the actual it produced, summed over *every* dispatch
+    including the failed ones, plus the counts behind it.
+
+    A node that was never dispatched — a decomposed feature, whose cost is its
+    children's packages — gets no rollup: it did not cost anything itself, and
+    counting it as a landed package would both double-count the work and dilute
+    cost-per-landed-package with a null.
+
+    Best-effort in full: this runs after the merge, on a package that has shipped.
+    Evidence is never worth failing a landing for, so any tracker or telemetry
+    failure returns False and the ship proceeds.
+    """
+    try:
+        history = run_record.dispatch_history(ctx.repo_root).get(ctx.issue_id, [])
+        if not history:
+            return False
+        rework: int | None = None
+        with contextlib.suppress(RuntimeError, ValueError, OSError):
+            rework = policy.rework_recorded(ctx.repo_root, ctx.issue_id)
+        info = decompose.bead_class_and_scope(ctx.repo_root, ctx.issue_id)
+        task_class, scope = info if info is not None else (None, ())
+        # Money is never recomputed — the forecast carries tokens only, from the
+        # estimate the governor froze when it accepted this package's plan.
+        estimate = (
+            decompose.forecast_for(ctx.repo_root, task_class, scope)
+            if task_class is not None
+            else None
+        )
+        forecast = run_record.CostForecast(tokens=estimate.total if estimate else None)
+        ident = run_record.record_cost_marker(
+            ctx.repo_root,
+            ctx.issue_id,
+            actual=run_record.cost_rollup(history, rework=rework),
+            forecast=forecast,
+            task_class=task_class,
+            scope_tokens=estimate.scope_tokens if estimate else None,
+        )
+    except RuntimeError, ValueError, OSError:
+        return False
+    return ident is not None
 
 
 def _skipped_tracker_suffix(ctx: _Ctx) -> str:

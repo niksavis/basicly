@@ -363,3 +363,208 @@ def test_record_marker_tolerates_br_being_unavailable(
     monkeypatch.setattr(run_record.br, "try_run_br", lambda *_a: None)
     entry = _entry(prompt_sha256="cafe", phase="build")
     assert run_record.record_marker(tmp_path, "basicly-x", entry) is None
+
+
+# --- Ship-time cost rollup (basicly-kjc5.50) ---------------------------------
+
+
+def _export(repo_root: Path, *records: dict) -> None:
+    """Write a committed tracker export — the artifact a fresh clone has."""
+    beads = repo_root / ".beads"
+    beads.mkdir(parents=True, exist_ok=True)
+    lines = [json.dumps(record) for record in records]
+    (beads / "issues.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _run_comment(**payload) -> dict:
+    ident = payload.pop("id", "basicly-x#run-1")
+    return {"text": f"{run_record.MARKER} id={ident} phase=build\n{json.dumps(payload)}"}
+
+
+def test_cost_rollup_sums_every_dispatch_including_the_failed_ones() -> None:
+    """The actual is the whole package: a cheap final attempt never hides an expensive one."""
+    history = [
+        {"outcome": FAILED, "tokens": 30_000, "cost": 0.60, "duration_s": 400.0},
+        {"outcome": EXECUTED, "tokens": 12_000, "cost": 0.24, "duration_s": 100.5},
+        {"outcome": HANDOFF},  # nothing executed: counted as a dispatch, meters nothing
+    ]
+    rolled = run_record.cost_rollup(history, rework=1)
+    assert rolled.dispatches == 3
+    assert rolled.tokens == 42_000
+    assert rolled.cost == pytest.approx(0.84)
+    assert rolled.wall_clock_s == pytest.approx(500.5)
+    assert rolled.rework == 1
+    assert rolled.estimated is False
+
+
+def test_cost_rollup_reports_none_for_what_was_never_metered() -> None:
+    """An unmetered package reads as null, never as a measured zero."""
+    rolled = run_record.cost_rollup([{"outcome": HANDOFF}, {"outcome": HANDOFF}])
+    assert rolled.dispatches == 2
+    assert rolled.tokens is None and rolled.cost is None and rolled.wall_clock_s is None
+    assert rolled.rework is None  # unreadable rework markers stay unclaimed
+
+
+def test_cost_rollup_flags_an_estimated_sample() -> None:
+    """A chars/4 transcript estimate in the sum is declared, so a consumer can down-weight it."""
+    history = [{"tokens": 10, "estimated": False}, {"tokens": 90, "estimated": True}]
+    assert run_record.cost_rollup(history).estimated is True
+
+
+def test_record_cost_marker_writes_the_forecast_beside_the_actual(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One marker carries the pair, the counts, and the class the sample belongs to."""
+    calls: list[list[str]] = []
+
+    def _try_run_br(_repo, args):
+        calls.append(args)
+        if args[:2] == ["comments", "list"]:
+            return SimpleNamespace(returncode=0, stdout="[]")
+        return SimpleNamespace(returncode=0, stdout="")
+
+    monkeypatch.setattr(run_record.br, "try_run_br", _try_run_br)
+    ident = run_record.record_cost_marker(
+        tmp_path,
+        "basicly-x",
+        actual=run_record.cost_rollup(
+            [{"tokens": 12_000, "cost": 0.3, "duration_s": 60.0}], rework=2
+        ),
+        forecast=run_record.CostForecast(tokens=24_000),
+        task_class="task",
+        scope_tokens=8_000,
+    )
+
+    assert ident == "basicly-x#cost"
+    add = next(c for c in calls if c[:2] == ["comments", "add"])
+    header, payload = add[3].split("\n", 1)
+    assert header == f"{run_record.COST_MARKER} id=basicly-x#cost"
+    body = json.loads(payload)
+    assert body["task_class"] == "task" and body["scope_tokens"] == 8_000
+    assert body["forecast"]["tokens"] == 24_000
+    assert body["actual"] == {
+        "dispatches": 1,
+        "tokens": 12_000,
+        "cost": 0.3,
+        "wall_clock_s": 60.0,
+        "rework": 2,
+        "estimated": False,
+    }
+    # Money is never forecast, and wall-clock waits on the duration predictor
+    # (basicly-kjc5.48) — both keys are present and null, not absent.
+    assert body["forecast"]["cost"] is None and body["forecast"]["wall_clock_s"] is None
+
+
+def test_record_cost_marker_never_writes_a_second_rollup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One package, one ledger entry: a re-record would double-count it."""
+    recorded: list[str] = []
+
+    def _try_run_br(_repo, args):
+        if args[:2] == ["comments", "list"]:
+            return SimpleNamespace(returncode=0, stdout=json.dumps([{"text": t} for t in recorded]))
+        if args[:2] == ["comments", "add"]:
+            recorded.append(args[3])
+        return SimpleNamespace(returncode=0, stdout="")
+
+    monkeypatch.setattr(run_record.br, "try_run_br", _try_run_br)
+    rollup = run_record.cost_rollup([{"tokens": 1}])
+    forecast = run_record.CostForecast()
+    first = run_record.record_cost_marker(tmp_path, "b-1", actual=rollup, forecast=forecast)
+    second = run_record.record_cost_marker(tmp_path, "b-1", actual=rollup, forecast=forecast)
+
+    assert first == "b-1#cost" and second is None
+    assert len(recorded) == 1
+
+
+def test_record_cost_marker_reports_nothing_written_when_br_refuses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed write is not a recorded rollup — the caller must not claim one."""
+    monkeypatch.setattr(
+        run_record.br,
+        "try_run_br",
+        lambda *_a: SimpleNamespace(returncode=2, stdout=""),
+    )
+    written = run_record.record_cost_marker(
+        tmp_path,
+        "b-1",
+        actual=run_record.cost_rollup([]),
+        forecast=run_record.CostForecast(),
+    )
+    assert written is None
+
+
+def test_tracker_history_reads_the_dispatches_a_clone_would_see(tmp_path: Path) -> None:
+    """The export carries comments, so the ledger travels where .basicly/usage cannot."""
+    _export(
+        tmp_path,
+        {
+            "id": "b-1",
+            "comments": [
+                _run_comment(id="b-1#run-a", tokens=100, timestamp="2026-07-26T10:00:00+00:00"),
+                {"text": "[harness-info] not a dispatch"},
+            ],
+        },
+        {"id": "b-2", "comments": []},
+    )
+    history = run_record.tracker_history(tmp_path)
+    assert list(history) == ["b-1"]
+    assert history["b-1"][0]["tokens"] == 100
+
+
+def test_dispatch_history_unions_local_records_with_the_tracker_once(tmp_path: Path) -> None:
+    """A dispatch recorded in both places is one sample, not two."""
+    entry = _entry(tokens=100, prompt_sha256="cafe", phase="build")
+    run_record.record(tmp_path, "b-1", entry)
+    _export(
+        tmp_path,
+        {
+            "id": "b-1",
+            "comments": [_run_comment(tokens=100, timestamp=entry.timestamp)],
+        },
+        {
+            "id": "b-2",  # only the tracker knows this one: another machine ran it
+            "comments": [_run_comment(tokens=7, timestamp="2026-07-26T09:00:00+00:00")],
+        },
+    )
+    history = run_record.dispatch_history(tmp_path)
+    assert len(history["b-1"]) == 1
+    assert len(history["b-2"]) == 1
+
+
+def _cost_comment(bead: str, **actual) -> dict:
+    payload = {"bead": bead, "forecast": {"tokens": None}, "actual": actual}
+    return {"text": f"{run_record.COST_MARKER} id={bead}#cost\n{json.dumps(payload)}"}
+
+
+def test_landed_package_cost_is_computable_from_the_tracker_alone(tmp_path: Path) -> None:
+    """Cost per landed package needs the export only — no local usage file (basicly-7bur)."""
+    _export(
+        tmp_path,
+        {
+            "id": "b-1",
+            "comments": [_cost_comment("b-1", dispatches=2, tokens=30_000, cost=0.6)],
+        },
+        {
+            "id": "b-2",
+            "comments": [_cost_comment("b-2", dispatches=1, tokens=10_000, cost=0.2)],
+        },
+        {"id": "b-3", "comments": [{"text": "[harness-info] never shipped"}]},
+    )
+    assert not (tmp_path / run_record.USAGE_DIR).exists()
+
+    landed = run_record.landed_package_cost(tmp_path)
+    assert landed.packages == 2
+    assert landed.tokens == 40_000
+    assert landed.cost == pytest.approx(0.8)
+    assert landed.per_package("cost") == pytest.approx(0.4)
+    assert landed.per_package("tokens") == pytest.approx(20_000)
+    assert landed.per_package("wall_clock_s") is None  # never metered, never invented
+
+
+def test_landed_package_cost_without_an_export(tmp_path: Path) -> None:
+    """No tracker export means no landed packages, not a crash."""
+    landed = run_record.landed_package_cost(tmp_path)
+    assert landed.packages == 0 and landed.per_package("cost") is None

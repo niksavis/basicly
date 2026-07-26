@@ -25,6 +25,7 @@ import hashlib
 import json
 import os
 import threading
+from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, fields
 from datetime import UTC, datetime
 from pathlib import Path
@@ -249,7 +250,7 @@ def marker_id(bead_id: str, prompt_sha256: str, phase: str, attempt: int = 1) ->
     return f"{bead_id}#run-{suffix}"
 
 
-def _recorded_marker_ids(repo_root: Path, bead_id: str) -> set[str]:
+def _recorded_marker_ids(repo_root: Path, bead_id: str, marker: str = MARKER) -> set[str]:
     """Marker ids already recorded on *bead_id*; empty when br cannot answer."""
     proc = br.try_run_br(repo_root, ["comments", "list", bead_id, "--json"])
     if proc is None or proc.returncode != 0:
@@ -264,8 +265,8 @@ def _recorded_marker_ids(repo_root: Path, bead_id: str) -> set[str]:
     for comment in comments:
         text = comment.get("text", "") if isinstance(comment, dict) else ""
         for line in text.splitlines():
-            if line.startswith(f"{MARKER} id="):
-                found.add(line[len(f"{MARKER} id=") :].split()[0])
+            if line.startswith(f"{marker} id="):
+                found.add(line[len(f"{marker} id=") :].split()[0])
     return found
 
 
@@ -292,3 +293,238 @@ def record_marker(repo_root: Path, bead_id: str, run_record: RunRecord) -> str |
     if br.try_run_br(repo_root, ["comments", "add", bead_id, body]) is None:
         return None
     return ident
+
+
+def marker_payloads(texts: Iterable[str], marker: str = MARKER) -> list[dict]:
+    """The JSON payloads carried by *marker* comments among *texts*, in order.
+
+    The reader half of the marker format: a header line naming the marker and its
+    id, then one JSON object. A comment that is not this marker, or whose payload
+    will not parse, is skipped — the ledger is read best-effort everywhere.
+    """
+    payloads: list[dict] = []
+    for text in texts:
+        head, _, body = text.strip().partition("\n")
+        if not (head == marker or head.startswith(f"{marker} ")):
+            continue
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            payloads.append(payload)
+    return payloads
+
+
+def tracker_history(repo_root: Path) -> dict[str, list[dict]]:
+    """Per-dispatch records per bead id, read from the committed tracker export.
+
+    The travelling twin of :func:`load_run_records`: ``.basicly/usage/`` is
+    self-ignored and never leaves the machine that wrote it, while every dispatch
+    also writes a ``[harness-run]`` marker and comments are exported. So this is
+    the same telemetry as seen by a fresh clone — no br invocation, no local
+    usage file (D10/D11).
+    """
+    history: dict[str, list[dict]] = {}
+    for record in br.export_records(repo_root):
+        payloads = marker_payloads(br.export_comment_texts(record))
+        if payloads:
+            history[str(record["id"])] = payloads
+    return history
+
+
+def dispatch_history(repo_root: Path) -> dict[str, list[dict]]:
+    """Every known dispatch per bead: the tracker's markers unioned with local records.
+
+    Two sources, one sample set. The tracker carries what travels (including
+    dispatches other machines ran); the local records carry what this machine has
+    recorded but not yet flushed and committed. A dispatch present in both is one
+    sample, deduplicated on its timestamp — counting it twice would double-weight
+    it in a calibration median and overstate a package's cost.
+    """
+    history: dict[str, list[dict]] = {}
+    seen: set[tuple[str, str]] = set()
+    for source in (tracker_history(repo_root), load_run_records(repo_root) or {}):
+        for bead_id, entries in source.items():
+            if not isinstance(entries, list):
+                continue
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                stamp = entry.get("timestamp")
+                if isinstance(stamp, str) and stamp:
+                    key = (bead_id, stamp)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                history.setdefault(bead_id, []).append(entry)
+    return history
+
+
+# --- Ship-time cost rollup (basicly-kjc5.50) ---------------------------------
+
+# The package-level ledger: one marker per shipped bead carrying the forecast that
+# was made and the actual it produced. Its reason for existing is not that the
+# per-dispatch markers are lossy — comments are exported and every record here is
+# compaction level 0 — but that a *package* cost is the unit forecasting and
+# cost-per-landed-package are expressed in, and deriving it means re-walking every
+# dispatch of a bead that may since have been compacted. Written by the engine at
+# ship, never hand-edited, and nothing branches on it: evidence, not state (D11).
+COST_MARKER = "[harness-cost]"
+
+
+@dataclass(frozen=True)
+class CostRollup:
+    """What a package actually cost, summed over every dispatch it took.
+
+    Includes failed attempts and handoffs by construction: a rollup over the
+    successful dispatch alone would understate exactly those packages whose cheap
+    final attempt followed an expensive one. A metric stays None when no dispatch
+    reported it, so "nothing was metered" never reads as a measured zero.
+    """
+
+    dispatches: int
+    tokens: int | None = None
+    cost: float | None = None
+    wall_clock_s: float | None = None
+    # Null when the rework markers could not be read, so a tracker hiccup cannot
+    # publish a confident zero.
+    rework: int | None = None
+    # True when any summed sample was a chars/4 transcript estimate rather than
+    # adapter-reported usage, so a consumer can down-weight the total.
+    estimated: bool = False
+
+
+@dataclass(frozen=True)
+class CostForecast:
+    """The forecast a package was sized with, kept beside its actual.
+
+    The pair is the point: forecast error per class is the learning signal, and a
+    median of raw actuals cannot correct a biased estimator. Money is never
+    forecast — it is only ever the cost captured per run at the price of the day —
+    and wall-clock stays None until the duration predictor (basicly-kjc5.48)
+    supplies one.
+    """
+
+    tokens: int | None = None
+    cost: float | None = None
+    wall_clock_s: float | None = None
+
+
+def _numbers(entries: Iterable[Mapping[str, object]], key: str) -> list[float]:
+    """The numeric values recorded under *key*, skipping absent and non-numeric ones."""
+    values: list[float] = []
+    for entry in entries:
+        value = entry.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        values.append(float(value))
+    return values
+
+
+def cost_rollup(
+    history: Iterable[Mapping[str, object]], *, rework: int | None = None
+) -> CostRollup:
+    """Sum *history* — every dispatch on one bead — into a :class:`CostRollup`."""
+    entries = [entry for entry in history if isinstance(entry, Mapping)]
+    tokens = _numbers(entries, "tokens")
+    cost = _numbers(entries, "cost")
+    duration = _numbers(entries, "duration_s")
+    return CostRollup(
+        dispatches=len(entries),
+        tokens=round(sum(tokens)) if tokens else None,
+        cost=sum(cost) if cost else None,
+        wall_clock_s=sum(duration) if duration else None,
+        rework=rework,
+        estimated=any(entry.get("estimated") is True for entry in entries),
+    )
+
+
+def cost_marker_id(bead_id: str) -> str:
+    """The id of *bead_id*'s cost marker — one per package, so re-recording is a no-op."""
+    return f"{bead_id}#cost"
+
+
+# One keyword per recorded field, same as build_record: the payload is the point.
+def record_cost_marker(  # noqa: PLR0913
+    repo_root: Path,
+    bead_id: str,
+    *,
+    actual: CostRollup,
+    forecast: CostForecast,
+    task_class: str | None = None,
+    scope_tokens: int | None = None,
+) -> str | None:
+    """Write *bead_id*'s ``[harness-cost]`` rollup; None when nothing was written.
+
+    Nothing is written when br is unavailable, when the write fails, or when the
+    package already carries a rollup — the marker is the package's ledger entry
+    and a second one would double-count it in cost-per-landed-package.
+
+    Nulls are kept in the payload rather than dropped: a consumer computing
+    forecast error has to tell "no forecast was made" apart from a missing field,
+    and the ledger is read by programs, not only by people.
+    """
+    if cost_marker_id(bead_id) in _recorded_marker_ids(repo_root, bead_id, COST_MARKER):
+        return None
+    ident = cost_marker_id(bead_id)
+    payload = {
+        "bead": bead_id,
+        "task_class": task_class,
+        "scope_tokens": scope_tokens,
+        "forecast": asdict(forecast),
+        "actual": asdict(actual),
+    }
+    body = f"{COST_MARKER} id={ident}\n{json.dumps(payload, sort_keys=True)}"
+    proc = br.try_run_br(repo_root, ["comments", "add", bead_id, body])
+    if proc is None or proc.returncode != 0:
+        return None
+    return ident
+
+
+@dataclass(frozen=True)
+class LandedCost:
+    """Cost aggregated over every landed package the tracker records (basicly-7bur)."""
+
+    packages: int
+    tokens: int | None = None
+    cost: float | None = None
+    wall_clock_s: float | None = None
+
+    def per_package(self, metric: str) -> float | None:
+        """The mean of *metric* per landed package; None when it was never metered."""
+        total = getattr(self, metric)
+        if total is None or not self.packages:
+            return None
+        return total / self.packages
+
+
+def landed_package_cost(repo_root: Path) -> LandedCost:
+    """Aggregate every ``[harness-cost]`` rollup in the committed tracker export.
+
+    The cost-per-landed-package unit, computable from the tracker alone: the
+    marker is written only at ship, so one marker is one landed package. A fresh
+    clone with no ``.basicly/usage/`` answers this as fully as the machine that
+    ran the work.
+    """
+    packages = 0
+    actuals: list[dict] = []
+    for record in br.export_records(repo_root):
+        rollups = marker_payloads(br.export_comment_texts(record), COST_MARKER)
+        if not rollups:
+            continue
+        # One marker is one landed package even when its payload is malformed —
+        # dropping the package from the denominator would flatter the average.
+        packages += 1
+        actual = rollups[0].get("actual")
+        if isinstance(actual, dict):
+            actuals.append(actual)
+    tokens = _numbers(actuals, "tokens")
+    cost = _numbers(actuals, "cost")
+    wall_clock = _numbers(actuals, "wall_clock_s")
+    return LandedCost(
+        packages=packages,
+        tokens=round(sum(tokens)) if tokens else None,
+        cost=sum(cost) if cost else None,
+        wall_clock_s=sum(wall_clock) if wall_clock else None,
+    )

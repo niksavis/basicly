@@ -298,6 +298,19 @@ def test_rework_counter_is_per_gate(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     assert policy.rework_attempts(tmp_path, "i", "security") == 0
 
 
+def test_rework_recorded_totals_every_gate_but_no_allowance(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The package-level total the cost rollup reports (basicly-kjc5.50)."""
+    _install(monkeypatch, _FakeBr())
+    assert policy.rework_recorded(tmp_path, "i") == 0
+    policy.record_rework(tmp_path, "i", "verify")
+    policy.record_rework(tmp_path, "i", "merge")
+    policy.grant_rework_allowance(tmp_path, "i", "verify")
+    # Two attempts across two gates; an allowance is not one of them.
+    assert policy.rework_recorded(tmp_path, "i") == 2
+
+
 # --- An answered `retry` must be executable (basicly-4tjt) -------------------
 
 
