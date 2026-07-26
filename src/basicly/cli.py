@@ -34,6 +34,7 @@ from . import (
     permissions,
     policy,
     projection,
+    release,
     review,
     rubrics,
     run_record,
@@ -1891,6 +1892,42 @@ def cmd_rubric(args: argparse.Namespace) -> int:
     return handler(args) if handler else 0
 
 
+def cmd_release(args: argparse.Namespace) -> int:
+    """Produce a release up to the annotated tag, or report why it refused.
+
+    Exit codes are the loop's convention: 0 when the release was produced (or a
+    dry run computed cleanly), 1 when preconditions refused it. The push is never
+    performed and the final line says so — see :mod:`basicly.release` for why that
+    boundary is where it is.
+    """
+    repo_root = _repo_root()
+    if args.root and not args.autonomous:
+        print("release: --root only applies with --autonomous", file=sys.stderr)
+        return 1
+    plan = release.plan_release(repo_root, args.version, date=args.date)
+    # Printed and flushed *before* the work starts: the run commits and tags, and a
+    # header emitted afterwards leaves the operator with no idea what a failure was
+    # in the middle of (and lands after the stderr refusals in any captured log).
+    print(f"release:  {plan.current_tag} -> {plan.tag} on {plan.date}")
+    sys.stdout.flush()
+    result = release.run_release(
+        repo_root,
+        plan,
+        issue_id=args.issue,
+        dry_run=args.dry_run,
+        root_issue=args.root,
+        autonomous=args.autonomous,
+        shipping=args.shipping,
+    )
+    if result.refused:
+        for reason in result.refusals:
+            print(f"refused:  {reason}", file=sys.stderr)
+        return 1
+    for step in result.steps:
+        print(f"step:     {step}")
+    return 0
+
+
 def cmd_catalog(args: argparse.Namespace) -> int:
     """Dispatch the ``catalog`` subcommands (lint / verify / review / new / list)."""
     handlers = {
@@ -3086,6 +3123,46 @@ def _add_decompose_parser(subparsers: argparse._SubParsersAction) -> None:
     )
 
 
+def _add_release_parser(subparsers: argparse._SubParsersAction) -> None:
+    release_parser = subparsers.add_parser(
+        "release",
+        help="Produce a release up to the annotated tag (never pushes; component 9)",
+    )
+    # Positional, not --version: the top-level parser already owns `--version` for
+    # printing the engine's own version, and two meanings of one flag on one
+    # command line is a trap.
+    release_parser.add_argument("version", help="Target semantic version, e.g. 0.6.0")
+    release_parser.add_argument(
+        "--issue",
+        required=True,
+        help="Beads issue id for the release commit (the commit-msg hook requires one)",
+    )
+    release_parser.add_argument(
+        "--date", help="Release date YYYY-MM-DD for the changelog heading (default: today)"
+    )
+    release_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report every step and write nothing (refusal checks still run)",
+    )
+    release_parser.add_argument(
+        "--autonomous",
+        action="store_true",
+        help="Non-interactive invocation: refused unless --root carries a green L3 grant",
+    )
+    release_parser.add_argument(
+        "--root",
+        metavar="ISSUE",
+        help="Session root issue the L3 grant is checked against (requires --autonomous)",
+    )
+    release_parser.add_argument(
+        "--shipping",
+        metavar="ISSUE",
+        help="Node whose required gates must be green for --autonomous "
+        "(default: --root; an open epic's own verify gate is never green, kjc5.39)",
+    )
+
+
 def _add_policy_parser(subparsers: argparse._SubParsersAction) -> None:
     policy_parser = subparsers.add_parser(
         "policy", help="Loop gate/checkpoint policy checks (DoR, gates, rework, checkpoints)"
@@ -3438,6 +3515,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_commit_parser(subparsers)
     _add_policy_parser(subparsers)
     _add_decompose_parser(subparsers)
+    _add_release_parser(subparsers)
     _add_loop_parser(subparsers)
     _add_runner_parser(subparsers)
     _add_rubric_parser(subparsers)
@@ -3470,6 +3548,7 @@ def main(argv: list[str] | None = None) -> int:
         "commit": cmd_commit,
         "policy": cmd_policy,
         "decompose": cmd_decompose,
+        "release": cmd_release,
         "loop": cmd_loop,
         "runner": cmd_runner,
         "rubric": cmd_rubric,

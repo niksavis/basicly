@@ -182,8 +182,14 @@ def commit_tracker_state(
     return True
 
 
-def _known_bead_ids(repo_root: Path) -> set[str] | None:
-    """Ids from ``.beads/issues.jsonl``, or None when no workspace exists."""
+def known_bead_ids(repo_root: Path) -> set[str] | None:
+    """Ids from ``.beads/issues.jsonl``, or None when no workspace exists.
+
+    Public because every path that composes a commit message owes the same check:
+    the ``beads-commit-msg`` gate rejects an unknown id, and discovering that at
+    commit time strands whatever the caller already wrote (merge mid-landing,
+    release mid-bump).
+    """
     issues = repo_root / ".beads" / "issues.jsonl"
     if not issues.exists():
         return None
@@ -236,7 +242,7 @@ def merge_worktree(
         raise SystemExit(
             "merge needs a bead id for the merge commit (the commit-msg hook requires one)"
         )
-    known = _known_bead_ids(repo_root)
+    known = known_bead_ids(repo_root)
     if known is not None and bead not in known:
         raise SystemExit(
             f"unknown bead id {bead!r}: not in .beads/issues.jsonl — the commit-msg "

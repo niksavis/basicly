@@ -74,6 +74,11 @@ def _build_section(
         f"Delta: {delta_start}..{tag}",
         "",
         "### Changes",
+        # markdownlint runs repo-wide on any staged .md, and MD022/MD032 require a
+        # blank line after a heading and before a list. The manual flow never hit
+        # this because a human curated the section into a second commit; an
+        # automated release commits this text as generated (basicly-kjc5.12).
+        "",
     ]
     if commits:
         section.extend([f"- {commit}" for commit in commits])
