@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import ast
+import inspect
 import json
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -1044,3 +1047,116 @@ def test_an_unreliable_gate_event_is_scoped_to_its_gate(
     _install(monkeypatch, _FakeBr())
     policy.record_unreliable_gate(tmp_path, "i", "merge")
     assert policy.unreliable_gate_events(tmp_path, "i", "verify") == 0
+
+
+# --- A budget meters the grant, not the session's lifetime (basicly-jr0l.17) ---
+
+
+def _with_spend(monkeypatch: pytest.MonkeyPatch, total: int) -> None:
+    """Pin the session's run-record spend total."""
+    monkeypatch.setattr(policy, "session_spend_tokens", lambda *_a, **_k: total)
+
+
+def test_a_fresh_grant_admits_dispatch_on_a_historically_expensive_session(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The reported defect: 30.7M of history halted a 5M grant before it dispatched once."""
+    _install(monkeypatch, _FakeBr())
+    _with_spend(monkeypatch, 30_705_839)
+    grant = policy.Grant(level="L1", token_budget=5_000_000, spent_at_issue=30_705_839)
+
+    status = policy.spend_status(tmp_path, "root", grant=grant)
+
+    assert status.halted is False
+
+
+def test_the_budget_halts_once_spend_under_this_grant_reaches_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """It is still a real ceiling — only the baseline moved."""
+    _install(monkeypatch, _FakeBr())
+    _with_spend(monkeypatch, 30_705_839 + 5_000_000)
+    grant = policy.Grant(level="L1", token_budget=5_000_000, spent_at_issue=30_705_839)
+
+    status = policy.spend_status(tmp_path, "root", grant=grant)
+
+    assert status.halted is True
+    assert "5000000/5000000 tokens under this grant" in status.detail
+    assert "35705839 lifetime" in status.detail  # both numbers, so neither misleads
+
+
+def test_a_grant_without_a_baseline_keeps_the_strict_lifetime_behaviour(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A marker issued before this existed must not become quietly unbounded."""
+    _install(monkeypatch, _FakeBr())
+    _with_spend(monkeypatch, 6_000_000)
+    grant = policy.Grant(level="L1", token_budget=5_000_000)
+
+    assert grant.spent_at_issue == 0
+    assert policy.spend_status(tmp_path, "root", grant=grant).halted is True
+
+
+def test_lost_run_records_cannot_buy_extra_budget(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Spend below the baseline clamps at zero rather than crediting the session."""
+    _install(monkeypatch, _FakeBr())
+    _with_spend(monkeypatch, 1_000)  # records pruned since issuance
+    grant = policy.Grant(level="L1", token_budget=5_000, spent_at_issue=30_000)
+
+    status = policy.spend_status(tmp_path, "root", grant=grant)
+
+    assert status.halted is False
+    assert "0/5000 tokens under this grant" in status.detail or not status.detail
+
+
+def test_the_baseline_round_trips_through_the_grant_marker(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The ledger is comment markers, so the baseline has to survive a write/read."""
+    _install(monkeypatch, _FakeBr())
+    monkeypatch.setattr(policy, "session_spend_tokens", lambda *_a, **_k: 30_705_839)
+    result = policy.issue_grant_guarded(
+        tmp_path, "root", "L1", 5_000_000, L3_CONFIG, interactive=True
+    )
+    assert result.status == "approved"
+
+    grant = policy.active_grant(tmp_path, "root")
+    assert grant is not None
+    assert grant.spent_at_issue == 30_705_839
+    assert grant.token_budget == 5_000_000
+
+
+def test_a_grant_with_no_prior_spend_records_no_baseline(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A clean session's marker stays exactly as it was before this change."""
+    _install(monkeypatch, _FakeBr())
+    monkeypatch.setattr(policy, "session_spend_tokens", lambda *_a, **_k: 0)
+    policy.issue_grant_guarded(tmp_path, "root", "L1", 5_000_000, L3_CONFIG, interactive=True)
+
+    assert "baseline=" not in policy._run_br.comments[-1]  # type: ignore[attr-defined]
+
+
+def test_nothing_in_the_spend_gate_reads_a_clock() -> None:
+    """Determinism pin: a spend gate must not branch on a wall clock.
+
+    The tracker's own ``updated_at cannot be before created_at`` defect is what
+    this rule exists for — a clock-ordered budget would fail the same way, and
+    silently.
+
+    Identifiers only, parsed rather than grepped: a prose mention of "timestamp"
+    in a comment explaining that nothing compares one is not a clock read, and
+    scanning the raw text flagged exactly that.
+    """
+    banned = {"timestamp", "datetime", "created_at", "updated_at", "time", "now"}
+    for func in (policy.spend_status, policy.session_spend_tokens):
+        tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
+        used = {
+            node.id if isinstance(node, ast.Name) else node.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Name | ast.Attribute)
+        }
+        leaked = used & banned
+        assert not leaked, f"{func.__name__} reads a clock: {leaked}"

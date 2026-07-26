@@ -572,12 +572,20 @@ class Grant:
     # Required for L2+ at issuance (unbounded lights-out is unreachable);
     # None only on an L1 grant.
     token_budget: int | None
+    # The session's total run-record spend when this grant was issued, so
+    # :func:`spend_status` can meter what *this grant* authorized rather than what
+    # the session has ever cost (basicly-jr0l.17). Zero on a grant issued before
+    # this existed, which reads as the old lifetime behaviour — the strict
+    # direction, so an old marker never becomes quietly unbounded.
+    spent_at_issue: int = 0
 
 
 def _grant_marker(grant: Grant) -> str:
     text = f"{_GRANT_PREFIX}{grant.level}"
     if grant.token_budget is not None:
         text += f" budget={grant.token_budget}"
+    if grant.spent_at_issue:
+        text += f" baseline={grant.spent_at_issue}"
     return text
 
 
@@ -591,10 +599,16 @@ def _parse_grant(text: str) -> Grant | None:
     if not tokens or tokens[0] not in AUTONOMY_LEVELS:
         return None
     budget: int | None = None
+    baseline = 0
     for token in tokens[1:]:
         if token.startswith("budget="):
             try:
                 budget = int(token[len("budget=") :])
+            except ValueError:
+                return None
+        elif token.startswith("baseline="):
+            try:
+                baseline = int(token[len("baseline=") :])
             except ValueError:
                 return None
     # Mirror _grant_refusal: an L2+ marker without a positive budget is not a
@@ -602,7 +616,7 @@ def _parse_grant(text: str) -> Grant | None:
     # a well-formed issued one (unmetered lights-out).
     if tokens[0] in ("L2", "L3") and not (isinstance(budget, int) and budget > 0):
         return None
-    return Grant(level=tokens[0], token_budget=budget)
+    return Grant(level=tokens[0], token_budget=budget, spent_at_issue=max(0, baseline))
 
 
 def active_grant(repo_root: Path, root_issue: str) -> Grant | None:
@@ -670,9 +684,8 @@ def issue_grant_guarded(  # noqa: PLR0913 — mirrors the CLI surface
     refusal = _grant_refusal(level, token_budget, config)
     if refusal is not None:
         return ApprovalResult("rejected", detail=refusal)
-    grant = Grant(level=level, token_budget=token_budget)
     if interactive:
-        _run_br(repo_root, ["comments", "add", root_issue, _grant_marker(grant)])
+        _write_grant(repo_root, root_issue, level, token_budget)
         return ApprovalResult("approved")
     # The code is keyed on level AND budget, so the exact grant the human saw
     # in the rerun hint is the only one the code can issue.
@@ -682,9 +695,26 @@ def issue_grant_guarded(  # noqa: PLR0913 — mirrors the CLI surface
             "challenge", code=_issue_confirm_code(repo_root, root_issue, checkpoint_name)
         )
     if _consume_confirm_code(repo_root, root_issue, checkpoint_name, confirm):
-        _run_br(repo_root, ["comments", "add", root_issue, _grant_marker(grant)])
+        _write_grant(repo_root, root_issue, level, token_budget)
         return ApprovalResult("approved")
     return ApprovalResult("rejected", detail="invalid or expired confirm code")
+
+
+def _write_grant(repo_root: Path, root_issue: str, level: str, token_budget: int | None) -> None:
+    """Record the grant marker, stamping the session's spend so far as its baseline.
+
+    The baseline is read here rather than before the challenge, because it must be
+    the total at the moment the grant *starts* — a code minted and relayed minutes
+    later would otherwise bake in a stale figure and silently credit whatever the
+    session spent in between (basicly-jr0l.17). It also keeps the challenge path
+    free of a tracker read it has no reason to make.
+    """
+    grant = Grant(
+        level=level,
+        token_budget=token_budget,
+        spent_at_issue=session_spend_tokens(repo_root, root_issue),
+    )
+    _run_br(repo_root, ["comments", "add", root_issue, _grant_marker(grant)])
 
 
 def revoke_grant(repo_root: Path, root_issue: str) -> None:
@@ -796,15 +826,23 @@ def spend_status(
     if grant is None or grant.token_budget is None:
         return SpendStatus(grant=grant, spent_tokens=spent, halted=False)
     budget = grant.token_budget
-    if spent < budget:
+    # What *this grant* authorized, not what the session has ever cost. Clock-free
+    # by construction: two readings of one monotonically-growing counter, never a
+    # timestamp comparison — a spend gate that branched on wall-clock would be the
+    # same defect class the tracker's own clock bug keeps demonstrating.
+    # Clamped, because pruned or lost run records can drop the total below the
+    # baseline and negative spend must never buy extra budget.
+    under_grant = max(0, spent - grant.spent_at_issue)
+    if under_grant < budget:
         return SpendStatus(grant=grant, spent_tokens=spent, halted=False)
     return SpendStatus(
         grant=grant,
         spent_tokens=spent,
         halted=True,
         detail=(
-            f"{grant.level} grant token_budget spent ({spent}/{budget} tokens); "
-            "the session is human-only until re-granted"
+            f"{grant.level} grant token_budget spent ({under_grant}/{budget} tokens "
+            f"under this grant; {spent} lifetime); the session is human-only until "
+            "re-granted"
         ),
     )
 
