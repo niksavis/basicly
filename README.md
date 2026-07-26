@@ -158,7 +158,6 @@ capability sits under the pillar it belongs to, grouped by what it currently is:
   enforces it.
 - `?` **researching** — the deliverable is a number, not a capability: a measurement
   whose result is allowed to cancel the work.
-- `~` **deferred** — deliberately not built until a real consumer asks.
 
 | Pillar | `✓` shipped | `▶` building | `◇` designed · `?` researching |
 | --- | --- | --- | --- |
@@ -166,9 +165,6 @@ capability sits under the pillar it belongs to, grouped by what it currently is:
 | **02 · gates** | git hooks · commit · push<br>agent hooks · Claude · Copilot<br>verify pipeline · 3 modes | gate taxonomy by type<br>severity on judged output<br>rework convergence check<br>install reports its tier | — |
 | **03 · the loop** | single-track loop<br>worktree isolation<br>parallel lanes · merge queue<br>autonomy grants · spend cap<br>release automation | per-model spend forecast<br>unattended multi-lane run | `◇` a named role per judgment step<br>`?` cost per landed package<br>`?` deterministic AST localisation |
 | **04 · the work graph** | issues · deps · gates<br>phase derived from state | dispatch score recorded | `◇` owned in-process event log<br>`◇` provenance on every edge<br>`◇` fsck and rebuild |
-
-`~` **Deferred** until a real consumer asks: Cursor as a target, a native Codex
-scoped-rules renderer, and a cross-repo work exchange.
 
 Some things are **not planned**, so absence here is not an oversight: an LLM
 orchestrator in control of the tracker, an agent-writable catalog, a maintained TUI,

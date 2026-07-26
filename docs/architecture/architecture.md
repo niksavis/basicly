@@ -1289,10 +1289,11 @@ that file carries order and reasons.
 This table is the copy the [README roadmap](../../README.md#roadmap) table and the
 [landing page](https://niksavis.github.io/basicly/#roadmap) render for a wider
 audience. Where the three disagree, this one wins and the other two are stale — with
-one **deliberate** difference: the landing page omits the `deferred` rows, because a
-prospective consumer is choosing between what exists and what is coming, and a list of
-things nobody has asked for is noise there. That omission is editorial, not drift, and
-this table remains the complete list.
+one **deliberate** difference: neither rendered copy carries the `deferred` rows,
+because a prospective consumer is choosing between what exists and what is coming, and
+a list of things nobody has asked for is noise there. That omission is editorial, not
+drift, and this table plus §11 remain the complete record of what was consciously left
+unbuilt.
 
 ### Details
 
