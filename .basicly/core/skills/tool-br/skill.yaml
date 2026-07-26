@@ -25,6 +25,7 @@ instructions: |
   br close <id> --reason "What was done"
   br delete <id> --hard                     # Delete durably (prunes JSONL; plain delete resurrects)
   br dep add <child-id> <parent-id>         # child depends on parent
+  br dep remove <child-id> <parent-id>      # drop an edge (the only way to change its type)
   br dep tree <id>                          # dependency tree rooted at an issue
   br dep cycles                             # detect dependency cycles
   br list --status open --priority 0-1
@@ -136,6 +137,16 @@ instructions: |
     `.beads/` (`beads.db-lock-*`, `.beads.vacuum.<pid>.tmp-*`, `*.fsqlite-*`); they are
     git-ignored and must never be committed. If any appear as untracked, they are junk —
     delete them, do not stage them.
+  - **Expecting a second `br dep add` to upgrade an edge's type.** `br dep add` is
+    idempotent: a repeat prints `Dependency already exists: <issue> → <depends-on>`,
+    exits `0`, and leaves exactly one dependency row. That includes a repeat with a
+    different `-t`, so `br dep add A B -t blocks` over an existing `related` edge is
+    refused as a duplicate, not upgraded — an edge's type is fixed by whichever call
+    recorded it first. To change a type, `br dep remove <issue> <depends-on>` first,
+    then add it again with the type you want. Because the no-op still exits `0`, never
+    read the exit status as "recorded"; confirm with `br dep list <id>`. This is
+    load-bearing for `supervise.propose_coupling_edges` — a coupling edge first
+    written while a lane was in flight keeps its non-gating type afterwards.
   - **Re-`br init` with a different `--prefix`.** The prefix is pinned in
     `.beads/config.yaml` (authoritative over the local DB); never re-init with another
     prefix or the team's `basicly-<hash>` ids diverge across machines.
