@@ -158,7 +158,10 @@ def _is_test(path: str) -> bool:
 
 
 def _is_doc(path: str) -> bool:
-    return path.startswith("docs/") or path.endswith(".md")
+    # ``site/`` is the published website; it moved out of ``docs/`` so that
+    # GitHub Pages stops dictating the documentation layout, and it stays a doc
+    # path here because a landing-page edit is documentation either way.
+    return path.startswith(("docs/", "site/")) or path.endswith(".md")
 
 
 def _kebab(text: str) -> str:
@@ -172,12 +175,15 @@ def scope_candidate(path: str) -> str | None:
     Package modules name themselves (``src/basicly/loop.py`` → ``loop``), a test
     names its subject (``tests/test_loop.py`` → ``loop``), catalog content names
     its kind (``.basicly/core/hooks/...`` → ``hooks``), and a doc names its file
-    (``docs/factory-design.md`` → ``factory-design``). Loose root files argue
-    for nothing rather than for a made-up scope.
+    (``docs/design/factory-design.md`` → ``factory-design``). The website names
+    itself rather than its files, because ``index`` is not a scope anyone reads.
+    Loose root files argue for nothing rather than for a made-up scope.
     """
     match path.split("/"):
         case [".github", "workflows", *_]:
             scope = "ci"
+        case ["site", *_]:
+            scope = "site"
         case [".beads", *_]:
             scope = "beads"
         case [".basicly", "core", kind, *_] | [".basicly-local", kind, *_]:

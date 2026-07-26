@@ -1,7 +1,7 @@
 # Catalog Efficacy — Proving the Guidance Layer Works
 
 Status: **design, not yet decomposed.** Opened 2026-07-26 out of the state-of-the-art review
-([`research/2026-07-26-sota-review.md`](research/2026-07-26-sota-review.md) §6.1). No
+([`research/2026-07-26-sota-review.md`](../research/2026-07-26-sota-review.md) §6.1). No
 implementation starts from this document; §8 names what has to be true before it does.
 
 Scope boundary, so this document does not collide with its two siblings:

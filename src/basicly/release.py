@@ -59,7 +59,7 @@ SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
 # one instruction disagreeing.
 PIN_FILES = (
     Path("README.md"),
-    Path("docs") / "index.html",
+    Path("site") / "index.html",
     Path(".scripts") / "bootstrap.sh",
     Path(".scripts") / "bootstrap.ps1",
 )

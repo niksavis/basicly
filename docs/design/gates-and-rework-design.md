@@ -1,7 +1,7 @@
 # Gates, Rework, and Adversarial Verification
 
 Status: **design, not yet decomposed.** Opened 2026-07-26 out of the state-of-the-art review
-([`research/2026-07-26-sota-review.md`](research/2026-07-26-sota-review.md) §§6.4–6.5).
+([`research/2026-07-26-sota-review.md`](../research/2026-07-26-sota-review.md) §§6.4–6.5).
 [`factory-design.md`](factory-design.md) remains authoritative; where this document and the
 factory design appear to disagree, the factory design wins until amended. This document proposes
 amendments rather than asserting them.

@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/logo.svg" alt="basicly logo" width="112">
+<img src="site/assets/logo.svg" alt="basicly logo" width="112">
 
 # basicly
 
@@ -131,7 +131,7 @@ flowchart LR
 ```
 
 The full design — directory contract, catalog model, verification pipeline —
-lives in [`docs/architecture.md`](docs/architecture.md).
+lives in [`docs/architecture/architecture.md`](docs/architecture/architecture.md).
 
 ## Everyday commands
 

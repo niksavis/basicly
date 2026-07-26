@@ -31,7 +31,7 @@ ever writes into a consumer repo.
 Fragments and skills are the **suggestive** half of the harness (Markdown guidance a
 model reads); hooks under `core/hooks/` are the **gating** half (scripts that
 mechanically block a bad commit/push). Both are first-class, catalog-distributed
-artifact types — see [`docs/architecture.md`](../docs/architecture.md) §3, §4.
+artifact types — see [`docs/architecture/architecture.md`](../docs/architecture/architecture.md) §3, §4.
 
 ## Fragments
 
@@ -146,7 +146,7 @@ This allows users to choose a custom overlay folder name instead of `.basicly-lo
 This keeps skills shippable when extracting the `basicly` engine into a standalone repository while still allowing downstream repos to consume projected skill files.
 
 **Known gap**: the skill source format is still Markdown+YAML-frontmatter (`SKILL.md`)
-at the catalog level. Per [`docs/architecture.md`](../docs/architecture.md) §4/§11,
+at the catalog level. Per [`docs/architecture/architecture.md`](../docs/architecture/architecture.md) §4/§11,
 this should migrate to a non-`SKILL.md`-named, Python-authored source so a broad
 filesystem scan for `SKILL.md` by a coding agent can't discover the catalog copy in
 addition to the projected one — not yet executed.
@@ -165,7 +165,7 @@ The `.basicly-local/fragments/user/` directory is reserved for user-added fragme
 survive updates to the core fragments shipped with basicly. The schema already accepts
 `source`, `override`, `replaces`, and `extends` fields with safe defaults. The full
 verification and override workflow is described in
-[`docs/architecture.md`](../docs/architecture.md) §6.
+[`docs/architecture/architecture.md`](../docs/architecture/architecture.md) §6.
 
 ## Extracting basicly
 

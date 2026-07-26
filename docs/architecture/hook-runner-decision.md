@@ -65,7 +65,7 @@ Bounded but a medium epic, front-loaded on the unknown:
   a package manager consumers may lack — the biggest risk item.
 - Rewrite `install_hooks` / the `basicly install` activation step and the
   runner-selection fallback.
-- Update README, `docs/architecture.md`, and the install flow; re-dogfood every
+- Update README, `docs/architecture/architecture.md`, and the install flow; re-dogfood every
   gate; run a deprecation window for consumers on the old config.
 
 ## Reconsider triggers

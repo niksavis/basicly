@@ -1,13 +1,13 @@
 # Specialist Agent Roster — Named Roles Inside the Factory
 
 Status: **agreed design — reviewed 2026-07-25 (§7), amended 2026-07-26 (§9). No implementation
-until `basicly-kjc5` (the parallel factory) is complete.** `docs/factory-design.md` is the
+until `basicly-kjc5` (the parallel factory) is complete.** `docs/design/factory-design.md` is the
 authoritative factory design and constrains everything below; where this document and the factory
 design appear to disagree, the factory design wins until it is amended. Tracking bead:
 `basicly-eqp6`.
 
 **§9 carries the amendments from the state-of-the-art review**
-([`research/2026-07-26-sota-review.md`](research/2026-07-26-sota-review.md)). One of them reopens
+([`research/2026-07-26-sota-review.md`](../research/2026-07-26-sota-review.md)). One of them reopens
 a decision this document closed — the Scout (§4) was cut on reasoning that turns out to apply
 only to a *model-based* scout — and one supplies the persona hardening R8 was reaching for.
 Sections 1–8 are unchanged; where §9 amends one, the amendment says so.
@@ -484,7 +484,7 @@ without it, an L3 grant would quietly hand the catalog to the Decider.
 ## 9. Amendments from the 2026-07-26 state-of-the-art review
 
 Eleven comparable projects were read at pinned revisions
-([`research/references.md`](research/references.md)). Four of them run named agent rosters, so
+([`research/references.md`](../research/references.md)). Four of them run named agent rosters, so
 this document's decisions now have external comparanda rather than only internal reasoning.
 Findings are grouped by whether they **confirm**, **amend**, or **reopen** a decision above.
 

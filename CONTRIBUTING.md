@@ -104,7 +104,7 @@ Guidance content (skills, fragments, hooks) is authored as YAML sources under
 
 ## Architecture
 
-Read [`docs/architecture.md`](docs/architecture.md) before non-trivial
+Read [`docs/architecture/architecture.md`](docs/architecture/architecture.md) before non-trivial
 changes — it is the authoritative reference for the directory contract, the
 catalog model, and the verification pipeline.
 

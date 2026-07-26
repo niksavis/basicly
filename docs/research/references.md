@@ -40,7 +40,7 @@ the practical obligation is attribution in the design doc — which §4 of the r
 
 ## 2. The `beads_rust` licence finding — a correction to our own docs
 
-`docs/work-tracker.md` §7 asserted: *"Reading beads_rust and bv sources for reference is
+`docs/design/work-tracker.md` §7 asserted: *"Reading beads_rust and bv sources for reference is
 explicitly sanctioned while they are MIT."* **That statement was factually wrong** and has been
 corrected in that document.
 

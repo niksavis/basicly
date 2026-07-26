@@ -4,7 +4,7 @@ Git hook scripts — the deterministic, gating half of the harness. Fragments an
 skills are the suggestive, non-deterministic guidance an agent reads; these scripts
 are what actually blocks a bad commit/push regardless of whether the agent read or
 followed the guidance. Both halves are first-class catalog citizens (see
-[`docs/architecture.md`](../../../docs/architecture.md) §3, §4).
+[`docs/architecture/architecture.md`](../../../docs/architecture/architecture.md) §3, §4).
 
 Scripts are invoked by [pre-commit](https://pre-commit.com/) via
 [`.pre-commit-config.yaml`](../../../.pre-commit-config.yaml). They are kept as
@@ -26,4 +26,4 @@ these hooks with `basicly hooks-build`, which materializes the scripts and merge
 a managed `repo: local` block into `.pre-commit-config.yaml` (foreign repos/hooks
 are preserved); `basicly hooks-check` reports drift. The hooks are described
 tool-agnostically in [`hooks.yaml`](hooks.yaml) so another manager (e.g. lefthook)
-can be projected later. See `docs/architecture.md` §4.2, §11.6.
+can be projected later. See `docs/architecture/architecture.md` §4.2, §11.6.

@@ -29,7 +29,7 @@ not rely on `AGENTS.md` being present.
 - Purpose: harness distribution for coding agents - one YAML catalog projected into agent instruction files, skills, and git hooks, consumed by other repos via `basicly install`.
 - Stack: Python 3.14+, managed with `uv`; version single-sourced from `src/basicly/__init__.py`.
 - Entry point: the `basicly` CLI (`src/basicly/cli.py`); catalog sources in `.basicly/core/`, overrides in `.basicly-local/`.
-- Architecture: `docs/architecture.md` is the authoritative reference.
+- Architecture: `docs/architecture/architecture.md` is the authoritative reference.
 
 ## Secure Coding
 

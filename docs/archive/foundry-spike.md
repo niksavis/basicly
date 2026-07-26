@@ -4,7 +4,9 @@
 > spike, its seven child dimensions, and every implementation follow-on have
 > shipped; this document is retained because its dimension numbering is cited by
 > `src/basicly/permissions.py` and `src/basicly/rubrics.py`. It is history, not a
-> live design doc — see `docs/file-audit.md` (basicly-vk1n).
+> live design doc, which is why it lives under `docs/archive/`: nothing here is
+> maintained, and a claim in it is evidence of what was true in 2026-07 rather
+> than of current behaviour.
 >
 > **Status:** research spike, not implementation. This document is the written
 > deliverable for `basicly-zv48` and its seven child dimensions. It maps, for each

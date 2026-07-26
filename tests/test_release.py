@@ -35,7 +35,7 @@ def repo(tmp_path: Path) -> Path:
     """A minimal repo carrying every file a release touches, plus a previous tag."""
     root = tmp_path / "repo"
     (root / "src" / "basicly").mkdir(parents=True)
-    (root / "docs").mkdir()
+    (root / "site").mkdir()
     (root / ".scripts").mkdir()
     (root / "src" / "basicly" / "__init__.py").write_text(
         f'"""basicly."""\n\n__version__ = "{CURRENT}"\n', encoding="utf-8"
@@ -44,7 +44,7 @@ def repo(tmp_path: Path) -> Path:
         f"Install with `basicly@v{CURRENT}`.\nPin `@v{CURRENT}` for reproducible installs.\n",
         encoding="utf-8",
     )
-    (root / "docs" / "index.html").write_text(
+    (root / "site" / "index.html").write_text(
         f"<pre>uvx --from git+https://x/basicly@v{CURRENT} basicly install</pre>\n",
         encoding="utf-8",
     )
@@ -95,7 +95,7 @@ def test_plan_reports_the_tag_the_date_and_every_pin_site(repo: Path) -> None:
     assert plan.date == "2026-07-26"
     assert {site.path.as_posix(): site.occurrences for site in plan.pins} == {
         "README.md": 2,
-        "docs/index.html": 1,
+        "site/index.html": 1,
         ".scripts/bootstrap.sh": 1,
         ".scripts/bootstrap.ps1": 1,
     }

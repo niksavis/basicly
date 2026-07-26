@@ -2,7 +2,7 @@
 
 Status: **initialization — information gathering, not a build plan.** Opened 2026-07-25; updated
 2026-07-26 from the state-of-the-art review
-([`research/2026-07-26-sota-review.md`](research/2026-07-26-sota-review.md) §2.10). No schema is
+([`research/2026-07-26-sota-review.md`](../research/2026-07-26-sota-review.md) §2.10). No schema is
 frozen and no implementation starts from this document; its job is to record why we must own this
 component, what our own usage already tells us it must do, and what we still need to measure
 before committing to a design. The decision point is named in §7.
@@ -168,7 +168,7 @@ consequences, none fatal, all better known now than at cutover:
 
 ## 6. What we must measure first
 
-We should not design a schema from memory of our own usage. `basicly-kjc5.53` extends the
+We should not design a schema from memory of our own usage. `basicly-vkh0.1` extends the
 existing tool-usage telemetry from binary-level counting to **subcommand and flag level** for `br`
 and `bv`, written to a **committed** ledger so it accumulates across machines and team members
 (the current `tool-usage.json` is in the self-ignored usage dir and so tells us only about one
@@ -198,7 +198,7 @@ MIT". `beads_rust/LICENSE` is titled **"MIT License (with OpenAI/Anthropic Rider
 grants no rights to Anthropic, OpenAI, their affiliates, or anyone "acting directly or indirectly
 on behalf of, for the benefit of, or under the direction of" them, and it names "benchmarking,
 testing, analyzing, indexing" as restricted use. Full text and analysis in
-[`research/references.md`](research/references.md) §2.
+[`research/references.md`](../research/references.md) §2.
 
 **A clean-room boundary therefore applies to this work.** The replacement tracker must not be
 derived from `beads_rust` source. Its sanctioned inputs are:

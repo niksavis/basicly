@@ -18,7 +18,7 @@ basicly release 0.6.0 --issue <beads-id>             # bump, regenerate, pins, c
 ```
 
 It bumps the single-sourced `__version__`, regenerates the version-stamped
-projections, rewrites the `@vX.Y.Z` pins in `README.md`, `docs/index.html` **and both
+projections, rewrites the `@vX.Y.Z` pins in `README.md`, `site/index.html` **and both
 bootstrap shims**, upserts the dated `CHANGELOG.md` section, commits, and creates the
 annotated tag. It **never pushes**.
 

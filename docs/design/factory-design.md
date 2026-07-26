@@ -2,7 +2,7 @@
 
 Status: **agreed design, largely implemented — see §9 for what has landed.** Decisions D1–D8
 were settled on 2026-07-22; D9 and the D4 amendment on 2026-07-25. This document is the
-implementation reference; `docs/architecture.md` remains authoritative for everything already
+implementation reference; `docs/architecture/architecture.md` remains authoritative for everything already
 built and absorbs the relevant sections as the pieces land (`basicly-kjc5.13`).
 
 A decision recorded here is not evidence that it is enforced in code. §9 is the reconciliation,

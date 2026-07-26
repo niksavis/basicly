@@ -4,7 +4,7 @@ The catalog describes hooks tool-agnostically in ``hooks.yaml``; this module
 renders that into a hook manager's native config. Only pre-commit is supported
 today (``.pre-commit-config.yaml``), and the managed hooks are confined to a
 single ``repo: local`` block so foreign repos/hooks the consumer already has are
-never clobbered. See docs/architecture.md §4.2, §11.6.
+never clobbered. See docs/architecture/architecture.md §4.2, §11.6.
 """
 
 from __future__ import annotations

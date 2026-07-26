@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: pages
+
+# Publishes the static landing page from `site/`.
+#
+# Why a workflow rather than the legacy branch-folder source: legacy Pages can
+# only serve `/` or `/docs`, which forced the website to live inside `docs/` and
+# let the publishing mechanism dictate the documentation layout. An Actions
+# deploy accepts any path, so `site/` is the website and `docs/` is only docs.
+"on":
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# A superseded deploy is cancelled rather than queued: only the newest commit's
+# site is worth publishing, and `cancel-in-progress` on the deployment group is
+# what Pages expects.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy site to Pages
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Assert the site has an entry point
+        # A silent empty deploy looks like success and serves a 404, so fail
+        # here instead of publishing nothing.
+        run: test -f site/index.html
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v5

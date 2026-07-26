@@ -1,13 +1,26 @@
 # basicly Architecture
 
 > **This document is the single authoritative architecture reference for `basicly`.**
-> There is no separate plan/design-notes folder — this file is kept current as the
-> only source of truth for architecture decisions, and beads (`br`) issues are broken
-> down directly from it (§10).
+> Beads (`br`) issues are broken down directly from it (§10). Where it and any other
+> document disagree, this one wins.
 >
-> **Status convention**: this document describes the system as it exists in code
-> today. Anything not yet built is explicitly marked **[Deferred]** and collected
-> in §11; everything else is implemented and available.
+> **Its relationship to [`docs/design/`](../design/)**: a design document explores
+> and settles _one_ question in depth — the factory, the roster, gates and rework,
+> catalog efficacy, steering surfaces, the tracker. This file carries the _result_:
+> the current system in §§0–13 and the agreed direction in §14. A design document is
+> therefore the detail behind a §14 row, never a competing account of how the system
+> works, and it is archived once absorbed. Evidence for the design documents lives in
+> [`docs/research/`](../research/2026-07-26-sota-review.md).
+>
+> **Status convention — two states, never blurred.** §§0–13 describe the system
+> **as it exists in code today**; deliberate small omissions are marked
+> **[Deferred]** and collected in §11. §14 describes the **target state** — where
+> the architecture is going — and is the only forward-looking section.
+>
+> A claim in §§0–13 is a statement about running code. A claim in §14 is a
+> statement of intent with a design document behind it. Reading the second as the
+> first is the specific error this convention exists to prevent: a decision
+> recorded in a design document is not evidence that it is enforced anywhere.
 >
 > **How to read this document**: each numbered Part opens with a short **Summary**
 > you can scan alone to get the full picture, followed by **Details** you only need
@@ -15,19 +28,56 @@
 
 ## 0) Idea
 
-`basicly` is a **harness distribution system** for coding agents: a curated,
-versioned catalog that a repository installs, customizes, and projects into the
-native context files each coding agent actually reads. The catalog has two equally
-first-class halves:
+`basicly` is a **harness for coding agents that ships its own development
+process**. It is distributed as a curated, versioned catalog a repository installs,
+customizes, and projects into the native context files each coding agent actually
+reads — and, in the same package, the workflow that drives work through those
+agents plus the state that workflow runs on.
 
-1. **Guidance** (suggestive, non-deterministic) — fragments and skills, Markdown a
-   model reads and may or may not follow.
-2. **Gates** (deterministic) — git hook scripts that mechanically block a bad
-   commit/push regardless of whether the model read or followed the guidance.
+That is deliberately more than a guidance bundle. Four pillars, each independently
+useful and only jointly sufficient:
 
-Both halves must be available together for an agent to do its best job — guidance
-without gating is easily ignored; gating without guidance gives the agent no context
-for _why_ a check exists or how to satisfy it up front.
+1. **Catalog — guidance** (suggestive, non-deterministic). Fragments and skills:
+   Markdown a model reads and may or may not follow (§§4–7).
+2. **Gates — enforcement** (deterministic). Git hook scripts and the verify
+   pipeline, which mechanically block a bad commit, push, or landing regardless of
+   whether the model read or followed the guidance (§4.2, §6).
+3. **The loop — an SDLC of its own** (deterministic engine, agent-supplied
+   judgment). Intake → classify → decompose → build → verify → ship → teardown →
+   retro, driven by `basicly loop` over the tracker, run single-track or as
+   parallel lanes behind a supervisor and a serial merge queue (§12).
+4. **The tracker — work state as a graph.** Issues, dependencies, gates,
+   checkpoints and evidence, from which the loop **derives** the current phase
+   rather than remembering it (§12.1).
+
+Pillars 1 and 2 are the classic harness bargain, and both halves must be present:
+guidance without gating is easily ignored; gating without guidance gives the agent
+no context for _why_ a check exists or how to satisfy it up front.
+
+**Pillars 3 and 4 are the distinction.** A harness that ships agents, skills, and
+automation scripts tells an agent _how to work_. `basicly` additionally owns _the
+process_ and _the state_, and enforces both in code:
+
+- **The process is a command, not a procedure in prose.** Anything fully
+  deterministic is executable as one command an agent triggers and waits on. If an
+  agent must perform a _sequence_ of mechanical steps, the engine is missing a
+  command — and the tokens, latency, and chance of getting a mechanical step wrong
+  are all waste (§12, D10).
+- **The state is derived, not remembered.** Because phase is a pure function of
+  tracker state and the engine keeps no side-state, a crashed, switched, or
+  compacted session resumes by re-reading the tracker. This makes a whole class of
+  orchestration failure — re-dispatching already-completed work after losing the
+  thread — structurally impossible rather than merely unlikely.
+- **Authority is asymmetric.** Agents propose; the engine disposes. No model holds
+  authority over the tracker, the schedule, or a required gate, at any autonomy
+  level.
+- **Enforcement is code, not a request.** The model choosing to run a formatter is
+  a different thing from the formatter running automatically. Where a hook can
+  enforce a rule, the rule is a hook and the prose only points at it (§3.1).
+
+The four pillars are also the axis along which this document is organised: §§4–11
+are the catalog and its projection, §12 is the loop and the tracker it runs on, and
+§14 is where each pillar is going next.
 
 ## 1) Goal
 
@@ -45,7 +95,30 @@ for _why_ a check exists or how to satisfy it up front.
    reach a generated file — deterministically where possible, by an agent reviewer
    where not.
 
+The four goals the loop and the tracker add, which a guidance-only harness does not
+have to meet:
+
+1. A unit of work can be driven end to end by any supported agent, and the phase it
+   is parked in is **derivable** from the tracker alone — so a session can be
+   crashed, compacted, or swapped for a different agent family mid-track and
+   resumed without replay.
+2. Every deterministic step in that workflow is reachable as **one command**; no
+   agent is asked to remember a mechanical sequence (§12, D10).
+3. A required gate can only ever be passed by deterministic checks. Judged
+   verification is advisory or routes a decision — never a green light.
+4. The harness's own claims are **measured, not asserted**: a rule that no longer
+   binds and a skill that never fires both cost context on every turn and deliver
+   nothing, and neither is currently visible. Closing that gap is §14.4.
+
 ## 2) Overview
+
+The system has **two planes**. The _distribution plane_ below turns authored
+catalog sources into the files agents read and the hooks that bind them; the
+_execution plane_ (§12) drives a unit of work through the loop over the tracker.
+They meet at exactly two points: the loop dispatches agents whose context is the
+projected guidance, and the loop's verify step runs the same gates the hooks run.
+
+### Distribution plane
 
 Three roles, one repo can dogfood all of them at once (as this repo does today):
 
@@ -92,8 +165,40 @@ Three roles, one repo can dogfood all of them at once (as this repo does today):
 ```
 
 Everything a coding agent or human reads is **generated**. Everything a user edits is
-a **fragment** (core, never touched directly, or overlay, always theirs). Nothing else
-is in scope for the core engine today — see §11 for what is deliberately not built yet.
+a **fragment** (core, never touched directly, or overlay, always theirs). See §11 for
+the small pieces of the projection deliberately not built yet.
+
+### Execution plane
+
+```text
+  TRACKER — the only state; phase is derived from it, never remembered
+  ┌──────────────────────────────────────────────────────────────────┐
+  │ issues · dependency graph · gates · checkpoints · evidence       │
+  └───────────────┬──────────────────────────────────┬───────────────┘
+        derive    │                                  │  record
+        phase     ▼                                  ▲  (engine only)
+  ┌──────────────────────────────┐                   │
+  │ Engine — deterministic       │                   │
+  │ basicly loop / loop supervise│───────────────────┘
+  │  ranks the ready set,        │
+  │  provisions worktrees,       │        ┌────────────────────────┐
+  │  assembles dispatch bundles, │───────▶│ Agent — a pure function│
+  │  validates every proposal,   │◀───────│ fresh context, headless│
+  │  lands through a serial      │        │ Claude / Codex / Copilot│
+  │  merge queue                 │        └────────────────────────┘
+  └──────────────┬───────────────┘         proposes: plan, commit,
+                 │                          decision, verdict
+                 ▼
+  GATES — deterministic; the same checks the hooks run
+  verify (fast | full | staged) + validate; a required gate
+  is never passed by a model, at any autonomy level
+```
+
+The engine disposes and the agent proposes: input is a bundle assembled
+deterministically from tracker state, output is a structured proposal the engine
+validates against policy before it becomes state. Human checkpoints sit at classify,
+decompose, and ship; an explicit, auditable autonomy grant can delegate some of them
+to a decider agent, and no grant can delegate a required gate.
 
 ---
 
@@ -121,8 +226,8 @@ a fragment that claims enforcement must point at the command, not restate the ru
 **3.2 Composability over templates.** Generated files are never hand-templated blobs;
 they are assembled from fragments — one fragment per policy/practice/decision —
 selected, sorted, and rendered per target — this is exactly how
-[`loader.py`](../src/basicly/loader.py) and
-[`planner.py`](../src/basicly/planner.py) work.
+[`loader.py`](../../src/basicly/loader.py) and
+[`planner.py`](../../src/basicly/planner.py) work.
 
 **3.3 Two-layer verification, deterministic first.** Deterministic, scriptable checks
 catch a large class of problems cheaply (duplicate ids, missing fields, unknown
@@ -190,7 +295,7 @@ generated/core paths; only the user writes to the overlay.
 
 #### 4.1 Engine
 
-Lives at [`src/basicly/`](../src/basicly/): `cli.py`, `config.py`,
+Lives at [`src/basicly/`](../../src/basicly/): `cli.py`, `config.py`,
 `loader.py`, `planner.py`, `schema.py`, `renderers/`, `skills.py`. It has no
 import-time dependency on specific fragment content, only on the schema below.
 
@@ -293,7 +398,7 @@ fragments/skills — described tool-agnostically in `core/hooks/hooks.yaml`.
 (`identity-guard.py` blocks a commit whose git identity is unset or a hostname
 fallback — a generic, no-personal-data gate; the `.scripts/setup_git_identity.py`
 helper and the `tool-git` skill cover the per-host identity setup it guards.) This
-repo dogfoods them directly: [`.pre-commit-config.yaml`](../.pre-commit-config.yaml)
+repo dogfoods them directly: [`.pre-commit-config.yaml`](../../.pre-commit-config.yaml)
 points straight at `core/hooks/*.py`. `basicly hooks-build` projects the manifest
 into a consumer's `.pre-commit-config.yaml` and then runs `pre-commit install` so the
 gates are active — not merely written; a gate that is shipped but never installed is
@@ -377,7 +482,7 @@ safe defaults today.
 
 ### Details
 
-Confirmed current schema ([`schema.py`](../src/basicly/schema.py)):
+Confirmed current schema ([`schema.py`](../../src/basicly/schema.py)):
 
 | Field         | Required | Values                                                                                                                                         | Notes                                                 |
 | ------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
@@ -573,7 +678,7 @@ names were removed, not aliased).
 | `basicly loop status\|advance\|run <issue>` | Drives an issue through the harness loop; a blocked step exits non-zero and names the input it needs (§12.2)                                 |
 | `basicly commit <description>`              | Assembles the conventional-commit envelope from engine state — type from the bead's work class (refined by an all-docs/all-test/all-ci diff), scope from the staged paths weighted by churn, trailing bead id from the branch's worktree binding — and commits the staged change with it. Only the description (and an optional `--body`) is authored; a description the charset rules reject names the offending character before any commit is attempted. `--type`/`--scope`/`--issue` override a derived part, `--dry-run` prints the message only. The `commit-msg`/`beads-commit-msg` hooks stay the gate (design D10, `basicly-kjc5.42`) |
 | `basicly runner list\|dry-run\|run`         | Agent-agnostic headless runner adapters (claude/codex/copilot + `manual` handoff); the loop build phase auto-dispatches through them (§12.8) |
-| `basicly release <version> --issue ID [--date D] [--dry-run] [--autonomous --root ID]` | Component 9 release automation (`release.py`): bumps the single-sourced `__version__`, regenerates the version-stamped projections in a **fresh interpreter with the target repo forced onto `PYTHONPATH`** (`cli` binds `__version__` at import, and a same-process or installed-copy rebuild stamps the previous version), rewrites the `@vX.Y.Z` install pins in `README.md` + `docs/index.html`, upserts the dated `CHANGELOG.md` section via `.scripts/generate_release_changelog.py`, commits, and creates the annotated tag. **Never pushes** — publishing is irreversible and stays a human step. Refuses on a dirty tree, a version that does not move forward, or an existing tag, reporting every reason from one run; `--dry-run` runs the same checks and writes nothing. `--autonomous` requires an **L3** grant (not L1/L2) with green lights-out preconditions on `--root` (D3) |
+| `basicly release <version> --issue ID [--date D] [--dry-run] [--autonomous --root ID]` | Component 9 release automation (`release.py`): bumps the single-sourced `__version__`, regenerates the version-stamped projections in a **fresh interpreter with the target repo forced onto `PYTHONPATH`** (`cli` binds `__version__` at import, and a same-process or installed-copy rebuild stamps the previous version), rewrites the `@vX.Y.Z` install pins in `README.md` + `site/index.html`, upserts the dated `CHANGELOG.md` section via `.scripts/generate_release_changelog.py`, commits, and creates the annotated tag. **Never pushes** — publishing is irreversible and stays a human step. Refuses on a dirty tree, a version that does not move forward, or an existing tag, reporting every reason from one run; `--dry-run` runs the same checks and writes nothing. `--autonomous` requires an **L3** grant (not L1/L2) with green lights-out preconditions on `--root` (D3) |
 
 The formerly planned `basicly conflicts`/`basicly overrides` reporting views are
 **[Deferred]** — cut from scope; `catalog verify` output covers the reporting need.
@@ -682,15 +787,15 @@ git hook, not just convention.
 - Workspace: `.beads/`, prefix `basicly`, defaults `priority: 2` (Medium),
   `type: task`. Full taxonomy, priority scale, and hierarchy convention (`--parent`,
   since `br` has no separate story/sub-task type) are documented once, in
-  [`.beads/config.yaml`](../.beads/config.yaml) and the
-  [`tool-br` skill](../.basicly/core/skills/tool-br/SKILL.md) — not restated here, per
+  [`.beads/config.yaml`](../../.beads/config.yaml) and the
+  [`tool-br` skill](../../.basicly/core/skills/tool-br/skill.yaml) — not restated here, per
   §3.1.
-- Enforcement: [`commit-msg.py`](../.basicly/core/hooks/commit-msg.py)
+- Enforcement: [`commit-msg.py`](../../.basicly/core/hooks/commit-msg.py)
   (conventional-commit format, permits a trailing issue-id parenthetical) and
-  [`beads-commit-msg.py`](../.basicly/core/hooks/beads-commit-msg.py)
+  [`beads-commit-msg.py`](../../.basicly/core/hooks/beads-commit-msg.py)
   (requires the referenced id to exist in `.beads/issues.jsonl`) both run at the
   `commit-msg` git stage, wired independently in
-  [`.pre-commit-config.yaml`](../.pre-commit-config.yaml).
+  [`.pre-commit-config.yaml`](../../.pre-commit-config.yaml).
 - These hooks are both this repo's own dev-process tooling **and** the literal
   catalog source (§4.2) — dogfooding is direct, not a copy.
 - Practical implication for planning work as beads issues: use `epic` for large
@@ -703,11 +808,13 @@ git hook, not just convention.
 
 ## 11) Not yet implemented
 
-Everything described elsewhere in this document exists in code today. The items
-below are the only known exceptions — each is **[Deferred]**: consciously not
-built until a real consumer need appears. None is tracked as an open issue
-(the former tracking beads were closed as won't-do, 2026-07-16); file a fresh
-task if demand appears.
+Everything described in §§0–13 exists in code today. The items below are the only
+known exceptions — each is **[Deferred]**: consciously not built until a real
+consumer need appears. None is tracked as an open issue (the former tracking beads
+were closed as won't-do, 2026-07-16); file a fresh task if demand appears.
+
+This section is **not** the roadmap. A deferred item here is one nobody has asked
+for; the work the architecture is actively heading toward is §14.
 
 1. **`.codex/rules/*.rules` scoped rules renderer**: Codex reads
    the shared `AGENTS.md` baseline today, with path-scoped fragments inlined for
@@ -994,3 +1101,141 @@ dependency.
 - Cursor SDK: <https://cursor.com/blog/typescript-sdk>
 - Pydantic AI: <https://pydantic.dev/docs/ai/overview/>
 - Fowler series (context priming, design-first, context anchoring): <https://martinfowler.com/articles/reduce-friction-ai/>
+
+---
+
+## 14) Target state — where the architecture is going
+
+**Summary**: the four pillars of §0 are at very different maturities. The loop and
+the factory are built and dogfooded; the judgment layer is designed and unbuilt;
+the evidence layer barely exists and is the largest gap; the tracker is a dependency
+we intend to own. This section is the map, not the detail — each row points at the
+design document that owns it, and **none of it is running code**.
+
+Everything here is grounded in a 2026-07-26 review of eleven comparable projects
+read at pinned revisions ([`research/`](../research/2026-07-26-sota-review.md)),
+which is also where the competitive framing comes from: the field has converged on
+a name for what this repo is — **harness engineering**, the claim that the
+deterministic scaffolding around a model matters more than the model choice. The
+open question is therefore not whether the harness approach is right; it is whether
+this harness is measurably better than the others that also believe it.
+
+### Details
+
+**14.1 Pillar maturity.**
+
+| Pillar | Today | Target | Owning design doc |
+| --- | --- | --- | --- |
+| Catalog (guidance) | projected + structurally gated | routing and behaviour measured per entry; a third, path-scoped tier in use | [`catalog-efficacy`](../design/catalog-efficacy-design.md), [`steering-surfaces`](../design/steering-surfaces-design.md) |
+| Gates (enforcement) | deterministic, per-site behaviour | classified by type, with stall detection and a severity contract | [`gates-and-rework`](../design/gates-and-rework-design.md) |
+| Loop / factory (SDLC) | parallel lanes, autonomy grants, merge queue — dogfooded | named roles per judgment step; release automation reachable under a grant | [`factory-design`](../design/factory-design.md), [`agent-roster`](../design/agent-roster-design.md) |
+| Tracker (state) | external `br` binary in the critical path | owned, in-process, append-only event log | [`work-tracker`](../design/work-tracker.md) |
+
+**14.2 The factory — built, and its remaining honesty gaps.** The supervisor,
+autonomy grant ledger, decision queue, lane mini-loop, and merge queue v2 have
+landed and have been exercised on this repo's own development, including a
+supervised multi-lane run. Two recorded gaps matter because a reader would otherwise
+believe the design is enforced: no model is pinned on any runner adapter, so the
+tier economics below rest on an unpinned mapping and a dispatch is not reproducible
+in its inputs; and coupling attribution still depends on intra-pass landing order,
+which the determinism rule forbids. `factory-design` §9 is the authoritative
+reconciliation of decision against code.
+
+**14.3 The judgment layer — designed, unbuilt.** Today the factory dispatches one
+generic prompt shape for every lane. The target replaces that with **named roles**,
+each carrying its own instructions, tool policy, model tier, and output contract, so
+the engine routes each judgment step to the role built for it. Three decisions
+constrain it, and all three are deliberately conservative:
+
+- **No agent spawns agents.** The supervisor is code and stays unnamed precisely so
+  nobody treats the thing that enforces the rules as something that can be
+  persuaded. Reviewers are read-only; a separate actor fixes.
+- **Admission is a test, not a preference.** A role becomes a persona only if the
+  work is genuine judgment, has a checkable success criterion, _and_ needs a
+  materially different tool policy or model tier than its neighbours. Otherwise it
+  is a prompt section or a deterministic engine step.
+- **Tier is chosen by reliability, priced per landed package** — total tokens, wall
+  clock, and human interventions per landed, correct unit, never the price of one
+  dispatch. A cheap dispatch that buys a rework cycle and a human interruption is
+  the expensive one. The refinement worth recording is that the safe predicate is
+  **specification completeness**, not the work's nominal category: a brief
+  containing the literal code is transcription, which is mechanically checkable.
+
+The judged half needs hardening the current prompts do not have: an explicit
+adversarial stance plus a **role-specific list of how that role goes soft**, derived
+from observed failures rather than invented. Reviewer conflict-avoidance —
+downgrading a blocker to a warning to avoid disagreeing with the producer — is a
+predictable failure mode and is named rather than hoped away.
+
+**14.4 The evidence layer — the largest gap.** Roughly thirty catalog entries ship
+today and there is behavioural evidence about **one** of them, from a single-task
+pilot whose own write-up notes the result was partly circular. Two failure modes
+follow and both are silent: a skill whose description contains no word a user would
+actually say never fires yet costs its context load forever, and an always-on rule
+that has drifted past the point where the model attends to it still passes every
+gate. The existing gates verify that an entry is _well-formed and projected_, never
+that it _changes behaviour_ — excellent checks on the wrong axis.
+
+The target is three tiers: structural (have it), **routing** (deterministic,
+lexical, free, runs in CI — the highest-value single deliverable and the thing
+nobody else in the field has), and behavioural (judged, on demand, with control arms
+so a result means something). Two disciplines carry over from the strongest
+measurement work reviewed: separate _mechanism confirmed_ from _outcome improved_
+and never report one as the other, and keep a safety tier that **executes** the
+produced code against hostile input, so "less code" or "more decisive" can never be
+bought by dropping validation.
+
+The single highest-leverage unknown sits here. The always-on baseline is around
+9000 characters — on the order of 1300 words of dense rules — against a consistent
+practitioner finding that adherence to dense rules degrades well below that. If
+those thresholds are even roughly right, this is not a budget being managed but a
+cliff already crossed, and raising the cap made it worse. Nothing currently measures
+which baseline rules bind. **No further change to the cap in either direction until
+that is measured** ([`steering-surfaces`](../design/steering-surfaces-design.md)
+§2.2).
+
+Relatedly, and cheaper than the design documents assume: the **path-scoped tier is
+already built** — targets declare a `scoped_rules` output and the planner routes
+fragments carrying a `scope` — and **no fragment declares one**. Moving conditional
+guidance (subprocess discipline, test isolation, catalog authoring) out of the
+always-on baseline is therefore authoring work, not engine work, and it improves
+both cost _and_ adherence: a rule injected because a matching file was opened
+competes with far less than the same rule buried in a dense always-on block.
+
+**14.5 Owning the tracker.** The tracker is not a peripheral integration — it _is_
+the harness's state, so every guarantee above is downstream of it, and it is
+currently an unowned external binary in the critical path. The target is pure
+Python inside this package, with an **append-only event log as the truth** and every
+other file derived and disposable; a record's state is a fold over its events, so
+history lives in the data rather than depending on git history surviving a squash or
+a shallow clone. Measured motivation: an in-process read is ~175× cheaper than one
+external CLI invocation, because process spawn dominates everything the tracker
+actually does.
+
+Two constraints are recorded because they are easy to lose: a **clean-room
+boundary** applies (the licence of the binary we currently depend on carries a rider
+restricting a class of users, which is itself the strongest argument for owning the
+component), and the alternative of adopting a versioned database is rejected because
+it reintroduces exactly the unowned-binary upgrade surface being removed.
+
+**14.6 Asserted, not yet earned.** Recorded explicitly so it is not mistaken for
+established fact. The structural leads are real: enforcement is code and hooks
+rather than prose; state is a tracker with a dependency graph rather than markdown
+plan files; one catalog is projected to three agent families and the projection is
+gated. But three headline claims are unmeasured — that the roster's tiers and lenses
+pay for themselves, that the always-on baseline is effective at its current size,
+and that individual catalog entries change behaviour. The cost-per-landed-package
+baseline is the instrument that makes the first falsifiable, and it gates several
+downstream decisions.
+
+**14.7 Explicitly rejected, so it is not re-proposed.** Each refusal has a reason
+stronger than taste, and several were reached independently by other projects: an
+LLM orchestrator in control of the tracker; personas spawning personas; an
+agent-writable catalog (a bad implementation bounces off a gate, a bad fragment is
+_absorbed_ and silently degrades every later lane); `--no-verify` to dodge parallel
+commit contention, which the merge queue already solves without defeating a gate;
+lossy compaction of the ledger; a maintained TUI; an external database or daemon; a
+compression proxy in the critical path; a cheap-tier model pre-reader whose
+characteristic error is an undetectable omission; and agent-to-agent messaging,
+which is a real capability declined because it costs reproducible scheduling and
+resumability.

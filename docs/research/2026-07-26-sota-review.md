@@ -695,7 +695,7 @@ Stated honestly, with the distinction between a structural lead and an asserted 
    than an authority model.
 5. **The tracker plan is more defensible than the alternatives on offer.** §2.10's upgrade
    procedure is the strongest available evidence for owning this component.
-6. **We already run a whole-harness A/B** (`docs/harness-eval.md`) and were already honest about
+6. **We already run a whole-harness A/B** (`docs/design/harness-eval.md`) and were already honest about
    its weakness (the circular-criterion problem) before reading ponytail. Almost nobody else in
    this set measures at all; ponytail measures better; we are second and know why.
 
@@ -719,7 +719,7 @@ never fires costs its context load forever and delivers nothing, and two collidi
 make routing a coin flip. This is deterministic, free, CI-safe, and we do not have it.
 
 **Cost:** every unfired skill is pure context load; every colliding pair is unpredictable
-behaviour. Carried into [`catalog-efficacy-design.md`](../catalog-efficacy-design.md).
+behaviour. Carried into [`catalog-efficacy-design.md`](../design/catalog-efficacy-design.md).
 
 ### 6.2 The always-on baseline may be past the point where adherence collapses
 
@@ -737,7 +737,7 @@ and ask the agent to summarise the rules; anything it cannot recall is not doing
 
 **Cost:** potentially the entire always-on layer under-performing while we pay for it on every
 turn of every session in every consumer repo. This is the highest-leverage unknown in the review.
-Carried into [`steering-surfaces-design.md`](../steering-surfaces-design.md).
+Carried into [`steering-surfaces-design.md`](../design/steering-surfaces-design.md).
 
 ### 6.3 No path-scoped guidance tier
 
@@ -753,7 +753,7 @@ deleting guidance.
 Our rework is capped but has no convergence check, so a stalled loop burns its remaining budget.
 Our gates are not classified, so "what happens when this fails" is answered per site rather than
 by type. Our findings have no structurally required severity. All three are cheap.
-Carried into [`gates-and-rework-design.md`](../gates-and-rework-design.md).
+Carried into [`gates-and-rework-design.md`](../design/gates-and-rework-design.md).
 
 ### 6.5 Reviewer and validator prompts are not hardened
 
@@ -845,11 +845,11 @@ trigger to revisit).
 
 | Finding | Carried into |
 | --- | --- |
-| Three-tier evals; control arms; micro-tests with a no-guidance control; separating mechanism from outcome; per-skill eval files as a CI requirement | [`catalog-efficacy-design.md`](../catalog-efficacy-design.md) (new) |
-| Gate taxonomy; stall detection; refute-or-promote; severity as a required field; adversarial stance and "how reviewers go soft"; adjudicate-only-at-the-cap; no-pre-judging lint; capability escalation on late rework rounds | [`gates-and-rework-design.md`](../gates-and-rework-design.md) (new) |
-| The seven steering mechanisms; the always-on adherence budget; path-scoped rules; capability tiers per agent family; `effort` signals; the ceremony threshold and a named primitive below it; form-matching for guidance | [`steering-surfaces-design.md`](../steering-surfaces-design.md) (new) |
-| `beads_rust` licence correction and clean-room boundary; Dolt as the rejected alternative; the three JSONL migration risks; adaptive id length with a collision budget; provenance labels on edges; `prime`-style memory assembly | [`work-tracker.md`](../work-tracker.md) (updated) |
-| Adversarial stance hardening; tier-vs-turn-count reconciliation keyed on specification completeness; the deterministic-localisation reopening of the Scout; two-pass generation within a dispatch; no-reranking across review axes; trend instrument; `effort` per role | [`agent-roster-design.md`](../agent-roster-design.md) (updated) |
+| Three-tier evals; control arms; micro-tests with a no-guidance control; separating mechanism from outcome; per-skill eval files as a CI requirement | [`catalog-efficacy-design.md`](../design/catalog-efficacy-design.md) (new) |
+| Gate taxonomy; stall detection; refute-or-promote; severity as a required field; adversarial stance and "how reviewers go soft"; adjudicate-only-at-the-cap; no-pre-judging lint; capability escalation on late rework rounds | [`gates-and-rework-design.md`](../design/gates-and-rework-design.md) (new) |
+| The seven steering mechanisms; the always-on adherence budget; path-scoped rules; capability tiers per agent family; `effort` signals; the ceremony threshold and a named primitive below it; form-matching for guidance | [`steering-surfaces-design.md`](../design/steering-surfaces-design.md) (new) |
+| `beads_rust` licence correction and clean-room boundary; Dolt as the rejected alternative; the three JSONL migration risks; adaptive id length with a collision budget; provenance labels on edges; `prime`-style memory assembly | [`work-tracker.md`](../design/work-tracker.md) (updated) |
+| Adversarial stance hardening; tier-vs-turn-count reconciliation keyed on specification completeness; the deterministic-localisation reopening of the Scout; two-pass generation within a dispatch; no-reranking across review axes; trend instrument; `effort` per role | [`agent-roster-design.md`](../design/agent-roster-design.md) (updated) |
 | Declarative typed worktree provisioning; atomic teardown | not yet carried — file against the worktree component |
 | Diátaxis restructure of `docs/`; tutorial and how-to layer | not yet carried — documentation workstream |
 | Prefix-stable dispatch bundles; reversible bundle compression with retrieval | not yet carried — depends on `basicly-7bur` baseline |

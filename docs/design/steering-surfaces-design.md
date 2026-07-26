@@ -1,7 +1,7 @@
 # Steering Surfaces — Which Mechanism Carries Which Guidance
 
 Status: **design, not yet decomposed.** Opened 2026-07-26 out of the state-of-the-art review
-([`research/2026-07-26-sota-review.md`](research/2026-07-26-sota-review.md) §§6.2, 6.3, 6.8). This
+([`research/2026-07-26-sota-review.md`](../research/2026-07-26-sota-review.md) §§6.2, 6.3, 6.8). This
 document is about the **guidance delivery layer** — the projection targets, not the catalog's
 content and not the loop.
 
@@ -20,7 +20,7 @@ ours.
 | --- | --- | --- | --- | --- | --- |
 | Root instruction file (`CLAUDE.md`/`AGENTS.md`/`copilot-instructions.md`) | session start | memoized, re-read | **high** — every line, every turn | moderate | **yes** — the always-on baseline |
 | Subdirectory instruction file | on-demand when that subtree is touched | lost until touched again | low | moderate | no |
-| **Rules with `paths:` / `applyTo:`** | when a matching file is touched | re-injected | **medium, low if scoped** | moderate | **no — §3** |
+| **Rules with `paths:` / `applyTo:`** | when a matching file is touched | re-injected | **medium, low if scoped** | moderate | **built, unused — §3** |
 | Skills | name+description at start; body on invoke | re-injected to a budget | low | low-moderate | **yes** — on-demand catalog |
 | Subagents | name+description at start; body never enters the parent | only the final message returns | low — isolated context | moderate | **yes** — factory dispatch |
 | Hooks | on lifecycle events | **bypass compaction entirely** | low — config lives outside context | **high (deterministic)** | **yes** — the gate floor |
@@ -113,17 +113,29 @@ it in three tiers.
 is a projection-template change, not new content, and it should be micro-tested (form-matching:
 this is a *retrieval* problem, so a structural fix is indicated, not more prose).
 
-## 3. Path-scoped rules — the tier we are missing
+## 3. Path-scoped rules — the tier we built and never used
 
-### 3.1 The mechanism exists in both platforms
+> **Corrected 2026-07-26.** This section previously claimed the path-scoped tier was *missing*
+> and planned the projection work to add it. That was wrong, and the error mattered: it sized a
+> content problem as an engine problem. **The projection exists and is wired; no fragment uses
+> it.** What follows is the corrected account.
+
+### 3.1 The mechanism exists in both platforms — and in our engine
 
 Claude Code supports `.claude/rules/*.md` with a `paths:` glob list; guidance loads only when a
 matching file is touched, and is re-injected on compaction. Copilot supports `*.instructions.md`
 with `applyTo:` glob frontmatter, comma-separable, with a sharp gotcha: **omit `applyTo` entirely
 and the file does nothing automatically.**
 
-Our catalog has **two** guidance tiers — always-on fragments and on-demand skills — where the
-platforms offer **three**. The missing middle is *conditional, automatic, scoped*.
+We already project into that mechanism. A fragment may declare `scope: paths: [...]`
+(`Fragment.scope_paths` / `is_scoped`), the planner routes on it (`has_scope`,
+`exclude_scoped`), the `claude` target declares a `scoped_rules` output at
+`.claude/rules/{fragment_id}.md`, and `rule_md.j2` renders it.
+
+**And the directory is empty, because zero fragments declare a scope.** So the catalog does have
+two *populated* tiers where the platforms offer three — but the third is not missing, it is
+unused. The remaining work is **authoring** (which fragments earn a scope) plus one deterministic
+check (§3.4), not a new projection target.
 
 ### 3.2 Why this is the right relief valve for §2
 
@@ -141,6 +153,22 @@ Moving them to path-scoped rules is better on **both** axes at once, which is ra
 That second point is the important one. This is not only a cost optimisation; under §2.1's model it
 is an **adherence** improvement for exactly the guidance most likely to be currently ignored.
 
+**But the saving is not uniform across families, and that must not be glossed.** Scoping a
+fragment does three different things depending on the target:
+
+| Target | What a scoped fragment does | Baseline cost |
+| --- | --- | --- |
+| `claude` | becomes a real conditional rule in `.claude/rules/`, loaded on a glob match and re-injected on compaction | **removed** from the baseline |
+| `codex` | stays **inlined** in `AGENTS.md`: nested `AGENTS.md` scoping is directory-based while our scopes are globs, so a per-directory offload cannot express `**/*.py` faithfully and inlining is the correctness-preserving choice | **unchanged** — which is why the codex cap carries a documented allowance |
+| `copilot` | is **not** twinned into `.github/instructions/` on purpose: VS Code loads both roots without dedup, so a twin double-loads. Single-sourced to `.claude/rules/` instead | **removed**, and github.com-side Copilot no longer sees it at all |
+
+Two consequences for how this work should be planned. First, §2's headline relief — shrinking the
+always-on baseline — **lands on Claude and Copilot but not on Codex**, so a measurement that
+averages across families will understate it and a claim of "we cut the baseline" needs the family
+named. Second, scoping a fragment is a *deliberate removal* from the github.com Copilot surface,
+which is a guarantee change, not a refactor: it belongs in §4's capability-tier table and should be
+a conscious choice per fragment rather than a side effect of tidying.
+
 ### 3.3 What must not move
 
 A rule earns its always-on slot only if it is **unconditional** — it binds regardless of which file
@@ -156,15 +184,28 @@ is open. Concretely, these stay:
 The test is mechanical: **if you can write a glob for it, it is a path-scoped rule.** If the
 predicate is "the agent is about to do something", it is always-on or it is a hook.
 
-### 3.4 Projection consequences
+### 3.4 What is actually left to build
 
-This adds a third projection target with a per-family capability question, so it needs the same
-gating treatment as the existing two: `basicly check` must verify the path-scoped tier projects
-correctly per family, and `skills-check`'s sibling for rules must catch a rule whose globs match
-nothing — the silent-failure mode Copilot's missing-`applyTo` gotcha exemplifies.
+The projection and its per-family routing are done (§3.1), and `basicly check` already gates
+generated-file drift for the scoped output like any other. So the engine work reduces to **one
+missing deterministic check**:
 
-**A rule that matches nothing is worse than no rule**: it looks like coverage in review and delivers
-nothing at runtime. That is a deterministic check and it belongs in CI.
+**A scope whose globs match nothing.** This is the silent-failure mode Copilot's
+missing-`applyTo` gotcha exemplifies, and it is the one failure the existing gates cannot see: the
+fragment is well-formed, it projects cleanly, `check` is green, and the rule never loads. **A rule
+that matches nothing is worse than no rule** — it looks like coverage in review and delivers
+nothing at runtime. Deterministic, cheap, belongs in CI.
+
+Two smaller notes, both cheap and both easy to forget:
+
+- **The check must run against the consumer's tree, not ours.** A scope like `**/*.py` matches here
+  and matches nothing in a docs-only consumer repo, so "matches nothing" is a warning at
+  projection time and an error only where the technology is selected — otherwise the gate punishes
+  a consumer for not having Python.
+- **`catalog_verify` already special-cases scoped fragments** when comparing for duplication (two
+  fragments with identical bodies are only a duplicate if their scopes match too). That logic is
+  written and untested against real scoped content, because there is none — expect it to be the
+  first thing that breaks when scopes appear.
 
 ## 4. Capability tiers per agent family
 
@@ -306,8 +347,11 @@ factory and keeps the routing question in one place.
 2. **Audit the baseline against three questions** before moving anything: *is this really a hook?*
    (§1) · *can I write a glob for it?* (§3.3) · *does it change behaviour versus the default at
    all?* (the no-op test). Expect all three to fire.
-3. **Confirm per-family capability for path-scoped rules** before designing the projection, since
-   the tier table in §4 is exactly the kind of claim that goes stale.
+3. ~~Confirm per-family capability for path-scoped rules before designing the projection.~~
+   **Done (2026-07-26), and it answered differently than expected**: the projection is already
+   built and wired, and the per-family behaviour is §3.2's table. What replaces this precondition
+   is narrower — **decide, per fragment, whether losing the github.com Copilot surface is
+   acceptable**, since scoping is a guarantee change there rather than a refactor (§3.2).
 4. **§6.2's threshold needs owner sign-off**, not derivation. It is a policy choice about how much
    ceremony this repo wants, and it is the one item in this document that is not a technical
    question.

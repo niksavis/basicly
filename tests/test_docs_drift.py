@@ -1,4 +1,4 @@
-"""Tripwires tying docs/architecture.md to the code it documents.
+"""Tripwires tying docs/architecture/architecture.md to the code it documents.
 
 Section 8's CLI tables must cover exactly the registered subcommands, and
 section 5's schema table must match ``schema.py`` — so doc drift fails CI
@@ -16,7 +16,7 @@ import pytest
 
 from basicly import cli, schema
 
-ARCHITECTURE_MD = Path(__file__).parent.parent / "docs" / "architecture.md"
+ARCHITECTURE_MD = Path(__file__).parent.parent / "docs" / "architecture" / "architecture.md"
 
 
 def _section(text: str, heading: str) -> str:
