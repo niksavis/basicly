@@ -1,9 +1,16 @@
 # Work Tracker — Owning the Harness's Core Dependency
 
-Status: **initialization — information gathering, not a build plan.** Opened 2026-07-25. No
-schema is frozen and no implementation starts from this document; its job is to record why we
-must own this component, what our own usage already tells us it must do, and what we still need
-to measure before committing to a design. The decision point is named in §7.
+Status: **initialization — information gathering, not a build plan.** Opened 2026-07-25; updated
+2026-07-26 from the state-of-the-art review
+([`research/2026-07-26-sota-review.md`](research/2026-07-26-sota-review.md) §2.10). No schema is
+frozen and no implementation starts from this document; its job is to record why we must own this
+component, what our own usage already tells us it must do, and what we still need to measure
+before committing to a design. The decision point is named in §7.
+
+**Read §7 first if you are about to start work.** It carries a licence correction — `beads_rust`
+is *not* MIT, and a clean-room boundary now applies to this component. The 2026-07-26 additions
+are §5.1 (three risks in the JSONL import path), §9.4's collision budget, §9.6 (provenance labels
+on graph edges), and §16 (why we decline the versioned-database alternative upstream chose).
 
 ## 1. Why this is not optional
 
@@ -137,6 +144,28 @@ working the whole time.
 4. **Flip** the source of truth once the differential test is clean and the telemetry (§6) shows
    no unimplemented surface in use.
 
+### 5.1 Three risks the 2026-07-26 review found in step 1
+
+Upstream `gastownhall/beads` has moved to **Dolt** as its storage backend and, in doing so, has
+explicitly demoted the format our import plan reads. Its own docs: *"The local Dolt database is
+the source of truth … `.beads/issues.jsonl` is an export. It exists for viewers, interchange,
+migration, and backup. It is **not** the canonical cross-machine sync channel."* Three
+consequences, none fatal, all better known now than at cutover:
+
+- **The JSONL path is a second-class citizen upstream and will drift.** Our importer targets a
+  format whose owner has deprioritised it. Pin the import against a known-good export and treat
+  format drift as expected, not exceptional.
+- **`import` is upsert-only.** Upstream states it *"cannot infer that records absent from an
+  export were deleted, pruned, or simply never exported."* So a JSONL snapshot **cannot express
+  deletion**, and our importer must treat tombstones as a first-class concern rather than
+  discovering the gap during the flip. §13's "unknown event kind is preserved and skipped" rule
+  handles forward compatibility; this is the different problem of *absence*, and absence in an
+  upsert-only format is ambiguous by construction.
+- **A one-shot import is the only import.** Because step 1 cannot round-trip deletions, the
+  shadow-mode differential in step 2 must compare against the **live tracker**, not against a
+  re-import of its export. Comparing two derivatives of the same lossy snapshot would agree with
+  itself and prove nothing.
+
 ## 6. What we must measure first
 
 We should not design a schema from memory of our own usage. `basicly-kjc5.53` extends the
@@ -163,9 +192,27 @@ sized by D8. Until then, no implementation of the tracker itself and no schema f
 improves the *current* tracker's use — recording the scheduler score (`basicly-vkh0.3`), stopping
 the path leak (`basicly-vkh0.5`) — is not blocked by this and lands against the existing tracker.
 
-Reading beads_rust and bv sources for reference is explicitly sanctioned while they are MIT —
-their id derivation, merge baseline, and ready-set ranking are the parts worth studying, and
-their gaps (§3) are the parts worth not copying.
+**Correction, 2026-07-26: the licence claim that stood here was wrong.** This section previously
+read "Reading beads_rust and bv sources for reference is explicitly sanctioned while they are
+MIT". `beads_rust/LICENSE` is titled **"MIT License (with OpenAI/Anthropic Rider)"**. The rider
+grants no rights to Anthropic, OpenAI, their affiliates, or anyone "acting directly or indirectly
+on behalf of, for the benefit of, or under the direction of" them, and it names "benchmarking,
+testing, analyzing, indexing" as restricted use. Full text and analysis in
+[`research/references.md`](research/references.md) §2.
+
+**A clean-room boundary therefore applies to this work.** The replacement tracker must not be
+derived from `beads_rust` source. Its sanctioned inputs are:
+
+- **our own ledger's observable data** — which is what §§9–10 are already built on;
+- **`br`'s documented CLI contract** — the interface we already consume;
+- **[`gastownhall/beads`](https://github.com/gastownhall/beads)**, the genuine-MIT upstream
+  original, which covers the same conceptual ground and is the better reference anyway (§16).
+
+This is a supply-chain finding as much as a legal one, and it strengthens §1 rather than
+complicating it: a dependency whose licence can be amended with a rider aimed at a class of users
+is exactly the unowned-critical-path risk this document was opened about. Not legal advice — if
+implementation proceeds, confirm the boundary with someone qualified. Until then the conservative
+line costs nothing, because the MIT original is available.
 
 ## 8. Cross-repo work exchange — announce, never push
 
@@ -264,6 +311,17 @@ The distinction our own usage has already taught us:
   short random root token, collision-checked, plus a dotted monotonic child suffix
   (`<prefix>-<root>.<n>`), which is what we already read comfortably and which sorts naturally.
   Ids are never reused, and a delete leaves a tombstone.
+
+  Two refinements from upstream's design, adopted 2026-07-26. First, **state the collision
+  budget rather than saying "collision-checked"**: upstream sizes id length from the birthday
+  paradox, `P(collision) ≈ 1 - e^(-n²/2N)` where `N = 36^length`, against a declared maximum
+  probability, and scales 4 → 5 → 6 characters as the ledger grows. Adopting an explicit target
+  turns a hand-wave into a specified, testable property; **adaptive length is safe because
+  existing ids never change** — only newly minted ones get longer. Second, a correction worth
+  recording: upstream's ids are widely described as "content-based" but are actually derived from
+  title **plus creation timestamp plus a random salt**, so they are effectively opaque. That
+  validates the split below rather than contradicting it — and it is a good reminder to read the
+  data rather than the marketing.
 - **Evidence is immutable** — a decision, a found-info record, a dispatch marker is a fact about
   a moment. Those ids **are** content-derived, which is what makes re-recording idempotent
   (`decisions.decision_id_for`, `run_record.marker_id`).
@@ -297,6 +355,39 @@ nothing branches on it. Specifically:
 The general form: **the ledger must be totally ordered by something we assign, so that a
 misbehaving host clock degrades the quality of our evidence and never the correctness of our
 state.**
+
+### 9.6 Provenance — every edge says how it got there
+
+Added 2026-07-26 from the review. Today a dependency edge is just an edge. An edge a human
+asserted during decomposition, an edge Dana proposed from a scope-glob overlap, and an edge the
+merge queue inferred after a conflict are **indistinguishable in the graph** — yet only the first
+should be trusted, unexamined, to gate a landing.
+
+`graphify` solves the same problem with a label on every derived edge, and the vocabulary
+transfers cleanly:
+
+| Label | Meaning here | Disposition |
+| --- | --- | --- |
+| `EXTRACTED` | explicitly asserted by a human, or mechanically derived from a fact in the repo (an import, a shared file in two scope globs) | trusted; may gate a landing |
+| `INFERRED` | proposed by an agent or deduced from a second-order signal (a bounce, a co-occurrence) | usable, but visible as a proposal |
+| `AMBIGUOUS` | the derivation is uncertain | **routes a decision item**; never silently gates anything |
+
+Three reasons this belongs in the schema rather than in a convention:
+
+- **It is D11 applied to structure.** We already require evidence to be attributable; an edge is
+  evidence about the shape of the work, and it is currently the only kind that carries no
+  attribution.
+- **It gives `AMBIGUOUS` a disposition path that already exists.** The decision queue is exactly
+  where an uncertain machine judgment belongs, and the engine-disposes/agents-propose split (D2)
+  already governs it.
+- **It makes the coupling-edge feedback loop honest.** When a merge conflict adds a coupling edge
+  because "the decomposition missed a coupling", that edge is an inference from one observation.
+  Recording it as `INFERRED` keeps a later reader from mistaking it for a declared dependency, and
+  makes "how often are our inferred couplings right?" a question the ledger can answer.
+
+The label is a property of the *event that created the edge*, not of the edge, which falls out of
+§4's model for free: the fold carries the strongest label any event asserted, and a human
+confirming an `INFERRED` edge is a new event promoting it to `EXTRACTED` rather than a mutation.
 
 ## 10. Speed and scaling — measured, not assumed
 
@@ -416,3 +507,46 @@ application; sprint, estimation, or reporting ceremony beyond what the loop cons
 TUI (§4); real-time collaboration; or import from third-party trackers beyond the one-off beads
 import in §5. Each of those is how a tool like this becomes unmaintainable, and none of them is
 required by the loop.
+
+## 16. The rejected alternative: a versioned database
+
+Added 2026-07-26. Upstream `gastownhall/beads` answered the same requirements with **Dolt** — a
+version-controlled SQL database with cell-level merge, native branching, and sync over Dolt
+remotes under `refs/dolt/data`. It is a serious, coherent answer, and recording why we decline it
+is more useful than pretending we never saw it.
+
+**What it does better than an append-only log.** Cell-level merge is genuinely stronger than
+line-level for concurrent edits to one record; SQL gives ad-hoc query for free, where we would
+hand-roll every projection; branching issue history independently of source branches is elegant;
+and multi-writer concurrency is solved rather than avoided.
+
+**Why we still decline it.** Every advantage is bought with the thing §1 exists to remove:
+
+- **It reintroduces the unowned binary.** Embedded mode ships inside their binary; server mode
+  needs a `dolt` install. Either way the storage engine is somebody else's release train sitting
+  in our critical path — the exact dependency shape we are eliminating, restored under a better
+  brand.
+- **Their upgrade procedure is the strongest evidence for our position.** Crossing a schema
+  migration on a remote-backed database requires *"exactly one designated clone"* to run
+  `bd migrate` and `bd dolt push` while *"other clones install the new binary and run
+  `bd bootstrap`."* That is a coordinated, human-sequenced, multi-machine ritual, in our critical
+  path, triggered by someone else's schema decision. §1 predicted this cost from first principles;
+  it is now observed.
+- **It contradicts the "lives in the repo" requirement.** A separate ref namespace synced by a
+  separate push is not state that travels with a clone; a fresh clone needs `bd bootstrap` before
+  the tracker works.
+- **The multi-writer capability solves a problem §8 dissolved.** One writer per repo ledger, and
+  cross-repo work as offers, means we never need distributed write coordination. Buying a
+  distributed database to solve a problem the architecture removed is the expensive way to be
+  wrong.
+
+**What we take from it.** The collision-budget maths (§9.4), the `remember`/`prime` split (a
+tracker-backed memory with an assembly command, which we have the storage half of and not the
+assembly half), and the honest observation that their compaction feature exists because real users
+have a growth problem — §9.1 declines it because *git plus the ship-time rollup already bound our
+growth*, which is a trade-off we chose, not a mistake they made.
+
+**The fork is genuine.** They made the database more authoritative and the export secondary; we
+make the log authoritative and everything else a disposable projection. Both are internally
+consistent. Ours is the one that needs no second binary, no daemon, and no bootstrap step — and
+those, not merge semantics, are the requirements in §2.

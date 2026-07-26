@@ -1,0 +1,860 @@
+# State-of-the-Art Review — Agent Harnesses, Skills, and Trackers
+
+Reviewed 2026-07-26. Eleven repositories read at pinned revisions, plus first-party vendor
+documentation and a general literature sweep. Provenance, licences, and confidence grades are in
+[`references.md`](references.md); **read §2 of that file before touching the tracker work** — one
+licence is not what our own docs claimed.
+
+This document is **findings, not a plan.** Its job is to be the durable evidence base we cite
+later, so that a future design decision can point at a paragraph here instead of re-running the
+review. Proposals derived from it live in the design documents indexed in §9.
+
+## 1. What was actually being asked
+
+The goal is to make `basicly` enterprise-grade and competitive with this field, on its own
+strengths, with no obligation to preserve current implementation. So the review is organised
+around four questions, and §§5–7 answer them:
+
+- Where is `basicly` **already ahead**, and is the lead real or asserted?
+- Where is it **behind**, and how much does the gap cost?
+- What in the field should be **rejected**, with a reason better than "not our style"?
+- What **vocabulary** should we adopt, since a shared word is the cheapest thing to import and
+  the most expensive thing to get wrong?
+
+One framing correction up front, because it changes how the rest reads. The field has largely
+converged on a name for what `basicly` is: **harness engineering** — the claim that the
+deterministic scaffolding around the model matters more than the model choice. That is `basicly`'s
+existing thesis, arrived at independently. The competitive question is therefore not *whether*
+the harness approach is right; it is whether our harness is measurably better than the eight
+other projects that also believe it.
+
+## 2. Per-repository findings
+
+Each entry: what the project is, what is worth taking, and what is worth refusing.
+
+### 2.1 mattpocock/skills — the vocabulary of skill authoring
+
+A deliberately small, hackable skill set positioned explicitly *against* process-owning
+frameworks ("GSD, BMAD, Spec-Kit … take away your control and make bugs in the process hard to
+resolve"). Its highest-value artifact is not a workflow but a **domain model for what makes a
+skill good**: `writing-great-skills/GLOSSARY.md`.
+
+**Take — the authoring vocabulary.** These are precise, mutually distinct terms we currently
+lack, and every one of them is a lever on a failure we have hit:
+
+| Term | What it names | Why we need the word |
+| --- | --- | --- |
+| **Predictability** | the agent taking the same *process* every run — not the same output | the root virtue; a brainstorming skill should predictably diverge |
+| **Context load** vs **cognitive load** | tokens spent on an always-loaded description vs what the *human* must remember | names the real trade-off in model- vs user-invoked; cognitive load is "the price of human agency", not a cost to minimise |
+| **Information hierarchy** | steps → in-file reference → disclosed reference | a ladder, so "where does this line go" has an answer |
+| **Completion criterion** | the condition telling the agent a step is done, on two axes: *clarity* (resists premature completion) and *demand* (sets legwork) | our gates have this; our prose steps mostly do not |
+| **Leading word** | a compact pretrained concept (*tracer bullet*, *fog of war*) that anchors a region of behaviour in one token | the cheapest compression available: recruits priors instead of paying definition tokens |
+| **Premature completion** | ending a step early because attention slipped to *being done* | a between-steps failure; cure the criterion first, hide later steps only if that fails |
+| **No-op** | a line the model already obeys by default | the single best pruning test; explicitly *model-relative*, settled by running the skill, not by debate |
+| **Negation** | steering by prohibition, which makes the banned behaviour more available | "don't think of an elephant"; prompt the positive |
+| **Sediment** / **sprawl** / **duplication** | length from staleness / length itself / length from repeated meaning | three different diseases with three different cures |
+
+**Take — the invocation axis as a real design decision.** Model-invoked keeps a description and
+so is reachable by the agent *and* by other skills, at permanent context cost. User-invoked
+strips the description: zero context load, but nothing except the human can reach it. The
+consequence they draw is sharp and correct: **a router skill can only ever hint, never fire**,
+because the skills it points at have no descriptions. Our catalog has no such axis; every
+projected skill is effectively model-invoked, so we pay context load on descriptions for skills
+only ever invoked by hand.
+
+**Take — `implement` as a lesson in restraint.** The whole skill is nine lines: use `/tdd` at
+pre-agreed seams, typecheck often, full suite once at the end, `/code-review`, commit. It works
+because the *other* skills carry the discipline. A long skill is often evidence that a
+neighbouring skill is missing.
+
+**Take — two-axis code review.** `Standards` (repo conventions plus a fixed Fowler smell
+baseline) and `Spec` (does it implement what the issue asked) run as **parallel sub-agents** and
+are reported **separately and un-reranked** — because "a change can pass one axis and fail the
+other", and merging them lets one mask the other. Our roster's Remo has lenses; it does not have
+this no-reranking rule, and Vera's acceptance judgment is arguably the Spec axis under a
+different name.
+
+**Take — `wayfinder`'s fog of war.** For work too big for one session: a map issue whose children
+are *decision* tickets, plus an explicit **Not yet specified** section for in-scope work you can
+see coming but cannot phrase sharply yet, and a separate **Out of scope** section that never
+graduates. The test for which is which is exact and useful: *can you state the question
+precisely now?* — not *can you answer it?* This is a better answer than we have to "what do you
+do with a decomposition you cannot finish", and it maps directly onto our decision queue.
+
+**Take — "refer by name, never by id."** *"A wall of `#42, #43, #44` is illegible; names read at
+a glance."* Our engine output is dense with bare bead ids.
+
+**Refuse — the local-markdown tracker fallback.** Sensible for their audience, strictly worse
+than what we have.
+
+### 2.2 obra/superpowers — the most mature subagent-orchestration loop in the set
+
+A complete methodology (brainstorm → spec → plan → subagent-driven execution) shipped as a plugin
+to eleven harnesses. It is the closest existing analogue to our factory, and it has clearly been
+run enough to have scar tissue. The scar tissue is the valuable part.
+
+**Take — the bounded fix loop with capability escalation.** Five rounds maximum per task.
+Rounds 1–3 **resume the original implementer** (its context is intact; it knows the code and its
+own choices). Rounds 4–5 dispatch a **fresh implementer on a more capable model**, framed as *"a
+prior implementer attempted this task N times; you own it now. Read the report file for what was
+tried."* Their reasoning is exactly right: *"a loop that survives three resumes usually means the
+implementer cannot see its own problem — fresh eyes and a capability bump in one move."* Our
+rework cap bounces to the same tier with the same framing every time.
+
+**Take — the ledger as the recovery map.** *"Conversation memory does not survive compaction. In
+real sessions, controllers that lost their place have re-dispatched entire completed task
+sequences — the single most expensive failure observed."* Hence a per-plan ledger file whose
+first line names its plan, with `Task N: complete (commits a7..b7, review clean)` lines, and the
+instruction: **after compaction, trust the ledger and `git log` over your own recollection.** We
+have this property already — `br` is the ledger and the engine keeps no side-state — which is a
+genuine structural lead. Worth noting we got for free the thing they had to learn the hard way.
+
+**Take — "adjudicate only at the cap."** When round 5 still leaves findings open, the controller
+adjudicates each one: *reviewer wrong or contestable* → park with a ruling; *real but nothing
+builds on it* → park with a ruling; *real and load-bearing* → **STOP and report BLOCKED**. And
+critically: *"Adjudicating earlier to end a loop is pre-judging with a different name … a silent
+discard is forbidden."* This is the disposition path our R4 needs, expressed better than R4
+expresses it.
+
+**Take — the no-pre-judging rule, stated as a checkable string test.** *"If the prompt you are
+writing contains 'do not flag', 'don't treat X as a defect', 'at most Minor', or 'the plan chose'
+— stop: you are pre-judging, usually to spare yourself a review loop."* A rule an observer can
+mechanically check on the dispatch prompt is worth ten rules of good intent. Our dispatch
+assembly is deterministic code, so this is enforceable as a *lint on the emitted prompt*, not
+merely as guidance.
+
+**Take — hand artifacts over as files, never as pasted text.** *"Everything you paste into a
+dispatch prompt — and everything a subagent prints back — stays resident in your context for the
+rest of the session and is re-read on every later turn."* So: a `review-package` script writes
+commit list + stat + `git diff -U10` to one file and the reviewer gets the *path*. And the
+measured failure: *"a real session's dispatch hit 42k chars of which 99% was pasted history."*
+Also: never `HEAD~1` as the review base — it silently truncates multi-commit tasks; record BASE
+before dispatching.
+
+**Take — "one fix dispatch, not one fixer per finding."** *"Per-finding fixers each rebuild
+context and re-run suites; a real session's final-review fix wave cost more than all its tasks
+combined."*
+
+**Take — writing skills IS TDD.** RED: run the pressure scenario **without** the skill and record
+the rationalisations verbatim. GREEN: write the minimal skill addressing *those* rationalisations.
+REFACTOR: close the new loopholes. Iron law: *"NO SKILL WITHOUT A FAILING TEST FIRST"* — and
+*"if you didn't watch an agent fail without the skill, you don't know if the skill teaches the
+right thing."*
+
+**Take — "Match the Form to the Failure," which is the most empirically grounded finding in the
+entire review.** They ran head-to-head wording tests and report that *the form which bulletproofs
+one failure type measurably backfires on another*:
+
+| Baseline failure | Right form | Wrong form |
+| --- | --- | --- |
+| Skips a rule under pressure (knows better, does it anyway) | prohibition + rationalisation table + red flags | soft guidance ("prefer…", "consider…") |
+| Complies but output has the wrong shape | **positive recipe / contract**: state what the output IS, its parts, in order | prohibition list ("don't restate", "never narrate") |
+| Omits a required element from something it already produces | **structural**: a REQUIRED slot in the template it fills | prose reminders near the template |
+| Behaviour should depend on a condition | conditional keyed to an **observable predicate** | unconditional rule + exemption clauses |
+
+With two corollaries they measured: *"appending a single nuance clause to a winning recipe
+degraded it from consistent to noisy"*, and *"exemption clauses don't scope — 'this limit doesn't
+apply to code blocks' still suppresses code blocks."* And the reason prohibitions fail on shaping
+problems: under a competing incentive, *"agents negotiate with 'don't X'. A recipe leaves nothing
+to negotiate."*
+
+**Take — micro-test the wording before the scenario.** One fresh-context sample per call, system
+prompt = the realistic context the guidance will live in, **always include a no-guidance
+control** (*"if the control doesn't exhibit the failure, there is nothing to fix — stop, don't
+author the guidance"*), 5+ reps, **read every flagged match manually** because template echoes
+and quoted counter-examples masquerade as hits, and treat **variance as a metric**: *"five
+different interpretations across five reps means the wording isn't binding."*
+
+**Take — the description must not summarise the workflow.** Their observed failure: a description
+saying "code review between tasks" caused an agent to do **one** review when the skill body
+specified two. *"Descriptions that summarise workflow create a shortcut agents will take. The
+skill body becomes documentation agents skip."*
+
+**Refuse — `<EXTREMELY-IMPORTANT>` / "you do not have a choice" shouting.** It is the negation
+anti-pattern their sibling repo names, applied to itself, and it is unnecessary where a hook can
+enforce the same thing. We have hooks.
+
+**Refuse — the model-selection rule as stated**, but keep its best sentence. See §4.1: their
+"least powerful model that can handle each role" collides with our R5, and the honest resolution
+is neither project's headline but their footnote.
+
+### 2.3 addyosmani/agent-skills — the only project measuring whether its skills route
+
+24 skills, 4 personas, 8 slash commands, hooks, references — and, uniquely in this set, an
+**eval harness for the catalog itself**.
+
+**Take — the three-tier eval model. This is the single most directly transferable artifact in the
+review.**
+
+| Tier | Checks | Runs | Cost |
+| --- | --- | --- | --- |
+| 1 Structural | frontmatter, naming, required sections, command parity | CI | free |
+| 2 Trigger & routing | positive prompts rank their skill top-k; negative prompts don't; no two descriptions near-collide | CI | free |
+| 3 Behavioural | an agent following the skill satisfies its `expectations[]` | on demand | tokens |
+
+Tier 2 is the part nobody else has and the part we most need. It is a deliberately **lexical
+approximation** (stemmed TF-IDF over descriptions) and they say so — it cannot judge semantics,
+that is Tier 3's job — but it catches the two failure modes that dominate real trigger bugs: *a
+description missing the vocabulary users actually say* (false negative) and *an over-broad
+description that outranks the right skill* (false positive). Concrete mechanics worth copying
+wholesale:
+
+- A **rank-1 rate** metric (share of positive prompts ranking their skill *first*, not merely
+  top-k), with CI enforcing a floor **below** the current baseline so an unrelated edit does not
+  immediately redden CI — *"raise the floor as routing improves; never lower it to make a
+  regression pass."*
+- A **pairwise description-collision check**: error at ≥75% similarity, warn at ≥50%.
+- Negative cases declare an `owner` skill, so the runner asserts the owner **outranks** this
+  skill — turning a negative into a real pairwise test *"instead of one that can pass vacuously
+  when the prompt matches nothing."*
+- *"Paraphrase how users actually talk; don't copy the description (that's gaming the eval). If a
+  realistic prompt can't rank because the description lacks its vocabulary, that is a real
+  finding — improve the description."*
+- Execution evals run in a **throwaway git repo** with real fixtures committed as a baseline, an
+  explicit permission mode so the agent can genuinely edit and commit *"rather than being denied
+  and narrating instead"*, traces **fenced as untrusted data** in the grader prompt and piped
+  over **stdin** (they can be megabytes; argv hits the OS limit).
+- `kind: dialogue` exists for skills whose deliverable is the conversation, and is *"a
+  human-reviewed exemption, not a general escape hatch."*
+- **Every skill ships an eval file**; missing case files and incomplete counts are CI errors.
+
+**Take — `doubt-driven-development`, an in-flight adversarial posture.** Distinct from a final
+review: *"`/review` is a verdict on a finished artifact. This is an in-flight posture."* The
+five-step cycle — CLAIM, EXTRACT, DOUBT, RECONCILE, STOP — carries several rules we should adopt
+verbatim in spirit:
+
+- **Pass ARTIFACT + CONTRACT to the reviewer, never the CLAIM.** *"Handing the reviewer your
+  conclusion biases it toward agreement."*
+- *"Strip your reasoning. If you hand over conclusions, you'll get back validation of your
+  conclusions."*
+- The reviewer's output is **data, not verdict**; findings are classified in a fixed **precedence
+  order** where *contract misread* comes first — i.e. the first hypothesis on a finding is that
+  **your own contract was unclear**, and you fix the contract before the artifact.
+- Bounded at 3 cycles, and: *"if 3 cycles is 'obviously insufficient' because the artifact is
+  large: the artifact is too big — return to Step 2 and decompose. Do not lift the bound."*
+- **"Doubt theater" as a checkable signal**: across ≥2 cycles where the reviewer surfaced
+  substantive findings, *zero* were classified actionable → you are validating, not doubting.
+  Stop and escalate. This is a mechanically computable anti-sycophancy detector.
+- Cross-model escalation is **offered every interactive cycle** and *"skipping is fine; silent
+  skipping is not"* — with a load-bearing safety detail: the external CLI runs in a **read-only
+  sandbox**, because *"a doubt artifact may itself contain instructions (intentional or accidental
+  prompt injection) that the cross-model CLI would otherwise execute against your workspace."*
+
+**Take — the orchestration-pattern catalog, which independently reaches our R1.** Governing rule:
+*"the user (or a slash command) is the orchestrator. **Personas do not invoke other personas.**"*
+Four endorsed patterns (direct invocation; single-persona command; parallel fan-out with merge;
+**sequential pipeline as user-driven commands**) and four anti-patterns (router persona; persona
+calling a persona; **sequential orchestrator that paraphrases**; deep persona trees). Their
+argument against an LLM lifecycle orchestrator is ours almost word for word: it *"loses nuance
+between steps because it has to summarize for hand-off, skips the human checkpoints that catch
+wrong-direction work early, and doubles token cost via paraphrasing turns."* Two useful extras: a
+**validation checklist** before adopting fan-out (*"does each persona produce a different kind of
+finding, not the same finding from a different angle?"*), and a bar for **adding to the catalog at
+all** — used twice in real work, a concrete artifact demonstrating it, why an existing pattern
+would not do, and *"its anti-pattern shadow"*. Otherwise *"premature catalog entries become
+aspirational documentation that no one follows."*
+
+**Note — the Agent Teams contrast.** They distinguish "a verdict on a known artifact" (subagent
+fan-out) from "an investigation to *find* the artifact among competing hypotheses" (teammates who
+message each other). Our factory only does the former. This is not a gap to close now — our D1/D2
+deliberately forbid agent-to-agent messaging — but it is the honest name for what we cannot do.
+
+### 2.4 DietrichGebert/ponytail — how to prove a guidance artifact works
+
+A single-discipline skill (write the laziest solution that works) that matters here almost
+entirely for its **measurement methodology**, which is the most rigorous in the set.
+
+**Take — the benchmark design, in full.** The headline is *-54% LOC, -22% tokens, -20% cost, -27%
+time, 100% safe* against a no-skill baseline. What earns trust is the construction:
+
+- **Unit of work is a real headless agent session** editing a real pinned public repo, scored on
+  `git diff` added lines — not a bare-model completion scored on answer length.
+- **The baseline is the same agent with no skill**, which removes the chatty-model artifact.
+- **Two control arms**, each killing a specific alternative explanation: a *terse-prose* skill
+  (if the effect were "be brief", this would match it) and the seven-word naive prompt *"Follow
+  YAGNI principles, and prefer one-liner solutions"* (if a short prompt would do, no skill is
+  needed).
+- **A separate adversarial safety tier** that *executes* the produced code against hostile input,
+  so "less code" cannot be bought by dropping validation. The naive-prompt arm scores 95% here
+  while ponytail scores 100% — the safety tier is what makes that difference visible.
+- **Per-cell isolation**, `n=4`, and honest reporting of where the effect is ~0 (*"near zero on
+  code that is already minimal"*).
+- **A disclosed contamination bug**: an earlier run showed a ~4% gap because the plugin's
+  `SessionStart` hook fired on *every* arm, so *"the baseline was secretly running ponytail."*
+  Fixed by `--setting-sources project,local` plus exactly one plugin per arm. They published this
+  because *"it is the kind of error that makes a benchmark lie, and finding it is the reason to
+  trust the rest."*
+- **A retracted claim.** The old single-shot 80–94% figure is explicitly reframed as *"the
+  per-task ceiling, not the average"* after a critic pointed out the baseline was unfair.
+
+That last pair is the standard we should hold ourselves to. Our own `harness-eval.md` pilot
+already flags the same class of problem in its own results ("the C4 win is partly circular"),
+which is encouraging — we independently know the trap. We have not yet built the controls that
+answer it.
+
+**Take — the decision ladder as a form.** Seven numbered rungs, *stop at the first that holds*.
+It is dense, ordered, and mechanically self-checkable ("which rung did you stop at?"), and it
+carries a guard against its own worst failure: *"the ladder runs after you understand the
+problem, not instead of it … laziness that skips comprehension to ship a small diff is the
+dangerous kind: it dresses up as efficiency and ships a confident wrong fix."*
+
+**Take — the `ponytail:` debt marker, harvested mechanically.** A deliberate shortcut leaves an
+inline comment naming **its ceiling and its upgrade trigger** (`# ponytail: global lock,
+per-account locks if throughput matters`), and a separate skill greps them into a ledger — tagging
+any marker with **no upgrade trigger** as `no-trigger`, *"those are the ones that silently rot."*
+A self-documenting debt convention with a mechanical harvest and a rot detector, at the cost of
+one comment.
+
+**Take — capability tiers for portability.** Their 20-host adapter table classifies each host as
+**instruction-tier** (only reads a rules file), **skill-tier**, or **plugin-tier** (hooks,
+commands, mode switching), with a thin-adapter rule: *"when a host supports skills or hooks, point
+it at the existing `skills/` and `hooks/` files."* We project to three agent families as if they
+were equivalent; they are not, and naming the tier makes the difference in delivered guarantee
+explicit rather than silent.
+
+### 2.5 techygarg/lattice — composition tiers and a living context layer
+
+27 skills in three tiers, plus a `.lattice/` directory that accumulates project knowledge across
+feature cycles.
+
+**Take — atoms / molecules / refiners.** Atoms are single-principle guardrails; molecules are
+multi-step workflows that **compose** atoms; **refiners are guided interviews that produce the
+project's own standards**, customising how atoms behave for that team. The third tier is the
+interesting one and we have no equivalent: our catalog ships guidance and lets a consumer
+override it in `.basicly-local/`, but nothing *interviews* the consumer to generate their overlay.
+That is the difference between a configurable product and one that configures itself.
+
+**Take — the two-pass generation model, and its stated reason.** *"Asking AI to generate and
+validate simultaneously is unreliable — like asking a writer to write and proofread in the same
+pass. The creative task and the analytical task compete for attention, and one always suffers."*
+Hence generate → **STOP** → verify against checklists → present. We already have the cross-
+dispatch version of this (Kai then Vera); the *within-dispatch* version is much cheaper and we do
+not use it.
+
+**Take — the verification hierarchy.** Level 1 per-component self-check → Level 2 cross-component
+coherence → Level 3 independent review with no generation bias. *"Same reason human teams have
+self-review, then peer review, then QA."* Note Level 2 — cross-component coherence — is the level
+our lane-scoped verification structurally cannot see, and the level our session-level Remo
+architecture lens is supposed to cover.
+
+**Take — the review log as a trend instrument.** Every review appends scope, atoms applied,
+finding counts by severity, key findings, strengths to `.lattice/reviews/review-log.md`, on a
+rolling 15–20 entry window. What the trend answers is exactly what our roster cannot currently
+answer: *which atoms catch the most issues, whether anti-patterns recur (learnings aren't being
+absorbed), whether findings per review decline over time.*
+
+**Take — the AI-compliance techniques, as candidate forms to micro-test.** Imperative language
+with a cognitive boundary (*"STOP and verify ALL of the following"* beats *"apply these checks as
+you write"*); numbered labelled constraints over prose; **active** anti-pattern scans as
+checkboxes rather than passive "here are bad patterns"; and **show your work** — *"silent
+compliance is unreliable; visible compliance is accountable."* These are hypotheses, not results
+— which is precisely what §2.4's harness is for.
+
+**Refuse — agent-writable standards.** Their learnings flywheel has the AI propose and the user
+confirm. Our R9 is stricter (catalog changes are human-only at every grant level) and the
+asymmetry argument behind it still holds: a wrong implementation bounces off a gate, a wrong
+fragment is *absorbed* and silently degrades every later lane. Keep R9.
+
+### 2.6 open-gsd/gsd-core — the closest cousin, and the best gate taxonomy
+
+A phase loop (Discuss → Plan → Execute → Verify → Ship) driven by 34 named agents, with a thin
+orchestrator that *"never touches source files"* and `.planning/` as the durable substrate. Read
+it as the mature version of the same bet we are making.
+
+**Take — the four-gate taxonomy.** Clean, complete, and immediately applicable:
+
+| Gate | Purpose | Behaviour | Recovery |
+| --- | --- | --- | --- |
+| **Pre-flight** | validate preconditions before starting | blocks entry; **no partial work created** | fix the precondition, retry |
+| **Revision** | evaluate output quality, route back to the producer | loops with specific feedback, **bounded by an iteration cap** | producer addresses, checker re-evaluates |
+| **Escalation** | surface an unresolvable issue for a decision | pauses, presents options, waits for a human | human chooses, workflow resumes |
+| **Abort** | terminate to prevent damage or waste | stops, **preserves state**, reports reason | fix root cause, restart from checkpoint |
+
+With a selection heuristic — *"start with pre-flight. If the check happens after work is
+produced, it is a revision gate. If the revision loop cannot resolve the issue, escalate. If
+continuing is dangerous, abort."* — and a cap-sizing rule: *"the cap should reflect the cost of
+each iteration; expensive operations get fewer retries."*
+
+**Take — stall detection.** The revision gate *"escalates early if issue count does not decrease
+between consecutive iterations."* Cheap, deterministic, and it catches the CAAF paper's
+*stochastic oscillation in reflection loops* before the cap burns. Our bounded rework has a cap
+and no stall detector, so we pay for every remaining round of a loop that has already stopped
+converging.
+
+**Take — the `<adversarial_stance>` block, with its "how reviewers go soft" list.** Their checker
+agents open with a **FORCE stance** — *"Assume every plan set is flawed until evidence proves
+otherwise. Your starting hypothesis: these plans will not deliver the phase goal"* — followed by
+an explicit enumeration of the ways this role's judgment degrades. For the plan checker:
+*accepting a plausible-sounding task list without tracing each task back to a requirement;
+crediting a decision reference without verifying the task delivers its full scope; treating scope
+reduction ("v1", "static for now") as acceptable; letting dimensions that pass anchor judgment — a
+plan can pass 6 of 7 dimensions and still fail on the 7th; issuing warnings for what are actually
+blockers to avoid conflict with the producer.* That last one names reviewer conflict-avoidance as
+a predicted failure and pre-empts it. This is the concrete hardening our Vera and Remo prompts
+need, and it is far better than R8's quirks at doing the same job.
+
+**Take — severity as an output-contract requirement.** *"Issues without a severity classification
+are not valid output."* A structurally required field, which is exactly the right form per §2.2's
+form-matching table.
+
+**Take — read-only enforcement by role, stated positively.** The Nyquist auditor:
+*"Implementation files are READ-ONLY. Only create/modify: test files, fixtures, VALIDATION.md.
+Implementation bugs → ESCALATE. Never fix implementation."* Plus a resolution contract that admits
+no silent third state: *"Every gap must resolve to FILLED (test passes), ESCALATED (BLOCKER), or
+explicitly justified SKIP"* — and *"a skipped gap is an unverified requirement, not a resolved
+one."*
+
+**Take — the escape hatch, which we are missing entirely.** `/gsd-quick` and `/gsd-fast` exist for
+work below the loop's threshold, and the threshold is written down: *"if the task could be fully
+specified in a single, short prompt and completed in one agent turn without further
+clarification, skip the phase loop."* And they price their own ceremony honestly: *"the phase
+loop introduces real friction … for a small, well-understood change, that overhead is not
+justified."* Our `harness-loop` is the mandated path for "non-trivial work" with no named
+primitive below it and no written threshold, so the ceremony cost of small work is unpriced and
+the rule is unenforceable by anyone but the agent's own judgment.
+
+**Take — runtime context-headroom measurement.** Lifecycle hooks (`PreCompact`, `Stop`,
+`SubagentStop`) give a per-turn signal *"to inspect how much context has been consumed and emit a
+warning before the window is exhausted"*, with the reason stated: an auto-compaction can
+*"silently discard planning state the orchestrator was relying on."* They are honest that it is
+*"a heuristic … a signal, not a guarantee."* This is the empirical complement to our static D8
+sizing bands, and it is compatible with our finding that a fixed 50–70% rule was unfounded:
+measure, do not legislate.
+
+**Take — `effort:` per skill.** Heavy orchestrator skills declare `effort: max`, quick status
+skills `effort: low`. A budget signal orthogonal to model tier — and their footnote is a real
+trap worth recording: they *removed* `context: fork` from spawning orchestrators because *"a
+forked subagent context does not have the `Agent` tool"*, i.e. isolating an orchestrator breaks
+the orchestration. Context isolation must come from the children, never from forking the parent.
+
+**Take — Diátaxis documentation structure.** Tutorials / how-to / reference / explanation, with
+each document declaring which it is. Our `docs/` is a flat pile of design documents with no
+tutorial or how-to layer at all, which is a real enterprise-readiness gap independent of any
+mechanism in this review.
+
+**Refuse — `--no-verify` for wave commits.** They have executors commit with `--no-verify`
+*"to prevent build-lock contention … when multiple agents commit in parallel"*, then run the hook
+once per wave. The contention is real and we should record it as a known problem, but the
+mitigation is forbidden by our rules and our merge queue already solves it a better way: lanes
+commit on isolated worktree branches and the queue serialises landing, so the gate runs on every
+landing without contention. Keep our stance; take their problem statement.
+
+**Refuse — 34 agents.** Not because the count is wrong for them, but because most of their roster
+is researchers and auditors that our R3 admission test would either fold into an existing persona
+or replace with deterministic code. Their roster is the *reason* R3 exists. That said, §4.3 notes
+one place where their fan-out genuinely beats ours.
+
+### 2.7 satococoa/wtp — declarative worktree provisioning
+
+A focused Go tool extending `git worktree`: derived paths from branch names, and a `.wtp.yml`
+declaring **typed post-create hooks** — `copy` (explicitly permitted for gitignored files like
+`.env`, always resolved relative to the *main* worktree), `symlink`, and `command`.
+
+**Take — the declarative typed-hook config.** Our `basicly worktree` provisions dependencies and
+git hooks imperatively in code. A declared list of typed steps is inspectable, diffable,
+overridable per consumer, and testable step-by-step. The `copy`-from-main-worktree type in
+particular is the exact shape of a problem we solve ad hoc, and naming `.env` as the motivating
+case matches our own experience.
+
+**Take — `remove --with-branch` as one atomic operation.** *"Remove worktree, then manually delete
+the branch. Forget the second step? Orphaned branches accumulate."* Our own history has orphaned
+harness branches and stranded session JSON after a failed advance; the fix shape is atomicity,
+not a longer checklist.
+
+**Refuse — the platform matrix.** Linux and macOS only. We must support Windows, which rules out
+adopting the tool and constrains any mechanism we borrow from it.
+
+### 2.8 headroomlabs-ai/headroom — context economics as a product
+
+A local compression layer between agent and provider (Apache-2.0): content-aware compressors for
+JSON/AST/prose, reversible with a retrieval tool, plus a proxy and MCP surface.
+
+**Take — reversible compression with a retrieval tool, as a design pattern.** Originals are cached
+locally and the model calls `headroom_retrieve` if it needs them. Applied to our dispatch bundles:
+when a bundle approaches the D8 band, the current answer is to *omit* — and omission is exactly
+the failure mode that made us cut the Scout, because nothing detects what was left out. Compress
+reversibly and hand the implementer a retrieval affordance, and the omission becomes recoverable
+by the agent rather than fatal.
+
+**Take — cache alignment as a first-class cost lever.** Their `CacheAligner` *"stabilizes prefixes
+so provider KV caches actually hit."* Our dispatch bundle is already a deterministic function of
+`br` state (D6), which means we are unusually well placed to also make it *prefix-stable* —
+ordering the bundle so the invariant part (role prompt, global constraints, repo conventions)
+precedes the variable part (this bead, this diff). That is a pure-win cost reduction available
+without changing any content, and we have never considered it.
+
+**Take — `headroom learn`'s default target.** It mines failed sessions and writes corrections to
+`CLAUDE.local.md` — **gitignored by default** — rather than the shared instruction file. A useful
+middle rung between our two options (silently drop the retro, or ask a human to amend the shared
+catalog): a machine-local, unshared lane for a proposal that has not yet earned team-wide
+authority.
+
+**Refuse — adopting headroom itself.** A compression proxy in the critical path is precisely the
+unowned external dependency `work-tracker.md` §1 argues against, and it would sit between us and
+the provider — a worse position than the tracker ever occupied.
+
+### 2.9 Graphify-Labs/graphify — provenance labels, and a deterministic answer to the Scout
+
+Maps a codebase into a queryable knowledge graph. Code is parsed with **tree-sitter AST —
+deterministic, no LLM**; only docs, PDFs and media take a semantic pass.
+
+**Take — confidence labels on every derived edge. This is the highest-value idea in this repo.**
+
+| Label | Meaning |
+| --- | --- |
+| `EXTRACTED` | explicitly stated in the source (an import, a direct call) |
+| `INFERRED` | a reasonable deduction (call-graph second pass, co-occurrence) |
+| `AMBIGUOUS` | uncertain — **flagged for human review** in the report |
+
+Applied to our tracker, this closes a real hole. Our dependency edges and found-info records are
+currently unlabelled: an edge a human asserted and an edge an agent guessed from a scope overlap
+are indistinguishable in the graph, even though only one of them should be trusted to gate a
+landing. Labelling them makes the graph auditable, tells the engine which edges need confirmation
+before they constrain the merge queue, and gives `AMBIGUOUS` a natural disposition — the decision
+queue. It also fits D11 exactly: evidence should carry its own provenance.
+
+**Take — the deterministic-extraction principle, which reopens a decision we closed.** Our roster
+cut the Scout because a cheap-tier pre-reader's characteristic error — a slightly incomplete file
+list — is undetectable and silently narrows the implementer's view. That reasoning is sound *for a
+model-based scout* and does not apply to a **deterministic AST-derived localisation artifact**: a
+tree-sitter call graph does not hallucinate a call site, its coverage is a checkable property of
+the parser, and it costs no tokens. That is the same principle our own R5 already states — pay no
+model where deterministic code suffices — applied to the one place we concluded the work simply
+should not happen. §4.3 records this as the review's most consequential single reopening.
+
+**Take — pipeline-of-pure-functions architecture.** Seven stages, each one function in its own
+module, communicating through plain dicts, *"no shared state, no side effects outside
+`graphify-out/`"*, with a schema validated before the next stage consumes it. A good shape for
+our own projection pipeline to be measured against.
+
+### 2.10 gastownhall/beads (MIT original) — the fork in the road for the tracker
+
+The upstream original, now **backed by Dolt** — a version-controlled SQL database with cell-level
+merge, native branching, and sync via Dolt remotes under `refs/dolt/data`.
+
+**Take — the confirmation that our divergence is real and deliberate.** Upstream's answer to
+"the DB and the export disagree" was to make the **DB more authoritative**: *"The local Dolt
+database is the source of truth … `.beads/issues.jsonl` is an export. It exists for viewers,
+interchange, migration, and backup. It is **not** the canonical cross-machine sync channel."*
+`work-tracker.md` chooses the opposite: the **log is the truth** and every other file is a
+disposable projection. Both are coherent; they are a genuine fork, and ours is the one that does
+not require a second binary or a database.
+
+**Take — three concrete migration risks this creates for our §5 import plan.**
+
+1. **The JSONL path is a second-class citizen upstream and will drift.** Our import plan reads a
+   format its owner has explicitly demoted.
+2. **`import` is upsert-only** — *"it cannot infer that records absent from an export were
+   deleted, pruned, or simply never exported."* So a JSONL round-trip cannot express deletion,
+   and our importer must handle tombstones as a first-class concern rather than discovering this
+   at cutover.
+3. **The upgrade procedure is itself the argument for owning this.** Crossing a schema migration
+   on a remote-backed database requires *"exactly one designated clone"* to run `bd migrate` and
+   `bd dolt push` while *"other clones install the new binary and run `bd bootstrap`."* That is a
+   coordinated, human-sequenced, multi-machine operation in our critical path — precisely the cost
+   `work-tracker.md` §1 predicted from an unowned dependency, now observed rather than
+   hypothesised.
+
+**Take — adaptive ID length with an explicit collision budget.** Hash IDs scale 4 → 5 → 6
+characters by database size, sized from the birthday paradox `P ≈ 1 - e^(-n²/2N)` against a stated
+maximum collision probability, with automatic disambiguation on collision and both records
+preserved. Our §9.4 already chose an opaque collision-checked root token plus a dotted child
+suffix — the same shape — but has no stated collision budget. Adopting an explicit probability
+target turns a "collision-checked" hand-wave into a specified property.
+
+**Take — the ID-derivation correction.** Their ID is derived from title **+ creation timestamp +
+random salt** — so it is *not* stably content-derived, and the docs' claim that it is
+"content-based" is loose. This validates our §9.4 split (opaque ids for mutable records,
+content-derived ids only for immutable evidence) and is a good example of why we should read the
+data rather than the marketing.
+
+**Take — `bd remember` / `bd prime`.** Persistent project memory stored in the tracker and
+injected as agent context on demand, with an explicit instruction not to create `MEMORY.md`
+files. Our found-info records are the same primitive; what we lack is the `prime` half — a single
+command that assembles the memory into session context.
+
+**Note — compaction.** Upstream ships *"semantic memory decay"* that summarises old closed tasks
+to save context. `work-tracker.md` §9.1 declines lossy compaction on evidence grounds (every one
+of our 330 records is level 0; git already packs the ledger better than record-shrinking would).
+That decision stands, but it should be restated as *"we decline it because git plus the ship-time
+rollup already bound growth"* rather than implying nobody needs it — upstream clearly has users
+who do.
+
+## 3. Where independent projects converge
+
+Convergence across projects that did not copy each other is the strongest evidence in this review.
+Each row is something we should treat as close to settled.
+
+| Convergent finding | Independently reached by |
+| --- | --- |
+| **A deterministic orchestrator, never an LLM one.** Agents propose; code disposes. Personas never spawn personas. | our D1/D2 + R1, agent-skills' orchestration catalog (anti-patterns A–D), gsd-core's thin orchestrator, superpowers' controller |
+| **Shared state must live in files, not in a conversation.** This is what *makes* fresh-context dispatch viable. | our `br`-as-truth, gsd's `.planning/` + `STATE.md`, superpowers' ledger, lattice's `.lattice/` |
+| **Fresh context per unit of work, with a precisely constructed bundle** — never the parent's history. | our D6, superpowers ("never inherit your session's context"), gsd-core, agent-skills' research isolation |
+| **Bounded rework with a hard cap, then escalate to a human.** Loops do not converge past the cap. | our bounded rework, superpowers (5 rounds), gsd's Revision Gate (3), doubt-driven (3) |
+| **The reviewer must be adversarially framed and must not see the author's conclusion.** | doubt-driven (ARTIFACT+CONTRACT, never CLAIM), gsd's FORCE stance, Refute-or-Promote, "the maker shouldn't grade the checker" |
+| **Reviewers are read-only; a separate actor fixes.** | our roster's tool policy, gsd's Nyquist auditor, the adversarial-review permissions pattern |
+| **Determinism beats instruction: if a hook can enforce it, do not ask the model.** | our "hooks are the deterministic floor", the steering blog ("the model choosing to run a formatter is different from the formatter running automatically"), CLAUDE.md best-practice write-ups ("remove the instruction, keep the enforcement") |
+| **Evidence before claims.** No completion claim without a freshly run verification command. | our Quality Gate, superpowers' Iron Law, Karpathy's goal-driven execution |
+| **Structured acceptance criteria per unit, written before implementation.** | our DoR/rubrics, gsd's PLAN.md, mattpocock's ticket template, superpowers' Global Constraints |
+| **Decomposition into vertical slices sized to one fresh context.** | our D8 bands, mattpocock's tracer bullets, gsd's phase scoping, superpowers' task right-sizing |
+| **Prohibitions are a weak steering form; prefer a positive recipe.** | superpowers' measured wording tests, mattpocock's Negation failure mode, lattice's active-checklist technique |
+| **A description must carry the user's actual vocabulary, and must not summarise the workflow.** | superpowers' observed one-review-instead-of-two failure, agent-skills' Tier-2 rank-1 metric, mattpocock's leading-word-in-description rule |
+
+## 4. Where the field genuinely disagrees — the open questions
+
+These are the places where reading more will not settle it and only measurement will. Each is
+recorded with what would decide it.
+
+### 4.1 Cheapest-sufficient tier vs reliable tier
+
+Our **R5** argues the unit of cost is total tokens, wall-clock and human interventions **per
+landed correct package**, and concludes that for consequential outputs the reliable tier is the
+expensive one. **superpowers** says *"use the least powerful model that can handle each role"* and
+routes mechanical implementation to a cheap model.
+
+They are not as far apart as they look, and the reconciling sentence is superpowers' own footnote:
+*"**Turn count beats token price.** Wall-clock and context cost scale with how many turns a
+subagent takes, and the cheapest models routinely take 2-3× the turns on multi-step work —
+costing more overall. Use a mid-tier model as the floor for reviewers and for implementers working
+from prose descriptions."* That is R5's argument, priced in turns. Their genuine addition is a
+**predicate for when the cheap tier is safe**: *"when the task's plan text contains the complete
+code to write, the implementation is transcription plus testing."*
+
+So the synthesis is: the reliable tier is a function of **specification completeness**, not of the
+work's nominal category. R5 is right that a cheap dispatch against a prose description is a false
+economy; superpowers is right that a cheap dispatch against a plan containing the literal code is
+not. Both also independently warn about the same operational trap — *"always specify the model
+explicitly when dispatching; an omitted model inherits your session's model, often the most
+capable and most expensive, which silently defeats this section."*
+
+**Decides it:** `basicly-7bur`'s cost-per-landed-package baseline, with dispatches labelled by
+specification completeness. Until then R5 stands, amended by the turn-count framing.
+
+### 4.2 Compaction: lossy summarisation vs git plus rollup
+
+Upstream beads ships semantic memory decay; `work-tracker.md` §9.1 declines it on measured
+evidence. No change recommended — but the decision should be restated as a trade-off we chose
+rather than a mistake others made.
+
+### 4.3 Localisation: is the Scout dead?
+
+**Reopened by §2.9.** Our roster cut the Scout on cost-model grounds: a cheap pre-reader's
+incomplete file list is undetectable and silently narrows the implementer. That argument is about
+a *model*. graphify demonstrates the same output produced **deterministically** by tree-sitter AST
+extraction, at zero token cost, with coverage that is a checkable property of the parser rather
+than a judgment.
+
+This is not the Scout coming back as a persona. It is the localisation *work* moving from "a
+dispatch we refused" to "an engine step we never considered", which is exactly where R5's first
+corollary says the biggest wins live. It also happens to be the one place where gsd-core's larger
+roster beats ours — their `gsd-codebase-mapper` runs four parallel sub-probes to produce a map —
+except the deterministic version needs no agents at all.
+
+**Decides it:** whether an AST-derived localisation artifact measurably reduces Kai's
+pre-first-edit token share without the omission risk. That is a cheap experiment and it should be
+run before the roster is implemented, because it changes what Dana's scope declarations need to
+carry.
+
+### 4.4 Where the ceremony threshold sits
+
+gsd-core writes its threshold down and ships two primitives below it. We mandate the loop for
+"non-trivial work" and ship nothing below it. Nobody in the field has a measured threshold; all
+of them have a written one. Having *a* written threshold and a named cheaper path is strictly
+better than leaving it to the agent's judgment, which is what we currently do.
+
+### 4.5 Agent-to-agent messaging
+
+agent-skills documents a real capability we forbid: teammates that challenge each other's
+hypotheses converge on a root cause better than independent reporters do, *"with multiple
+independent investigators actively trying to disprove each other, the theory that survives is
+much more likely to be the actual root cause."* Our D1/D2 forbid it and should continue to — the
+cost is reproducible scheduling and resumability, which we will not trade. Recorded as a known
+limitation, not a gap.
+
+## 5. Where basicly is already ahead
+
+Stated honestly, with the distinction between a structural lead and an asserted one.
+
+**Real, structural leads:**
+
+1. **Enforcement is code and git hooks, not prose.** Nearly every project in this set enforces
+   discipline by asking the model nicely. lattice says so outright: *"Atoms are markdown — AI can
+   read them but also ignore them. There's no compiler, no linter, no gate. Compliance depends on
+   prompt engineering."* We have `basicly check`, `catalog lint`, `skills-check`, `agents-check`,
+   `hooks-check`, and commit-msg gates. This is the widest gap in our favour and it is the thing
+   an enterprise buyer would care about most.
+2. **State lives in a tracker with a dependency graph, not in markdown plan files.** superpowers'
+   most expensive observed failure — a controller re-dispatching completed work after
+   compaction — is structurally impossible for us because phase is *derived* from `br` rather than
+   remembered. We got that property by design; they got the scar first.
+3. **Agent-agnostic projection from one catalog.** Others ship per-host adapters maintained by
+   hand (ponytail's 20-row table is impressive and is also 20 things to keep in sync). We generate,
+   and we gate the generation.
+4. **The engine-disposes / agents-propose split is explicit and enforced**, including for
+   autonomy grants. Only gsd-core has a comparable notion, and theirs is a gate taxonomy rather
+   than an authority model.
+5. **The tracker plan is more defensible than the alternatives on offer.** §2.10's upgrade
+   procedure is the strongest available evidence for owning this component.
+6. **We already run a whole-harness A/B** (`docs/harness-eval.md`) and were already honest about
+   its weakness (the circular-criterion problem) before reading ponytail. Almost nobody else in
+   this set measures at all; ponytail measures better; we are second and know why.
+
+**Asserted, not yet earned:**
+
+- **That our roster's tiers and lenses pay for themselves.** R6 says lenses run on every lane and
+  R5 says down-tiering is a false economy. Neither is measured. The roster document says so, which
+  is to its credit, but §6.1 is what turns that admission into evidence.
+- **That our always-on baseline is effective at its current size.** See §6.2 — this may be an
+  active regression rather than a gap.
+- **That the catalog's individual skills change behaviour.** One pilot, one task, `n=1`.
+
+## 6. Where basicly is behind, ranked by cost
+
+### 6.1 No per-skill efficacy measurement, and no routing check at all
+
+We have ~30 catalog entries and evidence about one of them. Worse, we have **no Tier-2 equivalent**
+— nothing checks that a skill's description carries the vocabulary a user would actually say, or
+that two descriptions have not drifted into each other. Both failures are silent: a skill that
+never fires costs its context load forever and delivers nothing, and two colliding descriptions
+make routing a coin flip. This is deterministic, free, CI-safe, and we do not have it.
+
+**Cost:** every unfired skill is pure context load; every colliding pair is unpredictable
+behaviour. Carried into [`catalog-efficacy-design.md`](../catalog-efficacy-design.md).
+
+### 6.2 The always-on baseline may be past the point where adherence collapses
+
+Our baseline sits at a ~9000-character soft cap with roughly 1000 characters of headroom. That is
+on the order of 1300 words of dense always-on rules. The consistent (if secondary-source)
+practitioner finding is that *rules start dropping past ~80 lines, whole blocks are ignored past
+~200 lines, and adherence to dense rules collapses past ~500 words.* The vendor guidance is
+blunter: keep the always-on file to facts, move procedures to skills, move "every time X" to
+hooks, and path-scope anything conditional.
+
+If those thresholds are even roughly right, **we are not managing a budget — we are past a cliff,
+and raising the cap made it worse.** We do not know, because nothing measures which baseline rules
+actually bind. There is a cheap first test available and it costs one session: open a fresh session
+and ask the agent to summarise the rules; anything it cannot recall is not doing work.
+
+**Cost:** potentially the entire always-on layer under-performing while we pay for it on every
+turn of every session in every consumer repo. This is the highest-leverage unknown in the review.
+Carried into [`steering-surfaces-design.md`](../steering-surfaces-design.md).
+
+### 6.3 No path-scoped guidance tier
+
+Both Claude Code (`rules/*.md` with `paths:`) and Copilot (`*.instructions.md` with `applyTo:`)
+support conditional loading keyed on file globs. Our catalog projects always-on fragments and
+on-demand skills — two tiers where the platforms offer three. Anything currently in the always-on
+baseline that only applies to, say, subprocess code or test files is paying full price on every
+turn to be relevant occasionally. This is the concrete mechanism that relieves §6.2 without
+deleting guidance.
+
+### 6.4 No stall detection, no gate taxonomy, no severity contract
+
+Our rework is capped but has no convergence check, so a stalled loop burns its remaining budget.
+Our gates are not classified, so "what happens when this fails" is answered per site rather than
+by type. Our findings have no structurally required severity. All three are cheap.
+Carried into [`gates-and-rework-design.md`](../gates-and-rework-design.md).
+
+### 6.5 Reviewer and validator prompts are not hardened
+
+R8's "quirks are operational contracts" is the right instinct aimed at the wrong target. gsd-core
+demonstrates the effective version: a FORCE stance plus an explicit enumeration of *how this role
+goes soft*, including naming conflict-avoidance as a predicted failure. Vera and Remo need that,
+and doubt-driven's contract needs adopting: never pass the CLAIM, classify contract-misread first,
+and compute the doubt-theater signal.
+
+### 6.6 No trend instrument
+
+lattice's review log answers "is this working, and are we getting better" from data. We have
+per-run telemetry and a health report but nothing that answers *which lens catches the most*,
+*whether findings per lane decline*, or *whether retro proposals get absorbed*. Without it, R6's
+"if a lens does not pay for itself, cut it" is unexecutable.
+
+### 6.7 Documentation has no tutorial or how-to layer
+
+`docs/` is nine design documents. There is no "your first loop" walkthrough and no task-focused
+how-to guides. For a distribution meant to be installed by other repos, that is an adoption
+blocker independent of any capability in this review, and Diátaxis is the obvious remedy.
+
+### 6.8 Smaller, still worth fixing
+
+- **No declared capability tier per agent family.** We project to three families as though the
+  delivered guarantee were the same. It is not.
+- **No `effort` signal per skill**, so a status query and a decomposition carry the same implied
+  budget.
+- **No prefix-stable dispatch bundles**, so we forfeit provider cache hits we are unusually well
+  positioned to get.
+- **No provenance labels on graph edges** (§2.9), so asserted and inferred couplings are
+  indistinguishable to the merge queue.
+- **Bare ids in human-facing output** (§2.1).
+- **No deliberate-shortcut convention** with a mechanical harvest and rot detector (§2.4).
+- **No refiner tier** — nothing interviews a consumer to generate their own overlay (§2.5).
+- **Worktree provisioning is imperative**, and teardown is not atomic (§2.7).
+
+## 7. What to reject, and why
+
+Recorded so these do not get re-proposed. Each rejection has a reason stronger than taste.
+
+| Rejected | Reason |
+| --- | --- |
+| An LLM orchestrator / uber-agent | Loses reproducible scheduling, resume-by-derivation, and enforcement-by-construction. Independently rejected by agent-skills and gsd-core. Our D1/D2/R1 stand. |
+| Personas spawning personas | Output-format and authority conflicts, hidden cost, multiplied failure modes; on Claude Code it is blocked by construction. |
+| Agent-writable catalog / standards | The asymmetry in R9: a bad implementation bounces off a gate, a bad fragment is absorbed and silently degrades every later lane. Keep human-only at every grant level. |
+| `--no-verify` for parallel commits | The contention gsd-core hit is real; our merge queue solves it without defeating a gate. |
+| Semantic/lossy compaction of the ledger | Measured: git already packs our ledger better, losslessly, and compaction discards the evidence D11 depends on. |
+| A maintained TUI | Permanent cost; generated artifacts (JSON, Mermaid/DOT, static HTML) are diffable in review and cost nothing to keep. |
+| Adopting Dolt, or any external DB/daemon | Reintroduces exactly the unowned-binary upgrade surface we are removing — and §2.10 shows what that surface costs at migration time. |
+| Adopting headroom as a proxy | A compression layer in the critical path is a worse-positioned dependency than the tracker ever was. Take the two ideas, not the dependency. |
+| `<EXTREMELY-IMPORTANT>` shouting and "you have no choice" framing | The negation anti-pattern; unnecessary where a hook enforces the same thing. |
+| A cheap-tier model Scout | Undetectable omission upstream of the most expensive dispatch. Superseded, not revived, by the deterministic version in §4.3. |
+| Agent-to-agent messaging / teams | Real capability, but it costs reproducible scheduling and resumability. Recorded as a limitation. |
+| Copying prose or prompts from any reviewed repo | Licence hygiene (`references.md` §1) and, for `beads_rust`, a clean-room boundary (§2). |
+
+## 8. Vocabulary adopted
+
+Importing a word is the cheapest change in this review and the one most likely to be
+misremembered later, so the adopted set is fixed here. Where a term names something we already
+had, the existing mechanism is noted — the word is new, not the behaviour.
+
+**Skill authoring** (from mattpocock/skills): predictability · context load · cognitive load ·
+information hierarchy · progressive disclosure · co-location · completion criterion (clarity and
+demand) · legwork · leading word · branch · premature completion · no-op · negation · sediment ·
+sprawl · duplication · router skill.
+
+**Gates** (from gsd-core): pre-flight gate · revision gate · escalation gate · abort gate ·
+stall detection · FORCE stance.
+
+**Review** (from agent-skills and the literature): doubt-driven posture · CLAIM / ARTIFACT /
+CONTRACT separation · contract misread (as the first finding class) · doubt theater ·
+refute-or-promote · park with a ruling (superpowers) · deferred minor.
+
+**Failure modes** (from CAAF): compliant hallucination — output satisfies the constraint while
+defeating its purpose; stochastic oscillation — a reflection loop cycling without converging.
+
+**Provenance** (from graphify): `EXTRACTED` · `INFERRED` · `AMBIGUOUS`.
+
+**Portability** (from ponytail): instruction-tier · skill-tier · plugin-tier.
+
+**Scoping** (from mattpocock/skills): destination · fog of war · not yet specified · out of scope ·
+decision ticket · frontier.
+
+**Debt** (from ponytail): ceiling · upgrade trigger · `no-trigger` (a shortcut with no stated
+trigger to revisit).
+
+## 9. Index: findings to design documents
+
+| Finding | Carried into |
+| --- | --- |
+| Three-tier evals; control arms; micro-tests with a no-guidance control; separating mechanism from outcome; per-skill eval files as a CI requirement | [`catalog-efficacy-design.md`](../catalog-efficacy-design.md) (new) |
+| Gate taxonomy; stall detection; refute-or-promote; severity as a required field; adversarial stance and "how reviewers go soft"; adjudicate-only-at-the-cap; no-pre-judging lint; capability escalation on late rework rounds | [`gates-and-rework-design.md`](../gates-and-rework-design.md) (new) |
+| The seven steering mechanisms; the always-on adherence budget; path-scoped rules; capability tiers per agent family; `effort` signals; the ceremony threshold and a named primitive below it; form-matching for guidance | [`steering-surfaces-design.md`](../steering-surfaces-design.md) (new) |
+| `beads_rust` licence correction and clean-room boundary; Dolt as the rejected alternative; the three JSONL migration risks; adaptive id length with a collision budget; provenance labels on edges; `prime`-style memory assembly | [`work-tracker.md`](../work-tracker.md) (updated) |
+| Adversarial stance hardening; tier-vs-turn-count reconciliation keyed on specification completeness; the deterministic-localisation reopening of the Scout; two-pass generation within a dispatch; no-reranking across review axes; trend instrument; `effort` per role | [`agent-roster-design.md`](../agent-roster-design.md) (updated) |
+| Declarative typed worktree provisioning; atomic teardown | not yet carried — file against the worktree component |
+| Diátaxis restructure of `docs/`; tutorial and how-to layer | not yet carried — documentation workstream |
+| Prefix-stable dispatch bundles; reversible bundle compression with retrieval | not yet carried — depends on `basicly-7bur` baseline |
+| Refiner tier (interview-generated consumer overlay) | not yet carried — largest genuinely new product idea in the review |
+
+The last four rows are deliberately unassigned. They are real findings with no home yet, and
+inventing a design document for each would be the "premature catalog entry" failure §2.3 warns
+about. They belong in the tracker as offers, not in a document nobody will read.

@@ -1,9 +1,16 @@
 # Specialist Agent Roster — Named Roles Inside the Factory
 
-Status: **agreed design — reviewed 2026-07-25 (§7). No implementation until `basicly-kjc5`
-(the parallel factory) is complete.** `docs/factory-design.md` is the authoritative factory
-design and constrains everything below; where this document and the factory design appear
-to disagree, the factory design wins until it is amended. Tracking bead: `basicly-eqp6`.
+Status: **agreed design — reviewed 2026-07-25 (§7), amended 2026-07-26 (§9). No implementation
+until `basicly-kjc5` (the parallel factory) is complete.** `docs/factory-design.md` is the
+authoritative factory design and constrains everything below; where this document and the factory
+design appear to disagree, the factory design wins until it is amended. Tracking bead:
+`basicly-eqp6`.
+
+**§9 carries the amendments from the state-of-the-art review**
+([`research/2026-07-26-sota-review.md`](research/2026-07-26-sota-review.md)). One of them reopens
+a decision this document closed — the Scout (§4) was cut on reasoning that turns out to apply
+only to a *model-based* scout — and one supplies the persona hardening R8 was reaching for.
+Sections 1–8 are unchanged; where §9 amends one, the amendment says so.
 
 ## 1. What a roster is for
 
@@ -473,3 +480,241 @@ carrying the failing criterion and Vera's evidence, and the lane has to hold rat
 or bounce. R9 needs the grant ledger (`basicly-kjc5.3`) to express a decision class that no
 level auto-disposes, which is an exception to the L0-L3 progression rather than a rung in it;
 without it, an L3 grant would quietly hand the catalog to the Decider.
+
+## 9. Amendments from the 2026-07-26 state-of-the-art review
+
+Eleven comparable projects were read at pinned revisions
+([`research/references.md`](research/references.md)). Four of them run named agent rosters, so
+this document's decisions now have external comparanda rather than only internal reasoning.
+Findings are grouped by whether they **confirm**, **amend**, or **reopen** a decision above.
+
+### 9.1 Confirmed by independent convergence
+
+Three of this document's more contested decisions were reached independently elsewhere, which is
+the strongest evidence available short of measurement:
+
+- **R1 — the Conductor is code, and no agent spawns agents.** `addyosmani/agent-skills`'
+  orchestration catalog states the identical governing rule (*"the user or a slash command is the
+  orchestrator; personas do not invoke other personas"*) and lists persona-calls-persona, router
+  personas, deep persona trees, and **the paraphrasing sequential orchestrator** as its four
+  anti-patterns. Its argument against an LLM lifecycle orchestrator is ours nearly verbatim: it
+  loses nuance to hand-off summarisation, skips the human checkpoints that catch wrong-direction
+  work early, and doubles token cost. `gsd-core` — the largest roster in the set at 34 agents —
+  also keeps a thin orchestrator that *"never touches source files."* On Claude Code the rule is
+  enforced by construction; subagents cannot spawn subagents.
+- **R3's admission test is vindicated by the counter-example.** `gsd-core`'s 34 agents are mostly
+  researchers and checkers that R3 would fold into an existing persona or replace with
+  deterministic code. Their roster is the outcome R3 exists to prevent, and it is worth noting
+  they pay for it in a per-runtime agent registry, per-agent model resolution, and an INVENTORY
+  document to keep track.
+- **Read-only reviewers with a separate fixer** is the field's settled permissions pattern —
+  `gsd-core`'s auditor states it positively (*"implementation files are READ-ONLY … implementation
+  bugs → ESCALATE. Never fix implementation"*), and the adversarial-review literature frames it as
+  "the maker shouldn't grade the checker."
+
+### 9.2 R8 amended — quirks become an adversarial stance and a soft-list
+
+**R8 as written is the right instinct aimed at the wrong target.** "Vera refuses to credit an
+acceptance criterion the diff does not evidence" is a good rule; as a *quirk* attached to an
+identity it is doing less work than it could.
+
+`gsd-core` demonstrates the effective form. Each judged agent opens with an explicit **FORCE
+stance** — *"Assume every plan set is flawed until evidence proves otherwise. Your starting
+hypothesis: these plans will not deliver the phase goal"* — followed by an enumerated list of
+**how this specific role goes soft**. Theirs, for a plan checker, includes: accepting a plausible
+task list without tracing each task to a requirement; crediting a decision reference without
+verifying the task delivers its full scope; treating scope reduction (*"v1"*, *"static for now"*)
+as acceptable; letting dimensions that pass anchor judgment (*"a plan can pass 6 of 7 dimensions
+and still fail the phase goal on the 7th"*); and **issuing warnings for what are actually blockers
+to avoid conflict with the producer.**
+
+That last item is the one R8 cannot express: it names reviewer conflict-avoidance as a *predicted*
+failure of the role and pre-empts it by name.
+
+**Amended:** every judged persona's projected prompt carries (a) an explicit adversarial stance and
+(b) a **role-specific** soft-list. Generic rigour instructions stay out — "be thorough" is a
+**no-op** in the review's vocabulary, since the model is already somewhat thorough, so the line
+costs tokens and changes nothing. A soft-list derived from *observed* failures is not generic and
+therefore is not a no-op.
+
+**The lists must be derived, not invented.** Our loop already records verdicts, rework rounds, and
+adjudications; that history is the raw material, and mining it is the highest-value thing Lumi
+could be pointed at (§9.7).
+
+R8's prose rule stands unchanged: personas are referred to as **they/them** everywhere.
+
+### 9.3 R5 amended — the predicate is specification completeness, not work category
+
+R5 argues that for outputs expensive to be wrong, the reliable tier *is* the expensive one, priced
+per landed package. `superpowers` argues the opposite headline — *"use the least powerful model
+that can handle each role"* — and routes mechanical implementation cheap.
+
+The two reconcile, and the reconciling sentence is theirs: **"Turn count beats token price.
+Wall-clock and context cost scale with how many turns a subagent takes, and the cheapest models
+routinely take 2-3× the turns on multi-step work — costing more overall. Use a mid-tier model as
+the floor for reviewers and for implementers working from prose descriptions."** That is R5's
+argument, priced in turns rather than rework cycles — a second independent derivation of the same
+conclusion.
+
+Their genuine addition is a **predicate for when cheap is actually safe**: *"when the task's plan
+text contains the complete code to write, the implementation is transcription plus testing."*
+
+**Amended:** the reliable tier is a function of **specification completeness**, not of the work's
+nominal category. R5's claim that a cheap dispatch against a prose description is a false economy
+stands. Its implicit corollary — that implementation is *always* high-tier — does not: a dispatch
+whose brief contains the literal code and the literal test cases is transcription, and
+transcription is mechanically verifiable, which is R5's own qualifying property for the low tier.
+
+Two operational notes, both adopted:
+
+- **Always set the model explicitly on every dispatch.** *"An omitted model inherits your session's
+  model — often the most capable and most expensive — which silently defeats this section."* For
+  us the dispatch is assembled by code, so this is enforceable: **a dispatch with no resolved tier
+  is a bug, not a default.**
+- **Late rework rounds bump the tier** rather than retrying at the same one — see
+  [`gates-and-rework-design.md`](gates-and-rework-design.md) §3.1. This also produces a signal
+  worth reading: if late-round bumps routinely succeed, the *initial* tier was wrong, and
+  `basicly-7bur` can see that directly.
+
+§6's falsifiability claim is unchanged and now has a sharper variable: label dispatches by
+specification completeness, and the tier question becomes measurable rather than arguable.
+
+### 9.4 §4 reopened — the Scout is cut, but the *work* comes back as engine code
+
+**This is the review's most consequential single finding for this document.**
+
+§4 cut the Scout on the cost model: a cheap pre-reader's characteristic error — a slightly wrong or
+incomplete file list — is *"exactly what the low tier must never be handed: nothing mechanical
+detects the omission, and it silently narrows Kai's view."* That reasoning is sound and it is
+**entirely about a model**.
+
+`Graphify-Labs/graphify` produces the same artifact **deterministically**: tree-sitter AST
+extraction, no LLM, no tokens, with every edge labelled `EXTRACTED` (explicit in source),
+`INFERRED` (resolved by a second pass), or `AMBIGUOUS` (flagged for review). A parser does not
+hallucinate a call site, and its coverage is a checkable property of the parser rather than a
+judgment nobody can audit — which dissolves the exact objection §4 raised.
+
+So the localisation work moves from *"a dispatch we refused"* to *"an engine step we never
+considered"*, which is precisely where R5's first corollary says the largest wins live: **not
+paying a model at all.** It is also the one place `gsd-core`'s larger roster genuinely beats ours —
+their codebase-mapper runs four parallel sub-probes to build a map — except the deterministic
+version needs no agents.
+
+**Amended:**
+
+- **The Scout stays cut as a persona**, permanently. §4's reasoning against a *model* pre-reader is
+  correct and is not weakened.
+- **A deterministic localisation artifact is a new candidate engine step**, not a role. It has no
+  tier, no prompt, and no gate authority, so R3 does not apply to it.
+- **It changes what Dana's scope declarations must carry.** If the engine can derive a call graph,
+  Dana declares *intent and boundaries* and the engine derives *reachable surface* — which is a
+  cleaner split than asking a maximum-tier persona to enumerate files by hand.
+- **It should be measured before the roster is implemented**, because it changes Dana's output
+  contract. The signal is §7's deferred one: the share of a lane's tokens Kai spends before their
+  first edit. This is now a cheap experiment rather than a blocked one.
+
+§7's deferred scout question is **closed as asked** — the tier sub-question is moot, because the
+answer is no model at all.
+
+### 9.5 R6 amended — no reranking across lenses, and a trend instrument
+
+Two additions.
+
+**No reranking.** `mattpocock/skills` runs review as two axes — Standards and Spec — in parallel
+subagents, reports them **separately and un-reranked**, and states why: *"a change can pass one
+axis and fail the other"*, so merging them lets one mask the other. Their instruction is explicit:
+end with the worst issue *within each axis*, and *"don't pick a single winner across axes — that's
+the reranking the separation exists to prevent."*
+
+R6 already splits lenses by tier and artifact but says nothing about aggregation. **Amended:** lens
+output is reported per lens, never merged into one ranked list. This also usefully clarifies a
+structural overlap worth naming: their **Spec** axis is our **Vera**, and their **Standards** axis
+is our **Remo/correctness**. Two projects arriving at the same two-axis split independently is
+evidence the split is real.
+
+**A trend instrument.** R6 promises *"if measurement shows a lens not paying for itself, it gets
+cut wholesale"*, and §6 promises the roster's claims are falsifiable — but nothing currently
+produces the trend. `lattice` appends every review to a rolling log (scope, atoms applied, findings
+by severity, key findings) precisely to answer *which checks catch the most issues, whether
+anti-patterns recur, whether findings per review decline.*
+
+**Amended:** R6's cut criterion requires a per-lens record over a window — finding rate and
+adjudication-outcome distribution — which also yields the two degenerate-reviewer detectors
+(rubber stamp, noise generator) in [`gates-and-rework-design.md`](gates-and-rework-design.md) §5.6.
+Without it R6's promise is unexecutable, which is worse than not making it.
+
+### 9.6 Kai's contract gains a self-check and a report file
+
+Two changes to the Implementer's output contract, neither affecting tier or tool policy, so R3 is
+not engaged.
+
+**A scoped self-check before reporting done.** `lattice`'s two-pass model — *"asking AI to generate
+and validate simultaneously is unreliable … the creative task and the analytical task compete for
+attention, and one always suffers"* — argues for generate → STOP → verify → present *within* one
+dispatch. We already have the stronger cross-dispatch version (Kai then Vera), and it stays:
+*"implementer self-review never replaces the task review; both are needed."* The within-dispatch
+pass is nearly free and its gain is **cheaper rework**, since a defect Kai catches never consumes a
+review round. Two constraints keep it from becoming theatre: it never substitutes for independent
+review, and its checklist is **the bead's own acceptance criteria**, not a generic quality list.
+Flagged honestly: lattice's superiority claim is asserted, not measured — micro-test it under
+[`catalog-efficacy-design.md`](catalog-efficacy-design.md) §5 before it becomes a contract.
+
+**A report file, not a printed report.** `superpowers`: *"everything you paste into a dispatch
+prompt — and everything a subagent prints back — stays resident in your context for the rest of the
+session and is re-read on every later turn"*, with a measured failure of a dispatch reaching 42k
+chars of which 99% was pasted history. Kai writes the full report to a file and returns only
+status, commits, a one-line test summary, and concerns. This also makes §9.3's tier-bump work
+across runners that cannot resume a live subagent: the report file *is* the persistent memory the
+fresh implementer reads.
+
+Their four-status contract is worth adopting wholesale because each status has a different correct
+response: **DONE** · **DONE_WITH_CONCERNS** · **NEEDS_CONTEXT** · **BLOCKED**. And the rule that
+gives it teeth: *"never ignore an escalation or force the same model to retry without changes. If
+the implementer said it's stuck, something needs to change."*
+
+### 9.7 Lumi gains a source, and R9 gains a middle rung
+
+**A source.** R9 establishes that Lumi proposes catalog diffs and a human always disposes, and §3
+notes Lumi is the only persona whose output improves *future* lanes. What R9 never specifies is
+**what Lumi reads**. §9.2 answers it: the verdict, rework, and adjudication history the loop
+already records is the raw material, and the highest-value output is a **role-specific soft-list
+entry derived from an observed failure** — a concrete, checkable line, which is exactly the shape
+R9 already demands ("a diff to a named catalog source, not prose advice").
+
+**A middle rung.** `headroom`'s `learn` mines failed sessions and writes corrections to a
+**gitignored, machine-local** file by default rather than the shared instruction file. That is a
+rung R9 does not have between "drop the retro" and "ask a human to amend the shared catalog": a
+local, unshared lane for a proposal that has not yet earned team-wide authority.
+
+**Amended, cautiously.** The asymmetry argument behind R9 is untouched — a wrong implementation
+bounces off a gate, a wrong fragment is absorbed and silently degrades every later lane — so
+**nothing agent-authored reaches the shared catalog without a human, at any grant level.** But a
+machine-local scratch lane is not the shared catalog, and it lets a proposal accumulate evidence
+before it costs a human a decision. The risk to watch is that it becomes a bypass by accretion:
+guidance that shapes a machine's sessions while never being reviewed by anyone. Any such lane must
+therefore be **visibly non-authoritative and expiring**, not a quiet second catalog.
+
+### 9.8 Naming — one collision to re-check
+
+§3's naming convention rule 4 forbids a name that *"collides with a provider's model or class
+name."* The review surfaced no collision in the current slate (Dana / Kai / Vera / Remo / Juno /
+Lumi / Tala) — but it did surface that the rule has already fired once, retiring "Sol" when a GPT
+class took the name. **Rule 4 needs re-checking at implementation time, not just at design time**,
+because the namespace it guards against is owned by other people and changes without notice. Names
+are display-only (R2), so the fix stays cheap; the point is to check rather than assume.
+
+### 9.9 What the review did not change
+
+- **R2, R4, R7** stand as written. R4's disposition path is strengthened, not altered, by
+  [`gates-and-rework-design.md`](gates-and-rework-design.md) §4.1, which argues the validate step
+  is a *composite* of a deterministic pre-flight gate (which can fail the lane) and a judged
+  escalation gate (which enqueues a decision) — giving the required gate real teeth without any
+  persona passing it.
+- **R9's human-only rule** is explicitly reaffirmed against `lattice`'s user-confirmed learnings
+  flywheel, which is weaker.
+- **The refusal of agent-to-agent messaging.** `agent-skills` documents a real capability we
+  forgo — teammates challenging each other's hypotheses converge on a root cause better than
+  independent reporters do. We decline it because it costs reproducible scheduling and resumability
+  (D1/D2), which we will not trade. Recorded as a known limitation, not a gap to close.
+- **Seven personas.** Nothing in the review argues for an eighth. §9.4 moves work *out* of the
+  roster and into the engine, which is the direction R3 was written to encourage.
