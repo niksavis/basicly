@@ -242,6 +242,12 @@
       .grid.two {
         grid-template-columns: repeat(2, 1fr);
       }
+      /* One card per row, for a group whose cards hold different numbers of rows:
+         side by side, the shorter card either stretches to leave dead space or
+         ends ragged against its neighbour. */
+      .grid.one {
+        grid-template-columns: 1fr;
+      }
       @media (max-width: 860px) {
         .grid.two {
           grid-template-columns: 1fr;
@@ -497,9 +503,6 @@
       .research > .st {
         color: var(--orange);
       }
-      .deferred > .st {
-        color: var(--text-dim);
-      }
       ul.chips {
         margin-top: 0.75rem;
         padding: 0;
@@ -513,11 +516,6 @@
         align-items: baseline;
         font-size: 0.9rem;
         color: var(--text-dim);
-      }
-      ul.chips li.deferred {
-        border-top: 1px solid var(--border);
-        padding-top: 0.6rem;
-        margin-top: 0.15rem;
       }
       /* Cards hug their content: the four pillars hold different numbers of
          rows, and a stretched card leaves dead space inside its border. */
@@ -889,13 +887,9 @@
               whose result is allowed to cancel the work.</span
             >
           </li>
-          <li class="deferred">
-            <span class="st">~ deferred</span>
-            <span>Deliberately not built until a real consumer asks.</span>
-          </li>
         </ul>
 
-        <div class="grid two">
+        <div class="grid one">
           <div class="card accent">
             <h3><i>01</i> Guidance</h3>
             <ul class="chips">
@@ -954,10 +948,6 @@
                   >Whether an entry changes behaviour, and which baseline rules
                   bind while an agent works</span
                 >
-              </li>
-              <li class="deferred">
-                <span class="st">~ deferred</span>
-                <span>Cursor as a target; a native Codex rules renderer</span>
               </li>
             </ul>
           </div>
@@ -1124,10 +1114,6 @@
                   the truth" is checkable</span
                 >
               </li>
-              <li class="deferred">
-                <span class="st">~ deferred</span>
-                <span>A cross-repo work exchange as an append-only offer log</span>
-              </li>
             </ul>
           </div>
         </div>
@@ -1142,7 +1128,8 @@
           </li>
           <li>
             <strong>The authoritative copy</strong> of this map — with the
-            evidence each status requires and a pointer per row — is
+            evidence each status requires, a pointer per row, and the items
+            deliberately deferred until someone asks for them — is
             <a
               href="https://github.com/niksavis/basicly/blob/main/docs/architecture/architecture.md#15-roadmap--status-per-capability"
               >architecture §15</a
