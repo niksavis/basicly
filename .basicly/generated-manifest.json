@@ -1,6 +1,6 @@
 {
   "version": "1",
-  "generated_at": "2026-07-26T11:07:36.318006+00:00",
+  "generated_at": "2026-07-26T17:40:02.463720+00:00",
   "outputs": {
     ".claude/CLAUDE.md": {
       "hash": "sha256:475ea55316fcf7d24209f9863421194e5e5ca35aeafa56d2696d36f54f0d1eba",
@@ -25,8 +25,14 @@
         "tool-usage"
       ]
     },
+    ".claude/rules/platform-hermetic-tests.md": {
+      "hash": "sha256:65871ee0f193ea61df38b305d0bf4ec213dcdd23ce9d9a06bd1e8e252444cc8b",
+      "source_fragments": [
+        "platform-hermetic-tests"
+      ]
+    },
     "AGENTS.md": {
-      "hash": "sha256:cddb897d1217b88174d8ed229242691bfdda75347173732f972cb37a4edbfa5d",
+      "hash": "sha256:96e5fdc2caf4feccf5425b238a84621c0f250c00e1356b5540c4dba09bc674d0",
       "source_fragments": [
         "require-explicit-confirmation",
         "knowledge-priming",
@@ -40,6 +46,7 @@
         "harness-loop",
         "quality-gate",
         "use",
+        "platform-hermetic-tests",
         "catalog-authoring",
         "self-improvement-retro",
         "session-completion",

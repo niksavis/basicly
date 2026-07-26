@@ -120,6 +120,29 @@ uv run basicly hooks-check
 - User instructions in the current task override this file.
 - More specific path-scoped instructions override this file for matching files.
 
+## Platform-Hermetic Tests
+
+The local gate runs one OS, so a test that depends on the host's platform is only
+ever checked on the other two by CI — after the push, on someone else's clock.
+Make the platform difference an *input* instead:
+
+- Assert a path rule by handing it `PureWindowsPath` **and** `PurePosixPath`, not by
+  running on that OS. `Path` is the host's flavour: `Path("/mnt/c/x").parts[0]` is
+  `/` on Linux and `\` on Windows, and `is_absolute()` is False there for a rootless
+  path — so a rule written against `parts` cannot even be exercised off-platform.
+- Compare paths as `Path` objects, or render both sides through the same
+  `str()`/`as_posix()`. A literal POSIX string on one side of `==` fails on Windows
+  while the code under test is correct.
+- Don't use `select`/`selectors` on a pipe: `DefaultSelector` is `SelectSelector` on
+  Windows and accepts only sockets. Bound the read with a reader thread and
+  `join(timeout=...)`, which is portable and asserts the stronger thing — that the
+  data arrived, not that a descriptor became readable.
+- Wait for the condition, never for a duration; take elapsed time from a monotonic
+  clock. A `sleep`-then-assert test fails on whichever runner is slowest that day.
+- Reach for `skipif` only when the behaviour genuinely cannot exist off-platform.
+  When it is a fact about a string, a byte, or an exit code, it is testable everywhere
+  — and a skip hides that the assertion was never made.
+
 ## Catalog Authoring
 
 - Author catalog content as YAML sources, never a discoverable `.md`; scaffold with `basicly catalog new skill`/`catalog new fragment` and follow the `catalog-authoring` skill — `basicly catalog lint` enforces the format.
