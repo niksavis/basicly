@@ -46,6 +46,7 @@ from . import (
     verify,
     worktree,
 )
+from . import session as session_config
 from .catalog import bundled_catalog_root, iter_catalog_files
 from .config import (
     AUTONOMY_LEVELS,
@@ -2424,6 +2425,46 @@ def _cmd_loop_run(args: argparse.Namespace) -> int:
     return 1 if result.blocked else 0
 
 
+def _apply_session_overrides(repo_root: Path, args: argparse.Namespace) -> tuple[str, ...]:
+    """Apply ``--runner``/``--autonomy`` for this session; the pairs applied.
+
+    Validated here rather than left to fail deep in a dispatch (basicly-jr0l.8):
+    a typo'd runner name would otherwise surface as a confusing adapter miss after
+    the lock was taken, and an unknown autonomy level would silently read as the
+    default, which is the quiet direction on a permission control. Raises
+    ``ValueError`` with the accepted values.
+    """
+    if runner_name := getattr(args, "runner", None):
+        known = {spec.name for spec in load_runner_config(repo_root).specs} | {"auto"}
+        if runner_name not in known:
+            raise ValueError(f"unknown runner {runner_name!r}; configured: {sorted(known)}")
+        session_config.set_override("runner", "default", runner_name)
+    if autonomy := getattr(args, "autonomy", None):
+        if autonomy not in AUTONOMY_LEVELS:
+            raise ValueError(f"unknown autonomy level {autonomy!r}; one of {list(AUTONOMY_LEVELS)}")
+        session_config.set_override("policy", "autonomy", autonomy)
+    return session_config.override_pairs()
+
+
+def _print_supervise_header(repo_root: Path, session_id: str, overrides: tuple[str, ...]) -> None:
+    """The session's opening lines: id, any override, and the process budget.
+
+    The override line is printed, not merely recorded: an operator reading a log
+    has to be able to see at a glance that this session is not running on the
+    repo's committed config (basicly-jr0l.8).
+    """
+    print(f"session:  {session_id}")
+    if overrides:
+        print(f"override: {', '.join(overrides)}")
+    # D1 puts this one process in charge of the machine's concurrency, so it owns
+    # the global agent-process ceiling for the session (component 8).
+    budget = supervise.configure_budget(repo_root)
+    print(
+        f"budget:   {budget.total} agent processes - {budget.lane_slots} lane, "
+        f"{budget.decider_slots} decider, {budget.helper_slots} helper"
+    )
+
+
 def _cmd_loop_supervise(args: argparse.Namespace) -> int:
     """The standing supervisor loop: derive, dispatch, route, land — until done.
 
@@ -2436,20 +2477,18 @@ def _cmd_loop_supervise(args: argparse.Namespace) -> int:
     — everything remaining waits on a human (see ``loop decisions``).
     """
     repo_root = _repo_root()
+    try:
+        overrides = _apply_session_overrides(repo_root, args)
+    except ValueError as exc:
+        print(f"supervise: refused - {exc}", file=sys.stderr)
+        return 1
     session_id = supervise.new_session_id(args.issue)
     try:
         lock = supervise.acquire(repo_root, session_id, args.issue)
     except supervise.LockHeldError as exc:
         print(f"supervise: refused - {exc}", file=sys.stderr)
         return 1
-    print(f"session:  {session_id}")
-    # D1 puts this one process in charge of the machine's concurrency, so it owns
-    # the global agent-process ceiling for the session (component 8).
-    budget = supervise.configure_budget(repo_root)
-    print(
-        f"budget:   {budget.total} agent processes - {budget.lane_slots} lane, "
-        f"{budget.decider_slots} decider, {budget.helper_slots} helper"
-    )
+    _print_supervise_header(repo_root, session_id, overrides)
     # Background beats keep the lock fresh through long landings (verify
     # suites easily outlast the staleness horizon); hb.check raises promptly
     # when a contender took over so no two supervisors ever land concurrently.
@@ -3371,6 +3410,17 @@ def _add_loop_parser(subparsers: argparse._SubParsersAction) -> None:
         "outcomes, land green work - until done or blocked on a human",
     )
     l_supervise.add_argument("issue", help="Root issue (feature or epic) the session is bound to")
+    l_supervise.add_argument(
+        "--runner",
+        help="Agent to dispatch for this session only, overriding [runner] default "
+        "without editing any committed config",
+    )
+    l_supervise.add_argument(
+        "--autonomy",
+        choices=AUTONOMY_LEVELS,
+        help="Grantable autonomy ceiling for this session only, overriding "
+        "[policy] autonomy without editing any committed config",
+    )
     l_sess = loop_sub.add_parser(
         "session",
         help="Attach to a supervisor session and observe its live status "

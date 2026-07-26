@@ -6,7 +6,7 @@ import tomllib
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from . import permissions
+from . import permissions, session
 from .runner import (
     AUTO,
     BUILTIN_RUNNERS,
@@ -420,14 +420,16 @@ class ProjectPaths:
 
 
 def _harness_section(repo_root: Path, name: str) -> dict:
-    """The named harness section with basicly.local.toml keys overriding basicly.toml.
+    """The named harness section, with later layers overriding earlier ones.
 
-    Key-level shallow merge: a key set in the gitignored local overlay replaces
-    the same key from the shared file wholesale (so a local ``checks`` or
-    ``agents`` list is taken as-is, not concatenated). A missing file or a
-    non-table section contributes nothing. Only harness sections go through
-    this merge — projection config ([paths], [catalog]) reads basicly.toml
-    alone.
+    Three layers, lowest first: basicly.toml, the gitignored basicly.local.toml,
+    and this process's session overrides (:mod:`basicly.session`).
+
+    Key-level shallow merge: a key set in a later layer replaces the same key
+    wholesale (so a local ``checks`` or ``agents`` list is taken as-is, not
+    concatenated). A missing file or a non-table section contributes nothing. Only
+    harness sections go through this merge — projection config ([paths],
+    [catalog]) reads basicly.toml alone.
     """
     merged: dict = {}
     for filename in (CONFIG_FILE, LOCAL_CONFIG_FILE):
@@ -437,6 +439,7 @@ def _harness_section(repo_root: Path, name: str) -> dict:
         section = tomllib.loads(config_path.read_text(encoding="utf-8")).get(name, {})
         if isinstance(section, dict):
             merged.update(section)
+    merged.update(session.overrides_for(name))
     return merged
 
 
