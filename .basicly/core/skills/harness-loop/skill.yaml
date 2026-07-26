@@ -55,6 +55,23 @@ instructions: |
   `.beads/issues.jsonl` on a harness branch (restore it if something staged
   it).
 
+  **The base clean-tree check counts untracked files.** Landing mutates the
+  shared base checkout, so it runs `git status --porcelain` there with
+  untracked paths included — unlike the worktree readiness check, which passes
+  `--untracked-files=no` because `git rebase` does not abort on untracked
+  files. So a stray untracked file in base blocks the landing exactly like a
+  modified tracked one. Check base before every landing:
+
+  ```sh
+  git -C <base-checkout> status --short
+  ```
+
+  When the dirt is not yours — one shared base checkout with a second
+  concurrent session in it is the usual cause — **hold the branch** until that
+  session commits its own work, then land. Never `git clean`, `git checkout --`
+  or stash another session's files to unblock your merge; the branch waits, the
+  other session's work does not survive being cleared.
+
   **Push cadence** — tracker-only pushes are CI-free by design (`paths-ignore
   .beads/**`; the local commit-msg hooks are the deterministic floor), so the
   choice is purely about who is watching the remote:
