@@ -177,6 +177,12 @@ def commit_tracker_state(
     if not paths or not all(path.startswith(".beads/") for path in paths):
         return False
     br.try_run_br(repo_root, ["sync", "--flush-only"])
+    # br stamps each flushed record with the producing workspace's absolute path;
+    # strip it before staging so the committed export never publishes a home
+    # directory layout (basicly-vkh0.5). This is the engine's only tracker-commit
+    # path, so scrubbing here covers every record br wrote since the last one.
+    # The tracker-path-scan hook is the gate for whatever this misses.
+    br.scrub_export(repo_root)
     git(["add", ".beads"], cwd=repo_root)
     git(["commit", "-m", f"chore(beads): {action} ({bead})"], cwd=repo_root)
     return True

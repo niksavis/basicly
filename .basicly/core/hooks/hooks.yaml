@@ -26,6 +26,16 @@ hooks:
     stage: pre-commit
     always_run: true
     pass_filenames: false
+  # Sibling of secret-scan, for the tracker export. The export is committed and
+  # cloned by consumers, so a machine-specific absolute path or username in it is
+  # published, and it is a wrong answer on every machine but the one that wrote
+  # it (basicly-vkh0.5). The engine strips br's source_repo_path at its own
+  # tracker commits; this is the gate for whatever that misses.
+  - id: tracker-path-scan
+    script: tracker-path-scan.py
+    stage: pre-commit
+    always_run: true
+    pass_filenames: false
   - id: commit-msg-script
     script: commit-msg.py
     stage: commit-msg
