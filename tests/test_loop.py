@@ -661,6 +661,28 @@ def test_not_ready_landing_carries_the_merge_attempt(
     assert result.blocked and result.landing is attempt and not attempt.conflicted
 
 
+def test_an_unreliable_gate_spends_no_rework_and_records_the_flake(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A gate that failed and then passed unchanged must not cost the node (basicly-55yh)."""
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    attempt = merge.MergeResult(
+        "i", merge.VERIFY_UNRELIABLE, "verify full failed on pytest but passed on re-run"
+    )
+    monkeypatch.setattr(merge, "merge_worktree", lambda *_a, **_k: attempt)
+    charged: list = []
+    monkeypatch.setattr(policy, "record_rework", lambda *a, **_k: charged.append(a) or 1)
+    flakes: list = []
+    monkeypatch.setattr(policy, "record_unreliable_gate", lambda *a, **_k: flakes.append(a) or 1)
+
+    result = _advance(tmp_path)
+
+    assert charged == []  # the whole point
+    assert result.blocked and result.action == "blocked"  # not "escalated"
+    assert result.landing is attempt
+    assert [(a[1], a[2]) for a in flakes] == [("i", merge.MERGE_GATE)]
+
+
 def test_build_leaf_reworks_on_failed_merge(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

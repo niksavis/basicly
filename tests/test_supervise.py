@@ -1548,6 +1548,35 @@ def test_route_still_holds_later_lanes_when_a_gate_fails(
     assert [r.route for r in routed] == ["rework", "held"]
 
 
+def test_route_holds_a_lane_whose_gate_was_merely_unreliable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A failure that did not reproduce carries the lane instead of re-dispatching it.
+
+    The lane is green and committed — the re-run proved it — so routing it to
+    ``rework`` would spend a fresh agent dispatch rewriting a correct diff, and
+    the ``held`` carry is exactly the "ran out of a landable base" shape
+    (basicly-55yh).
+    """
+    monkeypatch.setattr(
+        supervise.loop,
+        "advance",
+        lambda _r, issue_id, **_k: _blocked_landing(issue_id, merge.VERIFY_UNRELIABLE),
+    )
+    monkeypatch.setattr(supervise, "_landing_order", lambda _r, outcomes: list(outcomes))
+    outcomes = (_executed_outcome("epic.1"),)
+
+    routed = supervise.route_outcomes(
+        tmp_path, _session(*(_lane(o.issue_id) for o in outcomes)), outcomes
+    )
+
+    assert [r.route for r in routed] == ["held"]
+    # `held` is the only carrying route, so the next pass lands it first rather
+    # than re-entering dispatch.
+    assert supervise.carried_forward(routed) == frozenset({"epic.1"})
+    assert supervise.should_continue(routed) is True
+
+
 # --- Cancel and re-dispatch a lane a landing broke (D6, kjc5.26) --------------
 
 

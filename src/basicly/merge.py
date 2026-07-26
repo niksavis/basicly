@@ -62,6 +62,14 @@ ENGINE_PATHS = (".beads/",)
 # must not hold the bounced lane behind it — see `record_coupling` (basicly-grrb).
 COUPLING_DEP_TYPE = "related"
 
+# Status for a landing whose verify gate failed and then passed unchanged on a
+# re-run. Distinct from "verify-failed" because the two must be scored
+# differently: a merit failure spends the lane's bounded rework budget, an
+# unreliable gate carries no evidence against the work and must spend nothing
+# (basicly-55yh). The lane that hit this in the kjc5.22 dogfood had committed
+# three docs files and was escalated for an upstream tracker flake.
+VERIFY_UNRELIABLE = "verify-unreliable"
+
 
 @dataclass(frozen=True)
 class ProbeResult:
@@ -77,7 +85,7 @@ class MergeResult:
 
     name: str
     # "merged" | "not-ready" | "rebase-conflicts" | "verify-failed"
-    # | "merge-conflicts" | "merge-failed"
+    # | "verify-unreliable" | "merge-conflicts" | "merge-failed"
     status: str
     detail: str
     # Paths that collided, for a conflict status. Carried as data (not only in
@@ -94,6 +102,37 @@ class MergeResult:
     def conflicted(self) -> bool:
         """True when the landing failed on a collision, not on a gate or a state."""
         return self.status in CONFLICT_STATUSES
+
+    @property
+    def unreliable(self) -> bool:
+        """True when the gate failed and then passed unchanged on re-run.
+
+        No evidence against the lane's work, so no caller may charge it a rework
+        attempt (basicly-55yh).
+        """
+        return self.status == VERIFY_UNRELIABLE
+
+
+def _verify_for_landing(name: str, worktree_path: Path, verify_mode: str) -> MergeResult | None:
+    """Re-verify the rebased worktree: a blocking result, or None when it may land.
+
+    Evidence before blame. When the gate fails, exactly the checks that failed are
+    re-run in the same tree with nothing touched; a check that passes now did not
+    fail on this lane's work, so scoring it as a merit failure would spend the
+    lane's bounded rework budget on an unreliable gate (basicly-55yh). The re-run
+    is paid for only on a failure, so a green landing costs nothing extra.
+    """
+    report = verify.run_verify(worktree_path, verify_mode)
+    if report.passed:
+        return None
+    failures = ", ".join(report.failures)
+    if verify.rerun_failures(report, worktree_path, verify_mode).passed:
+        return MergeResult(
+            name,
+            VERIFY_UNRELIABLE,
+            f"verify {verify_mode} failed on {failures} but passed unchanged on re-run",
+        )
+    return MergeResult(name, "verify-failed", f"verify {verify_mode} failed: {failures}")
 
 
 def probe_merge(repo_root: Path, base: str, branch: str) -> ProbeResult:
@@ -292,11 +331,9 @@ def merge_worktree(
         )
 
     # 2. Re-verify in the worktree after the rebase.
-    report = verify.run_verify(worktree_path, verify_mode)
-    if not report.passed:
-        return MergeResult(
-            name, "verify-failed", f"verify {verify_mode} failed: {', '.join(report.failures)}"
-        )
+    gate = _verify_for_landing(name, worktree_path, verify_mode)
+    if gate is not None:
+        return gate
 
     # 3. Non-destructive conflict probe before touching the base tree.
     probe = probe_merge(repo_root, base, branch)
@@ -344,8 +381,13 @@ class QueueResult:
 
     @property
     def deferred(self) -> bool:
-        """True when the lane was not landable yet and simply stays queued."""
-        return self.result.status == "not-ready"
+        """True when the lane was not landable yet and simply stays queued.
+
+        Covers both no-charge outcomes: work not yet committed on the branch, and
+        a gate that failed without reproducing (basicly-55yh). Neither faults the
+        lane, so neither spends an attempt.
+        """
+        return self.result.status == "not-ready" or self.result.unreliable
 
 
 def unmerged_paths(cwd: Path) -> tuple[str, ...]:
@@ -510,6 +552,15 @@ def merge_queue(
             # Operator-fixable (work not committed on the branch), and nothing
             # this pass can resolve: leave it queued, spend no rework attempt on
             # it, and let the lanes behind it land.
+            results.append(QueueResult(result))
+            continue
+        if result.unreliable:
+            # The gate failed and then passed unchanged, so there is no evidence
+            # against this lane: record the flake and leave it queued rather than
+            # charging its bounded budget (basicly-55yh). Deliberately `continue`
+            # where "verify-failed" breaks — a failure that does not reproduce is
+            # not the signal about the base that stopping the pass exists for.
+            policy.record_unreliable_gate(repo_root, bead, MERGE_GATE, result.detail)
             results.append(QueueResult(result))
             continue
         if result.conflicted:

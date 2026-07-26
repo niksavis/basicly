@@ -636,3 +636,86 @@ def test_merge_worktree_aborts_when_the_merge_commit_fails(
 
     assert result.status == "merge-failed"
     assert ["merge", "--abort"] in [c[:2] for c in fake.calls]
+
+
+# --- An unreliable gate spends no rework budget (basicly-55yh) ----------------
+
+
+_FAILED = verify.VerifyReport("full", (verify.CheckResult("pytest", "fail", 1),))
+_GREEN = verify.VerifyReport("full", (verify.CheckResult("pytest", "pass", 0),))
+
+
+@pytest.mark.usefixtures("base_ready")
+def test_merge_worktree_reports_unreliable_when_verify_does_not_reproduce(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A failure that passes unchanged on re-run is a distinct status, not verify-failed."""
+    monkeypatch.setattr(merge, "git", _FakeGit({"status": _Proc(0, ""), "rebase": _Proc(0)}))
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: _FAILED)
+    monkeypatch.setattr(verify, "rerun_failures", lambda *_a, **_k: _GREEN)
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-onb.5")
+
+    assert result.status == merge.VERIFY_UNRELIABLE
+    assert result.unreliable is True
+    assert "pytest" in result.detail and "passed unchanged on re-run" in result.detail
+
+
+@pytest.mark.usefixtures("base_ready")
+def test_merge_worktree_still_reports_verify_failed_when_it_reproduces(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A real red suite must not be excused: the re-run fails too."""
+    monkeypatch.setattr(merge, "git", _FakeGit({"status": _Proc(0, ""), "rebase": _Proc(0)}))
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: _FAILED)
+    monkeypatch.setattr(verify, "rerun_failures", lambda *_a, **_k: _FAILED)
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-onb.5")
+
+    assert result.status == "verify-failed"
+    assert result.unreliable is False
+
+
+@pytest.mark.usefixtures("base_ready")
+def test_merge_worktree_reruns_only_after_a_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A green landing pays nothing for the mechanism: no re-run is attempted."""
+    monkeypatch.setattr(merge, "git", _FakeGit({"status": _Proc(0, ""), "rebase": _Proc(0)}))
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
+    reruns: list = []
+    monkeypatch.setattr(
+        verify,
+        "rerun_failures",
+        lambda *a, **_k: reruns.append(a) or verify.VerifyReport("full", ()),
+    )
+
+    merge.merge_worktree(tmp_path, "feat", bead="basicly-onb.5")
+
+    assert reruns == []
+
+
+def test_merge_queue_spends_no_rework_on_an_unreliable_gate(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The reported defect: the lane was charged and escalated for an upstream flake."""
+    outcomes = {
+        "a": merge.MergeResult("a", merge.VERIFY_UNRELIABLE, "failed on pytest, passed on re-run"),
+        "b": merge.MergeResult("b", "merged", "ok"),
+    }
+    monkeypatch.setattr(merge, "merge_worktree", lambda _r, name, **_kwargs: outcomes[name])
+    charged: list = []
+    monkeypatch.setattr(policy, "record_rework", lambda *a, **_k: charged.append(a) or 1)
+    flakes: list = []
+    monkeypatch.setattr(policy, "record_unreliable_gate", lambda *a, **_k: flakes.append(a) or 1)
+
+    results = merge.merge_queue(tmp_path, [("a", "b1"), ("b", "b2")])
+
+    assert charged == []  # the whole point
+    assert results[0].deferred and results[0].attempts == 0 and results[0].escalate is False
+    # `continue`, not `break`: a failure that does not reproduce says nothing
+    # about the base, so the lanes behind it still land.
+    assert [q.result.name for q in results] == ["a", "b"]
+    assert results[1].result.merged is True
+    # Forgiven, but not silently: the flake is recorded so a chronic one is visible.
+    assert [(a[1], a[2]) for a in flakes] == [("b1", merge.MERGE_GATE)]

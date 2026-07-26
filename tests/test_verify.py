@@ -415,3 +415,87 @@ def test_cli_verify_fix_reports_a_broken_fixer_without_hiding_the_verdict(
     assert "[fix] fmt failed" in captured.err
     assert "command not found: ghost-tool" in captured.err
     assert "[verify] FAIL: fmt" in captured.err
+
+
+# --- Telling an unreliable gate from a merit failure (basicly-55yh) ----------
+
+
+def _flaky_run(fail_first: set[str]) -> object:
+    """A subprocess.run stand-in where each named command fails once, then passes."""
+
+    def fake_run(command, **_kw):
+        name = command[0]
+        if name in fail_first:
+            fail_first.discard(name)
+            return _Proc(1)
+        return _Proc(0)
+
+    return fake_run
+
+
+def test_rerun_failures_reruns_only_the_checks_that_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A green check must not be paid for twice — only the failures re-run."""
+    seen: list[list[str]] = []
+
+    def fake_run(command, **_kw):
+        seen.append(command)
+        return _Proc(1 if command == ["bad"] else 0)
+
+    monkeypatch.setattr(verify.subprocess, "run", fake_run)
+    config = VerifyConfig((_check("ok", ("full",)), _check("bad", ("full",))))
+    report = verify.run_verify(tmp_path, "full", config)
+    seen.clear()
+
+    rerun = verify.rerun_failures(report, tmp_path, "full", config)
+    assert seen == [["bad"]]
+    assert rerun.passed is False
+
+
+def test_rerun_failures_passes_when_the_failure_does_not_reproduce(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The whole point: a check that fails once and then passes is not a merit failure."""
+    monkeypatch.setattr(verify.subprocess, "run", _flaky_run({"pytest"}))
+    config = VerifyConfig((_check("pytest", ("full",)),))
+    report = verify.run_verify(tmp_path, "full", config)
+    assert report.passed is False
+
+    assert verify.rerun_failures(report, tmp_path, "full", config).passed is True
+
+
+def test_rerun_failures_returns_a_green_report_untouched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A passing run pays nothing: no command runs at all."""
+    seen: list[list[str]] = []
+
+    def fake_run(command, **_kw):
+        seen.append(command)
+        return _Proc(0)
+
+    monkeypatch.setattr(verify.subprocess, "run", fake_run)
+    config = VerifyConfig((_check("ok", ("full",)),))
+    report = verify.run_verify(tmp_path, "full", config)
+    seen.clear()
+
+    assert verify.rerun_failures(report, tmp_path, "full", config) is report
+    assert seen == []
+
+
+def test_rerun_failures_keeps_the_verdict_when_no_check_matches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No new evidence means the original failure stands — never a vacuous pass.
+
+    An empty VerifyReport reads as passing, so re-running nothing must return the
+    failed report rather than an empty one, or a real failure would be forgiven.
+    """
+    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_kw: _Proc(1))
+    config = VerifyConfig((_check("gone", ("full",)),))
+    report = verify.run_verify(tmp_path, "full", config)
+
+    rerun = verify.rerun_failures(report, tmp_path, "full", VerifyConfig(()))
+    assert rerun is report
+    assert rerun.passed is False
