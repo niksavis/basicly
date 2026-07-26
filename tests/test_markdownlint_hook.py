@@ -11,7 +11,7 @@ from __future__ import annotations
 import ast
 import importlib.util
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
 
@@ -38,7 +38,14 @@ WINDOWS_NODE = "/mnt" + "/c/Program Files/nodejs/node"
 
 
 def test_a_windows_interop_path_is_rejected_on_linux(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The defect itself: /mnt is the Windows drive mount, and CMD.EXE cannot see the worktree."""
+    """The defect itself: /mnt is the Windows drive mount, and CMD.EXE cannot see the worktree.
+
+    Asserted on every OS leg, including the windows one, where ``Path`` renders
+    this string as a rootless ``WindowsPath``. That is the point rather than an
+    accident: the rule is a fact about the path text, so a host whose ``Path``
+    flavour spells it differently must still reach the same verdict
+    (basicly-jr0l.23).
+    """
     monkeypatch.setattr(hook.sys, "platform", "linux")
     assert hook._is_windows_interop(Path(WINDOWS_NODE)) is True
 
@@ -49,6 +56,25 @@ def test_a_windows_path_is_accepted_on_a_real_windows_host(
     """On win32 a Windows node is simply where node lives, so the rule must not fire."""
     monkeypatch.setattr(hook.sys, "platform", "win32")
     assert hook._is_windows_interop(Path(WINDOWS_NODE)) is False
+
+
+def test_the_interop_rule_survives_the_other_path_flavour(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The regression gate, and it runs on every host (basicly-jr0l.23).
+
+    The windows leg of CI went red here while Linux and macOS stayed green, because
+    the rule was written against ``Path.parts`` — whose spelling of ``/mnt/c/...``
+    depends on the interpreter, not on the path. Handing it ``PureWindowsPath``
+    deliberately reproduces that flavour anywhere, so this class of defect no longer
+    needs a Windows runner to be caught. Prefer this shape over a platform ``skipif``
+    whenever the behaviour under test is a fact about a string.
+    """
+    monkeypatch.setattr(hook.sys, "platform", "linux")
+    assert hook._is_windows_interop(PureWindowsPath(WINDOWS_NODE)) is True
+    assert hook._is_windows_interop(PurePosixPath(WINDOWS_NODE)) is True
+    assert hook._is_windows_interop(PureWindowsPath("/usr/bin/node")) is False
+    assert hook._is_windows_interop(PureWindowsPath(r"C:\Program Files\nodejs\node")) is False
 
 
 def test_an_ordinary_linux_path_is_not_interop(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -135,12 +161,19 @@ def test_no_usable_node_fails_with_one_actionable_line(
 
 
 def test_the_launcher_never_invokes_npx(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """The regression pin: npx is the whole defect, so it must not appear in the argv."""
+    """The regression pin: npx is the whole defect, so it must not appear in the argv.
+
+    The expected argv is rendered from the same ``Path`` the launcher was handed
+    rather than written out as POSIX text: ``str()`` on a rootless path yields
+    backslashes under a Windows interpreter, so the literal form failed the windows
+    leg while the launcher was behaving correctly (basicly-jr0l.23).
+    """
     cli = tmp_path / hook._CLI_ENTRY
     cli.parent.mkdir(parents=True)
     cli.write_text("// entry\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(hook, "find_node", lambda: Path("/opt/node/bin/node"))
+    node = Path("/opt/node/bin/node")
+    monkeypatch.setattr(hook, "find_node", lambda: node)
     seen: list[list[str]] = []
 
     class _Proc:
@@ -149,7 +182,7 @@ def test_the_launcher_never_invokes_npx(monkeypatch: pytest.MonkeyPatch, tmp_pat
     monkeypatch.setattr(hook.subprocess, "run", lambda cmd, **_kw: seen.append(cmd) or _Proc())
 
     assert hook.main(["--fix"]) == 0
-    assert seen == [["/opt/node/bin/node", str(hook._CLI_ENTRY), "--fix"]]
+    assert seen == [[str(node), str(hook._CLI_ENTRY), "--fix"]]
     assert not any("npx" in part for part in seen[0])
 
 

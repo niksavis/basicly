@@ -36,7 +36,7 @@ import os
 import shutil
 import subprocess  # nosec B404
 import sys
-from pathlib import Path
+from pathlib import Path, PurePath
 
 # markdownlint-cli2's real entry point inside node_modules. Invoked directly with
 # a resolved node, which is what removes npx — and with it the Windows npx — from
@@ -50,17 +50,28 @@ _NVM_ROOTS = ("versions/node",)
 _SYSTEM_NODES = (Path("/usr/local/bin/node"), Path("/usr/bin/node"))
 
 
-def _is_windows_interop(candidate: Path) -> bool:
+def _is_windows_interop(candidate: PurePath) -> bool:
     r"""True when *candidate* is a Windows binary reached through WSL interop.
 
     Only meaningful on Linux. A path under ``/mnt`` there is the Windows drive
     mount, and running it hands the job to CMD.EXE, which cannot even express the
     worktree's ``\\wsl.localhost\...`` directory. On a real Windows host a Windows
     path is simply where node lives, so the rule must not apply.
+
+    Read from the path's POSIX text rather than its ``parts``, because ``parts``
+    is a property of the *host's* path flavour and not of the path: a Windows
+    interpreter parses ``/mnt/c/...`` as a rootless ``WindowsPath`` whose anchor
+    is ``\\`` and which ``is_absolute()`` calls False, so the rule could not even
+    be exercised there (basicly-jr0l.23). The interop path is a fact about the
+    string, so the check is too — which also makes it assertable on every OS leg.
+
+    Typed :class:`PurePath` for the same reason, and it is not a widening for its
+    own sake: it lets a test hand this the *other* flavour deliberately, so the
+    windows-only failure is reproducible on any host instead of only on the runner
+    that has one.
     """
-    return (
-        sys.platform == "linux" and candidate.is_absolute() and candidate.parts[:2] == ("/", "mnt")
-    )
+    posix = candidate.as_posix()
+    return sys.platform == "linux" and (posix == "/mnt" or posix.startswith("/mnt/"))
 
 
 def _version_key(directory: Path) -> tuple[int, ...]:

@@ -5,10 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import selectors
 import shutil
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -1370,6 +1370,13 @@ def test_a_printed_line_is_observable_before_exit_when_stdout_is_a_pipe() -> Non
     proves the stream is block-buffered without the call. Asserting the negative
     *here* would mean waiting out a timeout to prove an absence, which costs
     seconds of suite time to learn nothing the control does not already give.
+
+    The read is bounded by joining a reader thread rather than by ``selectors``:
+    ``DefaultSelector`` is ``SelectSelector`` on Windows and ``select()`` there
+    accepts only sockets, so registering a pipe raised ``WinError 10038`` on that
+    leg alone (basicly-jr0l.23). The thread is also the stronger assertion — it
+    proves the *line* arrived while the child was still blocked, not merely that
+    the descriptor had become readable.
     """
     proc = subprocess.Popen(  # nosec B603
         [sys.executable, "-c", _OBSERVABLE_CHILD],
@@ -1380,12 +1387,13 @@ def test_a_printed_line_is_observable_before_exit_when_stdout_is_a_pipe() -> Non
     )
     assert proc.stdin and proc.stdout
     try:
-        selector = selectors.DefaultSelector()
-        selector.register(proc.stdout, selectors.EVENT_READ)
-        ready = selector.select(timeout=30)
-        selector.close()
-        assert ready, "nothing readable while the child was still blocked on stdin"
-        assert proc.stdout.readline() == "session:  demo\n"
+        stdout = proc.stdout
+        first: list[str] = []
+        reader = threading.Thread(target=lambda: first.append(stdout.readline()), daemon=True)
+        reader.start()
+        reader.join(timeout=30)
+        assert first, "nothing readable while the child was still blocked on stdin"
+        assert first[0] == "session:  demo\n"
     finally:
         proc.stdin.write("\n")
         proc.stdin.close()
