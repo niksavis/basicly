@@ -1326,9 +1326,11 @@ DISPATCH_GATE = "dispatch"
 # holds the lane via has_pending). "lane-step" is a mini-loop lane that closed a
 # sub-task this pass — bounded by max_subtasks_per_lane plus those same caps;
 # "bounced" is a collided lane whose agent re-applies its intent next pass,
-# bounded by the same merge rework cap. "lane-blocked" is deliberately absent,
-# because such a lane waits on an agent or a human exactly like a handoff.
-RETRIABLE_ROUTES = ("retry", "rework", "held", "lane-step", "bounced")
+# bounded by the same merge rework cap; "re-dispatch" is a lane whose merge a
+# landing this pass broke, cancelled before it collided and bounded by the
+# dispatch cap. "lane-blocked" is deliberately absent, because such a lane waits
+# on an agent or a human exactly like a handoff.
+RETRIABLE_ROUTES = ("retry", "rework", "held", "lane-step", "bounced", "re-dispatch")
 
 
 @dataclass(frozen=True)
@@ -1337,7 +1339,8 @@ class RoutedOutcome:
 
     issue_id: str
     # "shipped" | "merged" | "retry" | "rework" | "held" | "decision"
-    # | "handoff" | "lane-step" | "lane-blocked" | "bounced" | "error"
+    # | "handoff" | "lane-step" | "lane-blocked" | "bounced" | "re-dispatch"
+    # | "error"
     route: str
     detail: str
 
@@ -1417,6 +1420,11 @@ def route_outcomes(
       lane landed the colliding paths this pass, and the remaining green lanes
       still land. A lane's wrong scope declaration is its own problem, not a
       reason to stall everyone.
+    - A lane a *landing this pass* already **broke** — its branch no longer
+      merges cleanly, and that landing's paths are why — is cancelled before its
+      own landing is attempted and re-dispatched with the collision recorded for
+      its next prompt (D6, :func:`_preempt_lane`); that likewise does not hold
+      the pass.
     - Any **other** blocked landing (a red gate, an uncommitted worktree) still
       holds the later green lanes (``held``) — that is a signal about the base,
       and they re-land next iteration on top of whatever fix lands first.
@@ -1464,7 +1472,7 @@ def route_outcomes(
         routed.append(one)
         if one.progressed:
             landed.append((outcome.issue_id, merge.changed_paths(repo_root, before)))
-        elif is_green and one.route != "bounced":
+        elif is_green and one.route not in ("bounced", "re-dispatch"):
             landing_blocked = True
     return tuple(routed)
 
@@ -1646,22 +1654,130 @@ def _bounce_lane(
 
 def _route_failed(repo_root: Path, issue_id: str, outcome: LaneOutcome) -> RoutedOutcome:
     """A failed dispatch retries under the bounded rework cap, then escalates."""
+    return _capped_dispatch(
+        repo_root,
+        issue_id,
+        route="retry",
+        detail=outcome.detail,
+        question="dispatch failed at the rework cap: retry, re-dispatch, or park?",
+    )
+
+
+def _capped_dispatch(
+    repo_root: Path, issue_id: str, *, route: str, detail: str, question: str
+) -> RoutedOutcome:
+    """Owe *issue_id* another dispatch, bounded by the dispatch rework cap.
+
+    One counter for every reason a lane needs re-running (a failed run, a
+    pre-empted landing): the cap has to bound the *dispatches* a lane can spend,
+    so splitting it per reason would let a lane alternate between them and never
+    reach an escalation. At the cap the queue item holds the lane for a human.
+    """
     config = policy.load_policy(repo_root)
     attempts = policy.record_rework(repo_root, issue_id, DISPATCH_GATE)
     if attempts < config.max_rework:
         return RoutedOutcome(
-            issue_id,
-            "retry",
-            f"{outcome.detail} (dispatch rework {attempts}/{config.max_rework})",
+            issue_id, route, f"{detail} (dispatch rework {attempts}/{config.max_rework})"
         )
-    item = decisions.enqueue(
+    item = decisions.enqueue(repo_root, issue_id, "escalation", question, detail)
+    return RoutedOutcome(issue_id, "decision", f"{detail}; escalated as {item.decision_id}")
+
+
+def _invalidated_by(
+    repo_root: Path,
+    session: SessionState,
+    issue_id: str,
+    landed: list[tuple[str, tuple[str, ...]]],
+) -> tuple[str, ...]:
+    """Lanes landed this pass that broke *issue_id*'s pending landing (D6).
+
+    Read from the evidence, not from a proxy. ``git merge-tree`` predicts the
+    merge without touching any tree (:func:`merge.probe_merge`), and the paths it
+    names are intersected with what each landing changed
+    (:func:`merge.missed_couplings`) to say *which* landing did it — the same
+    attribution a bounce makes, one attempt earlier. A lane's declared ``##
+    Scope`` is only what it promised to touch, so overlapping it does not mean
+    the landing is doomed: cancelling on that would spend an agent run replacing
+    work that would have landed clean.
+
+    Nothing is returned unless a landing *this pass* is to blame. A branch that
+    conflicts on its own is the bounce path's business, which records the missed
+    coupling and takes the rework attempt the loop's own landing owes it.
+
+    Every way of failing to read the evidence — no adopted lane, no worktree
+    record, an unreadable session — yields nothing rather than raising: the
+    remedy costs an agent run, so it is spent on a demonstrated collision only,
+    and a lane that would have landed must never be cancelled by a git hiccup.
+    """
+    if not landed:
+        return ()
+    lane = next((la for la in session.adopted if la.issue_id == issue_id and la.live), None)
+    if lane is None:
+        return ()
+    try:
+        record = worktree.load_session(lane.binding.name, repo_root)
+        if record is None:
+            return ()
+        probe = merge.probe_merge(repo_root, record.base, record.branch)
+    except RuntimeError, OSError, ValueError:
+        return ()
+    if probe.safe:
+        return ()
+    return merge.missed_couplings(probe.conflicts, landed)
+
+
+def _preempt_lane(repo_root: Path, issue_id: str, culprits: tuple[str, ...]) -> RoutedOutcome:
+    """Cancel a lane a landing this pass broke and re-dispatch it *informed* (D6).
+
+    D6 forbids messaging a lane whose base moved under it; the write-side
+    counterpart is not to let it walk into the collision either. So the landing is
+    skipped and the lane owes a fresh dispatch — but a re-dispatch that says
+    nothing new would run the same agent, on the same tree, to the same
+    collision. What makes it worth a run is the ``kind=coupling`` found-info
+    record published here: that is D6's own propagation channel, and
+    :func:`build_bundle` folds it into this lane's **next** prompt, so its agent
+    re-applies its intent knowing which lane landed what.
+
+    No dependency edge is recorded. :func:`merge.record_coupling` writes a
+    *gating* ``blocks`` edge on the premise that the lane it names is done, and a
+    lane the supervisor just landed is merged but **not shipped** — still open —
+    so the edge would drop this lane out of :func:`ready_lanes` and hold it
+    behind a human ship approval, the exact opposite of re-dispatching it. The
+    graph still learns the coupling from the bounce, if the re-applied work
+    collides again.
+
+    Cancelling is not destructive: like a bounce, the lane keeps its commits on
+    its branch. What it costs is a dispatch, so it is bounded — once per lane per
+    pass, because a lane routes exactly once — and counted against the dispatch
+    rework cap, which escalates to a human rather than re-dispatching forever.
+    """
+    who = ", ".join(culprits)
+    record_found_info(
         repo_root,
         issue_id,
-        "escalation",
-        f"dispatch failed {attempts} time(s) at the rework cap: retry, re-dispatch, or park?",
-        outcome.detail,
+        FoundInfo(
+            kind="coupling",
+            summary=f"{who} landed changes this branch no longer merges cleanly onto",
+            detail=(
+                "the supervisor cancelled this lane's landing rather than let it "
+                "collide; re-apply your intent on top of what those lanes landed"
+            ),
+            affects=(issue_id,),
+        ),
     )
-    return RoutedOutcome(issue_id, "decision", f"{outcome.detail}; escalated as {item.decision_id}")
+    return _capped_dispatch(
+        repo_root,
+        issue_id,
+        route="re-dispatch",
+        detail=(
+            f"cancelled before landing: {who} landed changes this branch no longer "
+            "merges onto; recorded for the next dispatch"
+        ),
+        question=(
+            "a landing keeps breaking this lane's merge at the rework cap: "
+            "re-scope it, serialize it, or park?"
+        ),
+    )
 
 
 def _land_green(
@@ -1672,14 +1788,19 @@ def _land_green(
 ) -> RoutedOutcome:
     """Land a green lane through the single-track engine, then try to ship it.
 
-    ``loop.advance`` does the build→verify landing (rebase, verify, gate) — the
-    supervisor composes it, never replaces it. A blocked landing is triaged by
-    :func:`_route_blocked_landing` against *landed* (this pass's landings, which
-    a collision is attributed against). The ship checkpoint is then tried
-    non-interactively: an L3 grant with the lights-out preconditions holding
-    approves and the next advance ships; otherwise the request queues for the
-    human and the lane parks in verify.
+    A lane whose merge one of *landed* just broke is cancelled and re-dispatched
+    instead (:func:`_preempt_lane`, D6) — the doomed landing is not attempted.
+    Otherwise ``loop.advance`` does the build→verify landing (rebase, verify,
+    gate) — the supervisor composes it, never replaces it. A blocked landing is
+    triaged by :func:`_route_blocked_landing` against *landed* (this pass's
+    landings, which a collision is attributed against). The ship checkpoint is
+    then tried non-interactively: an L3 grant with the lights-out preconditions
+    holding approves and the next advance ships; otherwise the request queues for
+    the human and the lane parks in verify.
     """
+    invalidated = _invalidated_by(repo_root, session, outcome.issue_id, landed)
+    if invalidated:
+        return _preempt_lane(repo_root, outcome.issue_id, invalidated)
     landing = loop.advance(repo_root, outcome.issue_id)
     if landing.blocked:
         return _route_blocked_landing(repo_root, outcome, landing, landed)

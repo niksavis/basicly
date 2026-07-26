@@ -546,3 +546,66 @@ def test_a_landing_pass_invents_no_coupling_from_the_shared_tracker(harness_repo
             if dep.get("dependency_type") == "blocks"
         }
         assert blocking == set(), f"{child} gained an invented coupling: {blocking}"
+
+
+@needs_br
+def test_a_landing_cancels_the_lane_it_broke_and_tells_it_why(harness_repo: Path) -> None:
+    """A lane a landing broke is cancelled, informed, and left free to re-dispatch (D6).
+
+    Pins basicly-kjc5.26 end to end, on the two things no stubbed tracker can
+    disagree with: ``git merge-tree`` really has to report the collision the
+    first landing created, and the record the supervisor publishes really has to
+    come back out of ``build_bundle`` in the cancelled lane's next prompt. A
+    gating ``blocks`` edge is the failure mode being excluded — the lane that
+    landed is merged but *not shipped*, so an edge onto it would drop the
+    cancelled lane out of the ready set and hold it behind a human.
+    """
+    repo = harness_repo
+    root = _create_bead(repo, "the collision root", issue_type="epic")
+    first = _create_bead(repo, "lane that lands first")
+    second = _create_bead(repo, "lane that gets cancelled")
+    for child in (first, second):
+        _br(repo, "dep", "add", child, root, "-t", "parent-child")
+
+    for name, child in (("first", first), ("second", second)):
+        _to_build(repo, child)
+        state = loop_state.read_node_state(repo, child)
+        assert state.worktree is not None
+        session = worktree.load_session(state.worktree.name, repo)
+        assert session is not None
+        # The same file, incompatible content: once one lands, the other's branch
+        # no longer merges onto the base.
+        _commit(
+            Path(session.worktree_path),
+            "shared.txt",
+            f"the {name} lane wrote this\n",
+            f"feat: lane {name} ({child})",
+        )
+
+    session_state = supervise.derive_session(repo, root)
+    routed = supervise.route_outcomes(repo, session_state, (_green(first), _green(second)))
+
+    assert [r.route for r in routed] == ["merged", "re-dispatch"], [r.detail for r in routed]
+    assert first in routed[1].detail
+    # The cancelled lane's landing was never attempted: the base carries the
+    # first lane's content and only its merge.
+    assert (repo / "shared.txt").read_text(encoding="utf-8") == "the first lane wrote this\n"
+    merges = [
+        line
+        for line in _git(repo, "log", "--format=%s", "--first-parent", "main").splitlines()
+        if line.startswith("chore(worktree):")
+    ]
+    assert len(merges) == 1
+
+    # Nothing gates the cancelled lane: it must be free to re-dispatch.
+    blocking = {
+        str(dep["id"])
+        for dep in _show(repo, second).get("dependencies") or []
+        if dep.get("dependency_type") == "blocks"
+    }
+    assert blocking == set(), f"{second} was gated instead of re-dispatched: {blocking}"
+
+    # And its next dispatch prompt carries why, naming the lane that landed.
+    bundle = supervise.build_bundle(repo, second, known_ids=frozenset({root, first, second}))
+    assert [info.kind for info in bundle.folded] == ["coupling"]
+    assert first in bundle.prompt
