@@ -2431,6 +2431,11 @@ def _cmd_loop_supervise(args: argparse.Namespace) -> int:
             for decided in delegated:
                 verb = "decided" if decided.answered else "to human"
                 print(f"decider:  {decided.decision_id} [{decided.kind}] {verb} - {decided.detail}")
+            # Let the graph learn from discoveries before this pass reads it
+            # (basicly-kjc5.24): an edge added now gates dispatch and orders the
+            # landings in this same pass, not the next one.
+            for bead, coupled_to, dep_type in supervise.propose_coupling_edges(repo_root, state):
+                print(f"coupling: {bead} -> {coupled_to} ({dep_type}) - from a found-info record")
             outcomes = supervise.dispatch_lanes(
                 repo_root, state, beat=hb.check, skip=carried, admission=admission
             )

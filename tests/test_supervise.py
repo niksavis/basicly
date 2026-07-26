@@ -384,6 +384,140 @@ def test_parse_found_info_skips_malformed_records() -> None:
     assert supervise.parse_found_info('[harness-info] ["not","object"]', "x") is None
 
 
+# --- Coupling discoveries become graph edges (basicly-kjc5.24, D6/7.4) ---------
+
+
+def _coupling_session(*, in_flight: tuple[str, ...] = ()) -> supervise.SessionState:
+    """A two-child session where only *in_flight* children hold a live worktree."""
+    return supervise.SessionState(
+        root_issue="epic",
+        root_status="open",
+        children=(("epic.1", "in_progress"), ("epic.2", "open")),
+        adopted=tuple(_lane(issue_id) for issue_id in in_flight),
+    )
+
+
+def _coupling_issues(scope: str = "", deps: tuple[dict, ...] = ()) -> dict[str, dict]:
+    """Two children; epic.2 optionally declares *scope* and carries *deps*."""
+    return {
+        "epic": _issue("epic", children=(("epic.1", "in_progress"), ("epic.2", "open"))),
+        "epic.1": _issue("epic.1", "in_progress"),
+        "epic.2": {
+            "id": "epic.2",
+            "status": "open",
+            "issue_type": "task",
+            "description": f"Do the work.\n\n## Scope\n\n- `{scope}`\n" if scope else "Do it.",
+            "dependencies": list(deps),
+        },
+    }
+
+
+def _propose(
+    monkeypatch: pytest.MonkeyPatch,
+    fake: _FakeBr,
+    session: supervise.SessionState,
+) -> tuple[tuple[str, str, str], ...]:
+    """Run the proposal with every br seam this path uses pointed at *fake*."""
+    _install_br(monkeypatch, fake)
+    monkeypatch.setattr(supervise, "_try_run_br", fake)
+    monkeypatch.setattr(supervise.decompose, "_run_br", fake)
+    monkeypatch.setattr(supervise.merge.br, "try_run_br", fake)
+    return supervise.propose_coupling_edges(Path(), session)
+
+
+def test_a_coupling_record_gates_a_bead_that_has_not_started(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Nothing is lost by making unstarted work wait, and the collision is prevented."""
+    fake = _FakeBr(
+        _coupling_issues(),
+        comments={"epic.1": [_fold_marker("coupling", "both read the loader", ["epic.2"])]},
+    )
+
+    recorded = _propose(monkeypatch, fake, _coupling_session(in_flight=("epic.1",)))
+
+    assert recorded == (("epic.2", "epic.1", "blocks"),)
+    assert ("epic.2", "epic.1", "-t", "blocks") in fake.deps
+
+
+def test_a_coupling_record_teaches_an_in_flight_lane_without_gating_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A lane with committed work must not be stranded by what it just learned.
+
+    The grrb lesson applied to the discovery path: gating a live lane drops it out
+    of ready_lanes and holds it behind a human, so the coupling is recorded
+    non-gating and reaches that lane as a folded record instead.
+    """
+    fake = _FakeBr(
+        _coupling_issues(),
+        comments={"epic.1": [_fold_marker("coupling", "both read the loader", ["epic.2"])]},
+    )
+
+    recorded = _propose(monkeypatch, fake, _coupling_session(in_flight=("epic.1", "epic.2")))
+
+    assert recorded == (("epic.2", "epic.1", supervise.merge.COUPLING_DEP_TYPE),)
+    assert not any(dep[-1] == "blocks" for dep in fake.deps)
+
+
+def test_a_coupling_record_reaches_a_bead_by_scope_overlap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A record naming paths, not ids, still finds whoever declared those paths."""
+    fake = _FakeBr(
+        _coupling_issues(scope="src/basicly/loop.py"),
+        comments={
+            "epic.1": [_fold_marker("coupling", "the loader is shared", ["src/basicly/loop.py"])]
+        },
+    )
+
+    recorded = _propose(monkeypatch, fake, _coupling_session(in_flight=("epic.1",)))
+
+    assert recorded == (("epic.2", "epic.1", "blocks"),)
+
+
+def test_only_a_coupling_record_proposes_an_edge(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The other kinds are advisory context; only `coupling` implies an ordering."""
+    fake = _FakeBr(
+        _coupling_issues(),
+        comments={
+            "epic.1": [
+                _fold_marker("fact", "the loader caches", ["epic.2"]),
+                _fold_marker("constraint", "keep the window", ["epic.2"]),
+                _fold_marker("decision", "we chose toml", ["epic.2"]),
+            ]
+        },
+    )
+
+    assert _propose(monkeypatch, fake, _coupling_session(in_flight=("epic.1",))) == ()
+    assert fake.deps == []
+
+
+def test_a_coupling_edge_is_recorded_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Re-reading the record every pass must not re-issue the edge."""
+    existing = ({"id": "epic.1", "dependency_type": "blocks"},)
+    fake = _FakeBr(
+        _coupling_issues(deps=existing),
+        comments={"epic.1": [_fold_marker("coupling", "both read the loader", ["epic.2"])]},
+    )
+
+    assert _propose(monkeypatch, fake, _coupling_session(in_flight=("epic.1",))) == ()
+    assert fake.deps == []
+
+
+def test_a_coupling_record_never_couples_its_source_to_itself(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A lane naming its own bead (or its own scope) proposes nothing."""
+    fake = _FakeBr(
+        _coupling_issues(),
+        comments={"epic.1": [_fold_marker("coupling", "note to self", ["epic.1"])]},
+    )
+
+    assert _propose(monkeypatch, fake, _coupling_session(in_flight=("epic.1",))) == ()
+    assert fake.deps == []
+
+
 # --- Dispatch bundles: pure functions of br state at dispatch time (D6) --------
 
 
