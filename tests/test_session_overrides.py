@@ -190,3 +190,82 @@ def test_the_supervise_parser_rejects_an_unknown_level() -> None:
     parser = cli._build_parser()
     with pytest.raises(SystemExit):
         parser.parse_args(["loop", "supervise", "basicly-x", "--autonomy", "L9"])
+
+
+# --- The same pin on policy grant (basicly-jr0l.15) --------------------------
+
+
+def _grant_args(**kwargs) -> argparse.Namespace:
+    """`policy grant` flags as the handler receives them."""
+    defaults = {
+        "issue": "basicly-root",
+        "level": None,
+        "token_budget": None,
+        "revoke": False,
+        "autonomy": None,
+        "confirm": None,
+    }
+    return argparse.Namespace(**{**defaults, **kwargs})
+
+
+def test_the_grant_ceiling_can_be_pinned_for_one_issuance(repo: Path) -> None:
+    """A grant is issued by a separate process, so the session pin cannot reach it."""
+    assert load_policy_config(repo).autonomy == "L0"
+    cli._apply_session_overrides(repo, _grant_args(autonomy="L1"))
+    assert load_policy_config(repo).autonomy == "L1"
+
+
+def test_the_grant_reads_the_committed_ceiling_without_the_flag(repo: Path) -> None:
+    """Unchanged behaviour when the flag is absent — this widens nothing by default."""
+    cli._apply_session_overrides(repo, _grant_args(level="L1"))
+    assert load_policy_config(repo).autonomy == "L0"
+
+
+def test_the_grant_parser_exposes_the_autonomy_flag() -> None:
+    """The wiring, so the flag cannot exist in the handler but not the parser."""
+    args = cli._build_parser().parse_args([
+        "policy",
+        "grant",
+        "basicly-x",
+        "--level",
+        "L1",
+        "--token-budget",
+        "1000",
+        "--autonomy",
+        "L1",
+    ])
+    assert args.autonomy == "L1" and args.level == "L1" and args.token_budget == 1000
+
+
+def test_the_grant_challenge_reprints_the_autonomy_override(
+    monkeypatch: pytest.MonkeyPatch, repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Regression: the relayed command must carry --autonomy or it dead-ends.
+
+    The override is process-local, so a re-run without it is refused at the
+    committed ceiling again — the challenge would hand back a command that cannot
+    work. Found by exercising the command, not by a test.
+    """
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(cli.policy, "_new_code", lambda: "cafe1234")
+
+    assert (
+        cli.main([
+            "policy",
+            "grant",
+            "basicly-root",
+            "--level",
+            "L1",
+            "--token-budget",
+            "1000000",
+            "--autonomy",
+            "L1",
+        ])
+        == 1
+    )
+
+    rerun = capsys.readouterr().err
+    assert "--autonomy L1" in rerun
+    assert "--confirm cafe1234" in rerun
+    assert "--token-budget 1000000" in rerun
