@@ -2688,8 +2688,22 @@ def _print_observation(view: supervise.Observation) -> None:
     else:
         budget = view.token_budget if view.token_budget is not None else "unbounded"
         print(f"grant:      {view.grant_level}, {view.spent_tokens}/{budget} tokens spent")
+    print(
+        f"wait:       {_format_duration(view.human_wait_s)} human, "
+        f"{_format_duration(view.delegated_wait_s)} delegated "
+        f"(dispatch {_format_duration(view.dispatch_s)})"
+    )
     if view.done:
         print("done:       yes")
+
+
+def _format_duration(seconds: float) -> str:
+    """A duration at the precision an operator reads it in: s, then m, then h."""
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    if seconds < 3600:
+        return f"{seconds / 60:.0f}m"
+    return f"{seconds / 3600:.1f}h"
 
 
 def _format_decision(item: decisions.DecisionItem) -> str:

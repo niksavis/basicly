@@ -6,6 +6,7 @@ import ast
 import inspect
 import json
 import textwrap
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,11 @@ class _Proc:
         self.stdout = stdout
         self.stderr = ""
         self.returncode = returncode
+
+
+# The tracker stamp a comment a test seeded directly (never written through the
+# fake's `comments add`) reads as.
+_EPOCH = "2026-01-01T00:00:00Z"
 
 
 class _FakeBr:
@@ -51,6 +57,12 @@ class _FakeBr:
         # another's (lights-out scoping, basicly-kjc5.39); falls back to `gates`.
         self.gates_by_issue = gates_by_issue or {}
         self.comments: list[str] = []
+        # br stamps every comment with a created_at, and the wait meter
+        # (basicly-kjc5.51) reads it. Stamps are keyed by position so a test that
+        # seeds self.comments directly still gets the default, and `now` is the
+        # tracker's clock a test advances between writes.
+        self.now = _EPOCH
+        self.stamps: dict[int, str] = {}
 
     def __call__(self, _repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
         if args[:1] == ["lint"]:
@@ -69,10 +81,15 @@ class _FakeBr:
             results = self.gates_by_issue.get(args[2], self.gates)
             return _Proc(json.dumps({"results": results}))
         if args[:2] == ["comments", "list"]:
-            return _Proc(json.dumps([{"text": t} for t in self.comments]))
+            listing = [
+                {"text": text, "created_at": self.stamps.get(i, _EPOCH)}
+                for i, text in enumerate(self.comments)
+            ]
+            return _Proc(json.dumps(listing))
         if args[:2] == ["comments", "add"]:
             # br comments add <id> <text> — the marker text is the last arg.
             self.comments.append(args[-1])
+            self.stamps[len(self.comments) - 1] = self.now
             return _Proc("")
         raise AssertionError(f"unexpected br call: {args}")
 
@@ -1173,3 +1190,279 @@ def test_nothing_in_the_spend_gate_reads_a_clock() -> None:
         }
         leaked = used & banned
         assert not leaked, f"{func.__name__} reads a clock: {leaked}"
+
+
+# --- Human wait time (basicly-kjc5.51, D11) ----------------------------------
+
+_ASKED_AT = datetime(2026, 7, 26, 12, 0, tzinfo=UTC)
+
+
+def _pin_clocks(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr, *, waited_s: int) -> None:
+    """Ask at :data:`_ASKED_AT` on the tracker's clock, answer *waited_s* later.
+
+    Both clocks are pinned rather than slept on: the interval under test is the
+    measurement itself, so it must not depend on how long the test took to run.
+    """
+    fake.now = _ASKED_AT.isoformat().replace("+00:00", "Z")
+    monkeypatch.setattr(policy, "_now", lambda: _ASKED_AT.timestamp() + waited_s)
+
+
+def test_a_checkpoint_challenge_starts_the_clock_a_relayed_code_stops_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The wait a human made the track sit through is recorded with who ended it."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _pin_clocks(monkeypatch, fake, waited_s=420)
+
+    challenge = policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
+    assert challenge.status == "challenge"
+    assert policy.wait_events(tmp_path, "i") == ()  # still waiting: nothing to record yet
+
+    approved = policy.approve_checkpoint_guarded(
+        tmp_path, "i", "ship", interactive=False, confirm=challenge.code
+    )
+    assert approved.status == "approved"
+
+    (event,) = policy.wait_events(tmp_path, "i")
+    assert (event.kind, event.subject, event.waited_s) == ("checkpoint", "ship", 420)
+    assert (event.answered_by, event.delegated) == (policy.HUMAN_BY, False)
+    assert event.wait_id == policy.wait_id_for_checkpoint("i", "ship")
+
+
+def test_a_reissued_challenge_neither_duplicates_nor_restarts_the_wait(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The wait began at the first ask; a later ask is the same wait, still running.
+
+    A code expires after 15 minutes, so a track waiting on a human overnight is
+    challenged repeatedly — restarting the clock on each one would report the last
+    few minutes and hide the whole night.
+    """
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _pin_clocks(monkeypatch, fake, waited_s=7_200)
+
+    first = policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
+    fake.now = "2026-07-26T13:30:00Z"  # the tracker's clock moved on
+    again = policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
+    assert (first.status, again.status) == ("challenge", "challenge")
+    assert sum(1 for text in fake.comments if "kind=checkpoint requested" in text) == 1
+
+    policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False, confirm=again.code)
+    (event,) = policy.wait_events(tmp_path, "i")
+    assert event.waited_s == 7_200
+
+
+def test_a_covering_grant_records_no_wait_because_it_removed_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The value of an autonomy grant is the wait absent from the rollup (D3/D11)."""
+    fake = _FakeBr(gates=_VERIFY_GREEN)
+    _install(monkeypatch, fake)
+    _pin_clocks(monkeypatch, fake, waited_s=600)
+    fake.comments.append("[harness-policy] grant level=L3 budget=1000000")
+
+    approved = policy.approve_checkpoint_guarded(tmp_path, "root", "ship", interactive=False)
+
+    assert approved.status == "approved"
+    assert policy.wait_events(tmp_path, "root") == ()
+    summary = policy.session_wait_summary(tmp_path, "root")
+    assert (summary.human_wait_s, summary.delegated_wait_s) == (0, 0)
+
+
+def test_a_grant_that_ends_an_open_wait_is_recorded_as_delegated(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A wait the harness ended itself is not human time — it is measured apart."""
+    fake = _FakeBr(gates=_VERIFY_GREEN)
+    _install(monkeypatch, fake)
+    _pin_clocks(monkeypatch, fake, waited_s=900)
+
+    # Asked first (no grant yet), then a grant arrives and disposes of it.
+    asked = policy.approve_checkpoint_guarded(tmp_path, "root", "ship", interactive=False)
+    assert asked.status == "challenge"
+    fake.comments.append("[harness-policy] grant level=L3 budget=1000000")
+    approved = policy.approve_checkpoint_guarded(tmp_path, "root", "ship", interactive=False)
+    assert approved.status == "approved"
+
+    (event,) = policy.wait_events(tmp_path, "root")
+    assert (event.answered_by, event.delegated, event.waited_s) == ("grant:L3", True, 900)
+    summary = policy.session_wait_summary(tmp_path, "root")
+    assert (summary.human_wait_s, summary.delegated_wait_s) == (0, 900)
+
+
+def test_the_session_rollup_reports_wait_apart_from_dispatch(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The two durations are never added: dispatch is compute, wait is wall clock."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _pin_clocks(monkeypatch, fake, waited_s=1_800)
+    challenge = policy.approve_checkpoint_guarded(tmp_path, "root", "classify", interactive=False)
+    policy.approve_checkpoint_guarded(
+        tmp_path, "root", "classify", interactive=False, confirm=challenge.code
+    )
+    for duration in (12.5, 30.0):
+        run_record.record(
+            tmp_path,
+            "root",
+            run_record.build_record(
+                agent="t", handoff=False, returncode=0, duration_s=duration, command=("t",)
+            ),
+        )
+
+    summary = policy.session_wait_summary(tmp_path, "root")
+
+    assert summary.human_wait_s == 1_800
+    assert summary.dispatch_s == 42.5
+    assert [e.subject for e in summary.events] == ["classify"]
+
+
+def test_dispatch_seconds_cover_the_children_too(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Session-scoped like the spend meter: a lane's time is the session's time."""
+    fake = _FakeBr(
+        dependents=[{"id": "root.1", "dependency_type": "parent-child", "status": "open"}]
+    )
+    _install(monkeypatch, fake)
+    for issue_id, duration in (("root", 10.0), ("root.1", 5.0), ("unrelated", 900.0)):
+        run_record.record(
+            tmp_path,
+            issue_id,
+            run_record.build_record(
+                agent="t", handoff=False, returncode=0, duration_s=duration, command=("t",)
+            ),
+        )
+    assert policy.session_dispatch_seconds(tmp_path, "root") == 15.0
+
+
+def _wait_marker(wait_id: str, requested_at: str, answered_at: str, /, **overrides: object) -> str:
+    """One answered ``[harness-wait]`` marker, as :func:`policy.record_wait` writes it."""
+    start, end = policy._parse_ts(requested_at), policy._parse_ts(answered_at)
+    assert start is not None and end is not None
+    payload: dict[str, object] = {
+        "answered_at": answered_at,
+        "by": policy.HUMAN_BY,
+        "delegated": False,
+        "kind": "checkpoint",
+        "requested_at": requested_at,
+        "subject": "ship",
+        "waited_s": int(end.timestamp() - start.timestamp()),
+    }
+    payload |= overrides
+    header = f"{policy.WAIT_MARKER} id={wait_id} kind={payload['kind']} answered"
+    return f"{header}\n{json.dumps(payload, sort_keys=True)}"
+
+
+def test_overlapping_waits_count_once_but_separate_ones_add_up(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Lanes wait on the same human at the same time, so the total is a union.
+
+    One ask can also be recorded twice — the supervisor queues a ``checkpoint``
+    decision *and* mints the challenge behind it — and summing those would report
+    twice the wall clock a forecast is trying to predict.
+    """
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    fake.comments += [
+        _wait_marker("i#a", "2026-07-26T12:00:00Z", "2026-07-26T13:00:00Z"),
+        _wait_marker("i#b", "2026-07-26T12:30:00Z", "2026-07-26T13:30:00Z"),
+    ]
+    assert policy.session_wait_summary(tmp_path, "i").human_wait_s == 5_400  # 12:00 -> 13:30
+
+    fake.comments += [_wait_marker("i#c", "2026-07-26T14:00:00Z", "2026-07-26T14:20:00Z")]
+    assert policy.session_wait_summary(tmp_path, "i").human_wait_s == 6_600
+
+
+def test_a_wait_with_unusable_stamps_still_counts_its_own_interval(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A garbled marker must under-report the overlap, never the wait itself."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    fake.comments.append(
+        _wait_marker("i#a", "2026-07-26T12:00:00Z", "2026-07-26T12:05:00Z", requested_at="whenever")
+    )
+    assert policy.session_wait_summary(tmp_path, "i").human_wait_s == 300
+
+
+def test_a_garbled_wait_marker_is_skipped_not_raised(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Evidence reads stay best-effort: a malformed marker never wedges a rollup."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    fake.comments += [
+        "[harness-wait] kind=checkpoint answered",  # no id
+        "[harness-wait] id=i#wait-ship kind=checkpoint answered\nnot json",
+        '[harness-wait] id=i#wait-ship kind=vibes answered\n{"kind": "vibes", "waited_s": 5}',
+        '[harness-wait] id=i#wait-ship kind=decision answered\n{"kind": "decision"}',
+    ]
+    assert policy.wait_events(tmp_path, "i") == ()
+
+
+def test_a_clock_that_steps_backwards_records_no_negative_wait(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A wait cannot be negative; the tracker's clock and ours can still disagree."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _pin_clocks(monkeypatch, fake, waited_s=-90)
+
+    event = policy.record_wait(
+        tmp_path,
+        "i",
+        wait_id="i#wait-ship",
+        kind="checkpoint",
+        subject="ship",
+        requested_at=fake.now,
+        by=policy.HUMAN_BY,
+        delegated=False,
+    )
+
+    assert event is not None
+    assert event.waited_s == 0
+
+
+def test_an_unmeasurable_start_records_nothing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No parseable start means no interval - and an invented one would be worse."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+
+    assert (
+        policy.record_wait(
+            tmp_path,
+            "i",
+            wait_id="i#wait-ship",
+            kind="checkpoint",
+            subject="ship",
+            requested_at="",
+            by=policy.HUMAN_BY,
+            delegated=False,
+        )
+        is None
+    )
+    assert fake.comments == []
+
+
+def test_record_wait_rejects_an_unknown_kind(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The kind is what the rollup groups by, so an unknown one is a programming error."""
+    _install(monkeypatch, _FakeBr())
+    with pytest.raises(ValueError, match="unknown wait kind"):
+        policy.record_wait(
+            tmp_path,
+            "i",
+            wait_id="i#wait-ship",
+            kind="vibes",
+            subject="ship",
+            requested_at=_EPOCH,
+            by=policy.HUMAN_BY,
+            delegated=False,
+        )

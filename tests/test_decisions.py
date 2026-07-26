@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import json
 import threading
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -27,19 +28,36 @@ class _Proc:
         self.returncode = returncode
 
 
+# The tracker stamp a comment a test seeded directly (never written through the
+# fake's `comments add`) reads as.
+_EPOCH = "2026-01-01T00:00:00Z"
+
+
 class _FakeBr:
     """br stand-in: per-issue comments plus `show` records for the session walk."""
 
     def __init__(self, records: dict[str, dict] | None = None) -> None:
         self.records = records or {}
         self.comments: dict[str, list[str]] = {}
+        # br stamps every comment with a created_at, and the wait meter
+        # (basicly-kjc5.51) measures from it. Stamps are keyed by position so a
+        # test that seeds self.comments directly still gets the default, and `now`
+        # is the tracker's clock a test advances between writes.
+        self.now = _EPOCH
+        self.stamps: dict[tuple[str, int], str] = {}
 
     def __call__(self, _repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
         if args[:2] == ["comments", "list"]:
             texts = self.comments.get(args[2], [])
-            return _Proc(json.dumps([{"text": t} for t in texts]))
+            listing = [
+                {"text": text, "created_at": self.stamps.get((args[2], i), _EPOCH)}
+                for i, text in enumerate(texts)
+            ]
+            return _Proc(json.dumps(listing))
         if args[:2] == ["comments", "add"]:
-            self.comments.setdefault(args[2], []).append(args[3])
+            texts = self.comments.setdefault(args[2], [])
+            texts.append(args[3])
+            self.stamps[(args[2], len(texts) - 1)] = self.now
             return _Proc("")
         if args[:1] == ["show"]:
             record = self.records.get(args[1], {"status": "open", "dependents": []})
@@ -151,6 +169,76 @@ def test_garbled_markers_never_wedge_the_queue(
     real = decisions.enqueue(tmp_path, "epic.1", "needs-input", "which db?")
     items = decisions.pending(tmp_path, "epic.1")
     assert [i.decision_id for i in items] == [real.decision_id]
+
+
+# --- How long the queue held the item (basicly-kjc5.51, D11) -------------------
+
+
+def _pin_clocks(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr, *, waited_s: int) -> None:
+    """Enqueue at :data:`_QUEUED_AT` on the tracker's clock, answer *waited_s* later."""
+    fake.now = _QUEUED_AT.isoformat().replace("+00:00", "Z")
+    monkeypatch.setattr(policy, "_now", lambda: _QUEUED_AT.timestamp() + waited_s)
+
+
+_QUEUED_AT = datetime(2026, 7, 26, 9, 0, tzinfo=UTC)
+
+
+def test_answering_records_how_long_the_queue_held_the_item(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The interval from enqueue to answer is evidence on the bead, with who ended it.
+
+    Derived from the two markers' own tracker stamps — a blocked lane's cost is
+    already recorded, it was only never measured.
+    """
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _no_notify(monkeypatch)
+    _pin_clocks(monkeypatch, fake, waited_s=3_600)
+    item = decisions.enqueue(tmp_path, "epic.1", "needs-input", "which db?")
+
+    decisions.answer(tmp_path, item.decision_id, "postgres", by="niksa")
+
+    (event,) = policy.wait_events(tmp_path, "epic.1")
+    assert (event.wait_id, event.kind, event.subject) == (
+        item.decision_id,
+        "decision",
+        "needs-input",
+    )
+    assert (event.waited_s, event.answered_by, event.delegated) == (3_600, "niksa", False)
+
+
+def test_a_delegated_answer_is_recorded_as_the_wait_it_removed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Human and decider waits are measured apart — that split prices the autonomy."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _no_notify(monkeypatch)
+    _pin_clocks(monkeypatch, fake, waited_s=45)
+    item = decisions.enqueue(tmp_path, "epic", "needs-input", "which db?")
+
+    decisions.answer(tmp_path, item.decision_id, "postgres", by=f"{decisions.DECIDER_BY_PREFIX}c")
+
+    summary = policy.session_wait_summary(tmp_path, "epic")
+    assert (summary.human_wait_s, summary.delegated_wait_s) == (0, 45)
+    assert [(e.answered_by, e.delegated) for e in summary.events] == [("decider:c", True)]
+
+
+def test_an_unusable_enqueue_stamp_records_no_wait(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No measurable start means no event: the meter under-reports before it invents."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _no_notify(monkeypatch)
+    fake.now = "whenever"  # a tracker stamp nothing can measure from
+    item = decisions.enqueue(tmp_path, "epic.1", "needs-input", "which db?")
+
+    answered = decisions.answer(tmp_path, item.decision_id, "postgres", by="human")
+
+    assert answered.answer == "postgres"  # the answer still lands
+    assert policy.wait_events(tmp_path, "epic.1") == ()
 
 
 # --- Notify hook (design 7.3) --------------------------------------------------
@@ -554,7 +642,11 @@ def test_decider_answer_persists_the_audit_trail(
 
     decisions.invoke_decider(tmp_path, item.decision_id, "epic")
 
-    answer_marker = fake.comments["epic"][-1]
+    # Not simply the last comment: recording an answer also closes the item's
+    # wait interval (basicly-kjc5.51), which lands after it.
+    answer_marker = next(
+        text for text in fake.comments["epic"] if f"id={item.decision_id} answered" in text
+    )
     assert "corpus says so" in answer_marker
     assert "0.9" in answer_marker
 

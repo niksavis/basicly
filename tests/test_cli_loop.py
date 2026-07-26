@@ -269,6 +269,9 @@ def _observation(**overrides: object) -> supervise.Observation:
         "grant_level": "L2",
         "token_budget": 5000,
         "spent_tokens": 1200,
+        "human_wait_s": 5_400,
+        "delegated_wait_s": 45,
+        "dispatch_s": 92.5,
     }
     defaults.update(overrides)
     return supervise.Observation(**defaults)  # type: ignore[arg-type]
@@ -290,6 +293,20 @@ def test_loop_session_prints_the_attach_surface(
     assert "decisions:  1 pending" in out
     assert "ship without the migration?" in out
     assert "grant:      L2, 1200/5000 tokens spent" in out
+
+
+def test_loop_session_reports_human_wait_apart_from_dispatch(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Wall clock is dominated by waiting on a human, so the rollup says so (kjc5.51).
+
+    Reported beside dispatch and never folded into it: one is the compute the
+    session bought, the other is the bottleneck a delivery forecast has to predict.
+    """
+    monkeypatch.setattr(supervise, "observe", lambda *_a, **_k: _observation())
+
+    assert cli.main(["loop", "session", "basicly-epic"]) == 0
+    assert "wait:       1.5h human, 45s delegated (dispatch 2m)" in capsys.readouterr().out
 
 
 def test_loop_session_names_an_unsupervised_root(
@@ -374,6 +391,11 @@ def test_loop_session_json_emits_the_whole_observation(
         "L2",
         5000,
         1200,
+    )
+    assert (payload["human_wait_s"], payload["delegated_wait_s"], payload["dispatch_s"]) == (
+        5_400,
+        45,
+        92.5,
     )
     # A derived property asdict would drop, and the one flag a machine client acts on.
     assert payload["supervised"] is True

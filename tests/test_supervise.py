@@ -2277,6 +2277,18 @@ def test_observe_reports_the_holder_lanes_decisions_and_spend(
         ),
     )
     queued = decisions.enqueue(tmp_path, "epic.1", "validate", "ship without the migration?")
+    # A wait the lane already served out, recorded as its own evidence (kjc5.51).
+    monkeypatch.setattr(policy, "_now", lambda: 1_800.0)
+    policy.record_wait(
+        tmp_path,
+        "epic.1",
+        wait_id="epic.1#wait-ship",
+        kind="checkpoint",
+        subject="ship",
+        requested_at="1970-01-01T00:00:00Z",
+        by=policy.HUMAN_BY,
+        delegated=False,
+    )
     supervise.acquire(tmp_path, "epic:live", "epic")
 
     view = supervise.observe(tmp_path, "epic")
@@ -2302,6 +2314,8 @@ def test_observe_reports_the_holder_lanes_decisions_and_spend(
     )
     assert [item.decision_id for item in view.pending_decisions] == [queued.decision_id]
     assert (view.grant_level, view.token_budget, view.spent_tokens) == ("L2", 5000, 1200)
+    # Where the wall clock went, reported beside the compute and never folded in.
+    assert (view.human_wait_s, view.delegated_wait_s, view.dispatch_s) == (1_800, 0, 12.5)
 
 
 def test_observe_an_unsupervised_root_is_a_valid_read(

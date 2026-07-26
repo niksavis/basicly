@@ -22,6 +22,7 @@ import secrets
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from . import run_record
@@ -261,9 +262,19 @@ def gate_status(repo_root: Path, issue_id: str, config: PolicyConfig) -> GateSta
 # --- Rework loop (bounded, then escalate) -----------------------------------
 
 
-def _comment_texts(repo_root: Path, issue_id: str) -> list[str]:
+def _comments(repo_root: Path, issue_id: str) -> list[dict]:
+    """One bead's comments as ``br`` reports them, each with its ``created_at``.
+
+    The wait meter needs the stamp and not only the text (basicly-kjc5.51): the
+    tracker's own timestamps are what make a wait interval derivable without any
+    new state. A non-dict entry is dropped rather than raised.
+    """
     proc = _run_br(repo_root, ["comments", "list", issue_id, "--json"])
-    return [str(c.get("text", "")) for c in json.loads(proc.stdout)]
+    return [c for c in json.loads(proc.stdout) if isinstance(c, dict)]
+
+
+def _comment_texts(repo_root: Path, issue_id: str) -> list[str]:
+    return [str(c.get("text", "")) for c in _comments(repo_root, issue_id)]
 
 
 def _rework_marker(gate: str) -> str:
@@ -532,6 +543,10 @@ def approve_checkpoint_guarded(  # noqa: PLR0913 — mirrors the CLI surface
     code it must relay to a human; a matching, unexpired code approves, anything
     else is ``rejected`` with no marker recorded. Already-approved checkpoints
     short-circuit to ``approved`` (idempotent).
+
+    Every path through here is also where the human-wait clock starts and stops
+    (basicly-kjc5.51): the challenge is the moment the harness began waiting, and
+    an approval is the moment it stopped.
     """
     if name not in CHECKPOINTS:
         raise ValueError(f"unknown checkpoint {name!r}; expected one of {list(CHECKPOINTS)}")
@@ -539,14 +554,17 @@ def approve_checkpoint_guarded(  # noqa: PLR0913 — mirrors the CLI surface
         return ApprovalResult("approved", detail="already approved")
     if interactive:
         approve_checkpoint(repo_root, issue_id, name)
+        record_checkpoint_wait(repo_root, issue_id, name, by=HUMAN_BY, delegated=False)
         return ApprovalResult("approved")
     if confirm is None:
         delegated = _grant_approval(repo_root, issue_id, name, grant_root or issue_id)
         if delegated is not None:
             return delegated
+        record_wait_request(repo_root, issue_id, name)
         return ApprovalResult("challenge", code=_issue_confirm_code(repo_root, issue_id, name))
     if _consume_confirm_code(repo_root, issue_id, name, confirm):
         approve_checkpoint(repo_root, issue_id, name)
+        record_checkpoint_wait(repo_root, issue_id, name, by=HUMAN_BY, delegated=False)
         return ApprovalResult("approved")
     return ApprovalResult("rejected", detail="invalid or expired confirm code")
 
@@ -770,6 +788,11 @@ def _grant_approval(
             return None
     marker = f"{_checkpoint_marker(name)} under grant {grant.level}"
     _run_br(repo_root, ["comments", "add", issue_id, marker])
+    # Nothing to close on the first ask — the grant approves before any challenge
+    # is minted, which is exactly the wait it exists to remove. It does close one
+    # when the grant only became able to approve later (a spend halt lifted by a
+    # re-grant), and that wait is the harness's, not the human's.
+    record_checkpoint_wait(repo_root, issue_id, name, by=f"grant:{grant.level}", delegated=True)
     return ApprovalResult("approved", detail=f"delegated under {grant.level} grant")
 
 
@@ -932,6 +955,335 @@ def lights_out_violations(
                     f"rework escalation on {issue_id} (gate {gate}: {attempts}/{config.max_rework})"
                 )
     return tuple(violations)
+
+
+# --- Human wait time (D11, basicly-kjc5.51) ----------------------------------
+#
+# A factory's wall clock is dominated by waiting on a human — a checkpoint
+# approval, or an item in the decision queue — while the run record measures
+# only dispatch (``duration_s``). A delivery forecast built from that data
+# predicts the compute and misses the bottleneck.
+#
+# Nothing new has to be stored to fix it. A wait's *start* is already on the
+# bead (the ``[harness-decision]`` enqueue marker, or the request marker below
+# for a checkpoint the harness had to ask about) and ``br`` stamps every comment
+# with ``created_at``, so the interval is derivable. It is recorded as another
+# ``[harness-*]`` marker family rather than a tracker field, per the plan's
+# §3.4: markers are a format we own, so they migrate with us in Phase 6.
+
+WAIT_MARKER = "[harness-wait]"
+
+# What the harness was waiting on: a human checkpoint, or a decision-queue item.
+WAIT_KINDS = ("checkpoint", "decision")
+
+# Attribution recorded when a human answered. Matches ``loop answer``'s default
+# so one token means one thing across both surfaces.
+HUMAN_BY = "human"
+
+
+@dataclass(frozen=True)
+class WaitEvent:
+    """One interval the harness spent waiting for an answer, from its marker."""
+
+    wait_id: str
+    issue_id: str
+    kind: str  # one of WAIT_KINDS
+    subject: str  # the checkpoint name, or the queued item's kind
+    waited_s: int
+    answered_by: str
+    # True when the harness disposed of the question itself — a covering autonomy
+    # grant, or the decider agent — instead of a human. Recorded rather than
+    # re-derived from *answered_by* at read time: the recorder knows, and a
+    # prefix heuristic would silently reclassify any later attribution token.
+    delegated: bool
+    requested_at: str = ""
+    answered_at: str = ""
+
+
+def wait_id_for_checkpoint(issue_id: str, name: str) -> str:
+    """The wait id a checkpoint ask on *issue_id* is recorded under.
+
+    Derived, not minted, so a re-issued challenge (an expired code, a re-run
+    advance) reopens nothing: it is the same wait, still running.
+    """
+    return f"{issue_id}#wait-{name}"
+
+
+def _parse_ts(text: str) -> datetime | None:
+    """Parse a tracker timestamp; None when it is absent or malformed.
+
+    A naive stamp is read as UTC — ``br`` reports Zulu, and guessing the local
+    zone would turn a missing suffix into an hours-wrong interval.
+    """
+    try:
+        stamp = datetime.fromisoformat(text.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return stamp if stamp.tzinfo is not None else stamp.replace(tzinfo=UTC)
+
+
+def _parse_wait_header(text: str) -> tuple[str, bool] | None:
+    """The (wait id, answered) a ``[harness-wait]`` first line declares, or None."""
+    stripped = text.strip()
+    first_line = stripped.splitlines()[0] if stripped else ""
+    if not first_line.startswith(WAIT_MARKER):
+        return None
+    tokens = first_line[len(WAIT_MARKER) :].split()
+    fields = dict(token.split("=", 1) for token in tokens if "=" in token)
+    wait_id = fields.get("id", "")
+    return (wait_id, "answered" in tokens) if wait_id else None
+
+
+def _parse_wait_event(text: str, issue_id: str) -> WaitEvent | None:
+    """Parse one answered wait marker; None for anything else, or a garbled one.
+
+    Best-effort like the sibling marker parsers — a malformed marker is skipped,
+    never raised. Only the id is read from the header; every other field comes
+    from the JSON payload, so a mangled header line can lose evidence but never
+    misreport who answered or for how long.
+    """
+    header = _parse_wait_header(text)
+    if header is None or not header[1]:
+        return None
+    lines = text.strip().splitlines()
+    try:
+        payload = json.loads("\n".join(lines[1:]) or "{}")
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    waited = payload.get("waited_s")
+    kind = str(payload.get("kind", ""))
+    if not isinstance(waited, int) or isinstance(waited, bool) or kind not in WAIT_KINDS:
+        return None
+    return WaitEvent(
+        wait_id=header[0],
+        issue_id=issue_id,
+        kind=kind,
+        subject=str(payload.get("subject", "")),
+        waited_s=max(0, waited),
+        answered_by=str(payload.get("by", "")),
+        delegated=bool(payload.get("delegated", False)),
+        requested_at=str(payload.get("requested_at", "")),
+        answered_at=str(payload.get("answered_at", "")),
+    )
+
+
+def wait_events(repo_root: Path, issue_id: str) -> tuple[WaitEvent, ...]:
+    """Every closed wait recorded on *issue_id* — the per-bead evidence (D11)."""
+    events = (
+        _parse_wait_event(str(comment.get("text", "")), issue_id)
+        for comment in _comments(repo_root, issue_id)
+    )
+    return tuple(event for event in events if event is not None)
+
+
+def record_wait_request(repo_root: Path, issue_id: str, name: str) -> str | None:
+    """Record that the harness has started waiting on a human for *name*.
+
+    The one thing the tracker does not already know: a checkpoint the harness
+    asked about carries no trace of *when* it asked, so the challenge is where
+    the clock has to start. Returns the wait id, or None when a wait for it is
+    already open — the wait began at the first ask, so a re-issued challenge must
+    neither duplicate the marker nor restart the interval.
+    """
+    wait_id = wait_id_for_checkpoint(issue_id, name)
+    if _open_wait_stamp(repo_root, issue_id, wait_id) is not None:
+        return None
+    _run_br(
+        repo_root,
+        ["comments", "add", issue_id, f"{WAIT_MARKER} id={wait_id} kind=checkpoint requested"],
+    )
+    return wait_id
+
+
+def _open_wait_stamp(repo_root: Path, issue_id: str, wait_id: str) -> str | None:
+    """The tracker stamp on a still-unanswered request for *wait_id*, else None.
+
+    None covers every "nothing measurable to close": no request was recorded, one
+    was and has already been answered, or the tracker reported no ``created_at``
+    for it. Order-independent — any answer marker anywhere in the comment list
+    closes the wait, and comment order is not guaranteed chronological.
+    """
+    requested_at: str | None = None
+    for comment in _comments(repo_root, issue_id):
+        header = _parse_wait_header(str(comment.get("text", "")))
+        if header is None or header[0] != wait_id:
+            continue
+        if header[1]:
+            return None
+        requested_at = str(comment.get("created_at", "")) or requested_at
+    return requested_at
+
+
+def record_wait(  # noqa: PLR0913 — one parameter per recorded fact
+    repo_root: Path,
+    issue_id: str,
+    *,
+    wait_id: str,
+    kind: str,
+    subject: str,
+    requested_at: str,
+    by: str,
+    delegated: bool,
+) -> WaitEvent | None:
+    """Record the wait *wait_id* as closed now; return the event, or None.
+
+    None when *requested_at* does not parse: an unmeasurable start is recorded as
+    nothing rather than as a fabricated interval. The start is always the
+    tracker's own stamp, so a wait outlives the process that opened it; the end
+    is the local clock, because the closing marker has no stamp until ``br`` has
+    written it. Both are the same wall clock — ``br`` runs here.
+
+    *by* must be a single token (it lands on the header line); both callers
+    supply one, and the reader takes attribution from the payload regardless.
+    """
+    if kind not in WAIT_KINDS:
+        raise ValueError(f"unknown wait kind {kind!r}; expected one of {WAIT_KINDS}")
+    start = _parse_ts(requested_at)
+    if start is None:
+        return None
+    now = _now()
+    # Clamped: tracker stamps are whole seconds and a machine's clock can step
+    # backwards, and a negative wait is not evidence of anything.
+    waited_s = max(0, int(now - start.timestamp()))
+    event = WaitEvent(
+        wait_id=wait_id,
+        issue_id=issue_id,
+        kind=kind,
+        subject=subject,
+        waited_s=waited_s,
+        answered_by=by,
+        delegated=delegated,
+        requested_at=start.isoformat(),
+        answered_at=datetime.fromtimestamp(now, UTC).isoformat(),
+    )
+    payload = json.dumps(
+        {
+            "answered_at": event.answered_at,
+            "by": by,
+            "delegated": delegated,
+            "kind": kind,
+            "requested_at": event.requested_at,
+            "subject": subject,
+            "waited_s": waited_s,
+        },
+        sort_keys=True,
+    )
+    header = f"{WAIT_MARKER} id={wait_id} kind={kind} answered waited_s={waited_s} by={by}"
+    _run_br(repo_root, ["comments", "add", issue_id, f"{header}\n{payload}"])
+    return event
+
+
+def record_checkpoint_wait(
+    repo_root: Path, issue_id: str, name: str, *, by: str, delegated: bool
+) -> WaitEvent | None:
+    """Close the wait an approval of *name* just ended; None when nothing waited.
+
+    Recorded only when the harness actually asked (an open request marker), which
+    is what makes the grant's value measurable: a covering grant approves before
+    any challenge is minted, so it records no wait — and the wait it removed is
+    the wait that is now absent from the rollup.
+    """
+    wait_id = wait_id_for_checkpoint(issue_id, name)
+    requested_at = _open_wait_stamp(repo_root, issue_id, wait_id)
+    if requested_at is None:
+        return None
+    return record_wait(
+        repo_root,
+        issue_id,
+        wait_id=wait_id,
+        kind="checkpoint",
+        subject=name,
+        requested_at=requested_at,
+        by=by,
+        delegated=delegated,
+    )
+
+
+@dataclass(frozen=True)
+class WaitSummary:
+    """A session's wait accounting, reported apart from its dispatch time."""
+
+    events: tuple[WaitEvent, ...]
+    # Wall-clock seconds the session spent blocked on a human, and on the harness
+    # answering for one. Overlapping intervals count once (see
+    # :func:`_wall_clock_seconds`).
+    human_wait_s: int
+    delegated_wait_s: int
+    # Agent seconds from the run record — summed, not merged, because that is
+    # what ``duration_s`` has always meant. Reported beside the waits rather than
+    # added to them: conflating the two is the mistake this rollup exists to fix.
+    dispatch_s: float
+
+
+def _wall_clock_seconds(events: tuple[WaitEvent, ...]) -> int:
+    """The wall clock *events* cover, counting overlapping intervals once.
+
+    A sum would over-report twice over. Concurrent lanes wait on the same human
+    at the same time, and one ask can be recorded twice — the supervisor queues a
+    ``checkpoint`` decision *and* mints the challenge behind it — so the union is
+    what forecasts delivery. An event whose stamps do not parse is added as its
+    own interval instead of vanishing, so a malformed marker under-reports the
+    overlap rather than the wait.
+    """
+    spans: list[tuple[float, float]] = []
+    loose = 0
+    for event in events:
+        start, end = _parse_ts(event.requested_at), _parse_ts(event.answered_at)
+        if start is None or end is None:
+            loose += event.waited_s
+            continue
+        spans.append((start.timestamp(), max(end.timestamp(), start.timestamp())))
+    merged: list[list[float]] = []
+    for start, end in sorted(spans):
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    return int(sum(end - start for start, end in merged)) + loose
+
+
+def session_dispatch_seconds(
+    repo_root: Path, root_issue: str, *, ids: tuple[str, ...] | None = None
+) -> float:
+    """Total run-record dispatch seconds across the session's beads.
+
+    The compute half of the rollup, and the reason the wait half exists: this is
+    the only duration the harness has ever measured. *ids* skips re-walking the
+    session tree when the caller already has it.
+    """
+    records = run_record.load_run_records(repo_root) or {}
+    total = 0.0
+    for issue_id in ids if ids is not None else _session_issue_ids(repo_root, root_issue):
+        history = records.get(issue_id)
+        if not isinstance(history, list):
+            continue
+        for entry in history:
+            duration = entry.get("duration_s") if isinstance(entry, dict) else None
+            if isinstance(duration, int | float) and not isinstance(duration, bool):
+                total += float(duration)
+    return total
+
+
+def session_wait_summary(
+    repo_root: Path, root_issue: str, *, ids: tuple[str, ...] | None = None
+) -> WaitSummary:
+    """The session's wait rollup: human time, delegated time, and dispatch time.
+
+    Session-scoped like the spend meter, and for the same reason — a lane's wait
+    is the session's wall clock, not that lane's private cost. Splitting human
+    from delegated is what puts a number on an autonomy grant: the grant's value
+    is the wait it moves out of the human column.
+    """
+    ids = ids if ids is not None else _session_issue_ids(repo_root, root_issue)
+    events = tuple(event for issue_id in ids for event in wait_events(repo_root, issue_id))
+    return WaitSummary(
+        events=events,
+        human_wait_s=_wall_clock_seconds(tuple(e for e in events if not e.delegated)),
+        delegated_wait_s=_wall_clock_seconds(tuple(e for e in events if e.delegated)),
+        dispatch_s=session_dispatch_seconds(repo_root, root_issue, ids=ids),
+    )
 
 
 def load_policy(repo_root: Path) -> PolicyConfig:

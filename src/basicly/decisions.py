@@ -84,6 +84,11 @@ class DecisionItem:
     detail: str = ""
     answer: str | None = None
     answered_by: str | None = None
+    # The tracker's stamp on the enqueue marker: when the queue started holding
+    # this item, and so when the wait for its answer began (basicly-kjc5.51).
+    # Empty on the item :func:`enqueue` just wrote — the tracker stamps the
+    # comment, so only an item read back from ``br`` carries it.
+    queued_at: str = ""
 
     @property
     def pending(self) -> bool:
@@ -184,6 +189,9 @@ def answer(  # noqa: PLR0913 — mirrors the CLI surface
     header fields or corrupt the marker — see :data:`_BY_TOKEN`). Optional
     *rationale*/*confidence* persist the decider's audit trail (design 7.1)
     in the payload for decision review.
+
+    Recording an answer is also what closes the item's wait interval — the queue
+    is the harness's own measure of how long it sat blocked (basicly-kjc5.51).
     """
     if not _BY_TOKEN.match(by):
         raise ValueError(
@@ -204,6 +212,7 @@ def answer(  # noqa: PLR0913 — mirrors the CLI surface
     payload = json.dumps(body, sort_keys=True)
     header = f"{MARKER} id={decision_id} answered by={by}"
     _run_br(repo_root, ["comments", "add", issue_id, f"{header}\n{payload}"])
+    _record_wait(repo_root, item, by)
     return DecisionItem(
         decision_id=decision_id,
         issue_id=issue_id,
@@ -212,6 +221,32 @@ def answer(  # noqa: PLR0913 — mirrors the CLI surface
         detail=item.detail,
         answer=text,
         answered_by=by,
+        queued_at=item.queued_at,
+    )
+
+
+def _record_wait(repo_root: Path, item: DecisionItem, by: str) -> None:
+    """Record how long the queue held *item* before *by* answered it (D11).
+
+    The interval needs no new state: the enqueue marker's tracker stamp is the
+    start, and the answer just written is the end. An item whose marker carries no
+    usable stamp records nothing (:func:`policy.record_wait` decides that, so the
+    rule lives in one place) rather than a fabricated interval — the wait meter
+    under-reports before it invents.
+
+    A delegated answer is recorded as one: the decider disposing of an item is the
+    wait an autonomy grant removed from the human's column, which is the whole
+    point of measuring the two apart.
+    """
+    policy.record_wait(
+        repo_root,
+        item.issue_id,
+        wait_id=item.decision_id,
+        kind="decision",
+        subject=item.kind,
+        requested_at=item.queued_at,
+        by=by,
+        delegated=by.startswith(DECIDER_BY_PREFIX),
     )
 
 
@@ -262,7 +297,9 @@ def _items_on(repo_root: Path, issue_id: str) -> dict[str, DecisionItem]:
     for comment in comments:
         if not isinstance(comment, dict):
             continue
-        parsed = _parse_marker(str(comment.get("text", "")), issue_id)
+        parsed = _parse_marker(
+            str(comment.get("text", "")), issue_id, str(comment.get("created_at", ""))
+        )
         if parsed is None:
             continue
         if isinstance(parsed, DecisionItem):
@@ -280,6 +317,7 @@ def _items_on(repo_root: Path, issue_id: str) -> dict[str, DecisionItem]:
                 detail=item.detail,
                 answer=text,
                 answered_by=by,
+                queued_at=item.queued_at,
             )
     return items
 
@@ -305,8 +343,14 @@ def _marker_parts(text: str) -> tuple[dict[str, str], list[str], dict] | None:
     return (fields, tokens, payload) if isinstance(payload, dict) else None
 
 
-def _parse_marker(text: str, issue_id: str) -> DecisionItem | tuple[str, str, str] | None:
-    """Parse one comment: a DecisionItem, an (id, by, answer) tuple, or None."""
+def _parse_marker(
+    text: str, issue_id: str, created_at: str = ""
+) -> DecisionItem | tuple[str, str, str] | None:
+    """Parse one comment: a DecisionItem, an (id, by, answer) tuple, or None.
+
+    *created_at* is the tracker's stamp on the comment, carried onto an enqueue
+    marker as the item's :attr:`DecisionItem.queued_at`.
+    """
     parts = _marker_parts(text)
     if parts is None:
         return None
@@ -328,6 +372,7 @@ def _parse_marker(text: str, issue_id: str) -> DecisionItem | tuple[str, str, st
         kind=kind,
         question=question.strip(),
         detail=detail.strip() if isinstance(detail, str) else "",
+        queued_at=created_at,
     )
 
 

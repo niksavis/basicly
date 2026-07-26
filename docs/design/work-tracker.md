@@ -64,20 +64,23 @@ therefore a lower bound: §6's telemetry replaces it with measurement before any
 Semantics we depend on, which any replacement must preserve:
 
 1. **Content-derived ids** and idempotent re-writes (the decision-queue pattern).
-2. **Comment markers as durable, attributable evidence** — six families today
+2. **Comment markers as durable, attributable evidence** — eight families today
    (`[harness-policy]`, `[harness-decision]`, `[harness-info]`, `[harness-run]`,
-   `[harness-sizing]`, `[harness-cost]`). Comments are exported, so they are the shared ledger
-   (D11) — and the only carrier of cost history, since run-records live in the self-ignored
-   `.basicly/usage/` (`basicly-kjc5.50`).
-3. **A committed JSONL export plus a three-way merge baseline** (`beads.base.jsonl`) — git is the
+   `[harness-sizing]`, `[harness-overrun]`, `[harness-cost]`, `[harness-wait]`). Comments are
+   exported, so they are the shared ledger (D11) — and the only carrier of cost history, since
+   run-records live in the self-ignored `.basicly/usage/` (`basicly-kjc5.50`).
+3. **A creation timestamp on every comment.** The wait meter (`basicly-kjc5.51`) derives how long
+   a track sat blocked on a human from the interval between two markers, so a replacement that
+   drops (or rewrites) `created_at` silently destroys that measurement rather than failing.
+4. **A committed JSONL export plus a three-way merge baseline** (`beads.base.jsonl`) — git is the
    transport and the audit log. The export's own `comments` array is read *directly* for
    whole-tracker questions (calibration, cost per landed package): `list --json` caps its result
    set and drops closed records, so the file is the only bulk read — and the only one a fresh
    clone can answer from with no br invocation at all (D10).
-4. **Prefix-anchored commit scanning** for the commit-message gate.
-5. **A dependency graph** with parent-child and blocking edges, and derivation of ready/blocked
+5. **Prefix-anchored commit scanning** for the commit-message gate.
+6. **A dependency graph** with parent-child and blocking edges, and derivation of ready/blocked
    from it.
-6. **Compaction** (`compaction_level`, `original_size`) — present in the schema but dormant
+7. **Compaction** (`compaction_level`, `original_size`) — present in the schema but dormant
    here (every record is level 0), and §9.1 declines to reimplement it: it discards evidence to
    solve a size problem git already solves.
 
