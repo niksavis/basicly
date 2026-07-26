@@ -18,7 +18,7 @@ import sys
 from collections.abc import Mapping
 from pathlib import Path
 
-from basicly import redact
+from basicly import redact, tracker_usage
 
 # The oldest br this harness is exercised against (see `br --version`).
 # The probe warns below this floor; it never blocks — br's core commands
@@ -57,6 +57,24 @@ def _probe_version(br_path: str) -> None:
         )
 
 
+def _spawn(br_path: str, repo_root: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
+    """Spawn br and record the invocation into the usage ledger (basicly-vkh0.1).
+
+    The one place the engine's tracker calls are measured. It sits here rather
+    than at each caller for the same reason this module exists at all: a new call
+    site is instrumented by construction, so the surface list Phase 6 freezes
+    cannot silently miss a subcommand somebody added later. Only flag *names*
+    reach the ledger — never values, which would put issue titles and home
+    directory paths into a committed file.
+    """
+    with tracker_usage.timed(repo_root, "br", args, site=tracker_usage.SITE_ENGINE) as timer:
+        proc = subprocess.run(  # nosec B603
+            [br_path, *args], cwd=repo_root, capture_output=True, text=True, check=False
+        )
+        timer.ok = proc.returncode == 0
+    return proc
+
+
 def run_br(
     repo_root: Path, args: list[str], *, check: bool = True
 ) -> subprocess.CompletedProcess[str]:
@@ -65,9 +83,7 @@ def run_br(
     if not br_path:
         raise RuntimeError("br is not on PATH; the harness requires the beads tracker")
     _probe_version(br_path)
-    proc = subprocess.run(  # nosec B603
-        [br_path, *args], cwd=repo_root, capture_output=True, text=True, check=False
-    )
+    proc = _spawn(br_path, repo_root, args)
     if check and proc.returncode != 0:
         raise RuntimeError(f"br {' '.join(args)} failed: {(proc.stderr or proc.stdout).strip()}")
     return proc
@@ -79,9 +95,7 @@ def try_run_br(repo_root: Path, args: list[str]) -> subprocess.CompletedProcess[
     if not br_path:
         return None
     _probe_version(br_path)
-    return subprocess.run(  # nosec B603
-        [br_path, *args], cwd=repo_root, capture_output=True, text=True, check=False
-    )
+    return _spawn(br_path, repo_root, args)
 
 
 # --- Export scrubbing (basicly-vkh0.5) --------------------------------------

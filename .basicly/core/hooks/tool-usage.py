@@ -25,6 +25,26 @@ from pathlib import Path
 USAGE_DIR = Path(".basicly/usage")
 USAGE_FILE = USAGE_DIR / "tool-usage.json"
 
+# The tracker-surface ledger's spool (basicly-vkh0.1). Phase 6 freezes the
+# replacement's scope from a *measured* surface list, and the engine half of that
+# measurement is recorded in src/basicly/tracker_usage.py. This hook records the
+# other half: a br/bv call typed by an agent or a human in a shell, which the
+# engine seam never sees. Same file and same record shape, distinguished by
+# `site`, so one reader answers both.
+#
+# Duplicated here rather than imported because a hook runs as a standalone script
+# under whatever interpreter the host provides, with no guarantee that this
+# repo's package is importable — the format is the contract, and the ledger's
+# reader discards anything malformed.
+TRACKER_SPOOL = USAGE_DIR / "tracker-usage.jsonl"
+# Recording is opt-in by the presence of this committed directory, so a consumer
+# repo is never written to uninvited.
+TRACKER_LEDGER_DIR = Path(".basicly/ledger")
+TRACKER_BINARIES = {"br", "bv"}
+# Kept in step with tracker_usage.split_invocation: these take a second word that
+# names a distinct operation, so the pair is one surface.
+TWO_WORD_SUBCOMMANDS = {"dep", "comments", "gate", "catalog", "config"}
+
 # Tool names that carry a shell command, per platform (Claude: Bash; Copilot:
 # bash/shell). Anything else (Edit, view, ...) is not ours to count.
 SHELL_TOOLS = {"bash", "shell"}
@@ -194,6 +214,92 @@ def tools_in_command(command: str) -> list[str]:
     return tools
 
 
+def tracker_invocations(command: str) -> list[tuple[str, list[str]]]:
+    """Every ``br``/``bv`` call in *command*, as ``(binary, args)``.
+
+    Reuses the pipeline splitter, so a tracker call later in a pipeline or after
+    ``&&`` is seen, and unwraps the same wrappers ``tools_in_command`` does
+    (``uv run br ...``).
+
+    ``shlex.split`` mangles backslashes under POSIX rules, which would corrupt a
+    Windows path in an argument — harmless here because only the subcommand and
+    flag *names* are kept and every value is discarded.
+    """
+    found: list[tuple[str, list[str]]] = []
+    for segment in _split_pipeline_segments(_strip_heredocs(command)):
+        try:
+            tokens = shlex.split(segment, posix=True)
+        except ValueError:
+            tokens = segment.split()
+        while tokens:
+            head = tokens[0]
+            if "=" in head and not head.startswith("-"):
+                tokens.pop(0)  # VAR=val prefix
+                continue
+            if Path(head).name in WRAPPER_TOKENS:
+                tokens = tokens[1:]
+                while tokens and tokens[0] in {"run", "tool"}:
+                    tokens = tokens[1:]
+                while tokens and tokens[0].startswith("-"):
+                    tokens = tokens[1:]
+                continue
+            break
+        if not tokens:
+            continue
+        name = Path(tokens[0]).name
+        if name in TRACKER_BINARIES:
+            found.append((name, tokens[1:]))
+    return found
+
+
+def _split_invocation(args: list[str]) -> tuple[str, list[str]]:
+    """The subcommand and sorted flag names — mirrors tracker_usage.split_invocation."""
+    words = [arg for arg in args if not arg.startswith("-")]
+    flags = sorted({arg.split("=", 1)[0] for arg in args if arg.startswith("-")})
+    if not words:
+        return (flags[0] if flags else "", flags)
+    subcommand = words[0]
+    if len(words) > 1 and subcommand in TWO_WORD_SUBCOMMANDS:
+        subcommand = f"{subcommand} {words[1]}"
+    return subcommand, flags
+
+
+def record_tracker(invocations: list[tuple[str, list[str]]], repo_root: Path) -> None:
+    """Append interactive tracker calls to the ledger spool; never raises.
+
+    No duration: PostToolUse fires after the fact and the payload carries no
+    timing, so latency per surface is answerable from the engine half only. The
+    field is omitted rather than written as zero — a zero would silently drag
+    down the mean for any surface an interactive session also uses.
+    """
+    if not invocations:
+        return
+    # Opt-in by the presence of the committed ledger directory, matching
+    # tracker_usage.is_enabled. Without it this hook would create .basicly/usage/
+    # in any consumer repo that happens to install us, which is an uninvited
+    # write into somebody else's tree.
+    if not (repo_root / TRACKER_LEDGER_DIR).is_dir():
+        return
+    spool = repo_root / TRACKER_SPOOL
+    spool.parent.mkdir(parents=True, exist_ok=True)
+    gitignore = spool.parent / ".gitignore"
+    if not gitignore.exists():
+        gitignore.write_text("*\n", encoding="utf-8")
+    with spool.open("a", encoding="utf-8") as handle:
+        for binary, args in invocations:
+            subcommand, flags = _split_invocation(args)
+            if not subcommand:
+                continue
+            entry = {
+                "binary": binary,
+                "flags": flags,
+                "ok": True,
+                "site": "interactive",
+                "subcommand": subcommand,
+            }
+            handle.write(json.dumps(entry, separators=(",", ":"), sort_keys=True) + "\n")
+
+
 def record(tools: list[str], repo_root: Path) -> None:
     """Increment counters atomically; a corrupt file restarts empty."""
     if not tools:
@@ -232,6 +338,7 @@ def main() -> int:
         command = _command_from_payload(payload)
         if command:
             record(tools_in_command(command), Path.cwd())
+            record_tracker(tracker_invocations(command), Path.cwd())
         skill = _skill_from_payload(payload)
         if skill:
             record([f"skill:{skill}"], Path.cwd())
