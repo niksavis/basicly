@@ -154,3 +154,89 @@ def test_python_c_and_m_inline_snippets_do_not_leak(tmp_path: Path) -> None:
     payload = {"tool_name": "Bash", "tool_input": {"command": command}}
     assert _run(payload, tmp_path).returncode == 0
     assert {tool: entry["count"] for tool, entry in _stats(tmp_path).items()} == {"python3": 2}
+
+
+# --- Interactive tracker-surface ledger (basicly-vkh0.1) ----------------------
+
+TRACKER_SPOOL = Path(".basicly/usage/tracker-usage.jsonl")
+
+
+def _optin(cwd: Path) -> Path:
+    """Opt the temp repo into tracker recording (the committed ledger dir is the switch)."""
+    (cwd / ".basicly/ledger").mkdir(parents=True, exist_ok=True)
+    return cwd
+
+
+def _tracker(cwd: Path) -> list[dict]:
+    raw = (cwd / TRACKER_SPOOL).read_text(encoding="utf-8")
+    return [json.loads(line) for line in raw.splitlines() if line.strip()]
+
+
+def test_interactive_br_call_is_recorded_with_its_surface(tmp_path: Path) -> None:
+    """The engine seam never sees a br call typed in a shell; this hook is that half."""
+    _optin(tmp_path)
+    payload = {"tool_name": "Bash", "tool_input": {"command": "br list --json --limit 5"}}
+    assert _run(payload, tmp_path).returncode == 0
+
+    entries = _tracker(tmp_path)
+    assert len(entries) == 1
+    assert entries[0]["binary"] == "br"
+    assert entries[0]["subcommand"] == "list"
+    assert entries[0]["flags"] == ["--json", "--limit"]
+    assert entries[0]["site"] == "interactive"
+    # PostToolUse carries no timing, so the field is absent rather than zero.
+    assert "duration_ms" not in entries[0]
+
+
+def test_tracker_ledger_records_no_argument_values(tmp_path: Path) -> None:
+    """A value is an issue title or a home directory; the ledger is committed."""
+    _optin(tmp_path)
+    command = 'br create "Fix the thing" -t bug --db=/home/someone/beads.db'
+    _optin(tmp_path)
+    payload = {"tool_name": "Bash", "tool_input": {"command": command}}
+    assert _run(payload, tmp_path).returncode == 0
+
+    raw = (tmp_path / TRACKER_SPOOL).read_text(encoding="utf-8")
+    assert "someone" not in raw
+    assert "Fix the thing" not in raw
+    assert _tracker(tmp_path)[0]["flags"] == ["--db", "-t"]
+
+
+def test_tracker_ledger_sees_a_call_behind_a_wrapper_and_in_a_pipeline(tmp_path: Path) -> None:
+    """`uv run br ...` and a call after `&&` are both real usage."""
+    _optin(tmp_path)
+    command = "uv run br ready && br dep add a b | jq ."
+    _optin(tmp_path)
+    payload = {"tool_name": "Bash", "tool_input": {"command": command}}
+    assert _run(payload, tmp_path).returncode == 0
+
+    assert [(e["binary"], e["subcommand"]) for e in _tracker(tmp_path)] == [
+        ("br", "ready"),
+        ("br", "dep add"),
+    ]
+
+
+def test_bv_is_recorded_alongside_br(tmp_path: Path) -> None:
+    """Both binaries are in scope: the freeze covers the whole tracker surface."""
+    _optin(tmp_path)
+    payload = {"tool_name": "Bash", "tool_input": {"command": "bv show basicly-1"}}
+    assert _run(payload, tmp_path).returncode == 0
+    assert _tracker(tmp_path)[0]["binary"] == "bv"
+
+
+def test_a_non_tracker_command_writes_no_tracker_ledger(tmp_path: Path) -> None:
+    """The spool exists only once there is tracker usage to record."""
+    _optin(tmp_path)
+    payload = {"tool_name": "Bash", "tool_input": {"command": "rg -n foo src"}}
+    assert _run(payload, tmp_path).returncode == 0
+    assert not (tmp_path / TRACKER_SPOOL).exists()
+
+
+def test_a_br_mention_inside_a_heredoc_is_not_usage(tmp_path: Path) -> None:
+    """Heredoc bodies are data; counting them would inflate the surface with prose."""
+    _optin(tmp_path)
+    command = "cat <<'EOF'\nbr create should not count\nEOF\nbr ready"
+    _optin(tmp_path)
+    payload = {"tool_name": "Bash", "tool_input": {"command": command}}
+    assert _run(payload, tmp_path).returncode == 0
+    assert [e["subcommand"] for e in _tracker(tmp_path)] == ["ready"]

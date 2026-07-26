@@ -41,6 +41,7 @@ from . import (
     runner,
     state,
     supervise,
+    tracker_usage,
     ui,
     usage,
     verify,
@@ -1498,8 +1499,53 @@ def _resolve_skill_output_roots(args: argparse.Namespace, repo_root: Path) -> li
     )
 
 
+def _cmd_usage_tracker(args: argparse.Namespace) -> int:
+    """Report the measured br/bv surface Phase 6 freezes its scope from."""
+    repo_root = _repo_root()
+    if args.promote:
+        moved = tracker_usage.promote(repo_root)
+        ui.say(
+            f"Promoted {moved} spooled record(s) into {tracker_usage.LEDGER_FILE}."
+            if moved
+            else "Nothing spooled to promote.",
+            style="ok" if moved else "warn",
+        )
+    rows = tracker_usage.summarize(repo_root)
+    if not rows:
+        ui.say(
+            f"No tracker usage recorded yet — run the harness, then read "
+            f"{tracker_usage.LEDGER_FILE}.",
+            style="warn",
+        )
+        return 0
+    ui.table(
+        f"Measured br/bv surface ({len(rows)})",
+        ["binary", "subcommand", "calls", "engine", "interactive", "access", "mean ms", "flags"],
+        [
+            [
+                row.binary,
+                row.subcommand,
+                str(row.calls),
+                str(row.engine_calls),
+                str(row.interactive_calls),
+                row.access,
+                f"{row.mean_ms:.0f}" if row.mean_ms is not None else "—",
+                " ".join(row.flags) or "—",
+            ]
+            for row in rows
+        ],
+    )
+    ratio = tracker_usage.access_ratio(rows)
+    ui.say(
+        "calls by access: " + ", ".join(f"{name}={count}" for name, count in sorted(ratio.items())),
+    )
+    return 0
+
+
 def cmd_usage(args: argparse.Namespace) -> int:
     """Dispatch the usage telemetry subcommands."""
+    if args.usage_command == "tracker":
+        return _cmd_usage_tracker(args)
     if args.usage_command != "report":
         return 0
     repo_root = _repo_root()
@@ -3586,6 +3632,14 @@ def _add_usage_parser(subparsers: argparse._SubParsersAction) -> None:
     usage_sub = usage_parser.add_subparsers(dest="usage_command", required=True)
     usage_sub.add_parser(
         "report", help="Report recorded tool/skill counts and never-used catalog skills"
+    )
+    tracker_parser = usage_sub.add_parser(
+        "tracker", help="Report the measured br/bv surface (basicly-vkh0.1)"
+    )
+    tracker_parser.add_argument(
+        "--promote",
+        action="store_true",
+        help="Fold the spool into the committed ledger before reporting",
     )
 
 
