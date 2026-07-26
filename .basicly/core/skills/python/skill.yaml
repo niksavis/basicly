@@ -5,8 +5,9 @@ technologies: [python]
 description: >-
   Write and edit Python for this repo — type hints pathlib and cross-platform
   subprocess and shell-out. Use when creating or changing .py files wiring up a
-  subprocess call or chasing a test that passes on POSIX but fails only on Windows
-  CI (a WinError 2 or a mangled backslash path).
+  subprocess call chasing a test that passes on POSIX but fails only on Windows CI
+  (a WinError 2 or a mangled backslash path) or second-guessing syntax that looks
+  wrong for an older Python (an unparenthesized multi-exception except clause).
 instructions: |
   # Python
 
@@ -23,6 +24,19 @@ instructions: |
   - Prefer `pathlib.Path` over `os.path` string munging for filesystem work.
   - Do not hand-format to match the formatter. Run `ruff format` / `ruff check`
     (they run in pre-commit) and let them own whitespace, quotes, and import order.
+
+  ## `except A, B:` is valid here — leave it alone
+
+  This repo's floor is Python 3.14 (`requires-python = ">=3.14"`), where PEP 758
+  makes an unparenthesized multi-exception clause legal:
+  `except ValueError, OSError:` catches either type. It is **not** the Python 2
+  `except Error, name:` capture form and not a syntax error — `src/basicly/decompose.py`
+  uses it and imports fine. Do not add parentheses to "fix" it; that is a no-op
+  diff, and stopping to re-verify that the module parses costs a whole detour.
+
+  Parentheses are still required when the clause binds the exception —
+  `except (ValueError, OSError) as err:`. Dropping them there raises
+  `SyntaxError: multiple exception types must be parenthesized when using 'as'`.
 
   ## Type test doubles and helpers precisely
 
