@@ -142,6 +142,27 @@ operative rather than aspirational:
   decision, not a test failure: failing the lane on a judged verdict would hand a model
   blocking power and spend a rework attempt on a possible false NO.
 
+**Amended 2026-07-26 — validate is a composite of two separately-typed gates**
+(`basicly-imnu.1`, from [`gates-and-rework`](gates-and-rework-design.md) §4.1). The amendment
+above says what a judged NO *does*; this says how validate is *recorded*, and the two were
+previously in tension — one gate could not both be required and be unable to fail on its judged
+half, which meant it could pass having checked nothing.
+
+| Gate | Type | Checks | May fail the lane |
+| --- | --- | --- | --- |
+| `rubric` | pre-flight | deterministic only | **yes** — required at lane level |
+| `rubric-judged` | escalation | judged only | **no** — enqueues a decision, lane holds |
+
+The escalation half is deliberately **absent from `[policy] required_gates`**, and that absence
+is the mechanism: `policy.gate_status` treats any non-required gate as advisory. So
+`rubric-judged` records an honest `fail` when a judged check answers no, without the model
+gaining blocking power — R4 preserved rather than worked around. Both halves are recorded on
+every validate even when one has no checks of its kind, because a gate that appears only when it
+has something to say cannot be read after the fact.
+
+This is the shape Phase 2's severity contract and gate taxonomy must be built against. The
+single combined gate it replaces left a judged NO reading `pass`, visible only as note text.
+
 ### D5 — Merge queue: standing consumer, conflicts bounce back to the lane
 
 The one-shot `merge_queue` function becomes a standing consumer inside the supervisor:

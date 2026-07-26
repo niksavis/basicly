@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from basicly import rubrics, runner
+from basicly import config, rubrics, runner
 from basicly.rubrics import DETERMINISTIC, JUDGED, NO, UNKNOWN, YES, Rubric, RubricCheck
 
 VALID = """\
@@ -308,13 +308,115 @@ def test_evaluate_judged_handoff_is_unknown(
     assert all(v.answer == UNKNOWN for v in verdicts)
 
 
+def _proc(output: str = "", returncode: int = 0) -> SimpleNamespace:
+    """Minimal stand-in for the CompletedProcess ``br.try_run_br`` returns."""
+    return SimpleNamespace(stdout=output, stderr=output, returncode=returncode)
+
+
 def test_gate_status_is_deterministic_first() -> None:
-    """Only a deterministic 'no' fails the gate; a judged 'no' stays advisory."""
+    """Only a deterministic 'no' fails the pre-flight gate; a judged 'no' does not."""
     det_no = [rubrics.CheckVerdict("d", DETERMINISTIC, NO)]
     judged_no = [rubrics.CheckVerdict("j", JUDGED, NO)]
     assert rubrics.gate_status(det_no) == "fail"
     assert rubrics.gate_status(judged_no) == "pass"
     assert rubrics.gate_status([rubrics.CheckVerdict("d", DETERMINISTIC, YES)]) == "pass"
+
+
+# --- Validate is a composite of two separately-typed gates (basicly-imnu.1) ----
+
+
+def test_escalation_status_fails_only_on_a_judged_no() -> None:
+    """The escalation half may say fail; that is the signal a decision was enqueued.
+
+    A deterministic no belongs to the pre-flight half, and UNKNOWN is an absence of
+    judgment (a handoff or an unparseable reply) rather than a negative one.
+    """
+    assert rubrics.escalation_status([rubrics.CheckVerdict("j", JUDGED, NO)]) == "fail"
+    assert rubrics.escalation_status([rubrics.CheckVerdict("j", JUDGED, YES)]) == "pass"
+    assert rubrics.escalation_status([rubrics.CheckVerdict("j", JUDGED, UNKNOWN)]) == "pass"
+    assert rubrics.escalation_status([rubrics.CheckVerdict("d", DETERMINISTIC, NO)]) == "pass"
+
+
+def test_report_gate_records_both_halves_separately(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A judged no must be visible on the record, not only in a note.
+
+    As one gate, a judged no left the combined gate reading ``pass``, so a reader
+    could not tell a satisfied acceptance criterion from a disputed one.
+    """
+    calls: list[list[str]] = []
+
+    def fake(_repo_root: Path, args: list[str]) -> SimpleNamespace:
+        calls.append(args)
+        return _proc("", 0)
+
+    monkeypatch.setattr(rubrics.br, "try_run_br", fake)
+
+    ok, message = rubrics.report_gate(
+        Path(),
+        "i",
+        [
+            rubrics.CheckVerdict("d", DETERMINISTIC, YES),
+            rubrics.CheckVerdict("j", JUDGED, NO, "criterion unmet"),
+        ],
+    )
+
+    assert ok, message
+    reported = {args[args.index("--gate") + 1]: args[args.index("--status") + 1] for args in calls}
+    assert reported == {rubrics.RUBRIC_GATE: "pass", rubrics.RUBRIC_JUDGED_GATE: "fail"}
+    # The pre-flight (required) half is reported first, so a br failure midway
+    # leaves the required half recorded rather than the advisory one.
+    assert calls[0][calls[0].index("--gate") + 1] == rubrics.RUBRIC_GATE
+
+
+def test_report_gate_records_both_halves_even_when_one_has_no_checks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A gate that appears only when it has something to say cannot be read afterwards.
+
+    A missing ``rubric-judged`` would be ambiguous between "no judged checks
+    existed" and "the judged half never ran".
+    """
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        rubrics.br, "try_run_br", lambda _r, args: (calls.append(args), _proc("", 0))[1]
+    )
+
+    rubrics.report_gate(Path(), "i", [rubrics.CheckVerdict("d", DETERMINISTIC, YES)])
+
+    gates = [args[args.index("--gate") + 1] for args in calls]
+    assert gates == [rubrics.RUBRIC_GATE, rubrics.RUBRIC_JUDGED_GATE]
+    judged_note = calls[1][calls[1].index("--note") + 1]
+    assert "no checks" in judged_note
+
+
+def test_report_gate_reports_failure_when_either_half_fails_to_record(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A partial record is worse than a clear failure: it reads as authoritative."""
+    monkeypatch.setattr(
+        rubrics.br,
+        "try_run_br",
+        lambda _r, args: (
+            _proc("", 0)
+            if args[args.index("--gate") + 1] == rubrics.RUBRIC_GATE
+            else _proc("boom", 1)
+        ),
+    )
+
+    ok, message = rubrics.report_gate(Path(), "i", [rubrics.CheckVerdict("j", JUDGED, NO)])
+
+    assert ok is False
+    assert rubrics.RUBRIC_JUDGED_GATE in message
+
+
+def test_the_escalation_gate_is_not_required_so_it_cannot_block(tmp_path: Path) -> None:
+    """The absence of rubric-judged from required_gates *is* the mechanism.
+
+    Adding it to the required list would silently restore the incoherence §4.1 was
+    written to remove — a required gate a model can fail.
+    """
+    assert rubrics.RUBRIC_JUDGED_GATE not in config.DEFAULT_REQUIRED_GATES
+    assert rubrics.RUBRIC_JUDGED_GATE not in config.load_policy_config(tmp_path).required_gates
 
 
 def test_build_judge_prompt_lists_checks_and_format() -> None:
