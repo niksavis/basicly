@@ -1191,14 +1191,22 @@ and never report one as the other, and keep a safety tier that **executes** the
 produced code against hostile input, so "less code" or "more decisive" can never be
 bought by dropping validation.
 
-The single highest-leverage unknown sits here. The always-on baseline is around
-9000 characters — on the order of 1300 words of dense rules — against a consistent
-practitioner finding that adherence to dense rules degrades well below that. If
-those thresholds are even roughly right, this is not a budget being managed but a
-cliff already crossed, and raising the cap made it worse. Nothing currently measures
-which baseline rules bind. **No further change to the cap in either direction until
-that is measured** ([`steering-surfaces`](../design/steering-surfaces-design.md)
-§2.2).
+The single highest-leverage unknown sat here, and half of it has now been measured.
+The always-on baseline is 7209 / 7343 / 8484 characters for Claude / Copilot / Codex
+— on the order of 1100–1300 words of dense rules — against a consistent practitioner
+finding that adherence to dense rules degrades well below that. **The "cliff already
+crossed" reading is refuted**: measured 2026-07-26, both families reproduce 93–98% of
+their baseline's rules when asked, against a 6–17% no-guidance control
+([`steering-surfaces`](../design/steering-surfaces-design.md) §2.2). The content is
+not invisible at this size.
+
+What that result does **not** settle is the operational question, so the entry above
+still stands as written: nothing measures which baseline rules _bind_ while an agent
+works. Recall under a direct cue is an upper bound and confirms mechanism only — by
+`catalog-efficacy`'s own rule it may not be cited as evidence of quality. So the cap
+policy is now asymmetric: **lowering it is ordinary housekeeping; raising it still has
+no evidence behind it** and would prejudge exactly the adherence question that remains
+open.
 
 Relatedly, and cheaper than the design documents assume: the **path-scoped tier is
 already built** — targets declare a `scoped_rules` output and the planner routes

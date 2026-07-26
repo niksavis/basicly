@@ -48,9 +48,11 @@ instruction files.
 
 ### 2.1 What we know and what we assume
 
-We manage the baseline against a soft character cap, currently ~9000 characters with roughly 1000
-characters of headroom, and we treat refilling it as a budgeting problem — trim here, scope out
-there. That framing assumes **adherence degrades smoothly with size**.
+We manage the baseline against a soft character cap — 9000 for Claude and Copilot, 12000 for Codex —
+and we treat refilling it as a budgeting problem: trim here, scope out there. (Measured 2026-07-26:
+7209 / 7343 / 8484 chars for Claude / Copilot / Codex. The "roughly 1000 characters of headroom" this
+section used to cite was never right.) That framing assumes **adherence degrades smoothly with
+size**.
 
 The field's consistent claim is that it does not. The reported thresholds: rules start dropping past
 roughly 80 lines; whole blocks are ignored past roughly 200 lines; adherence to dense rules
@@ -68,19 +70,81 @@ more coverage.
 **We do not know which it is, and that is the actual finding.** Nothing we ship measures which
 baseline rules bind.
 
-### 2.2 The cheap test, first
+### 2.2 The cheap test — run 2026-07-26, and the cliff is not where we feared
 
-Before any redesign, one measurement, adopted from the field and costing a single session: **open a
-fresh session and ask the agent to summarise the rules in the always-on file.** Anything it cannot
-recall is not doing work.
-
-Run it per agent family, since our baseline is projected to three of them and there is no reason to
-assume the same adherence profile. Formalised, this is a **Tier-3 recall case** under
+The design was: open a fresh session per agent family and ask the agent to summarise the rules in
+the always-on file; anything it cannot recall is not doing work. A **Tier-3 recall case** under
 [`catalog-efficacy-design.md`](catalog-efficacy-design.md), with the no-guidance control being the
-same session with the baseline absent.
+same cell with the baseline absent.
 
-**Decided: no further change to the always-on cap — in either direction — until this is run.**
-Raising it and lowering it are both guesses right now, and one of them has already been made.
+**It has run** (`basicly-agzx.1`). Harness: [`.scripts/recall_eval.py`](../../.scripts/recall_eval.py),
+with the rule inventory and match anchors in
+[`.scripts/recall_rules.toml`](../../.scripts/recall_rules.toml). Twelve dispatches — 2 families ×
+2 arms × 3 reps — each in a fresh throwaway repo containing only that arm's guidance, with the
+isolation read back before dispatch and every read, write and shell tool denied so the answer can
+only come from context loaded at session start.
+
+| Family | Rules | Baseline recall | Control base rate | Lift attributable to the file |
+| --- | --- | --- | --- | --- |
+| claude (`.claude/CLAUDE.md`, 7209 chars) | 53 | **98%** (52.0/53) | 17% | **+81 pp** |
+| copilot (`copilot-instructions.md`, 7343 chars) | 54 | **93%** (50.3/54) | 6% | **+87 pp** |
+
+**The strong form of the cliff hypothesis is refuted.** At the size the baseline has actually
+reached, the rules are not being dropped, ignored, or skimmed past: asked directly, both families
+reproduce essentially the entire file. The large lift over control is what makes this a statement
+about *our file* rather than about model priors — a guidance-free agent volunteers "never commit
+secrets" and "keep diffs small" unprompted, and those are precisely the rules with a non-zero
+control rate. So the ~500-word threshold, read as "past this size the model stops seeing the
+content", does not describe us at 1086–1303 words.
+
+**What this does and does not license.** Two limits are structural, not caveats to wave off:
+
+- **This is `mechanism confirmed`, never `outcome improved`** (§4.1 of `catalog-efficacy-design.md`).
+  It measures whether a rule is *retrievable* when the agent is asked for it. It says nothing about
+  whether the rule *binds* while the agent is doing unrelated work under pressure — which is the
+  operational claim, and the one the field's threshold is really about. By that document's own rule,
+  a case with no hidden objective check **may not be cited as evidence of quality**, and this case
+  has none.
+- **It is an upper bound.** The prompt is a direct retrieval cue, the single most favourable
+  condition recall can be measured under. No real session ever asks "list your rules".
+
+The honest reading is therefore narrow and still decisive: **the content is not invisible.** The
+argument "the baseline is past the cliff, therefore the tokens are wasted" is no longer available —
+and that was the argument for treating Phase 4 as urgent surgery. What remains open is adherence,
+which needs a hidden-criterion case where the rule is never mentioned and compliance is scored from
+the work product.
+
+**Consequences, recorded so they are not re-litigated:**
+
+1. **The cap freeze is lifted for lowering and stays for raising.** Trimming and scoping are now
+   ordinary housekeeping justified on cost, not rescue operations. Raising the cap still has no
+   evidence behind it, and adherence is exactly the question raising it would prejudge.
+2. **Phase 4 is routine tidying, not urgent surgery** — the plan's stated fork resolves to its P2
+   branch. Its cost argument survives untouched: the baseline is billed per turn to every consumer,
+   and §3's scoped tier still removes that cost for conditional content.
+3. **One reproducible miss is worth more than the aggregate.** `project-overview.1` — the *purpose*
+   statement — scored 0/3 in both families' baseline arms, and it is the only line in the file that
+   is descriptive rather than imperative. Asked for rules, both models silently drop the prose. That
+   is a finding about *shape*, and it supports §2.4's three-tier block on independent grounds:
+   content not phrased as a constraint is not retrieved as one. The prompt did ask for imperative
+   rules, so the effect is partly cued — but nothing in a real session cues it either.
+4. **Codex is unmeasured**, and it is the arm that matters most: `AGENTS.md` is the largest baseline
+   (8484 chars) and the only one that *grows* when a fragment is scoped (§3). The `codex` CLI was
+   absent from the measuring machine, so the gap is declared rather than interpolated from the other
+   two.
+
+**Re-run it after any baseline change.** Phase 4's exit criterion depends on comparing against these
+numbers, which is why the scorer is deterministic and committed rather than judged: a scorer that
+drifts between runs cannot support a before/after claim. The inventory is derived from the live file
+and refuses to score when a rule's text has changed under its anchors, so the comparison cannot
+quietly become unlike-for-unlike.
+
+**Method limits to respect when citing this.** Three reps per cell, one machine, one CLI build per
+family. The scorer is lexical, so a paraphrase can miss — `project-overview.1` is one — and that
+bias applies to both arms, leaving the contrast sound while making each absolute figure a slight
+underestimate. Globally installed plugins and user-level settings were present on the measuring
+machine and are a declared confound; there was no user-level `CLAUDE.md`, which is the one that
+would have mattered.
 
 ### 2.3 Two rules for what stays
 
