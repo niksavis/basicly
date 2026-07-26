@@ -633,6 +633,14 @@ def _overrun_issues() -> dict[str, dict]:
             "status": "in_progress",
             "title": "Build the parser",
             "issue_type": "task",
+            # A real bead always carries a priority and may carry labels; the
+            # fixture used to omit both, which is why the dropped-classification
+            # defect was invisible to this suite (basicly-jr0l.25). P0 is chosen
+            # deliberately: it differs from br's default of 2, so a regression
+            # that stops passing ``-p`` shows up as a value mismatch rather than
+            # coincidentally matching.
+            "priority": 0,
+            "labels": ["phase-7", "determinism"],
             "acceptance_criteria": "- parses all three formats",
             "description": "Work.\n\n## Scope\n\n- `src/a/**`\n",
         },
@@ -712,6 +720,66 @@ def test_finalize_followup_body_carries_the_inherited_types_sections(
     assert "- parses all three formats" in body and "- `src/a/**`" in body
 
 
+def test_finalize_followup_carries_the_overrun_beads_priority(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A P0 lane's remainder must not come back as P2.
+
+    ``br create`` defaults an omitted priority to 2 and the call site passed no
+    ``-p``, so the continuation of the most urgent work in a pass was ranked
+    behind every routine bead in the ready set — the scheduler orders by
+    priority. Invisible until now because all three follow-ups the engine has
+    produced continued P2 parents, so the default happened to match
+    (basicly-jr0l.25).
+    """
+    br = _FakeBr(_overrun_issues())
+    _install_br(monkeypatch, br)
+
+    supervise.finalize_followup(Path(), "epic", "epic.1", occupancy=130_000, ceiling=120_000)
+
+    create = br.created[0]
+    assert create[create.index("-p") + 1] == "0"
+
+
+def test_finalize_followup_carries_the_overrun_beads_labels(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Phase membership is a label, so a dropped label removes the bead from the phase.
+
+    An unlabelled follow-up is well-formed, passes its own DoR, and is absent
+    from every ``br list --label phase-N`` — so a planning pass built on the
+    label cannot see it at all (basicly-jr0l.25).
+    """
+    br = _FakeBr(_overrun_issues())
+    _install_br(monkeypatch, br)
+
+    supervise.finalize_followup(Path(), "epic", "epic.1", occupancy=130_000, ceiling=120_000)
+
+    create = br.created[0]
+    assert create[create.index("-l") + 1] == "phase-7,determinism"
+
+
+def test_finalize_followup_omits_classification_flags_the_overrun_bead_lacks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unlabelled or priority-less parent must not send an empty flag value.
+
+    ``-l ''`` is not the same request as omitting ``-l``, and a bead read back
+    from a tracker that has never set a label returns null rather than a list.
+    """
+    issues = _overrun_issues()
+    issues["epic.1"]["labels"] = None
+    del issues["epic.1"]["priority"]
+    br = _FakeBr(issues)
+    _install_br(monkeypatch, br)
+
+    supervise.finalize_followup(Path(), "epic", "epic.1", occupancy=130_000, ceiling=120_000)
+
+    create = br.created[0]
+    assert "-l" not in create
+    assert "-p" not in create
+
+
 def test_finalize_followup_leaf_root_creates_without_parent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -751,7 +819,7 @@ def test_finalize_followup_keeps_every_flag_next_to_its_value(
 
     create = br.created[0]
     assert create[create.index("-t") + 1] == "task"
-    for flag in ("-t", "--parent", "-d"):
+    for flag in ("-t", "-p", "-l", "--parent", "-d"):
         value = create[create.index(flag) + 1]
         assert not value.startswith("-"), f"{flag} is followed by {value!r}, not a value"
 

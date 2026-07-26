@@ -920,6 +920,22 @@ def finalize_followup(
     # its value keeps the pairing local and removes the index arithmetic that
     # made the two separable at all.
     create_args = ["create", title, "-t", str(issue_type)]
+    # The follow-up inherits the *classification* of the work, not just the work.
+    # ``br create`` defaults an omitted priority to 2, so a P0 lane's remainder
+    # used to come back as P2 and the scheduler — which ranks by priority — put
+    # it behind every routine bead in the ready set. Labels matter for the same
+    # reason in reverse: phase membership is a label rather than a re-parenting,
+    # so an unlabelled follow-up is silently absent from ``br list --label``
+    # and from any planning pass built on one (basicly-jr0l.25). Deliberately
+    # *not* inherited: assignee, estimate, due date — the remainder is a
+    # different size than the original, and a carried-over estimate is worse
+    # than none.
+    priority = record.get("priority")
+    if priority is not None:
+        create_args += ["-p", str(priority)]
+    labels = [str(label) for label in (record.get("labels") or []) if str(label).strip()]
+    if labels:
+        create_args += ["-l", ",".join(labels)]
     if root_issue != issue_id:
         create_args += ["--parent", root_issue]
     create_args += ["-d", body, "--json"]
