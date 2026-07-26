@@ -1,8 +1,12 @@
 # basicly Implementation Plan
 
 Authored 2026-07-26 against `main` @ `b02b527`. Reviewed: every document in
-[`docs/design/`](../design/) and [`docs/research/`](../research/), the 39 engine modules under
-`src/basicly/`, and all 51 non-closed tracker records.
+[`docs/design/`](../design/) and [`docs/research/`](../research/), the engine modules under
+`src/basicly/`, and every non-closed tracker record.
+
+**§2 last refreshed 2026-07-26 against `main` @ `13a4647`** (§8 makes this a standing
+obligation at the start of each phase; §2 states the commit it was measured at, and that
+stamp — not this header's — is the one to trust).
 
 ## 0. What this document is, and why it is a file
 
@@ -53,35 +57,72 @@ external database or daemon; agent-to-agent messaging. Reasons are in architectu
 
 ## 2. Current state, measured
 
-Everything in this section was checked against the tree at `b02b527` rather than read from a
-design document, because two figures the design documents carry turned out to be stale.
+Everything in this section was checked against the tree at `13a4647` rather than read from a
+design document, because figures the design documents carry turn out to be stale. Re-measured
+there on 2026-07-26; it was first measured at `b02b527`, and where a figure moved between the
+two the delta is shown, because the direction of travel is itself evidence.
 
 **Shipped and dogfooded.** Catalog and projection with drift gates; the git and agent hook floor;
 the single-track loop; worktree isolation; the concurrent supervisor with lanes and a serial merge
 queue; autonomy grants L0–L3 with a spend ceiling; the decision queue and corpus-bounded decider;
-release automation to the annotated tag. 39 engine modules, 55 test files, 1247 tests, an 8-check
-`verify --mode full`. The 2026-07-26 dogfood landed three concurrent lanes with no human editing
+release automation to the annotated tag. 40 engine modules, 57 test files, 1416 collected tests,
+an 8-check `verify --mode full` (`basicly.toml` declares nine; the host `pyright` runs in
+`fast`/`staged` only). The 2026-07-26 dogfood landed three concurrent lanes with no human editing
 code, at 3.36M tokens against an earlier run's 25.25M — a 7.5× reduction from right-sizing alone.
 
-**Not started.** Grep confirms zero modules mention a role registry or persona routing, no
-lexical ranker (`tf-idf`/stemmer), no `severity` field, and no `evals/` directory anywhere. The
-tracker is still the external `br` binary.
+**Not started.** Grep confirms zero modules mention a role registry or persona routing (the one
+`src/` hit for "persona" is the word _impersonating_ in `decisions.py` prose), no lexical ranker
+(`tf-idf`/stemmer/Porter), no `severity` field anywhere in `src/`, `rubrics/` or `schemas/`, and
+no `evals/` directory. The tracker is still the external `br` binary, reached through seven
+subprocess sites in `br.py`.
 
 **Partially true, and the gap matters:**
 
 | Claim | Measured reality |
 | --- | --- |
 | "Rework has a cap but no stall detector" | Correct. `policy.py` has no convergence check. `runner.StallWatchdog` exists but is dispatch-level (no file activity for _n_ seconds) — a different mechanism entirely. |
-| "We lack a path-scoped guidance tier" | **Wrong, and it was corrected this session.** The tier is fully built: `claude.yaml` declares a `scoped_rules` output at `.claude/rules/{fragment_id}.md`, the planner routes on `has_scope`/`exclude_scoped`, `rule_md.j2` renders it. **Zero fragments declare a scope.** The remaining work is authoring plus one check. |
-| "The always-on baseline is ~9000 chars with ~1000 chars of headroom" | Stale. Actual: 7014 / 7209 / 7343 chars for `AGENTS.md` / `CLAUDE.md` / `copilot-instructions.md` — roughly 1070 words each, against a 9000 soft cap, so ~1700–2000 chars of headroom. **The cliff concern stands** (1070 words is well past the ~500-word threshold the review cites); the headroom figure does not. |
-| "Roughly thirty catalog entries" | 19 fragments + 29 projected skills + 7 subagents + 4 rubrics. The eval-coverage lift is **48 guidance entries**, not 30. |
+| "We lack a path-scoped guidance tier" | **Wrong.** The tier is fully built: `claude.yaml` declares a `scoped_rules` output at `.claude/rules/{fragment_id}.md`, the planner routes on `has_scope`/`exclude_scoped`, `rule_md.j2` renders it. **One fragment now declares a scope** — `platform-hermetic-tests` (`62cabc8`), projected to `.claude/rules/platform-hermetic-tests.md`; at `b02b527` none did. So the tier is in use, the remaining work is authoring, and the one check is still missing — see the asymmetry below, which that first real fragment measured. |
+| "The always-on baseline is ~9000 chars with ~1000 chars of headroom" | Stale. Actual: 8484 / 7209 / 7343 chars for `AGENTS.md` / `CLAUDE.md` / `copilot-instructions.md`. The 9000 soft cap applies to Claude and Copilot only (~1650–1800 chars of headroom each); `codex.yaml` sets 12000, so `AGENTS.md` has ~3500. **The cliff concern stands** — 1086–1303 words per file, well past the ~500-word threshold the review cites; the headroom figure does not. |
+| "Roughly thirty catalog entries" | 20 fragments (17 core + 3 local) + 29 projected skills + **3** subagents + 4 rubrics. The eval-coverage lift is **49 routable guidance entries** (fragments + skills), not 30. |
 
-**Tracker state.** 42 open, 5 deferred, 4 tombstones, 314 closed. Three epics open: `basicly-kjc5`
-(parallel factory, 7 open children), `basicly-jr0l` (factory hardening — D9/D10/D11 and field
-usability, 22 open children), `basicly-vkh0` (own the tracker, deferred, 5 children). Only two
-gating `blocks` edges exist among open work: `basicly-7bur` blocks `basicly-4t9z`, and
-`basicly-vkh0.1` blocks `basicly-vkh0.2`. **Almost all sequencing in this plan is therefore not
-yet expressed in the graph** — which is the main thing the decomposition step must fix.
+**A correction to the entry count, because it changes what 2c owes.** The earlier "7 subagents"
+was a miscount. There are **three** subagents — `code-reviewer`, `security-auditor`, `test-runner`
+— plus **four reusable prompt blocks** under `.basicly/core/agents/blocks/` (`context-priming`,
+`escalation-honesty`, `evidence-discipline`, `read-only-discipline`). A block is composed into an
+agent rather than routed to, so it is not an eval-coverage entry in the sense 2c means and cannot
+carry a routing case of its own. The 48 figure was `19 + 29` — subagents and rubrics were listed
+but never added. Separately, 32 skill _sources_ project to 29 skills; the other three are gated by
+technology selection, so a consumer's entry count is a function of its stack.
+
+**The scoped tier costs Codex, and this is now measured rather than predicted.** Landing the first
+scoped fragment moved exactly one baseline:
+
+| File | `b02b527` | `13a4647` | Δ |
+| --- | --- | --- | --- |
+| `AGENTS.md` (Codex) | 7014 | 8484 | **+1470 (+21%)** |
+| `.claude/CLAUDE.md` | 7209 | 7209 | 0 |
+| `.github/copilot-instructions.md` | 7343 | 7343 | 0 |
+
+One scoped fragment removed **nothing** from the Claude and Copilot baselines and **added** 1470
+chars to Codex's, because Codex inlines scoped fragments (our scopes are globs; nested `AGENTS.md`
+is directory-based). There is no gate pressure — Codex's cap is 12000 — but the direction is fixed
+by construction, not by this fragment: **for Codex, scoping is strictly a cost increase, always.**
+Phase 4 §4 is worded as though Codex merely fails to benefit; it pays. Its exit criterion
+("measurably smaller on two of three families") is therefore the only achievable form rather than a
+conservative target, and any future claim that the baseline shrank must name the family. Note also
+that this fragment landed **before** the empty-glob check of Phase 4 step 3 exists, so nothing
+verifies its `paths:` still match anything.
+
+**Tracker state.** 60 open, 6 deferred, 0 tombstones, 332 closed. Nine epics open: the six phase
+epics `basicly-u6jq` / `agzx` / `m4zv` / `imnu` / `a3ab` / `s2xf` (labelled `phase-0`…`phase-5`),
+plus `basicly-vkh0` (`phase-6`, now `open` — it was `deferred`), `basicly-jr0l` (`phase-7`) and
+`basicly-kjc5` (`phase-multi`). **The sequencing gap this section used to report is closed**: 21
+gating `blocks` edges now exist among open work, up from two, and phase membership is a label
+rather than a re-parenting. The residue is four open beads carrying **no** phase label —
+`basicly-jr0l.18` / `.19` / `.20`, which the loop created as context-ceiling continuations of the
+closed `kjc5.32` / `.50` / `.51` without inheriting their `phase-7` label, and `basicly-jr0l.24`.
+An unlabelled bead is invisible to every phase-scoped query, and the continuation path will keep
+producing them.
 
 ## 3. Sequencing principles
 
@@ -264,10 +305,12 @@ Cheaper than the design documents assume, because the mechanism is already built
 5. **Move `## Commands` early** and prefer one real example over three paragraphs where a
    convention has a canonical form.
 
-**Watch the asymmetry** established this session: scoping removes a fragment from the Claude and
-Copilot baselines but **not** from Codex's, which inlines scoped fragments because our scopes are
-globs and nested `AGENTS.md` is directory-based. So a claim of "we cut the baseline" must name the
-family, and scoping is a deliberate _removal_ from the github.com Copilot surface — a guarantee
+**Watch the asymmetry**, now measured on the first real scoped fragment (§2): scoping removes a
+fragment from the Claude and Copilot baselines and **adds** it to Codex's, which inlines scoped
+fragments because our scopes are globs and nested `AGENTS.md` is directory-based. It is not that
+Codex fails to benefit — it pays, +1470 chars for one fragment. So a claim of "we cut the baseline"
+must name the family, the exit criterion below is the strongest form available rather than a
+hedge, and scoping is a deliberate _removal_ from the github.com Copilot surface — a guarantee
 change per fragment, not a refactor.
 
 **Exit criteria.** Baseline measurably smaller on two of three families, 1a's recall test re-run
@@ -427,10 +470,23 @@ Phase 6 ─── vkh0.1 ──→ vkh0.2 ──→ freeze surface ──→ eve
          └─ shadow (vs LIVE tracker) ──→ dual-write ──→ flip
 ```
 
-**Critical path to a credible product claim**: `Phase 0 → kjc5.29 → 7bur → Phase 2b → Phase 5`.
-That is the chain that turns "our harness is better" from an assertion into an instrumented,
-gated, role-routed system. Phase 6 is the largest effort but is **not** on this path — it is a
-strategic dependency-removal that can proceed in parallel once its telemetry lands.
+**Critical path to a credible product claim**: `kjc5.29 → jr0l.21 → jr0l.22 → u6jq.1 (Phase 0's
+exit) → 7bur → Phase 2b → Phase 5`. That is the chain that turns "our harness is better" from an
+assertion into an instrumented, gated, role-routed system. Phase 6 is the largest effort but is
+**not** on this path — it is a strategic dependency-removal that can proceed in parallel once its
+telemetry lands.
+
+**The head of that path inverted after the 2026-07-26 proof run, and the ordering above is the
+corrected one.** The plan originally put Phase 0 ahead of `kjc5.29`. Phase 0's six work items did
+all land, but its proof run (`u6jq.1`) cost $34.16 for 46.0M tokens — 13.7× the 3.36M baseline —
+and so failed its acceptance criterion. The diagnosis is that the forecast, not the admission gate,
+is the defect: D8 forecasts _working set_, under-forecasts it 2.8–4.8×, and does not model turn
+count at all, while an agentic loop re-sends its context every turn — so spend came out 160–420×
+the forecast. Re-running today would be financially unsafe rather than merely inconclusive, which
+is why `u6jq.1` is now blocked on a forecast that must first learn actual tokens and wall clock per
+unit of work **per model**. `kjc5.29` (model provenance) therefore precedes Phase 0's completion
+rather than following it. The constraint that falls out is worth stating once: **cost is bounded by
+sizing the work, never by interrupting a working agent.**
 
 **Longest pole**: Phase 6. Start `vkh0.1` early (it is only telemetry) so the measurement window
 is accumulating while other phases run.
@@ -476,36 +532,53 @@ Each blocks something; none can be derived from the code.
 | A design document drifts from shipped behaviour and misleads a future session | Each phase ends by absorbing into the architecture reference and archiving the source (§3.5). This session already found two such drifts — a tier claimed missing that was built, and a bead citation pointing at unrelated closed work. |
 | The plan itself goes stale after the tracker is replaced | This file is the durable copy; refresh §2 against the tree at the start of each phase rather than trusting it. |
 
-## 9. Appendix A — every non-closed bead, mapped
+## 9. Appendix A — how a phase maps to the graph
 
-| Phase | Beads |
-| --- | --- |
-| 0 | `vkh0.5`, `4tjt`, `55yh`, `jr0l.14`, `8veb`, `f7li` |
-| 1 | `kjc5.29`, `7bur`; new: recall test, localisation experiment |
-| 2 | new: invocation axis, Tier-2 routing, eval case files; `4t9z` (after `7bur`) |
-| 2/7 | `kjc5.46` (run through Phase 2's micro-test harness) |
-| 3 | `kjc5.13`; new: D4 amendment, tutorial/how-to layer, capability tiers |
-| 4 | new: baseline audit, scope declarations, empty-glob check, boundary triad |
-| 5 | new: role registry, role-aware dispatch, soft-lists, R4 path, R9 class, tier escalation |
-| 6 | `vkh0` epic: `vkh0.1`, `vkh0.2`, `vkh0.3`, `vkh0.4` |
-| 7 | `jr0l` epic: `jr0l.1`, `.4`, `.8`, `.9`, `.10`, `.12`, `.13`; `kjc5.32`, `.33`, `.37`, `.38`, `.45`, `.47`, `.48`, `.49`, `.50`, `.51`, `.52`; `kvx5`, `5xcj`, `sco6`, `g7os`, `z25w`, `l7zo`, `k5tr`, `7h1z` |
-| bookkeeping | `q5pk` (record the review — largely satisfied by the 2026-07-26 doc work; verify and close), `2rn9`, `0jiq` (deferred, external CLI) |
+This appendix used to enumerate every non-closed bead per phase. That list is deleted rather than
+updated: the decomposition landed phase membership as a **label**, so the graph now answers the
+question directly and any hand-maintained copy here would be stale within a session — exactly the
+failure §8's last row warns about. Query it instead of reading it:
 
-Epics `kjc5`, `jr0l`, `vkh0` close when their children do.
+```sh
+br list --label phase-2          # membership
+basicly loop status <issue>      # where one bead actually is
+br scheduler                     # what to pick up next
+```
+
+What the phase label alone does not make obvious, and so belongs here — which epic owns each
+phase, and which two epics pre-date the scheme:
+
+| Phase | Epic | Note |
+| --- | --- | --- |
+| 0 | `basicly-u6jq` | all six work items closed; only `u6jq.1` (the proof run) remains, blocked on `jr0l.22` |
+| 1 | `basicly-agzx` | — |
+| 2 | `basicly-m4zv` | — |
+| 3 | `basicly-imnu` | — |
+| 4 | `basicly-a3ab` | — |
+| 5 | `basicly-s2xf` | — |
+| 6 | `basicly-vkh0` | pre-dates the phase epics; labelled `phase-6` rather than renamed |
+| 7 | `basicly-jr0l` | pre-dates the phase epics; labelled `phase-7` rather than renamed |
+| multi | `basicly-kjc5` | the original parallel-factory epic; labelled `phase-multi`, its children spread across phases |
+
+Nothing was re-parented — a bead's parent is still its epic of origin, and its phase is the label.
+So `kjc5` children appear in several phases, and the epics close when their children do.
 
 ## 10. Appendix B — tracker hygiene found while planning
 
-Small, worth fixing during decomposition rather than filing separately:
+**Discharged in full, verified at `13a4647`.** Kept as a record because each item was a gate gap
+as well as a piece of dirt, and the gap is the durable part:
 
-- **4 tombstone records** remain from probe beads (`2ra`, `qij`, `yci`,
-  `dor-accept-ac-field-ayb1`). Prune with a hard delete.
-- **`basicly-jr0l.9`** has all three children closed, no acceptance criteria, and is still open.
-  Either close it or give it an AC — the criteria-on-every-bead rule is supposed to make this
-  impossible, so it is also a small gap in that gate.
-- **`basicly-q5pk`** (P1) is very likely satisfied by the 2026-07-26 documentation work. Verify
-  against its description and close, rather than leaving a P1 that looks like open work.
-- **Almost no sequencing is in the graph.** Only two gating edges exist among 42 open beads. The
-  decomposition step should add the `blocks` edges this plan implies, otherwise `br ready` will
-  keep offering Phase 5 work while Phase 0 is unfinished.
-- **`basicly-vkh0` is `deferred`** while its child `vkh0.1` is `open` and its child `vkh0.5` is a
-  live leak. Reopen the epic or promote the two children, so the scheduler stops hiding them.
+| Item | Outcome |
+| --- | --- |
+| 4 tombstone records from probe beads (`2ra`, `qij`, `yci`, `dor-accept-ac-field-ayb1`) | pruned; 0 remain |
+| `basicly-jr0l.9` open with all children closed and no AC | closed. The gate gap stands: the criteria-on-every-bead rule was supposed to make this state impossible |
+| `basicly-q5pk` (P1) likely already satisfied | verified and closed |
+| Almost no sequencing in the graph (two edges) | 21 gating `blocks` edges among open work; phase membership is a label |
+| `basicly-vkh0` `deferred` while its children were live | epic is `open` |
+
+**One residue, and it is a defect rather than dirt.** Four open beads carry no phase label:
+`basicly-jr0l.18` / `.19` / `.20` are context-ceiling continuations the loop created when
+`kjc5.32` / `.50` / `.51` finalized early, and they did not inherit their parents' `phase-7` label;
+`basicly-jr0l.24` never had one. Because membership is a label, an unlabelled bead drops out of
+every phase-scoped query silently, and the early-finalize path will keep producing them. Labelling
+these four is bookkeeping; fixing the inheritance is engine work.
