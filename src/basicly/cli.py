@@ -2127,16 +2127,27 @@ def _cmd_policy_grant(args: argparse.Namespace) -> int:
 
 
 def _cmd_policy_rework(args: argparse.Namespace) -> int:
-    """Show or record a rework attempt, reporting whether the cap forces escalation."""
+    """Show, record, or forgive a rework attempt, reporting whether the cap escalates."""
     repo_root = _repo_root()
     config = load_policy_config(repo_root)
+    if args.record and args.allow_retry:
+        print("rework: --record and --allow-retry are opposites", file=sys.stderr)
+        return 1
     if args.record:
-        attempts = policy.record_rework(repo_root, args.issue, args.gate)
+        charged = policy.record_rework(repo_root, args.issue, args.gate)
         print(f"Recorded rework for gate '{args.gate}'.")
+    elif args.allow_retry:
+        charged = policy.grant_rework_allowance(repo_root, args.issue, args.gate)
+        print(f"Granted one further attempt on gate '{args.gate}'.")
     else:
-        attempts = policy.rework_attempts(repo_root, args.issue, args.gate)
-    verdict = "ESCALATE (cap reached)" if attempts >= config.max_rework else "may retry"
-    print(f"rework: {attempts}/{config.max_rework} attempts for gate '{args.gate}' — {verdict}")
+        charged = policy.rework_charged(repo_root, args.issue, args.gate)
+    verdict = "ESCALATE (cap reached)" if charged >= config.max_rework else "may retry"
+    print(f"rework: {charged}/{config.max_rework} attempts for gate '{args.gate}' — {verdict}")
+    # Only worth the extra tracker read once an allowance exists: it explains why
+    # the charged count is behind the raw history.
+    if granted := policy.rework_allowances(repo_root, args.issue, args.gate):
+        recorded = policy.rework_attempts(repo_root, args.issue, args.gate)
+        print(f"  ({recorded} recorded, {granted} forgiven)")
     return 0
 
 
@@ -2634,6 +2645,38 @@ def _cmd_loop_decisions(args: argparse.Namespace) -> int:
     return 1  # pending decisions mean the session is blocked on judgment
 
 
+# An answer that chooses `retry` from "retry, re-dispatch, or park?". Anchored on
+# the leading token so a rationale may follow ("retry - the gate flake was
+# unrelated"), while `re-dispatch` and `park` are not mistaken for it.
+_RETRY_ANSWER = re.compile(r"^\s*retry\b", re.IGNORECASE)
+
+
+def _carry_out_rework_retry(repo_root: Path, item: decisions.DecisionItem) -> str | None:
+    """Grant one further attempt when *item* is a rework escalation answered `retry`.
+
+    The answer is the decision; this is the engine carrying it out, so the
+    operator does not have to know that a second command exists (basicly-4tjt —
+    the escalation used to offer three choices and implement none of them).
+
+    A decider's answer deliberately does not grant. An autonomy grant may dispose
+    of the question, but extending the rework budget that bounds a model's own
+    retries is not something that model gets to do for itself; the engine
+    disposes. The operator still has `basicly policy rework --allow-retry`.
+    """
+    if item.kind != policy.REWORK_ESCALATION_KIND:
+        return None
+    if not _RETRY_ANSWER.match(item.answer or ""):
+        return None
+    if (item.answered_by or "").startswith(decisions.DECIDER_BY_PREFIX):
+        return None
+    gate = policy.gate_from_rework_escalation(item.question)
+    if gate is None:
+        return None
+    charged = policy.grant_rework_allowance(repo_root, item.issue_id, gate)
+    cap = load_policy_config(repo_root).max_rework
+    return f"granted one further attempt on gate '{gate}' (rework now {charged}/{cap})"
+
+
 def _cmd_loop_answer(args: argparse.Namespace) -> int:
     """Record a human answer on a queued decision, with attribution."""
     repo_root = _repo_root()
@@ -2644,6 +2687,8 @@ def _cmd_loop_answer(args: argparse.Namespace) -> int:
         print(f"answer: refused - {exc}", file=sys.stderr)
         return 1
     print(f"answered {item.decision_id} by {by}")
+    if granted := _carry_out_rework_retry(repo_root, item):
+        print(granted)
     return 0
 
 
@@ -3216,10 +3261,15 @@ def _add_policy_parser(subparsers: argparse._SubParsersAction) -> None:
         metavar="CODE",
         help="One-time confirm code for non-interactive issuance",
     )
-    p_rw = policy_sub.add_parser("rework", help="Show or record a rework attempt")
+    p_rw = policy_sub.add_parser("rework", help="Show, record, or forgive a rework attempt")
     p_rw.add_argument("issue")
     p_rw.add_argument("--gate", default=verify.DEFAULT_GATE, help="Gate the rework is for")
     p_rw.add_argument("--record", action="store_true", help="Record a new rework attempt")
+    p_rw.add_argument(
+        "--allow-retry",
+        action="store_true",
+        help="Permit exactly one further attempt on this node, leaving the repo-wide cap alone",
+    )
 
 
 def _add_rubric_parser(subparsers: argparse._SubParsersAction) -> None:

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import time
 from collections.abc import Mapping
@@ -281,21 +282,94 @@ def _marker_matches(text: str, marker: str) -> bool:
     return first_line == marker or first_line.startswith(marker + " ")
 
 
+def _rework_allowance_marker(gate: str) -> str:
+    return f"{MARKER} rework-allowance gate={gate}"
+
+
 def rework_attempts(repo_root: Path, issue_id: str, gate: str) -> int:
-    """Count the rework attempts recorded for *gate* on *issue_id*."""
+    """Count the rework attempts recorded for *gate* on *issue_id*.
+
+    The raw history: every attempt ever recorded, including ones an operator has
+    since forgiven. What the cap is compared against is :func:`rework_charged`.
+    """
     marker = _rework_marker(gate)
     return sum(1 for text in _comment_texts(repo_root, issue_id) if _marker_matches(text, marker))
 
 
+def rework_allowances(repo_root: Path, issue_id: str, gate: str) -> int:
+    """Count the further attempts granted for *gate* on *issue_id*."""
+    marker = _rework_allowance_marker(gate)
+    return sum(1 for text in _comment_texts(repo_root, issue_id) if _marker_matches(text, marker))
+
+
+def rework_charged(repo_root: Path, issue_id: str, gate: str) -> int:
+    """Attempts charged against ``max_rework``: recorded minus granted, floored at zero.
+
+    Both counts come from one comment scan — the rework path already pays for a
+    tracker read and this keeps it at one.
+    """
+    texts = _comment_texts(repo_root, issue_id)
+    attempt_marker = _rework_marker(gate)
+    allowance_marker = _rework_allowance_marker(gate)
+    attempts = sum(1 for text in texts if _marker_matches(text, attempt_marker))
+    granted = sum(1 for text in texts if _marker_matches(text, allowance_marker))
+    return max(0, attempts - granted)
+
+
 def record_rework(repo_root: Path, issue_id: str, gate: str) -> int:
-    """Record one rework attempt for *gate*; return the new attempt count."""
+    """Record one rework attempt for *gate*; return the attempts now charged.
+
+    The return is the *charged* count, not the raw one, because every caller
+    compares it against ``max_rework``. An allowance granted for an answered
+    ``retry`` has to be visible at that comparison, not only in the history.
+    """
     _run_br(repo_root, ["comments", "add", issue_id, _rework_marker(gate)])
-    return rework_attempts(repo_root, issue_id, gate)
+    return rework_charged(repo_root, issue_id, gate)
+
+
+def grant_rework_allowance(repo_root: Path, issue_id: str, gate: str) -> int:
+    """Permit exactly one further attempt for *gate*; return the attempts still charged.
+
+    This is how an answered ``retry`` is carried out (basicly-vkh0.5's sibling
+    defect, basicly-4tjt: the escalation offered three choices and implemented
+    none of them, because nothing anywhere cleared or offset the counter).
+
+    Additive per grant, never a reset. Two reasons. ``br`` comments cannot be
+    deleted, so a reset would have to be a marker the counter reads *around*, and
+    the audit trail would stop saying how many attempts were actually spent —
+    "three attempts, two of them forgiven" is the honest record. And a reset would
+    hand the node a fresh full budget, where the operator answered *retry*: one
+    more attempt.
+
+    Deliberately per node and per gate. Raising ``[policy] max_rework`` loosens
+    the cap for every node in the repo, which is one of the two wrong levers this
+    exists to replace.
+    """
+    _run_br(repo_root, ["comments", "add", issue_id, _rework_allowance_marker(gate)])
+    return rework_charged(repo_root, issue_id, gate)
 
 
 def should_escalate(repo_root: Path, issue_id: str, gate: str, config: PolicyConfig) -> bool:
-    """True when rework attempts have reached the cap and the node must escalate."""
-    return rework_attempts(repo_root, issue_id, gate) >= config.max_rework
+    """True when charged rework attempts have reached the cap and the node must escalate."""
+    return rework_charged(repo_root, issue_id, gate) >= config.max_rework
+
+
+# The escalation an exhausted rework budget raises. The queue's only carrier for
+# the gate is the question text, so it is written and read back in one place —
+# a driver acting on the answer must not have to guess the format.
+REWORK_ESCALATION_KIND = "escalation"
+_REWORK_ESCALATION_RE = re.compile(r"^rework cap reached on gate (?P<gate>\S+):")
+
+
+def rework_escalation_question(gate: str) -> str:
+    """The canonical queue question for an exhausted rework budget on *gate*."""
+    return f"rework cap reached on gate {gate}: retry, re-dispatch, or park?"
+
+
+def gate_from_rework_escalation(question: str) -> str | None:
+    """The gate a rework escalation asks about, or None when *question* is not one."""
+    match = _REWORK_ESCALATION_RE.match(question.strip())
+    return match.group("gate") if match else None
 
 
 # --- Human checkpoints ------------------------------------------------------

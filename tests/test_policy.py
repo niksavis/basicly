@@ -295,6 +295,104 @@ def test_rework_counter_is_per_gate(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     assert policy.rework_attempts(tmp_path, "i", "security") == 0
 
 
+# --- An answered `retry` must be executable (basicly-4tjt) -------------------
+
+
+def _to_cap(tmp_path: Path) -> None:
+    """Spend the whole rework budget on gate 'verify'."""
+    for _ in range(CONFIG.max_rework):
+        policy.record_rework(tmp_path, "i", "verify")
+
+
+def test_an_allowance_permits_exactly_one_further_attempt(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The whole point: at the cap, one grant buys one attempt and then re-escalates."""
+    _install(monkeypatch, _FakeBr())
+    _to_cap(tmp_path)
+    assert policy.should_escalate(tmp_path, "i", "verify", CONFIG) is True
+
+    policy.grant_rework_allowance(tmp_path, "i", "verify")
+    assert policy.should_escalate(tmp_path, "i", "verify", CONFIG) is False
+
+    policy.record_rework(tmp_path, "i", "verify")
+    assert policy.should_escalate(tmp_path, "i", "verify", CONFIG) is True
+
+
+def test_an_allowance_does_not_reset_the_budget(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """One grant is one attempt, not a fresh full budget — the operator answered retry."""
+    _install(monkeypatch, _FakeBr())
+    _to_cap(tmp_path)
+    policy.grant_rework_allowance(tmp_path, "i", "verify")
+    assert policy.rework_charged(tmp_path, "i", "verify") == CONFIG.max_rework - 1
+
+
+def test_record_rework_returns_the_charged_count_not_the_raw_one(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Every caller compares the return against the cap, so it must net off grants."""
+    _install(monkeypatch, _FakeBr())
+    policy.grant_rework_allowance(tmp_path, "i", "verify")
+    assert policy.record_rework(tmp_path, "i", "verify") == 0
+    assert policy.rework_attempts(tmp_path, "i", "verify") == 1
+
+
+def test_the_raw_history_survives_a_grant(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Tracker comments cannot be deleted, so the audit trail stays literal."""
+    _install(monkeypatch, _FakeBr())
+    _to_cap(tmp_path)
+    policy.grant_rework_allowance(tmp_path, "i", "verify")
+    assert policy.rework_attempts(tmp_path, "i", "verify") == CONFIG.max_rework
+    assert policy.rework_allowances(tmp_path, "i", "verify") == 1
+
+
+def test_charged_attempts_never_go_negative(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A grant before any attempt must not bank credit against a future failure."""
+    _install(monkeypatch, _FakeBr())
+    policy.grant_rework_allowance(tmp_path, "i", "verify")
+    policy.grant_rework_allowance(tmp_path, "i", "verify")
+    assert policy.rework_charged(tmp_path, "i", "verify") == 0
+    policy.record_rework(tmp_path, "i", "verify")
+    assert policy.rework_charged(tmp_path, "i", "verify") == 0
+
+
+def test_an_allowance_is_scoped_to_its_gate(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Forgiving a merge flake must not extend the verify budget."""
+    _install(monkeypatch, _FakeBr())
+    policy.grant_rework_allowance(tmp_path, "i", "merge")
+    policy.record_rework(tmp_path, "i", "verify")
+    assert policy.rework_charged(tmp_path, "i", "verify") == 1
+    assert policy.rework_charged(tmp_path, "i", "merge") == 0
+
+
+def test_an_allowance_marker_is_not_counted_as_an_attempt(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`rework-allowance gate=x` must not token-match `rework gate=x`."""
+    _install(monkeypatch, _FakeBr())
+    policy.grant_rework_allowance(tmp_path, "i", "verify")
+    assert policy.rework_attempts(tmp_path, "i", "verify") == 0
+
+
+def test_the_escalation_question_round_trips_its_gate() -> None:
+    """The queue's only carrier for the gate is the question, so write and read must agree."""
+    question = policy.rework_escalation_question("merge")
+    assert policy.gate_from_rework_escalation(question) == "merge"
+
+
+def test_an_unrelated_question_yields_no_gate() -> None:
+    """A non-rework decision must never be mistaken for one."""
+    assert (
+        policy.gate_from_rework_escalation("acceptance criteria unmet: accept or rework?") is None
+    )
+
+
 def test_checkpoint_approval_roundtrip(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """A checkpoint reads pending until approved, then approved (idempotent)."""
     _install(monkeypatch, _FakeBr())
