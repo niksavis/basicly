@@ -73,6 +73,7 @@ from . import (
     worktree,
 )
 from .br import run_br as _run_br
+from .br import try_run_br as _try_run_br
 from .config import (
     AUTONOMY_LEVELS,
     SizingConfig,
@@ -709,6 +710,106 @@ def _info_matches(
         if entry == info.source or entry in known_ids:
             continue
         if scope and decompose.scopes_overlap((entry,), scope):
+            return True
+    return False
+
+
+def coupled_beads(
+    repo_root: Path, info: FoundInfo, candidates: Iterable[str], known_ids: frozenset[str]
+) -> tuple[str, ...]:
+    """The *candidates* a coupling record affects, by the same test folding uses.
+
+    Deliberately :func:`_info_matches`, not a second implementation: the bead that
+    earns an edge from a record must be exactly the bead that gets the record
+    folded into its next prompt, or the graph and the prompts would disagree
+    about what a discovery means. The record's own source is excluded — a lane
+    cannot be coupled to itself.
+    """
+    found: list[str] = []
+    for bead in sorted(candidates):
+        if bead == info.source:
+            continue
+        read = decompose.bead_class_and_scope(repo_root, bead)
+        scope = read[1] if read is not None else ()
+        if _info_matches(info, bead, scope, known_ids):
+            found.append(bead)
+    return tuple(found)
+
+
+def propose_coupling_edges(
+    repo_root: Path, session: SessionState
+) -> tuple[tuple[str, str, str], ...]:
+    """Turn ``kind=coupling`` discoveries into dependency edges (D6, design 7.4).
+
+    D6 has the graph learn a coupling from a *discovery*, not only from a merge
+    collision: a lane that finds out two packages are coupled teaches the graph
+    immediately, so the next decomposition serializes them instead of declaring
+    them parallel-safe again. Reading the records was already built (they fold
+    into later dispatch bundles); this is the write half.
+
+    Which edge depends on whether the affected bead has started, and that
+    distinction is the whole lesson of basicly-grrb:
+
+    - **Not started** — a ``blocks`` edge, which gates. Nothing is lost by making
+      it wait and a collision is prevented outright, which is the point of
+      learning the coupling before either lane runs.
+    - **In flight** — a non-gating :func:`merge.record_coupling` edge instead.
+      That lane has committed work; gating it would drop it out of
+      :func:`ready_lanes` and strand that work behind a human, which is exactly
+      the defect grrb fixed on the bounce path. It still learns the discovery the
+      way D6 intends — the record folds into its next prompt.
+
+    Runs once per pass from the supervisor loop rather than inside
+    :func:`build_bundle`, which is called concurrently from the dispatch threads:
+    writing edges there would mean concurrent ``br`` writes and a landing order
+    that depended on thread scheduling.
+
+    Idempotent per edge — an existing dependency between the two beads is left
+    alone, whatever its type. ``br`` refuses a duplicate rather than changing its
+    type, so an edge first recorded while a lane was in flight keeps its
+    non-gating type afterwards; that is the safe direction to be wrong in.
+    Returns the ``(bead, coupled_to, dep_type)`` triples recorded by this call.
+    """
+    open_children = frozenset(session.open_children)
+    known = frozenset({session.root_issue, *(cid for cid, _ in session.children)})
+    in_flight = {lane.issue_id for lane in session.adopted if lane.live}
+    recorded: list[tuple[str, str, str]] = []
+    for info in found_info_records(repo_root, sorted(known)):
+        if info.kind != "coupling":
+            continue
+        for bead in coupled_beads(repo_root, info, open_children, known):
+            if _already_coupled(repo_root, bead, info.source):
+                continue
+            if bead in in_flight:
+                merge.record_coupling(repo_root, bead, info.source)
+                recorded.append((bead, info.source, merge.COUPLING_DEP_TYPE))
+            else:
+                # Best-effort like every other coupling write: a cycle br refuses
+                # must not end the pass.
+                _try_run_br(repo_root, ["dep", "add", bead, info.source, "-t", "blocks"])
+                recorded.append((bead, info.source, "blocks"))
+    return tuple(recorded)
+
+
+def _already_coupled(repo_root: Path, bead: str, coupled_to: str) -> bool:
+    """True when *bead* already carries any dependency on *coupled_to*.
+
+    Any type counts. ``br`` will refuse a second edge between the same pair
+    anyway, so re-issuing one would only add a failed write per pass — and a
+    ``parent-child`` edge already expresses the ordering a coupling would.
+    Unreadable tracker reads as "already there": skipping an edge is recoverable
+    next pass, while a spurious gating edge holds a lane.
+    """
+    try:
+        record = _show_issue(repo_root, bead)
+    except RuntimeError, OSError, ValueError:
+        return True
+    if record is None:
+        return True
+    for dep in record.get("dependencies") or []:
+        if not isinstance(dep, dict):
+            continue
+        if (dep.get("depends_on_id") or dep.get("id")) == coupled_to:
             return True
     return False
 

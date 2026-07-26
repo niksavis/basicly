@@ -649,3 +649,45 @@ def test_a_missed_coupling_teaches_the_graph_without_gating_the_bounced_lane(
     session_state = supervise.derive_session(repo, root)
     ready = {lane.issue_id for lane in supervise.ready_lanes(repo, session_state)}
     assert bounced in ready, f"{bounced} was gated by the coupling it taught the graph"
+
+
+@needs_br
+def test_a_discovered_coupling_gates_and_orders_the_bead_it_names(harness_repo: Path) -> None:
+    """A lane's coupling discovery teaches the real graph, which then holds the order.
+
+    Pins basicly-kjc5.24 on what only ``br`` can answer: whether the proposed edge
+    actually gates (``br blocked`` → ``ready_lanes``) and whether the landing order
+    the merge queue computes from the tracker honours it. A lane already in flight
+    is deliberately excluded from gating (basicly-grrb), so the gated bead here is
+    one that has not started.
+    """
+    repo = harness_repo
+    root = _create_bead(repo, "the discovery root", issue_type="epic")
+    finder = _create_bead(repo, "the lane that discovers")
+    named = _create_bead(repo, "the bead it names")
+    for child in (finder, named):
+        _br(repo, "dep", "add", child, root, "-t", "parent-child")
+    _to_build(repo, finder)  # in flight; `named` has not started
+
+    supervise.record_found_info(
+        repo,
+        finder,
+        supervise.FoundInfo(
+            kind="coupling",
+            summary="the config loader is shared with the runner window",
+            affects=(named,),
+        ),
+    )
+
+    session_state = supervise.derive_session(repo, root)
+    recorded = supervise.propose_coupling_edges(repo, session_state)
+    assert recorded == ((named, finder, "blocks"),)
+
+    # br really gates it, so the pass will not dispatch the two in parallel...
+    assert named in loop_state.blocked_ids(repo)
+    # ...and the merge queue's dependency sort really honours the new edge.
+    ordered = merge.landing_order(repo, [(finder, finder), (named, named)])
+    assert [bead for _name, bead in ordered] == [finder, named]
+
+    # Re-reading the same record on a later pass proposes nothing new.
+    assert supervise.propose_coupling_edges(repo, supervise.derive_session(repo, root)) == ()
