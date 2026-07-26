@@ -1517,10 +1517,11 @@ def route_outcomes(
     too:
 
     - A **scope collision** bounces back to the owning lane and the pass keeps
-      going: the missed coupling is recorded as a dependency edge on whichever
-      lane landed the colliding paths this pass, and the remaining green lanes
-      still land. A lane's wrong scope declaration is its own problem, not a
-      reason to stall everyone.
+      going, and the remaining green lanes still land. A lane's wrong scope
+      declaration is its own problem, not a reason to stall everyone. The missed
+      coupling is recorded once the pass is over
+      (:func:`_attribute_pass_couplings`) rather than at the bounce, so the edge
+      cannot depend on which lanes had landed by then (D9, basicly-kjc5.32).
     - A lane a *landing this pass* already **broke** — its branch no longer
       merges cleanly, and that landing's paths are why — is cancelled before its
       own landing is attempted and re-dispatched with the collision recorded for
@@ -1546,8 +1547,12 @@ def route_outcomes(
     routed: list[RoutedOutcome] = []
     landing_blocked = False
     # (bead, paths its landing added to the base) per landing this pass — the
-    # evidence a collision is attributed against (merge.missed_couplings).
+    # evidence D6's pre-empt reads to name the landing that broke a pending merge
+    # (merge.missed_couplings, via _invalidated_by).
     landed: list[tuple[str, tuple[str, ...]]] = []
+    # (bead, conflicting paths) per collision, attributed after the pass rather
+    # than here: see _attribute_pass_couplings (D9, basicly-kjc5.32).
+    collisions: list[tuple[str, tuple[str, ...]]] = []
     pass_outcomes = _carried_outcomes(repo_root, session, carried, outcomes) + outcomes
     for outcome in _landing_order(repo_root, pass_outcomes):
         if beat is not None:
@@ -1564,7 +1569,7 @@ def route_outcomes(
             continue
         before = merge.head_sha(repo_root) if is_green else ""
         try:
-            one = _route_one(repo_root, session, outcome, landed)
+            one = _route_one(repo_root, session, outcome, landed, collisions)
         except (RuntimeError, OSError, ValueError) as exc:
             # Contained like dispatch's guarded(): the lane re-routes next
             # pass; "error" is non-retriable so a persistent infra failure
@@ -1575,7 +1580,50 @@ def route_outcomes(
             landed.append((outcome.issue_id, merge.changed_paths(repo_root, before)))
         elif is_green and one.route not in ("bounced", "re-dispatch"):
             landing_blocked = True
-    return tuple(routed)
+    return _attribute_pass_couplings(repo_root, tuple(routed), collisions, landed)
+
+
+def _attribute_pass_couplings(
+    repo_root: Path,
+    routed: tuple[RoutedOutcome, ...],
+    collisions: list[tuple[str, tuple[str, ...]]],
+    landed: list[tuple[str, tuple[str, ...]]],
+) -> tuple[RoutedOutcome, ...]:
+    """Record this pass's missed couplings, once the whole pass is known (D9).
+
+    The edge outlives the pass — it changes every later decomposition — so nothing
+    about the pass's own ordering may decide it (basicly-kjc5.32). Attributing at
+    the bounce did: a collided lane could only be blamed on the landings that
+    happened to precede it, so with the lanes' completion order reversed the same
+    plan taught the graph the opposite edge, or none at all. Here the inputs are
+    the whole pass's landings and the declared scopes behind them — both order-free
+    — and :func:`merge.record_coupling` writes the pair in a canonical direction so
+    the edge is literally identical either way.
+
+    The bounced lanes' details are completed here for the same reason: which lane
+    to name is not known while the pass is still running.
+
+    Best-effort like every tracker read on the landing path: a tracker that will
+    not answer costs the graph an edge, never the pass.
+    """
+    if not collisions:
+        return routed
+    try:
+        attributed = merge.record_pass_couplings(
+            repo_root, collisions, [bead for bead, _ in landed]
+        )
+    except RuntimeError, OSError, ValueError:
+        return routed
+    return tuple(_reporting_couplings(one, attributed.get(one.issue_id, ())) for one in routed)
+
+
+def _reporting_couplings(one: RoutedOutcome, culprits: tuple[str, ...]) -> RoutedOutcome:
+    """*one* with the culprits it was attributed against named in its detail."""
+    if not culprits:
+        return one
+    return RoutedOutcome(
+        one.issue_id, one.route, f"{one.detail}; coupling recorded on {', '.join(culprits)}"
+    )
 
 
 def _carried_outcomes(
@@ -1678,13 +1726,20 @@ def _route_one(
     repo_root: Path,
     session: SessionState,
     outcome: LaneOutcome,
-    landed: list[tuple[str, tuple[str, ...]]] | None = None,
+    landed: list[tuple[str, tuple[str, ...]]],
+    collisions: list[tuple[str, tuple[str, ...]]],
 ) -> RoutedOutcome:
+    """Route one collected outcome, appending to the pass's *landed*/*collisions*.
+
+    Both ledgers are required rather than defaulted: a caller that omitted
+    *collisions* would drop a bounce's coupling silently, which is the D9
+    regression this shape exists to prevent (basicly-kjc5.32).
+    """
     issue_id = outcome.issue_id
     result = outcome.result
     if not outcome.dispatched:
         # Carried lane: nothing ran, so there is no run to triage — land it.
-        return _land_green(repo_root, session, outcome, landed or [])
+        return _land_green(repo_root, session, outcome, landed, collisions)
     if result is not None and result.handoff:
         return RoutedOutcome(issue_id, "handoff", outcome.detail)
     # Held-by-the-queue shapes come before the failure branch: a nonzero exit
@@ -1694,14 +1749,14 @@ def _route_one(
         return RoutedOutcome(issue_id, "decision", outcome.detail)
     if result is None or result.returncode != 0:
         return _route_failed(repo_root, issue_id, outcome)
-    return _land_green(repo_root, session, outcome, landed or [])
+    return _land_green(repo_root, session, outcome, landed, collisions)
 
 
 def _route_blocked_landing(
     repo_root: Path,
     outcome: LaneOutcome,
     landing: loop.AdvanceResult,
-    landed: list[tuple[str, tuple[str, ...]]],
+    collisions: list[tuple[str, tuple[str, ...]]],
 ) -> RoutedOutcome:
     """Where a blocked landing goes, read off the merge attempt behind it.
 
@@ -1712,7 +1767,7 @@ def _route_blocked_landing(
     """
     attempt = landing.landing
     if attempt is not None and attempt.conflicted:
-        return _bounce_lane(repo_root, outcome.issue_id, landing, attempt, landed)
+        return _bounce_lane(outcome.issue_id, landing, attempt, collisions)
     if landing.action == "escalated":
         # loop._rework already queued the escalation (kjc5.4); the pending item
         # now holds the lane until a human triages it.
@@ -1733,31 +1788,30 @@ def _route_blocked_landing(
 
 
 def _bounce_lane(
-    repo_root: Path,
     issue_id: str,
     landing: loop.AdvanceResult,
     attempt: merge.MergeResult,
-    landed: list[tuple[str, tuple[str, ...]]],
+    collisions: list[tuple[str, tuple[str, ...]]],
 ) -> RoutedOutcome:
-    """Bounce a collided lane back to its owner and record the missed coupling (D5).
+    """Bounce a collided lane back to its owner and note the collision (D5).
 
     The rework attempt was already recorded by the loop's own landing (and it
     escalated into the decision queue if that hit the cap); what the supervisor
-    adds is the graph edge — the lane that landed the colliding paths this pass —
-    so the next decomposition serializes what it wrongly called parallel-safe.
+    adds is the graph edge that makes the next decomposition serialize what it
+    wrongly called parallel-safe. That edge is deliberately **not** written here:
+    naming whoever had landed by the time this bounce happened is the pass-order
+    dependence D9 forbids, so the conflicting paths are noted as evidence and
+    :func:`_attribute_pass_couplings` attributes them once the pass is over
+    (basicly-kjc5.32).
+
     There is no resolution of any kind here: the base was left untouched and the
     lane keeps its commits for its agent to re-apply on the new base.
     """
-    couplings = merge.missed_couplings(attempt.conflicts, landed)
-    for culprit in couplings:
-        merge.record_coupling(repo_root, issue_id, culprit)
-    detail = f"bounced back to the lane: {landing.detail}"
-    if couplings:
-        detail += f"; coupling recorded on {', '.join(couplings)}"
+    collisions.append((issue_id, attempt.conflicts))
     # At the rework cap the loop already queued the escalation, so the lane is
     # held by a pending decision rather than re-dispatched — say so.
     route = "decision" if landing.action == "escalated" else "bounced"
-    return RoutedOutcome(issue_id, route, detail)
+    return RoutedOutcome(issue_id, route, f"bounced back to the lane: {landing.detail}")
 
 
 def _route_failed(repo_root: Path, issue_id: str, outcome: LaneOutcome) -> RoutedOutcome:
@@ -1891,6 +1945,7 @@ def _land_green(
     session: SessionState,
     outcome: LaneOutcome,
     landed: list[tuple[str, tuple[str, ...]]],
+    collisions: list[tuple[str, tuple[str, ...]]],
 ) -> RoutedOutcome:
     """Land a green lane through the single-track engine, then try to ship it.
 
@@ -1898,8 +1953,8 @@ def _land_green(
     instead (:func:`_preempt_lane`, D6) — the doomed landing is not attempted.
     Otherwise ``loop.advance`` does the build→verify landing (rebase, verify,
     gate) — the supervisor composes it, never replaces it. A blocked landing is
-    triaged by :func:`_route_blocked_landing` against *landed* (this pass's
-    landings, which a collision is attributed against). The ship checkpoint is
+    triaged by :func:`_route_blocked_landing`, which adds a collision to
+    *collisions* for the pass to attribute at the end. The ship checkpoint is
     then tried non-interactively: an L3 grant with the lights-out preconditions
     holding approves and the next advance ships; otherwise the request queues for
     the human and the lane parks in verify.
@@ -1909,7 +1964,7 @@ def _land_green(
         return _preempt_lane(repo_root, outcome.issue_id, invalidated)
     landing = loop.advance(repo_root, outcome.issue_id)
     if landing.blocked:
-        return _route_blocked_landing(repo_root, outcome, landing, landed)
+        return _route_blocked_landing(repo_root, outcome, landing, collisions)
     approval = policy.approve_checkpoint_guarded(
         repo_root,
         outcome.issue_id,

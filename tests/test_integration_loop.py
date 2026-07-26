@@ -549,6 +549,52 @@ def test_a_landing_pass_invents_no_coupling_from_the_shared_tracker(harness_repo
 
 
 @needs_br
+def test_a_pass_attributes_the_coupling_the_same_way_whichever_lane_bounced(
+    harness_repo: Path,
+) -> None:
+    """The coupling edge is a function of the declared scopes, not of landing order.
+
+    Pins basicly-kjc5.32 on the two things no stubbed tracker can decide: the
+    ``## Scope`` section really has to come back out of a real bead, and ``br``
+    really has to hold the resulting edge in one direction. So the same pass is
+    attributed twice with the two lanes' roles swapped — as reversing their
+    completion order does — and both must write the identical edge.
+    """
+    repo = harness_repo
+    root = _create_bead(repo, "the attribution root", issue_type="epic")
+    alpha = _create_bead(repo, "lane declaring the shared file")
+    beta = _create_bead(repo, "lane declaring the shared tree")
+    for child, scope in ((alpha, "src/shared.py"), (beta, "src/*.py")):
+        _br(repo, "dep", "add", child, root, "-t", "parent-child")
+        _br(
+            repo,
+            "update",
+            child,
+            "-d",
+            f"## Acceptance Criteria\n\n- Given it when landed then it holds\n"
+            f"\n## Scope\n\n- `{scope}`\n",
+        )
+
+    conflicts = ("src/shared.py",)
+    # alpha bounced and beta landed, then the reverse — the same collision seen
+    # from each side of the pass.
+    forward = merge.record_pass_couplings(repo, [(alpha, conflicts)], [beta])
+    backward = merge.record_pass_couplings(repo, [(beta, conflicts)], [alpha])
+
+    assert forward == {alpha: (beta,)}, "the declared scope did not come back out of br"
+    assert backward == {beta: (alpha,)}
+    # One edge in the tracker, in the canonical direction, not two opposed ones.
+    lower, higher = sorted((alpha, beta))
+    for bead, expected in ((lower, {higher: merge.COUPLING_DEP_TYPE}), (higher, {})):
+        coupled = {
+            str(dep["id"]): dep.get("dependency_type")
+            for dep in _show(repo, bead).get("dependencies") or []
+            if str(dep["id"]) in (alpha, beta)
+        }
+        assert coupled == expected
+
+
+@needs_br
 def test_a_landing_cancels_the_lane_it_broke_and_tells_it_why(harness_repo: Path) -> None:
     """A lane a landing broke is cancelled, informed, and left free to re-dispatch (D6).
 
@@ -637,12 +683,14 @@ def test_a_missed_coupling_teaches_the_graph_without_gating_the_bounced_lane(
     merge.record_coupling(repo, bounced, landed)
     assert _show(repo, landed)["status"] != "closed"
 
-    # The graph learned the coupling...
+    # The graph learned the coupling, written in the canonical direction — the two
+    # ids sorted — so the edge is identical whichever lane bounced (kjc5.32).
+    lower, higher = sorted((bounced, landed))
     coupled = {
         str(dep["id"]): dep.get("dependency_type")
-        for dep in _show(repo, bounced).get("dependencies") or []
+        for dep in _show(repo, lower).get("dependencies") or []
     }
-    assert coupled.get(landed) == merge.COUPLING_DEP_TYPE
+    assert coupled.get(higher) == merge.COUPLING_DEP_TYPE
 
     # ...and the bounced lane is still dispatchable on the next pass.
     assert bounced not in loop_state.blocked_ids(repo)

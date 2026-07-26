@@ -25,9 +25,15 @@ one lane's state must not hold the others hostage:
   hand-edited conflict marker**. The lane keeps its own commits, a rework
   attempt is recorded against its bead (bounded by ``[policy] max_rework``,
   escalating at the cap), the missed coupling is recorded as a non-gating
-  ``related`` edge onto the lane that landed the conflicting paths so the graph
-  learns without holding the bounce back (:func:`record_coupling`), and the
-  lane's own agent re-applies its intent on the new base at the next dispatch.
+  ``related`` edge onto the lane whose **declared scope** covers the conflicting
+  paths so the graph learns without holding the bounce back
+  (:func:`record_pass_couplings`), and the lane's own agent re-applies its intent
+  on the new base at the next dispatch.
+- **The edge never depends on landing order** (D9, basicly-kjc5.32). Attribution
+  runs once the pass is over, over every landing rather than the prefix that
+  happened to precede a bounce, and reads declared scopes rather than what each
+  landing changed — so the same plan teaches the graph the same edge whichever
+  lane lands first.
 - **A red suite or a rejected merge commit still stops the pass**: unlike a
   scope collision, that is a signal about the base itself, and stacking more
   landings on top of it only compounds the damage.
@@ -39,10 +45,11 @@ never by hand-editing conflict markers.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import br, policy, run_record, verify
+from . import br, decompose, policy, run_record, verify
 from .config import PolicyConfig, load_policy_config
 from .worktree import current_branch, git, load_session
 
@@ -411,8 +418,9 @@ class QueueResult:
     escalate: bool = False
     # Conflict handed back to the owning lane instead of stopping the pass (D5).
     bounced: bool = False
-    # Beads whose landing this pass touched the conflicting paths, now recorded
-    # as ``blocks`` dependency edges so the graph learns the missed coupling.
+    # Beads that landed this pass whose declared scope covers the conflicting
+    # paths, recorded as `related` edges so the graph learns the missed coupling.
+    # Filled after the pass, not at the bounce (`_attribute_pass`, D9).
     couplings: tuple[str, ...] = ()
 
     @property
@@ -502,16 +510,116 @@ def missed_couplings(
     """Beads landed this pass whose changes touched *conflicts* (pure).
 
     The conflicting paths are the evidence of the coupling the decomposition
-    missed: whoever landed them is who this lane should have been serialized
-    after. Paths the engine owns are excluded — **every** landing rewrites the
-    tracker, so counting it would blame every lane for a collision the engine
-    reconciles itself. With no evidence left, nothing is attributed: a wrong
-    dependency edge would teach the graph a coupling that does not exist.
+    missed: whoever landed them is who this lane collided with. Paths the engine
+    owns are excluded — **every** landing rewrites the tracker, so counting it
+    would blame every lane for a collision the engine reconciles itself. With no
+    evidence left, nothing is attributed.
+
+    This is the *within-pass* answer, and it is order-sensitive by construction —
+    it names whoever had already landed. So it is only for outcomes that die with
+    the pass: D6's pre-empt (``supervise._invalidated_by``) reads it to tell one
+    lane's next prompt which landing broke its merge. The dependency edge, which
+    outlives the pass, must not be attributed this way — see
+    :func:`coupled_lanes`.
     """
     collided = {path for path in conflicts if not _engine_owned(path)}
     if not collided:
         return ()
     return tuple(bead for bead, changed in landed if collided & set(changed))
+
+
+def coupled_lanes(
+    conflicts: tuple[str, ...],
+    scopes: Mapping[str, tuple[str, ...]],
+    *,
+    bounced: str,
+) -> tuple[str, ...]:
+    """Lanes in *scopes* whose declared globs cover a conflicting path (pure, D9).
+
+    The conflicting paths are the evidence a coupling was missed; the declared
+    ``## Scope`` globs say *whose* coupling it is. Attributing from the plan this
+    way rather than from what each landing happened to change is what makes the
+    edge order-free: two lanes whose scopes collide name the same pair whichever
+    of them lands first — and so whichever of them bounces (basicly-kjc5.32).
+
+    Engine-owned paths are excluded for the same reason as in
+    :func:`missed_couplings`. *bounced* is never its own culprit, results are
+    sorted so the caller cannot inherit a dict's insertion order, and a lane with
+    no readable declared scope is not a candidate: nothing shows it owns the path,
+    and a wrong edge teaches the graph a coupling that does not exist.
+    """
+    collided = {path for path in conflicts if not _engine_owned(path)}
+    if not collided:
+        return ()
+    return tuple(
+        bead
+        for bead, scope in sorted(scopes.items())
+        if bead != bounced and _scope_covers(scope, collided)
+    )
+
+
+def _scope_covers(scope: tuple[str, ...], paths: set[str]) -> bool:
+    """True when any declared glob in *scope* can match any path in *paths*.
+
+    Reuses the decomposition's own glob overlap (a concrete path is a glob that
+    matches only itself), so "in scope" means the same thing to the planner that
+    declared the lanes parallel-safe and to the merge that proved it wrong.
+    """
+    return any(decompose.globs_overlap(path, glob) for glob in scope for path in paths)
+
+
+def declared_scopes(repo_root: Path, beads: Iterable[str]) -> dict[str, tuple[str, ...]]:
+    """Each bead's declared ``## Scope`` globs per ``br``; unreadable ones are absent.
+
+    Best-effort like every other tracker read on the landing path: a bead whose
+    scope cannot be read simply cannot be attributed, which costs the graph an
+    edge rather than the pass.
+    """
+    scopes: dict[str, tuple[str, ...]] = {}
+    for bead in beads:
+        found = decompose.bead_class_and_scope(repo_root, bead)
+        if found is not None:
+            scopes[bead] = found[1]
+    return scopes
+
+
+def attribute_couplings(
+    repo_root: Path,
+    collisions: Sequence[tuple[str, tuple[str, ...]]],
+    landed: Sequence[str],
+) -> dict[str, tuple[str, ...]]:
+    """The missed coupling per collided lane, computed once over the whole pass (D9).
+
+    *collisions* is ``(bounced bead, conflicting paths)`` per bounce and *landed*
+    the beads that landed anywhere in the pass. Deliberately **not** incremental:
+    a bounce is attributed against every landing of the pass, not merely the
+    landings that happened to precede it, so the prefix a scheduler produced
+    cannot decide who receives the edge — nor whether one is recorded at all
+    (basicly-kjc5.32). With :func:`coupled_lanes` reading declared scopes, the
+    result is a function of the plan and the conflicting paths alone.
+    """
+    if not collisions or not landed:
+        return {}
+    scopes = declared_scopes(repo_root, dict.fromkeys(landed))
+    return {bead: coupled_lanes(conflicts, scopes, bounced=bead) for bead, conflicts in collisions}
+
+
+def record_pass_couplings(
+    repo_root: Path,
+    collisions: Sequence[tuple[str, tuple[str, ...]]],
+    landed: Sequence[str],
+) -> dict[str, tuple[str, ...]]:
+    """Attribute a finished pass's collisions and write the edges (D5/D9).
+
+    The one seam both landing paths — :func:`merge_queue` and the supervisor's
+    ``route_outcomes`` — go through, so neither can drift back to an incremental
+    attribution. Returns what was attributed, for the caller's own reporting.
+    """
+    attributed = attribute_couplings(repo_root, collisions, landed)
+    for bead, culprits in attributed.items():
+        for culprit in culprits:
+            record_coupling(repo_root, bead, culprit)
+    return attributed
 
 
 def _engine_owned(path: str) -> bool:
@@ -550,12 +658,20 @@ def record_coupling(repo_root: Path, bead: str, coupled_to: str) -> None:
     the rework cap. That is the trade the design already wanted — the edge is for
     the *next* decomposition.
 
+    The pair is written in a **canonical direction** — the two ids sorted — so the
+    edge is literally identical however the collision was discovered
+    (basicly-kjc5.32). Coupling is symmetric and ``related`` does not gate, so the
+    direction carried no meaning; what it did carry was which lane happened to
+    land first, and that is exactly the pass-order leak into permanent graph state
+    D9 forbids.
+
     Best-effort: a rejected edge (already present, or a cycle ``br`` refuses)
     must not turn a bounced lane into a crash. Note ``br`` refuses a duplicate
     rather than changing its type, so an edge some other path already recorded as
     ``blocks`` keeps that type.
     """
-    br.try_run_br(repo_root, ["dep", "add", bead, coupled_to, "-t", COUPLING_DEP_TYPE])
+    first, second = sorted((bead, coupled_to))
+    br.try_run_br(repo_root, ["dep", "add", first, second, "-t", COUPLING_DEP_TYPE])
 
 
 def merge_queue(
@@ -569,19 +685,24 @@ def merge_queue(
 
     Re-verifies after each merge. A lane that is not committed yet is deferred
     and the pass continues; a lane that *conflicts* is bounced back to its owner
-    (rework recorded, missed coupling written to the graph) and the pass
-    continues with the lanes that can still land. A failed verify or a rejected
-    merge commit still stops the pass — that is a signal about the base, not
-    about one lane's scope.
+    (rework recorded, the collision noted) and the pass continues with the lanes
+    that can still land. A failed verify or a rejected merge commit still stops
+    the pass — that is a signal about the base, not about one lane's scope.
+
+    The missed couplings are written to the graph once, after the pass, by
+    :func:`_attribute_pass` — never as each bounce happens, which would attribute
+    against whatever prefix had landed by then (D9, basicly-kjc5.32).
     """
     config = config or load_policy_config(repo_root)
     results: list[QueueResult] = []
-    landed: list[tuple[str, tuple[str, ...]]] = []
+    landed: list[str] = []
+    # (index in *results*, bead, conflicting paths) per bounce this pass. The
+    # index is carried because a MergeResult names its worktree, not its bead.
+    collisions: list[tuple[int, str, tuple[str, ...]]] = []
     for name, bead in landing_order(repo_root, items):
-        before = head_sha(repo_root)
         result = merge_worktree(repo_root, name, bead=bead, verify_mode=verify_mode)
         if result.merged:
-            landed.append((bead, changed_paths(repo_root, before)))
+            landed.append(bead)
             results.append(QueueResult(result))
             continue
         if result.status == "not-ready":
@@ -600,40 +721,71 @@ def merge_queue(
             results.append(QueueResult(result))
             continue
         if result.conflicted:
-            results.append(_bounce_back(repo_root, bead, result, landed, config))
+            collisions.append((len(results), bead, result.conflicts))
+            results.append(_bounce_back(repo_root, bead, result, config))
             continue
         attempts = policy.record_rework(repo_root, bead, MERGE_GATE)
         escalate = attempts >= config.max_rework
         results.append(QueueResult(result, attempts=attempts, escalate=escalate))
         break  # a bad base, not a bad lane: stop before stacking more on it
-    return results
+    return _attribute_pass(repo_root, results, collisions, landed)
 
 
 def _bounce_back(
     repo_root: Path,
     bead: str,
     result: MergeResult,
-    landed: list[tuple[str, tuple[str, ...]]],
     config: PolicyConfig,
 ) -> QueueResult:
-    """Hand a conflicting lane back to its owner, recording what the graph missed.
+    """Hand a conflicting lane back to its owner; the graph learns after the pass.
 
     No merge-time resolution of any kind (D5): the base was left untouched by
     :func:`merge_worktree`, the lane keeps its own commits, and re-applying the
     intent on the new base is the lane agent's job at its next dispatch — bounded
     by the rework cap, escalating to a human at it.
+
+    The rework attempt is charged now (it is this lane's own budget); the coupling
+    edge is not, because who to name is not knowable until the pass is done
+    (:func:`_attribute_pass`).
     """
-    couplings = missed_couplings(result.conflicts, landed)
-    for culprit in couplings:
-        record_coupling(repo_root, bead, culprit)
     attempts = policy.record_rework(repo_root, bead, MERGE_GATE)
     return QueueResult(
         result,
         attempts=attempts,
         escalate=attempts >= config.max_rework,
         bounced=True,
-        couplings=couplings,
     )
+
+
+def _attribute_pass(
+    repo_root: Path,
+    results: list[QueueResult],
+    collisions: list[tuple[int, str, tuple[str, ...]]],
+    landed: list[str],
+) -> list[QueueResult]:
+    """Write the pass's missed couplings and report them on the bounced results (D9).
+
+    Runs once, over every landing of the pass, so a bounce is attributed the same
+    way whether the lane it collided with landed before or after it
+    (basicly-kjc5.32).
+    """
+    if not collisions:
+        return results
+    attributed = record_pass_couplings(
+        repo_root, [(bead, conflicts) for _, bead, conflicts in collisions], landed
+    )
+    for index, bead, _ in collisions:
+        culprits = attributed.get(bead, ())
+        if culprits:
+            bounced = results[index]
+            results[index] = QueueResult(
+                bounced.result,
+                attempts=bounced.attempts,
+                escalate=bounced.escalate,
+                bounced=bounced.bounced,
+                couplings=culprits,
+            )
+    return results
 
 
 def head_sha(repo_root: Path) -> str:
@@ -645,9 +797,11 @@ def head_sha(repo_root: Path) -> str:
 def changed_paths(repo_root: Path, before: str) -> tuple[str, ...]:
     """Paths a landing added to the base since *before* (empty when unknown).
 
-    Public because coupling attribution needs it wherever landings happen: the
-    supervisor lands lane by lane through the loop engine rather than through
-    :func:`merge_queue`, and must attribute a conflict the same way (kjc5.20).
+    Public because the supervisor lands lane by lane through the loop engine
+    rather than through :func:`merge_queue` (kjc5.20) and D6's pre-empt needs to
+    say *which* landing broke a pending merge (:func:`missed_couplings`). Not used
+    for the coupling edge, which reads declared scopes instead so it cannot depend
+    on landing order (:func:`coupled_lanes`).
     """
     if not before:
         return ()
