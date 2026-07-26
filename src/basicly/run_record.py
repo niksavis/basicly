@@ -29,7 +29,7 @@ from dataclasses import asdict, dataclass, fields
 from datetime import UTC, datetime
 from pathlib import Path
 
-from . import br
+from . import br, session
 
 USAGE_DIR = Path(".basicly/usage")
 RUN_RECORDS_FILE = USAGE_DIR / "run-records.json"
@@ -78,6 +78,13 @@ class RunRecord:
     # Ids of the found-info records folded into the bundle. Bundle assembly
     # truncates to the newest N, so without this the prompt is unexplainable.
     folded_info: tuple[str, ...] = ()
+    # Harness config this session overrode from the command line, as sorted
+    # ``section.key=value`` strings (basicly-jr0l.8). A per-session ``--runner``
+    # or ``--autonomy`` changes what a dispatch *is* without changing any
+    # committed file, so leaving it unrecorded would put two genuinely different
+    # dispatches behind identical records — the irreproducibility D9 forbids.
+    # Empty for a run configured entirely by committed config.
+    config_overrides: tuple[str, ...] = ()
 
 
 def outcome_of(*, handoff: bool, returncode: int | None) -> str:
@@ -133,6 +140,10 @@ def build_record(  # noqa: PLR0913
         scope_tokens=scope_tokens,
         forecast_tokens=forecast_tokens,
         folded_info=tuple(folded_info),
+        # Read here rather than passed in: the overrides are process-global for the
+        # session, so stamping them centrally means no dispatch site can forget to
+        # and a later one gets it for free (basicly-jr0l.8).
+        config_overrides=session.override_pairs(),
     )
 
 
