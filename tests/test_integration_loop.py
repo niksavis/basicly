@@ -609,3 +609,43 @@ def test_a_landing_cancels_the_lane_it_broke_and_tells_it_why(harness_repo: Path
     bundle = supervise.build_bundle(repo, second, known_ids=frozenset({root, first, second}))
     assert [info.kind for info in bundle.folded] == ["coupling"]
     assert first in bundle.prompt
+
+
+@needs_br
+def test_a_missed_coupling_teaches_the_graph_without_gating_the_bounced_lane(
+    harness_repo: Path,
+) -> None:
+    """A recorded coupling must not hold the lane the bounce exists to send back.
+
+    Pins basicly-grrb, on the one thing no stubbed tracker can decide: whether
+    ``br`` counts this edge in ``br blocked``. The bounce records the coupling
+    onto the lane it collided with, and under the supervisor that lane is
+    ``merged`` but parked in verify awaiting a ship checkpoint — still open. As a
+    ``blocks`` edge that dropped the bounced lane out of ``ready_lanes``, holding
+    it behind a human approval instead of re-dispatching it.
+    """
+    repo = harness_repo
+    root = _create_bead(repo, "the coupling-edge root", issue_type="epic")
+    landed = _create_bead(repo, "the lane that landed")
+    bounced = _create_bead(repo, "the lane that bounced")
+    for child in (landed, bounced):
+        _br(repo, "dep", "add", child, root, "-t", "parent-child")
+        _to_build(repo, child)
+
+    # Exactly what a bounce writes, with the collided-with lane still open —
+    # which is the state a supervisor landing leaves it in.
+    merge.record_coupling(repo, bounced, landed)
+    assert _show(repo, landed)["status"] != "closed"
+
+    # The graph learned the coupling...
+    coupled = {
+        str(dep["id"]): dep.get("dependency_type")
+        for dep in _show(repo, bounced).get("dependencies") or []
+    }
+    assert coupled.get(landed) == merge.COUPLING_DEP_TYPE
+
+    # ...and the bounced lane is still dispatchable on the next pass.
+    assert bounced not in loop_state.blocked_ids(repo)
+    session_state = supervise.derive_session(repo, root)
+    ready = {lane.issue_id for lane in supervise.ready_lanes(repo, session_state)}
+    assert bounced in ready, f"{bounced} was gated by the coupling it taught the graph"

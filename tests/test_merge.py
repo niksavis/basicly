@@ -441,7 +441,11 @@ def test_merge_queue_records_the_missed_coupling_as_a_dependency_edge(
     results = merge.merge_queue(tmp_path, [("a", "ba"), ("b", "bb"), ("c", "bc")])
 
     assert results[2].bounced and results[2].couplings == ("bb",)
-    assert ["dep", "add", "bc", "bb", "-t", "blocks"] in calls
+    # `related`, never `blocks`: the edge teaches the next decomposition, and a
+    # gating edge would hold the bounced lane behind the lane it collided with
+    # until that lane *ships* (basicly-grrb).
+    assert ["dep", "add", "bc", "bb", "-t", "related"] in calls
+    assert not any(call[:2] == ["dep", "add"] and call[-1] == "blocks" for call in calls)
 
 
 def test_merge_queue_bounce_records_no_coupling_without_paths(

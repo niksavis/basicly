@@ -1738,13 +1738,11 @@ def _preempt_lane(repo_root: Path, issue_id: str, culprits: tuple[str, ...]) -> 
     :func:`build_bundle` folds it into this lane's **next** prompt, so its agent
     re-applies its intent knowing which lane landed what.
 
-    No dependency edge is recorded. :func:`merge.record_coupling` writes a
-    *gating* ``blocks`` edge on the premise that the lane it names is done, and a
-    lane the supervisor just landed is merged but **not shipped** — still open —
-    so the edge would drop this lane out of :func:`ready_lanes` and hold it
-    behind a human ship approval, the exact opposite of re-dispatching it. The
-    graph still learns the coupling from the bounce, if the re-applied work
-    collides again.
+    No dependency edge is recorded either — the found-info record already carries
+    the discovery to the one lane that needs it, and the graph learns the coupling
+    from the bounce if the re-applied work collides again. (That edge is
+    non-gating since basicly-grrb, so the choice here is about not duplicating a
+    record, no longer about avoiding a stall.)
 
     Cancelling is not destructive: like a bounce, the lane keeps its commits on
     its branch. What it costs is a dispatch, so it is bounded — once per lane per

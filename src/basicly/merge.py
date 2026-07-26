@@ -24,10 +24,10 @@ one lane's state must not hold the others hostage:
   the merge — so there is **never a merge-time AI resolution and never a
   hand-edited conflict marker**. The lane keeps its own commits, a rework
   attempt is recorded against its bead (bounded by ``[policy] max_rework``,
-  escalating at the cap), the missed coupling is recorded as a ``blocks``
-  dependency edge on the lane that landed the conflicting paths so the graph
-  learns, and the lane's own agent re-applies its intent on the new base at the
-  next dispatch.
+  escalating at the cap), the missed coupling is recorded as a non-gating
+  ``related`` edge onto the lane that landed the conflicting paths so the graph
+  learns without holding the bounce back (:func:`record_coupling`), and the
+  lane's own agent re-applies its intent on the new base at the next dispatch.
 - **A red suite or a rejected merge commit still stops the pass**: unlike a
   scope collision, that is a signal about the base itself, and stacking more
   landings on top of it only compounds the damage.
@@ -56,6 +56,11 @@ CONFLICT_STATUSES = ("rebase-conflicts", "merge-conflicts")
 # with `br sync --merge`). A collision here is engine bookkeeping, never evidence
 # of a coupling the decomposition missed.
 ENGINE_PATHS = (".beads/",)
+
+# Dependency type for a missed coupling. Deliberately not `blocks`: the edge
+# teaches the next decomposition, and `br blocked` (so `supervise.ready_lanes`)
+# must not hold the bounced lane behind it — see `record_coupling` (basicly-grrb).
+COUPLING_DEP_TYPE = "related"
 
 
 @dataclass(frozen=True)
@@ -432,16 +437,35 @@ def _engine_owned(path: str) -> bool:
     return any(normalized.lstrip("/").startswith(prefix) for prefix in ENGINE_PATHS)
 
 
-def record_coupling(repo_root: Path, bead: str, blocks_on: str) -> None:
-    """Record *bead* as blocked by *blocks_on* — the missed coupling, in ``br`` (D5).
+def record_coupling(repo_root: Path, bead: str, coupled_to: str) -> None:
+    """Record that *bead* and *coupled_to* are coupled — what the graph missed (D5).
 
-    A ``blocks`` edge onto an already-landed lane gates nothing now (that lane is
-    done); its job is to make the coupling part of the graph, so the next
-    decomposition serializes the two instead of declaring them parallel-safe.
+    The edge exists to *teach*, not to gate: its job is to make the coupling part
+    of the graph so the next decomposition serializes the two instead of
+    declaring them parallel-safe. So it is recorded as ``related``, not
+    ``blocks``.
+
+    This used to write ``blocks``, justified by "an edge onto an already-landed
+    lane gates nothing now (that lane is done)". Under the supervisor that
+    premise is false and the cost is severe (basicly-grrb): a lane the supervisor
+    lands is routed ``merged`` and parks in verify awaiting a ship checkpoint, so
+    the bead is still **open**, and ``br blocked`` — hence
+    ``supervise.ready_lanes`` — drops the bounced lane. The one lane the bounce
+    exists to send back to its agent was instead held behind a human approval on
+    the lane it collided with, indefinitely at autonomy ceiling L0.
+
+    ``related`` is invisible to ``br blocked`` and to
+    :func:`blocking_dependencies`, so coupled lanes are no longer serialized
+    within a landing pass; a genuine collision simply bounces again, bounded by
+    the rework cap. That is the trade the design already wanted — the edge is for
+    the *next* decomposition.
+
     Best-effort: a rejected edge (already present, or a cycle ``br`` refuses)
-    must not turn a bounced lane into a crash.
+    must not turn a bounced lane into a crash. Note ``br`` refuses a duplicate
+    rather than changing its type, so an edge some other path already recorded as
+    ``blocks`` keeps that type.
     """
-    br.try_run_br(repo_root, ["dep", "add", bead, blocks_on, "-t", "blocks"])
+    br.try_run_br(repo_root, ["dep", "add", bead, coupled_to, "-t", COUPLING_DEP_TYPE])
 
 
 def merge_queue(
