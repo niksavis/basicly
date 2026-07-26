@@ -181,6 +181,36 @@ def run_verify(repo_root: Path, mode: str, config: VerifyConfig | None = None) -
     return VerifyReport(mode=mode, results=results)
 
 
+def rerun_failures(
+    report: VerifyReport, repo_root: Path, mode: str, config: VerifyConfig | None = None
+) -> VerifyReport:
+    """Re-run just the checks that failed in *report*, unchanged.
+
+    Evidence, not a retry. Nothing in the tree, the config, or the command line
+    differs between the two runs, so a check that passes now did not fail on the
+    work under test — which is what lets a caller tell an unreliable gate from a
+    merit failure instead of scoring both the same (basicly-55yh).
+
+    Only the failed checks re-run, and the whole check re-runs rather than the
+    one case inside it that failed: narrowing to a single test would change the
+    run, and an order-dependent test that passes alone would then be excused as a
+    flake when it is a real defect.
+
+    Fail-safe by construction. A green *report* is returned unchanged, and so is
+    one whose failures no longer match a configured check — no new evidence means
+    the original verdict stands. A caller may only forgive on a positive pass
+    here, never on the absence of a result.
+    """
+    failed = set(report.failures)
+    if not failed:
+        return report
+    config = config or load_verify_config(repo_root)
+    checks = [check for check in config.for_mode(mode) if check.name in failed]
+    if not checks:
+        return report
+    return VerifyReport(mode=mode, results=tuple(run_check(c, repo_root, mode) for c in checks))
+
+
 def apply_fixes(repo_root: Path, mode: str, config: VerifyConfig | None = None) -> VerifyReport:
     """Apply the ``fix_command`` of every *mode* check that declares one.
 

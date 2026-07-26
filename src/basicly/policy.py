@@ -354,6 +354,34 @@ def should_escalate(repo_root: Path, issue_id: str, gate: str, config: PolicyCon
     return rework_charged(repo_root, issue_id, gate) >= config.max_rework
 
 
+def _unreliable_gate_marker(gate: str) -> str:
+    return f"{MARKER} gate-unreliable gate={gate}"
+
+
+def unreliable_gate_events(repo_root: Path, issue_id: str, gate: str) -> int:
+    """Count the times *gate* failed on *issue_id* and then passed unchanged."""
+    marker = _unreliable_gate_marker(gate)
+    return sum(1 for text in _comment_texts(repo_root, issue_id) if _marker_matches(text, marker))
+
+
+def record_unreliable_gate(repo_root: Path, issue_id: str, gate: str, detail: str = "") -> int:
+    """Record that *gate* failed and then passed unchanged; return the count so far.
+
+    The counterpart to not charging rework for it (basicly-55yh). Forgiving a
+    flake silently would be worse than the bug it fixes: a chronically unreliable
+    gate would stop escalating and stop being visible at the same time, and the
+    lane it keeps deferring would look merely slow. The marker makes the flake
+    countable, which is what turns "the suite is flaky" into a bead someone can
+    act on.
+
+    Not a rework attempt and never charged as one — a separate marker precisely so
+    the two cannot be confused by a reader or by a counter.
+    """
+    suffix = f" {detail}" if detail else ""
+    _run_br(repo_root, ["comments", "add", issue_id, f"{_unreliable_gate_marker(gate)}{suffix}"])
+    return unreliable_gate_events(repo_root, issue_id, gate)
+
+
 # The escalation an exhausted rework budget raises. The queue's only carrier for
 # the gate is the question text, so it is written and read back in one place —
 # a driver acting on the answer must not have to guess the format.

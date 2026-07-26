@@ -1717,6 +1717,13 @@ def _route_blocked_landing(
         # loop._rework already queued the escalation (kjc5.4); the pending item
         # now holds the lane until a human triages it.
         return RoutedOutcome(outcome.issue_id, "decision", landing.detail)
+    if attempt is not None and attempt.unreliable:
+        # The gate failed and then passed unchanged, so this lane is green and
+        # committed and only the gate was unreliable (basicly-55yh). That is
+        # exactly the ``held`` shape: carry it forward to land first next pass,
+        # and do not re-dispatch an agent over work no evidence faults — a fresh
+        # dispatch would spend tokens rewriting a correct diff.
+        return RoutedOutcome(outcome.issue_id, "held", landing.detail)
     if attempt is not None and attempt.status == "not-ready":
         # A green run that committed nothing (merge's not-ready guard,
         # basicly-4psl) would re-dispatch forever un-counted — bound it with the

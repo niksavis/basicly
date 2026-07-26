@@ -508,6 +508,12 @@ def _verify_and_land(
         # The build's work is not committed on the branch: block with guidance,
         # do not burn a rework attempt on an operator-fixable state (basicly-4psl).
         return _blocked(ctx, result.detail, landing=result)
+    if result.unreliable:
+        # The gate failed and then passed unchanged, so nothing here faults this
+        # work: record the flake and block for another landing attempt rather
+        # than spending the node's bounded budget on it (basicly-55yh).
+        policy.record_unreliable_gate(ctx.repo_root, ctx.issue_id, merge.MERGE_GATE, result.detail)
+        return _blocked(ctx, result.detail, landing=result)
     if not result.merged:
         return _rework(ctx, merge.MERGE_GATE, f"merge failed: {result.detail}", landing=result)
     return _record_verify(ctx, result.detail, verify_mode=mode)

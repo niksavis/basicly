@@ -1008,3 +1008,39 @@ def test_grant_confirm_code_binds_level_and_budget(
     )
     assert exact.status == "approved"
     assert policy.active_grant(tmp_path, "root") == policy.Grant(level="L2", token_budget=5_000)
+
+
+# --- Forgiving a flake without hiding it (basicly-55yh) ----------------------
+
+
+def test_an_unreliable_gate_event_is_recorded_and_counted(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Forgiven is not the same as invisible: a chronic flake has to stay countable."""
+    _install(monkeypatch, _FakeBr())
+    assert policy.unreliable_gate_events(tmp_path, "i", "merge") == 0
+
+    assert policy.record_unreliable_gate(tmp_path, "i", "merge", "pytest passed on re-run") == 1
+    assert policy.record_unreliable_gate(tmp_path, "i", "merge") == 2
+    assert policy.unreliable_gate_events(tmp_path, "i", "merge") == 2
+
+
+def test_an_unreliable_gate_event_is_not_a_rework_attempt(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The two markers must never be confused by a counter — that was the bug."""
+    _install(monkeypatch, _FakeBr())
+    policy.record_unreliable_gate(tmp_path, "i", "merge")
+
+    assert policy.rework_attempts(tmp_path, "i", "merge") == 0
+    assert policy.rework_charged(tmp_path, "i", "merge") == 0
+    assert policy.should_escalate(tmp_path, "i", "merge", CONFIG) is False
+
+
+def test_an_unreliable_gate_event_is_scoped_to_its_gate(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A flaky merge gate says nothing about the verify gate."""
+    _install(monkeypatch, _FakeBr())
+    policy.record_unreliable_gate(tmp_path, "i", "merge")
+    assert policy.unreliable_gate_events(tmp_path, "i", "verify") == 0
