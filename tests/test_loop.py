@@ -790,6 +790,122 @@ def test_ship_proceeds_when_the_worktree_landed(
     assert result.to_phase == "done" and result.action == "tore-down"
 
 
+def test_ship_records_the_forecast_and_the_whole_packages_actual_cost(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The bead is the only carrier that survives a clone, so ship writes the ledger.
+
+    basicly-kjc5.50: run-records live in the self-ignored ``.basicly/usage/``, so
+    without this a fresh clone forecasts from the seed factors and never learns
+    what a package cost. The actual must span every dispatch — the failed attempt
+    included — or the packages whose cheap dispatch produced an expensive result
+    are exactly the ones understated.
+    """
+    at(_state("ship", worktree=WorktreeBinding("i", "harness/i")))
+    monkeypatch.setattr(loop, "_worktree_landed", lambda *_a, **_k: True)
+    monkeypatch.setattr(worktree, "cleanup", lambda *_a, **_k: None)
+    monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        run_record,
+        "dispatch_history",
+        lambda _repo: {
+            "i": [
+                {"outcome": "failed", "tokens": 30_000, "cost": 0.6, "duration_s": 400.0},
+                {"outcome": "executed", "tokens": 12_000, "cost": 0.2, "duration_s": 100.0},
+            ]
+        },
+    )
+    monkeypatch.setattr(policy, "rework_recorded", lambda *_a: 1)
+    monkeypatch.setattr(
+        decompose, "bead_class_and_scope", lambda *_a: ("task", ("src/basicly/loop.py",))
+    )
+    monkeypatch.setattr(
+        decompose,
+        "forecast_for",
+        lambda *_a: decompose.CostEstimate(
+            scope_tokens=8_000, overhead_tokens=2_000, build_factor=2.0
+        ),
+    )
+    written: dict = {}
+
+    def _record_cost_marker(_repo, bead, **kw):
+        written["bead"] = bead
+        written.update(kw)
+        return f"{bead}#cost"
+
+    monkeypatch.setattr(run_record, "record_cost_marker", _record_cost_marker)
+
+    result = _advance(tmp_path)
+
+    assert result.to_phase == "done" and result.action == "tore-down"
+    assert "cost rollup recorded" in result.detail
+    assert written["bead"] == "i"
+    assert written["task_class"] == "task" and written["scope_tokens"] == 8_000
+    assert written["forecast"].tokens == 18_000  # 2_000 overhead + 8_000 x 2.0
+    actual = written["actual"]
+    assert actual.dispatches == 2 and actual.rework == 1
+    assert actual.tokens == 42_000
+    assert actual.cost == pytest.approx(0.8)
+    assert actual.wall_clock_s == pytest.approx(500.0)
+
+
+def test_ship_records_the_rollup_before_the_tracker_commit(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The rollup has to be flushed by the closing commit, or it never leaves the machine."""
+    at(_state("ship"))
+    order: list[str] = []
+    monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: order.append("close"))
+    monkeypatch.setattr(
+        loop.merge, "commit_tracker_state", lambda *_a, **_k: bool(order.append("commit")) or True
+    )
+    monkeypatch.setattr(run_record, "dispatch_history", lambda _repo: {"i": [{"tokens": 10}]})
+    monkeypatch.setattr(policy, "rework_recorded", lambda *_a: 0)
+    monkeypatch.setattr(decompose, "bead_class_and_scope", lambda *_a: None)
+    monkeypatch.setattr(
+        run_record, "record_cost_marker", lambda *_a, **_k: order.append("rollup") or "i#cost"
+    )
+
+    _advance(tmp_path)
+    assert order == ["rollup", "close", "commit"]
+
+
+def test_ship_writes_no_rollup_for_a_node_that_was_never_dispatched(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A decomposed feature costs what its children cost — it is not a package of its own.
+
+    Recording a zero-dispatch rollup for it would count the same work twice and
+    dilute cost-per-landed-package with a null.
+    """
+    at(_state("ship", issue_type="feature", has_children=True))
+    monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: None)
+    monkeypatch.setattr(run_record, "dispatch_history", lambda _repo: {})
+    monkeypatch.setattr(
+        run_record, "record_cost_marker", lambda *_a, **_k: pytest.fail("no rollup is due")
+    )
+
+    result = _advance(tmp_path)
+    assert result.action == "tore-down" and "cost rollup" not in result.detail
+
+
+def test_ship_proceeds_when_the_cost_rollup_cannot_be_written(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Evidence is never worth failing a landing for: the ship reports no rollup and goes on."""
+    at(_state("ship"))
+    monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: None)
+
+    def _boom(*_a, **_k):
+        raise RuntimeError("br is unavailable")
+
+    monkeypatch.setattr(run_record, "dispatch_history", _boom)
+
+    result = _advance(tmp_path)
+    assert result.to_phase == "done" and result.action == "tore-down"
+    assert "cost rollup" not in result.detail
+
+
 def test_worktree_landed_missing_branch_counts_as_landed(monkeypatch: pytest.MonkeyPatch) -> None:
     """A branch that no longer exists was merged and cleaned (git branch -d) -> landed."""
     monkeypatch.setattr(

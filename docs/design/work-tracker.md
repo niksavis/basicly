@@ -64,11 +64,16 @@ therefore a lower bound: §6's telemetry replaces it with measurement before any
 Semantics we depend on, which any replacement must preserve:
 
 1. **Content-derived ids** and idempotent re-writes (the decision-queue pattern).
-2. **Comment markers as durable, attributable evidence** — four families today
-   (`[harness-policy]`, `[harness-decision]`, `[harness-info]`, `[harness-run]`). Comments are
-   exported, so they are the shared ledger (D11).
+2. **Comment markers as durable, attributable evidence** — six families today
+   (`[harness-policy]`, `[harness-decision]`, `[harness-info]`, `[harness-run]`,
+   `[harness-sizing]`, `[harness-cost]`). Comments are exported, so they are the shared ledger
+   (D11) — and the only carrier of cost history, since run-records live in the self-ignored
+   `.basicly/usage/` (`basicly-kjc5.50`).
 3. **A committed JSONL export plus a three-way merge baseline** (`beads.base.jsonl`) — git is the
-   transport and the audit log.
+   transport and the audit log. The export's own `comments` array is read *directly* for
+   whole-tracker questions (calibration, cost per landed package): `list --json` caps its result
+   set and drops closed records, so the file is the only bulk read — and the only one a fresh
+   clone can answer from with no br invocation at all (D10).
 4. **Prefix-anchored commit scanning** for the commit-message gate.
 5. **A dependency graph** with parent-child and blocking edges, and derivation of ready/blocked
    from it.

@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess  # nosec B404
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 from basicly import redact
@@ -181,3 +182,68 @@ def scrub_export(repo_root: Path) -> int:
     trailer = "\n" if raw.endswith("\n") else ""
     export.write_text("\n".join(scrubbed) + trailer, encoding="utf-8")
     return changed
+
+
+# --- Reading the committed export (basicly-kjc5.50) --------------------------
+
+
+def beads_dir(repo_root: Path) -> Path:
+    """The active beads directory, following br's git-ignored ``redirect`` file.
+
+    A harness worktree shares the base checkout's tracker through ``redirect``,
+    so the redirected directory — not the worktree's own checked-out copy — is
+    where br flushes and where the freshest export lives.
+    """
+    beads = Path(repo_root) / ".beads"
+    redirect = beads / "redirect"
+    if redirect.is_file():
+        try:
+            target = Path(redirect.read_text(encoding="utf-8").strip())
+        except OSError:
+            return beads
+        if target.is_dir():
+            return target
+    return beads
+
+
+def export_records(repo_root: Path) -> list[dict]:
+    """Every issue record in the committed JSONL export, in file order.
+
+    The export is the *shared* tracker: git is its transport, so it is what a
+    fresh clone has and the one source that answers for beads this machine never
+    ran (D11). It carries each record's comments, which makes the harness marker
+    families readable without a single br invocation — the bulk read `br list`
+    cannot serve (it caps results and drops closed records).
+
+    Empty when there is no export or it cannot be read; an unparsable line is
+    skipped rather than fatal, matching :func:`scrub_export` — every consumer here
+    is evidence or telemetry, never a gate.
+    """
+    export = beads_dir(repo_root) / "issues.jsonl"
+    try:
+        raw = export.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    records: list[dict] = []
+    for line in raw.splitlines():
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(record, dict) and isinstance(record.get("id"), str):
+            records.append(record)
+    return records
+
+
+def export_comment_texts(record: Mapping[str, object]) -> list[str]:
+    """The comment bodies on one exported record, in export order."""
+    comments = record.get("comments")
+    if not isinstance(comments, list):
+        return []
+    return [
+        str(comment["text"])
+        for comment in comments
+        if isinstance(comment, Mapping) and isinstance(comment.get("text"), str)
+    ]

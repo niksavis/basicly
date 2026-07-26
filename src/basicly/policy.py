@@ -296,6 +296,17 @@ def rework_attempts(repo_root: Path, issue_id: str, gate: str) -> int:
     return sum(1 for text in _comment_texts(repo_root, issue_id) if _marker_matches(text, marker))
 
 
+def rework_recorded(repo_root: Path, issue_id: str) -> int:
+    """Every rework attempt recorded on *issue_id*, across all gates.
+
+    The per-node total the ship-time cost rollup reports (basicly-kjc5.50), which
+    is a property of the package rather than of one gate. Token-exact matching
+    keeps ``rework-allowance`` markers out of the count.
+    """
+    marker = f"{MARKER} rework"
+    return sum(1 for text in _comment_texts(repo_root, issue_id) if _marker_matches(text, marker))
+
+
 def rework_allowances(repo_root: Path, issue_id: str, gate: str) -> int:
     """Count the further attempts granted for *gate* on *issue_id*."""
     marker = _rework_allowance_marker(gate)

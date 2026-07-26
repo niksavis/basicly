@@ -30,10 +30,11 @@ import json
 import re
 import statistics
 import tomllib
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import policy, run_record
+from . import br, policy, run_record
 from .br import run_br as _run_br
 from .config import DEFAULT_BUILD_FACTOR, SizingConfig, load_sizing_config
 
@@ -323,14 +324,8 @@ def parse_scope_section(description: str) -> tuple[str, ...]:
     return tuple(scope)
 
 
-def bead_class_and_scope(repo_root: Path, bead_id: str) -> tuple[str, tuple[str, ...]] | None:
-    """The task class and declared scope of *bead_id*, or None when unreadable."""
-    try:
-        proc = _run_br(repo_root, ["show", bead_id, "--json"])
-        data = json.loads(proc.stdout)
-    except RuntimeError, ValueError, OSError:
-        return None
-    issue = data[0] if isinstance(data, list) and data else data
+def _class_and_scope_of(issue: object) -> tuple[str, tuple[str, ...]] | None:
+    """The task class and declared scope carried by one issue record, if both are there."""
     if not isinstance(issue, dict):
         return None
     task_class = issue.get("issue_type")
@@ -339,6 +334,16 @@ def bead_class_and_scope(repo_root: Path, bead_id: str) -> tuple[str, tuple[str,
         return None
     scope = parse_scope_section(description)
     return (task_class, scope) if scope else None
+
+
+def bead_class_and_scope(repo_root: Path, bead_id: str) -> tuple[str, tuple[str, ...]] | None:
+    """The task class and declared scope of *bead_id*, or None when unreadable."""
+    try:
+        proc = _run_br(repo_root, ["show", bead_id, "--json"])
+        data = json.loads(proc.stdout)
+    except RuntimeError, ValueError, OSError:
+        return None
+    return _class_and_scope_of(data[0] if isinstance(data, list) and data else data)
 
 
 def calibrated_build_factors(repo_root: Path, sizing: SizingConfig) -> dict[str, float]:
@@ -358,27 +363,37 @@ def calibrated_build_factors(repo_root: Path, sizing: SizingConfig) -> dict[str,
     dispatch that produced the sample (basicly-kjc5.30), so a sample means the same
     thing whenever it is read. Only a record written before that — which has no
     ``scope_tokens`` — falls back to measuring the current tree.
+
+    Samples come from the tracker as well as from local telemetry
+    (basicly-kjc5.50): ``.basicly/usage/`` is self-ignored, so reading it alone
+    meant a fresh clone calibrated from the seeds and two machines sized the same
+    plan differently. Every dispatch already writes a ``[harness-run]`` marker and
+    the export carries comments, so the shared ledger answers — and answers with
+    no br invocation, since the exported record also carries the task class and the
+    ``## Scope`` section each sample needs.
     """
     factors = dict(sizing.build_factors)
-    records = run_record.load_run_records(repo_root)
+    exported = {str(record["id"]): record for record in br.export_records(repo_root)}
+    records = run_record.dispatch_history(repo_root)
     if not records:
         return factors
 
     samples: dict[str, list[tuple[str, float]]] = {}
     for bead_id, history in records.items():
-        if not isinstance(history, list):
-            continue
         reported = [
             entry
             for entry in history
-            if isinstance(entry, dict)
-            and entry.get("estimated") is False
+            if entry.get("estimated") is False
             and isinstance(entry.get("tokens"), int)
             and entry["tokens"] > 0
         ]
         if not reported:
             continue
-        info = bead_class_and_scope(repo_root, bead_id)
+        # The exported record answers for free; only a bead the export does not
+        # carry (recorded locally but not yet flushed) costs a br read.
+        info = _class_and_scope_of(exported.get(bead_id)) or bead_class_and_scope(
+            repo_root, bead_id
+        )
         if info is None:
             continue
         task_class, scope = info
@@ -430,15 +445,42 @@ _SIZING_MARKER = "[harness-sizing]"
 _SIZING_HEADER = re.compile(rf"^{re.escape(_SIZING_MARKER)} key=(\S+)$")
 
 
-def sizing_key(spec: ChildSpec) -> str:
-    """Content key for a spec's frozen estimate.
+def sizing_key_for(task_class: str, scope: Iterable[str]) -> str:
+    """Content key for the estimate of a task class over a declared scope.
 
     Derived from exactly what the estimate is a function of — the task class picks
     the build factor and the declared scope sets the read cost. Deliberately not
     the title: retitling a child must not silently re-open a settled verdict.
+
+    Takes the content rather than a :class:`ChildSpec` so a *shipped bead* can key
+    into the same freeze (basicly-kjc5.50): by then the spec is long gone, but the
+    bead still carries its class and its ``## Scope``.
     """
-    payload = json.dumps({"type": spec.type, "scope": sorted(spec.scope)}, sort_keys=True)
+    payload = json.dumps({"type": task_class, "scope": sorted(scope)}, sort_keys=True)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
+
+
+def sizing_key(spec: ChildSpec) -> str:
+    """Content key for *spec*'s frozen estimate (see :func:`sizing_key_for`)."""
+    return sizing_key_for(spec.type, spec.scope)
+
+
+def _parse_sizing_marker(text: str) -> tuple[str, CostEstimate] | None:
+    """The key and estimate carried by one ``[harness-sizing]`` comment, if it is one."""
+    head, _, payload = text.partition("\n")
+    match = _SIZING_HEADER.match(head.strip())
+    if match is None:
+        return None
+    try:
+        data = json.loads(payload)
+        estimate = CostEstimate(
+            scope_tokens=int(data["scope_tokens"]),
+            overhead_tokens=int(data["overhead_tokens"]),
+            build_factor=float(data["build_factor"]),
+        )
+    except ValueError, TypeError, KeyError:
+        return None
+    return match.group(1), estimate
 
 
 def frozen_estimates(repo_root: Path, feature_id: str) -> dict[str, CostEstimate]:
@@ -457,21 +499,30 @@ def frozen_estimates(repo_root: Path, feature_id: str) -> dict[str, CostEstimate
     if not isinstance(comments, list):
         return frozen
     for text in (str(c.get("text", "")) for c in comments if isinstance(c, dict)):
-        head, _, payload = text.partition("\n")
-        match = _SIZING_HEADER.match(head.strip())
-        if match is None:
-            continue
-        try:
-            data = json.loads(payload)
-            estimate = CostEstimate(
-                scope_tokens=int(data["scope_tokens"]),
-                overhead_tokens=int(data["overhead_tokens"]),
-                build_factor=float(data["build_factor"]),
-            )
-        except ValueError, TypeError, KeyError:
-            continue
-        frozen.setdefault(match.group(1), estimate)
+        parsed = _parse_sizing_marker(text)
+        if parsed is not None:
+            frozen.setdefault(parsed[0], parsed[1])
     return frozen
+
+
+def forecast_for(repo_root: Path, task_class: str, scope: tuple[str, ...]) -> CostEstimate | None:
+    """The estimate frozen anywhere in the tracker export for this content, or None.
+
+    A shipped child cannot look up its own forecast by id: the governor freezes
+    estimates on the *feature*, because when it runs no child exists yet. The key
+    is content-derived, though, so the export answers without the parent link —
+    and answers in a fresh clone, which is the point (basicly-kjc5.50).
+
+    First match in export order wins, mirroring :func:`frozen_estimates`' rule that
+    the earliest freeze is the verdict of record.
+    """
+    key = sizing_key_for(task_class, scope)
+    for record in br.export_records(repo_root):
+        for text in br.export_comment_texts(record):
+            parsed = _parse_sizing_marker(text)
+            if parsed is not None and parsed[0] == key:
+                return parsed[1]
+    return None
 
 
 def freeze_estimate(repo_root: Path, feature_id: str, key: str, estimate: CostEstimate) -> None:

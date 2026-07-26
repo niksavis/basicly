@@ -411,6 +411,94 @@ def test_calibration_falls_back_to_the_tree_for_a_record_without_scope_tokens(
     assert factors["task"] == 4.0
 
 
+def _export(repo: Path, *records: dict) -> None:
+    """Write the committed tracker export — what a fresh clone has and nothing more."""
+    beads = repo / ".beads"
+    beads.mkdir(parents=True, exist_ok=True)
+    lines = [json.dumps(record) for record in records]
+    (beads / "issues.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _exported_dispatch(tokens: int, scope_tokens: int, stamp: str) -> dict:
+    payload = {
+        "tokens": tokens,
+        "estimated": False,
+        "scope_tokens": scope_tokens,
+        "timestamp": stamp,
+    }
+    return {"text": f"{run_record.MARKER} id=b-1#run-{stamp} phase=build\n{json.dumps(payload)}"}
+
+
+def test_calibration_reads_samples_from_the_tracker_in_a_fresh_clone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A clone with no local usage files still calibrates (basicly-kjc5.50).
+
+    ``.basicly/usage/`` is self-ignored, so reading it alone meant a fresh clone —
+    or a new teammate — forecast every class from the seed factors while the machine
+    that did the work knew better. Every dispatch also writes a ``[harness-run]``
+    marker and the export carries comments, so the shared ledger answers. It has to
+    answer without br as well: the export already carries the class and the scope.
+    """
+    _install(monkeypatch, lambda *_a, **_k: pytest.fail("calibration must not need br"))
+    body = decompose._child_body(_child("t", "src/a.py"))
+    _export(
+        tmp_path,
+        {
+            "id": "b-1",
+            "issue_type": "task",
+            "description": body,
+            "comments": [
+                _exported_dispatch(4_000, 1_000, "2026-07-26T10:00:00+00:00"),
+                _exported_dispatch(5_000, 1_000, "2026-07-26T11:00:00+00:00"),
+                _exported_dispatch(6_000, 1_000, "2026-07-26T12:00:00+00:00"),
+            ],
+        },
+    )
+    assert run_record.load_run_records(tmp_path) is None  # no local telemetry at all
+
+    factors = decompose.calibrated_build_factors(tmp_path, _sizing(calibration_min_samples=3))
+    assert factors["task"] == 5.0  # factors 4.0, 5.0, 6.0 -> median 5.0
+    assert factors["bug"] == 2.0  # other classes keep their seeds
+
+
+def test_calibration_counts_a_dispatch_in_both_places_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A locally-recorded dispatch and its marker are one sample, not two.
+
+    The union has to deduplicate or every local dispatch weighs double in the
+    median once it reaches the tracker — a silently different answer on the machine
+    that ran the work.
+    """
+    _write(tmp_path, "src/a.py", 4_000)  # 1_000 scope tokens
+    body = decompose._child_body(_child("t", "src/a.py"))
+    _install(monkeypatch, _FakeBrShow({"b-1": ("task", body)}))
+    _record_run_tokens(tmp_path, "b-1", 4_000, scope_tokens=1_000)
+    local = run_record.load_run_records(tmp_path)
+    assert local is not None
+    stamp = local["b-1"][0]["timestamp"]
+    _export(
+        tmp_path,
+        {
+            "id": "b-1",
+            "issue_type": "task",
+            "description": body,
+            # The same dispatch as above, plus two the tracker alone carries.
+            "comments": [
+                _exported_dispatch(4_000, 1_000, stamp),
+                _exported_dispatch(9_000, 1_000, "2026-07-26T11:00:00+00:00"),
+                _exported_dispatch(9_000, 1_000, "2026-07-26T12:00:00+00:00"),
+            ],
+        },
+    )
+
+    # Three distinct samples (4.0, 9.0, 9.0) -> median 9.0. Double-counting the
+    # shared one would make four (4.0, 4.0, 9.0, 9.0) and a median of 6.5.
+    factors = decompose.calibrated_build_factors(tmp_path, _sizing(calibration_min_samples=3))
+    assert factors["task"] == 9.0
+
+
 # --- Frozen estimates (basicly-kjc5.30) -------------------------------------
 
 
@@ -501,6 +589,36 @@ def test_govern_does_not_freeze_a_refused_plan(
         decompose.govern_working_set(tmp_path, (_child("huge", "src/big.py"),), feature_id="feat")
 
     assert fake.comments == {}
+
+
+def test_forecast_for_finds_the_freeze_by_content_in_the_export(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A shipped child can look up the forecast that was made for it (basicly-kjc5.50).
+
+    The governor freezes estimates on the *feature*, because when it runs no child
+    exists — so a shipped bead has no id to look itself up by. The key is derived
+    from the content the estimate is a function of, and the export carries every
+    marker, so the lookup needs neither the parent link nor br.
+    """
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _write(tmp_path, "src/a.py", 16_000)  # 4_000 tokens x seed 3.0, inside the band
+    spec = _child("a", "src/a.py")
+    estimates = decompose.govern_working_set(tmp_path, (spec,), feature_id="feat")
+    # The freeze is on the feature; the export is how it reaches everyone else.
+    _export(tmp_path, {"id": "feat", "comments": [{"text": fake.comments["feat"][0]}]})
+
+    _install(monkeypatch, lambda *_a, **_k: pytest.fail("the forecast lookup must not need br"))
+    assert decompose.forecast_for(tmp_path, "task", ("src/a.py",)) == estimates[0]
+    # A different class or scope is a different estimate, never a near-enough one.
+    assert decompose.forecast_for(tmp_path, "bug", ("src/a.py",)) is None
+    assert decompose.forecast_for(tmp_path, "task", ("src/b.py",)) is None
+
+
+def test_forecast_for_without_an_export(tmp_path: Path) -> None:
+    """No freeze to find means no forecast, and the caller records the actual alone."""
+    assert decompose.forecast_for(tmp_path, "task", ("src/a.py",)) is None
 
 
 def test_govern_refuses_oversized_child_before_recording(
