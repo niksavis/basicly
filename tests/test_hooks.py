@@ -57,6 +57,7 @@ def test_manifest_lists_every_catalog_hook() -> None:
         "pre-commit-script",
         "catalog-lint",
         "secret-scan",
+        "tracker-path-scan",
         "commit-msg-script",
         "beads-commit-msg-script",
         "pre-push-script",

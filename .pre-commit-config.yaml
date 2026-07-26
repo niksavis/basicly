@@ -1,6 +1,19 @@
 repos:
 - repo: local
   hooks:
+  - id: markdownlint
+    name: markdownlint
+    # Repo-wide run through .markdownlint-cli2.yaml (globs + generated-file
+    # ignores) instead of staged filenames, so explicit paths can't bypass the
+    # config's ignore list. npx resolves the local devDependency.
+    entry: npx --no-install markdownlint-cli2
+    language: system
+    stages:
+    - pre-commit
+    pass_filenames: false
+    files: \.md$
+- repo: local
+  hooks:
   - id: identity-guard
     name: identity-guard
     entry: uv run python .basicly/core/hooks/identity-guard.py
@@ -28,6 +41,14 @@ repos:
   - id: secret-scan
     name: secret-scan
     entry: uv run python .basicly/core/hooks/secret-scan.py
+    language: system
+    stages:
+    - pre-commit
+    pass_filenames: false
+    always_run: true
+  - id: tracker-path-scan
+    name: tracker-path-scan
+    entry: uv run python .basicly/core/hooks/tracker-path-scan.py
     language: system
     stages:
     - pre-commit
@@ -63,14 +84,3 @@ repos:
     - pre-commit
     pass_filenames: false
     always_run: true
-  - id: markdownlint
-    name: markdownlint
-    # Repo-wide run through .markdownlint-cli2.yaml (globs + generated-file
-    # ignores) instead of staged filenames, so explicit paths can't bypass the
-    # config's ignore list. npx resolves the local devDependency.
-    entry: npx --no-install markdownlint-cli2
-    language: system
-    stages:
-    - pre-commit
-    pass_filenames: false
-    files: \.md$

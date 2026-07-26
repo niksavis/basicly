@@ -10,11 +10,14 @@ built against.
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import subprocess  # nosec B404
 import sys
 from pathlib import Path
+
+from basicly import redact
 
 # The oldest br this harness is exercised against (see `br --version`).
 # The probe warns below this floor; it never blocks — br's core commands
@@ -78,3 +81,103 @@ def try_run_br(repo_root: Path, args: list[str]) -> subprocess.CompletedProcess[
     return subprocess.run(  # nosec B603
         [br_path, *args], cwd=repo_root, capture_output=True, text=True, check=False
     )
+
+
+# --- Export scrubbing (basicly-vkh0.5) --------------------------------------
+
+# br stamps every record it writes with the absolute canonical path of the
+# workspace that produced it. The export is committed and this repo is
+# distributed, so the field publishes each contributor's home directory layout
+# to every consumer clone — a breach of the hard constraint that no
+# machine-specific path or username is ever committed, and a portability defect
+# in its own right (a path that means something on one machine is a wrong answer
+# on another). br documents the field as optional: "older databases and
+# hand-edited JSONL records without this field are valid" (`br schema issue`),
+# and nothing in the harness reads it.
+#
+# Stripping it here rather than asking br not to emit it is deliberate: br has no
+# config knob for the field, and an upstream defect is requirements input for our
+# own replacement, never something we patch outside this repo. The requirement is
+# recorded for the replacement in docs/design/work-tracker.md — a record is
+# path-free, and provenance is the repo identity rather than a filesystem
+# location.
+MACHINE_PATH_FIELD = "source_repo_path"
+
+# A path can also reach the export as ordinary text — pasted into a description
+# or a comment. That half cannot be fixed by asking br to drop a field, and it
+# cannot be edited away either: `br comments` offers only `add` and `list`, so a
+# path already recorded in a comment has no removal path through the documented
+# CLI (another requirement carried to basicly-vkh0.6 — the replacement owes a
+# redaction path for recorded text).
+#
+# The export is therefore the layer where this is fixed. The local database is
+# git-ignored and keeps full fidelity; only the published artifact is redacted,
+# so nobody working in the repo loses the original.
+
+
+def _dump_record(record: dict[str, object]) -> str:
+    """Serialize *record* the way br writes the export.
+
+    Compact separators with UTF-8 left unescaped: every untouched record
+    round-trips byte-identically under these, so a scrub's diff is exactly the
+    fields it changed and nothing else.
+    """
+    return json.dumps(record, separators=(",", ":"), ensure_ascii=False)
+
+
+def _redact_paths(value: object) -> object:
+    """Recursively redact machine-specific paths in every string inside *value*.
+
+    Comments and dependency rows are nested under the record, so a leak is not
+    confined to a top-level field.
+    """
+    if isinstance(value, str):
+        return redact.redact_machine_paths(value)
+    if isinstance(value, dict):
+        return {key: _redact_paths(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_redact_paths(item) for item in value]
+    return value
+
+
+def scrub_export(repo_root: Path) -> int:
+    """Strip machine-specific paths from the tracker export; return records changed.
+
+    Two shapes, one pass: br's :data:`MACHINE_PATH_FIELD` is removed outright, and
+    any path left in text is redacted to a placeholder.
+
+    A no-op (returning 0, leaving the file untouched) when the export is absent or
+    already clean, and a line that will not parse is passed through verbatim —
+    this runs on the commit path, so it must never be the reason tracker state
+    fails to land. The companion ``tracker-path-scan`` hook is the gate that makes
+    a leak visible; this is only the repair.
+    """
+    export = repo_root / ".beads" / "issues.jsonl"
+    try:
+        raw = export.read_text(encoding="utf-8")
+    except OSError:
+        return 0
+    scrubbed: list[str] = []
+    changed = 0
+    for line in raw.splitlines():
+        if not line.strip():
+            scrubbed.append(line)
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            scrubbed.append(line)
+            continue
+        if not isinstance(record, dict):
+            scrubbed.append(line)
+            continue
+        record.pop(MACHINE_PATH_FIELD, None)
+        rendered = _dump_record({key: _redact_paths(item) for key, item in record.items()})
+        scrubbed.append(rendered)
+        if rendered != line:
+            changed += 1
+    if not changed:
+        return 0
+    trailer = "\n" if raw.endswith("\n") else ""
+    export.write_text("\n".join(scrubbed) + trailer, encoding="utf-8")
+    return changed

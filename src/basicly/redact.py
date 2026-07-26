@@ -81,3 +81,49 @@ def redact_secrets(text: str) -> str:
 
         text = pattern.sub(_sub, text)
     return text
+
+
+# --- Machine-specific paths (basicly-vkh0.5) --------------------------------
+
+# Shapes that identify a filesystem location on one particular machine. A path
+# like this is published when it reaches a committed artifact, and it is a wrong
+# answer everywhere else: the repo's hard constraint is that no machine-specific
+# path, username, or hostname is ever committed.
+#
+# These are matched against *parsed* strings — a JSON value after decoding, not
+# the escaped source text — so one literal backslash is one backslash here.
+# Mirrored by the ``tracker-path-scan`` pre-commit hook, which parses each record
+# for exactly that reason; ``test_tracker_path_scan`` asserts the two sets stay
+# equal, so this is a checked mirror rather than a convention.
+# Where a path stops. Path characters are almost unrestricted, so the tail runs
+# to whitespace or the punctuation that ends a path in prose. Redacting the whole
+# path, not just its user-identifying head, is deliberate: the tail is the
+# directory layout, which is machine-specific in its own right.
+_PATH_TAIL = r"[^\s\"'`,;)\]}]*"
+
+MACHINE_PATH_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    # A POSIX or macOS home directory: the segment after it is a username.
+    ("posix-home-path", re.compile(rf"/(?:home|Users)/[A-Za-z0-9._-]+{_PATH_TAIL}")),
+    # A Windows UNC/extended-length prefix, checked before the bare drive rule so
+    # the longer form wins the label and the report names the shape found.
+    ("windows-unc-path", re.compile(rf"\\\\\?\\[A-Za-z]:\\{_PATH_TAIL}")),
+    # A Windows drive-rooted path. Deliberately not narrowed to `\Users\`: the
+    # leak this rule was written for was `\\?\C:\Development\basicly`, which
+    # carries a working-directory layout and no username at all.
+    ("windows-drive-path", re.compile(rf"[A-Za-z]:\\{_PATH_TAIL}")),
+)
+
+
+def redact_machine_paths(text: str) -> str:
+    """Return *text* with every machine-specific path replaced by a placeholder.
+
+    Fail-safe in the same direction as :func:`redact_secrets`: over-redaction
+    costs a little detail, under-redaction publishes someone's home directory. A
+    reader who needs the original has the local tracker database, which is
+    git-ignored and keeps full fidelity — only the committed export is redacted.
+    """
+    if not text:
+        return text
+    for rule, pattern in MACHINE_PATH_RULES:
+        text = pattern.sub(_placeholder(rule), text)
+    return text
