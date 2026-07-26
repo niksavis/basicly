@@ -44,7 +44,7 @@ import contextlib
 import json
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from . import (
@@ -313,7 +313,24 @@ def _on_ship(ctx: _Ctx) -> AdvanceResult:
     detail = "worktree torn down and issue closed"
     if committed:
         detail += "; tracker state committed"
+    else:
+        # The ship itself succeeded — the code merged and the bead closed — so this
+        # is a warning on a completed step, not a failure. What it must not be is
+        # silent: an unrelated dirty file in base once made this skip the closing
+        # chore(beads) commit with no hint at all, and the operator pushed the code
+        # without the tracker state and found out later (basicly-f7li).
+        detail += _skipped_tracker_suffix(ctx)
     return _moved(ctx, "done", "tore-down", detail)
+
+
+def _skipped_tracker_suffix(ctx: _Ctx) -> str:
+    """`; <warning>` when foreign dirt blocked the tracker commit, else empty.
+
+    Empty covers the ordinary case of nothing pending to commit, which needs no
+    words — only a *declined* commit is news.
+    """
+    warning = merge.skipped_tracker_commit_warning(ctx.repo_root)
+    return f"; {warning}" if warning else ""
 
 
 # --- Build helpers ----------------------------------------------------------
@@ -338,13 +355,20 @@ def _start_build_leaf(ctx: _Ctx) -> AdvanceResult:
     # Publish the claim: roll the pending tracker-only dirt (status, work type,
     # classify approval) into a chore commit now, so a teammate pulling the
     # repo sees the claim from the moment work starts, not at landing.
-    merge.commit_tracker_state(
+    claimed = merge.commit_tracker_state(
         ctx.repo_root, ctx.issue_id, action="record the claim before provisioning"
     )
     name = _worktree_name(ctx.issue_id)
     session = worktree.create(name, base=wt_config.base_branch, repo_root=ctx.repo_root)
     _bind_worktree(ctx, name, session.branch)
-    return _dispatch_runner(ctx, name, Path(session.worktree_path))
+    dispatched = _dispatch_runner(ctx, name, Path(session.worktree_path))
+    if claimed:
+        return dispatched
+    # Same silence as the ship case, with a different cost: an unpublished claim is
+    # invisible to a teammate pulling the repo, so two sessions can start the same
+    # bead (basicly-f7li).
+    suffix = _skipped_tracker_suffix(ctx)
+    return replace(dispatched, detail=dispatched.detail + suffix) if suffix else dispatched
 
 
 def _dispatch_runner(ctx: _Ctx, name: str, cwd: Path) -> AdvanceResult:

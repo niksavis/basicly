@@ -200,6 +200,39 @@ def reconcile_beads(repo_root: Path) -> None:
     br.try_run_br(repo_root, ["sync", "--merge"])
 
 
+def foreign_dirt(repo_root: Path) -> tuple[str, ...]:
+    """Dirty paths in *repo_root* that are not the loop's own tracker state.
+
+    Anything outside ``.beads/`` is somebody's uncommitted work, which is why
+    :func:`commit_tracker_state` declines to sweep it into a ``chore(beads)``
+    commit. Public because a caller that was declined has to be able to *say* what
+    blocked it: reporting "the tracker state was not committed" without naming the
+    paths leaves an operator to rediscover them (basicly-f7li).
+    """
+    lines = git(["status", "--porcelain"], cwd=repo_root).stdout.splitlines()
+    paths = [line[3:] for line in lines if line.strip()]
+    return tuple(path for path in paths if not path.startswith(".beads/"))
+
+
+def skipped_tracker_commit_warning(repo_root: Path) -> str:
+    """The warning for an advance whose tracker-state commit was declined.
+
+    Empty when nothing foreign is dirty — that case is simply "there was nothing
+    to commit", which is not worth a word. Otherwise it names the blocking paths
+    and the recovery, because the failure mode this exists to stop was silent: the
+    advance reported a clean ship, and the operator pushed the code without the
+    tracker state and learned about it later as unexplained dirt.
+    """
+    foreign = foreign_dirt(repo_root)
+    if not foreign:
+        return ""
+    return (
+        "WARNING tracker state NOT committed — these paths are dirty in the base "
+        f"checkout and are not the loop's to commit: {', '.join(foreign)}; stash or "
+        "commit them and re-run the advance to publish the tracker state"
+    )
+
+
 def commit_tracker_state(
     repo_root: Path, bead: str, *, action: str = "sync tracker state for the harness loop"
 ) -> bool:
@@ -210,6 +243,9 @@ def commit_tracker_state(
     dirt in base is expected engine state, not the agent's business — roll it
     into one chore commit instead of blocking the advance on it. Any non-beads
     dirt still blocks: that is someone's uncommitted work.
+
+    A caller that gets ``False`` owes the operator an explanation — see
+    :func:`skipped_tracker_commit_warning`.
     """
     lines = git(["status", "--porcelain"], cwd=repo_root).stdout.splitlines()
     paths = [line[3:] for line in lines if line.strip()]
