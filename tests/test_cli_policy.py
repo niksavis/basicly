@@ -202,6 +202,113 @@ def test_loop_answer_refuses_unknown_id(
     assert "refused" in capsys.readouterr().err
 
 
+# --- An answered `retry` is carried out, not just recorded (basicly-4tjt) -----
+
+
+_CONFIG = PolicyConfig(required_gates=("verify",), max_rework=2)
+
+
+def _escalate(gate: str = "merge") -> decisions.DecisionItem:
+    """Spend the budget on *gate* and enqueue the escalation the loop would."""
+    for _ in range(_CONFIG.max_rework):
+        policy.record_rework(Path(), "basicly-x", gate)
+    return decisions.enqueue(
+        Path(),
+        "basicly-x",
+        policy.REWORK_ESCALATION_KIND,
+        policy.rework_escalation_question(gate),
+    )
+
+
+def test_answering_a_rework_escalation_with_retry_permits_one_more_attempt(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The reported defect: the answer was recorded and the lane still could not move."""
+    _install_decisions_fake(monkeypatch)
+    item = _escalate()
+    assert policy.should_escalate(Path(), "basicly-x", "merge", _CONFIG) is True
+
+    assert cli.main(["loop", "answer", item.decision_id, "retry", "--by", "niksa"]) == 0
+    assert "granted one further attempt on gate 'merge'" in capsys.readouterr().out
+    assert policy.should_escalate(Path(), "basicly-x", "merge", _CONFIG) is False
+
+
+def test_a_retry_answer_may_carry_a_rationale(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Operators explain themselves; the leading token is what decides."""
+    _install_decisions_fake(monkeypatch)
+    item = _escalate()
+    answer = "retry - the gate failed on the br clock defect, not on this lane"
+    assert cli.main(["loop", "answer", item.decision_id, answer, "--by", "niksa"]) == 0
+    assert "granted one further attempt" in capsys.readouterr().out
+
+
+def test_answering_with_park_grants_nothing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Only one of the three offered choices extends the budget."""
+    _install_decisions_fake(monkeypatch)
+    item = _escalate()
+    assert cli.main(["loop", "answer", item.decision_id, "park", "--by", "niksa"]) == 0
+    assert "granted" not in capsys.readouterr().out
+    assert policy.should_escalate(Path(), "basicly-x", "merge", _CONFIG) is True
+
+
+def test_answering_with_re_dispatch_is_not_read_as_retry(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`re-dispatch` shares a prefix with nothing, but the guard must be explicit."""
+    _install_decisions_fake(monkeypatch)
+    item = _escalate()
+    assert cli.main(["loop", "answer", item.decision_id, "re-dispatch", "--by", "niksa"]) == 0
+    assert "granted" not in capsys.readouterr().out
+
+
+def test_a_decider_answer_does_not_extend_its_own_rework_budget(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An autonomy grant may dispose of the question; the engine still holds the budget."""
+    _install_decisions_fake(monkeypatch)
+    item = _escalate()
+    by = f"{decisions.DECIDER_BY_PREFIX}claude"
+    assert cli.main(["loop", "answer", item.decision_id, "retry", "--by", by]) == 0
+    assert "granted" not in capsys.readouterr().out
+    assert policy.should_escalate(Path(), "basicly-x", "merge", _CONFIG) is True
+
+
+def test_a_retry_on_a_non_rework_decision_grants_nothing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Only a rework escalation carries a gate to forgive."""
+    _install_decisions_fake(monkeypatch)
+    item = decisions.enqueue(Path(), "basicly-x", "needs-input", "retry which db?")
+    assert cli.main(["loop", "answer", item.decision_id, "retry", "--by", "niksa"]) == 0
+    assert "granted" not in capsys.readouterr().out
+
+
+def test_policy_rework_allow_retry_is_the_operators_direct_lever(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The escalation is answerable out of band too, without touching max_rework."""
+    _install_decisions_fake(monkeypatch)
+    _escalate("verify")
+    assert cli.main(["policy", "rework", "basicly-x", "--gate", "verify", "--allow-retry"]) == 0
+    out = capsys.readouterr().out
+    assert "Granted one further attempt" in out
+    assert "may retry" in out
+    assert "forgiven" in out
+
+
+def test_policy_rework_refuses_record_and_allow_retry_together(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Charging and forgiving in one call is a contradiction, not a no-op."""
+    _install_decisions_fake(monkeypatch)
+    assert cli.main(["policy", "rework", "basicly-x", "--record", "--allow-retry"]) == 1
+    assert "opposites" in capsys.readouterr().err
+
+
 # --- policy scaffold / the DoR refusal's own remedy (basicly-kjc5.44) --------
 
 

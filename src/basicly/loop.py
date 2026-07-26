@@ -841,8 +841,8 @@ def _rework(
         decisions.enqueue(
             ctx.repo_root,
             target,
-            "escalation",
-            f"rework cap reached on gate {gate}: retry, re-dispatch, or park?",
+            policy.REWORK_ESCALATION_KIND,
+            policy.rework_escalation_question(gate),
             reason,
         )
     return _blocked(
