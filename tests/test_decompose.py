@@ -28,9 +28,15 @@ class _FakeBr:
     seeded with one — exactly enough to exercise the decomposer.
     """
 
-    def __init__(self, *, cycles: list[list[str]] | None = None) -> None:
+    def __init__(
+        self, *, cycles: list[list[str]] | None = None, labels: list[str] | None = None
+    ) -> None:
         self.cycles = cycles or []
+        # The labels the *parent* feature carries, which children inherit.
+        self.labels = labels
         self.created: list[tuple[str, str, str]] = []  # (id, title, body)
+        self.create_args: list[list[str]] = []  # the full argv, for flag assertions
+        self.shown: list[str] = []  # ids read back, to assert the read is not per-child
         self.edges: list[tuple[str, str]] = []  # (issue, depends_on)
         self.comments: dict[str, list[str]] = {}
         self._counter = 0
@@ -38,6 +44,11 @@ class _FakeBr:
     def __call__(self, _repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
         if args[:1] == ["create"]:
             return self._create(args)
+        if args[:1] == ["show"]:
+            self.shown.append(args[1])
+            # A *list* of records, which is what the installed br actually
+            # returns — the fake said dict until the real binary was exercised.
+            return _Proc(json.dumps([{"id": args[1], "labels": self.labels}]))
         if args[:2] == ["dep", "add"]:
             self.edges.append((args[2], args[3]))
             return _Proc("")
@@ -57,6 +68,7 @@ class _FakeBr:
         title = args[1]
         body = args[args.index("-d") + 1]
         self.created.append((issue_id, title, body))
+        self.create_args.append(list(args))
         return _Proc(json.dumps({"id": issue_id}))
 
 
@@ -181,6 +193,57 @@ def test_decompose_parallel_children_get_no_sibling_deps(
     # Every child body carries the DoR section and its scope.
     assert all("## Acceptance Criteria" in body for _id, _title, body in fake.created)
     assert "src/a.py" in fake.created[0][2]
+
+
+def test_decompose_children_inherit_the_features_labels(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A child of a phase-labelled feature must stay in that phase.
+
+    Phase membership is a label rather than a re-parenting, so a child created
+    without the parent's labels is well-formed, passes its own DoR, and is absent
+    from every ``br list --label phase-N`` — the feature stays in the phase while
+    none of the work under it does (basicly-jr0l.26).
+    """
+    fake = _FakeBr(labels=["phase-2", "determinism"])
+    _install(monkeypatch, fake)
+    children = (_child("a", "src/a.py"), _child("b", "src/b.py"))
+
+    decompose.decompose(tmp_path, "feat", children)
+
+    assert len(fake.create_args) == 2
+    for args in fake.create_args:
+        assert args[args.index("-l") + 1] == "phase-2,determinism"
+
+
+def test_decompose_reads_the_feature_labels_once_not_once_per_child(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An external br invocation is ~175x an in-process read, and the answer cannot change."""
+    fake = _FakeBr(labels=["phase-2"])
+    _install(monkeypatch, fake)
+    children = (_child("a", "src/a.py"), _child("b", "src/b.py"), _child("c", "src/c.py"))
+
+    decompose.decompose(tmp_path, "feat", children)
+
+    assert fake.shown == ["feat"]
+
+
+def test_decompose_unlabelled_feature_sends_no_empty_label_flag(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``-l ''`` is not the same request as omitting ``-l``.
+
+    A feature that has never been labelled reads back as null rather than an
+    empty list, and both must produce an argv with no ``-l`` at all.
+    """
+    for labels in (None, []):
+        fake = _FakeBr(labels=labels)
+        _install(monkeypatch, fake)
+
+        decompose.decompose(tmp_path, "feat", (_child("a", "src/a.py"),))
+
+        assert "-l" not in fake.create_args[0], f"labels={labels!r} emitted an -l flag"
 
 
 def test_decompose_overlapping_children_are_chained_in_order(

@@ -685,21 +685,40 @@ class DecomposeResult:
         return len(self.groups)
 
 
-def _create_child(repo_root: Path, feature_id: str, spec: ChildSpec) -> str:
-    proc = _run_br(
-        repo_root,
-        [
-            "create",
-            spec.title,
-            "-t",
-            spec.type,
-            "--parent",
-            feature_id,
-            "-d",
-            _child_body(spec),
-            "--json",
-        ],
-    )
+def feature_labels(repo_root: Path, feature_id: str) -> tuple[str, ...]:
+    """The labels on *feature_id*, to be inherited by each of its children.
+
+    Read once per decomposition rather than once per child: an external ``br``
+    invocation is ~175x an in-process read, and the answer cannot change
+    mid-decomposition.
+    """
+    proc = _run_br(repo_root, ["show", feature_id, "--json"])
+    payload = json.loads(proc.stdout)
+    # ``br show --json`` returns a *list* of records, not a single object —
+    # verified against the installed binary. A dict is tolerated too so this does
+    # not become the only reader that breaks if that ever changes.
+    record = payload
+    if isinstance(payload, list):
+        record = payload[0] if payload else {}
+    raw = record.get("labels") or [] if isinstance(record, dict) else []
+    return tuple(str(label) for label in raw if str(label).strip())
+
+
+def _create_child(
+    repo_root: Path, feature_id: str, spec: ChildSpec, labels: tuple[str, ...] = ()
+) -> str:
+    # A child inherits the parent's labels because phase membership is a label
+    # rather than a re-parenting, so an unlabelled child is silently absent from
+    # ``br list --label phase-N`` — the parent feature stays in the phase while
+    # none of the work under it does (basicly-jr0l.26; the same root cause as
+    # basicly-jr0l.25 on the overrun path). ``ChildSpec`` deliberately cannot
+    # declare labels: letting an agent-authored plan re-declare them would let a
+    # plan move work between phases.
+    args = ["create", spec.title, "-t", spec.type, "--parent", feature_id]
+    if labels:
+        args += ["-l", ",".join(labels)]
+    args += ["-d", _child_body(spec), "--json"]
+    proc = _run_br(repo_root, args)
     return str(json.loads(proc.stdout)["id"])
 
 
@@ -718,10 +737,11 @@ def decompose(repo_root: Path, feature_id: str, children: tuple[ChildSpec, ...])
     The sizing governor runs first (D8): every child's context cost must land
     inside the configured working-set band or the whole plan is refused before
     anything is recorded. Each child is then created with acceptance criteria
-    (so DoR passes), and any two children whose declared scopes overlap are
-    serialized by a ``blocks`` chain in declared order. The resulting graph is
-    checked for cycles before the result — carrying the parallel groups and
-    serial order — is returned.
+    (so DoR passes) and the parent's labels (so it stays in the parent's phase),
+    and any two children whose declared scopes overlap are serialized by a
+    ``blocks`` chain in declared order. The resulting graph is checked for cycles
+    before the result — carrying the parallel groups and serial order — is
+    returned.
     """
     if not children:
         raise ValueError("decompose needs at least one child spec")
@@ -730,7 +750,8 @@ def decompose(repo_root: Path, feature_id: str, children: tuple[ChildSpec, ...])
     groups = group_children(children)
     predecessors = chain_predecessors(groups)
 
-    issue_ids = [_create_child(repo_root, feature_id, spec) for spec in children]
+    inherited = feature_labels(repo_root, feature_id)
+    issue_ids = [_create_child(repo_root, feature_id, spec, inherited) for spec in children]
 
     created: list[CreatedChild] = []
     for index, spec in enumerate(children):
