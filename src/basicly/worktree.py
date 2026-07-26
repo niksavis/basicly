@@ -36,11 +36,18 @@ def run(
     *,
     cwd: Path | str | None = None,
     check: bool = True,
+    env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """Run a subprocess with explicit utf-8 decoding (Windows defaults to cp1252)."""
+    """Run a subprocess with explicit utf-8 decoding (Windows defaults to cp1252).
+
+    *env* replaces the child's environment wholesale when given (the release
+    regeneration needs PYTHONPATH pointed at the repo being released); omitting it
+    inherits this process's, which is what every other caller wants.
+    """
     proc = subprocess.run(  # nosec B603
         args,
         cwd=cwd,
+        env=env,
         check=False,
         text=True,
         encoding="utf-8",

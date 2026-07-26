@@ -7,6 +7,43 @@ description: Prepare and publish semantic version releases using this repository
 
 Run the repository release flow end-to-end with semantic tags and dated changelog sections.
 
+## Use `basicly release` — do not hand-run the preparation steps
+
+Everything up to and including the annotated tag is automated (`basicly release`,
+component 9). Run it instead of typing the steps below:
+
+```sh
+basicly release 0.6.0 --issue <beads-id> --dry-run   # pre-flight; writes nothing
+basicly release 0.6.0 --issue <beads-id>             # bump, regenerate, pins, changelog, commit, tag
+```
+
+It bumps the single-sourced `__version__`, regenerates the version-stamped
+projections, rewrites the `@vX.Y.Z` pins in `README.md`, `docs/index.html` **and both
+bootstrap shims**, upserts the dated `CHANGELOG.md` section, commits, and creates the
+annotated tag. It **never pushes**.
+
+Three things it deliberately does not do, which stay with you:
+
+- **Push.** Publishing is irreversible; run the two `git push` commands it prints.
+- **Curate the changelog.** It guarantees the section exists and is dated and
+  lint-clean; the `### Highlights` prose is yours to write before pushing.
+- **Decide the version.** Pass it explicitly; the command refuses one that does not
+  move forward.
+
+It refuses before writing anything on a dirty tree, a non-forward version, an
+existing tag, a bad date, an unknown `--issue`, a commit subject the `commit-msg`
+gate would reject, or a linked worktree (tags are shared with the primary
+checkout). A failure after the first write restores the tree, so a half-released
+repo needs no `git reset --hard`.
+
+`--autonomous --root <epic>` is the delegated form and needs an **L3** grant inside
+its spend ceiling with green lights-out preconditions; pass `--shipping <node>` to
+name the node whose gates are checked, because an open epic's own verify gate is
+never green.
+
+The manual workflow below remains the reference for what the command automates and
+for the publication half.
+
 ## Scope
 
 This skill handles release preparation and publication for this repository.
