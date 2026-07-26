@@ -441,6 +441,12 @@ class Observation:
     grant_level: str | None = None
     token_budget: int | None = None
     spent_tokens: int = 0
+    # Where the session's wall clock actually went (basicly-kjc5.51). Waiting on a
+    # human dominates it, and the run record measures only dispatch — so the two
+    # are reported side by side and never added together.
+    human_wait_s: int = 0
+    delegated_wait_s: int = 0
+    dispatch_s: float = 0.0
 
     @property
     def supervised(self) -> bool:
@@ -452,10 +458,11 @@ def observe(repo_root: Path, root_issue: str) -> Observation:
     """Snapshot the session a client just attached to — a pure read (design 7.3).
 
     Layer 3's status half. It is the same derivation the supervisor runs on
-    every tick (:func:`derive_session`), plus the four facts a client cannot get
+    every tick (:func:`derive_session`), plus the facts a client cannot get
     from the tracker alone: who holds the lock and how fresh their heartbeat is,
-    what each in-flight lane last ran, and how much of the grant's token budget
-    (D3) the session has spent.
+    what each in-flight lane last ran, how much of the grant's token budget
+    (D3) the session has spent, and where its wall clock went — human wait time
+    reported apart from dispatch time (D11, basicly-kjc5.51).
 
     Takes no lock and writes nothing, so any number of clients may attach while
     the supervisor works — and attaching to an *unsupervised* root is a valid
@@ -464,6 +471,7 @@ def observe(repo_root: Path, root_issue: str) -> Observation:
     state = derive_session(repo_root, root_issue)
     holder = read_holder(repo_root)
     grant = policy.active_grant(repo_root, root_issue)
+    wait = policy.session_wait_summary(repo_root, root_issue)
     return Observation(
         root_issue=state.root_issue,
         root_status=state.root_status,
@@ -478,6 +486,9 @@ def observe(repo_root: Path, root_issue: str) -> Observation:
         grant_level=grant.level if grant is not None else None,
         token_budget=grant.token_budget if grant is not None else None,
         spent_tokens=policy.session_spend_tokens(repo_root, root_issue),
+        human_wait_s=wait.human_wait_s,
+        delegated_wait_s=wait.delegated_wait_s,
+        dispatch_s=wait.dispatch_s,
     )
 
 
