@@ -719,3 +719,45 @@ def test_merge_queue_spends_no_rework_on_an_unreliable_gate(
     assert results[1].result.merged is True
     # Forgiven, but not silently: the flake is recorded so a chronic one is visible.
     assert [(a[1], a[2]) for a in flakes] == [("b1", merge.MERGE_GATE)]
+
+
+# --- Naming what blocked a tracker-state commit (basicly-f7li) ----------------
+
+
+def test_foreign_dirt_names_only_the_paths_outside_beads(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The loop's own tracker state is not foreign; anything else is."""
+    fake = _FakeGit({"status": _Proc(0, " M src/app.py\n M .beads/issues.jsonl\n?? .gitignore\n")})
+    monkeypatch.setattr(merge, "git", fake)
+
+    assert merge.foreign_dirt(tmp_path) == ("src/app.py", ".gitignore")
+
+
+def test_foreign_dirt_is_empty_for_a_tracker_only_tree(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A commit that would have succeeded has nothing foreign to report."""
+    monkeypatch.setattr(merge, "git", _FakeGit({"status": _Proc(0, " M .beads/issues.jsonl\n")}))
+    assert merge.foreign_dirt(tmp_path) == ()
+
+
+def test_the_warning_names_the_blocking_paths_and_the_recovery(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An operator must not have to rediscover what stopped the commit."""
+    monkeypatch.setattr(merge, "git", _FakeGit({"status": _Proc(0, " M .gitignore\n")}))
+
+    warning = merge.skipped_tracker_commit_warning(tmp_path)
+
+    assert "tracker state NOT committed" in warning
+    assert ".gitignore" in warning
+    assert "stash or commit" in warning and "re-run the advance" in warning
+
+
+def test_the_warning_is_empty_when_nothing_foreign_is_dirty(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A declined commit on a clean tree is 'nothing pending', which needs no words."""
+    monkeypatch.setattr(merge, "git", _FakeGit({"status": _Proc(0, "")}))
+    assert merge.skipped_tracker_commit_warning(tmp_path) == ""

@@ -1509,3 +1509,71 @@ def test_classify_leaf_blocks_at_the_concurrency_cap(
     result = _advance(tmp_path)
     assert result.blocked and "concurrency cap" in result.detail
     assert "n" not in created
+
+
+# --- A skipped tracker-state commit is never silent (basicly-f7li) ------------
+
+
+def test_ship_warns_and_names_the_paths_when_the_tracker_commit_is_skipped(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The reported defect: it printed a clean ship and the operator pushed without the tracker."""
+    at(_state("ship", worktree=WorktreeBinding("i", "harness/i")))
+    monkeypatch.setattr(loop, "_worktree_landed", lambda *_a, **_k: True)
+    monkeypatch.setattr(worktree, "cleanup", lambda *_a, **_k: None)
+    monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: None)
+    monkeypatch.setattr(loop.merge, "commit_tracker_state", lambda *_a, **_k: False)
+    monkeypatch.setattr(loop.merge, "foreign_dirt", lambda _r: (".gitignore", "src/x.py"))
+
+    result = _advance(tmp_path)
+
+    assert result.to_phase == "done" and result.action == "tore-down"  # the ship did happen
+    assert "tracker state NOT committed" in result.detail
+    assert ".gitignore" in result.detail and "src/x.py" in result.detail
+    assert "re-run the advance" in result.detail  # the recovery
+    assert "tracker state committed" not in result.detail.replace("NOT committed", "")
+
+
+def test_ship_stays_quiet_when_there_was_simply_nothing_to_commit(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A declined commit with no foreign dirt is 'nothing pending', which is not news."""
+    at(_state("ship", worktree=WorktreeBinding("i", "harness/i")))
+    monkeypatch.setattr(loop, "_worktree_landed", lambda *_a, **_k: True)
+    monkeypatch.setattr(worktree, "cleanup", lambda *_a, **_k: None)
+    monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: None)
+    monkeypatch.setattr(loop.merge, "commit_tracker_state", lambda *_a, **_k: False)
+    monkeypatch.setattr(loop.merge, "foreign_dirt", lambda _r: ())
+
+    result = _advance(tmp_path)
+
+    assert result.detail == "worktree torn down and issue closed"
+
+
+def test_the_claim_commit_also_warns_when_it_is_skipped(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An unpublished claim lets two sessions start the same bead, so it warns too."""
+    _ready_leaf(at, monkeypatch)
+    _pin_runner(monkeypatch, "manual")
+    monkeypatch.setattr(loop.merge, "commit_tracker_state", lambda *_a, **_k: False)
+    monkeypatch.setattr(loop.merge, "foreign_dirt", lambda _r: (".gitignore",))
+
+    result = _advance(tmp_path)
+
+    assert "provisioned" in result.detail  # the original detail survives
+    assert "tracker state NOT committed" in result.detail
+    assert ".gitignore" in result.detail
+
+
+def test_a_published_claim_adds_no_warning(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, tracker_commits: list
+) -> None:
+    """The control: a committed claim leaves the provisioning detail untouched."""
+    _ready_leaf(at, monkeypatch)
+    _pin_runner(monkeypatch, "manual")
+
+    result = _advance(tmp_path)
+
+    assert tracker_commits == [("i", "record the claim before provisioning")]
+    assert "NOT committed" not in result.detail
