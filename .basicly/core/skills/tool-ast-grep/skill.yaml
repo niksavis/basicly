@@ -1,6 +1,7 @@
 # yaml-language-server: $schema=../../schemas/skill.schema.json
 schema_version: 1
 name: tool-ast-grep
+invocation: model
 description: Use ast-grep for structural code search and rewrite based on syntax trees. Trigger when text search is too imprecise for code-aware matching.
 instructions: |
   # tool-ast-grep

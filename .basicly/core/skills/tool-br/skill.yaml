@@ -1,6 +1,7 @@
 # yaml-language-server: $schema=../../schemas/skill.schema.json
 schema_version: 1
 name: tool-br
+invocation: model
 description: Use br (beads_rust) as the primary task/issue tracker for this repo. Trigger when planning work, creating or claiming issues, checking what is ready to work on, or preparing a commit that must reference a beads issue id.
 instructions: |
   # tool-br

@@ -143,6 +143,34 @@ sources**, because until an entry knows whether it is agent-reachable, "does it 
 is not a well-posed question. This also directly relieves §6.2 of the review: every entry
 correctly reclassified as user-invoked stops paying context load forever.
 
+**Landed 2026-07-26 (`basicly-m4zv.1`), with one correction the measurement forced.** `invocation`
+is a required field on every skill source; `catalog lint` fails a missing declaration, an unknown
+value, and either half of the wrong pairing; and a user-invoked entry projects no `description`
+line.
+
+The correction: this section — and the review it draws on — says a user-invoked entry has **zero
+context load** and is **reachable only by a human**. Probed against the installed Claude Code CLI
+(two skills in a throwaway repo, one with a description and one without, asked to list its
+available skills with reads denied) **the description-less skill still loads and is still listed by
+name**, so the model can still invoke it. What stripping the description actually buys is the
+description's own tokens — most of the cost, not all of it. Across this repo's projected skills,
+descriptions were 6113 of 6412 characters of skill-index text, so ~95%.
+
+Read the axis accordingly. **User-invoked means "not advertised with a description", not
+"unreachable".** The sharp consequence the review draws — *"a router skill can only ever hint, never
+fire"* — does not hold on this host, because a router's targets stay callable. Genuine zero context
+load would require not projecting the entry as a skill at all, which is a different output target
+and not what this bead built.
+
+Six entries were reclassified, each because its own description already said it serves a human:
+`tool-bat` and `tool-git-delta` render for human eyes (an agent has `Read` and its own diff view),
+`tool-fzf` is an interactive picker a headless dispatch cannot drive, and `tool-starship`,
+`tool-wezterm`, `tool-zsh` configure the developer's terminal rather than the repo. Three of the six
+are technology-gated and unprojected here, so the measured saving in *this* repo is 430 characters
+(~107 tokens) per turn, permanently. The scaffold defaults to `model` because that is the reversible
+mistake: over-declaring `model` wastes a description, while over-declaring `user` silently removes
+an entry from the agent's reach.
+
 ## 4. Tier 3 — behavioural, and the controls that make it mean something
 
 Tier 3 is expensive, so it must be *decisive*. The review's methodological centrepiece

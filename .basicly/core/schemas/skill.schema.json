@@ -5,7 +5,12 @@
   "description": "A skill authored as skill.yaml, projected to SKILL.md at target roots.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "name", "description", "instructions"],
+  "required": [
+    "schema_version",
+    "name",
+    "invocation",
+    "instructions"
+  ],
   "properties": {
     "schema_version": {
       "const": 1,
@@ -16,10 +21,18 @@
       "minLength": 1,
       "description": "Skill slug/name; must match the containing directory name."
     },
+    "invocation": {
+      "type": "string",
+      "enum": [
+        "model",
+        "user"
+      ],
+      "description": "Who can reach this entry. 'model' keeps a description and is advertised to the agent, paying context load every turn. 'user' carries no description and is reached by a human typing it."
+    },
     "description": {
       "type": "string",
       "minLength": 1,
-      "description": "One-line trigger description used for discovery."
+      "description": "One-line trigger description used for model discovery. Required for a model-invoked entry and forbidden for a user-invoked one."
     },
     "instructions": {
       "type": "string",
@@ -28,7 +41,10 @@
     },
     "technologies": {
       "type": "array",
-      "items": {"type": "string", "minLength": 1},
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
       "description": "Technology scoping tags (controlled vocabulary, enforced by catalog-lint); absent means universal. basicly-internal; NOT emitted into SKILL.md frontmatter."
     },
     "license": {
@@ -49,7 +65,9 @@
     },
     "metadata": {
       "type": "object",
-      "additionalProperties": {"type": "string"},
+      "additionalProperties": {
+        "type": "string"
+      },
       "description": "Optional Agent Skills frontmatter: arbitrary string key/value map."
     }
   }

@@ -680,7 +680,10 @@ def test_cli_uninstall_keeps_hand_written_skill(tmp_path: Path) -> None:
 
     mine = consumer / ".claude" / "skills" / "my-skill" / "SKILL.md"
     mine.parent.mkdir(parents=True, exist_ok=True)
-    mine.write_text("---\nname: my-skill\ndescription: mine\n---\n\nMine.\n", encoding="utf-8")
+    mine.write_text(
+        "---\nname: my-skill\ninvocation: model\ndescription: mine\n---\n\nMine.\n",
+        encoding="utf-8",
+    )
 
     result = run_basicly_consumer(consumer, "uninstall")
     assert result.returncode == 0, result.stderr
@@ -904,14 +907,17 @@ def test_cli_install_prunes_legacy_catalog_sources(tmp_path: Path) -> None:
 
     # Pre-migration hand-copied sources (must be pruned).
     legacy_skill = skill_dir / "SKILL.md"
-    legacy_skill.write_text("---\nname: tool-x\ndescription: d\n---\n\nbody\n", encoding="utf-8")
+    legacy_skill.write_text(
+        "---\nname: tool-x\ninvocation: model\ndescription: d\n---\n\nbody\n", encoding="utf-8"
+    )
     legacy_frag = frag_dir / "y.fragment.md"
     legacy_frag.write_text("---\nid: y\n---\n\nbody\n", encoding="utf-8")
 
     # New YAML sources (must survive).
     kept_skill = skill_dir / "skill.yaml"
     kept_skill.write_text(
-        "schema_version: 1\nname: tool-x\ndescription: d\ninstructions: |\n  body\n",
+        "schema_version: 1\nname: tool-x\ninvocation: model\n"
+        "description: d\ninstructions: |\n  body\n",
         encoding="utf-8",
     )
 

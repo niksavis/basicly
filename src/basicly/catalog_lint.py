@@ -1,6 +1,6 @@
 """Catalog source lint — the deterministic gate that keeps the YAML contract.
 
-Enforces five invariants across the managed core catalog so the double-load fix
+Enforces six invariants across the managed core catalog so the double-load fix
 and the single-extension decision cannot regress (architecture §4.2):
 
 1. No discoverable-name *sources*: no ``SKILL.md`` under ``core/skills``, no
@@ -12,6 +12,8 @@ and the single-extension decision cannot regress (architecture §4.2):
    each listed command in its body — point at enforcement, don't restate it.
 5. Agent composition: block refs resolve, read-only postures grant no write
    tools, composed bodies stay under the portable size cap.
+6. Invocation axis (basicly-m4zv.1): every skill declares ``model`` or ``user``,
+   and only a model-invoked entry carries a description.
 
 ``README.md`` and other documentation files are not sources and are left alone.
 """
@@ -25,7 +27,7 @@ from pathlib import Path
 import yaml
 from jsonschema import Draft202012Validator
 
-from . import agents, rubrics
+from . import agents, rubrics, skills
 from .schema import TECHNOLOGIES
 
 # Agent Skills spec (https://agentskills.io/specification) name rule: 1-64 chars,
@@ -162,6 +164,9 @@ def lint_catalog(repo_root: Path) -> list[str]:
     # 7. Agent Skills spec naming/size constraints JSON Schema cannot express
     violations.extend(_check_skill_spec(repo_root))
 
+    # 8. invocation axis: the description/invocation pairing (basicly-m4zv.1)
+    violations.extend(_check_invocation_axis(repo_root))
+
     return violations
 
 
@@ -196,6 +201,40 @@ def _check_skill_spec(repo_root: Path) -> list[str]:
                     f"{rel}: skill name '{name}' must be 1-64 lowercase a-z0-9/hyphen characters "
                     "with no leading, trailing, or consecutive hyphen"
                 )
+    return violations
+
+
+def _check_invocation_axis(repo_root: Path) -> list[str]:
+    """Enforce the description/invocation pairing (basicly-m4zv.1).
+
+    The *presence* of ``invocation`` is schema-required; this owns the pairing,
+    because a raw jsonschema ``not: required`` message reads as
+    "should not be valid under {'required': ['description']}" and an author hitting
+    the gate deserves to be told what to do.
+
+    Both directions are violations, and the second is the one that matters: a
+    user-invoked entry carrying a description pays context load every turn for
+    reach it does not have, which is exactly the waste the axis was introduced to
+    find.
+    """
+    violations: list[str] = []
+    for path in sorted((repo_root / SKILLS_DIR).glob("*/skill.yaml")):
+        data = _load_skill_data(path)
+        if data is None:
+            continue
+        rel = _rel(path, repo_root)
+        invocation = data.get("invocation")
+        has_description = isinstance(data.get("description"), str) and data["description"].strip()
+        if invocation == skills.MODEL_INVOKED and not has_description:
+            violations.append(
+                f"{rel}: a model-invoked entry needs a description — it is what the agent "
+                "reads to decide whether to route here"
+            )
+        elif invocation == skills.USER_INVOKED and has_description:
+            violations.append(
+                f"{rel}: a user-invoked entry must not carry a description — nothing can route "
+                "to it, so the description is context load bought for no reach"
+            )
     return violations
 
 
