@@ -1414,6 +1414,301 @@ def test_route_still_holds_later_lanes_when_a_gate_fails(
     assert [r.route for r in routed] == ["rework", "held"]
 
 
+# --- Cancel and re-dispatch a lane a landing broke (D6, kjc5.26) --------------
+
+
+class _WtBinding:
+    """A worktree session record: what the merge probe needs to read a lane."""
+
+    def __init__(self, issue_id: str) -> None:
+        self.name = issue_id
+        self.branch = f"harness/{issue_id}"
+        self.base = "main"
+        self.worktree_path = f"/tmp/{issue_id}"
+
+
+def _patch_preempt_pass(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    conflicts: dict[str, tuple[str, ...]],
+    changed: tuple[str, ...],
+    max_rework: int = 2,
+    known_rework: int = 0,
+) -> dict[str, list]:
+    """A pass where every lane lands green unless the merge probe says otherwise.
+
+    *conflicts* is what ``git merge-tree`` reports per lane branch (absent means
+    the probe is clean); *changed* is what a landing adds to the base.
+    *known_rework* seeds the dispatch counter, as an earlier failure in the
+    session would have. Returns the lanes actually landed, the found-info records
+    published, the rework gates charged, and the queue items enqueued.
+    """
+    seen: dict[str, list] = {"landed": [], "info": [], "rework": [], "enqueued": []}
+
+    def advance(_r, issue_id, **_k):
+        seen["landed"].append(issue_id)
+        return loop.AdvanceResult(issue_id, "build", "verify", "merged", "landed")
+
+    def probe(_r, _base, branch):
+        found = conflicts.get(branch.removeprefix("harness/"), ())
+        return merge.ProbeResult(safe=not found, conflicts=found)
+
+    def record_rework(_r, issue_id, gate):
+        seen["rework"].append((issue_id, gate))
+        return known_rework + sum(1 for i, _g in seen["rework"] if i == issue_id)
+
+    monkeypatch.setattr(supervise.loop, "advance", advance)
+    monkeypatch.setattr(supervise, "_landing_order", lambda _r, outcomes: list(outcomes))
+    monkeypatch.setattr(supervise.merge, "head_sha", lambda _r: "sha")
+    monkeypatch.setattr(supervise.merge, "changed_paths", lambda _r, _before: changed)
+    monkeypatch.setattr(supervise.merge, "probe_merge", probe)
+    monkeypatch.setattr(supervise.worktree, "load_session", lambda name, _r: _WtBinding(name))
+    monkeypatch.setattr(supervise.policy, "record_rework", record_rework)
+    monkeypatch.setattr(
+        supervise.policy,
+        "load_policy",
+        lambda _r: PolicyConfig(required_gates=("verify",), max_rework=max_rework),
+    )
+    monkeypatch.setattr(
+        supervise.policy,
+        "approve_checkpoint_guarded",
+        lambda *_a, **_k: policy.ApprovalResult("challenge", code="abc"),
+    )
+
+    def enqueue(_r, issue, kind, question, *_a, **_k):
+        seen["enqueued"].append((issue, kind, question))
+        return decisions_item(issue, kind)
+
+    monkeypatch.setattr(supervise.decisions, "enqueue", enqueue)
+    monkeypatch.setattr(
+        supervise,
+        "record_found_info",
+        lambda _r, issue, info: seen["info"].append((issue, info)),
+    )
+    # A dependency edge here would gate, not merely inform: the lane that landed
+    # is merged and not yet shipped, so it is still open.
+    monkeypatch.setattr(
+        supervise.merge,
+        "record_coupling",
+        lambda *_a: pytest.fail("the pre-empt must not record a gating dependency edge"),
+    )
+    return seen
+
+
+def test_route_cancels_a_lane_whose_merge_the_landing_broke_and_lands_the_rest(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The doomed landing is never attempted: the lane owes a fresh dispatch (D6)."""
+    seen = _patch_preempt_pass(
+        monkeypatch,
+        conflicts={"epic.2": ("src/shared.py",)},
+        changed=("src/shared.py",),
+    )
+    outcomes = tuple(_executed_outcome(f"epic.{n}") for n in (1, 2, 3))
+
+    routed = supervise.route_outcomes(
+        tmp_path, _session(*(_lane(o.issue_id) for o in outcomes)), outcomes
+    )
+
+    assert [r.route for r in routed] == ["merged", "re-dispatch", "merged"]
+    # The cancelled lane's landing was skipped entirely, and epic.3 still landed.
+    assert seen["landed"] == ["epic.1", "epic.3"]
+    assert "epic.1" in routed[1].detail
+    # Charged against the same counter a failed dispatch spends, under the cap.
+    assert seen["rework"] == [("epic.2", supervise.DISPATCH_GATE)]
+    assert "dispatch rework 1/2" in routed[1].detail
+    # It is a retriable route, so the pass keeps going and the lane re-dispatches
+    # next pass rather than being carried to a landing (kjc5.18).
+    assert supervise.should_continue(routed) is True
+    assert supervise.carried_forward(routed) == frozenset()
+
+
+def test_route_publishes_the_cancellation_for_the_lanes_next_prompt(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A re-dispatch that says nothing new would reach the same collision (D6).
+
+    The record travels the found-info channel, so ``build_bundle`` folds it into
+    the lane's next prompt — and it names the lane that landed, which is what the
+    agent needs to re-apply its intent somewhere else.
+    """
+    seen = _patch_preempt_pass(
+        monkeypatch,
+        conflicts={"epic.2": ("src/shared.py",)},
+        changed=("src/shared.py",),
+    )
+    outcomes = (_executed_outcome("epic.1"), _executed_outcome("epic.2"))
+
+    supervise.route_outcomes(tmp_path, _session(*(_lane(o.issue_id) for o in outcomes)), outcomes)
+
+    assert len(seen["info"]) == 1
+    issue, info = seen["info"][0]
+    assert issue == "epic.2"
+    assert info.kind == "coupling"
+    assert info.affects == ("epic.2",)
+    assert "epic.1" in info.summary
+
+
+def test_route_cancels_a_lane_at_the_rework_cap_onto_the_decision_queue(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Re-dispatching forever is not an option: at the cap a human disposes of it."""
+    seen = _patch_preempt_pass(
+        monkeypatch,
+        conflicts={"epic.2": ("src/shared.py",)},
+        changed=("src/shared.py",),
+        known_rework=1,  # one dispatch already spent earlier in the session
+    )
+    outcomes = (_executed_outcome("epic.1"), _executed_outcome("epic.2"))
+
+    routed = supervise.route_outcomes(
+        tmp_path, _session(*(_lane(o.issue_id) for o in outcomes)), outcomes
+    )
+
+    assert [r.route for r in routed] == ["merged", "decision"]
+    assert "escalated as epic.2#abc" in routed[1].detail
+    escalations = [(i, k) for i, k, _q in seen["enqueued"] if k == "escalation"]
+    assert escalations == [("epic.2", "escalation")]
+
+
+def test_route_does_not_cancel_a_lane_whose_merge_is_still_clean(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Overlap is not a collision: work that would land clean may not be thrown away.
+
+    Two lanes can both own a file and touch disjoint hunks. Cancelling on scope
+    overlap alone would spend a whole agent run replacing a landing that was
+    about to succeed, so the trigger is the merge probe, not the declaration.
+    """
+    seen = _patch_preempt_pass(monkeypatch, conflicts={}, changed=("src/shared.py",))
+    outcomes = (_executed_outcome("epic.1"), _executed_outcome("epic.2"))
+
+    routed = supervise.route_outcomes(
+        tmp_path, _session(*(_lane(o.issue_id) for o in outcomes)), outcomes
+    )
+
+    assert [r.route for r in routed] == ["merged", "merged"]
+    assert seen["landed"] == ["epic.1", "epic.2"] and seen["info"] == []
+
+
+def test_route_does_not_cancel_a_lane_over_engine_owned_paths(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Every landing rewrites the tracker; blaming it would cancel every lane."""
+    seen = _patch_preempt_pass(
+        monkeypatch,
+        conflicts={"epic.2": (".beads/issues.jsonl",)},
+        changed=(".beads/issues.jsonl",),
+    )
+    outcomes = (_executed_outcome("epic.1"), _executed_outcome("epic.2"))
+
+    routed = supervise.route_outcomes(
+        tmp_path, _session(*(_lane(o.issue_id) for o in outcomes)), outcomes
+    )
+
+    # Unattributable, so the lane takes its normal landing and the bounce path
+    # owns whatever it finds there.
+    assert [r.route for r in routed] == ["merged", "merged"]
+    assert seen["landed"] == ["epic.1", "epic.2"] and seen["rework"] == []
+
+
+def test_route_does_not_cancel_a_lane_no_landing_this_pass_can_explain(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A branch that conflicts on its own is the bounce path's business, not this one.
+
+    Cancelling costs a dispatch, so it is spent only where a landing this pass is
+    demonstrably the cause; otherwise the landing runs and its rework attempt and
+    coupling edge are the loop's to record.
+    """
+    seen = _patch_preempt_pass(
+        monkeypatch,
+        conflicts={"epic.2": ("src/elsewhere.py",)},
+        changed=("src/shared.py",),
+    )
+    outcomes = (_executed_outcome("epic.1"), _executed_outcome("epic.2"))
+
+    routed = supervise.route_outcomes(
+        tmp_path, _session(*(_lane(o.issue_id) for o in outcomes)), outcomes
+    )
+
+    assert [r.route for r in routed] == ["merged", "merged"]
+    assert seen["landed"] == ["epic.1", "epic.2"] and seen["info"] == []
+
+
+def test_route_does_not_cancel_before_anything_has_landed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """With no landing to blame the probe is not even run — the first lane just lands."""
+    seen = _patch_preempt_pass(
+        monkeypatch,
+        conflicts={"epic.1": ("src/shared.py",)},
+        changed=("src/shared.py",),
+    )
+    probed: list[str] = []
+    monkeypatch.setattr(
+        supervise.merge,
+        "probe_merge",
+        lambda _r, _base, branch: probed.append(branch) or merge.ProbeResult(True, ()),
+    )
+
+    routed = supervise.route_outcomes(
+        tmp_path, _session(_lane("epic.1")), (_executed_outcome("epic.1"),)
+    )
+
+    assert [r.route for r in routed] == ["merged"] and seen["landed"] == ["epic.1"]
+    assert probed == []
+
+
+def test_route_cancels_a_carried_lane_the_landing_broke(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A lane held last pass is no safer: its commits sit on the base that moved."""
+    seen = _patch_preempt_pass(
+        monkeypatch,
+        conflicts={"epic.2": ("src/shared.py",)},
+        changed=("src/shared.py",),
+    )
+    monkeypatch.setattr(
+        supervise, "ready_lanes", lambda _r, _s, **_k: (_lane("epic.1"), _lane("epic.2"))
+    )
+    # The carried lane is prepended to the pass, so sort the landing order to put
+    # the landing that breaks it first — the situation under test.
+    monkeypatch.setattr(
+        supervise, "_landing_order", lambda _r, outs: sorted(outs, key=lambda o: o.issue_id)
+    )
+
+    routed = supervise.route_outcomes(
+        tmp_path,
+        _session(_lane("epic.1"), _lane("epic.2")),
+        (_executed_outcome("epic.1"),),
+        carried=("epic.2",),
+    )
+
+    assert [r.route for r in routed] == ["merged", "re-dispatch"]
+    assert seen["landed"] == ["epic.1"]
+    assert [issue for issue, _info in seen["info"]] == ["epic.2"]
+
+
+def test_route_does_not_cancel_a_lane_whose_worktree_is_gone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No worktree record, no probe: the landing decides, as it did before this."""
+    seen = _patch_preempt_pass(
+        monkeypatch,
+        conflicts={"epic.2": ("src/shared.py",)},
+        changed=("src/shared.py",),
+    )
+    monkeypatch.setattr(supervise.worktree, "load_session", lambda *_a, **_k: None)
+    outcomes = (_executed_outcome("epic.1"), _executed_outcome("epic.2"))
+
+    routed = supervise.route_outcomes(
+        tmp_path, _session(*(_lane(o.issue_id) for o in outcomes)), outcomes
+    )
+
+    assert [r.route for r in routed] == ["merged", "merged"] and seen["info"] == []
+
+
 def test_landing_order_sorts_the_pass_by_dependency(monkeypatch: pytest.MonkeyPatch) -> None:
     """The pass lands a lane before the lanes that depend on it (kjc5.20).
 
@@ -1441,6 +1736,7 @@ def test_carried_forward_carries_only_the_held_lanes() -> None:
         supervise.RoutedOutcome("epic.3", "rework", ""),
         supervise.RoutedOutcome("epic.4", "bounced", ""),
         supervise.RoutedOutcome("epic.5", "retry", ""),
+        supervise.RoutedOutcome("epic.6", "re-dispatch", ""),
     )
 
     assert supervise.carried_forward(routed) == frozenset({"epic.2"})
