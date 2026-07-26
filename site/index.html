@@ -10,7 +10,7 @@
     />
     <meta
       name="keywords"
-      content="coding agents, agent harness, harness engineering, agent SDLC, YAML catalog, git hooks, deterministic gates, worktree isolation, CLAUDE.md, AGENTS.md, copilot-instructions"
+      content="coding agents, agent harness, harness engineering, agent SDLC, YAML catalog, git hooks, deterministic gates, worktree isolation, roadmap, CLAUDE.md, AGENTS.md, copilot-instructions"
     />
     <link rel="icon" type="image/svg+xml" href="assets/logo.svg" />
     <meta property="og:type" content="website" />
@@ -39,6 +39,7 @@
         --indigo-deep: #6366f1;
         --amber: #f59e0b;
         --orange: #fb923c;
+        --green: #34d399;
         --mono:
           ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
         --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -459,46 +460,81 @@
         color: var(--text-bright);
       }
 
-      /* ---------- status ---------- */
-      .status {
+      /* ---------- roadmap: status legend + per-pillar chips ---------- */
+      /* Five states, each carrying a word as well as a colour, so the map is
+         readable without relying on hue alone. */
+      .legend {
         margin-top: 1.5rem;
         display: grid;
-        gap: 0.6rem;
+        gap: 0.5rem;
+        padding: 0;
+        list-style: none;
       }
-      .status div {
+      .legend li {
         display: flex;
         gap: 0.85rem;
         align-items: baseline;
-        background: var(--bg-raise);
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 0.75rem 1rem;
-      }
-      .status em {
-        flex: 0 0 8.5rem;
-        font-family: var(--mono);
-        font-style: normal;
-        font-size: 0.74rem;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-      }
-      .status .shipped em {
-        color: var(--indigo);
-      }
-      .status .designed em {
-        color: var(--amber);
-      }
-      .status .measuring em {
-        color: var(--orange);
-      }
-      .status p {
-        font-size: 0.93rem;
+        font-size: 0.9rem;
         color: var(--text-dim);
       }
+      .st {
+        flex: 0 0 7.5rem;
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      .shipped > .st {
+        color: var(--green);
+      }
+      .building > .st {
+        color: var(--indigo);
+      }
+      .designed > .st {
+        color: var(--amber);
+      }
+      .research > .st {
+        color: var(--orange);
+      }
+      .deferred > .st {
+        color: var(--text-dim);
+      }
+      ul.chips {
+        margin-top: 0.75rem;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 0.45rem;
+      }
+      ul.chips li {
+        display: flex;
+        gap: 0.75rem;
+        align-items: baseline;
+        font-size: 0.9rem;
+        color: var(--text-dim);
+      }
+      ul.chips li.deferred {
+        border-top: 1px solid var(--border);
+        padding-top: 0.6rem;
+        margin-top: 0.15rem;
+      }
+      /* Cards hug their content: the four pillars hold different numbers of
+         rows, and a stretched card leaves dead space inside its border. */
+      #roadmap .grid.two {
+        align-items: start;
+      }
       @media (max-width: 620px) {
-        .status div {
+        .legend li,
+        ul.chips li {
           flex-direction: column;
-          gap: 0.25rem;
+          gap: 0.15rem;
+        }
+        /* A column flex line reads `flex-basis` as a height, so the status
+           token must drop its fixed 7.5rem basis or it becomes 7.5rem tall. */
+        .legend .st,
+        ul.chips .st {
+          flex: 0 0 auto;
         }
       }
 
@@ -524,6 +560,7 @@
         </p>
         <div class="links">
           <a class="btn primary" href="#install">Get started</a>
+          <a class="btn ghost" href="#roadmap">Roadmap</a>
           <a class="btn ghost" href="https://github.com/niksavis/basicly"
             >GitHub</a
           >
@@ -812,42 +849,310 @@
       </div>
     </section>
 
-    <section id="status">
+    <section id="roadmap">
       <div class="wrap">
-        <p class="kicker">Where it stands</p>
-        <h2>Honest about what is built</h2>
+        <p class="kicker">Roadmap</p>
+        <h2>What is built, and what is next</h2>
         <p class="lead">
-          The architecture reference separates the system as it exists in code
-          from where it is going, and so does this page.
+          No dates — this is a status map, not a schedule. The architecture
+          reference separates the system as it exists in code from where it is
+          going, and this map keeps that line visible per capability, along the
+          same four pillars. It moves as features land.
         </p>
-        <div class="status">
-          <div class="shipped">
-            <em>Shipped</em>
-            <p>
-              Catalog and projection with drift gates, the git and agent hook
-              floor, the single-track loop, worktree isolation, parallel lanes
-              with a supervisor and merge queue, autonomy grants, and release
-              automation. All of it developed through the loop itself.
-            </p>
+        <ul class="legend" aria-label="Status legend">
+          <li class="shipped">
+            <span class="st">&#10003; shipped</span>
+            <span
+              >Running code in the current release, exercised on this project's
+              own development.</span
+            >
+          </li>
+          <li class="building">
+            <span class="st">&#9654; building</span>
+            <span
+              >Sequenced into a phase being worked now, with an open work
+              package and written exit criteria.</span
+            >
+          </li>
+          <li class="designed">
+            <span class="st">&#9671; designed</span>
+            <span
+              >Settled in a design document but sequenced behind a later phase,
+              and nothing is built. A recorded decision is not evidence that
+              anything enforces it.</span
+            >
+          </li>
+          <li class="research">
+            <span class="st">? researching</span>
+            <span
+              >The deliverable is a number, not a capability: a measurement
+              whose result is allowed to cancel the work.</span
+            >
+          </li>
+          <li class="deferred">
+            <span class="st">~ deferred</span>
+            <span>Deliberately not built until a real consumer asks.</span>
+          </li>
+        </ul>
+
+        <div class="grid two">
+          <div class="card accent">
+            <h3><i>01</i> Guidance</h3>
+            <ul class="chips">
+              <li class="shipped">
+                <span class="st">&#10003; shipped</span>
+                <span
+                  >One catalog projected to Claude, Codex and Copilot</span
+                >
+              </li>
+              <li class="shipped">
+                <span class="st">&#10003; shipped</span>
+                <span>Drift gate run by CI</span>
+              </li>
+              <li class="shipped">
+                <span class="st">&#10003; shipped</span>
+                <span
+                  >Path-scoped rules, so conditional guidance loads on a
+                  matching file instead of always</span
+                >
+              </li>
+              <li class="shipped">
+                <span class="st">&#10003; shipped</span>
+                <span
+                  >An invocation axis per entry: only model-invoked entries pay
+                  context load</span
+                >
+              </li>
+              <li class="building">
+                <span class="st">&#9654; building</span>
+                <span
+                  >Deterministic routing evals — does an entry rank first for
+                  the prompt it exists for</span
+                >
+              </li>
+              <li class="building">
+                <span class="st">&#9654; building</span>
+                <span>An eval case file required per catalog entry</span>
+              </li>
+              <li class="building">
+                <span class="st">&#9654; building</span>
+                <span
+                  >Relieving the always-on baseline by scoping what is
+                  conditional</span
+                >
+              </li>
+              <li class="building">
+                <span class="st">&#9654; building</span>
+                <span
+                  >A tutorial and how-to layer from install to first shipped
+                  unit</span
+                >
+              </li>
+              <li class="research">
+                <span class="st">? researching</span>
+                <span
+                  >Whether an entry changes behaviour, and which baseline rules
+                  bind while an agent works</span
+                >
+              </li>
+              <li class="deferred">
+                <span class="st">~ deferred</span>
+                <span>Cursor as a target; a native Codex rules renderer</span>
+              </li>
+            </ul>
           </div>
-          <div class="designed">
-            <em>Designed</em>
-            <p>
-              Named roles per judgment step, a gate taxonomy with convergence
-              detection, and owning the work tracker in-process instead of
-              depending on an external binary.
-            </p>
+
+          <div class="card accent">
+            <h3><i>02</i> Gates</h3>
+            <ul class="chips">
+              <li class="shipped">
+                <span class="st">&#10003; shipped</span>
+                <span
+                  >Git hook floor across pre-commit, commit-msg and
+                  pre-push</span
+                >
+              </li>
+              <li class="shipped">
+                <span class="st">&#10003; shipped</span>
+                <span>Agent hooks for Claude Code and Copilot</span>
+              </li>
+              <li class="shipped">
+                <span class="st">&#10003; shipped</span>
+                <span
+                  >Verify pipeline with <code>fast</code>, <code>full</code> and
+                  <code>staged</code> modes</span
+                >
+              </li>
+              <li class="building">
+                <span class="st">&#9654; building</span>
+                <span
+                  >Every gate classified by type, and a pre-flight gate that
+                  writes nothing</span
+                >
+              </li>
+              <li class="building">
+                <span class="st">&#9654; building</span>
+                <span
+                  >A required severity on judged output, and a lint against a
+                  pre-judging review prompt</span
+                >
+              </li>
+              <li class="building">
+                <span class="st">&#9654; building</span>
+                <span
+                  >Rework convergence detection from the open-finding set, not
+                  the count</span
+                >
+              </li>
+              <li class="building">
+                <span class="st">&#9654; building</span>
+                <span
+                  >Install reporting the capability tier it actually delivered —
+                  enforcement needs plugin-tier support, and degrades to advice
+                  without it</span
+                >
+              </li>
+            </ul>
           </div>
-          <div class="measuring">
-            <em>Being measured</em>
-            <p>
-              Whether each catalog entry earns its context cost. Structural
-              checks prove an entry is well-formed and projected, never that it
-              changes behaviour — so routing and behavioural evals are the
-              current work, and claims stay labelled until they are evidence.
-            </p>
+
+          <div class="card accent">
+            <h3><i>03</i> The loop</h3>
+            <ul class="chips">
+              <li class="shipped">
+                <span class="st">&#10003; shipped</span>
+                <span>Single-track loop, intake to retro, any agent</span>
+              </li>
+              <li class="shipped">
+                <span class="st">&#10003; shipped</span>
+                <span>Worktree isolation per unit of work</span>
+              </li>
+              <li class="shipped">
+                <span class="st">&#10003; shipped</span>
+                <span
+                  >Parallel lanes behind a supervisor and a serial merge
+                  queue</span
+                >
+              </li>
+              <li class="shipped">
+                <span class="st">&#10003; shipped</span>
+                <span
+                  >Autonomy grants with a spend ceiling, a decision queue and a
+                  confined decider</span
+                >
+              </li>
+              <li class="shipped">
+                <span class="st">&#10003; shipped</span>
+                <span>Release automation up to the annotated tag</span>
+              </li>
+              <li class="building">
+                <span class="st">&#9654; building</span>
+                <span
+                  >A per-model spend and wall-clock forecast, enforced when a
+                  pass is admitted</span
+                >
+              </li>
+              <li class="building">
+                <span class="st">&#9654; building</span>
+                <span
+                  >A multi-lane run with zero human interventions caused by a
+                  harness defect</span
+                >
+              </li>
+              <li class="designed">
+                <span class="st">&#9671; designed</span>
+                <span
+                  >A named role per judgment step, each with its own tool
+                  policy, tier and output contract</span
+                >
+              </li>
+              <li class="research">
+                <span class="st">? researching</span>
+                <span
+                  >Cost per landed package — the instrument every tier claim
+                  rests on</span
+                >
+              </li>
+              <li class="research">
+                <span class="st">? researching</span>
+                <span
+                  >Whether deterministic code localisation cuts what an
+                  implementer spends before its first edit</span
+                >
+              </li>
+            </ul>
+          </div>
+
+          <div class="card accent">
+            <h3><i>04</i> The work graph</h3>
+            <ul class="chips">
+              <li class="shipped">
+                <span class="st">&#10003; shipped</span>
+                <span
+                  >Issues, dependencies, gate results, checkpoints and evidence
+                  in a tracked graph</span
+                >
+              </li>
+              <li class="shipped">
+                <span class="st">&#10003; shipped</span>
+                <span
+                  >Phase derived from that state, so resume is a read rather
+                  than a replay</span
+                >
+              </li>
+              <li class="building">
+                <span class="st">&#9654; building</span>
+                <span>The scheduler score and rank recorded per dispatch</span>
+              </li>
+              <li class="designed">
+                <span class="st">&#9671; designed</span>
+                <span
+                  >An owned in-process append-only event log, removing the
+                  external binary from the critical path</span
+                >
+              </li>
+              <li class="designed">
+                <span class="st">&#9671; designed</span>
+                <span
+                  >Provenance on every edge: extracted, inferred or
+                  ambiguous</span
+                >
+              </li>
+              <li class="designed">
+                <span class="st">&#9671; designed</span>
+                <span
+                  ><code>fsck</code> and <code>rebuild</code>, so "the log is
+                  the truth" is checkable</span
+                >
+              </li>
+              <li class="deferred">
+                <span class="st">~ deferred</span>
+                <span>A cross-repo work exchange as an append-only offer log</span>
+              </li>
+            </ul>
           </div>
         </div>
+
+        <ul class="plain">
+          <li>
+            <strong>Some things are not planned</strong>, so absence above is not
+            an oversight: an LLM orchestrator in control of the tracker, an
+            agent-writable catalog, a maintained TUI, an external database or
+            daemon, and agent-to-agent messaging. Each refusal has a recorded
+            reason.
+          </li>
+          <li>
+            <strong>The authoritative copy</strong> of this map — with the
+            evidence each status requires and a pointer per row — is
+            <a
+              href="https://github.com/niksavis/basicly/blob/main/docs/architecture/architecture.md#15-roadmap--status-per-capability"
+              >architecture §15</a
+            >. The order the unbuilt rows get built in lives in the
+            <a
+              href="https://github.com/niksavis/basicly/blob/main/docs/plan/implementation-plan.md"
+              >implementation plan</a
+            >.
+          </li>
+        </ul>
       </div>
     </section>
 
@@ -865,7 +1170,8 @@
               href="https://github.com/niksavis/basicly/blob/main/docs/architecture/architecture.md"
               >Architecture</a
             >
-            — the authoritative reference: current system, then target state
+            — the authoritative reference: current system, target state, then the
+            roadmap that tracks the gap between them
           </li>
           <li>
             <a

@@ -144,6 +144,74 @@ uvx --from git+https://github.com/niksavis/basicly@v0.5.1 basicly check   # exit
 uvx --from git+https://github.com/niksavis/basicly@v0.5.1 basicly build   # regenerate agent instruction files
 ```
 
+## Roadmap
+
+There are no dates here on purpose — this is a status map, not a schedule. Every
+capability sits under the pillar it belongs to, grouped by what it currently is:
+
+- `✓` **shipped** — running code in the current release, exercised on this repo's
+  own development.
+- `▶` **building** — sequenced into a phase being worked now, with an open work
+  package and written exit criteria.
+- `◇` **designed** — settled in a design document but sequenced behind a later
+  phase, and **nothing is built**; a recorded decision is not evidence that anything
+  enforces it.
+- `?` **researching** — the deliverable is a number, not a capability: a measurement
+  whose result is allowed to cancel the work.
+- `~` **deferred** — deliberately not built until a real consumer asks.
+
+```mermaid
+flowchart LR
+    subgraph p1["01 · guidance"]
+        direction TB
+        a1["✓ shipped<br>one catalog → 3 agent families<br>drift gate in CI<br>path-scoped rules tier<br>invocation axis per entry"]:::shipped
+        a2["▶ building<br>lexical routing evals<br>an eval case per entry<br>always-on baseline relief<br>tutorial and how-to layer"]:::building
+        a3["? researching<br>do entries change behaviour"]:::research
+        a4["~ deferred<br>Cursor · native Codex rules"]:::deferred
+        a1 ~~~ a2 ~~~ a3 ~~~ a4
+    end
+    subgraph p2["02 · gates"]
+        direction TB
+        b1["✓ shipped<br>git hooks · commit · push<br>agent hooks · Claude · Copilot<br>verify pipeline · 3 modes"]:::shipped
+        b2["▶ building<br>gate taxonomy by type<br>severity on judged output<br>rework convergence check<br>install reports its tier"]:::building
+        b1 ~~~ b2
+    end
+    subgraph p3["03 · the loop"]
+        direction TB
+        c1["✓ shipped<br>single-track loop<br>worktree isolation<br>parallel lanes · merge queue<br>autonomy grants · spend cap<br>release automation"]:::shipped
+        c2["▶ building<br>per-model spend forecast<br>unattended multi-lane run"]:::building
+        c3["◇ designed<br>a named role per judgment step"]:::designed
+        c4["? researching<br>cost per landed package<br>deterministic AST localisation"]:::research
+        c1 ~~~ c2 ~~~ c3 ~~~ c4
+    end
+    subgraph p4["04 · the work graph"]
+        direction TB
+        d1["✓ shipped<br>issues · deps · gates<br>phase derived from state"]:::shipped
+        d2["▶ building<br>dispatch score recorded"]:::building
+        d3["◇ designed<br>owned in-process event log<br>provenance on every edge<br>fsck and rebuild"]:::designed
+        d4["~ deferred<br>cross-repo work exchange"]:::deferred
+        d1 ~~~ d2 ~~~ d3 ~~~ d4
+    end
+    p1 ~~~ p2 ~~~ p3 ~~~ p4
+    classDef shipped fill:#dcfce7,stroke:#16a34a,color:#14532d
+    classDef building fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+    classDef designed fill:#fef3c7,stroke:#b45309,color:#78350f
+    classDef research fill:#ede9fe,stroke:#7c3aed,color:#4c1d95
+    classDef deferred fill:#f1f5f9,stroke:#94a3b8,color:#334155
+```
+
+Some things are **not planned**, so absence here is not an oversight: an LLM
+orchestrator in control of the tracker, an agent-writable catalog, a maintained TUI,
+an external database or daemon, and agent-to-agent messaging. The reasons are in
+architecture §14.7.
+
+The authoritative copy of this map — with the evidence each status requires and a
+pointer per row — is
+[architecture §15](docs/architecture/architecture.md#15-roadmap--status-per-capability).
+The order the unbuilt rows get built in, with dependencies and exit criteria, is
+[`docs/plan/implementation-plan.md`](docs/plan/implementation-plan.md). Both are
+updated as features land.
+
 ## Contributing
 
 Bug reports and ideas are welcome as GitHub issues. For development setup,

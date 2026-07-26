@@ -16,7 +16,9 @@
 > **Status convention — two states, never blurred.** §§0–13 describe the system
 > **as it exists in code today**; deliberate small omissions are marked
 > **[Deferred]** and collected in §11. §14 describes the **target state** — where
-> the architecture is going — and is the only forward-looking section.
+> the architecture is going — and is the only forward-looking section. §15 is a
+> **derived view** of those two: the per-capability roadmap the README and the
+> landing page render, adding no claim of its own.
 >
 > A claim in §§0–13 is a statement about running code. A claim in §14 is a
 > statement of intent with a design document behind it. Reading the second as the
@@ -334,7 +336,8 @@ fragments in them yet. **Important distinction**: category `hooks` labels a _fra
 that describes hook usage_ — it is not the mechanism that ships an actual hook script;
 the actual scripts live in `core/hooks/` (below).
 
-**Skills**: `core/skills/` is the catalog location. Sources are authored as `skill.yaml` (name, description, and an
+**Skills**: `core/skills/` is the catalog location. Sources are authored as `skill.yaml` (name, an
+`invocation` axis, description, and an
 `instructions` block scalar), **not** the discoverable `SKILL.md` name: because some coding
 agents auto-discover skills by scanning broadly for `SKILL.md`, a `SKILL.md` _source_ would
 risk an agent loading both the catalog copy and the projected copy twice. `skills-build`
@@ -352,7 +355,17 @@ root — the rendered `SKILL.md` (carrying the generated marker) plus every othe
 verbatim (bytes and mode) — so a skill can ship a long reference guide or a fixer script.
 `skill.yaml` also accepts the spec's optional frontmatter (`license`, `compatibility`,
 `allowed-tools`, `metadata`), rendered into the `SKILL.md` header; `technologies` stays
-basicly-internal (§9 scoping) and is never emitted. The projected skill directory is a pure
+basicly-internal (§9 scoping) and is never emitted.
+
+**The invocation axis** (`invocation`, required, `model` or `user`) declares whether
+anything can route to an entry. A **model-invoked** skill keeps its `description`, is
+advertised to the agent, and therefore pays context load on every turn; a
+**user-invoked** skill carries no description at all, costs nothing until a human types
+it, and the empty pairing is enforced by `catalog lint`. It is declared rather than
+inferred because "does this entry route correctly" is not a well-posed question until
+the entry says whether routing applies to it — which makes this the prerequisite for
+the routing evals of §14.4. Implemented in
+[`skills.py`](../../src/basicly/skills.py). The projected skill directory is a pure
 projection target owned wholly by basicly and is **mirrored**: `skills-check` flags a stale or
 orphaned resource, a rebuild prunes a resource dropped from the source, and deselecting a
 skill's technology prunes the whole directory. `catalog lint` enforces the spec's naming rules
@@ -815,7 +828,9 @@ consumer need appears. None is tracked as an open issue (the former tracking bea
 were closed as won't-do, 2026-07-16); file a fresh task if demand appears.
 
 This section is **not** the roadmap. A deferred item here is one nobody has asked
-for; the work the architecture is actively heading toward is §14.
+for; the work the architecture is actively heading toward is §14, and the combined
+status view of both — what is built, building, designed, researched or deferred — is
+§15.
 
 1. **`.codex/rules/*.rules` scoped rules renderer**: Codex reads
    the shared `AGENTS.md` baseline today, with path-scoped fragments inlined for
@@ -1116,7 +1131,8 @@ design document that owns it, and **none of it is running code**.
 **The order it gets built in is [`docs/plan/implementation-plan.md`](../plan/implementation-plan.md)**,
 which sequences these rows into phases with dependencies and exit criteria. That file
 is deliberately external to the tracker, because the tracker is itself one of the
-things being replaced (§14.5).
+things being replaced (§14.5). **Which of these rows is actively being built rather
+than merely agreed is §15**, the roadmap view.
 
 Everything here is grounded in a 2026-07-26 review of eleven comparable projects
 read at pinned revisions ([`research/`](../research/2026-07-26-sota-review.md)),
@@ -1253,3 +1269,109 @@ compression proxy in the critical path; a cheap-tier model pre-reader whose
 characteristic error is an undetectable omission; and agent-to-agent messaging,
 which is a real capability declined because it costs reproducible scheduling and
 resumability.
+
+---
+
+## 15) Roadmap — status per capability
+
+**Summary**: one status view of every capability, so a reader can tell running code
+from a decision on paper without cross-referencing three sections. It is **derived,
+not a new source of truth**: a `shipped` row is the system described in §§0–13, a
+`deferred` row is §11, and every other row is a §14 target with the state it is
+currently in. There are **no dates** — the project does not run to a schedule, so
+status is the only honest axis.
+
+The **order** the non-shipped rows get built in is
+[`docs/plan/implementation-plan.md`](../plan/implementation-plan.md), which sequences
+them into phases with dependencies and exit criteria. This section carries status;
+that file carries order and reasons.
+
+This table is the copy the [README roadmap](../../README.md#roadmap) map and the
+[landing page](https://niksavis.github.io/basicly/#roadmap) render for a wider
+audience. Where the three disagree, this one wins and the other two are stale.
+
+### Details
+
+**15.1 Status vocabulary.** Five states, each defined by the evidence it requires, so
+a row cannot be promoted by optimism:
+
+| Status | Means | Evidence required to claim it |
+| --- | --- | --- |
+| `shipped` | Running code in the current release | Exercised on this repo's own development, and described in §§0–13 |
+| `building` | Sequenced into a phase being worked now — plan Phases 0–4 | An open work package with written exit criteria |
+| `designed` | Settled in a design document but sequenced behind a later phase — plan Phases 5–6 — and **nothing is built** | A design document and a §14 row. **Not** evidence that anything enforces it |
+| `researching` | The deliverable is a number rather than a capability, so this label wins over the phase band | A specified measurement whose result is allowed to cancel the work, written into the design document that owns it |
+| `deferred` | Deliberately not built | Nobody has asked for it yet (§11) |
+
+The `building`/`designed` line is drawn at the plan's phase sequence rather than at
+enthusiasm, because both states have an open tracked record and only the sequence says
+which one is actually in flight.
+
+**15.2 The map.** Grouped by the four pillars of §0, because that is the axis the
+whole document is organised on.
+
+Pillar 01 — **guidance**:
+
+| Capability | Status | Where it is specified |
+| --- | --- | --- |
+| One catalog projected to Claude, Codex and Copilot — instructions, skills, subagents, permissions | `shipped` | §§4–7, §9 |
+| Drift gate (`basicly check`) run by CI | `shipped` | §6 |
+| Path-scoped rules tier, so conditional guidance loads on a matching file instead of always | `shipped` | §7 detail 4 — engine built, one fragment uses it today |
+| Invocation axis per entry: model-invoked pays context load, user-invoked does not | `shipped` | §4.2 (skills) — declared on skill sources today, not yet on fragments |
+| Deterministic lexical routing evals — rank-1 rate in CI, no embeddings | `building` | §14.4, [`catalog-efficacy`](../design/catalog-efficacy-design.md) |
+| An eval case file per catalog entry, enforced as a structural failure | `building` | §14.4 |
+| Relieve the always-on baseline by scoping what is conditional | `building` | §7, [`steering-surfaces`](../design/steering-surfaces-design.md) |
+| Tutorial and how-to layer, so a new consumer has a path from install to first shipped unit | `building` | Diátaxis gap, plan Phase 3 |
+| Whether an individual entry changes behaviour, and which baseline rules bind while an agent works | `researching` | §14.4 — recall measured 2026-07-26; adherence still open |
+| Cursor as a target; a native Codex scoped-rules renderer | `deferred` | §11 |
+
+Pillar 02 — **gates**:
+
+| Capability | Status | Where it is specified |
+| --- | --- | --- |
+| Git hook floor across pre-commit, commit-msg and pre-push | `shipped` | §4.2 |
+| Agent hooks for Claude Code and Copilot | `shipped` | §4.2 |
+| Verify pipeline with `fast`, `full` and `staged` modes | `shipped` | §6, §12 |
+| Every gate classified by type, and a pre-flight gate that writes nothing | `building` | [`gates-and-rework`](../design/gates-and-rework-design.md) |
+| Severity required on judged output, plus a lint refusing a pre-judging reviewer bundle | `building` | §14.3, `gates-and-rework` |
+| Rework convergence detection from the open-finding set rather than the count | `building` | `gates-and-rework` |
+| `basicly install` reporting the capability tier it actually delivered | `building` | Plan Phase 3 — enforcement is plugin-tier; on an instruction-tier host the harness degrades to advice, and we currently say so nowhere |
+
+Pillar 03 — **the loop**:
+
+| Capability | Status | Where it is specified |
+| --- | --- | --- |
+| Single-track loop, intake to retro, driven identically by any supported agent | `shipped` | §12 |
+| Worktree isolation per unit of work | `shipped` | §12 |
+| Parallel lanes: supervisor, lane mini-loop, serial merge queue | `shipped` | §12, §14.2 |
+| Autonomy grants L0–L3 with a spend ceiling, decision queue, confined decider | `shipped` | §12 |
+| Release automation up to the annotated tag | `shipped` | §12 |
+| Per-model spend and wall-clock forecast, enforced when a supervisor pass is admitted | `building` | Plan Phase 1 — the current forecast models working set, not turn count |
+| A supervised multi-lane run with zero human interventions caused by a harness defect | `building` | Plan Phase 0 exit criterion |
+| A named role per judgment step, each with its own instructions, tool policy, tier and output contract | `designed` | §14.3, [`agent-roster`](../design/agent-roster-design.md) |
+| Cost per landed package — the instrument the tier claims rest on | `researching` | §14.6 |
+| Whether deterministic AST localisation cuts an implementer's pre-first-edit cost | `researching` | Plan Phase 1c |
+
+Pillar 04 — **the work graph**:
+
+| Capability | Status | Where it is specified |
+| --- | --- | --- |
+| Issues, dependencies, gate results, checkpoints and evidence in a tracked graph | `shipped` | §12.1 |
+| Phase derived from tracker state, so resume is a read rather than a replay | `shipped` | §12.1 |
+| The scheduler score and rank recorded behind each dispatch | `building` | [`work-tracker`](../design/work-tracker.md) |
+| Owned in-process append-only event log, removing the external binary from the critical path | `designed` | §14.5, `work-tracker` |
+| Provenance on every edge — extracted, inferred, ambiguous | `designed` | §14.5 |
+| `fsck` and `rebuild`, so "the log is the truth" is a claim someone can check | `designed` | §14.5 |
+| Cross-repo work exchange as an append-only offer log | `deferred` | `work-tracker` |
+
+**15.3 Not planned.** So a reader does not read absence as an oversight, the refusals
+in §14.7 are permanent rather than unscheduled: an LLM orchestrator in control of the
+tracker, personas spawning personas, an agent-writable catalog, a maintained TUI, an
+external database or daemon, and agent-to-agent messaging. Each has a reason stronger
+than taste recorded there.
+
+**15.4 How this stays current.** A row changes state in the change that lands the
+behaviour, not in a later cleanup pass, and the same change updates the two rendered
+copies (README and the landing page). Nothing gates that today — it is a convention,
+and the honest consequence is that a stale row here is possible; §§0–13 remain the
+place a `shipped` claim has to be true.
