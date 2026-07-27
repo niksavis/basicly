@@ -82,7 +82,7 @@ subprocess sites in `br.py`.
 | --- | --- |
 | "Rework has a cap but no stall detector" | Correct. `policy.py` has no convergence check. `runner.StallWatchdog` exists but is dispatch-level (no file activity for _n_ seconds) — a different mechanism entirely. |
 | "We lack a path-scoped guidance tier" | **Wrong.** The tier is fully built: `claude.yaml` declares a `scoped_rules` output at `.claude/rules/{fragment_id}.md`, the planner routes on `has_scope`/`exclude_scoped`, `rule_md.j2` renders it. **One fragment now declares a scope** — `platform-hermetic-tests` (`62cabc8`), projected to `.claude/rules/platform-hermetic-tests.md`; at `b02b527` none did. So the tier is in use, the remaining work is authoring, and the one check is still missing — see the asymmetry below, which that first real fragment measured. |
-| "The always-on baseline is ~9000 chars with ~1000 chars of headroom" | Stale. Actual: 8484 / 7209 / 7343 chars for `AGENTS.md` / `CLAUDE.md` / `copilot-instructions.md`. The 9000 soft cap applies to Claude and Copilot only (~1650–1800 chars of headroom each); `codex.yaml` sets 12000, so `AGENTS.md` has ~3500. **The cliff concern stands** — 1086–1303 words per file, well past the ~500-word threshold the review cites; the headroom figure does not. |
+| "The always-on baseline is ~9000 chars with ~1000 chars of headroom" | Stale. Actual: 8484 / 7209 / 7343 chars for `AGENTS.md` / `CLAUDE.md` / `copilot-instructions.md`. The 9000 soft cap applies to Claude and Copilot only (~1650–1800 chars of headroom each); `codex.yaml` sets 12000, so `AGENTS.md` has ~3500. **The cliff concern is refuted, not merely unproven** — at 1086–1303 words per file, `agzx.1` measured 98% recall (claude, 53 rules) and 93% (copilot, 54), so the ~500-word threshold the review cites does not bind here. Neither figure survives; read the result narrowly, per Phase 1 1a. |
 | "Roughly thirty catalog entries" | 20 fragments (17 core + 3 local) + 29 projected skills + **3** subagents + 4 rubrics. The eval-coverage lift is **49 routable guidance entries** (fragments + skills), not 30. |
 
 **A correction to the entry count, because it changes what 2c owes.** The earlier "7 subagents"
@@ -185,12 +185,25 @@ flake and cannot be released once escalated, the measurement measures the defect
 Three assumptions currently carry large downstream work. Each has a cheap test, and at least one
 could cancel a whole phase.
 
-**1a. The always-on recall test.** _Independent — can run first or in parallel._ Open a fresh
-session per agent family and ask the agent to summarise the rules in the always-on file; anything
-it cannot recall is not doing work. Formalised as a behavioural recall case with the no-guidance
-control being the same session with the baseline absent. **This decides whether Phase 4 is urgent
-surgery or routine tidying**, and no change to the always-on cap in either direction is legitimate
-until it runs.
+**1a. The always-on recall test — done, `basicly-agzx.1`, 2026-07-26.** _Was independent of every
+other item, which is why it ran first._ A fresh session per agent family is asked to summarise the
+rules in the always-on file; anything it cannot recall is not doing work. The no-guidance control is
+the same session with the baseline absent. The harness is committed and re-runnable:
+`.scripts/recall_eval.py` + `.scripts/recall_rules.toml`.
+
+**Result: claude recalls 98% of its 53 baseline rules, copilot 93% of 54**, against 17% / 6%
+no-guidance controls — +81 / +87 percentage points. **Codex is unmeasured**, its CLI being absent,
+and it is the arm that matters most: `AGENTS.md` is the largest baseline and the only one that
+_grows_ when a fragment is scoped (§2).
+
+**Read it narrowly.** This is `mechanism confirmed`, never `outcome improved` — recall under a direct
+cue is an upper bound, and it says nothing about whether a rule _binds_ while the agent works. Per
+`catalog-efficacy-design` §4.1 it may not be cited as evidence of quality. It kills exactly one
+claim: that the baseline is past the cliff, so the tokens are wasted.
+
+**Two consequences, both applied below.** Phase 4 is routine tidying rather than urgent surgery. And
+the cap policy is now **asymmetric**: lowering the cap is housekeeping, raising it still has no
+evidence behind it.
 
 **1b. Cost per landed package.** Bead `basicly-7bur`. The hub of the whole plan: it gates
 `basicly-4t9z` by an existing edge, and the design documents defer four further decisions to it —
@@ -212,7 +225,8 @@ boundaries instead of enumerating files. Note the framing — the persona was cu
 _model_ whose omissions are undetectable; a parser's coverage is a checkable property.
 
 **Exit criteria.** Three numbers written into the design documents that own them, and the roster's
-tier table plus the localisation question decided by data rather than argument.
+tier table plus the localisation question decided by data rather than argument. **One of the three is
+in** (1a). 1b and 1c are still owed, and 1b cannot start until `kjc5.29` pins a model.
 
 **Risk.** 1b is a genuine build (task set, hidden objective checks, arm isolation), not a
 measurement script — it is the largest item in this phase and the one most likely to slip. Its
@@ -287,9 +301,10 @@ its content, a new consumer can follow a tutorial from install to first shipped 
 
 ### Phase 4 — Relieve the always-on layer
 
-**Priority: P1 if 1a shows a cliff, P2 if it shows a slope. Depends on: 1a (urgency), 2a (adjacent). Size: 2–3 sessions.**
+**Priority: P2 — settled by 1a, which found no cliff. Depends on: 2a (adjacent). Size: 2–3 sessions.**
 
-Cheaper than the design documents assume, because the mechanism is already built (§2).
+Cheaper than the design documents assume, because the mechanism is already built (§2), and less
+urgent than they assume, because 1a measured the baseline being recalled rather than lost.
 
 1. **Audit every baseline line against three questions**: _is this really a hook?_ · _can I write a
    glob for it?_ · _does it change behaviour versus the default at all?_ Expect all three to fire.
@@ -314,7 +329,8 @@ hedge, and scoping is a deliberate _removal_ from the github.com Copilot surface
 change per fragment, not a refactor.
 
 **Exit criteria.** Baseline measurably smaller on two of three families, 1a's recall test re-run
-shows improved recall, and no declared scope matches nothing.
+shows recall **not degraded** — at 98% / 93% there is no headroom left to improve, so demanding
+improvement would be unsatisfiable — and no declared scope matches nothing.
 
 ### Phase 5 — The judgment layer
 
@@ -449,7 +465,7 @@ Phase 0 ─┬─ vkh0.5 (leak)      ──────────────�
          ├─ 4tjt + 55yh + jr0l.14 + 8veb ──→ unattended run ──┐    │
          └─ f7li                                              │    │
                                                              │    │
-Phase 1 ─┬─ 1a recall test  (independent, no prerequisite) ───┼────┤
+Phase 1 ─┬─ 1a recall test  (DONE 2026-07-26, agzx.1) ────────┼────┤
          ├─ kjc5.29 (pin the model) ──→ 7bur (1b) ────────────┤    │
          └─ 7bur ──→ 1c localisation ──→ Dana's contract      │    │
                  └──→ 4t9z (existing edge)                    │    │
@@ -461,7 +477,7 @@ Phase 2 ─── 2a invocation axis ──→ 2b Tier-2 routing ──→ 2c ev
          └─ 2d severity + no-pre-judging lint ──┐
          └─ 2e stall detector + gate taxonomy ──┴──→ Phase 5
 
-Phase 4 ─── 1a ──→ baseline audit ──→ declare scopes ──→ empty-glob check
+Phase 4 ─── 1a (done) ──→ baseline audit ──→ declare scopes ──→ empty-glob check
 
 Phase 5 ─── 1b + 1c + 2d + D4 ──→ role registry ──→ role-aware dispatch
          └─ kjc5.32 (coupling attribution) should precede
@@ -496,8 +512,9 @@ is accumulating while other phases run.
 - **Must**: Phase 0 in full, `kjc5.29`, `7bur`, `2a`+`2b`, the D4 amendment, `kjc5.13`.
   Without these the project cannot make an evidence-backed claim about itself, and it cannot run
   unattended.
-- **Should**: `1a` (one session, disproportionate leverage), `2d`, `2e`, Phase 3's tutorial layer,
-  Phase 4 steps 1–3.
+- **Should**: `2d`, `2e`, Phase 3's tutorial layer, Phase 4 steps 1–3. (`1a` was listed here and is
+  **done** — one session, and it cancelled Phase 4's urgency, which is the leverage the entry
+  predicted.)
 - **Opportunistic**: Phase 7's catalog-content beads, `kjc5.47`/`.48`, the capability-tier
   declaration.
 - **Defer deliberately, and say so**: Phase 5 until 1b has numbers — building the roster first
