@@ -233,7 +233,31 @@ def test_a_missing_invocation_declaration_fails_the_lint(tmp_path: Path) -> None
 
     violations = lint_catalog(root)
 
-    assert any("'invocation' is a required property" in v for v in violations), violations
+    assert any("no 'invocation' declared" in v for v in violations), violations
+
+
+def test_a_missing_invocation_names_both_values_and_the_safe_migration(tmp_path: Path) -> None:
+    """The field is required with no default, so the refusal must carry the fix.
+
+    A consumer catalog authored before the axis existed fails on upgrade, and the
+    owner ruled the break stays rather than defaulting (basicly-m4zv.9). Reaching
+    into our source to learn what to type is not an acceptable migration, so both
+    valid values and the one that preserves existing behaviour are in the text —
+    and the raw jsonschema line is gone, so one defect yields one diagnostic.
+    """
+    root = _catalog(tmp_path)
+    _skill_source(
+        root,
+        "legacy",
+        f"schema_version: 1\nname: legacy\ndescription: d\n{_INSTRUCTIONS}",
+    )
+
+    violations = [v for v in lint_catalog(root) if "legacy" in v]
+
+    assert len(violations) == 1, f"one defect must yield one diagnostic: {violations}"
+    assert "invocation: model" in violations[0]
+    assert "invocation: user" in violations[0]
+    assert "is a required property" not in violations[0]
 
 
 def test_an_unknown_invocation_value_fails_the_lint(tmp_path: Path) -> None:

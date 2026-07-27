@@ -26,6 +26,7 @@ from pathlib import Path
 
 import yaml
 from jsonschema import Draft202012Validator
+from jsonschema.exceptions import ValidationError
 
 from . import agents, rubrics, skills
 from .schema import TECHNOLOGIES
@@ -48,6 +49,9 @@ AGENTS_DIR = CORE_DIR / "agents"
 HOOKS_DIR = CORE_DIR / "hooks"
 RUBRICS_DIR = CORE_DIR / "rubrics"
 SCHEMAS_DIR = CORE_DIR / "schemas"
+# Skill properties whose absence _check_invocation_axis reports in full, so the
+# raw jsonschema "is a required property" line is dropped for them.
+_AXIS_OWNED_REQUIRED = frozenset({"invocation"})
 
 
 def _rel(path: Path, repo_root: Path) -> str:
@@ -62,13 +66,45 @@ def _validator(repo_root: Path, name: str) -> Draft202012Validator:
     return Draft202012Validator(schema)
 
 
-def _validate(path: Path, validator: Draft202012Validator, repo_root: Path) -> list[str]:
+def _missing_required(err: ValidationError) -> str | None:
+    """The property name a jsonschema ``required`` error is about, else None.
+
+    Derived by diffing the required list against the instance rather than parsed
+    out of ``err.message``, so a jsonschema wording change cannot silently stop a
+    caller's suppression from matching.
+    """
+    if err.validator != "required" or not isinstance(err.instance, dict):
+        return None
+    required = err.validator_value
+    if not isinstance(required, list):
+        return None
+    return next((p for p in required if p not in err.instance), None)
+
+
+def _validate(
+    path: Path,
+    validator: Draft202012Validator,
+    repo_root: Path,
+    *,
+    owned_required: frozenset[str] = frozenset(),
+) -> list[str]:
+    """Schema violations for one source, as ``path: message`` lines.
+
+    ``owned_required`` names properties whose absence a later, more helpful check
+    reports instead: the raw jsonschema line is dropped so one defect yields one
+    diagnostic. Nothing else is suppressed — a wrong *value* for such a property
+    still reports here.
+    """
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:
         return [f"{_rel(path, repo_root)}: invalid YAML: {exc}"]
     errors = sorted(validator.iter_errors(data), key=lambda e: list(e.path))
-    return [f"{_rel(path, repo_root)}: {err.message}" for err in errors]
+    return [
+        f"{_rel(path, repo_root)}: {err.message}"
+        for err in errors
+        if _missing_required(err) not in owned_required
+    ]
 
 
 def _check_enforcement_pointer(path: Path, repo_root: Path) -> list[str]:
@@ -144,7 +180,9 @@ def lint_catalog(repo_root: Path) -> list[str]:
     skill_validator = _validator(repo_root, "skill.schema.json")
     fragment_validator = _validator(repo_root, "fragment.schema.json")
     for path in sorted((repo_root / SKILLS_DIR).glob("*/skill.yaml")):
-        violations.extend(_validate(path, skill_validator, repo_root))
+        violations.extend(
+            _validate(path, skill_validator, repo_root, owned_required=_AXIS_OWNED_REQUIRED)
+        )
     for path in sorted((repo_root / FRAGMENTS_DIR).rglob("*.fragment.yaml")):
         violations.extend(_validate(path, fragment_validator, repo_root))
 
@@ -205,17 +243,24 @@ def _check_skill_spec(repo_root: Path) -> list[str]:
 
 
 def _check_invocation_axis(repo_root: Path) -> list[str]:
-    """Enforce the description/invocation pairing (basicly-m4zv.1).
+    """Enforce the invocation axis and its description pairing (basicly-m4zv.1).
 
-    The *presence* of ``invocation`` is schema-required; this owns the pairing,
-    because a raw jsonschema ``not: required`` message reads as
-    "should not be valid under {'required': ['description']}" and an author hitting
-    the gate deserves to be told what to do.
+    Owns every diagnostic about the field, presence included — the schema's raw
+    lines are suppressed via ``_AXIS_OWNED_REQUIRED`` because ``'invocation' is a
+    required property`` names no valid value and no migration, and a
+    ``not: required`` message reads as "should not be valid under
+    {'required': ['description']}". An author hitting the gate deserves to be told
+    what to do.
 
-    Both directions are violations, and the second is the one that matters: a
-    user-invoked entry carrying a description pays context load every turn for
-    reach it does not have, which is exactly the waste the axis was introduced to
-    find.
+    Presence is a **breaking** requirement for a catalog authored before the axis
+    existed (basicly-m4zv.9: the owner ruled it stays required rather than
+    defaulting, with the migration documented in the changelog), so the message
+    has to carry the fix a consumer applies rather than merely refusing.
+
+    Both pairing directions are violations, and the second is the one that
+    matters: a user-invoked entry carrying a description pays context load every
+    turn for reach it does not have, which is exactly the waste the axis was
+    introduced to find.
     """
     violations: list[str] = []
     for path in sorted((repo_root / SKILLS_DIR).glob("*/skill.yaml")):
@@ -225,7 +270,14 @@ def _check_invocation_axis(repo_root: Path) -> list[str]:
         rel = _rel(path, repo_root)
         invocation = data.get("invocation")
         has_description = isinstance(data.get("description"), str) and data["description"].strip()
-        if invocation == skills.MODEL_INVOKED and not has_description:
+        if invocation is None:
+            violations.append(
+                f"{rel}: no 'invocation' declared — add `invocation: model` for an entry the "
+                "agent should discover and route to, or `invocation: user` for one only a human "
+                "types (which must then carry no description). `invocation: model` preserves the "
+                "behaviour of any entry that already has a description"
+            )
+        elif invocation == skills.MODEL_INVOKED and not has_description:
             violations.append(
                 f"{rel}: a model-invoked entry needs a description — it is what the agent "
                 "reads to decide whether to route here"
