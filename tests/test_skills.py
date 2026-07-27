@@ -282,6 +282,35 @@ def test_a_model_invoked_skill_still_projects_its_description() -> None:
     assert "description: Do a thing." in rendered.split("---")[1]
 
 
+def test_a_user_invoked_skill_never_advertises_the_generated_marker() -> None:
+    """The host fills an absent description from the first body line (basicly-m4zv.7).
+
+    With the marker there, the entry advertised the drift notice itself — 91
+    characters telling the agent nothing. The entry's own heading must reach that
+    slot instead, so the marker moves into the frontmatter as a YAML comment.
+    """
+    rendered = render_skill_md(_definition("user", ""))
+
+    body = rendered.split("---\n")[2]
+    assert body.splitlines()[0] == "# Body", body
+    assert GENERATED_MARKER not in body
+    # Still detectable as generated, which is what drift detection matches on.
+    assert GENERATED_MARKER in rendered
+
+
+def test_a_model_invoked_skill_keeps_the_marker_as_its_first_body_line() -> None:
+    """Its description already occupies the advertised slot, so nothing moves.
+
+    Pinned separately from the byte-for-byte header test because the fix for
+    basicly-m4zv.7 branches on the axis, and a later tidy-up that unified the two
+    forms would silently change every consumer's model-invoked projection.
+    """
+    rendered = render_skill_md(_definition("model", "Do a thing."))
+
+    assert rendered.split("---\n")[2].splitlines()[0] == GENERATED_MARKER
+    assert f"# {GENERATED_MARKER}" not in rendered
+
+
 def test_loading_rejects_an_unknown_invocation_value(tmp_path: Path) -> None:
     """A third position on a two-position axis would be unenforceable downstream."""
     path = tmp_path / SKILLS_SOURCE_DIR / "odd" / "skill.yaml"

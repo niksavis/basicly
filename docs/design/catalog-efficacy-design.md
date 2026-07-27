@@ -166,10 +166,30 @@ Six entries were reclassified, each because its own description already said it 
 `tool-bat` and `tool-git-delta` render for human eyes (an agent has `Read` and its own diff view),
 `tool-fzf` is an interactive picker a headless dispatch cannot drive, and `tool-starship`,
 `tool-wezterm`, `tool-zsh` configure the developer's terminal rather than the repo. Three of the six
-are technology-gated and unprojected here, so the measured saving in *this* repo is 430 characters
-(~107 tokens) per turn, permanently. The scaffold defaults to `model` because that is the reversible
-mistake: over-declaring `model` wastes a description, while over-declaring `user` silently removes
-an entry from the agent's reach.
+are technology-gated and unprojected here, so the saving in *this* repo comes from three entries. The
+scaffold defaults to `model` because that is the reversible mistake: over-declaring `model` wastes a
+description, while over-declaring `user` silently removes an entry from the agent's reach.
+
+**The figure this section first carried — 430 characters, ~107 tokens — was wrong, and how it was
+wrong is worth more than the number** (`basicly-m4zv.7`). 430 is the description bytes deleted from
+the sources (136 + 166 + 128). But the host does not leave the advertised slot empty when a
+description is absent: it falls back to the entry's **first body line**, which was our 91-character
+generated marker. So the saving actually shipped was 430 − (3 × 91) = **157 characters**, and what
+the three entries advertised was a drift marker that tells an agent nothing — a worse trade per
+character than the descriptions it replaced.
+
+Fixed by carrying the marker as a YAML comment inside the frontmatter for a user-invoked entry,
+leaving its own `# <slug>` heading as the fallback; the host strips the heading punctuation, so the
+advertised text is now the bare slug. Re-probed the same way — two skills in a throwaway repo, reads
+denied, asked for the description text it was given — returning `tool-bat=tool-bat` with
+model-invoked `tool-br` unchanged. Advertised text is therefore 8 + 8 + 14 = 30 characters, so the
+saving is **400 characters (~100 tokens) per turn, permanently**.
+
+Two rules fall out, and they bind on any future claim in this document. **Measure a saving at the
+surface the agent actually reads, not at the bytes removed from the source** — the two differ
+whenever that surface has a fallback. And **re-measure after any change to what fills the slot**,
+because the original figure was arithmetic over the sources and was never checked against a live
+index.
 
 ## 4. Tier 3 — behavioural, and the controls that make it mean something
 
