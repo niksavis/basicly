@@ -6,6 +6,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING: `invocation` is now a required field on every skill source.** Every
+  `skill.yaml` must declare who can reach the entry: `model` for one the agent
+  discovers and routes to, which keeps its `description` and pays context load
+  every turn, or `user` for one only a human types, which carries no
+  `description`. A source without the field fails `basicly catalog lint`.
+
+  **Migration.** Add `invocation: model` to every `skill.yaml` you author. That
+  one line is sufficient and preserves existing behaviour — before this change
+  `description` was itself required, so any source that passed lint on v0.5.1
+  already satisfies the model-invoked pairing rule and needs no second edit.
+  Change an entry to `invocation: user` only when you also remove its
+  `description`; nothing can route to a user-invoked entry, so a description
+  there is context load bought for no reach.
+
+  There is deliberately no default and no migration command. The field exists so
+  that "does this entry route correctly" is a well-posed question, and a
+  defaulted value would answer it by inertia rather than by declaration.
+
 ## v0.5.1 - 2026-07-20
 
 Delta: v0.5.0..v0.5.1
