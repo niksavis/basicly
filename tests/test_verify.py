@@ -499,3 +499,60 @@ def test_rerun_failures_keeps_the_verdict_when_no_check_matches(
     rerun = verify.rerun_failures(report, tmp_path, "full", VerifyConfig(()))
     assert rerun is report
     assert rerun.passed is False
+
+
+def test_a_streamed_run_captures_no_output_so_nothing_is_forgiven(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fail-safe direction: absent evidence must never excuse a failure.
+
+    A normal gate streams to the terminal and carries no text, so
+    ``dependency_defect`` has nothing to match and the original verdict stands
+    (basicly-kjc5.56).
+    """
+    signature, _ = verify.DEPENDENCY_DEFECT_SIGNATURES[0]
+    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_kw: _Proc(1, signature))
+    config = VerifyConfig((_check("pytest", ("full",)),))
+
+    report = verify.run_verify(tmp_path, "full", config)
+
+    assert report.results[0].output == ""
+    assert verify.dependency_defect(report) is None
+
+
+def test_capture_collects_output_for_the_signature_test(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Both streams, because a dependency may report on either."""
+    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_kw: _Proc(1, "out-", "err"))
+
+    result = verify.run_check(_check("pytest", ("full",)), tmp_path, "full", capture=True)
+
+    assert result.output == "out-err"
+
+
+def test_dependency_defect_names_the_check_and_why_forgiving_is_safe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A forgiven failure must say which dependency and on what grounds."""
+    signature, _ = verify.DEPENDENCY_DEFECT_SIGNATURES[0]
+    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_kw: _Proc(1, f"E  {signature}"))
+    config = VerifyConfig((_check("pytest", ("full",)),))
+    report = verify.run_verify(tmp_path, "full", config)
+    captured = verify.rerun_failures(report, tmp_path, "full", config, capture=True)
+
+    reason = verify.dependency_defect(captured)
+
+    assert reason is not None
+    assert reason.startswith("pytest: ")
+    assert "clock steps backwards" in reason
+
+
+def test_dependency_defect_ignores_the_signature_on_a_passing_check() -> None:
+    """Only a failure can be forgiven; matching a green check would be meaningless."""
+    signature, _ = verify.DEPENDENCY_DEFECT_SIGNATURES[0]
+    passing = verify.VerifyReport(
+        "full", (verify.CheckResult("pytest", "pass", 0, output=signature),)
+    )
+
+    assert verify.dependency_defect(passing) is None

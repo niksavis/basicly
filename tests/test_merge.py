@@ -806,6 +806,57 @@ def test_merge_worktree_still_reports_verify_failed_when_it_reproduces(
 
 
 @pytest.mark.usefixtures("base_ready")
+def test_merge_worktree_forgives_a_reproduced_failure_that_is_a_dependency_defect(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A backwards clock step persists, so the re-run test alone cannot see it.
+
+    Measured on basicly-m4zv.9: the landing re-ran, reproduced, and spent a rework
+    attempt on a `br` defect the work could not have caused (basicly-kjc5.56).
+    """
+    signature, _ = verify.DEPENDENCY_DEFECT_SIGNATURES[0]
+    reproduced = verify.VerifyReport(
+        "full",
+        (verify.CheckResult("pytest", "fail", 1, output=f"E   RuntimeError: {signature}\n"),),
+    )
+    monkeypatch.setattr(merge, "git", _FakeGit({"status": _Proc(0, ""), "rebase": _Proc(0)}))
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: _FAILED)
+    monkeypatch.setattr(verify, "rerun_failures", lambda *_a, **_k: reproduced)
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-onb.5")
+
+    assert result.status == merge.VERIFY_UNRELIABLE
+    assert result.unreliable is True
+    assert "known dependency defect" in result.detail
+    # The reason travels with the verdict, so a reader is never left guessing which
+    # dependency was forgiven or why forgiving it is safe.
+    assert "clock steps backwards" in result.detail
+
+
+@pytest.mark.usefixtures("base_ready")
+def test_merge_worktree_does_not_forgive_reproduced_output_it_does_not_recognise(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The register is a whitelist; anything else is the work's fault.
+
+    This is the direction that matters. A signature list becomes a way to launder
+    real failures the moment it matches something this repo can cause.
+    """
+    reproduced = verify.VerifyReport(
+        "full",
+        (verify.CheckResult("pytest", "fail", 1, output="E   AssertionError: assert 3 == 4\n"),),
+    )
+    monkeypatch.setattr(merge, "git", _FakeGit({"status": _Proc(0, ""), "rebase": _Proc(0)}))
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: _FAILED)
+    monkeypatch.setattr(verify, "rerun_failures", lambda *_a, **_k: reproduced)
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-onb.5")
+
+    assert result.status == "verify-failed"
+    assert result.unreliable is False
+
+
+@pytest.mark.usefixtures("base_ready")
 def test_merge_worktree_reruns_only_after_a_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

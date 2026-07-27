@@ -74,6 +74,10 @@ class CheckResult:
     # One-line human-readable context for a failure the tool itself could not
     # report (e.g. the command was not found on PATH).
     detail: str = ""
+    # Combined stdout+stderr, populated only when the caller asked to capture
+    # (basicly-kjc5.56). Empty for a streamed run, which is every normal one —
+    # a gate's output belongs on the operator's terminal, not in memory.
+    output: str = ""
 
 
 @dataclass(frozen=True)
@@ -116,9 +120,11 @@ def staged_files(repo_root: Path, suffix: str) -> list[str] | None:
     return [line for line in proc.stdout.splitlines() if line.endswith(suffix)]
 
 
-def run_check(check: VerifyCheck, repo_root: Path, mode: str) -> CheckResult:
+def run_check(
+    check: VerifyCheck, repo_root: Path, mode: str, *, capture: bool = False
+) -> CheckResult:
     """Run a single check, filtering to staged files in ``staged`` mode."""
-    return _run(check.name, list(check.command), repo_root, mode, check.staged_suffix)
+    return _run(check, list(check.command), repo_root, mode, capture=capture)
 
 
 def run_fix(check: VerifyCheck, repo_root: Path, mode: str) -> CheckResult:
@@ -130,15 +136,29 @@ def run_fix(check: VerifyCheck, repo_root: Path, mode: str) -> CheckResult:
     """
     if not check.fix_command:
         return CheckResult(check.name, "skip", 0)
-    return _run(check.name, list(check.fix_command), repo_root, mode, check.staged_suffix)
+    return _run(check, list(check.fix_command), repo_root, mode)
 
 
 def _run(
-    name: str, command: list[str], repo_root: Path, mode: str, staged_suffix: str | None
+    check: VerifyCheck,
+    command: list[str],
+    repo_root: Path,
+    mode: str,
+    *,
+    capture: bool = False,
 ) -> CheckResult:
-    """Run one check-or-fix command, filtering to staged files in ``staged`` mode."""
-    if mode == "staged" and staged_suffix:
-        files = staged_files(repo_root, staged_suffix)
+    """Run one check-or-fix command, filtering to staged files in ``staged`` mode.
+
+    *command* is passed separately because ``run_fix`` runs the check's
+    ``fix_command`` rather than its ``command``; everything else comes off *check*.
+
+    ``capture`` diverts the command's output into ``CheckResult.output`` instead of
+    the terminal. Off by default and only ever set for the diagnostic re-run, so
+    an operator watching a long gate still sees it stream.
+    """
+    name = check.name
+    if mode == "staged" and check.staged_suffix:
+        files = staged_files(repo_root, check.staged_suffix)
         if files is None:
             return CheckResult(
                 name,
@@ -151,7 +171,13 @@ def _run(
             return CheckResult(name, "skip", 0)
         command += files
     try:
-        proc = subprocess.run(command, cwd=repo_root, check=False)  # nosec B603
+        proc = subprocess.run(  # nosec B603
+            command,
+            cwd=repo_root,
+            check=False,
+            capture_output=capture,
+            text=capture or None,
+        )
     except FileNotFoundError:
         return CheckResult(
             name,
@@ -171,7 +197,10 @@ def _run(
             f"cannot run {command[0]} ({exc.strerror or exc}) — check "
             f"[[verify.checks]] in basicly.toml",
         )
-    return CheckResult(name, "pass" if proc.returncode == 0 else "fail", proc.returncode)
+    output = f"{proc.stdout or ''}{proc.stderr or ''}" if capture else ""
+    return CheckResult(
+        name, "pass" if proc.returncode == 0 else "fail", proc.returncode, output=output
+    )
 
 
 def run_verify(repo_root: Path, mode: str, config: VerifyConfig | None = None) -> VerifyReport:
@@ -182,7 +211,12 @@ def run_verify(repo_root: Path, mode: str, config: VerifyConfig | None = None) -
 
 
 def rerun_failures(
-    report: VerifyReport, repo_root: Path, mode: str, config: VerifyConfig | None = None
+    report: VerifyReport,
+    repo_root: Path,
+    mode: str,
+    config: VerifyConfig | None = None,
+    *,
+    capture: bool = False,
 ) -> VerifyReport:
     """Re-run just the checks that failed in *report*, unchanged.
 
@@ -200,6 +234,10 @@ def rerun_failures(
     one whose failures no longer match a configured check — no new evidence means
     the original verdict stands. A caller may only forgive on a positive pass
     here, never on the absence of a result.
+
+    ``capture`` collects the re-run's output so a caller can also ask
+    :func:`dependency_defect` about a failure that *did* reproduce
+    (basicly-kjc5.56).
     """
     failed = set(report.failures)
     if not failed:
@@ -208,7 +246,46 @@ def rerun_failures(
     checks = [check for check in config.for_mode(mode) if check.name in failed]
     if not checks:
         return report
-    return VerifyReport(mode=mode, results=tuple(run_check(c, repo_root, mode) for c in checks))
+    return VerifyReport(
+        mode=mode,
+        results=tuple(run_check(c, repo_root, mode, capture=capture) for c in checks),
+    )
+
+
+# Failure signatures a dependency emits and the work under test cannot cause
+# (basicly-kjc5.56). Each entry is (substring, why it is safe to forgive) and
+# earns its place only on proof that no change to this repo can produce it —
+# otherwise this becomes a way to launder a real failure, which is worse than the
+# flake it excuses. Keep it short and keep the reason with it.
+DEPENDENCY_DEFECT_SIGNATURES: tuple[tuple[str, str], ...] = (
+    (
+        "Validation failed: updated_at: cannot be before created_at",
+        "br rejects its own write when the host clock steps backwards between two "
+        "writes; nothing in this repo sets either timestamp (basicly-vkh0.6 carries "
+        "it as a requirement on the replacement)",
+    ),
+)
+
+
+def dependency_defect(report: VerifyReport) -> str | None:
+    """The reason a failure in *report* is a known dependency defect, else None.
+
+    Matched on captured output, so it answers only for a report produced with
+    ``capture=True``; a streamed report has no text and yields None, which keeps
+    the original verdict standing rather than forgiving on absent evidence.
+
+    This exists because the re-run test alone cannot see this class of defect. A
+    backwards clock step persists for a window, so the failure reproduces and
+    scores as a merit failure — measured on basicly-m4zv.9, where a landing spent
+    a rework attempt on it (basicly-55yh shipped the re-run; this closes the gap).
+    """
+    for result in report.results:
+        if result.status != "fail" or not result.output:
+            continue
+        for signature, reason in DEPENDENCY_DEFECT_SIGNATURES:
+            if signature in result.output:
+                return f"{result.name}: {reason}"
+    return None
 
 
 def apply_fixes(repo_root: Path, mode: str, config: VerifyConfig | None = None) -> VerifyReport:
