@@ -510,8 +510,7 @@ def test_a_streamed_run_captures_no_output_so_nothing_is_forgiven(
     ``dependency_defect`` has nothing to match and the original verdict stands
     (basicly-kjc5.56).
     """
-    signature, _ = verify.DEPENDENCY_DEFECT_SIGNATURES[0]
-    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_kw: _Proc(1, signature))
+    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_kw: _Proc(1, _CLOCK_SINGULAR))
     config = VerifyConfig((_check("pytest", ("full",)),))
 
     report = verify.run_verify(tmp_path, "full", config)
@@ -535,8 +534,7 @@ def test_dependency_defect_names_the_check_and_why_forgiving_is_safe(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A forgiven failure must say which dependency and on what grounds."""
-    signature, _ = verify.DEPENDENCY_DEFECT_SIGNATURES[0]
-    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_kw: _Proc(1, f"E  {signature}"))
+    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_kw: _Proc(1, _CLOCK_SINGULAR))
     config = VerifyConfig((_check("pytest", ("full",)),))
     report = verify.run_verify(tmp_path, "full", config)
     captured = verify.rerun_failures(report, tmp_path, "full", config, capture=True)
@@ -550,9 +548,65 @@ def test_dependency_defect_names_the_check_and_why_forgiving_is_safe(
 
 def test_dependency_defect_ignores_the_signature_on_a_passing_check() -> None:
     """Only a failure can be forgiven; matching a green check would be meaningless."""
-    signature, _ = verify.DEPENDENCY_DEFECT_SIGNATURES[0]
     passing = verify.VerifyReport(
-        "full", (verify.CheckResult("pytest", "pass", 0, output=signature),)
+        "full", (verify.CheckResult("pytest", "pass", 0, output=_CLOCK_SINGULAR),)
     )
 
     assert verify.dependency_defect(passing) is None
+
+
+def test_dependency_defect_matches_brs_other_message_shape() -> None:
+    """One defect, two message shapes, and a landing reproduced only the plural one.
+
+    The first version of the register held br's singular prose and missed this,
+    which is why matching is conjunctive per line rather than literal
+    (basicly-kjc5.56).
+    """
+    plural = verify.VerifyReport(
+        "full", (verify.CheckResult("pytest", "fail", 1, output=_CLOCK_PLURAL),)
+    )
+
+    assert verify.dependency_defect(plural) is not None
+
+
+def test_dependency_defect_needs_the_br_wrapper_on_the_same_line() -> None:
+    """The defect phrase alone is not proof a dependency produced it.
+
+    A test fixture quoting the phrase must not be able to forgive its own failure,
+    so the register also requires the br.py wrapper text on that line.
+    """
+    bare = verify.VerifyReport(
+        "full",
+        (
+            verify.CheckResult(
+                "pytest", "fail", 1, output="E  assert 'cannot be before created_at' in text\n"
+            ),
+        ),
+    )
+
+    assert verify.dependency_defect(bare) is None
+
+
+def test_dependency_defect_refuses_when_only_some_failures_are_explained() -> None:
+    """A run mixing a dependency defect with a real failure is a real failure."""
+    mixed = verify.VerifyReport(
+        "full",
+        (
+            verify.CheckResult("pytest", "fail", 1, output=_CLOCK_SINGULAR),
+            verify.CheckResult("ruff", "fail", 1, output="E  F401 unused import\n"),
+        ),
+    )
+
+    assert verify.dependency_defect(mixed) is None
+
+
+# Real br failures, copied from a landing that reproduced them (basicly-kjc5.56).
+_CLOCK_SINGULAR = (
+    "E           RuntimeError: br update fx-d01 -t task failed: "
+    "Error: Validation failed: updated_at: cannot be before created_at\n"
+)
+_CLOCK_PLURAL = (
+    "E           RuntimeError: br close fx-sj2.1 --reason lane sub-task verified failed: "
+    'Error: Validation errors: [ValidationError { field: "updated_at", '
+    'message: "cannot be before created_at" }]\n'
+)

@@ -814,10 +814,19 @@ def test_merge_worktree_forgives_a_reproduced_failure_that_is_a_dependency_defec
     Measured on basicly-m4zv.9: the landing re-ran, reproduced, and spent a rework
     attempt on a `br` defect the work could not have caused (basicly-kjc5.56).
     """
-    signature, _ = verify.DEPENDENCY_DEFECT_SIGNATURES[0]
     reproduced = verify.VerifyReport(
         "full",
-        (verify.CheckResult("pytest", "fail", 1, output=f"E   RuntimeError: {signature}\n"),),
+        (
+            verify.CheckResult(
+                "pytest",
+                "fail",
+                1,
+                output=(
+                    "E           RuntimeError: br update fx-d01 -t task failed: "
+                    "Error: Validation failed: updated_at: cannot be before created_at\n"
+                ),
+            ),
+        ),
     )
     monkeypatch.setattr(merge, "git", _FakeGit({"status": _Proc(0, ""), "rebase": _Proc(0)}))
     monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: _FAILED)

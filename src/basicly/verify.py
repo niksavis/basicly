@@ -253,13 +253,22 @@ def rerun_failures(
 
 
 # Failure signatures a dependency emits and the work under test cannot cause
-# (basicly-kjc5.56). Each entry is (substring, why it is safe to forgive) and
-# earns its place only on proof that no change to this repo can produce it —
-# otherwise this becomes a way to launder a real failure, which is worse than the
-# flake it excuses. Keep it short and keep the reason with it.
-DEPENDENCY_DEFECT_SIGNATURES: tuple[tuple[str, str], ...] = (
+# (basicly-kjc5.56). Each entry is (substrings that must all appear on ONE line,
+# why forgiving it is safe). An entry earns its place only on proof that no change
+# to this repo can produce it — otherwise this launders a real failure, which is
+# worse than the flake it excuses. Keep it short and keep the reason with it.
+#
+# Matching is per-line and conjunctive because the defect phrase alone is not
+# enough. Requiring our own ``br.py`` wrapper text on the same line proves the
+# failure came out of a br subprocess rather than out of a test's own fixture.
+# It also spans both shapes br uses for one defect — "Validation failed: <field>:
+# <msg>" and "Validation errors: [ValidationError { field: .., message: .. }]" —
+# which a literal match on either prose form does not (learned the hard way: the
+# first version of this register held only the singular form and a landing
+# reproduced only the plural one).
+DEPENDENCY_DEFECT_SIGNATURES: tuple[tuple[tuple[str, ...], str], ...] = (
     (
-        "Validation failed: updated_at: cannot be before created_at",
+        ("RuntimeError: br ", "failed:", "cannot be before created_at"),
         "br rejects its own write when the host clock steps backwards between two "
         "writes; nothing in this repo sets either timestamp (basicly-vkh0.6 carries "
         "it as a requirement on the replacement)",
@@ -267,8 +276,17 @@ DEPENDENCY_DEFECT_SIGNATURES: tuple[tuple[str, str], ...] = (
 )
 
 
+def _defect_reason(output: str) -> str | None:
+    """The register reason matching any single line of *output*, else None."""
+    for line in output.splitlines():
+        for substrings, reason in DEPENDENCY_DEFECT_SIGNATURES:
+            if all(s in line for s in substrings):
+                return reason
+    return None
+
+
 def dependency_defect(report: VerifyReport) -> str | None:
-    """The reason a failure in *report* is a known dependency defect, else None.
+    """The reason *every* failure in *report* is a known dependency defect, else None.
 
     Matched on captured output, so it answers only for a report produced with
     ``capture=True``; a streamed report has no text and yields None, which keeps
@@ -278,14 +296,24 @@ def dependency_defect(report: VerifyReport) -> str | None:
     backwards clock step persists for a window, so the failure reproduces and
     scores as a merit failure — measured on basicly-m4zv.9, where a landing spent
     a rework attempt on it (basicly-55yh shipped the re-run; this closes the gap).
+
+    **Every** failing check must be explained, not merely one: a run that mixes a
+    dependency defect with a real failure is a real failure. Granularity is the
+    check, though, so a single check whose output holds both is still forgiven —
+    the honest bound on this mechanism. What keeps that bound acceptable is that
+    the caller's verdict *blocks* the landing rather than merging it, so a wrong
+    forgive costs one more cycle and can never merge an unverified tree.
     """
-    for result in report.results:
-        if result.status != "fail" or not result.output:
-            continue
-        for signature, reason in DEPENDENCY_DEFECT_SIGNATURES:
-            if signature in result.output:
-                return f"{result.name}: {reason}"
-    return None
+    failures = [r for r in report.results if r.status == "fail"]
+    if not failures:
+        return None
+    reasons: list[str] = []
+    for result in failures:
+        reason = _defect_reason(result.output) if result.output else None
+        if reason is None:
+            return None
+        reasons.append(f"{result.name}: {reason}")
+    return "; ".join(reasons)
 
 
 def apply_fixes(repo_root: Path, mode: str, config: VerifyConfig | None = None) -> VerifyReport:
