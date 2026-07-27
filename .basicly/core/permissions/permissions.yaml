@@ -12,7 +12,10 @@
 # command by token PREFIX with no infix wildcard (verified against copilot CLI
 # v1.0.70), so it cannot express the claude globs faithfully — flag-reordered or
 # variant spellings (e.g. `rm -r -f`) slip through, and the `.env` file
-# read/edit rules have no copilot form at all, so they carry no `copilot` list.
+# read/edit rules have no path-scoped copilot form, so they carry no `copilot`
+# list: `--deny-tool=read` is a real deny name (probed 2026-07-26, see
+# runner._DECIDER_DENY_COPILOT) but takes no path argument, so the only copilot
+# form of one `.env` rule would deny every read a working agent needs.
 # Codex sandbox/approval defaults remain invocation-only too (basicly-t0kt,
 # --sandbox/-a), not yet wired.
 deny:

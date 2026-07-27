@@ -382,10 +382,15 @@ _DECIDER_DENY_CLAUDE: tuple[str, ...] = (
 # no known tool ("SlashCommand" did, and was dropped after a live probe on
 # 2026-07-25), so a typo here would silently leave that tool allowed.
 
-# Copilot names a shell class and a write class; it has no deny spec for reads
-# (permissions.yaml records the same gap), so its corpus bound stays
-# contract-level while writing tracker state is genuinely blocked.
-_DECIDER_DENY_COPILOT: tuple[str, ...] = ("shell", "write")
+# Copilot names one class per surface, reads included. ``read`` is undocumented
+# as a deny name but a live probe on 2026-07-26 established it is accepted and
+# enforced — the dispatch returns the CANNOT_READ sentinel — and that the earlier
+# shell+write pair did not bound the corpus at all: denying only the shell left
+# copilot falling back to its native read tool and reading a canary file outside
+# the prompt. ``--available-tools=`` is documented as a whitelist ("Only these
+# tools will be available"), but an empty value was ignored rather than denying
+# everything, so a blocklist stays the mechanism (basicly-jr0l.27).
+_DECIDER_DENY_COPILOT: tuple[str, ...] = ("shell", "write", "read")
 
 
 def confine_for_decider(spec: RunnerSpec) -> RunnerSpec | None:
