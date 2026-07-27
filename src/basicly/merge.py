@@ -128,16 +128,30 @@ def _verify_for_landing(name: str, worktree_path: Path, verify_mode: str) -> Mer
     fail on this lane's work, so scoring it as a merit failure would spend the
     lane's bounded rework budget on an unreliable gate (basicly-55yh). The re-run
     is paid for only on a failure, so a green landing costs nothing extra.
+
+    Two ways to clear the lane, because the re-run test alone is not enough
+    (basicly-kjc5.56). A failure that does not reproduce is unreliable. So is one
+    that *does* reproduce but carries a signature only a dependency can emit: a
+    backwards clock step persists for a window, so re-running inside that window
+    reproduces a failure the work under test could not have caused. The re-run
+    captures its output for that second test; no other run's output is diverted.
     """
     report = verify.run_verify(worktree_path, verify_mode)
     if report.passed:
         return None
     failures = ", ".join(report.failures)
-    if verify.rerun_failures(report, worktree_path, verify_mode).passed:
+    rerun = verify.rerun_failures(report, worktree_path, verify_mode, capture=True)
+    if rerun.passed:
         return MergeResult(
             name,
             VERIFY_UNRELIABLE,
             f"verify {verify_mode} failed on {failures} but passed unchanged on re-run",
+        )
+    if (defect := verify.dependency_defect(rerun)) is not None:
+        return MergeResult(
+            name,
+            VERIFY_UNRELIABLE,
+            f"verify {verify_mode} failed on {failures} — known dependency defect, {defect}",
         )
     return MergeResult(name, "verify-failed", f"verify {verify_mode} failed: {failures}")
 
