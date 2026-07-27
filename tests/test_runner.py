@@ -248,12 +248,23 @@ def test_confine_for_decider_denies_claudes_whole_tool_surface() -> None:
     assert "judge" in argv
 
 
-def test_confine_for_decider_denies_copilot_shell_and_write() -> None:
-    """Copilot gets one --deny-tool= per class, in its own vocabulary."""
+def test_confine_for_decider_denies_copilot_shell_write_and_read() -> None:
+    """Copilot gets one --deny-tool= per class, in its own vocabulary.
+
+    ``read`` is the one that bounds the corpus: with only shell and write denied,
+    a probe showed copilot falling back to its native read tool and answering
+    from a file outside the prompt (basicly-jr0l.27).
+    """
     confined = runner.confine_for_decider(_builtin("copilot"))
     assert confined is not None
+    assert "read" in confined.deny_tools
     argv = runner.format_command(confined, "judge")
-    assert argv[:3] == ["copilot", "--deny-tool=shell", "--deny-tool=write"]
+    assert argv[:4] == [
+        "copilot",
+        "--deny-tool=shell",
+        "--deny-tool=write",
+        "--deny-tool=read",
+    ]
 
 
 def test_confine_for_decider_puts_codex_in_a_read_only_sandbox() -> None:
@@ -292,7 +303,7 @@ def test_confine_for_decider_adds_to_existing_denials_never_replaces_them() -> N
     )
     confined = runner.confine_for_decider(baseline)
     assert confined is not None
-    assert confined.deny_tools == ("fetch", "shell", "write")
+    assert confined.deny_tools == ("fetch", "shell", "write", "read")
 
 
 def test_confine_for_decider_refuses_an_unconfinable_family() -> None:
