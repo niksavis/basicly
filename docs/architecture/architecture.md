@@ -1367,7 +1367,7 @@ Pillar 04 — **the work graph**:
 | Owned in-process append-only event log, removing the external binary from the critical path | `designed` | §14.5, `work-tracker` |
 | Provenance on every edge — extracted, inferred, ambiguous | `designed` | §14.5 |
 | `fsck` and `rebuild`, so "the log is the truth" is a claim someone can check | `designed` | §14.5 |
-| Cross-repo work exchange as an append-only offer log | `deferred` | `work-tracker` |
+| Cross-repo work offers as self-writes in each repo's own ledger, read-only across the boundary | `deferred` | `work-tracker` |
 
 **15.3 Not planned.** So a reader does not read absence as an oversight, the refusals
 in §14.7 are permanent rather than unscheduled: an LLM orchestrator in control of the

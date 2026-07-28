@@ -2,7 +2,8 @@
 
 Status: **initialization — information gathering, not a build plan.** Opened 2026-07-25; updated
 2026-07-26 from the state-of-the-art review
-([`research/2026-07-26-sota-review.md`](../research/2026-07-26-sota-review.md) §2.10). No schema is
+([`research/2026-07-26-sota-review.md`](../research/2026-07-26-sota-review.md) §2.10); updated
+2026-07-28 with the cross-repo topology decision in §8.1. No schema is
 frozen and no implementation starts from this document; its job is to record why we must own this
 component, what our own usage already tells us it must do, and what we still need to measure
 before committing to a design. The decision point is named in §7.
@@ -10,7 +11,9 @@ before committing to a design. The decision point is named in §7.
 **Read §7 first if you are about to start work.** It carries a licence correction — `beads_rust`
 is *not* MIT, and a clean-room boundary now applies to this component. The 2026-07-26 additions
 are §5.1 (three risks in the JSONL import path), §9.4's collision budget, §9.6 (provenance labels
-on graph edges), and §16 (why we decline the versioned-database alternative upstream chose).
+on graph edges), and §16 (why we decline the versioned-database alternative upstream chose). The
+2026-07-28 change is §8: the shared exchange is replaced by a per-repo mesh, with the reasoning
+and the reversal condition recorded in §8.1.
 
 ## 1. Why this is not optional
 
@@ -40,7 +43,7 @@ Stated by the owner, plus what the harness's own use has demonstrated:
 | Requirement | What it means concretely here |
 | --- | --- |
 | **Lives in the repo** | State is committed, diffable, and travels with a clone; no server, no daemon, no external DB |
-| **Cross-repo** | One writer per repo ledger; foreign work moves as *offers* through an append-only exchange in `development`, pulled never pushed (§8) |
+| **Cross-repo** | One writer per repo ledger and no shared artifact; foreign work is *offered* by a self-write in the announcer's ledger and taken by a self-write in the target's, with read-only access across the boundary (§8) |
 | **Fast** | The loop makes many reads per advance, so per-read cost multiplies. Measured baseline and targets in §10 — an in-process read is ~175× cheaper than one external CLI call |
 | **Upgradable** | Every event carries a schema version; unknown fields are preserved on read-modify-write, never dropped. A newer writer's events stay readable by an older reader |
 | **Maintainable** | Owned by the same toolchain as the rest of `basicly`; no second language, no separate release train |
@@ -136,8 +139,8 @@ HTML board emitted by a command, both viewable in any browser or markdown render
 in review. A Textual TUI stays possible later; it is not a first deliverable.
 
 **Cross-repo shape:** each repo owns its ledger under its own prefix and is its only writer;
-cross-repo work moves as offers through the exchange in §8, so no component ever writes across a
-repo boundary.
+cross-repo work moves as offers recorded by each participant in its *own* ledger (§8), so no
+component ever writes across a repo boundary and there is no shared artifact to coordinate on.
 
 ## 5. Migration and coexistence
 
@@ -222,38 +225,122 @@ is exactly the unowned-critical-path risk this document was opened about. Not le
 implementation proceeds, confirm the boundary with someone qualified. Until then the conservative
 line costs nothing, because the MIT original is available.
 
-## 8. Cross-repo work exchange — announce, never push
+## 8. Cross-repo work offers — announce in your own ledger, never write across a boundary
 
-Settled 2026-07-25 by the owner. Several repos are worked at once, and work is routinely
-*discovered* in the wrong repo: a bug for `basicly` surfaces while working in `terminal`. The
+Settled 2026-07-25 by the owner; **topology revised 2026-07-28** — see the decision entry in §8.1,
+which is where the reasoning lives. Several repos are worked at once, and work is routinely
+*discovered* in the wrong repo: a bug for one repo surfaces while working in a different one. The
 resolution is Kanban pull semantics, not delivery.
 
-**Each repo's ledger has exactly one writer: that repo.** No repo ever writes into another
-repo's tracker. Cross-repo coordination therefore never needs a cross-tracker write, which is
-what makes the concurrency story trivial rather than distributed (see §9).
+**Each repo's ledger has exactly one writer: that repo — and there is no shared artifact that more
+than one repo writes.** Every write in the system is a self-write. That is what makes the
+concurrency story trivial rather than distributed (§9.3), and it holds without exception.
 
-The `development` workspace hosts an **exchange**: an append-only log of *offers*, not
-assignments.
+Work moves as **offers**, not assignments, in three self-writes:
 
-- A repo that discovers foreign work **announces** it — an event naming the target repo, the
-  summary, and whatever context exists. It does not create a bead in the target.
-- Design work brainstormed in `development` (design docs that are not yet ready for any repo to
-  implement) is **decomposed in `development`** and its children announced the same way, so the
-  exchange is the single place work becomes available.
-- Consumers **poll at their own cadence**. A repo checks the exchange when *it* is stable enough
-  to take work, pulls an item by creating a bead in its own tracker, and records the offer id as
-  provenance. The claim is written back to the **exchange**, never to another tracker.
+1. **Announce** — the discovering repo creates a record *in its own ledger*, typed as an offer,
+   naming the target repo and carrying the whole payload (summary, context, provenance). That is
+   its only write. It does not create a record in the target.
+2. **Intake** — the target reads its peers' committed ledgers, finds offers addressed to itself,
+   and creates a native record *in its own ledger* that copies the offer payload verbatim and
+   records the offer id as provenance.
+3. **Reconcile** — the announcer reads the target's committed ledger, observes a record whose
+   provenance names its offer, and retires the offer *in its own ledger*.
+
+Reading a peer is ordinary git — `git show <default-branch>:<ledger-path>` against a peer
+checkout — so it needs no coordination, no write access, and no daemon. Peer discovery is the
+mechanism `basicly status --fleet` already ships (`fleet.py`): the basicly-installed repos under a
+workspace root, read-only, with an unreadable peer captured as an error entry rather than failing
+the sweep.
+
+- **Consumers poll at their own cadence.** A repo checks its peers when *it* is stable enough to
+  take work. The claim is a record in the claimant's own ledger; nothing is written anywhere else.
+- Design work brainstormed in a workspace repo (design docs not yet ready for any repo to
+  implement) is **decomposed where the design lives** and its children announced the same way.
+  That repo is a peer like every other, not a hub.
 - Event kinds are append-only and total: `announced`, `claimed`, `declined`, `superseded`. An
-  offer's state is a fold over its events, so nothing is mutated and history is the audit trail.
+  offer's state is a fold over its events — now over the union of the ledgers involved rather than
+  over one shared file — so nothing is mutated and history is the audit trail.
 
 Why offers rather than tasks: an announcement carries no authority. The receiving repo decides
 whether the work fits its own priorities, and a repo that never pulls simply has a growing offer
 list rather than a corrupted backlog. That is the same engine-disposes/agents-propose stance
 (D2) applied across repo boundaries — the announcer proposes, the owner disposes.
 
-Idempotence: an offer id is stable, and the pulled bead records `offer: <exchange-id>`, so a
-double-pull is detectable and a re-poll is free. Provenance runs both ways — the bead names its
-offer, the offer's `claimed` event names the repo and bead that took it.
+Idempotence: an offer id is stable, and the taken record names it as provenance, so a double-take
+is detectable and a re-poll is free. Provenance runs both ways — the taken record names its offer,
+and the announcer's `claimed` event names the repo and record that took it.
+
+### 8.1 Decision — a per-repo mesh, not a shared exchange (2026-07-28)
+
+This section previously specified an **exchange**: an append-only offer log hosted in a designated
+workspace repo, written by every participant. Revisiting the topology against the requirement in §2
+that this harness be *installable into repos it does not own* showed the exchange to be the weaker
+of the two shapes, for the reasons below. Recorded as a decision entry rather than a silent
+rewrite, because §8 was marked settled and the reasoning is the part worth keeping.
+
+**Adopted: the mesh.** In descending weight:
+
+1. **The exchange imposes a deployment precondition on a distribution.** This harness is
+   *installed into repos it does not own* (`basicly install`). Under the exchange, announcing or
+   taking work requires a designated workspace repo that is cloned, writable, and pushable — so a
+   consumer who installs into two repos and has no workspace repo cannot use cross-repo work at all
+   until they create one and grant write access to it. The mesh requires only that peers can *read*
+   each other. For a distribution whose proposition is "install it and the capability appears",
+   that difference is the whole argument, and it is invisible in the design until someone hits a
+   permission error.
+2. **Peer discovery is already built here.** `basicly status --fleet` (`fleet.py`) already
+   enumerates the basicly-installed repos under a workspace root, reads each one read-only, and
+   captures a repo whose snapshot raises as an `error` entry rather than failing the rollup — which
+   is exactly the failure behaviour cross-repo reads need. The mesh reuses a shipped mechanism; the
+   exchange introduces a new privileged artifact. Reuse-before-reinventing decides this on its own.
+3. **It removes the design's only multi-writer artifact.** §9.3's claim previously carried a
+   carve-out: the exchange had many writers and was conflict-free *by argument*. Under the mesh,
+   "one writer per ledger" is unconditional. A property with no exception is one fewer thing that
+   can quietly stop being true.
+4. **It narrows the trust boundary.** §11 already treats offers as untrusted input. In the mesh
+   that input arrives from an explicit, enumerable peer set, read-only, and we never write to an
+   artifact a foreign agent also writes. The injection surface is the same in kind and smaller in
+   extent.
+5. **There is no bootstrap ordering.** You cannot announce before the exchange repo exists; the
+   mesh has no such step.
+
+**The objection that had to be answered first.** §2 requires a state change be reconstructible
+from the ledger *itself*. With an exchange, one offer's whole history sits in one file; in a mesh
+it spans two. The answer is that **each side records the whole offer**: the announcer's record
+carries the full payload, and the taker copies that payload verbatim alongside the offer id. So
+neither ledger needs the other in order to be *understood* — only in order to be *reconciled*.
+That satisfies the requirement as written, which is about not depending on git history; it was
+never a requirement that one file hold both halves of a two-party interaction. The mesh is in fact
+the more available of the two: if a participant repo becomes unreachable, the exchange loses that
+offer's later events as well, whereas each mesh ledger still fully explains what its own repo did.
+
+**The cost the mesh adds, which the exchange did not have.** Offers now sit in the announcer's own
+ledger, so that ledger holds records describing work the announcer will never do. An offer must
+therefore be excluded from that repo's ready set, from the scheduler's ranked set (§9.2), and from
+phase derivation — otherwise the announcer's own loop will try to dispatch foreign work. So an
+offer is a **distinct record kind carrying its own exclusion**, not an ordinary record with a type
+the loop is trusted to skip, and §14 carries the property test. The exchange avoided this by
+keeping foreign work outside every work ledger; that is a real advantage it had, bought back here
+for the price of one explicit filter that is cheap to test.
+
+**Two behaviours to document rather than fix.** Convergence takes two reads — intake, then
+reconcile — so the announcer's view of an offer is stale until it reads the target. That is
+consistent with "the owner disposes", and no worse than an exchange, which also converges
+asynchronously. And reconciliation is **per-machine**: a machine that holds the announcer but not
+the target can announce yet cannot observe the take, so the offer reads open locally. That is
+staleness, not a stuck offer, and the command must say so in its output rather than leaving a
+reader to infer it.
+
+**Peer schema skew is a non-issue by direction.** A peer may run a newer version and write offer
+fields we do not understand. Because we only ever *read* a peer and copy its payload verbatim into
+our own record, §13's forward-compatibility rule applies with none of the round-trip risk — we
+cannot truncate a peer's unknown fields, because we never write back to it.
+
+**What would reverse this.** A requirement that one artifact hold both halves of an offer's
+history without reading two repos — an audit obligation satisfiable only from a single file.
+Nothing in §2 asks for that today; if something does later, the exchange is the better answer on
+that axis and this entry is where to start.
 
 ## 9. The open questions, answered
 
@@ -299,10 +386,11 @@ Two consequences:
 
 ### 9.3 Concurrency — single writer per ledger
 
-Answered by §8. One writer per repo ledger; the supervisor is already a singleton per repo (D1),
-and cross-repo work moves as offers rather than writes. The exchange itself has many writers but
-is conflict-free by construction: every event is its own line with a unique id, so concurrent
-appends from different repos touch different lines and merge cleanly.
+Answered by §8, and after the 2026-07-28 topology decision the answer carries no exception: one
+writer per repo ledger, no shared artifact, every write a self-write. The supervisor is already a
+singleton per repo (D1), and cross-repo work moves as offers each participant records in its own
+ledger, so two repos never contend for one file and cross-repo access is read-only in both
+directions.
 
 Within one repo a second *interactive* writer is permitted, and the event log is what makes that
 cheap: an append is one line, so two writers do not contend for a record. Only the derived index
@@ -442,8 +530,10 @@ directory layouts across 328 records** (`basicly-vkh0.5`). The requirement for o
 follows directly — **a record is path-free**, and provenance is the repo's identity (prefix, or
 remote URL), never a filesystem location.
 
-**The exchange is untrusted input.** Offers in `development` are written by *other repos' agents*
-and read by ours, which makes §8 a trust boundary rather than a convenience. Two rules:
+**A peer's ledger is untrusted input.** Offers are written by *other repos' agents* and read by
+ours, which makes §8 a trust boundary rather than a convenience. The mesh (§8.1) keeps that
+boundary narrow — the peer set is explicit and enumerable, access across it is read-only, and no
+foreign agent writes to an artifact we also write — but it does not remove it. Two rules:
 
 - **Offers are data, never instructions.** An offer's text reaches an agent's context, so a
   malicious or merely confused announcement is a prompt-injection vector. Offer content is embedded
@@ -506,6 +596,11 @@ The properties worth asserting, beyond the differential test in §5:
   does not understand (the upgradability requirement, tested rather than asserted).
 - **Property-based generation** over event sequences, because the interesting bugs are in
   interleavings a hand-written case will not find.
+- **Offers never enter their own repo's work graph** — an announced offer is absent from the ready
+  set, from the scheduler's ranked output, and from phase derivation, no matter what state its
+  events put it in. This is the one property the mesh (§8.1) adds and the exchange did not need,
+  and it must be asserted rather than assumed, because the failure mode is a repo dispatching work
+  it announced for somebody else.
 
 ## 15. Non-goals
 
