@@ -22,14 +22,14 @@ def _load_identity_guard_module():
 def test_accepts_a_real_identity() -> None:
     """A configured name and real email should pass."""
     module = _load_identity_guard_module()
-    ok, _ = module.check_identity("Niksa Visic", "niksavis@live.com")
+    ok, _ = module.check_identity("Ada Lovelace", "ada@personal.example")
     assert ok
 
 
 def test_rejects_missing_email() -> None:
     """An empty email (git would use the hostname fallback) must be blocked."""
     module = _load_identity_guard_module()
-    ok, message = module.check_identity("Niksa Visic", "")
+    ok, message = module.check_identity("Ada Lovelace", "")
     assert not ok
     assert "user.email" in message
 
@@ -37,8 +37,8 @@ def test_rejects_missing_email() -> None:
 def test_rejects_hostname_fallback_email() -> None:
     """A machine-local auto-generated email must be blocked."""
     module = _load_identity_guard_module()
-    for bad in ("visicni@at-work.local", "user@host.(none)", "user@box.localdomain"):
-        ok, message = module.check_identity("Niksa Visic", bad)
+    for bad in ("user@workstation.local", "user@host.(none)", "user@box.localdomain"):
+        ok, message = module.check_identity("Ada Lovelace", bad)
         assert not ok, bad
         assert "auto-generated" in message
 
@@ -46,7 +46,7 @@ def test_rejects_hostname_fallback_email() -> None:
 def test_rejects_missing_name() -> None:
     """An empty name must be blocked even when the email is valid."""
     module = _load_identity_guard_module()
-    ok, message = module.check_identity("", "niksavis@live.com")
+    ok, message = module.check_identity("", "ada@personal.example")
     assert not ok
     assert "user.name" in message
 
@@ -54,9 +54,11 @@ def test_rejects_missing_name() -> None:
 def test_allow_email_pattern_enforced_when_set() -> None:
     """When basicly.identityAllowEmail is set, a non-matching email is blocked."""
     module = _load_identity_guard_module()
-    ok_match, _ = module.check_identity("Niksa Visic", "niksa.visic@drei.com", r"@drei\.com$")
+    ok_match, _ = module.check_identity("Ada Lovelace", "ada@acme.example", r"@acme\.example$")
     assert ok_match
-    ok_miss, message = module.check_identity("Niksa Visic", "niksavis@live.com", r"@drei\.com$")
+    ok_miss, message = module.check_identity(
+        "Ada Lovelace", "ada@personal.example", r"@acme\.example$"
+    )
     assert not ok_miss
     assert "identityAllowEmail" in message
 

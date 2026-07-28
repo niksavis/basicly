@@ -20,7 +20,7 @@ def test_sanitize_label_makes_a_safe_slug() -> None:
     """Hosts become filesystem-safe, hyphen-separated labels."""
     module = _load_module()
     assert module.sanitize_label("github.com") == "github-com"
-    assert module.sanitize_label("bitbucket.drei.com") == "bitbucket-drei-com"
+    assert module.sanitize_label("bitbucket.acme.example") == "bitbucket-acme-example"
 
 
 def test_sanitize_label_rejects_empty() -> None:

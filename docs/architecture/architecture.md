@@ -1098,8 +1098,8 @@ branch → merge to it, push, open a PR to `main`. Delivery is incremental per f
 follows each feature's merge.
 
 **12.10 Reuse & positioning.** basicly's harness is a lean, clean-room, `br`-substrate-native,
-agent-agnostic re-founding of the same goal as the sibling `agent-harness` (basicly's first,
-company-owned, lefthook/pinned-pack, tracker-abstracted attempt): borrow its battle-tested
+agent-agnostic re-founding of the same goal as an earlier private harness (a lefthook/pinned-pack,
+tracker-abstracted first attempt): borrow that battle-tested
 worktree/merge know-how (copy-mode deps, `git merge-tree` pre-flight probe, mode-aware
 cleanup) as a reference, while keeping the **`br`-wrapping engine + agent-agnostic projection +
 installable composable distribution** as the differentiators. From beads-blueprint, adapt
