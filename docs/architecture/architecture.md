@@ -405,7 +405,17 @@ not imported — §4.4 detail 3). Both skill roots and all three always-on files
 (`pre-commit.py`, `identity-guard.py`, `commit-msg.py`, `beads-commit-msg.py`,
 `pre-push.py`, `secret-scan.py` — a stdlib scanner that blocks a commit whose
 staged added lines carry a likely credential, with an inline
-`pragma: allowlist secret` escape for reviewed false positives) plus agent-side
+`pragma: allowlist secret` escape for reviewed false positives;
+`internal-info-scan.py` — its sibling for internal-only identifiers (a company
+domain, an internal host, a machine username, a private repo name), which
+publish silently because they read as ordinary text to anyone who does not
+already know they are internal. Its denylist is **not** in the script: a gate
+hard-coding the strings it suppresses would publish them into this repo and into
+every consumer that installs the catalog, so the tokens live in the gitignored
+`basicly.local.toml` as named `[[privacy.denied]]` rules and the report prints
+only the rule name — pre-commit also runs in CI, whose logs are public. Inert
+until configured, so a consumer is never blocked by a list it did not write)
+plus agent-side
 hooks (`protect-generated.py`, `tool-usage.py`) — as
 first-class catalog artifacts — the deterministic, gating counterpart to
 fragments/skills — described tool-agnostically in `core/hooks/hooks.yaml`.

@@ -36,6 +36,18 @@ hooks:
     stage: pre-commit
     always_run: true
     pass_filenames: false
+  # Sibling of secret-scan for internal-only identifiers (a company domain, an
+  # internal host, a machine username, a private repo name). Committed content is
+  # published, and these read as ordinary text to anyone who does not already know
+  # they are internal (basicly-0n3d). The denylist lives in the gitignored
+  # basicly.local.toml, never here: a gate that hard-codes the strings it
+  # suppresses publishes them itself, into this repo and into every consumer that
+  # installs the catalog. Inert until configured.
+  - id: internal-info-scan
+    script: internal-info-scan.py
+    stage: pre-commit
+    always_run: true
+    pass_filenames: false
   - id: commit-msg-script
     script: commit-msg.py
     stage: commit-msg

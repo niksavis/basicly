@@ -60,6 +60,14 @@ repos:
     - pre-commit
     pass_filenames: false
     always_run: true
+  - id: internal-info-scan
+    name: internal-info-scan
+    entry: uv run python .basicly/core/hooks/internal-info-scan.py
+    language: system
+    stages:
+    - pre-commit
+    pass_filenames: false
+    always_run: true
   - id: commit-msg-script
     name: commit-msg-script
     entry: uv run python .basicly/core/hooks/commit-msg.py
