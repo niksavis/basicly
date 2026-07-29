@@ -48,6 +48,15 @@ DEFAULT_SKILL_ROOTS = (
     Path(".claude/skills"),
     Path(".agents/skills"),
 )
+# Loader tolerance for a missing `description` differs by root (basicly-m4zv.10),
+# so the render does too. Claude Code loads a description-less skill and still
+# lists it by name — that tolerance is what makes the invocation axis's saving
+# possible at all. Codex rejects the file outright ("missing field
+# `description`"), so on the open-standard root the trade is not "pay tokens or
+# save them" but "have the skill or not": v0.5.1 shipped these three loadable and
+# main does not. Listed as tolerant rather than as requiring, so an unrecognised
+# custom root fails safe toward a file that loads.
+DESCRIPTION_OPTIONAL_ROOTS = frozenset({".claude/skills"})
 
 # Roots basicly used to project into; generated-marker files here are pruned on
 # skills-build/install and removed by uninstall.
@@ -209,7 +218,7 @@ def _optional_frontmatter(skill: SkillDefinition) -> str:
     return yaml.safe_dump(fields, sort_keys=False, allow_unicode=True, default_flow_style=False)
 
 
-def render_skill_md(skill: SkillDefinition) -> str:
+def render_skill_md(skill: SkillDefinition, *, require_description: bool = False) -> str:
     """Render the discoverable SKILL.md (frontmatter + generated marker + body).
 
     ``name`` and ``description`` are emitted verbatim (byte-identical to the
@@ -227,6 +236,17 @@ def render_skill_md(skill: SkillDefinition) -> str:
     so "user-invoked" delivers a large context saving, not zero context load and
     not human-only reach.
 
+    **That tolerance is Claude's, not universal (basicly-m4zv.10).** Codex rejects
+    a description-less file outright — ``missing field `description` `` — so the
+    stripping that saves context on one root deletes the skill on another, which
+    is why *require_description* exists and why the caller derives it from the
+    destination root rather than choosing it. Since a user-invoked source carries
+    no description (catalog lint forbids one), there is nothing to project for a
+    root that demands the field and one is synthesized: the entry's name plus its
+    contract, which satisfies the loader for a few tokens instead of restoring a
+    routing description nothing should route to. Verified against codex-cli
+    0.146.0 — three load failures before, zero after.
+
     **Where the marker goes depends on the axis (basicly-m4zv.7).** The host does
     not leave an absent description empty — it falls back to the first body line.
     With the marker sitting there, a user-invoked entry advertised
@@ -239,9 +259,20 @@ def render_skill_md(skill: SkillDefinition) -> str:
     file, which is what :func:`_is_generated_skill` matches on.
     """
     user_invoked = skill.invocation != MODEL_INVOKED
-    description = "" if user_invoked else f"description: {skill.description}\n"
-    marker_comment = f"# {GENERATED_MARKER}\n" if user_invoked else ""
-    body_marker = "" if user_invoked else f"{GENERATED_MARKER}\n\n"
+    # *require_description* is the root's loader tolerance, not a style choice
+    # (basicly-m4zv.10). A user-invoked source carries no description by design —
+    # catalog lint forbids one — so for a root that demands the field there is
+    # nothing to project and it must be synthesized. Name the entry and state its
+    # contract rather than writing a routing description: the field satisfies the
+    # loader for a few tokens without advertising a route no human wants taken.
+    stripped = user_invoked and not require_description
+    if user_invoked and require_description:
+        text = f"User-invoked skill {skill.name}. A human runs it by name."
+    else:
+        text = skill.description
+    description = "" if stripped else f"description: {text}\n"
+    marker_comment = f"# {GENERATED_MARKER}\n" if stripped else ""
+    body_marker = "" if stripped else f"{GENERATED_MARKER}\n\n"
     header = (
         f"---\nname: {skill.name}\n{marker_comment}{description}{_optional_frontmatter(skill)}---\n"
     )
@@ -274,6 +305,19 @@ def resolve_skill_roots(
         resolved.append(absolute_root)
 
     return resolved
+
+
+def root_requires_description(skill_root: Path) -> bool:
+    """Whether a skill projected under *skill_root* must carry a description.
+
+    Keyed on the root's own last two path parts and joined with ``/`` so the
+    comparison is identical on POSIX and Windows and works for an absolute root
+    (``/repo/.claude/skills``) as well as a relative one. An unrecognised root
+    requires a description: emitting one costs a few tokens, omitting one can
+    cost the whole skill.
+    """
+    key = "/".join(skill_root.parts[-2:])
+    return key not in DESCRIPTION_OPTIONAL_ROOTS
 
 
 def _is_generated_skill(path: Path) -> bool:
@@ -327,7 +371,8 @@ def _project_skill(skill: SkillDefinition, skill_dir: Path, result: SyncResult) 
     expected: set[Path] = set()
 
     skill_md = skill_dir / SKILL_FILE_NAME
-    sync_file(skill_md, render_skill_md(skill).encode("utf-8"), result)
+    require = root_requires_description(skill_dir.parent)
+    sync_file(skill_md, render_skill_md(skill, require_description=require).encode("utf-8"), result)
     expected.add(skill_md)
 
     for rel in _resource_files(skill):
@@ -407,7 +452,8 @@ def _check_projected_skill(skill: SkillDefinition, skill_dir: Path) -> list[tupl
 
     skill_md = skill_dir / SKILL_FILE_NAME
     expected.add(skill_md)
-    rendered = render_skill_md(skill).encode("utf-8")
+    require = root_requires_description(skill_dir.parent)
+    rendered = render_skill_md(skill, require_description=require).encode("utf-8")
     if not skill_md.exists():
         mismatches.append((skill_md, "missing"))
     elif skill_md.read_bytes() != rendered:
