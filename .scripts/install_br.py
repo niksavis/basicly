@@ -31,9 +31,11 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
-# The floor the harness is exercised against; worktree provisioning refuses an
-# older br because tracker sharing needs `.beads/redirect` support.
-BR_VERSION = "0.2.16"
+# The version is owned by `basicly.br` so the engine's expectation and the
+# binary CI installs can never drift apart (basicly-o7z5); the digests stay
+# here, next to the asset names they belong to. Refresh both together.
+from basicly.br import PINNED_VERSION as BR_VERSION
+
 RELEASES = "https://github.com/Dicklesworthstone/beads_rust/releases/download"
 
 

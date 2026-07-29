@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pytest
 
+from basicly import br
+
 
 def _load_module():
     """Load the install-br script module from its path.
@@ -62,6 +64,17 @@ def test_every_ci_runner_resolves_to_a_pinned_asset(
     asset = module.select_asset()
     assert module.BR_VERSION in asset.name
     assert asset.member in ("br", "br.exe")
+
+
+def test_the_installer_and_the_engine_agree_on_one_pinned_version() -> None:
+    """The version CI installs and the version the engine expects are one constant.
+
+    They used to be two unrelated literals, so a machine could run a br the
+    harness had never been tested against with nothing to notice it
+    (basicly-o7z5). Pinning the *asset digests* still lives in the installer;
+    only the version is shared, and this is the assertion that keeps it so.
+    """
+    assert _load_module().BR_VERSION == br.PINNED_VERSION
 
 
 def test_an_unknown_host_fails_loudly(monkeypatch: pytest.MonkeyPatch) -> None:

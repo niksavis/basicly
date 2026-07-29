@@ -53,3 +53,7 @@ redirect
 *.tmp-*
 *-lock-*
 *.fsqlite-*
+# br 0.2.19 spells these with a hyphen before `fsqlite`, not a dot
+# (`beads.db-fsqlite-ns-gate`, `beads.db-fsqlite-ns-use`), so `*.fsqlite-*`
+# above misses them and they land as untracked dirt (basicly-o7z5).
+*-fsqlite-*

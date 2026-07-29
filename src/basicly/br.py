@@ -25,6 +25,23 @@ from basicly import redact, tracker_usage
 # are stable and a hard failure would strand every loop.
 MIN_VERSION = (0, 2)
 
+# The exact br the harness is *tested* against: what `.scripts/install_br.py`
+# pins by digest and what CI puts on PATH. It lives here, not in that script,
+# because the script is not importable (it is `.scripts/`, not a package) while
+# both sides can import this module — one constant, no drift between the version
+# CI installs and the version the engine expects.
+#
+# MIN_VERSION alone could not catch what happened on 2026-07-28 (basicly-o7z5):
+# it compares major.minor only, so 0.2.19 and 0.2.16 are indistinguishable to
+# it, and it is a floor with no ceiling. A machine silently upgraded to 0.2.19,
+# whose `gate report` rejects the harness's call, and the only symptom was four
+# integration tests failing on that machine while CI — still on the pin — stayed
+# green. Upgrading *past* the pin is not a fix either: br's current `main`
+# targets schema 17 and its reviewed migration accepts only 13->17 and 14->17,
+# so a 0.2.19 database (schema 16 here) has no supported path forward
+# (beads_rust#398). The pin is the supported state in both directions.
+PINNED_VERSION = "0.2.16"
+
 _probed_paths: set[str] = set()
 
 
@@ -34,7 +51,7 @@ def which() -> str | None:
 
 
 def _probe_version(br_path: str) -> None:
-    """Warn once per process when the installed br is older than the floor."""
+    """Warn once per process when the installed br is not the version we test."""
     if br_path in _probed_paths:
         return
     _probed_paths.add(br_path)
@@ -44,15 +61,27 @@ def _probe_version(br_path: str) -> None:
         )
     except OSError, subprocess.TimeoutExpired:
         return
-    match = re.search(r"(\d+)\.(\d+)", proc.stdout or "")
+    match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", proc.stdout or "")
     if match is None:
         return
+    found = match.group(0)
     version = (int(match.group(1)), int(match.group(2)))
     if version < MIN_VERSION:
         floor = ".".join(str(part) for part in MIN_VERSION)
         print(
-            f"Warning: br {match.group(0)} is older than the harness floor "
+            f"Warning: br {found} is older than the harness floor "
             f"({floor}); upgrade br if tracker commands misbehave.",
+            file=sys.stderr,
+        )
+    elif found != PINNED_VERSION:
+        # Any difference from the pin, in either direction. Naming the fix in
+        # the warning is the point: the failure this catches shows up as
+        # unrelated-looking test failures, hours away from the upgrade.
+        print(
+            f"Warning: br {found} on PATH ({br_path}) is not the pinned "
+            f"{PINNED_VERSION} the harness is tested against; tracker behaviour "
+            f"may differ. Reinstall the pin with "
+            f"`python .scripts/install_br.py --bin-dir <dir-on-PATH>`.",
             file=sys.stderr,
         )
 

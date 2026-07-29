@@ -46,6 +46,52 @@ def test_version_probe_warns_below_the_floor(
     assert err.count("older than the harness floor") == 1
 
 
+def test_version_probe_warns_when_newer_than_the_pin(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A br *above* the pin warns too: 0.2.19 broke `gate report` (basicly-o7z5).
+
+    The floor check cannot see this — it compares major.minor, where 0.2.19 and
+    the pinned 0.2.16 are equal — so an upgraded machine ran a tracker the
+    harness was never tested against and the only symptom was integration
+    tests failing there while CI, still on the pin, stayed green.
+    """
+    monkeypatch.setattr(br, "which", lambda: "/usr/bin/br")
+    monkeypatch.setattr(br, "_probed_paths", set())
+
+    def fake_run(cmd, **_kw):
+        out = "br 0.2.19" if "--version" in cmd else ""
+        return subprocess.CompletedProcess(cmd, 0, out, "")
+
+    monkeypatch.setattr(br.subprocess, "run", fake_run)
+    br.run_br(tmp_path, ["ready"])
+    br.run_br(tmp_path, ["ready"])
+    err = capsys.readouterr().err
+    assert err.count("is not the pinned") == 1
+    assert br.PINNED_VERSION in err
+    assert "older than the harness floor" not in err
+
+
+def test_version_probe_is_silent_on_the_pinned_version(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The supported state warns about nothing, so the warning stays meaningful."""
+    monkeypatch.setattr(br, "which", lambda: "/usr/bin/br")
+    monkeypatch.setattr(br, "_probed_paths", set())
+
+    def fake_run(cmd, **_kw):
+        out = f"br {br.PINNED_VERSION}" if "--version" in cmd else ""
+        return subprocess.CompletedProcess(cmd, 0, out, "")
+
+    monkeypatch.setattr(br.subprocess, "run", fake_run)
+    br.run_br(tmp_path, ["ready"])
+    assert capsys.readouterr().err == ""
+
+
 # --- Reading the committed export (basicly-kjc5.50) --------------------------
 
 
