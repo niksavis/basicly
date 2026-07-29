@@ -191,17 +191,71 @@ def test_any_other_br_error_is_not_retried(tmp_path: Path, monkeypatch: pytest.M
     assert len(calls) == 1
 
 
-def test_a_persistent_clock_skew_gives_up_rather_than_spinning(
+def test_a_persistent_clock_skew_gives_up_at_the_deadline(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The retry is bounded: a clock that never catches up surfaces the error."""
-    calls = _skewed_run(monkeypatch, failures=99, stderr=_SKEW_STDERR)
+    """The retry is bounded by elapsed time, not by an attempt count.
+
+    Bounded that way because the wait a skew needs cannot be derived — br's error
+    names no timestamps — so a fixed ladder could not span a step larger than
+    itself (basicly-jr0l.42). The clock here advances slowly enough to allow far
+    more attempts than any fixed ladder would, which is what makes this
+    discriminating rather than merely satisfied.
+
+    Injects the clock rather than patching ``br.time.monotonic``: that patches the
+    global ``time`` module, so ``tracker_usage.timed`` would consume the same
+    ticks for its own latency measurement and the count would silently be wrong.
+    """
+    _skewed_run(monkeypatch, failures=99, stderr=_SKEW_STDERR)
+    calls: list[float] = []
+    ticks = iter([n * 0.5 for n in range(40)])
+
+    proc = br._spawn_tolerating_clock_skew(
+        "/usr/bin/br",
+        tmp_path,
+        ["update", "x"],
+        sleep=calls.append,
+        monotonic=lambda: next(ticks),
+    )
+
+    assert br._is_clock_skew(proc), "the caller must still see the unrescued failure"
+    # deadline = 0.0 + 5.0; the check reaches it on the tenth attempt, so nine waits
+    assert len(calls) == 9, len(calls)
+
+
+def test_the_deadline_never_consults_the_wall_clock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The wall clock is the thing misbehaving, so it cannot bound a wait on itself.
+
+    A wall-clock deadline would be extended by the very backward step it is
+    waiting out, so the retry could outlive its own bound.
+    """
+    _skewed_run(monkeypatch, failures=1, stderr=_SKEW_STDERR)
     monkeypatch.setattr(br.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(br.time, "time", lambda: pytest.fail("must not read the wall clock"))
 
-    with pytest.raises(RuntimeError, match="cannot be before created_at"):
-        br.run_br(tmp_path, ["update", "x"])
+    assert br.run_br(tmp_path, ["update", "x"]).returncode == 0
 
-    assert len(calls) == len(br._CLOCK_SKEW_BACKOFF_S) + 1
+
+def test_a_retry_is_countable_in_the_usage_ledger(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The bound stays a guess until the ledger says how many attempts a real skew needs.
+
+    Only a retry carries the field, so existing ledger lines stay byte-identical
+    and the committed file does not churn.
+    """
+    _skewed_run(monkeypatch, failures=2, stderr=_SKEW_STDERR)
+    monkeypatch.setattr(br.time, "sleep", lambda _s: None)
+    recorded: list[int] = []
+    monkeypatch.setattr(
+        br.tracker_usage, "record", lambda *_a, **kw: recorded.append(kw.get("attempt", 1))
+    )
+
+    br.run_br(tmp_path, ["update", "x"])
+
+    assert recorded == [1, 2, 3]
 
 
 def test_a_soft_call_site_tolerates_the_same_skew(

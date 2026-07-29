@@ -87,7 +87,9 @@ def _probe_version(br_path: str) -> None:
         )
 
 
-def _spawn(br_path: str, repo_root: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
+def _spawn(
+    br_path: str, repo_root: Path, args: list[str], *, attempt: int = 1
+) -> subprocess.CompletedProcess[str]:
     """Spawn br and record the invocation into the usage ledger (basicly-vkh0.1).
 
     The one place the engine's tracker calls are measured. It sits here rather
@@ -97,7 +99,9 @@ def _spawn(br_path: str, repo_root: Path, args: list[str]) -> subprocess.Complet
     reach the ledger — never values, which would put issue titles and home
     directory paths into a committed file.
     """
-    with tracker_usage.timed(repo_root, "br", args, site=tracker_usage.SITE_ENGINE) as timer:
+    with tracker_usage.timed(
+        repo_root, "br", args, site=tracker_usage.SITE_ENGINE, attempt=attempt
+    ) as timer:
         proc = subprocess.run(  # nosec B603
             [br_path, *args], cwd=repo_root, capture_output=True, text=True, check=False
         )
@@ -106,20 +110,33 @@ def _spawn(br_path: str, repo_root: Path, args: list[str]) -> subprocess.Complet
 
 
 # br rejects an update whose `updated_at` precedes its `created_at`. On a host
-# whose clock can step backwards a hair between two consecutive br calls, a
+# whose clock can step backwards between two consecutive br calls, a
 # create-then-update pair therefore fails for a reason that has nothing to do
 # with the request (basicly-jr0l.41): it blocked a landing twice consecutively,
 # with a different victim test each run, which reads as suite flakiness rather
 # than as the dependency defect it is.
 #
-# Retry that one error, briefly and bounded. Deliberately not a general retry —
-# any other non-zero exit is returned untouched so a real error still fails fast,
-# and each attempt goes through _spawn so the usage ledger counts how often this
-# actually fires (basicly-vkh0.1). Requirements input for the replacement
+# Bounded by a *deadline*, not by a ladder of sleeps (basicly-jr0l.42). The wait a
+# skew needs is however long the host clock takes to advance past the record's
+# `created_at`, and br's error names no timestamps, so that duration cannot be
+# derived — a fixed 0.35s ladder simply could not span a larger step, which is why
+# the defect recurred after the first fix. A deadline covers any step shorter than
+# itself without pretending to know which.
+#
+# The deadline is read from a *monotonic* clock, which matters more than usual
+# here: the wall clock is the thing misbehaving, so it cannot be used to bound a
+# wait on itself. tracker_usage.timed already documents the same hazard.
+#
+# Deliberately not a general retry — any other non-zero exit returns untouched so
+# a real error still fails fast. Each attempt carries its attempt number into the
+# usage ledger, so how many attempts a real skew needs becomes readable and the
+# deadline below can stop being a guess. Requirements input for the replacement
 # (basicly-vkh0.6), which must never branch on a wall-clock comparison at all —
 # the rule D3 already states for the event log.
 _CLOCK_SKEW_MARKER = "updated_at: cannot be before created_at"
-_CLOCK_SKEW_BACKOFF_S = (0.05, 0.1, 0.2)
+_CLOCK_SKEW_DEADLINE_S = 5.0
+_CLOCK_SKEW_FIRST_WAIT_S = 0.05
+_CLOCK_SKEW_MAX_WAIT_S = 1.0
 
 
 def _is_clock_skew(proc: subprocess.CompletedProcess[str]) -> bool:
@@ -132,23 +149,31 @@ def _spawn_tolerating_clock_skew(
     args: list[str],
     *,
     sleep: Callable[[float], None] | None = None,
+    monotonic: Callable[[], float] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """:func:`_spawn`, retrying only br's updated_at-before-created_at rejection.
 
-    The backoff is the point rather than politeness: retrying instantly re-reads
-    the same skewed clock, so each attempt waits for it to catch up. *sleep* is
-    injectable so a test can prove the retry without spending the wall clock, and
-    it resolves at call time rather than as a bound default — a default of
-    ``time.sleep`` would freeze the reference at import and silently ignore both
-    the parameter's intent and a patched ``time.sleep``.
+    Waits between attempts rather than spinning: retrying instantly re-reads the
+    same skewed clock. *sleep* and *monotonic* are injectable so a test can prove
+    both the retry and the deadline without spending wall-clock time, and both
+    resolve at call time rather than as bound defaults — a default of
+    ``time.sleep`` freezes the reference at import and silently ignores both the
+    parameter and a patched ``time.sleep``.
     """
     wait = sleep if sleep is not None else time.sleep
-    for delay in _CLOCK_SKEW_BACKOFF_S:
-        proc = _spawn(br_path, repo_root, args)
+    clock = monotonic if monotonic is not None else time.monotonic
+    deadline = clock() + _CLOCK_SKEW_DEADLINE_S
+    delay = _CLOCK_SKEW_FIRST_WAIT_S
+    attempt = 1
+    while True:
+        proc = _spawn(br_path, repo_root, args, attempt=attempt)
         if proc.returncode == 0 or not _is_clock_skew(proc):
             return proc
+        if clock() >= deadline:
+            return proc
         wait(delay)
-    return _spawn(br_path, repo_root, args)
+        delay = min(delay * 2, _CLOCK_SKEW_MAX_WAIT_S)
+        attempt += 1
 
 
 def run_br(
