@@ -560,6 +560,22 @@ def test_run_stdin_injection_passes_prompt_on_stdin(monkeypatch: pytest.MonkeyPa
     assert captured["stdin"] is subprocess.PIPE  # a prompt needs a writable pipe
 
 
+def test_run_arg_prompt_closes_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An arg-prompt dispatch gets stdin closed, never inherited (basicly-jr0l.36).
+
+    Popen's ``stdin=None`` inherits the parent's, so an agent CLI that reads stdin
+    for extra context blocks on the supervisor's own stdin until the dispatch
+    timeout — codex exec does this — and the stall is indistinguishable from a
+    wedged lane. The prompt is already on the argv, so DEVNULL is the contract.
+    """
+    captured = _patch_popen(monkeypatch)
+    spec = RunnerSpec("codex", HEADLESS, ("codex", "exec", PROMPT_PLACEHOLDER))
+    runner.run(spec, "do the thing", Path("/work"))
+
+    assert captured["stdin"] is subprocess.DEVNULL
+    assert captured["input"] is None  # nothing to write when the prompt is on argv
+
+
 def test_git_identity_env_none_without_identity() -> None:
     """No bot identity configured -> no env overrides (basicly-smzg)."""
     spec = RunnerSpec("claude", HEADLESS, ("claude", "-p", PROMPT_PLACEHOLDER))

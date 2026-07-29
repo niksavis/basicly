@@ -676,6 +676,13 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     if dry_run:
         return RunResult(spec.name, tuple(argv), executed=False)
     stdin = prompt if spec.prompt_via == "stdin" else None
+    # An arg-prompt dispatch must get stdin *closed*, not inherited (basicly-jr0l.36).
+    # Popen's stdin=None means inherit, and an agent CLI that reads stdin for extra
+    # context then blocks on the supervisor's own stdin until the dispatch timeout —
+    # codex exec does exactly this ("Reading additional input from stdin..."), which
+    # reads as a wedged lane to the StallWatchdog rather than as the hang it is. The
+    # prompt is already on the argv, so there is nothing this end should ever send.
+    stdin_source = subprocess.PIPE if stdin is not None else subprocess.DEVNULL
     # Overlay br attribution (basicly-kjc5.3) and, when configured, the bot git
     # identity (basicly-smzg) on the inherited environment.
     identity = git_identity_env(spec)
@@ -692,7 +699,7 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     proc = subprocess.Popen(  # nosec B603
         argv,
         cwd=cwd,
-        stdin=subprocess.PIPE if stdin is not None else None,
+        stdin=stdin_source,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
