@@ -16,6 +16,7 @@ from basicly.skills import (
     discover_skills,
     render_skill_md,
     resolve_skill_roots,
+    root_requires_description,
     sync_skills,
 )
 
@@ -336,3 +337,81 @@ def test_loading_a_user_invoked_skill_needs_no_description(tmp_path: Path) -> No
     (skill,) = discover_skills(tmp_path)
     assert skill.invocation == "user"
     assert skill.description == ""
+
+
+# --- Per-root loader tolerance (basicly-m4zv.10) -------------------------------
+
+
+@pytest.mark.parametrize(
+    ("root", "requires"),
+    [
+        (Path(".claude/skills"), False),
+        (Path("/repo/.claude/skills"), False),
+        (Path("C:/repo/.claude/skills"), False),
+        (Path(".agents/skills"), True),
+        (Path("/repo/.agents/skills"), True),
+        (Path(".github/skills"), True),
+        (Path("vendor/custom-root"), True),
+    ],
+)
+def test_root_description_requirement_is_data_not_host_dependent(
+    root: Path, requires: bool
+) -> None:
+    """Tolerance keys on the root's own trailing parts, so absolute and relative agree.
+
+    Expressed as a table rather than as a branch on the running platform: the
+    thing that varies is the path, and a path is data. An unrecognised root
+    requires a description — emitting one costs a few tokens, omitting one can
+    cost the whole skill.
+    """
+    assert root_requires_description(root) is requires
+
+
+def test_a_user_invoked_skill_gets_a_description_where_the_loader_demands_one() -> None:
+    """Codex rejects a description-less file, so stripping it there deletes the skill.
+
+    The source carries none (catalog lint forbids it), so the field is
+    synthesized rather than restored: named, so three user-invoked entries do not
+    all render the same string, and stating the contract instead of a route.
+    """
+    rendered = render_skill_md(_definition("user", ""), require_description=True)
+
+    frontmatter = rendered.split("---")[1]
+    assert "description: User-invoked skill s." in frontmatter
+    assert "s" in frontmatter
+
+
+def test_a_description_bearing_render_keeps_the_marker_out_of_the_advertised_slot() -> None:
+    """With a description present the marker returns to the body, as for a model entry.
+
+    Otherwise the frontmatter would carry both a description and the YAML-comment
+    marker — two mechanisms for the same slot, and the m4zv.7 defect waiting to
+    resurface if the description were ever dropped again.
+    """
+    rendered = render_skill_md(_definition("user", ""), require_description=True)
+
+    assert f"# {GENERATED_MARKER}" not in rendered.split("---")[1]
+    assert rendered.split("---\n")[2].splitlines()[0] == GENERATED_MARKER
+
+
+def test_build_and_check_agree_per_root(tmp_path: Path) -> None:
+    """The drift check compares bytes, so it must render exactly as the build did.
+
+    Both derive the requirement from the destination root; if they ever diverged,
+    every user-invoked skill would report permanent drift on one of the two roots.
+    """
+    _write_skill(tmp_path, "handrun", "handrun", "")
+    path = tmp_path / SKILLS_SOURCE_DIR / "handrun" / "skill.yaml"
+    path.write_text(
+        "schema_version: 1\nname: handrun\ninvocation: user\ninstructions: |\n  # x\n",
+        encoding="utf-8",
+    )
+    roots = [tmp_path / ".claude/skills", tmp_path / ".agents/skills"]
+
+    sync_skills(tmp_path, roots)
+
+    assert check_synced_skills(tmp_path, roots) == []
+    tolerant = (roots[0] / "handrun" / "SKILL.md").read_text(encoding="utf-8")
+    demanding = (roots[1] / "handrun" / "SKILL.md").read_text(encoding="utf-8")
+    assert "description:" not in tolerant.split("---")[1]
+    assert "description:" in demanding.split("---")[1]
