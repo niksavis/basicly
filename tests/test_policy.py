@@ -1079,6 +1079,45 @@ def test_an_unreliable_gate_event_is_scoped_to_its_gate(
     assert policy.unreliable_gate_events(tmp_path, "i", "verify") == 0
 
 
+# --- ...and escalating it rather than deferring forever (basicly-jr0l.41) ------
+
+
+def test_the_count_reaches_a_bound_that_forces_a_human_look(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Forgiving without a bound is a livelock: no budget spent, so no cap reached.
+
+    The count was always returned here; what was missing was anything comparing
+    it to a limit, so a chronically unreliable gate deferred its lane forever
+    while the lane looked merely slow.
+    """
+    _install(monkeypatch, _FakeBr())
+    counts = [
+        policy.record_unreliable_gate(tmp_path, "i", "merge")
+        for _ in range(policy.MAX_UNRELIABLE_GATE_EVENTS)
+    ]
+
+    assert counts[-1] == policy.MAX_UNRELIABLE_GATE_EVENTS
+    assert counts[-2] < policy.MAX_UNRELIABLE_GATE_EVENTS  # the bound is reached, not skipped
+    # Still not rework: the flake is no evidence against the work.
+    assert policy.rework_charged(tmp_path, "i", "merge") == 0
+
+
+def test_the_two_escalations_stay_distinguishable_in_one_queue() -> None:
+    """Both ride the same decision kind, so only the question text tells them apart.
+
+    They answer different questions — untrustworthy result versus wrong work — and
+    a driver acting on one must never parse it as the other.
+    """
+    unreliable = policy.unreliable_gate_escalation_question("merge")
+    rework = policy.rework_escalation_question("merge")
+
+    assert policy.gate_from_unreliable_escalation(unreliable) == "merge"
+    assert policy.gate_from_rework_escalation(rework) == "merge"
+    assert policy.gate_from_rework_escalation(unreliable) is None
+    assert policy.gate_from_unreliable_escalation(rework) is None
+
+
 # --- A budget meters the grant, not the session's lifetime (basicly-jr0l.17) ---
 
 

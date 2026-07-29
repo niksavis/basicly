@@ -422,6 +422,36 @@ def gate_from_rework_escalation(question: str) -> str | None:
     return match.group("gate") if match else None
 
 
+# How many times a gate may be forgiven as unreliable before a human must look
+# (basicly-jr0l.41). Not charging rework for a flake is right — the flake is no
+# evidence against the work — but "not charged" was implemented as "block and try
+# again", with nothing counting the tries. A gate that keeps failing and then
+# passing unchanged therefore deferred its lane indefinitely: no budget was ever
+# spent, so no cap was ever reached, so nothing escalated, and the lane looked
+# merely slow. :func:`record_unreliable_gate` already returns the count for
+# exactly this purpose — this is the bound it was missing.
+#
+# Deliberately separate from ``max_rework`` rather than reusing it: the two count
+# different things, untrustworthy result versus wrong work, and the markers were
+# split in two precisely so neither a reader nor a counter could confuse them.
+MAX_UNRELIABLE_GATE_EVENTS = 3
+_UNRELIABLE_ESCALATION_RE = re.compile(r"^gate (?P<gate>\S+) is unreliable:")
+
+
+def unreliable_gate_escalation_question(gate: str) -> str:
+    """The canonical queue question for a chronically unreliable *gate*."""
+    return (
+        f"gate {gate} is unreliable: it failed and then passed unchanged "
+        f"{MAX_UNRELIABLE_GATE_EVENTS} times; fix the flake, or land anyway?"
+    )
+
+
+def gate_from_unreliable_escalation(question: str) -> str | None:
+    """The gate an unreliable-gate escalation asks about, or None when it is not one."""
+    match = _UNRELIABLE_ESCALATION_RE.match(question.strip())
+    return match.group("gate") if match else None
+
+
 # --- Human checkpoints ------------------------------------------------------
 
 

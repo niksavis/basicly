@@ -609,7 +609,25 @@ def _verify_and_land(
         # The gate failed and then passed unchanged, so nothing here faults this
         # work: record the flake and block for another landing attempt rather
         # than spending the node's bounded budget on it (basicly-55yh).
-        policy.record_unreliable_gate(ctx.repo_root, ctx.issue_id, merge.MERGE_GATE, result.detail)
+        events = policy.record_unreliable_gate(
+            ctx.repo_root, ctx.issue_id, merge.MERGE_GATE, result.detail
+        )
+        # ...but "block and try again" with nothing counting the tries is a
+        # livelock (basicly-jr0l.41). No budget is spent, so no cap is reached, so
+        # a chronically unreliable gate defers its lane forever while looking
+        # merely slow. The count has always been returned here; at the bound the
+        # lane escalates to the same queue an exhausted budget uses, so a human
+        # sees an untrustworthy gate rather than a lane that never finishes.
+        if events >= policy.MAX_UNRELIABLE_GATE_EVENTS:
+            question = policy.unreliable_gate_escalation_question(merge.MERGE_GATE)
+            decisions.enqueue(
+                ctx.repo_root,
+                ctx.issue_id,
+                policy.REWORK_ESCALATION_KIND,
+                question,
+                result.detail,
+            )
+            return _blocked(ctx, f"escalated: {question}", landing=result)
         return _blocked(ctx, result.detail, landing=result)
     if not result.merged:
         return _rework(ctx, merge.MERGE_GATE, f"merge failed: {result.detail}", landing=result)

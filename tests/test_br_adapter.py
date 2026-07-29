@@ -138,3 +138,80 @@ def test_export_comment_texts_reads_only_well_formed_comments() -> None:
     }
     assert br.export_comment_texts(record) == ["first"]
     assert br.export_comment_texts({"id": "b-2"}) == []
+
+
+# --- br's clock-skew rejection (basicly-jr0l.41) -------------------------------
+
+_SKEW_STDERR = "Error: Validation failed: updated_at: cannot be before created_at"
+
+
+def _skewed_run(monkeypatch: pytest.MonkeyPatch, failures: int, stderr: str) -> list[list[str]]:
+    """Fake br: fail *failures* times with *stderr*, then succeed. Returns the calls."""
+    monkeypatch.setattr(br, "which", lambda: "/usr/bin/br")
+    monkeypatch.setattr(br, "_probed_paths", {"/usr/bin/br"})
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **_kw):
+        calls.append(list(cmd))
+        if len(calls) <= failures:
+            return subprocess.CompletedProcess(cmd, 1, "", stderr)
+        return subprocess.CompletedProcess(cmd, 0, "ok", "")
+
+    monkeypatch.setattr(br.subprocess, "run", fake_run)
+    return calls
+
+
+def test_a_clock_skew_rejection_is_retried_until_it_succeeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Br rejects an update whose updated_at precedes created_at: the clock, not the request.
+
+    This blocked a landing twice consecutively with a different victim test each
+    run, so it read as suite flakiness rather than as a dependency defect.
+    """
+    calls = _skewed_run(monkeypatch, failures=2, stderr=_SKEW_STDERR)
+    slept: list[float] = []
+    monkeypatch.setattr(br.time, "sleep", slept.append)
+
+    proc = br.run_br(tmp_path, ["update", "x", "-t", "task"])
+
+    assert proc.returncode == 0
+    assert len(calls) == 3  # two rejections, then the retry that stuck
+    assert slept, "the retry must wait for the clock to catch up, not re-read the same skew"
+
+
+def test_any_other_br_error_is_not_retried(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A real error must still fail fast — this is one defect's escape hatch, not a retry policy."""
+    calls = _skewed_run(monkeypatch, failures=1, stderr="Error: issue not found")
+    monkeypatch.setattr(br.time, "sleep", lambda _s: pytest.fail("must not back off"))
+
+    with pytest.raises(RuntimeError, match="issue not found"):
+        br.run_br(tmp_path, ["update", "nope"])
+
+    assert len(calls) == 1
+
+
+def test_a_persistent_clock_skew_gives_up_rather_than_spinning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The retry is bounded: a clock that never catches up surfaces the error."""
+    calls = _skewed_run(monkeypatch, failures=99, stderr=_SKEW_STDERR)
+    monkeypatch.setattr(br.time, "sleep", lambda _s: None)
+
+    with pytest.raises(RuntimeError, match="cannot be before created_at"):
+        br.run_br(tmp_path, ["update", "x"])
+
+    assert len(calls) == len(br._CLOCK_SKEW_BACKOFF_S) + 1
+
+
+def test_a_soft_call_site_tolerates_the_same_skew(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """try_run_br swallows failures, so without the retry the skew would corrupt state silently."""
+    calls = _skewed_run(monkeypatch, failures=1, stderr=_SKEW_STDERR)
+    monkeypatch.setattr(br.time, "sleep", lambda _s: None)
+
+    proc = br.try_run_br(tmp_path, ["comments", "add", "x", "note"])
+
+    assert proc is not None and proc.returncode == 0
+    assert len(calls) == 2
