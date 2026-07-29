@@ -87,9 +87,16 @@ modes = ["fast", "full"]
 
 [[verify.checks]]
 name = "pytest"
-# -n auto (pytest-xdist) parallelizes the subprocess-heavy CLI tests across
-# cores; on the multi-core CI runners this is the bulk of the gate's wall time.
-command = ["pytest", "-q", "-n", "auto"]
+# pytest-xdist parallelizes the subprocess-heavy CLI tests; this is the bulk of
+# the gate's wall time. Capped rather than `-n auto` (basicly-9s59): every
+# `br init` takes a *machine-global* write lock at ~/.beads/.write.lock with a
+# 30s timeout, so worker count is contention on one lock, not free parallelism.
+# On a 13-core workstation `auto` stampedes it and the integration fixtures die
+# with "Timed out after 30000ms waiting for write lock" — different victims each
+# run, which reads as flakiness rather than as the resource limit it is. Four
+# matches what the 2-4 core CI runners effectively use, so `auto` was never
+# exercising this path in CI anyway. Raise only if br stops serialising globally.
+command = ["pytest", "-q", "-n", "4"]
 modes = ["full"]
 
 # Loop gate/checkpoint policy: which gates block advancement and the rework cap.
