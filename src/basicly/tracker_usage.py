@@ -178,6 +178,7 @@ def record(  # noqa: PLR0913 — six independent facts about one observation
     site: str,
     duration_ms: float | None = None,
     ok: bool = True,
+    attempt: int = 1,
 ) -> None:
     """Append one invocation to the spool. Never raises.
 
@@ -203,6 +204,11 @@ def record(  # noqa: PLR0913 — six independent facts about one observation
         }
         if duration_ms is not None:
             entry["duration_ms"] = round(float(duration_ms), 1)
+        if attempt > 1:
+            # Only a retry carries this, so existing lines stay byte-identical and
+            # the committed ledger does not churn (basicly-jr0l.42). Reading the
+            # highest attempt per burst is how the retry bound stops being a guess.
+            entry["attempt"] = attempt
         spool = _spool_path(repo_root)
         spool.parent.mkdir(parents=True, exist_ok=True)
         gitignore = spool.parent / ".gitignore"
@@ -214,7 +220,14 @@ def record(  # noqa: PLR0913 — six independent facts about one observation
         pass
 
 
-def timed(repo_root: Path, binary: str, args: list[str] | tuple[str, ...], *, site: str):
+def timed(
+    repo_root: Path,
+    binary: str,
+    args: list[str] | tuple[str, ...],
+    *,
+    site: str,
+    attempt: int = 1,
+):
     """Context manager recording *args* with its measured wall-clock duration.
 
     Uses a monotonic clock: a wall-clock delta can go backwards across an NTP
@@ -239,6 +252,7 @@ def timed(repo_root: Path, binary: str, args: list[str] | tuple[str, ...], *, si
                 site=site,
                 duration_ms=elapsed_ms,
                 ok=self.ok and exc_type is None,
+                attempt=attempt,
             )
             return False  # never swallow the caller's exception
 
