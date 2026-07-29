@@ -15,6 +15,7 @@ import pytest
 
 from basicly import (
     classify,
+    decisions,
     decompose,
     loop,
     merge,
@@ -1730,3 +1731,59 @@ def test_a_published_claim_adds_no_warning(
 
     assert tracker_commits == [("i", "record the claim before provisioning")]
     assert "NOT committed" not in result.detail
+
+
+# --- A chronically unreliable gate escalates (basicly-jr0l.41) -----------------
+
+
+def _unreliable_landing(monkeypatch: pytest.MonkeyPatch, events: int) -> list[tuple[str, str]]:
+    """Drive a landing whose gate is unreliable, with the count already at *events*."""
+    attempt = merge.MergeResult(
+        "i", merge.VERIFY_UNRELIABLE, "verify full failed on pytest but passed unchanged on re-run"
+    )
+    monkeypatch.setattr(merge, "merge_worktree", lambda *_a, **_k: attempt)
+    monkeypatch.setattr(policy, "record_unreliable_gate", lambda *_a, **_k: events)
+    enqueued: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        decisions,
+        "enqueue",
+        lambda _root, _issue, kind, question, *_a, **_k: enqueued.append((kind, question)),
+    )
+    return enqueued
+
+
+def test_a_flaky_gate_below_the_bound_blocks_without_escalating(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """One flake is no evidence against the work, so it must not reach a human yet."""
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    enqueued = _unreliable_landing(monkeypatch, events=1)
+
+    result = _advance(tmp_path)
+
+    assert result.blocked
+    assert enqueued == []
+
+
+def test_a_chronically_unreliable_gate_escalates_instead_of_deferring_forever(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The livelock: no budget is spent, so no cap is reached, so nothing escalated.
+
+    Observed in the field — a br clock defect failed one arbitrary test per run,
+    the loop correctly refused to charge rework, and the lane could never land
+    because "forgiven" had no exit. The bound gives it one.
+    """
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    enqueued = _unreliable_landing(monkeypatch, events=policy.MAX_UNRELIABLE_GATE_EVENTS)
+
+    result = _advance(tmp_path)
+
+    assert result.blocked
+    assert len(enqueued) == 1
+    kind, question = enqueued[0]
+    assert kind == policy.REWORK_ESCALATION_KIND
+    assert policy.gate_from_unreliable_escalation(question) == merge.MERGE_GATE
+    assert "escalated" in result.detail
+    # That it is never charged as rework is pinned at the policy level, where the
+    # tracker is faked — asserting it here would drag a real br call into a unit test.

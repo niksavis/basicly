@@ -15,7 +15,8 @@ import re
 import shutil
 import subprocess  # nosec B404
 import sys
-from collections.abc import Mapping
+import time
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from basicly import redact, tracker_usage
@@ -104,6 +105,52 @@ def _spawn(br_path: str, repo_root: Path, args: list[str]) -> subprocess.Complet
     return proc
 
 
+# br rejects an update whose `updated_at` precedes its `created_at`. On a host
+# whose clock can step backwards a hair between two consecutive br calls, a
+# create-then-update pair therefore fails for a reason that has nothing to do
+# with the request (basicly-jr0l.41): it blocked a landing twice consecutively,
+# with a different victim test each run, which reads as suite flakiness rather
+# than as the dependency defect it is.
+#
+# Retry that one error, briefly and bounded. Deliberately not a general retry —
+# any other non-zero exit is returned untouched so a real error still fails fast,
+# and each attempt goes through _spawn so the usage ledger counts how often this
+# actually fires (basicly-vkh0.1). Requirements input for the replacement
+# (basicly-vkh0.6), which must never branch on a wall-clock comparison at all —
+# the rule D3 already states for the event log.
+_CLOCK_SKEW_MARKER = "updated_at: cannot be before created_at"
+_CLOCK_SKEW_BACKOFF_S = (0.05, 0.1, 0.2)
+
+
+def _is_clock_skew(proc: subprocess.CompletedProcess[str]) -> bool:
+    return _CLOCK_SKEW_MARKER in f"{proc.stderr or ''}{proc.stdout or ''}"
+
+
+def _spawn_tolerating_clock_skew(
+    br_path: str,
+    repo_root: Path,
+    args: list[str],
+    *,
+    sleep: Callable[[float], None] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """:func:`_spawn`, retrying only br's updated_at-before-created_at rejection.
+
+    The backoff is the point rather than politeness: retrying instantly re-reads
+    the same skewed clock, so each attempt waits for it to catch up. *sleep* is
+    injectable so a test can prove the retry without spending the wall clock, and
+    it resolves at call time rather than as a bound default — a default of
+    ``time.sleep`` would freeze the reference at import and silently ignore both
+    the parameter's intent and a patched ``time.sleep``.
+    """
+    wait = sleep if sleep is not None else time.sleep
+    for delay in _CLOCK_SKEW_BACKOFF_S:
+        proc = _spawn(br_path, repo_root, args)
+        if proc.returncode == 0 or not _is_clock_skew(proc):
+            return proc
+        wait(delay)
+    return _spawn(br_path, repo_root, args)
+
+
 def run_br(
     repo_root: Path, args: list[str], *, check: bool = True
 ) -> subprocess.CompletedProcess[str]:
@@ -112,7 +159,7 @@ def run_br(
     if not br_path:
         raise RuntimeError("br is not on PATH; the harness requires the beads tracker")
     _probe_version(br_path)
-    proc = _spawn(br_path, repo_root, args)
+    proc = _spawn_tolerating_clock_skew(br_path, repo_root, args)
     if check and proc.returncode != 0:
         raise RuntimeError(f"br {' '.join(args)} failed: {(proc.stderr or proc.stdout).strip()}")
     return proc
@@ -124,7 +171,7 @@ def try_run_br(repo_root: Path, args: list[str]) -> subprocess.CompletedProcess[
     if not br_path:
         return None
     _probe_version(br_path)
-    return _spawn(br_path, repo_root, args)
+    return _spawn_tolerating_clock_skew(br_path, repo_root, args)
 
 
 # --- Export scrubbing (basicly-vkh0.5) --------------------------------------
