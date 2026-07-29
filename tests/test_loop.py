@@ -518,6 +518,43 @@ def test_decompose_merges_children_when_all_closed(
     assert result.to_phase == "verify" and result.action == "merged"
 
 
+def test_a_refused_verify_gate_blocks_instead_of_deriving_back_to_build(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A tracker that refuses the gate must stop the loop and say so (basicly-o7z5).
+
+    ``report_gate`` degrades gracefully by design, and both call sites used to
+    discard its verdict. Since ``derive_phase`` keys off ``gates.can_advance``,
+    an unrecorded gate silently derived the node back to ``build`` and the next
+    advance re-ran build->verify forever, with nothing naming the cause. br
+    0.2.19 made that reachable in the field: its ``gate report`` rejects the
+    harness's call outright.
+    """
+    at(_state("decompose", has_children=True))
+    monkeypatch.setattr(policy, "checkpoint_approved", lambda *_a: True)
+    monkeypatch.setattr(loop, "_child_states", lambda _ctx: [("i.1", "closed"), ("i.2", "closed")])
+    monkeypatch.setattr(loop, "_ensure_child_worktrees", lambda *_a: None)
+    monkeypatch.setattr(worktree, "list_sessions", lambda *_a, **_k: [_session("i-1")])
+    monkeypatch.setattr(
+        merge,
+        "merge_queue",
+        lambda *_a, **_k: [merge.QueueResult(merge.MergeResult("i-1", "merged", "ok"))],
+    )
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
+    monkeypatch.setattr(
+        verify,
+        "report_gate",
+        lambda *_a, **_k: (False, "br gate report failed: no configured transition"),
+    )
+
+    result = _advance(tmp_path)
+
+    assert result.blocked
+    assert result.to_phase != "verify"
+    assert "verify gate not recorded" in result.detail
+    assert "no configured transition" in result.detail
+
+
 def test_decompose_skips_self_landed_children(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

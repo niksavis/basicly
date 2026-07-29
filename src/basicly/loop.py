@@ -175,6 +175,24 @@ def _moved(ctx: _Ctx, to_phase: str, action: str, detail: str = "") -> AdvanceRe
     return AdvanceResult(ctx.issue_id, ctx.state.phase, to_phase, action, detail)
 
 
+def _record_gate(ctx: _Ctx, issue_id: str, report: verify.VerifyReport) -> str | None:
+    """Record *report* as the verify gate; return a reason when the tracker refused.
+
+    :func:`verify.report_gate` degrades gracefully so a missing tracker never
+    masks the verify result — but the caller must not then carry on as if the
+    gate were recorded. :func:`loop_state.derive_phase` keys off
+    ``gates.can_advance``, so an unrecorded gate derives the node back to
+    ``build`` and the next advance re-runs build->verify: a loop that never
+    progresses and never says why. Surfacing the tracker's own message turns
+    that into one blocked result naming the cause (basicly-o7z5).
+    """
+    record = run_record.latest_record(ctx.repo_root, issue_id)
+    ok, message = verify.report_gate(
+        ctx.repo_root, issue_id, report, actor=record.agent if record else None
+    )
+    return None if ok else f"verify gate not recorded on {issue_id}: {message}"
+
+
 # --- Phase handlers ---------------------------------------------------------
 
 
@@ -713,8 +731,9 @@ def _run_subtask(
                 issue_id=subtask_id,
             )
     report = verify.run_verify(cwd, _SUBTASK_VERIFY_MODE)
-    record = run_record.latest_record(ctx.repo_root, subtask_id)
-    verify.report_gate(ctx.repo_root, subtask_id, report, actor=record.agent if record else None)
+    gate_error = _record_gate(ctx, subtask_id, report)
+    if gate_error is not None:
+        return _blocked(ctx, f"{where}: {gate_error}")
     if not report.passed:
         return _rework(
             ctx,
@@ -904,8 +923,9 @@ def _build_children(ctx: _Ctx) -> AdvanceResult:
 def _record_verify(ctx: _Ctx, detail: str, *, verify_mode: str | None = None) -> AdvanceResult:
     """Run verify + record the required gate so the derived phase becomes verify."""
     report = verify.run_verify(ctx.repo_root, verify_mode or ctx.inputs.verify_mode)
-    record = run_record.latest_record(ctx.repo_root, ctx.issue_id)
-    verify.report_gate(ctx.repo_root, ctx.issue_id, report, actor=record.agent if record else None)
+    gate_error = _record_gate(ctx, ctx.issue_id, report)
+    if gate_error is not None:
+        return _blocked(ctx, gate_error)
     if not report.passed:
         return _rework(ctx, verify.DEFAULT_GATE, f"verify failed: {', '.join(report.failures)}")
     return _moved(ctx, "verify", "merged", detail)
