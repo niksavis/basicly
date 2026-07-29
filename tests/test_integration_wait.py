@@ -37,10 +37,26 @@ pytestmark = needs_br
 # than slept out: the interval under test must not depend on how long the test ran.
 _WAITED_S = 600
 
-# Tolerance on the recorded interval. ``created_at`` has whole-second resolution
-# and truncates, and two real br invocations sit between the ask and the answer —
-# so the meter may read a second or two over, never hours (a mis-zoned stamp).
+# Tolerance for the tracker's own clock resolution: ``created_at`` has whole-second
+# resolution and truncates, so the meter may read a second or two over. It covers
+# *only* that. The real br round-trips between the ask and the answer also land in
+# the interval, but their cost is measured per run rather than budgeted here — see
+# :func:`_assert_interval`.
 _SLACK_S = 5
+
+
+def _assert_interval(waited_s: int, elapsed_s: float) -> None:
+    """The injected offset must show up, allowing for the time the calls really took.
+
+    The upper bound used to be a flat ``_WAITED_S + _SLACK_S``, which quietly
+    asserted that two real br invocations complete within five seconds. On a
+    loaded machine they do not: a full-suite run measured ``609 <= 605`` and
+    failed a push for a defect that was not there (basicly-o7z5). Taking the
+    overhead from a monotonic clock keeps the property under test — the pinned
+    offset is what the meter reports — without also testing how fast the host is,
+    per ``.claude/rules/platform-hermetic-tests.md``.
+    """
+    assert _WAITED_S <= waited_s <= _WAITED_S + elapsed_s + _SLACK_S
 
 
 @pytest.fixture
@@ -83,6 +99,7 @@ def test_a_checkpoint_wait_round_trips_through_the_real_tracker(
     tracker: Path, issue_id: str
 ) -> None:
     """Challenge to approval: the interval and the answerer come back off the bead."""
+    started = time.monotonic()
     challenge = policy.approve_checkpoint_guarded(tracker, issue_id, "ship", interactive=False)
     assert challenge.status == "challenge"
 
@@ -90,11 +107,12 @@ def test_a_checkpoint_wait_round_trips_through_the_real_tracker(
         tracker, issue_id, "ship", interactive=False, confirm=challenge.code
     )
     assert approved.status == "approved"
+    elapsed = time.monotonic() - started
 
     (event,) = policy.wait_events(tracker, issue_id)
     assert (event.kind, event.subject) == ("checkpoint", "ship")
     assert (event.answered_by, event.delegated) == (policy.HUMAN_BY, False)
-    assert _WAITED_S <= event.waited_s <= _WAITED_S + _SLACK_S
+    _assert_interval(event.waited_s, elapsed)
 
 
 @pytest.mark.usefixtures("answered_late")
@@ -102,9 +120,11 @@ def test_a_queued_decision_wait_round_trips_through_the_real_tracker(
     tracker: Path, issue_id: str
 ) -> None:
     """Enqueue to answer: the queue's own hold time, measured off its own markers."""
+    started = time.monotonic()
     item = decisions.enqueue(tracker, issue_id, "needs-input", "which db?")
 
     decisions.answer(tracker, item.decision_id, "postgres", by="niksa")
+    elapsed = time.monotonic() - started
 
     (event,) = policy.wait_events(tracker, issue_id)
     assert (event.wait_id, event.kind, event.subject) == (
@@ -113,7 +133,7 @@ def test_a_queued_decision_wait_round_trips_through_the_real_tracker(
         "needs-input",
     )
     assert (event.answered_by, event.delegated) == ("niksa", False)
-    assert _WAITED_S <= event.waited_s <= _WAITED_S + _SLACK_S
+    _assert_interval(event.waited_s, elapsed)
 
 
 @pytest.mark.usefixtures("answered_late")
