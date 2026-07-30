@@ -51,6 +51,31 @@ Stated by the owner, plus what the harness's own use has demonstrated:
 | **Visualizes work** | Dependency graph, ready set, and progress viewable without a bespoke TUI to maintain |
 | **Prioritizes work** | A ranked ready set the loop can consume deterministically, with total ordering and stable tie-breaks (D9) |
 
+### 2.1 Requirements carried forward from defects we have already paid for
+
+The requirements above are what we want. These six are what we have already been
+*billed* for — each is a `br` defect that cost real sessions, and the repo rule is that a
+dependency's defect is **requirements input for our own replacement** and the proof must become a
+committed gate, never a fix applied outside this repo (`basicly-vkh0.6`).
+
+Every one is pinned by a test in `tests/test_tracker_requirements.py`, named for its id. Those
+tests assert the *harness's* defence against the defective input — never that `br` still
+misbehaves, which would pin us to a bug and break on the version that fixes it. When the
+replacement lands, the module runs against it unchanged.
+
+| Id | Defect | What it cost | Requirement on the replacement |
+| --- | --- | --- | --- |
+| **R1.** Clock | `br` validates `updated_at >= created_at` and refuses its own write when the host clock steps backwards | Flaky landings, and a rework attempt spent on `basicly-m4zv.9`; invisible to the re-run test because a clock step persists and so reproduces | **A timestamp is evidence, never a constraint.** Nothing branches on wall-clock order; total order comes from the single writer's sequence numbers (§9.5) |
+| **R2.** Field spelling | One dependency edge is spelled `id`/`dependency_type` by `show --json` and `depends_on_id`/`type` by the `create`/`dep add` echo | Silent empty graphs — reading one spelling returns *no* dependencies rather than an error, degrading every landing order to the caller's (`basicly-kjc5.10`) | **Exactly one spelling per field**, in every command's output. One reader (`br.dependency_edge`) contains the damage until then |
+| **R3.** Validation templates | Lint templates are compiled into the binary; a `chore` is never asked for acceptance criteria, and only the description *body* is inspected | The rule "every bead needs acceptance criteria" had to move into the harness's own gate (`basicly-kjc5.36`) | **Validation rules are configuration, not code**, and apply per work type without a rebuild |
+| **R4.** Single-line field | `--acceptance-criteria` accepts one line only, and exists only on `update` — so filing a bead is always two calls | Structured criteria are flattened; the harness carries them in the description body instead | **A text field accepts newlines**, and every field settable on update is settable on create |
+| **R5.** Id shape | `--slug` mints ids like `basicly-fix-the-thing`, whose internal hyphens read as a prefix boundary | Broke our own `beads-commit-msg` gate (`basicly-jms0`); the standing rule is now "never `--slug`" | **An id is opaque and never re-parsed** — a short root plus a dotted child counter, with no separator that any consumer needs to interpret (§9.4) |
+| **R6.** Path leak | The export wrote `source_repo_path` on 328 of 332 records | Published two users' home-directory layouts into a committed, distributed file (`basicly-vkh0.5`) | **No committed artifact carries a host path**, username or hostname; portability is a property of the format, not of a scrubbing pass |
+
+R1, R5 and R6 are already settled in the design (§9.5, §9.4, §12). R2, R3 and R4 are constraints on
+the command layer that has not been written yet, and this table is where they are recorded so it
+cannot be written without them.
+
 ## 3. What our own usage already tells us
 
 The harness's tracker surface is **narrow and enumerable** — this is the central finding, and the
