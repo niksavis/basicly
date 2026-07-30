@@ -414,7 +414,17 @@ Two consequences:
 
 - **Now**: the cheap half of D9's requirement is to *record* the score and rank into the
   dispatch marker, which makes a pass's dispatch order reconstructible without replacing
-  anything (`basicly-vkh0.3`).
+  anything. **Landed 2026-07-30 (`basicly-vkh0.3`)**: each `[harness-run]` marker carries
+  `scheduler_rank`, `scheduler_fallback_rank`, `scheduler_score` and `scheduler_policy` — the
+  schema version, without which a score is an uninterpretable integer — read once per pass so
+  every lane is explained against the same answer rather than a blend of several.
+
+  Building it surfaced a fact the plan had not accounted for: **`br scheduler` recommends only
+  *unclaimed* work, and a provisioned lane is claimed**, so for most dispatched lanes br has no
+  rank at all and the supervisor orders them by adoption. A marker therefore also carries
+  `dispatch_rank`, the lane's position in the order the pass actually dispatched. That is the
+  field that satisfies "reconstructible" in the ordinary case; the `scheduler_*` fields are null
+  when br had no opinion, which is deliberately distinguishable from unrecorded.
 - **When we own it**: the ranking function must be **pure**, and it must drop `created_at`.
   Age-based ordering makes dispatch order clock-dependent for an unchanged graph, which D9
   forbids for anything outliving the pass. Our ordering: unblocked only, then priority, then

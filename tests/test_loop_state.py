@@ -37,6 +37,7 @@ class _FakeBr:
         comments: list[str] | None = None,
         ready: list[dict] | None = None,
         blocked: list[dict] | None = None,
+        scheduler_envelope: dict | None = None,
         **record: object,
     ) -> None:
         # Any issue field can be overridden by keyword (status, external_ref,
@@ -53,6 +54,10 @@ class _FakeBr:
         self.comments = comments or []
         self.ready = ready or []
         self.blocked = blocked or []
+        # br wraps its recommendations in a versioned envelope; a test that needs
+        # the policy fields supplies them, and omitting them exercises the
+        # degradation path against an older br.
+        self.scheduler_envelope = scheduler_envelope or {}
 
     def __call__(self, _repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
         if args[:1] == ["show"]:
@@ -62,7 +67,7 @@ class _FakeBr:
         if args[:2] == ["comments", "list"]:
             return _Proc(json.dumps([{"text": t} for t in self.comments]))
         if args[:1] == ["scheduler"]:
-            return _Proc(json.dumps({"recommendations": self.ready}))
+            return _Proc(json.dumps({**self.scheduler_envelope, "recommendations": self.ready}))
         if args[:1] == ["blocked"]:
             return _Proc(json.dumps(self.blocked))
         raise AssertionError(f"unexpected br call: {args}")
@@ -208,6 +213,51 @@ def test_ready_ranked_parses_scheduler(monkeypatch: pytest.MonkeyPatch, tmp_path
         (1, 49, "a", "first"),
         (2, 30, "b", "second"),
     ]
+
+
+def test_ready_ranking_captures_the_policy_envelope(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A rank is uninterpretable without the policy that produced it (basicly-vkh0.3).
+
+    D9 wants dispatch inputs reproducible, and the score is an integer on a scale
+    br owns — so the schema version and the tie-break sort are part of the answer,
+    not decoration.
+    """
+    _install(
+        monkeypatch,
+        _FakeBr(
+            ready=[
+                {"rank": 1, "fallback_rank": 3, "score": 49, "issue": {"id": "a", "title": "x"}},
+            ],
+            scheduler_envelope={
+                "schema": "br.scheduler.v1",
+                "fallback_policy": {"sort": "priority ASC, created_at ASC, id ASC"},
+            },
+        ),
+    )
+    ranking = loop_state.ready_ranking(tmp_path)
+
+    assert ranking.schema == "br.scheduler.v1"
+    assert ranking.fallback_sort == "priority ASC, created_at ASC, id ASC"
+    # Evidence weighting moved this node from 3rd to 1st; recording only the final
+    # rank would hide that the score is what did it.
+    assert ranking.nodes[0].rank == 1
+    assert ranking.nodes[0].fallback_rank == 3
+    assert ranking.by_issue()["a"].score == 49
+
+
+def test_ready_ranking_degrades_without_the_envelope(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An older br emits no schema or fallback_rank; the ranks must still parse."""
+    _install(monkeypatch, _FakeBr(ready=[{"rank": 2, "score": 5, "issue": {"id": "a"}}]))
+    ranking = loop_state.ready_ranking(tmp_path)
+
+    assert ranking.schema == ""
+    assert ranking.fallback_sort == ""
+    # No fallback_rank reported: br's documented behaviour is to preserve the rank.
+    assert ranking.nodes[0].fallback_rank == 2
 
 
 def test_blocked_ids_parses_blocked_list(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

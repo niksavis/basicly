@@ -205,24 +205,62 @@ class RankedNode:
     score: int
     issue_id: str
     title: str
+    # br's own pre-evidence ordering. Kept because the two diverge exactly when
+    # evidence weighting mattered, and a recorded score is only interpretable
+    # against the order it changed (basicly-vkh0.3).
+    fallback_rank: int = 0
 
 
-def ready_ranked(repo_root: Path, limit: int | None = None) -> tuple[RankedNode, ...]:
-    """Return the ready issues ranked by ``br scheduler`` (highest priority first)."""
+@dataclass(frozen=True)
+class Ranking:
+    """One ``br scheduler`` answer: its nodes plus the policy that produced them.
+
+    The envelope matters as much as the ranks. D9 requires dispatch inputs to be
+    reproducible, and a bare rank is not — it means nothing without the scoring
+    policy behind it. ``br scheduler`` is explicitly versioned
+    (``schema: br.scheduler.v1``) and states its own tie-break sort, so carrying
+    those two strings is what makes a recorded rank interpretable later
+    (basicly-vkh0.3).
+    """
+
+    nodes: tuple[RankedNode, ...]
+    schema: str
+    fallback_sort: str
+
+    def by_issue(self) -> dict[str, RankedNode]:
+        """The nodes keyed by issue id, for a dispatch-time lookup."""
+        return {node.issue_id: node for node in self.nodes}
+
+
+def ready_ranking(repo_root: Path, limit: int | None = None) -> Ranking:
+    """The ready set ranked by ``br scheduler``, with its policy envelope."""
     args = ["scheduler", "--json"]
     if limit is not None:
         args += ["--limit", str(limit)]
     proc = _run_br(repo_root, args)
-    recommendations = json.loads(proc.stdout).get("recommendations", [])
-    return tuple(
-        RankedNode(
-            rank=int(rec["rank"]),
-            score=int(rec.get("score", 0)),
-            issue_id=str(rec["issue"]["id"]),
-            title=str(rec["issue"].get("title", "")),
-        )
-        for rec in recommendations
+    payload = json.loads(proc.stdout)
+    fallback = payload.get("fallback_policy")
+    return Ranking(
+        nodes=tuple(
+            RankedNode(
+                rank=int(rec["rank"]),
+                score=int(rec.get("score", 0)),
+                issue_id=str(rec["issue"]["id"]),
+                title=str(rec["issue"].get("title", "")),
+                # Absent on an older br: fall back to the rank itself, which is
+                # what br does when evidence is tied or incomplete.
+                fallback_rank=int(rec.get("fallback_rank", rec["rank"])),
+            )
+            for rec in payload.get("recommendations", [])
+        ),
+        schema=str(payload.get("schema", "")),
+        fallback_sort=str(fallback.get("sort", "")) if isinstance(fallback, dict) else "",
     )
+
+
+def ready_ranked(repo_root: Path, limit: int | None = None) -> tuple[RankedNode, ...]:
+    """Return the ready issues ranked by ``br scheduler`` (highest priority first)."""
+    return ready_ranking(repo_root, limit).nodes
 
 
 def blocked_ids(repo_root: Path) -> tuple[str, ...]:
