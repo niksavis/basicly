@@ -580,6 +580,35 @@ That decision stands, but it should be restated as *"we decline it because git p
 rollup already bound growth"* rather than implying nobody needs it — upstream clearly has users
 who do.
 
+### 2.11 gastownhall/gastown — the orchestration half, on the fork we declined
+
+Added 2026-07-30, from the owner's competitive read. §2.10 analysed this org's *tracker*; this is
+the *orchestrator* built on it, and it was the single biggest gap in this review.
+
+Gastown covers the whole of our orchestration half: worktree-backed per-agent workspaces
+("hooks"), a **Bors-style merge queue that bisects to isolate a failing MR**, a supervisor patrol
+tier (Deacon/Witness/Dogs) monitoring concurrent workers ("polecats"), and human-gated work
+bundles ("convoys", with a `--human` flag). Go, MIT.
+
+**Take — this is not evidence we are reinventing; it is evidence the fork in §2.10 is real and
+widening.** Gastown requires **`bd` 0.57+ plus Dolt plus tmux 3.0+**. It is the DB-authoritative
+branch shipped as a product, with a database, a patrol process and a terminal multiplexer in its
+critical path. `work-tracker.md` chose the opposite branch — the log is the truth, no second binary,
+no daemon. Both are coherent. Ours is the one that can reach a zero-runtime-dependency 1.0.0; theirs
+structurally cannot.
+
+**Take — their merge queue is ahead of ours in one specific, adoptable way.** `merge.py` lands
+serially and bounces a conflicted lane back to its owner. Gastown *bisects* on verification
+failure: when a batch fails, it isolates the offending MR and merges the rest. We currently pay
+full serial cost for every landing. Bisecting is a pure throughput win with no new dependency and
+no LLM in the loop, so it does not violate the determinism rules — worth filing against `merge.py`.
+
+**Take — do not read their config layer as a projection layer.** Gastown configures *runtime*
+(`settings/config.json` per rig, `.claude/settings.json`, `~/.codex/config.toml`). That is
+permissions and command wiring, not a catalog compiled into instruction files with a drift gate. The
+two halves of basicly still do not co-exist in one tool anywhere we have looked — but note that is a
+statement about the field today, not a moat.
+
 ## 3. Where independent projects converge
 
 Convergence across projects that did not copy each other is the strongest evidence in this review.
@@ -677,19 +706,37 @@ Stated honestly, with the distinction between a structural lead and an asserted 
 
 **Real, structural leads:**
 
-1. **Enforcement is code and git hooks, not prose.** Nearly every project in this set enforces
-   discipline by asking the model nicely. lattice says so outright: *"Atoms are markdown — AI can
-   read them but also ignore them. There's no compiler, no linter, no gate. Compliance depends on
-   prompt engineering."* We have `basicly check`, `catalog lint`, `skills-check`, `agents-check`,
-   `hooks-check`, and commit-msg gates. This is the widest gap in our favour and it is the thing
-   an enterprise buyer would care about most.
+1. **Enforcement runs at commit time, not only in CI.** Nearly every project in *this* set
+   enforces discipline by asking the model nicely — lattice says so outright: *"Atoms are
+   markdown — AI can read them but also ignore them. There's no compiler, no linter, no gate.
+   Compliance depends on prompt engineering."* We have `basicly check`, `catalog lint`,
+   `skills-check`, `agents-check`, `hooks-check`, and commit-msg gates.
+
+   **Narrowed 2026-07-30.** As first written this claimed "enforcement is code and git hooks, not
+   prose" and called it the widest gap in our favour. That overstated it: `first-fluke/oh-my-agent`
+   ships *"a drift check in CI keeping the generated output honest"* plus `oma verify <agent>`, a
+   deterministic per-agent check battery. Enforcement-by-code is therefore **not** unique to us.
+   What survives is the *stage*: oh-my-agent installs no git hooks, so its checks run after the
+   commit exists. A hook that refuses the commit and a check that fails the build afterwards are
+   different guarantees — the first cannot be merged around by someone who does not read CI. Claim
+   the stage, not the existence of gates.
 2. **State lives in a tracker with a dependency graph, not in markdown plan files.** superpowers'
    most expensive observed failure — a controller re-dispatching completed work after
    compaction — is structurally impossible for us because phase is *derived* from `br` rather than
    remembered. We got that property by design; they got the scar first.
-3. **Agent-agnostic projection from one catalog.** Others ship per-host adapters maintained by
-   hand (ponytail's 20-row table is impressive and is also 20 things to keep in sync). We generate,
-   and we gate the generation.
+3. ~~**Agent-agnostic projection from one catalog.**~~ **No longer a lead — matched.** The
+   original entry read: *"Others ship per-host adapters maintained by hand (ponytail's 20-row table
+   is impressive and is also 20 things to keep in sync). We generate, and we gate the generation."*
+   True of the ten repos reviewed here, and **false of the wider field**:
+   `first-fluke/oh-my-agent` keeps `.agents/` as a single source of truth and `oma emit` projects it
+   into each runtime's native layout — Agent-Skills-conformant skill folders, `AGENTS.md`,
+   `.claude-plugin/marketplace.json` — with the CI drift check quoted in lead 1.
+
+   So generate-and-gate-the-generation is now table stakes for a serious project in this category,
+   not a differentiator. Our remaining edges on the projection half are narrower and should be named
+   individually rather than bundled: the **invocation axis**, the **path-scoped rules tier**, and
+   **commit-time** rather than CI-time drift enforcement. Whether those are worth what they cost is
+   §6.1's question, not this section's.
 4. **The engine-disposes / agents-propose split is explicit and enforced**, including for
    autonomy grants. Only gsd-core has a comparable notion, and theirs is a gate taxonomy rather
    than an authority model.
