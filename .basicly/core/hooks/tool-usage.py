@@ -41,9 +41,30 @@ TRACKER_SPOOL = USAGE_DIR / "tracker-usage.jsonl"
 # repo is never written to uninvited.
 TRACKER_LEDGER_DIR = Path(".basicly/ledger")
 TRACKER_BINARIES = {"br", "bv"}
-# Kept in step with tracker_usage.split_invocation: these take a second word that
-# names a distinct operation, so the pair is one surface.
-TWO_WORD_SUBCOMMANDS = {"dep", "comments", "gate", "catalog", "config"}
+# Kept in step with tracker_usage.GROUP_SUBCOMMANDS: these take a second word that
+# names a distinct operation, so the pair is one surface. A parity test compares
+# the two sets, because "kept in step" as a comment had already drifted — this set
+# was missing six real groups (`audit`, `doctor`, `epic`, `history`, `label`,
+# `query`) and carried `catalog`, which is a basicly command br has never had.
+TWO_WORD_SUBCOMMANDS = {
+    "audit",
+    "comments",
+    "config",
+    "coordination",
+    "dep",
+    "doctor",
+    "epic",
+    "gate",
+    "history",
+    "label",
+    "query",
+    "robot-docs",
+}
+# Mirrors tracker_usage._SURFACE_WORD. A positional that cannot be a br command
+# name is shell text that survived tokenisation (`2>&1`, an unexpanded `$g`), and
+# this hook is the half that sees raw shell, so it is where they entered the
+# committed ledger.
+SURFACE_WORD = re.compile(r"^[a-z][a-z0-9-]*$")
 
 # Tool names that carry a shell command, per platform (Claude: Bash; Copilot:
 # bash/shell). Anything else (Edit, view, ...) is not ours to count.
@@ -254,7 +275,7 @@ def tracker_invocations(command: str) -> list[tuple[str, list[str]]]:
 
 def _split_invocation(args: list[str]) -> tuple[str, list[str]]:
     """The subcommand and sorted flag names — mirrors tracker_usage.split_invocation."""
-    words = [arg for arg in args if not arg.startswith("-")]
+    words = [arg for arg in args if not arg.startswith("-") and SURFACE_WORD.match(arg)]
     flags = sorted({arg.split("=", 1)[0] for arg in args if arg.startswith("-")})
     if not words:
         return (flags[0] if flags else "", flags)

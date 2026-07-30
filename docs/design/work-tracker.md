@@ -57,6 +57,43 @@ The harness's tracker surface is **narrow and enumerable** — this is the centr
 reason owning it is tractable. The list below is a *manual read* of the engine's call sites and is
 therefore a lower bound: §6's telemetry replaces it with measurement before anything is frozen.
 
+### 3.0 Measured, 2026-07-30 — the manual read was close, and `bv` is not needed at all
+
+`basicly-vkh0.2` landed the reduction, so this is no longer a lower bound but a count. Regenerate
+both numbers with `basicly usage tracker --refresh-surface`; the report reads
+`.basicly/ledger/tracker-usage.jsonl` (measurement) against
+`.basicly/ledger/tracker-surface.json` (the full surface, generated from `br --help` — a sanctioned
+clean-room input per §7, never from source).
+
+Over **1568 recorded invocations** against **br 0.2.16**:
+
+| Question | Answer |
+| --- | --- |
+| `br` surfaces exercised | **17 of 87** |
+| `br` surfaces never used | **70** — 12 of them group namespaces, so **58 real operations** |
+| `bv` surfaces exercised | **0 of 141** |
+| Read : write calls | **1210 : 358**, about **3.4:1** |
+| Unclassified calls | **0** |
+
+Three consequences for the design:
+
+1. **The replacement needs no `bv` equivalent.** Not one of its 141 flags has ever been invoked
+   programmatically — it is a TUI a human opens, so it reads the ledger rather than being part of
+   it. This is the single largest scope reduction available and it was invisible to the manual read,
+   which listed `bv` alongside `br` throughout.
+2. **Reads dominate 3.4:1**, which supports §10's derived-snapshot direction — but note the ratio is
+   flattered by `comments list` alone (714 calls, 45% of everything). §10's cache decision should be
+   driven by that one surface, not by the aggregate.
+3. **The engine/interactive split is real and lopsided.** `create`, `ready`, `list`, `dep list` and
+   `dep remove` are **interactive-only** — a human at a prompt, never a harness phase. By §6 those
+   may be served later or never, which moves five more surfaces out of the hard requirement.
+
+Two honest limits on the sample. It covers many sessions on **one machine**, so an
+interactive-only classification reflects how *this* operator works. And `where --json` is a genuine
+engine surface (`worktree.py` `_probe_redirect`) that shows as never-used because its only recorded
+observation was destroyed while promoting this sample; the next worktree provisioning re-records it.
+Neither affects the `bv` result, which is the load-bearing one.
+
 - **Records**: `create`, `update` (type, external-ref, acceptance-criteria, description, status),
   `show --json`, `list --json`, `close`, `delete --hard`
 - **Structure**: `dep add`, parent-child links, `ready`, `blocked`, `scheduler` (ranked)

@@ -61,6 +61,41 @@ def test_split_invocation_treats_a_leading_flag_as_the_surface() -> None:
     assert flags == ("--version",)
 
 
+def test_split_invocation_rejects_shell_text_as_a_surface() -> None:
+    """A redirection or an unexpanded variable is not a surface (basicly-vkh0.2).
+
+    ``br --version 2>&1`` recorded the surface ``2>&1`` and ``br $g --help`` inside
+    a shell loop recorded ``$g``; four fake surfaces reached the committed ledger
+    that way. Only the junk word is dropped, so the real surface — the leading flag
+    — is still recorded rather than the whole observation being lost.
+    """
+    assert tracker_usage.split_invocation(["--version", "2>&1"])[0] == "--version"
+    assert tracker_usage.split_invocation(["$g", "--help"])[0] == "--help"
+    assert tracker_usage.split_invocation(["show", "2>&1"])[0] == "show"
+    assert tracker_usage.split_invocation(["2>&1"])[0] == ""
+
+
+def test_split_invocation_joins_every_group_br_actually_has() -> None:
+    """The group set missed six real groups, collapsing five ``label`` operations into one.
+
+    ``br label add`` and ``br label list`` differ in access class, so recording
+    both as ``label`` understates the surface count a freeze reads and makes the
+    read/write ratio meaningless for the pair.
+    """
+    assert tracker_usage.split_invocation(["label", "add", "x"])[0] == "label add"
+    assert tracker_usage.split_invocation(["epic", "status"])[0] == "epic status"
+    assert tracker_usage.split_invocation(["query", "run", "q"])[0] == "query run"
+    assert tracker_usage.split_invocation(["history", "diff"])[0] == "history diff"
+    assert tracker_usage.split_invocation(["audit", "log"])[0] == "audit log"
+    assert tracker_usage.split_invocation(["doctor", "health"])[0] == "doctor health"
+
+
+def test_split_invocation_does_not_invent_a_group_br_lacks() -> None:
+    """``catalog`` is a basicly command; br has never had one, so ``sync`` stays bare."""
+    assert "catalog" not in tracker_usage.GROUP_SUBCOMMANDS
+    assert tracker_usage.split_invocation(["sync", "--flush-only"])[0] == "sync"
+
+
 def test_classify_access_reports_unknown_as_unclassified() -> None:
     """Guessing a bucket would bias the read/write ratio this ledger exists to produce."""
     assert tracker_usage.classify_access("list") == "read"
@@ -82,6 +117,50 @@ def test_classify_access_covers_two_word_subcommands() -> None:
     assert tracker_usage.classify_access("gate report") == "write"
     assert tracker_usage.classify_access("dep cycles") == "read"
     assert tracker_usage.classify_access("dep add") == "write"
+    # Both sat in `unclassified` against real measured traffic (basicly-vkh0.2):
+    # `sync` is the engine's second-most-called write at 57 calls, and `dep list`
+    # was the one `dep` read the set forgot while listing its two siblings.
+    assert tracker_usage.classify_access("sync") == "write"
+    assert tracker_usage.classify_access("dep list") == "read"
+
+
+def test_promote_discards_a_record_that_is_not_a_surface(repo: Path) -> None:
+    """The committed ledger feeds a surface freeze, so junk must not enter it.
+
+    A spool written by an older recorder holds shell text (``2>&1``). Validating at
+    the promote boundary means the committed artifact is clean whatever produced the
+    spool, rather than depending on every machine having upgraded.
+    """
+    spool = repo / tracker_usage.SPOOL_FILE
+    spool.parent.mkdir(parents=True, exist_ok=True)
+    spool.write_text(
+        '{"binary":"br","subcommand":"show","site":"engine"}\n'
+        '{"binary":"br","subcommand":"2>&1","site":"interactive"}\n'
+        '{"binary":"br","subcommand":"$g","site":"interactive"}\n'
+        '{"binary":"bv","subcommand":"--robot-next","site":"interactive"}\n',
+        encoding="utf-8",
+    )
+
+    assert tracker_usage.promote(repo) == (2, 2)
+    kept = [
+        json.loads(line)["subcommand"]
+        for line in (repo / tracker_usage.LEDGER_FILE).read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    # A leading long flag is a legitimate surface for a binary with no subcommands.
+    assert kept == ["show", "--robot-next"]
+
+
+def test_is_valid_surface_accepts_only_the_shapes_split_invocation_emits() -> None:
+    """The predicate is the ledger's boundary check, so its edges are worth pinning."""
+    assert tracker_usage.is_valid_surface("show")
+    assert tracker_usage.is_valid_surface("dep add")
+    assert tracker_usage.is_valid_surface("--robot-next")
+    assert not tracker_usage.is_valid_surface("")
+    assert not tracker_usage.is_valid_surface("2>&1")
+    assert not tracker_usage.is_valid_surface("$g")
+    assert not tracker_usage.is_valid_surface("--agents-")
+    assert not tracker_usage.is_valid_surface("show me the money")
 
 
 # --- Opt-in -------------------------------------------------------------------
@@ -165,11 +244,11 @@ def test_promote_moves_the_spool_into_the_committed_ledger(repo: Path) -> None:
     tracker_usage.record(repo, "br", ["list"], site=tracker_usage.SITE_ENGINE)
     tracker_usage.record(repo, "br", ["create"], site=tracker_usage.SITE_ENGINE)
 
-    assert tracker_usage.promote(repo) == 2
+    assert tracker_usage.promote(repo) == (2, 0)
     ledger = (repo / tracker_usage.LEDGER_FILE).read_text(encoding="utf-8")
     assert len(ledger.splitlines()) == 2
     assert _spool_lines(repo) == []
-    assert tracker_usage.promote(repo) == 0  # nothing left to move
+    assert tracker_usage.promote(repo) == (0, 0)  # nothing left to move
 
 
 def test_promote_appends_rather_than_replacing(repo: Path) -> None:
