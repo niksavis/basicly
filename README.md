@@ -4,7 +4,7 @@
 
 # basicly
 
-**One command installs a complete coding-agent harness — instructions, skills, and gates — projected from a single catalog.**
+**A coding-agent harness that ships the workflow and the state, not just the instructions — one catalog projected into every agent's config, a deterministic loop that runs on it, and gates at commit time.**
 
 [![latest release](https://img.shields.io/github/v/release/niksavis/basicly?label=release)](https://github.com/niksavis/basicly/releases/latest)
 [![quality gates](https://github.com/niksavis/basicly/actions/workflows/quality-gates.yml/badge.svg)](https://github.com/niksavis/basicly/actions/workflows/quality-gates.yml)
@@ -16,20 +16,36 @@
 
 ## What is basicly?
 
-Coding agents read guidance from many places — `CLAUDE.md`, `AGENTS.md`,
-`.github/copilot-instructions.md`, skill folders, hook configs — and keeping
-them consistent by hand does not scale. `basicly` fixes that with one catalog
-and a projector:
+Most agent harnesses ship instructions and skills. `basicly` also ships the
+**workflow** and the **state** — a deterministic development loop, the work
+graph it derives progress from, and git gates that hold whether or not the model
+read the guidance.
 
-- **Suggestive guidance** — instructions, skills, and policy fragments a model
-  reads. Authored once as YAML, projected into every format your agents expect.
-- **Deterministic gates** — git hook scripts that mechanically block a bad
-  commit or push, whether or not the guidance was followed.
-- **Projection tooling** — the `basicly` CLI that generates, verifies, and
-  upgrades all of the above in any consumer repo.
+Four pillars:
 
-Think of it as Lego bricks for agent enablement: pick the blocks, install them
-with one command, and let `basicly check` keep them from drifting.
+- **01 Guidance** — one versioned YAML catalog, projected into what each tool
+  natively reads: `CLAUDE.md`, `AGENTS.md`, `.github/copilot-instructions.md`,
+  skills, subagents, permissions. Edit one fragment and every target regenerates
+  consistently. Your overrides live in an overlay that upgrades never touch.
+- **02 Gates** — git hooks across pre-commit, commit-msg and pre-push, plus
+  agent hooks and a verify pipeline. **Enforcement is at commit time, not only in
+  CI**: a hook that refuses the commit is a different guarantee from a check that
+  fails the build afterwards.
+- **03 The loop** — a development process shipped as commands: intake, classify,
+  decompose, build, verify, ship, teardown, retro — driven the same way under
+  Claude, Codex or Copilot. Work builds in an isolated worktree; run one track at
+  a time, or fan out parallel lanes behind a serial merge queue.
+- **04 The work graph** — issues, dependencies, gate results, checkpoints and
+  evidence live in a tracked graph. The loop keeps no side-state: the phase a
+  track sits in is *derived* from that graph, so a session can crash, compact, or
+  hand over to a different agent family mid-track and the next command picks it
+  up by re-reading it.
+
+**The pillars are not a bundle of files.** The loop, and every headless agent it
+dispatches, reads the artifacts pillar 01 emits — so the config layer's output
+*is* the orchestrator's contract. That is why the same track can start on one
+agent and finish on another, and it is what a projector alone or an orchestrator
+alone cannot offer.
 
 ## Quick start
 
@@ -111,7 +127,7 @@ redirect-capable [beads (`br`)](https://github.com/Dicklesworthstone/beads_rust)
 ## How it works
 
 ```mermaid
-flowchart LR
+flowchart TB
     subgraph sources["One source of truth"]
         core[".basicly/core/<br>managed catalog"]
         local[".basicly-local/<br>your overlay"]
@@ -120,15 +136,26 @@ flowchart LR
     core --> cli
     local --> cli
     subgraph outputs["Projected into your repo"]
-        agents["Agent instructions<br>CLAUDE.md / AGENTS.md / copilot-instructions.md"]
-        skills["Skills<br>.claude/skills / .agents/skills"]
-        hooks["Hooks<br>git stages / Claude Code / Copilot"]
+        agents["Agent instructions<br>CLAUDE.md / AGENTS.md<br>copilot-instructions.md"]
+        skills["Skills<br>.claude/skills<br>.agents/skills"]
+        hooks["Hooks<br>git stages<br>Claude Code / Copilot"]
     end
     cli --> agents
     cli --> skills
     cli --> hooks
     gate["basicly check<br>drift gate, run by CI"] -. verifies .-> outputs
+    loop{{"basicly loop / supervise"}}
+    outputs -- "the contract the agents read" --> loop
+    tracker[("work graph<br>issues, gates, evidence")]
+    loop <-- "reads phase, writes gates" --> tracker
 ```
+
+The edge from the projected outputs into `basicly loop` is the part that is easy
+to miss, and it is drawn solid because it is load-bearing rather than advisory:
+the loop does not carry its own copy of the rules. It dispatches headless agents
+that read the same projected artifacts, so **the projection is the contract** —
+and because the loop stores no side-state, phase is always re-derived from the
+work graph.
 
 The full design — directory contract, catalog model, verification pipeline —
 lives in [`docs/architecture/architecture.md`](docs/architecture/architecture.md).
