@@ -37,6 +37,7 @@ of it.
 from __future__ import annotations
 
 import json
+import re
 import time
 from collections import Counter
 from dataclasses import dataclass
@@ -52,6 +53,39 @@ LEDGER_FILE = Path(".basicly/ledger/tracker-usage.jsonl")
 
 SITE_ENGINE = "engine"
 SITE_INTERACTIVE = "interactive"
+
+# A positional that could name a br subcommand. See :func:`is_surface_word` for
+# why a stricter filter than "does not start with -" is required.
+_SURFACE_WORD = re.compile(r"^[a-z][a-z0-9-]*$")
+
+# A leading long flag standing in for a subcommand: `bv` has none at all, so a
+# flag is the only name its invocation has.
+_LONG_FLAG_SURFACE = re.compile(r"^--[a-z][a-z0-9-]*[a-z0-9]$")
+
+# Top-level br commands that take a second word naming a distinct operation, so
+# the pair is one surface. Generated from `br --help` and mirrored in
+# `.basicly/ledger/tracker-surface.json`; `test_tracker_surface` asserts the two
+# agree, which is what turns "keep this in step" into a gate.
+#
+# The set previously held five entries and was wrong in both directions: it missed
+# `audit`, `doctor`, `epic`, `history`, `label` and `query` — so `br label add` and
+# `br label list` collapsed to one surface named `label`, understating exactly the
+# count a freeze reads — and it listed `catalog`, which is a *basicly* command and
+# has never existed in br (basicly-vkh0.2).
+GROUP_SUBCOMMANDS = frozenset({
+    "audit",
+    "comments",
+    "config",
+    "coordination",
+    "dep",
+    "doctor",
+    "epic",
+    "gate",
+    "history",
+    "label",
+    "query",
+    "robot-docs",
+})
 
 # Subcommands that only read. Used for the read/write ratio the cache design
 # rests on: if reads dominate by the margin the 175x in-process figure implies,
@@ -70,6 +104,10 @@ READ_SUBCOMMANDS = frozenset({
     "comments list",
     "config get",
     "dep cycles",
+    # `dep list` was missing while `dep tree`/`dep cycles` were present, so five
+    # measured reads sat in `unclassified` (basicly-vkh0.2). Found by reporting
+    # the unclassified rows individually instead of trusting the bucket total.
+    "dep list",
     "dep tree",
     "doctor",
     "gate list",
@@ -95,6 +133,10 @@ WRITE_SUBCOMMANDS = frozenset({
     "gate report",
     "import",
     "reopen",
+    # The engine's second-most-called write, and it sat in `unclassified` from the
+    # day the ledger landed. Either direction mutates — export rewrites the JSONL,
+    # import rewrites the DB — so it is a write regardless of which way it runs.
+    "sync",
     "update",
 })
 
@@ -122,6 +164,40 @@ def classify_access(subcommand: str) -> str:
     return "unclassified"
 
 
+def is_surface_word(token: str) -> bool:
+    """True when *token* could name a ``br`` subcommand.
+
+    Every ``br`` command name is lowercase letters, digits and hyphens. Anything
+    else in a positional slot is shell text that survived tokenisation, not a
+    surface — and it reached the committed ledger: ``br --version 2>&1`` recorded
+    the surface ``2>&1``, and ``br $g --help`` inside a shell loop recorded ``$g``
+    (six such rows across four fake surfaces, basicly-vkh0.2). A freeze list is
+    exactly the artifact that must not contain them, since its whole purpose is to
+    say which surfaces exist.
+
+    Rejecting the token rather than the whole invocation is deliberate: for
+    ``br --version 2>&1`` the real surface is the leading flag, and dropping only
+    the junk word still records it.
+    """
+    return bool(_SURFACE_WORD.match(token))
+
+
+def is_valid_surface(subcommand: str) -> bool:
+    """True when *subcommand* is a shape :func:`split_invocation` can legitimately emit.
+
+    Two shapes are legitimate: one or two command words (``show``, ``dep add``), or
+    a single long flag for a binary that has no subcommands (``bv --robot-next``,
+    ``br --version``). Everything else is recorder junk. Used at the promote
+    boundary so the committed ledger cannot inherit it.
+    """
+    if not subcommand:
+        return False
+    if subcommand.startswith("-"):
+        return bool(_LONG_FLAG_SURFACE.match(subcommand))
+    words = subcommand.split()
+    return len(words) <= 2 and all(is_surface_word(word) for word in words)
+
+
 def split_invocation(args: list[str] | tuple[str, ...]) -> tuple[str, tuple[str, ...]]:
     """The subcommand and the flag *names* in *args*.
 
@@ -134,7 +210,7 @@ def split_invocation(args: list[str] | tuple[str, ...]) -> tuple[str, tuple[str,
     ``--flag=value`` is truncated at the ``=``; a value in the next position is
     simply not collected, since only names are recorded.
     """
-    words = [arg for arg in args if not arg.startswith("-")]
+    words = [arg for arg in args if not arg.startswith("-") and is_surface_word(arg)]
     flags = sorted({arg.split("=", 1)[0] for arg in args if arg.startswith("-")})
 
     if not words:
@@ -142,7 +218,7 @@ def split_invocation(args: list[str] | tuple[str, ...]) -> tuple[str, tuple[str,
         return (flags[0] if flags else "", tuple(flags))
 
     subcommand = words[0]
-    if len(words) > 1 and subcommand in {"dep", "comments", "gate", "catalog", "config"}:
+    if len(words) > 1 and subcommand in GROUP_SUBCOMMANDS:
         subcommand = f"{subcommand} {words[1]}"
     return subcommand, tuple(flags)
 
@@ -284,26 +360,38 @@ def load(repo_root: Path) -> list[dict]:
     return _read_jsonl(root / LEDGER_FILE) + _read_jsonl(root / SPOOL_FILE)
 
 
-def promote(repo_root: Path) -> int:
-    """Fold the spool into the committed ledger and clear it; return records moved.
+def promote(repo_root: Path) -> tuple[int, int]:
+    """Fold the spool into the committed ledger and clear it.
+
+    Returns ``(promoted, discarded)``.
 
     Truncates the spool only after the ledger write has been flushed, so an
     interruption loses nothing: the worst case re-promotes records already in the
     ledger, and a duplicated observation biases a count rather than destroying
     the sample. Losing the spool silently would be the worse failure.
+
+    **A record whose subcommand cannot be a surface is discarded here rather than
+    committed.** The ledger is the input to a surface freeze, so a malformed
+    observation in it is worse than a missing one — and the spool on any machine
+    that ran an older recorder already holds some (``2>&1``, ``$g``). Validating at
+    the boundary means the committed artifact is clean regardless of which recorder
+    version produced the spool, instead of depending on everyone having upgraded.
+    The count is returned, never swallowed: a caller reports what it dropped.
     """
     root = Path(repo_root)
     spooled = _read_jsonl(root / SPOOL_FILE)
     if not spooled:
-        return 0
+        return 0, 0
+    keep = [entry for entry in spooled if is_valid_surface(str(entry["subcommand"]))]
+    discarded = len(spooled) - len(keep)
     ledger = root / LEDGER_FILE
     ledger.parent.mkdir(parents=True, exist_ok=True)
     with ledger.open("a", encoding="utf-8") as handle:
-        for entry in spooled:
+        for entry in keep:
             handle.write(json.dumps(entry, separators=(",", ":"), sort_keys=True) + "\n")
         handle.flush()
     (root / SPOOL_FILE).write_text("", encoding="utf-8")
-    return len(spooled)
+    return len(keep), discarded
 
 
 def summarize(repo_root: Path) -> list[SurfaceRow]:
