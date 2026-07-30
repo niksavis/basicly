@@ -585,10 +585,26 @@ who do.
 Added 2026-07-30, from the owner's competitive read. §2.10 analysed this org's *tracker*; this is
 the *orchestrator* built on it, and it was the single biggest gap in this review.
 
-Gastown covers the whole of our orchestration half: worktree-backed per-agent workspaces
-("hooks"), a **Bors-style merge queue that bisects to isolate a failing MR**, a supervisor patrol
-tier (Deacon/Witness/Dogs) monitoring concurrent workers ("polecats"), and human-gated work
-bundles ("convoys", with a `--human` flag). Go, MIT.
+Gastown covers most of our orchestration half: worktree-backed per-agent workspaces ("hooks"), a
+merge queue, a supervisor patrol tier (Deacon/Witness/Dogs) monitoring concurrent workers
+("polecats"), and human-gated work bundles ("convoys", with a `--human` flag). Go, MIT.
+
+> **Correction, 2026-07-30 — and the method failure matters more than the fact.** This section was
+> first written from gastown's README, fetched and summarised rather than read from source. It
+> claimed a *"Bors-style merge queue that bisects to isolate a failing MR"* and recommended we build
+> the same. **That code is unreachable.** `AssembleBatch` and `ProcessBatch` appear only at their own
+> definitions (`internal/refinery/batch.go:58`, `:211`) with no call sites outside tests; the config
+> field that would enable them is never read (`engineer.go:177-179`); `ProcessMRInfo`
+> (`engineer.go:1321`) has no callers at all, including tests; and the Go merge engine cannot be
+> entered, because the Refinery is a Claude agent in a tmux session and the Go-driven foreground mode
+> returns a hard error — *"foreground mode is deprecated; use background mode"*
+> (`internal/refinery/manager.go:154-156`). The agent's own runbook processes the queue
+> **sequentially** (`.claude/commands/patrol.md:126`). `README.md:96` and `:653-661` describe an
+> algorithm the shipped binary cannot run.
+>
+> This repo's own rule is that a README claim is not evidence, and §1 pins every finding to a
+> revision for exactly this reason. The rule was broken by reading a summary of a summary. Every
+> corrected fact above came from the clone at `649b832`.
 
 **Take — this is not evidence we are reinventing; it is evidence the fork in §2.10 is real and
 widening.** Gastown requires **`bd` 0.57+ plus Dolt plus tmux 3.0+**. It is the DB-authoritative
@@ -597,17 +613,151 @@ critical path. `work-tracker.md` chose the opposite branch — the log is the tr
 no daemon. Both are coherent. Ours is the one that can reach a zero-runtime-dependency 1.0.0; theirs
 structurally cannot.
 
-**Take — their merge queue is ahead of ours in one specific, adoptable way.** `merge.py` lands
-serially and bounces a conflicted lane back to its owner. Gastown *bisects* on verification
-failure: when a batch fails, it isolates the offending MR and merges the rest. We currently pay
-full serial cost for every landing. Bisecting is a pure throughput win with no new dependency and
-no LLM in the loop, so it does not violate the determinism rules — worth filing against `merge.py`.
+**Take — our merge queue is ahead of what gastown actually runs, and the recommendation to build
+bisecting is withdrawn.** `merge.py` lands serially, detects conflicts with `git merge-tree` before
+touching a working tree, and bounces the conflicted lane to its owner — deterministically, in engine
+code. What gastown *runs* is a Claude agent working the queue sequentially. So this is not a gap to
+close; it is a place where a deterministic implementation beats a nondeterministic one at the same
+throughput.
+
+Bisecting should not be filed even on its own merits. The analysis put its break-even at a per-lane
+pass rate of about **0.86 for a batch of five** — below that, re-verification costs more than the
+batch saves — for roughly **2,100 lines**, and it introduces a blame defect: a batch that fails
+attributes the failure to the batch rather than to a lane, which would corrupt the coupling records
+D9 depends on. Reject on cost, not only on absence.
+
+**Take — the one thing here genuinely worth adopting is much smaller and we have the scar for it.**
+Gastown never believes its own merge: after merging and pushing it re-resolves the ref and *proves*
+the submitted commit is an ancestor of the target, and it refuses to land at all if the lane branch
+moved since it was queued (`engineer.go:1478-1499`, `:1538-1560`, `internal/git/git.go:2091-2144`).
+About twenty lines of `rev-parse` plus `merge-base --is-ancestor`, no dependency. We have the
+ancestry check but only at the *ship* gate (`loop.py:299-304`) — and this repo has twice recorded the
+incident it guards: a bead closed with its code stranded unmerged. The lesson is to assert inside the
+merge function, so a `MergeResult(status="merged")` can never be returned without proof.
+
+**Take — reject the supervision tiers, adopt the detection code underneath them.** Gastown runs five
+tiers, three of them LLM sessions, justified as *"the daemon is mechanical (can't reason), but health
+decisions need intelligence"* (`docs/design/dog-infrastructure.md:20-22`). The repo then refutes its
+own thesis: three separate gates exist purely to *avoid* invoking the triage agent — one credited
+with saving *"~480 Claude sessions/day"* (`internal/daemon/daemon.go:1338-1353`, `:1369-1383`) — and
+both shipped plugin dogs instruct the model **not** to reason (*"Run this command EXACTLY. Do NOT
+interpret"*, `internal/plugin/types.go:220-221`). The tiers are compensation for an **agent-driven
+loop**: the agent calls `gt patrol report`, which closes the cycle and spawns the next
+(`internal/cmd/patrol_report.go:47`), so nothing deterministic owns continuation and a hung agent
+stops the world silently. Our engine owns the loop and derives phase from the tracker, which makes
+"did the phase advance within T?" a plain predicate. Their *mechanical* guards are still worth
+taking: the worktree-teardown guard stack, where a **transient** git error must never authorize a
+deletion (`internal/polecat/manager.go:1138-1305`), and the restart governor's hard crash-loop stop
+(`internal/daemon/restart_tracker.go:44-54`).
 
 **Take — do not read their config layer as a projection layer.** Gastown configures *runtime*
 (`settings/config.json` per rig, `.claude/settings.json`, `~/.codex/config.toml`). That is
 permissions and command wiring, not a catalog compiled into instruction files with a drift gate. The
 two halves of basicly still do not co-exist in one tool anywhere we have looked — but note that is a
 statement about the field today, not a moat.
+
+### 2.12 The 2026-07-30 sweep — six more repos, one agent each
+
+Full reports live outside the repo in `reference-repos/_analysis/*.md` (they are long and quote
+freely from other projects' source). Each was read from a pinned clone, not from a README, after
+§2.11 demonstrated the cost of the alternative. Revisions are cited inline per subsection.
+
+**Licence status: not yet reviewed for these six.** `research/references.md` §2 exists because the
+last time a licence was assumed rather than read, `beads_rust` turned out to carry an
+OpenAI/Anthropic rider naming "benchmarking, testing, analyzing, indexing" as restricted use. The
+findings below are short attributed citations with `file:line`, which is ordinary research practice
+and what this section needs; **reusing any of this text or deriving an implementation from a quoted
+snippet requires reading that project's `LICENSE` first** and recording it in the references table.
+Treat every subsection here as *analysis*, and the clean-room rules in §2.10 as still governing what
+may be written from it.
+
+**`first-fluke/oh-my-agent` (TypeScript, MIT, `2c28bc4`) — our closest competitor on projection.**
+Adopt `oma skills audit` (`cli/commands/skills/audit.ts:9-36`,
+`cli/utils/text-similarity.ts:105-129`): dependency-free TF-IDF/cosine over skill *descriptions*
+flagging near-duplicate pairs and "black-hole" skills whose mean similarity to the library is an
+outlier. Our routing rests on 33 descriptions and we have **no cross-skill check at all** — every
+`catalog lint` rule inspects one file in isolation (`src/basicly/catalog_lint.py:219-292`). Sharpens
+`basicly-m4zv.2` rather than adding work. We stay ahead on three axes with evidence: our sources are
+deliberately non-discoverable YAML while their SSOT *is* `SKILL.md`/`AGENTS.md` defended by a prose
+instruction (`cli/platform/rules.ts:267`); our composition is a real render-time merge while their
+`_shared/` is relative-markdown pointers that silently broke their own emit
+(`cli/scripts/check-emit-drift.mjs:7-14`); and our token budget reads real run-record spend and halts
+dispatch (`src/basicly/policy.py:869-899`) while theirs counts `promptContent.length / 4`
+(`cli/commands/agent/spawn-status.ts:466`). They are ahead on target *breadth* — 13 skill roots to our
+2 — but buy it by writing to **gitignored** directories at install time, which is a different
+architecture rather than a better projector.
+
+**`code-yeongyu/oh-my-openagent` (`f287227`) — the answer to our capability-tier question.** Adopt
+named-capability-tier routing (`model-resolution-pipeline.ts:88-274`, tiers at
+`category-model-requirements.ts:3-162`): a work item declares a *tier*, never a model id, and a pure
+injected resolver walks an ordered `(providers[], model, variant)` fallback chain against what is
+reachable, returning the chosen model **plus a `provenance` enum** (`override | category-default |
+provider-fallback | system-default`). Pair it with `model-settings-compatibility.ts:107-206`, which
+never refuses an unsupported knob but clamps it down a fixed ladder and records each downgrade as
+`{field, from, to, reason}` — the graceful-degradation contract `basicly-kjc5.58`/`.59`/`.61` need,
+and about 400 lines of pure logic that ports to stdlib Python unchanged. **Their HEAD is decisive for
+our open question**: `fix/task-reject-category-with-model` makes tier and raw model id *mutually
+exclusive* with a typed error, because a call-site override would silently bypass the routing — so if
+a catalog entry may declare both, the tier is decoration. Reject their stated thesis: the ROADMAP
+refuses a harness abstraction (*"duplication causes less pain"*) and the repo then pays the bill —
+three hand-ported rules-injection implementations, two background-agent engines of which only the
+older detects a wedge, two contradictory harness-id enums four lines apart (`schema/harness.ts:3` vs
+`:7`), and two byte-identical committed copies of a 25,905-byte skill with a third silently diverged
+by 1,606 bytes. Our single-source projector is the correct call.
+
+**`SouthBridgeAI/hankweave-runtime` (`66a9921`) — the only production append-only journal in the
+set, and the most important input to `work-tracker.md`.** Adopt the **denormalized running
+aggregate**: every event carries the totals that hold *after* it
+(`state.transition.data.resultingState`, `event-schemas.ts:429-434`), so the common query is answered
+by reading the tail while the fold remains the checkable authority. That is a concrete answer to the
+cost `work-tracker.md` §4 admits, and it defers the index without hand-waving. Adopt **honest
+truncation** (`truncated` + `originalLength`, `event-schemas.ts:259-268`) as a better growth bound
+than the lossy compaction §9.1 declines, because it records that evidence was dropped and how much.
+Reject their sentinels — a sentinel is an injected LLM call with a per-million-token cost model
+(`sentinels/sentinel.ts:108`, `:502`), inadmissible under the product rule and already covered by
+`StallWatchdog`. Reject their ordering model outright and cite it as vindication: **no sequence
+numbers**, ids minted as `Date.now()` + `Math.random()` (`utils.ts:26-28`), and **44.5% of events in
+their own committed 6,467-event production fixture share a millisecond** — total order exists only as
+an unrecorded side effect of append order, exactly what §9.5 forbids. Net: our *unbuilt* design is
+more rigorous than their *shipped* one.
+
+**`openai/symphony` (`f8e8b8a`) — the prior art we went looking for does not exist.** Adopt the
+phase machine as *data*: their engine knows only three predicates about a work item — active,
+terminal, neither — with the seven-stage lifecycle living in `WORKFLOW.md` front matter, so adding a
+stage costs no code. Note the `## Codex Workpad` journal (`WORKFLOW.md:295-329`) as a file-format
+sketch. Reject the state model: `grep File.write lib/` finds nothing but rotating logs — claim,
+running, retry and blocked live in RAM, re-derived from a network tracker on a five-second poll,
+`SPEC.md:1691` calling this *"intentionally in-memory"* and `SPEC.md:2238` still carrying *"TODO:
+Persist retry queue and session metadata across process restarts"*. **The absence is the finding.**
+Reject their conflict policy: `land/SKILL.md:32-34` has the LLM resolve merge conflicts.
+
+**`coleam00/Archon` (`3044829`) — matched its billing on phases, not on gates.** A genuine
+Zod-validated node DAG in `.archon/workflows/*.yaml` with per-run worktrees and Kahn-layered
+execution (`packages/workflows/src/schemas/dag-node.ts:499`,
+`packages/workflows/src/dag-executor.ts:1174`). Adopt `evidence_policy.required` plus typed node
+artifacts: refuse terminal success unless a declared evidence file exists on disk, the engine gating
+on *presence* while the workflow produces the content — *"code computes, YAML coordinates"*
+(`schemas/workflow.ts:105`). Pure filesystem, no dependency, and it plugs a hole we have too: a lane
+can currently claim a phase done with no artifact to point at. Reject their completion gate and cite
+it: `completionDetected = signalDetected || bashComplete` (`dag-executor.ts:4602`) lets a model's
+self-emitted `<promise>DONE</promise>` **short-circuit the deterministic check**, the exact inversion
+of `rubrics.py`'s contract. Their "validation gates" are `bash:` nodes; the module that would turn a
+result into structured state is dead code reachable only from its own test.
+
+**`automazeio/ccpm` (`7d7e462`) — a prompt pack, and its headline is false.** It does **not** use
+GitHub Issues as its work store: `gh` appears in one setup script while all twelve readiness and
+status scripts grep local markdown frontmatter — so it is evidence *for* owning our store, not
+against it. Adopt two things anyway: turning declared file-scope from a planning input into a
+**verified postcondition** (filed as `basicly-jr0l.44`), and a **designated owner** for a shared path
+(`execute.md:212`), which fixes a real pathology in our `group_children` where one common
+`pyproject.toml` collapses every child into a single serial group (filed as `basicly-jr0l.45`).
+
+**What the sweep changes about §5.** Two of the six independently made phases declarative (Archon's
+DAG, Symphony's three predicates) and **both kept determinism weak** — one lets the model self-certify
+completion, the other persists nothing at all. We have the opposite profile: hard-coded phases,
+strong determinism. So the open design question is not whether to copy declarative phases but whether
+phases can become data *without* surrendering derive-from-state and deterministic gating. Archon's own
+slogan is the best framing available for it: **code computes, YAML coordinates.**
 
 ## 3. Where independent projects converge
 
