@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from basicly import cli, verify
-from basicly.config import VerifyCheck, VerifyConfig
+from basicly.config import VerifyCheck, VerifyConfig, load_verify_config
 
 
 class _Proc:
@@ -610,3 +610,36 @@ _CLOCK_PLURAL = (
     'Error: Validation errors: [ValidationError { field: "updated_at", '
     'message: "cannot be before created_at" }]\n'
 )
+
+
+# --- The projection gates must run locally, not only in CI (basicly-m4zv.11) ---
+
+_PROJECTION_COMMANDS = {
+    ("basicly", "check"),
+    ("basicly", "skills-check", "--all-default-roots"),
+    ("basicly", "agents-check"),
+    ("basicly", "hooks-check"),
+}
+
+
+def test_this_repos_fast_mode_runs_every_projection_gate() -> None:
+    """A stale projection must fail before the change can reach the remote.
+
+    ``protect-generated-commit`` compares the *staged* generated blob against the
+    manifest, so it catches a hand-edited output but is blind to a *stale* one:
+    editing a fragment does not stage the generated file at all, so its bytes still
+    match. Before this, the four projection gates ran only in CI — so a fragment
+    edit with no rebuild passed every local hook and pushed stale output, which is
+    precisely the posture the README, the site and the repo About claim we do not
+    have.
+
+    Asserts the wiring rather than the detection: that ``basicly check`` reports
+    drift is covered elsewhere, and what went missing here was nobody *calling* it.
+    ``fast`` specifically, not merely ``full`` — the published claim says commit
+    time, and ``fast`` is the pre-commit mode.
+    """
+    config = load_verify_config(Path(__file__).parent.parent)
+    fast = {tuple(check.command) for check in config.checks if "fast" in check.modes}
+
+    missing = _PROJECTION_COMMANDS - fast
+    assert not missing, f"projection gates absent from this repo's fast mode: {sorted(missing)}"

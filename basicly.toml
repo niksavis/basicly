@@ -99,6 +99,38 @@ name = "pytest"
 command = ["pytest", "-q", "-n", "4"]
 modes = ["full"]
 
+# The four projection gates, run locally (basicly-m4zv.11). They were CI-only,
+# which left exactly the hole the positioning claims we do not have.
+# `protect-generated-commit` catches a hand-*edited* generated file by comparing
+# the staged blob against the manifest, but it cannot see a *stale* projection:
+# editing a fragment does not stage the generated output at all, so its on-disk
+# bytes still match. A fragment edit with no rebuild therefore passed every local
+# hook and reached the remote stale.
+#
+# In "fast" (every commit) rather than "full" alone, because that is what makes the
+# commit-time claim in README/site/About true. Measured at 0.71s for all four
+# together against seconds for pyright and pytest, and most of that is `uv run`
+# spawn overhead (~0.18s each) rather than work — so the cost is noise.
+[[verify.checks]]
+name = "projection-check"
+command = ["basicly", "check"]
+modes = ["fast", "full"]
+
+[[verify.checks]]
+name = "projection-skills"
+command = ["basicly", "skills-check", "--all-default-roots"]
+modes = ["fast", "full"]
+
+[[verify.checks]]
+name = "projection-agents"
+command = ["basicly", "agents-check"]
+modes = ["fast", "full"]
+
+[[verify.checks]]
+name = "projection-hooks"
+command = ["basicly", "hooks-check"]
+modes = ["fast", "full"]
+
 # Loop gate/checkpoint policy: which gates block advancement and the rework cap.
 [policy]
 # Gate names (from [verify] / br gate report) that MUST pass to advance. Any
