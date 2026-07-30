@@ -113,11 +113,25 @@ Three consequences for the design:
    `dep remove` are **interactive-only** — a human at a prompt, never a harness phase. By §6 those
    may be served later or never, which moves five more surfaces out of the hard requirement.
 
-Two honest limits on the sample. It covers many sessions on **one machine**, so an
-interactive-only classification reflects how *this* operator works. And `where --json` is a genuine
-engine surface (`worktree.py` `_probe_redirect`) that shows as never-used because its only recorded
-observation was destroyed while promoting this sample; the next worktree provisioning re-records it.
-Neither affects the `bv` result, which is the load-bearing one.
+**One honest limit on the sample**: it covers many sessions on **one machine**, so an
+interactive-only classification reflects how *this* operator works. It does not affect the `bv`
+result, which is the load-bearing one.
+
+**And one correction, because the first version of this section named the wrong cause.** It said
+`where --json` — a genuine engine surface, called by `worktree.py` `_probe_redirect` on every
+provisioning — read as never-used because a single observation was lost while promoting, and that
+the next provisioning would re-record it. Three provisionings later the count was still zero, which
+is what exposed the real defect: **the spool did not follow `.beads/redirect`**, so a call made with
+a worktree as its repo root spooled *inside the worktree* and the loop deleted it at teardown. Every
+engine tracker call from a lane was being discarded — not uniform sampling loss, but precisely the
+traffic the harness generates while doing work. Fixed in `basicly-vkh0.8`
+(`tracker_usage.ledger_root`, mirroring `br.beads_dir`, in both the package and the hook).
+
+The lesson generalises past this bug and belongs with the freeze: **a never-used entry is the only
+finding in this report that a measurement error can fabricate**, because absence of a record and
+absence of a surface look identical. So every never-used entry that a call site contradicts must be
+chased to a cause, never explained away — the `bv` result above is trustworthy for the opposite
+reason, that no `bv` call site exists to contradict it.
 
 - **Records**: `create`, `update` (type, external-ref, acceptance-criteria, description, status),
   `show --json`, `list --json`, `close`, `delete --hard`

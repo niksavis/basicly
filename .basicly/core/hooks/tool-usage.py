@@ -285,6 +285,25 @@ def _split_invocation(args: list[str]) -> tuple[str, list[str]]:
     return subcommand, flags
 
 
+def ledger_root(repo_root: Path) -> Path:
+    """The checkout owning the ledger, following br's git-ignored ``.beads/redirect``.
+
+    Duplicated from ``tracker_usage.ledger_root`` for the same reason the rest of
+    this hook is: it runs as a standalone script under whatever interpreter the host
+    provides, with no guarantee the package is importable. A parity test compares the
+    two.
+    """
+    try:
+        redirect = repo_root / ".beads" / "redirect"
+        if redirect.is_file():
+            target = Path(redirect.read_text(encoding="utf-8").strip())
+            if target.is_dir() and target.name == ".beads":
+                return target.parent
+    except OSError:
+        return repo_root
+    return repo_root
+
+
 def record_tracker(invocations: list[tuple[str, list[str]]], repo_root: Path) -> None:
     """Append interactive tracker calls to the ledger spool; never raises.
 
@@ -295,13 +314,18 @@ def record_tracker(invocations: list[tuple[str, list[str]]], repo_root: Path) ->
     """
     if not invocations:
         return
+    # One ledger per repo, never one per worktree: an agent typing `br` inside a
+    # lane worktree would otherwise spool into a directory the loop deletes at
+    # teardown, discarding the observation (basicly-vkh0.8). Mirrors
+    # tracker_usage.ledger_root.
+    root = ledger_root(repo_root)
     # Opt-in by the presence of the committed ledger directory, matching
     # tracker_usage.is_enabled. Without it this hook would create .basicly/usage/
     # in any consumer repo that happens to install us, which is an uninvited
     # write into somebody else's tree.
-    if not (repo_root / TRACKER_LEDGER_DIR).is_dir():
+    if not (root / TRACKER_LEDGER_DIR).is_dir():
         return
-    spool = repo_root / TRACKER_SPOOL
+    spool = root / TRACKER_SPOOL
     spool.parent.mkdir(parents=True, exist_ok=True)
     gitignore = spool.parent / ".gitignore"
     if not gitignore.exists():

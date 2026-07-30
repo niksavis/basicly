@@ -223,8 +223,42 @@ def split_invocation(args: list[str] | tuple[str, ...]) -> tuple[str, tuple[str,
     return subcommand, tuple(flags)
 
 
+def ledger_root(repo_root: Path) -> Path:
+    """The checkout that owns the ledger for *repo_root*, following ``.beads/redirect``.
+
+    **One ledger per repo, never one per worktree.** A loop worktree shares the base
+    checkout's tracker through br's git-ignored ``redirect`` file, and the spool has
+    to follow the same rule for the same reason. It did not, and the consequence was
+    silent: :func:`is_enabled` saw the worktree's own checked-out
+    ``.basicly/ledger/`` directory, spooled beside it, and the loop deleted the
+    worktree at teardown — so **every engine tracker call made from a lane was
+    discarded** (basicly-vkh0.8).
+
+    That is not uniform sampling loss. Lane work is most of what the harness does,
+    and it made ``where`` — which ``worktree._probe_redirect`` calls on every single
+    provisioning — read as *never used* in the surface report. A false never-used
+    entry is the worst error the freeze's input can carry, because it would drop a
+    surface the engine depends on.
+
+    Mirrors :func:`basicly.br.beads_dir` rather than inventing a second rule: the
+    redirect names the base checkout's ``.beads``, whose parent is that checkout.
+    Falls back to *repo_root* when the redirect is absent or unreadable, so a plain
+    checkout is unaffected and telemetry never becomes a failure path.
+    """
+    root = Path(repo_root)
+    redirect = root / ".beads" / "redirect"
+    try:
+        if redirect.is_file():
+            target = Path(redirect.read_text(encoding="utf-8").strip())
+            if target.is_dir() and target.name == ".beads":
+                return target.parent
+    except OSError:
+        return root
+    return root
+
+
 def _spool_path(repo_root: Path) -> Path:
-    return Path(repo_root) / SPOOL_FILE
+    return ledger_root(repo_root) / SPOOL_FILE
 
 
 def is_enabled(repo_root: Path) -> bool:
@@ -242,8 +276,12 @@ def is_enabled(repo_root: Path) -> bool:
     that never asked for our development telemetry is a defect twice over: it is
     an uninvited write, and for a distribution it multiplies across the install
     base.
+
+    Asked of :func:`ledger_root`, so the switch and the spool it gates are the same
+    authority — a worktree cannot be recording into a directory the base does not
+    own.
     """
-    return (Path(repo_root) / LEDGER_FILE).parent.is_dir()
+    return (ledger_root(repo_root) / LEDGER_FILE).parent.is_dir()
 
 
 def record(  # noqa: PLR0913 — six independent facts about one observation
@@ -355,9 +393,15 @@ def _read_jsonl(path: Path) -> list[dict]:
 
 
 def load(repo_root: Path) -> list[dict]:
-    """The committed ledger plus anything still spooled, ledger first."""
-    root = Path(repo_root)
-    return _read_jsonl(root / LEDGER_FILE) + _read_jsonl(root / SPOOL_FILE)
+    """The committed ledger plus anything still spooled, ledger first.
+
+    The two halves resolve differently on purpose. The ledger is a **tracked** file,
+    so it belongs to the checkout you are on — reading it from *repo_root* is what
+    makes a report reflect the branch under test. The spool is machine-local and
+    shared with the base checkout (:func:`ledger_root`), so a report run inside a
+    worktree still sees what its own lane recorded.
+    """
+    return _read_jsonl(Path(repo_root) / LEDGER_FILE) + _read_jsonl(_spool_path(repo_root))
 
 
 def promote(repo_root: Path) -> tuple[int, int]:
@@ -377,9 +421,14 @@ def promote(repo_root: Path) -> tuple[int, int]:
     the boundary means the committed artifact is clean regardless of which recorder
     version produced the spool, instead of depending on everyone having upgraded.
     The count is returned, never swallowed: a caller reports what it dropped.
+
+    Reads the shared spool (:func:`ledger_root`) and writes *repo_root*'s ledger:
+    promoting is a step toward a commit, so the tracked file it grows must be the one
+    on the current branch, while the observations it drains are the machine's.
     """
     root = Path(repo_root)
-    spooled = _read_jsonl(root / SPOOL_FILE)
+    spool = _spool_path(repo_root)
+    spooled = _read_jsonl(spool)
     if not spooled:
         return 0, 0
     keep = [entry for entry in spooled if is_valid_surface(str(entry["subcommand"]))]
@@ -390,7 +439,7 @@ def promote(repo_root: Path) -> tuple[int, int]:
         for entry in keep:
             handle.write(json.dumps(entry, separators=(",", ":"), sort_keys=True) + "\n")
         handle.flush()
-    (root / SPOOL_FILE).write_text("", encoding="utf-8")
+    spool.write_text("", encoding="utf-8")
     return len(keep), discarded
 
 

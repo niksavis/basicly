@@ -192,3 +192,26 @@ def test_hook_and_engine_agree_on_every_surface_split() -> None:
         engine = tracker_usage.split_invocation(args)
         hooked = hook._split_invocation(list(args))
         assert (engine[0], list(engine[1])) == (hooked[0], hooked[1]), args
+
+
+def test_hook_and_engine_agree_on_where_the_ledger_lives(tmp_path: Path) -> None:
+    """Both halves must resolve a worktree to the same base checkout (basicly-vkh0.8).
+
+    The hook records the interactive half and the package records the engine half. If
+    they disagreed about which checkout owns the spool, half the sample would land in
+    a directory the loop deletes at teardown — the defect this pins.
+    """
+    spec = importlib.util.spec_from_file_location("tool_usage_hook_root", HOOK)
+    assert spec is not None and spec.loader is not None
+    hook = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(hook)
+
+    base = tmp_path / "base"
+    (base / ".beads").mkdir(parents=True)
+    worktree = tmp_path / "wt"
+    (worktree / ".beads").mkdir(parents=True)
+    (worktree / ".beads" / "redirect").write_text(f"{base / '.beads'}\n", encoding="utf-8")
+
+    for root, expected in ((worktree, base), (base, base), (tmp_path, tmp_path)):
+        assert tracker_usage.ledger_root(root) == expected
+        assert hook.ledger_root(root) == expected

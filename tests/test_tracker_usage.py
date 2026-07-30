@@ -22,6 +22,84 @@ def _spool_lines(repo: Path) -> list[dict]:
     return [json.loads(line) for line in raw.splitlines() if line.strip()]
 
 
+@pytest.fixture
+def worktree_of(repo: Path, tmp_path: Path) -> Path:
+    """A loop worktree sharing *repo*'s tracker through br's ``.beads/redirect``.
+
+    Both halves of the real shape matter to the bug under test: the redirect file
+    pointing at the base's ``.beads``, and the worktree's *own* checked-out
+    ``.basicly/ledger/`` directory — the latter is what made the recorder believe
+    the worktree owned a ledger.
+    """
+    base_beads = repo / ".beads"
+    base_beads.mkdir(parents=True, exist_ok=True)
+    worktree = tmp_path / "wt"
+    (worktree / ".beads").mkdir(parents=True)
+    (worktree / ".beads" / "redirect").write_text(f"{base_beads}\n", encoding="utf-8")
+    (worktree / tracker_usage.LEDGER_FILE).parent.mkdir(parents=True)
+    return worktree
+
+
+# --- One ledger per repo, never one per worktree (basicly-vkh0.8) --------------
+
+
+def test_a_worktree_records_into_the_base_checkouts_spool(repo: Path, worktree_of: Path) -> None:
+    """Teardown deletes the worktree, so a spool inside it is a discarded observation.
+
+    Every engine tracker call from a lane was lost this way, and it made ``where``
+    — called on every single provisioning — read as never used in the surface
+    report (basicly-vkh0.8).
+    """
+    tracker_usage.record(worktree_of, "br", ["where", "--json"], site=tracker_usage.SITE_ENGINE)
+
+    assert [entry["subcommand"] for entry in _spool_lines(repo)] == ["where"]
+    # The defect: anything here dies with the worktree.
+    assert not (worktree_of / tracker_usage.SPOOL_FILE).exists()
+
+
+def test_ledger_root_follows_the_redirect_to_the_base_checkout(
+    repo: Path, worktree_of: Path
+) -> None:
+    """One authority for the ledger's location, mirroring ``br.beads_dir``."""
+    assert tracker_usage.ledger_root(worktree_of) == repo
+    assert tracker_usage.ledger_root(repo) == repo
+
+
+def test_ledger_root_ignores_a_redirect_that_does_not_name_a_beads_dir(tmp_path: Path) -> None:
+    """A stale or hand-edited redirect must not scatter the spool somewhere arbitrary."""
+    (tmp_path / ".beads").mkdir()
+    (tmp_path / ".beads" / "redirect").write_text("/nonexistent/elsewhere\n", encoding="utf-8")
+    assert tracker_usage.ledger_root(tmp_path) == tmp_path
+
+
+def test_a_worktree_promotes_the_shared_spool_into_its_own_ledger(
+    repo: Path, worktree_of: Path
+) -> None:
+    """The tracked ledger belongs to the branch; the spool belongs to the machine.
+
+    Promoting from a lane must grow the *worktree's* ledger, because that is the file
+    that lands, while draining the base's spool where the observations accumulated.
+    """
+    tracker_usage.record(worktree_of, "br", ["where"], site=tracker_usage.SITE_ENGINE)
+
+    assert tracker_usage.promote(worktree_of) == (1, 0)
+
+    committed = (worktree_of / tracker_usage.LEDGER_FILE).read_text(encoding="utf-8")
+    assert json.loads(committed.strip())["subcommand"] == "where"
+    # The base's committed ledger is untouched: it is a different branch's file.
+    assert not (repo / tracker_usage.LEDGER_FILE).exists()
+    # And the shared spool is drained, so the next promote cannot double-count.
+    assert _spool_lines(repo) == []
+
+
+def test_summarize_from_a_worktree_sees_what_its_lane_recorded(worktree_of: Path) -> None:
+    """A report run inside a lane must not read as though the lane did nothing."""
+    tracker_usage.record(worktree_of, "br", ["where"], site=tracker_usage.SITE_ENGINE)
+
+    rows = {row.subcommand: row for row in tracker_usage.summarize(worktree_of)}
+    assert rows["where"].engine_calls == 1
+
+
 # --- Splitting an invocation into a surface -----------------------------------
 
 
