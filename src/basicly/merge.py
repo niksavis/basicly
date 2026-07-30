@@ -459,11 +459,10 @@ def unmerged_paths(cwd: Path) -> tuple[str, ...]:
 def blocking_dependencies(repo_root: Path, bead: str) -> frozenset[str]:
     """Ids *bead* is blocked by, per ``br``; empty when unreadable.
 
-    ``br`` renders a dependency two ways — ``br show --json`` gives
-    ``id``/``dependency_type`` while the ``create``/``dep add`` echo gives
-    ``depends_on_id``/``type`` — so both spellings are read. (Trusting only the
-    echo's spelling silently returned no dependencies at all, which degraded
-    every landing order to the caller's.)
+    Both of br's dependency spellings are read, via :func:`basicly.br.dependency_edge`
+    — trusting only the echo's spelling silently returned no dependencies at all,
+    which degraded every landing order to the caller's (basicly-kjc5.10, carried as
+    requirement R2 on the replacement).
 
     Best-effort by design: ordering is an optimization over an already-correct
     serial landing, so an unreachable tracker degrades to the caller's order
@@ -481,13 +480,9 @@ def blocking_dependencies(repo_root: Path, bead: str) -> frozenset[str]:
         return frozenset()
     blocking: set[str] = set()
     for dep in record.get("dependencies") or []:
-        if not isinstance(dep, dict):
-            continue
-        if (dep.get("dependency_type") or dep.get("type")) != "blocks":
-            continue
-        dep_id = dep.get("depends_on_id") or dep.get("id")
-        if isinstance(dep_id, str) and dep_id:
-            blocking.add(dep_id)
+        edge = br.dependency_edge(dep)
+        if edge is not None and edge[1] == "blocks":
+            blocking.add(edge[0])
     return frozenset(blocking)
 
 

@@ -241,6 +241,28 @@ def _dump_record(record: dict[str, object]) -> str:
     return json.dumps(record, separators=(",", ":"), ensure_ascii=False)
 
 
+def dependency_edge(dep: object) -> tuple[str, str] | None:
+    """One dependency row as ``(dep_id, dep_type)``, or None when it is not a row.
+
+    **br spells a dependency two ways for the same edge**: ``br show --json``
+    emits ``id``/``dependency_type`` while the ``create``/``dep add`` echo emits
+    ``depends_on_id``/``type``. Reading only one spelling silently yields *no
+    dependencies at all* rather than an error, which is how it degraded every
+    landing order to the caller's (basicly-kjc5.10).
+
+    One reader for both spellings, so a new call site cannot re-acquire the bug by
+    picking a spelling. Carried as a requirement on the replacement, which must
+    emit exactly one spelling (`docs/design/work-tracker.md` R2, basicly-vkh0.6).
+    """
+    if not isinstance(dep, dict):
+        return None
+    dep_id = dep.get("depends_on_id") or dep.get("id")
+    dep_type = dep.get("dependency_type") or dep.get("type")
+    if not isinstance(dep_id, str) or not dep_id:
+        return None
+    return dep_id, dep_type if isinstance(dep_type, str) else ""
+
+
 def _redact_paths(value: object) -> object:
     """Recursively redact machine-specific paths in every string inside *value*.
 
