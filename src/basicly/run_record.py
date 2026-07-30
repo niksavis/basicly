@@ -86,6 +86,28 @@ class RunRecord:
     # dispatches behind identical records — the irreproducibility D9 forbids.
     # Empty for a run configured entirely by committed config.
     config_overrides: tuple[str, ...] = ()
+    # --- Dispatch ordering (D9, basicly-vkh0.3) -------------------------------
+    # Why this lane went when it did. `loop_state.ready_ranked` passed br's rank
+    # through untouched as the primary ordering key and nothing recorded it, so a
+    # pass's ordering could not be reconstructed afterwards — a live D9 violation
+    # in a system whose architecture claims the rule is enforced.
+    #
+    # `dispatch_rank` is the lane's 1-based position in the order the pass
+    # actually dispatched, and it is the field that makes the ordering
+    # reconstructible. The three `scheduler_*` fields are br's evidence and are
+    # null whenever br did not rank the lane — which is the common case, not an
+    # edge case: a provisioned lane is claimed, and `br scheduler` recommends only
+    # unclaimed work, so the supervisor orders most lanes by the adoption
+    # fallback. Recording both means a null reads as "br had no opinion" rather
+    # than as "nobody recorded it".
+    #
+    # `scheduler_policy` is br's schema version (`br.scheduler.v1`), without which
+    # a score is an uninterpretable integer.
+    dispatch_rank: int | None = None
+    scheduler_rank: int | None = None
+    scheduler_fallback_rank: int | None = None
+    scheduler_score: int | None = None
+    scheduler_policy: str | None = None
 
 
 def outcome_of(*, handoff: bool, returncode: int | None) -> str:
@@ -115,6 +137,11 @@ def build_record(  # noqa: PLR0913
     scope_tokens: int | None = None,
     forecast_tokens: int | None = None,
     folded_info: tuple[str, ...] = (),
+    dispatch_rank: int | None = None,
+    scheduler_rank: int | None = None,
+    scheduler_fallback_rank: int | None = None,
+    scheduler_score: int | None = None,
+    scheduler_policy: str | None = None,
 ) -> RunRecord:
     """Assemble a :class:`RunRecord`, deriving the outcome and stamping the time.
 
@@ -141,6 +168,11 @@ def build_record(  # noqa: PLR0913
         scope_tokens=scope_tokens,
         forecast_tokens=forecast_tokens,
         folded_info=tuple(folded_info),
+        dispatch_rank=dispatch_rank,
+        scheduler_rank=scheduler_rank,
+        scheduler_fallback_rank=scheduler_fallback_rank,
+        scheduler_score=scheduler_score,
+        scheduler_policy=scheduler_policy,
         # Read here rather than passed in: the overrides are process-global for the
         # session, so stamping them centrally means no dispatch site can forget to
         # and a later one gets it for free (basicly-jr0l.8).

@@ -983,6 +983,11 @@ def record_dispatch(  # noqa: PLR0913 — one parameter per recorded dispatch in
     scope_tokens: int | None = None,
     forecast_tokens: int | None = None,
     folded_info: tuple[str, ...] = (),
+    dispatch_rank: int | None = None,
+    scheduler_rank: int | None = None,
+    scheduler_fallback_rank: int | None = None,
+    scheduler_score: int | None = None,
+    scheduler_policy: str | None = None,
 ) -> None:
     """Persist a metadata-only run-record for one dispatch, keyed by the bead.
 
@@ -1027,6 +1032,11 @@ def record_dispatch(  # noqa: PLR0913 — one parameter per recorded dispatch in
         scope_tokens=scope_tokens,
         forecast_tokens=forecast_tokens,
         folded_info=folded_info,
+        dispatch_rank=dispatch_rank,
+        scheduler_rank=scheduler_rank,
+        scheduler_fallback_rank=scheduler_fallback_rank,
+        scheduler_score=scheduler_score,
+        scheduler_policy=scheduler_policy,
     )
     with contextlib.suppress(OSError):
         run_record.record(repo_root, issue_id, entry)

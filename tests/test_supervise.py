@@ -852,14 +852,21 @@ def _patch_readiness(
     ranked: tuple[tuple[int, str], ...] = (),
 ) -> None:
     monkeypatch.setattr(supervise.loop_state, "blocked_ids", lambda _r: tuple(blocked))
-    monkeypatch.setattr(
-        supervise.loop_state,
-        "ready_ranked",
-        lambda _r: tuple(
-            loop_state.RankedNode(rank=rank, score=0, issue_id=iid, title="")
+    # One ranking behind both accessors: `ready_lanes` orders with `ready_ranked`
+    # while `dispatch_lanes` records the envelope from `ready_ranking`, and a fake
+    # answering them differently would not be a state the supervisor can reach.
+    ranking = loop_state.Ranking(
+        nodes=tuple(
+            loop_state.RankedNode(
+                rank=rank, score=rank * 10, issue_id=iid, title="", fallback_rank=rank
+            )
             for rank, iid in ranked
         ),
+        schema="br.scheduler.v1",
+        fallback_sort="priority ASC, created_at ASC, id ASC",
     )
+    monkeypatch.setattr(supervise.loop_state, "ready_ranking", lambda _r, *_a: ranking)
+    monkeypatch.setattr(supervise.loop_state, "ready_ranked", lambda _r: ranking.nodes)
     monkeypatch.setattr(supervise.decisions, "has_pending", lambda _r, _i: False)
     monkeypatch.setattr(supervise, "_phase_of", lambda _r, _i: "build")
     monkeypatch.setattr(supervise, "_has_subtasks", lambda _r, _i: False)
@@ -898,7 +905,7 @@ def test_dispatch_lanes_runs_concurrently_up_to_the_cap(
     gauge = {"current": 0, "max": 0}
     gauge_lock = threading.Lock()
 
-    def fake_dispatch(_repo, _session, lane, _spec, _sizing) -> supervise.LaneOutcome:
+    def fake_dispatch(_repo, _session, lane, _spec, _sizing, **_kw) -> supervise.LaneOutcome:
         with gauge_lock:
             gauge["current"] += 1
             gauge["max"] = max(gauge["max"], gauge["current"])
@@ -945,7 +952,7 @@ def test_dispatch_lanes_heartbeats_while_runners_execute(
         beats.append(1)
         release.set()
 
-    def fake_dispatch(_repo, _session, lane, _spec, _sizing) -> supervise.LaneOutcome:
+    def fake_dispatch(_repo, _session, lane, _spec, _sizing, **_kw) -> supervise.LaneOutcome:
         assert release.wait(timeout=5)
         return _outcome(lane.issue_id)
 
@@ -967,7 +974,7 @@ def test_dispatch_lanes_lock_lost_cancels_lanes_not_yet_started(
     release = threading.Event()
     started: list[str] = []
 
-    def fake_dispatch(_repo, _session, lane, _spec, _sizing) -> supervise.LaneOutcome:
+    def fake_dispatch(_repo, _session, lane, _spec, _sizing, **_kw) -> supervise.LaneOutcome:
         started.append(lane.issue_id)
         assert release.wait(timeout=5)
         return _outcome(lane.issue_id)
@@ -1040,6 +1047,93 @@ def _worker_fixture(
         supervise.loop, "record_run", lambda *a, **_k: seen.setdefault("recorded", a[1])
     )
     return br, seen
+
+
+def test_dispatch_lane_records_the_scheduler_evidence(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The pass ordering must be reconstructible from the record (D9, basicly-vkh0.3)."""
+    codex = _codex()
+    _worker_fixture(monkeypatch, tmp_path, stdout=_codex_events(50_000))
+    captured: dict = {}
+    monkeypatch.setattr(supervise.loop, "record_run", lambda *_a, **kw: captured.update(kw))
+
+    supervise._dispatch_lane(
+        tmp_path,
+        _session(_lane("epic.1")),
+        _lane("epic.1"),
+        codex,
+        _sizing(),
+        ordering=supervise.DispatchOrdering(
+            dispatch_rank=2,
+            node=loop_state.RankedNode(
+                rank=1, score=45, issue_id="epic.1", title="", fallback_rank=3
+            ),
+            policy="br.scheduler.v1",
+        ),
+    )
+
+    assert captured["dispatch_rank"] == 2
+    assert captured["scheduler_rank"] == 1
+    assert captured["scheduler_fallback_rank"] == 3
+    assert captured["scheduler_score"] == 45
+    assert captured["scheduler_policy"] == "br.scheduler.v1"
+
+
+def test_dispatch_lane_records_the_order_when_br_never_ranked_the_lane(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The common case, not an edge case (basicly-vkh0.3).
+
+    A provisioned lane is claimed and ``br scheduler`` recommends only unclaimed
+    work, so most dispatched lanes carry no scheduler evidence at all. The dispatch
+    position must still be recorded, or a null would be ambiguous between "br had
+    no opinion" and "nobody recorded it".
+    """
+    codex = _codex()
+    _worker_fixture(monkeypatch, tmp_path, stdout=_codex_events(50_000))
+    captured: dict = {}
+    monkeypatch.setattr(supervise.loop, "record_run", lambda *_a, **kw: captured.update(kw))
+
+    supervise._dispatch_lane(
+        tmp_path,
+        _session(_lane("epic.1")),
+        _lane("epic.1"),
+        codex,
+        _sizing(),
+        ordering=supervise.DispatchOrdering(dispatch_rank=1, node=None, policy="br.scheduler.v1"),
+    )
+
+    assert captured["dispatch_rank"] == 1
+    assert captured["scheduler_rank"] is None
+    assert captured["scheduler_score"] is None
+    # The policy is a property of the pass, so it is recorded either way.
+    assert captured["scheduler_policy"] == "br.scheduler.v1"
+
+
+def test_dispatch_lanes_records_one_ranking_for_the_whole_pass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every lane in a pass is explained against the same ranking, in dispatch order."""
+    lanes = (_lane("epic.1"), _lane("epic.2"))
+    _patch_readiness(monkeypatch, ranked=((1, "epic.1"), (2, "epic.2")))
+    monkeypatch.setattr(supervise.runner, "select_runner", lambda *_a, **_k: _MANUAL_SPEC)
+    seen: dict[str, supervise.DispatchOrdering | None] = {}
+
+    def fake_dispatch(_repo, _session, lane, _spec, _sizing, *, ordering=None):
+        seen[lane.issue_id] = ordering
+        return _outcome(lane.issue_id)
+
+    monkeypatch.setattr(supervise, "_dispatch_lane", fake_dispatch)
+
+    supervise.dispatch_lanes(Path(), _session(*lanes), cap=1)
+
+    first, second = seen["epic.1"], seen["epic.2"]
+    assert first is not None and second is not None
+    assert [first.dispatch_rank, second.dispatch_rank] == [1, 2]
+    assert {first.policy, second.policy} == {"br.scheduler.v1"}
+    assert first.node is not None
+    assert first.node.rank == 1
 
 
 def test_dispatch_lane_green_path_meters_and_records(
@@ -1154,7 +1248,7 @@ def test_dispatch_lanes_contains_a_lane_failure_to_its_outcome(
     _patch_readiness(monkeypatch)
     monkeypatch.setattr(supervise.runner, "select_runner", lambda *_a, **_k: _MANUAL_SPEC)
 
-    def flaky_dispatch(_repo, _session, lane, _spec, _sizing) -> supervise.LaneOutcome:
+    def flaky_dispatch(_repo, _session, lane, _spec, _sizing, **_kw) -> supervise.LaneOutcome:
         if lane.issue_id == "epic.1":
             raise RuntimeError("br: database is locked")
         return _outcome(lane.issue_id)
@@ -2082,7 +2176,7 @@ def test_dispatch_lanes_skips_a_carried_lane(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(supervise.runner, "select_runner", lambda *_a, **_k: _MANUAL_SPEC)
     dispatched: list[str] = []
 
-    def fake_dispatch(_repo, _session, lane, _spec, _sizing) -> supervise.LaneOutcome:
+    def fake_dispatch(_repo, _session, lane, _spec, _sizing, **_kw) -> supervise.LaneOutcome:
         dispatched.append(lane.issue_id)
         return _outcome(lane.issue_id)
 
@@ -2505,7 +2599,7 @@ def test_dispatch_lanes_admits_a_grant_still_inside_its_budget(
     _patch_readiness(monkeypatch, ranked=((1, "epic.1"),))
     monkeypatch.setattr(supervise.runner, "select_runner", lambda *_a, **_k: _MANUAL_SPEC)
     monkeypatch.setattr(
-        supervise, "_dispatch_lane", lambda _r, _s, lane, *_a: _outcome(lane.issue_id)
+        supervise, "_dispatch_lane", lambda _r, _s, lane, *_a, **_kw: _outcome(lane.issue_id)
     )
     monkeypatch.setattr(
         supervise.decisions,

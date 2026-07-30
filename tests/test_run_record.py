@@ -324,6 +324,52 @@ def test_record_marker_writes_one_marker_carrying_the_dispatch_inputs(
     assert "prompt" not in body
 
 
+def test_record_marker_carries_the_dispatch_ordering(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ordering must travel in the marker, not only on disk (basicly-vkh0.3).
+
+    The AC asks for the pass ordering to be reconstructible *from the tracker
+    alone*, and ``.basicly/usage/`` never leaves the machine — so the marker, which
+    br exports in ``issues.jsonl``, is the half that has to carry it.
+    """
+
+    def _try_run_br(_repo, args):
+        if args[:2] == ["comments", "list"]:
+            return SimpleNamespace(returncode=0, stdout="[]")
+        _try_run_br.added = args  # type: ignore[attr-defined]
+        return SimpleNamespace(returncode=0, stdout="")
+
+    monkeypatch.setattr(run_record.br, "try_run_br", _try_run_br)
+    entry = _entry(
+        prompt_sha256="deadbeef",
+        phase="lane",
+        dispatch_rank=2,
+        scheduler_rank=1,
+        scheduler_fallback_rank=3,
+        scheduler_score=45,
+        scheduler_policy="br.scheduler.v1",
+    )
+    run_record.record_marker(tmp_path, "basicly-x", entry)
+
+    body = json.loads(_try_run_br.added[3].split("\n", 1)[1])  # type: ignore[attr-defined]
+    assert body["dispatch_rank"] == 2
+    assert body["scheduler_rank"] == 1
+    assert body["scheduler_fallback_rank"] == 3
+    assert body["scheduler_score"] == 45
+    assert body["scheduler_policy"] == "br.scheduler.v1"
+
+
+def test_build_record_defaults_the_ordering_to_unrecorded(tmp_path: Path) -> None:
+    """A dispatch outside a supervisor pass has no ranking, and must say so with nulls."""
+    _ = tmp_path
+    entry = run_record.build_record(
+        agent="codex", handoff=False, returncode=0, duration_s=1.0, command=("codex",)
+    )
+    assert entry.dispatch_rank is None
+    assert entry.scheduler_policy is None
+
+
 def test_record_marker_is_idempotent_but_counts_a_real_rerun(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

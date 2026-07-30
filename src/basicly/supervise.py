@@ -1235,12 +1235,33 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
     spec = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
     sizing = load_sizing_config(repo_root)
 
+    # Read once for the whole pass, not per lane: every lane must be recorded
+    # against the *same* ranking, or the pass ordering it explains is a blend of
+    # several answers and reconstructs to nothing (D9, basicly-vkh0.3). `lanes` is
+    # already in dispatch order, so a lane's position in it is the ordering key
+    # actually used — including for the lanes br never ranked, which is most of
+    # them once they are claimed.
+    ranking = loop_state.ready_ranking(repo_root)
+    ranked = ranking.by_issue()
+    dispatch_ranks = {lane.issue_id: position for position, lane in enumerate(lanes, start=1)}
+
     def guarded(lane: AdoptedLane) -> LaneOutcome:
         # Per-lane containment: a transient br failure (e.g. a locked tracker
         # DB under this very concurrency) or an OS hiccup in one lane must not
         # discard every other lane's outcome at collection time.
         try:
-            return _dispatch_lane(repo_root, session, lane, spec, sizing)
+            return _dispatch_lane(
+                repo_root,
+                session,
+                lane,
+                spec,
+                sizing,
+                ordering=DispatchOrdering(
+                    dispatch_rank=dispatch_ranks.get(lane.issue_id),
+                    node=ranked.get(lane.issue_id),
+                    policy=ranking.schema,
+                ),
+            )
         except (RuntimeError, OSError, ValueError) as exc:
             return LaneOutcome(
                 issue_id=lane.issue_id,
@@ -1312,12 +1333,41 @@ def flag_stalled_lane(
     )
 
 
-def _dispatch_lane(
+@dataclass(frozen=True)
+class DispatchOrdering:
+    """Why one lane went when it did, recorded on its run marker (basicly-vkh0.3).
+
+    *node* is br's scheduler evidence and is None whenever br did not rank the
+    lane — the ordinary case, since a provisioned lane is claimed and ``br
+    scheduler`` recommends only unclaimed work. *dispatch_rank* is always known,
+    so the pass ordering stays reconstructible either way.
+    """
+
+    dispatch_rank: int | None
+    node: loop_state.RankedNode | None
+    policy: str
+
+    def as_inputs(self) -> dict[str, object]:
+        """The recorded-dispatch keywords this ordering contributes."""
+        return {
+            "dispatch_rank": self.dispatch_rank,
+            "scheduler_rank": self.node.rank if self.node else None,
+            "scheduler_fallback_rank": self.node.fallback_rank if self.node else None,
+            "scheduler_score": self.node.score if self.node else None,
+            # Recorded even when br did not rank this lane: the policy is a
+            # property of the pass, and it says which version produced the
+            # ordering the other lanes were sorted by.
+            "scheduler_policy": self.policy or None,
+        }
+
+
+def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane input
     repo_root: Path,
     session: SessionState,
     lane: AdoptedLane,
     spec: runner.RunnerSpec,
     sizing: SizingConfig,
+    ordering: DispatchOrdering | None = None,
 ) -> LaneOutcome:
     """Run one lane: assemble its bundle now, dispatch, record, and meter."""
     record = worktree.load_session(lane.binding.name, repo_root)
@@ -1358,6 +1408,7 @@ def _dispatch_lane(
         prompt=bundle.prompt,
         phase="lane",
         folded_info=tuple(_folded_ref(info) for info in bundle.folded),
+        **(ordering.as_inputs() if ordering else {}),
     )
     if result.timed_out:
         # Consume any sentinel the killed run managed to write — leaving it
