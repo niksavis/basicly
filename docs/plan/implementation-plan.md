@@ -148,8 +148,10 @@ it prevents.
    the architecture reference and archiving what it supersedes.
 6. **Prefer the root cause when the proximate fix is a workaround, but ship the workaround first
    when the root cause is a phase away.** The clock defect that makes a gate flaky is an upstream
-   `br` bug; the root fix is Phase 6, which is months of work. Stop charging rework for it now, and
-   carry the defect forward as a **requirement** on the replacement.
+   `br` bug; the root fix is Phase 6. The workaround shipped (`jr0l.41`, `jr0l.42` — a bounded
+   retry plus a forgiveness register keyed on the dependency's own message), which is what bought
+   the room to sequence the root fix deliberately rather than in a panic. Stop charging rework for
+   it now, and carry the defect forward as a **requirement** on the replacement (`vkh0.6`).
 
 ## 4. The phases
 
@@ -377,7 +379,15 @@ roster's cost claims are visible in 1b's instrument rather than asserted.
 
 ### Phase 6 — Own the work graph
 
-**Priority: P2, highest effort. Depends on: `vkh0.1` → `vkh0.2`; schema stability from Phase 5. Size: 5–8 sessions.**
+**Priority: P0, highest effort. Targeted as the release after v0.6.0. Depends on: `vkh0.2`;
+schema stability from Phase 5. Size: 5–8 sessions.**
+
+**Resequenced by owner decision 2026-07-29, and the rationale is cost, not strategy.** `br` is
+flaky and bills us for its own errors: twelve distinct defects listed on `basicly-vkh0` have
+already been paid for in sessions spent diagnosing them, and the clock defect alone consumed two
+tracks of workaround (§3.6). A dependency that costs time and money every session is not a
+dependency to remove eventually. So this phase is no longer a parallel strategic track — it is the
+next release after `v0.6.0` (`basicly-m3od`) unless something blocks it.
 
 The tracker _is_ the harness's state, so every guarantee in §1 is downstream of it, and it is
 currently an unowned external binary in the critical path whose licence carries a rider
@@ -385,18 +395,20 @@ restricting a class of users.
 
 **Hard constraint: a clean-room boundary applies.** The replacement must not be derived from
 `beads_rust` source. Sanctioned inputs are our own ledger's observable data, `br`'s documented CLI
-contract, and the genuine-MIT upstream original. Confirm the boundary with someone qualified
-before implementation proceeds; the conservative line costs nothing because the MIT original is
-available.
+contract, and the genuine-MIT upstream original. **The boundary was signed off on `basicly-qk6y`
+(closed), so this no longer gates the build** — wire `qk6y` as the blocker of the event-log beads
+at this phase's decomposition, as a record of the sign-off rather than a decision still pending.
 
 **Order:**
 
-1. **`basicly-vkh0.1`** — record `br`/`bv` usage at subcommand and flag level into a _committed_
-   ledger, distinguishing engine call sites from interactive human ones. The engine's set is the
-   hard requirement; the human's may be thinner at first. _Do not design the schema from memory of
-   our own usage._
+1. ~~**`basicly-vkh0.1`**~~ — **DONE.** `br`/`bv` usage is recorded at subcommand and flag level
+   into a _committed_ ledger, distinguishing engine call sites from interactive human ones. This is
+   what removed the deferral: the measurement window has been accumulating since it landed.
 2. **`basicly-vkh0.2`** — report the surface actually exercised, then **freeze the surface list**.
-   Surfaces nobody uses simply do not exist in the replacement.
+   Surfaces nobody uses simply do not exist in the replacement. **Unblocked and open at P1** now
+   that `vkh0.1` has landed; it is the one hard gate left, because `vkh0`'s acceptance criterion
+   asks for a frozen surface and no replacement code may be written before it. _Do not design the
+   schema from memory of our own usage._
 3. **Design and build the event log.** Append-only is the truth; the record snapshot and any index
    are derived and disposable. A record's state is a fold over its events, so history lives in the
    data and survives a squash or a shallow clone. Sequence numbers assigned by the single writer
@@ -417,11 +429,13 @@ available.
    must compare against the **live tracker**, never against a re-import of its own export — two
    derivatives of one lossy snapshot agree with each other and prove nothing.
 
-**Carry Phase 0's defects forward as requirements.** The clock error that makes a gate flaky, the
-dependency-field spelling inconsistency, the unconfigurable lint templates, the single-line
-acceptance-criteria field, the ids whose internal hyphens break our own commit gate, and the
-absolute-path leak are all _requirements input_ for the replacement. Each should become a
+**Carry Phase 0's defects forward as requirements** (`basicly-vkh0.6`). The clock error that makes
+a gate flaky, the dependency-field spelling inconsistency, the unconfigurable lint templates, the
+single-line acceptance-criteria field, the ids whose internal hyphens break our own commit gate,
+and the absolute-path leak are all _requirements input_ for the replacement. Each should become a
 committed regression test, so the replacement cannot reintroduce a defect we already paid for.
+**Not surface-dependent, so it does not wait on the `vkh0.2` freeze** — it can land early alongside
+`vkh0.3`.
 
 **Also in this phase:** `basicly-vkh0.3` (record the scheduler score and rank behind each
 dispatch) is cheap and independently useful now — it makes a pass's dispatch order reconstructible
@@ -482,15 +496,22 @@ Phase 4 ─── 1a (done) ──→ baseline audit ──→ declare scopes �
 Phase 5 ─── 1b + 1c + 2d + D4 ──→ role registry ──→ role-aware dispatch
          └─ kjc5.32 (coupling attribution) should precede
 
-Phase 6 ─── vkh0.1 ──→ vkh0.2 ──→ freeze surface ──→ event log ──→ import
+Phase 6 ─── vkh0.1 (DONE) ──→ vkh0.2 ──→ freeze surface ──→ event log ──→ import
          └─ shadow (vs LIVE tracker) ──→ dual-write ──→ flip
+         └─ vkh0.3 + vkh0.6 land early (not surface-dependent)
 ```
 
 **Critical path to a credible product claim**: `kjc5.29 → jr0l.21 → jr0l.22 → u6jq.1 (Phase 0's
 exit) → 7bur → Phase 2b → Phase 5`. That is the chain that turns "our harness is better" from an
-assertion into an instrumented, gated, role-routed system. Phase 6 is the largest effort but is
-**not** on this path — it is a strategic dependency-removal that can proceed in parallel once its
-telemetry lands.
+assertion into an instrumented, gated, role-routed system.
+
+**Phase 6 is a second, parallel critical path — to a harness that does not bill us for a
+dependency's defects**: `vkh0.2 → freeze surface → event log → import → shadow → dual-write →
+flip`. It does not gate the product claim above, and the product claim does not gate it; they
+compete for capacity, and the owner's 2026-07-29 decision resolves that competition in Phase 6's
+favour for the release after `v0.6.0` (§4, Phase 6). The earlier framing — that Phase 6 was
+strategic work to run in the background once its telemetry landed — is superseded: its telemetry
+_has_ landed, and the twelve paid-for defects are a recurring cost, not a risk to hedge.
 
 **The head of that path inverted after the 2026-07-26 proof run, and the ordering above is the
 corrected one.** The plan originally put Phase 0 ahead of `kjc5.29`. Phase 0's six work items did
@@ -504,22 +525,28 @@ unit of work **per model**. `kjc5.29` (model provenance) therefore precedes Phas
 rather than following it. The constraint that falls out is worth stating once: **cost is bounded by
 sizing the work, never by interrupting a working agent.**
 
-**Longest pole**: Phase 6. Start `vkh0.1` early (it is only telemetry) so the measurement window
-is accumulating while other phases run.
+**Longest pole**: Phase 6 — and it is now the _next_ pole, not a background one. `vkh0.1` landed,
+so the measurement window has been accumulating; the sequencing question is no longer when to start
+telemetry but when `vkh0.2` freezes the surface, because everything after it is blocked on that one
+document.
 
 ## 6. What to cut if capacity is short
 
-- **Must**: Phase 0 in full, `kjc5.29`, `7bur`, `2a`+`2b`, the D4 amendment, `kjc5.13`.
-  Without these the project cannot make an evidence-backed claim about itself, and it cannot run
-  unattended.
+- **Must**: Phase 0 in full, `kjc5.29`, `7bur`, `2a`+`2b`, the D4 amendment, `kjc5.13`, **and
+  Phase 6 through the `vkh0.2` freeze**. Without the first group the project cannot make an
+  evidence-backed claim about itself, and it cannot run unattended; without the last it keeps paying
+  a dependency for its own defects, which is the one cost that recurs every session.
 - **Should**: `2d`, `2e`, Phase 3's tutorial layer, Phase 4 steps 1–3. (`1a` was listed here and is
   **done** — one session, and it cancelled Phase 4's urgency, which is the leverage the entry
   predicted.)
 - **Opportunistic**: Phase 7's catalog-content beads, `kjc5.47`/`.48`, the capability-tier
-  declaration.
+  declaration, `vkh0.3` and `vkh0.6` (both cheap, independently useful, and not gated on the
+  freeze).
 - **Defer deliberately, and say so**: Phase 5 until 1b has numbers — building the roster first
-  means guessing the tier table, which is the specific error R5 was written to prevent. Phase 6
-  until `vkh0.2` has a measured surface, for the same reason.
+  means guessing the tier table, which is the specific error R5 was written to prevent. **Phase 6
+  is no longer on this list**: it was deferred here pending a measured surface, `vkh0.1` supplied
+  the measurement, and the owner then resequenced it (§4, Phase 6). Only `vkh0.4` (the cross-repo
+  offer exchange) stays deferred, because nothing consumes it yet.
 
 ## 7. Decisions still owed by the owner
 
@@ -531,7 +558,9 @@ Each blocks something; none can be derived from the code.
    threshold **and** a named lightweight path below it that skips ceremony but never the hooks.
 2. **Whether losing the github.com Copilot surface is acceptable, per fragment**, before Phase 4
    moves anything (§4, Phase 4).
-3. **The clean-room boundary sign-off** before Phase 6 writes code.
+3. ~~**The clean-room boundary sign-off** before Phase 6 writes code.~~ **DISCHARGED** on
+   `basicly-qk6y` (closed). Recorded here because Phase 6 is now next and a reader checking what
+   still blocks it would otherwise find a decision that was already made.
 4. **Whether the machine-local, expiring retro lane is wanted** — a rung between dropping a retro
    proposal and asking a human to amend the shared catalog. The risk to weigh is bypass by
    accretion: guidance that shapes a machine's sessions while never being reviewed.
@@ -573,7 +602,7 @@ phase, and which two epics pre-date the scheme:
 | 3 | `basicly-imnu` | — |
 | 4 | `basicly-a3ab` | — |
 | 5 | `basicly-s2xf` | — |
-| 6 | `basicly-vkh0` | pre-dates the phase epics; labelled `phase-6` rather than renamed |
+| 6 | `basicly-vkh0` | pre-dates the phase epics; labelled `phase-6` rather than renamed. **P0 — resequenced 2026-07-29 as the release after `v0.6.0`**; `vkh0.1` closed, `vkh0.2` is the gate, `vkh0.4` alone stays deferred |
 | 7 | `basicly-jr0l` | pre-dates the phase epics; labelled `phase-7` rather than renamed |
 | multi | `basicly-kjc5` | the original parallel-factory epic; labelled `phase-multi`, its children spread across phases |
 
