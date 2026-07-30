@@ -566,6 +566,31 @@ Each blocks something; none can be derived from the code.
    accretion: guidance that shapes a machine's sessions while never being reviewed.
 5. **Tier-2's rank-1 floor**, after the baseline is measured — deliberately not guessable.
 
+### 7.1 Decided and closed: declarative phases are rejected
+
+Recorded here rather than left out, because the question will be asked again every time a competitor
+ships YAML-defined phases — and because a rejection with no reason attached is indistinguishable from
+an oversight.
+
+**Decision, 2026-07-30: the loop's phases stay engine code. Not deferred — rejected.** The reasoning
+sits with the pillar list in `architecture.md` §3; the short form is that the `verified`/landed
+invariant from incident `basicly-k35r` cannot move into data without leaving the type checker, the
+test suite and code review behind; that no consumer has asked (zero beads, and the eight phases were
+stable through the entire factory build); and that what a consumer would plausibly vary — required
+gates, rework cap, verify checks, autonomy — is already configuration.
+
+**Not on the roadmap, and nothing is filed to build it.** Two things were adopted independently of
+the rejection and must not be discarded with it: `basicly-m4zv.13` (Archon's evidence-artifact
+presence check, which needs no phase machinery at all) and `basicly-jr0l.48` (a simplification review
+of the existing ladder — explicitly a typed refactor, not a move to data).
+
+**The limit of the evidence, stated so a future reader does not overclaim it.** It is tempting to
+argue that declarativeness _caused_ the determinism failures in the two projects that adopted it. It
+did not. Archon's flaw is a disjunction in a completion gate; Symphony's is holding all real state in
+RAM. Both are independent design errors in projects that happened also to be configurable. The
+correlation is real; the causation is not established. The reason to reject is the typed-invariant
+argument above — anyone revisiting this should attack that, not the correlation.
+
 ## 8. Risks, and how each is detected
 
 | Risk | Detection |

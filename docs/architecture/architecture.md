@@ -77,6 +77,22 @@ process_ and _the state_, and enforces both in code:
 - **Enforcement is code, not a request.** The model choosing to run a formatter is
   a different thing from the formatter running automatically. Where a hook can
   enforce a rule, the rule is a hook and the prose only points at it (§3.1).
+- **The phases are engine code, and deliberately not configuration.** Decided
+  2026-07-30 after two independently-built projects were reviewed that had made
+  phases declarative — a YAML node DAG and an engine driving a lifecycle declared in
+  front matter. Most rungs of `derive_phase` are mechanical enough to express as
+  data; the `verified` term is not. It reads
+  `gates.can_advance and (worktree is not None or has_children)`, and the ship rung
+  adds `(worktree is None or verified)` — together the _landed_ invariant found by
+  incident `basicly-k35r`, where approving ship before the landing wedged the phase
+  with no route back to the merge. In YAML that becomes a boolean expression
+  language, and the invariant then lives where the type checker cannot see it, the
+  test suite cannot easily target it, and review will not catch a subtle edit. The
+  general form is worth stating once, because it applies past this decision:
+  **every rule that moves from code to data leaves the type checker, the test
+  suite, and code review.** What a consumer would plausibly want to vary — required
+  gates, the rework cap, verify checks per mode, autonomy levels — is already
+  configuration in `basicly.toml`.
 
 The four pillars are also the axis along which this document is organised: §§4–11
 are the catalog and its projection, §12 is the loop and the tracker it runs on, and
