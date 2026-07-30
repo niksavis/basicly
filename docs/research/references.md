@@ -32,13 +32,33 @@ whitelist `.gitignore`). Shallow clones, `--depth 50`.
 | [Graphify-Labs/graphify](https://github.com/Graphify-Labs/graphify) | `66d8110` | 2026-07-25 | **Apache-2.0** (+ `LICENSE-MIT` for pre-relicensing contributions; `NOTICE` present) | Yes — must preserve `NOTICE` if any file is vendored |
 | [Dicklesworthstone/beads_rust](https://github.com/Dicklesworthstone/beads_rust) | `94fb146` | 2026-07-22 | **MIT with OpenAI/Anthropic Rider** | **Restricted — see §2** |
 | [gastownhall/beads](https://github.com/gastownhall/beads) | `d01d62e` | 2026-07-25 | MIT (Beads Contributors, 2025) | Yes — concepts and, with attribution, text |
+| [gastownhall/gastown](https://github.com/gastownhall/gastown) | `649b832` | 2026-07-23 | MIT (Steve Yegge, 2025) | Yes — concepts and, with attribution, text |
+| [first-fluke/oh-my-agent](https://github.com/first-fluke/oh-my-agent) | `2c28bc4` | 2026-07-30 | MIT (Eunkwang Shin and Gahyun Kim, 2026) | Yes — concepts and, with attribution, text |
+| [code-yeongyu/oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent) | `f287227` | 2026-07-30 | **Sustainable Use License 1.0** — non-OSI, non-commercial-only (no holder named; some `packages/*` subtrees separately MIT, Yeongyu Kim, 2026) | **Restricted — see §2.2** |
+| [openai/symphony](https://github.com/openai/symphony) | `f8e8b8a` | 2026-07-24 | **Apache-2.0** (stock text; `NOTICE` present — "Copyright 2025 OpenAI") | Yes — must preserve `NOTICE` if any file is vendored |
+| [automazeio/ccpm](https://github.com/automazeio/ccpm) | `7d7e462` | 2026-03-18 | MIT (Ran Aroussi, 2025) | Yes — concepts and, with attribution, text |
+| [coleam00/Archon](https://github.com/coleam00/Archon) | `3044829` | 2026-07-30 | MIT (Cole Medin, 2025-2026) | Yes — concepts and, with attribution, text |
+| [SouthBridgeAI/hankweave-runtime](https://github.com/SouthBridgeAI/hankweave-runtime) | `66a9921` | 2026-07-20 | **Apache-2.0** (stock text) **+ `NOTICE.md` Terms-of-Service incorporation with competition restrictions** | **Restricted — see §2.3** |
 
-The two Apache-2.0 repos are usable but carry obligations MIT does not: retain the licence and
+The Apache-2.0 repos are usable but carry obligations MIT does not: retain the licence and
 `NOTICE`, state changes, and do not use the project's marks. Since we intend to take *concepts*
-from both (headroom's cache-alignment idea, graphify's edge-provenance labels) rather than code,
+from them (headroom's cache-alignment idea, graphify's edge-provenance labels) rather than code,
 the practical obligation is attribution in the design doc — which §4 of the review provides.
 
-## 2. The `beads_rust` licence finding — a correction to our own docs
+**Rows 11–17 were added 2026-07-30**, after the review sweep of the same date. No licence file was
+missing in any of the seven. Five are stock and unremarkable; two are not, and in both cases **the
+`LICENSE` file alone would have cleared them** — which is precisely the failure mode §2 was written
+about. That is now three restricted repos found in this set, so treat "read the LICENSE" as the
+*start* of the check and not the whole of it: read every licence-bearing file, including `NOTICE`,
+and read the per-subdirectory licences before assuming a monorepo is uniform.
+
+## 2. Restricted licences, and the corrections each forced
+
+Three of the seventeen reviewed repos restrict what we may do, and in every case a casual read of
+the licence would have missed it. Each subsection below records the operative clause verbatim, the
+consequence, and the claim in our own documents it invalidated.
+
+### 2.1 `beads_rust` — the OpenAI/Anthropic rider
 
 `docs/design/work-tracker.md` §7 asserted: *"Reading beads_rust and bv sources for reference is
 explicitly sanctioned while they are MIT."* **That statement was factually wrong** and has been
@@ -75,6 +95,75 @@ Three consequences, stated plainly:
 Not legal advice. If the tracker work proceeds to implementation, the boundary above should be
 confirmed by someone qualified; until then the conservative line costs us nothing, because the
 MIT original is available and is the better reference anyway.
+
+### 2.2 `oh-my-openagent` — not open source at all
+
+`LICENSE.md` is the **Sustainable Use License 1.0**, which is not an OSI-approved licence. The
+operative limitation, verbatim:
+
+> You may use or modify the software only for your own internal business purposes or for
+> non-commercial or personal use. You may distribute the software or provide it to others only if
+> you do so free of charge for non-commercial purposes.
+
+It also requires that *"anyone who gets a copy of any part of the software from you also gets a copy
+of these terms"*, and that a modified copy carry a prominent notice of modification.
+
+**Monorepo subtleties that matter, because the safe-looking path is narrower than it appears.** Some
+`packages/*` subtrees carry their own MIT (`pi-goal`, `pi-webfetch`, `lsp-tools-mcp`), and
+`omo-senpi/plugin/LICENSE` is a *scoped* MIT covering six named portions only. **`packages/model-core`
+has no licence of its own**, so the root Sustainable Use License governs it — and `model-core` is
+exactly where the three files the review cites live
+(`model-resolution-pipeline.ts`, `category-model-requirements.ts`, `model-settings-compatibility.ts`).
+
+**Consequence, and a correction to our own review.** Review §2.12 as first written recommended that
+tier-routing logic as *"about 400 lines of pure logic that ports to stdlib Python unchanged"*. Under
+this licence that is not an available option: `basicly` is distributed, so a port would be
+distribution of a derivative work outside the permitted purposes. The recommendation is withdrawn
+there and on `basicly-kjc5.58`.
+
+**What survives is the part that was always the valuable part.** A licence restricts copying
+expression, not learning a fact. The *concept* — a work item declares a named capability tier rather
+than a model id; the resolver returns provenance for which rule chose the model; an unsupported
+setting is clamped and the downgrade recorded rather than refused — is an idea, and the observation
+that their HEAD makes tier and model id mutually exclusive is a fact about published history. Both
+stay usable. What stops is treating their source as the implementation reference: no port, no
+snippet, no line-by-line transcription. Same clean-room posture as §2.1.
+
+### 2.3 `hankweave-runtime` — a competition restriction asserted through `NOTICE.md`
+
+The `LICENSE` is stock Apache-2.0. The restriction is in `NOTICE.md`:
+
+> By using Hankweave, you agree to Southbridge AI's Terms of Service:
+> `https://www.southbridge.ai/blog/terms-of-service`
+>
+> Key provisions include:
+>
+> - You retain ownership of your Hanks and Outputs
+> - **Competition restrictions on using Hanks to build competing products**
+> - Managed services restrictions require prior written consent
+
+**Why this plausibly reaches us.** `basicly` is a coding-agent harness with an orchestration engine;
+hankweave is an agent-orchestration runtime. Those are adjacent enough that "competing product" is
+not obviously inapplicable, and the review used hankweave specifically as prior art for an
+orchestration component we intend to build.
+
+**Genuinely unsettled, and not ours to settle.** Apache-2.0 treats `NOTICE` contents as
+informational and does not provide for a NOTICE adding terms; whether an incorporated Terms-of-Service
+can bind a recipient who merely reads a public repository is a legal question. Two readings are
+available and we are not qualified to choose between them. **So the conservative line applies, and it
+costs little:** treat derivation from hankweave *source* as out of bounds pending review by someone
+qualified, and stop at its published `README` and docs.
+
+**Consequence for `basicly-vkh0.9`.** That bead was filed recommending we absorb their journal
+mechanisms with source line ranges as the reference. Narrowed: the **measurements** stay — that 44.5%
+of events in their own committed fixture share a millisecond is a measured property of published
+data, and it is the finding that turns `work-tracker.md` §9.5 from an assertion into evidence. The
+mechanism adoption is held pending the licence question.
+
+Note also, for a different reason: their `NOTICE.md` records that hankweave orchestrates Claude
+through `@anthropic-ai/claude-agent-sdk`, which it states is **not** open source. Irrelevant to our
+own dependency policy, but it is the second time in this set that a project's real constraints lived
+outside its `LICENSE`.
 
 ## 3. Primary documents read, by repo
 

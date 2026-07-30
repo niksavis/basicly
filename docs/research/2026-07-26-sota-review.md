@@ -662,14 +662,24 @@ Full reports live outside the repo in `reference-repos/_analysis/*.md` (they are
 freely from other projects' source). Each was read from a pinned clone, not from a README, after
 §2.11 demonstrated the cost of the alternative. Revisions are cited inline per subsection.
 
-**Licence status: not yet reviewed for these six.** `research/references.md` §2 exists because the
-last time a licence was assumed rather than read, `beads_rust` turned out to carry an
-OpenAI/Anthropic rider naming "benchmarking, testing, analyzing, indexing" as restricted use. The
-findings below are short attributed citations with `file:line`, which is ordinary research practice
-and what this section needs; **reusing any of this text or deriving an implementation from a quoted
-snippet requires reading that project's `LICENSE` first** and recording it in the references table.
-Treat every subsection here as *analysis*, and the clean-room rules in §2.10 as still governing what
-may be written from it.
+**Licences reviewed 2026-07-30 — and two of the six are restricted.** Recorded in
+`research/references.md` §1 and §§2.2–2.3. `oh-my-openagent` is under the **Sustainable Use License
+1.0**, which is not open source and permits use only for internal or non-commercial purposes;
+`hankweave-runtime` is stock Apache-2.0 but its `NOTICE.md` incorporates Southbridge's Terms of
+Service, whose provisions include *"Competition restrictions on using Hanks to build competing
+products"*. **In both cases the `LICENSE` file alone would have cleared them.** The other four
+(`oh-my-agent`, `symphony`, `ccpm`, `Archon`) plus `gastown` are stock MIT or Apache-2.0.
+
+Read the two restricted subsections below as **analysis only**: their measurements and concepts are
+usable, their source is not an implementation reference, and the clean-room posture §2.1 sets for
+`beads_rust` applies to them too.
+
+> **The order in which this section was written is itself a finding.** The paragraph above replaces
+> one that said the licences were *"not yet reviewed"* and warned that *"deriving an implementation
+> from a quoted snippet requires reading that project's `LICENSE` first"* — written in the same
+> commit that then recommended porting ~400 lines from one of them. The warning was correct and was
+> not followed. Reviewing licences **before** writing the adopt findings, rather than after, is the
+> cheap fix; §2.1 was supposed to have taught that already.
 
 **`first-fluke/oh-my-agent` (TypeScript, MIT, `2c28bc4`) — our closest competitor on projection.**
 Adopt `oma skills audit` (`cli/commands/skills/audit.ts:9-36`,
@@ -687,18 +697,31 @@ dispatch (`src/basicly/policy.py:869-899`) while theirs counts `promptContent.le
 2 — but buy it by writing to **gitignored** directories at install time, which is a different
 architecture rather than a better projector.
 
-**`code-yeongyu/oh-my-openagent` (`f287227`) — the answer to our capability-tier question.** Adopt
-named-capability-tier routing (`model-resolution-pipeline.ts:88-274`, tiers at
-`category-model-requirements.ts:3-162`): a work item declares a *tier*, never a model id, and a pure
-injected resolver walks an ordered `(providers[], model, variant)` fallback chain against what is
-reachable, returning the chosen model **plus a `provenance` enum** (`override | category-default |
-provider-fallback | system-default`). Pair it with `model-settings-compatibility.ts:107-206`, which
-never refuses an unsupported knob but clamps it down a fixed ladder and records each downgrade as
-`{field, from, to, reason}` — the graceful-degradation contract `basicly-kjc5.58`/`.59`/`.61` need,
-and about 400 lines of pure logic that ports to stdlib Python unchanged. **Their HEAD is decisive for
-our open question**: `fix/task-reject-category-with-model` makes tier and raw model id *mutually
-exclusive* with a typed error, because a call-site override would silently bypass the routing — so if
-a catalog entry may declare both, the tier is decoration. Reject their stated thesis: the ROADMAP
+**`code-yeongyu/oh-my-openagent` (`f287227`) — the answer to our capability-tier question, but
+concept-only.** **Licence: Sustainable Use License 1.0 — see `references.md` §2.2.** The files below
+sit in `packages/model-core`, which carries no licence of its own and is therefore governed by the
+non-commercial root licence. **Their source is not an implementation reference for us**; what follows
+is the design, which is an idea and freely usable.
+
+The concept: a work item declares a named *tier*, never a model id, and a pure injected resolver
+walks an ordered `(providers[], model, variant)` fallback chain against what is actually reachable,
+returning the chosen model **plus a `provenance` enum** (`override | category-default |
+provider-fallback | system-default`) so the choice is explainable after the fact. Alongside it, an
+unsupported setting is never refused — it is clamped down a fixed ladder and the downgrade recorded as
+`{field, from, to, reason}`, which is the graceful-degradation contract `basicly-kjc5.58`/`.59`/`.61`
+need. Implemented in `model-resolution-pipeline.ts`, `category-model-requirements.ts` and
+`model-settings-compatibility.ts`; cited for provenance, not for transcription.
+
+> **Recommendation withdrawn.** This entry originally called it *"about 400 lines of pure logic that
+> ports to stdlib Python unchanged"* and said so on `basicly-kjc5.58`. Under the Sustainable Use
+> License a port is distribution of a derivative work outside the permitted purposes, and `basicly`
+> is distributed. Build it from the description above, clean-room, exactly as §2.1 requires for
+> `beads_rust`.
+
+**Their HEAD is decisive for our open question, and this part is a fact about published history
+rather than anything derived from their code**: `fix/task-reject-category-with-model` makes tier and
+raw model id *mutually exclusive* with a typed error, because a call-site override would silently
+bypass the routing — so if a catalog entry may declare both, the tier is decoration. Reject their stated thesis: the ROADMAP
 refuses a harness abstraction (*"duplication causes less pain"*) and the repo then pays the bill —
 three hand-ported rules-injection implementations, two background-agent engines of which only the
 older detects a wedge, two contradictory harness-id enums four lines apart (`schema/harness.ts:3` vs
@@ -706,7 +729,12 @@ older detects a wedge, two contradictory harness-id enums four lines apart (`sch
 by 1,606 bytes. Our single-source projector is the correct call.
 
 **`SouthBridgeAI/hankweave-runtime` (`66a9921`) — the only production append-only journal in the
-set, and the most important input to `work-tracker.md`.** Adopt the **denormalized running
+set, and the most important input to `work-tracker.md`.** **Licence: Apache-2.0, but `NOTICE.md`
+incorporates Terms of Service carrying competition restrictions — see `references.md` §2.3.** The
+measurements below are properties of published data and stay usable; **the mechanism adoption is held
+pending a licence question we are not qualified to settle**, and `basicly-vkh0.9` has been narrowed
+accordingly. Read what follows as analysis, and do not use their source as an implementation
+reference. Adopt the **denormalized running
 aggregate**: every event carries the totals that hold *after* it
 (`state.transition.data.resultingState`, `event-schemas.ts:429-434`), so the common query is answered
 by reading the tail while the fold remains the checkable authority. That is a concrete answer to the
