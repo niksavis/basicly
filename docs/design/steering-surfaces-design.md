@@ -49,10 +49,14 @@ instruction files.
 ### 2.1 What we know and what we assume
 
 We manage the baseline against a soft character cap — 9000 for Claude and Copilot, 12000 for Codex —
-and we treat refilling it as a budgeting problem: trim here, scope out there. (Measured 2026-07-31:
-7940 / 8074 / 10833 chars for Claude / Copilot / Codex, so roughly 1060 / 926 / 1167 characters of
-headroom; 7209 / 7343 / 8484 when §2.2's recall test ran. The "roughly 1000 characters of headroom"
-this section used to cite was never right, and is only now accidentally close.) That framing assumes
+and we treat refilling it as a budgeting problem: trim here, scope out there. (Re-measured 2026-07-31
+with `wc -m` — the cap compares `len(content)` on the decoded string, so characters, not the bytes
+first recorded here: **7894 / 8026 / 10775** chars for Claude / Copilot / Codex, so **1106 / 974 /
+1225** characters of headroom; 7167 / 7299 / 8434 when §2.2's recall test ran. The "roughly 1000
+characters of headroom" this section used to cite was never right, and is only now accidentally
+close. Copilot is the tightest always-on surface; Codex's `AGENTS.md` is the tightest for the
+path-scoped tier, since a scoped fragment costs it ~1500 chars and costs the other two nothing,
+so the next one overflows.) That framing assumes
 **adherence degrades smoothly with size**.
 
 The field's consistent claim is that it does not. The reported thresholds: rules start dropping past

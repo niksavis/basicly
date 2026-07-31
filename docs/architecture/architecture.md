@@ -493,7 +493,7 @@ outputs, so it is repo-level only and never reads the overlay.
 #### 4.4 Generated artifacts
 
 ```text
-AGENTS.md                                    # applies_to: [all]; inlines scoped fragments (codex can't path-scope)
+AGENTS.md                                    # applies_to: [all]; inlines scoped fragments (our scopes are globs; codex scopes by directory)
 .claude/CLAUDE.md                            # applies_to: [all] + [claude]; scoped fragments excluded (exclude_scoped)
 .claude/rules/*.md                           # path-scoped fragments, `paths:` frontmatter (single source)
 .github/copilot-instructions.md              # applies_to: [all] + [copilot], inlined (no @-import); scoped excluded
@@ -505,8 +505,12 @@ Which fragments land where is driven by each output's `filter` in `targets/*.yam
 fragments (the `.claude/rules/` files), and `exclude_scoped: true` drops scoped
 fragments from a baseline (the `CLAUDE.md` and `copilot-instructions.md` wrappers) —
 see §7 detail 4. Codex gets the shared `AGENTS.md` baseline only, with scoped
-fragments inlined because it has no path-scoping mechanism; `.codex/rules/*.rules`
-is **[Deferred]** (§11).
+fragments inlined because its only scoping axis is directory placement while our
+scopes are globs, and because a nested `AGENTS.md` below the cwd is not loaded at
+all (§7 detail 4). A native per-path renderer is **[Deferred]** (§11). Note that
+Codex's own feature named **"Rules"** (`.codex/rules/`, Starlark
+`prefix_rule(pattern=…)`) is a sandbox command-execution policy, not a per-file
+instruction tier — the name collides, the mechanism does not.
 
 **Scoped rules are single-sourced to `.claude/rules/`** (adopted 2026-07-16): VS Code
 loads both `.claude/rules/*.md` and `.github/instructions/*.instructions.md` with no
@@ -622,9 +626,12 @@ inherits that failure.
 
 ### Details
 
-1. **Size discipline**: a **shared soft cap of 8,000 chars** for the `claude` and
+1. **Size discipline**: a **shared soft cap of 9,000 chars** for the `claude` and
    `copilot` targets, and **12,000 for `codex`** (`max_size_warning` per
-   `targets/*.yaml`). The shared-baseline reasoning still holds — all three always-on
+   `targets/*.yaml`; raised from 8,000 in `e70e4db`). The cap counts **characters**,
+   not bytes — `cli.py` compares `len(content)` on the decoded string, so a `wc -c`
+   reading overstates a UTF-8 baseline by the multi-byte characters in it. The
+   shared-baseline reasoning still holds — all three always-on
    files project from the same `applies_to: [all]` fragment set and differ only by a
    small per-target defaults fragment — but the codex projection legitimately carries
    more: scoped fragments are inlined there for glob fidelity (detail 4), so its cap
@@ -632,10 +639,24 @@ inherits that failure.
    are a deliberate discipline choice, not platform limits: Claude Code's own
    degradation warning is ~40 KB, GitHub removed its former 4,000-char hard limit on
    `copilot-instructions.md` (it now only advises shortening past ~4,000 chars), and
-   Codex reads AGENTS.md up to `project_doc_max_bytes` (32 KiB default, verified
-   2026-07-15). A cap warning means split into a scoped rule, not shrink the prose.
+   Codex reads AGENTS.md up to `project_doc_max_bytes` (32 KiB default, configurable;
+   verified 2026-07-31). A cap warning means split into a scoped rule, not shrink the prose.
    (Refs: GitHub removed the hard limit — github/docs#42761; Claude ~40 KB — Claude
    Code memory docs; Codex 32 KiB — learn.chatgpt.com/docs/agent-configuration/agents-md.)
+
+   Measured 2026-07-31 (`wc -m`):
+
+   | Surface | chars | cap | headroom |
+   | --- | --- | --- | --- |
+   | `AGENTS.md` (codex) | 10775 | 12000 | 1225 |
+   | `.claude/CLAUDE.md` | 7894 | 9000 | 1106 |
+   | `.github/copilot-instructions.md` | 8026 | 9000 | 974 |
+
+   So **`copilot-instructions.md` is the tightest always-on surface** and binds for an
+   always-on fragment, while **`AGENTS.md` binds for the path-scoped tier** — a scoped
+   fragment costs `AGENTS.md` ~1500 chars (measured 1462 and 1614 for the two that
+   exist) and costs the other two nothing, so the **next** scoped fragment already
+   overflows the codex cap (1225 < 1462).
 2. **Enforced vs. judgment split**: enforced rules are one line pointing at the
    command/config; judgment rules are prose, and should be the shorter of the two
    sections.
@@ -651,19 +672,43 @@ inherits that failure.
    inlined into `CLAUDE.md`/`copilot-instructions.md`. This keeps the always-on file lean
    (a Python-only rule shouldn't cost every task its context budget) and is enforced by
    the `exclude_scoped: true` output filter (§4.4). **Exception — `AGENTS.md` (codex)**:
-   scoped fragments are still inlined there, but the reason has changed (verified
-   2026-07-15 against OpenAI's docs). Codex **does** now support both Agent Skills
-   (SKILL.md open standard, discovered from `.agents/skills` at repo root/cwd with
-   progressive disclosure — basicly's skill projection already targets this) and
-   nested/path-scoped `AGENTS.md` (root→leaf concatenation, nearest file wins,
-   `AGENTS.override.md` precedence). However, nested `AGENTS.md` scoping is
-   **directory-based**, while basicly scoped fragments are **glob-based**
-   (`**/*.py`) — a per-directory offload cannot faithfully express a glob scope, so
-   inlining remains the correctness-preserving choice. This is why `AGENTS.md` runs
-   larger than the other two baselines and why the codex cap carries an allowance
-   (detail 1). Offloading via nested `AGENTS.md`/skills for directory-shaped scopes
-   is **[Deferred]**. (Refs: learn.chatgpt.com/docs/build-skills;
-   learn.chatgpt.com/docs/agent-configuration/agents-md; agentskills.io.)
+   scoped fragments are still inlined there, for two reasons (re-verified 2026-07-31
+   against OpenAI's docs). First, a framing correction: Codex is **not** short of
+   separate steering files — it supports nested `AGENTS.md` (root→leaf concatenation,
+   nearest file wins), `AGENTS.override.md` precedence,
+   `project_doc_fallback_filenames`, repo-checked-in Agent Skills (SKILL.md open
+   standard, discovered from `.agents/skills` at repo root/cwd with progressive
+   disclosure — basicly's skill projection already targets this), project subagents at
+   `.codex/agents/*.toml`, and sandbox policy at `.codex/rules/`. What it has is a
+   **type mismatch and a loading limit**:
+   1. **No glob- or pattern-based instruction scoping exists at all** — no `applyTo`, no
+      `paths:` frontmatter, no `globs` field, anywhere in `AGENTS.md` discovery, the
+      config reference, or `SKILL.md` frontmatter. Directory placement is the only
+      scoping axis, while basicly scoped fragments are **glob-based** (`**/*.py`), so a
+      per-directory offload cannot faithfully express a glob scope.
+   2. **A nested `AGENTS.md` below the cwd is never loaded.** Codex walks from the
+      project root down to the current directory and _stops there_. Run from the repo
+      root — the normal case — a file at `src/foo/AGENTS.md` contributes **nothing**.
+      So per-directory offload would not merely lose glob fidelity; it would usually
+      not load. (Exception: Codex code review on GitHub does walk the changed files, so
+      that surface behaves differently from the CLI.)
+
+   Inlining therefore remains the correctness-preserving choice. This is why
+   `AGENTS.md` runs larger than the other two baselines and why the codex cap carries
+   an allowance (detail 1). Offloading via nested `AGENTS.md`/skills for
+   directory-shaped scopes is **[Deferred]** (§11), and reason 2 is what makes that
+   reject stronger than a fidelity trade-off.
+
+   Two naming traps on the codex surface, both of which have misled a reader here:
+   Codex's own **"Rules"** feature (`.codex/rules/`, Starlark `prefix_rule(pattern=…)`)
+   is a **sandbox command-execution policy**, unrelated to per-file instructions —
+   reading that page and concluding Codex has no instruction rules is the exact wrong
+   turn; and file-based **custom prompts** (`~/.codex/prompts`) are **deprecated** in
+   favour of skills and are user-scope only, so they can never ship in a repo — worth
+   remembering if a codex command tier is ever proposed. (Refs:
+   learn.chatgpt.com/docs/build-skills;
+   learn.chatgpt.com/docs/agent-configuration/agents-md; agentskills.io. The former
+   `developers.openai.com/codex/*` paths 308-redirect to `learn.chatgpt.com/docs/*`.)
 5. **Self-contained per target**: each generated file stands alone; an agent should
    never need a second file to understand the baseline.
 6. **Stable ordering**: priority → category → id, so diffs stay minimal.
@@ -864,13 +909,20 @@ for; the work the architecture is actively heading toward is §14, and the combi
 status view of both — what is built, building, designed, researched or deferred — is
 §15.
 
-1. **`.codex/rules/*.rules` scoped rules renderer**: Codex reads
+1. **A native per-path instruction renderer for codex**: Codex reads
    the shared `AGENTS.md` baseline today, with path-scoped fragments inlined for
    glob fidelity (§7 detail 4). A native scoped-rules projection would add
-   per-path parity once a real Codex consumer needs it.
+   per-path parity once a real Codex consumer needs it — but there is currently no
+   Codex mechanism to project _to_: it has no glob-based instruction scoping at all.
+   (Not to be confused with `.codex/rules/`, which is Codex's _sandbox
+   command-execution_ policy, a different feature that happens to share the name
+   "Rules" — see §7 detail 4.)
 2. **Cursor as a target**: no renderer, no templates.
 3. **Offloading directory-shaped scopes** via nested `AGENTS.md`/skills for the
-   codex target (§7 detail 4).
+   codex target (§7 detail 4). Rejected more firmly than a fidelity trade-off would
+   warrant: Codex loads nested `AGENTS.md` only from the project root **down to the
+   cwd** and stops there, so a file at `src/foo/AGENTS.md` is not loaded at all when
+   Codex runs from the repo root — the offload would usually contribute nothing.
 4. **`basicly conflicts`/`basicly overrides` reporting views** — cut from scope;
    `catalog verify` output covers the reporting need (§8).
 5. **Per-block technology conditioning inside agent slots** — technology scoping
@@ -1248,8 +1300,8 @@ produced code against hostile input, so "less code" or "more decisive" can never
 bought by dropping validation.
 
 The single highest-leverage unknown sat here, and half of it has now been measured.
-The always-on baseline is 7940 / 8074 / 10833 characters for Claude / Copilot / Codex
-(measured 2026-07-31; 7209 / 7343 / 8484 at the recall test below)
+The always-on baseline is 7894 / 8026 / 10775 characters for Claude / Copilot / Codex
+(`wc -m`, measured 2026-07-31; 7167 / 7299 / 8434 at the recall test below)
 — on the order of 1100–1600 words of dense rules — against a consistent practitioner
 finding that adherence to dense rules degrades well below that. **The "cliff already
 crossed" reading is refuted**: measured 2026-07-26, both families reproduce 93–98% of

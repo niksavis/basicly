@@ -123,7 +123,7 @@ subprocess sites in `br.py`.
 | --- | --- |
 | "Rework has a cap but no stall detector" | Correct. `policy.py` has no convergence check. `runner.StallWatchdog` exists but is dispatch-level (no file activity for _n_ seconds) — a different mechanism entirely. |
 | "We lack a path-scoped guidance tier" | **Wrong.** The tier is fully built: `claude.yaml` declares a `scoped_rules` output at `.claude/rules/{fragment_id}.md`, the planner routes on `has_scope`/`exclude_scoped`, `rule_md.j2` renders it. **Two fragments now declare a scope** — `platform-hermetic-tests` on `tests/**` (`62cabc8`) and `external-review` on `docs/research/**` + `docs/design/**` (`basicly-a3ab.6`), each projected to `.claude/rules/{id}.md`; at `b02b527` none did. So the tier is in use, the remaining work is authoring, and the one check is still missing — see the asymmetry below, which that first real fragment measured. |
-| "The always-on baseline is ~9000 chars with ~1000 chars of headroom" | Stale as written, but the headroom figure has since become accidentally right. Measured 2026-07-31: 10833 / 7940 / 8074 chars for `AGENTS.md` / `CLAUDE.md` / `copilot-instructions.md` (8484 / 7209 / 7343 at `31d441d`, before the `jr0l.33`, `a3ab.6` and `a3ab.7` catalog edits). The 9000 soft cap applies to Claude and Copilot only, leaving ~1060 and ~926 chars; `codex.yaml` sets 12000, leaving `AGENTS.md` ~1167 — no longer the roomy surface, because it inlines every scoped fragment. **The cliff concern is refuted, not merely unproven** — at 1086–1303 words per file, `agzx.1` measured 98% recall (claude, 53 rules) and 93% (copilot, 54), so the ~500-word threshold the review cites does not bind here; read that result narrowly, per Phase 1 1a. |
+| "The always-on baseline is ~9000 chars with ~1000 chars of headroom" | Stale as written, but the headroom figure has since become accidentally right. Re-measured 2026-07-31 in **characters** (`wc -m`, matching the `len(content)` the cap compares — the figures first recorded here were `wc -c` bytes and overstated every surface): 10775 / 7894 / 8026 for `AGENTS.md` / `CLAUDE.md` / `copilot-instructions.md` (8434 / 7167 / 7299 at `31d441d`, before the `jr0l.33`, `a3ab.6` and `a3ab.7` catalog edits). The 9000 soft cap applies to Claude and Copilot only, leaving **1106** and **974** chars; `codex.yaml` sets 12000, leaving `AGENTS.md` **1225** — no longer the roomy surface, because it inlines every scoped fragment. So the two surfaces bind for different things: **Copilot is tightest in absolute headroom**, and so binds first for an always-on fragment, while **`AGENTS.md` binds for the path-scoped tier** — the next scoped fragment alone (~1500 chars) overflows it. **The cliff concern is refuted, not merely unproven** — at 1086–1303 words per file, `agzx.1` measured 98% recall (claude, 53 rules) and 93% (copilot, 54), so the ~500-word threshold the review cites does not bind here; read that result narrowly, per Phase 1 1a. |
 | "Roughly thirty catalog entries" | 21 fragments (18 core + 3 local, `basicly-a3ab.6` added one) + projected skills + **3** subagents + 4 rubrics. The eval-coverage lift is **~50 routable guidance entries** (fragments + skills), not 30. The skill half needs a recount before it is quoted again: 32 `skill.yaml` sources project to 28 files at the Claude root and 27 at `.agents/`, and which filter accounts for the gap is untraced. |
 
 **A correction to the entry count, because it changes what 2c owes.** The earlier "7 subagents"
@@ -136,17 +136,21 @@ but never added. Separately, 32 skill _sources_ project to 29 skills; the other 
 technology selection, so a consumer's entry count is a function of its stack.
 
 **The scoped tier costs Codex, and this is now measured rather than predicted.** Landing the first
-scoped fragment moved exactly one baseline:
+scoped fragment moved exactly one baseline — in characters (`wc -m`, re-measured 2026-07-31; the
+byte figures first recorded here overstated each surface by its multi-byte characters):
 
 | File | `b02b527` | `13a4647` | Δ |
 | --- | --- | --- | --- |
-| `AGENTS.md` (Codex) | 7014 | 8484 | **+1470 (+21%)** |
-| `.claude/CLAUDE.md` | 7209 | 7209 | 0 |
-| `.github/copilot-instructions.md` | 7343 | 7343 | 0 |
+| `AGENTS.md` (Codex) | 6972 | 8434 | **+1462 (+21%)** |
+| `.claude/CLAUDE.md` | 7167 | 7167 | 0 |
+| `.github/copilot-instructions.md` | 7299 | 7299 | 0 |
 
-One scoped fragment removed **nothing** from the Claude and Copilot baselines and **added** 1470
-chars to Codex's, because Codex inlines scoped fragments (our scopes are globs; nested `AGENTS.md`
-is directory-based). There is no gate pressure — Codex's cap is 12000 — but the direction is fixed
+One scoped fragment removed **nothing** from the Claude and Copilot baselines and **added** 1462
+chars to Codex's, because Codex inlines scoped fragments (our scopes are globs and Codex has no
+glob-based scoping at all; its nested `AGENTS.md` is directory-based _and_ is not loaded below the
+cwd). The second scoped fragment, `external-review`, cost 1614 — so **~1500 chars is the working
+per-fragment figure**. There is now real gate pressure: Codex's cap is 12000 against 10775 today,
+so the **next** scoped fragment overflows it. The direction is fixed
 by construction, not by this fragment: **for Codex, scoping is strictly a cost increase, always.**
 Phase 4 §4 is worded as though Codex merely fails to benefit; it pays. Its exit criterion
 ("measurably smaller on two of three families") is therefore the only achievable form rather than a
@@ -403,7 +407,8 @@ urgent than they assume, because 1a measured the baseline being recalled rather 
 **Watch the asymmetry**, now measured on the first real scoped fragment (§2): scoping removes a
 fragment from the Claude and Copilot baselines and **adds** it to Codex's, which inlines scoped
 fragments because our scopes are globs and nested `AGENTS.md` is directory-based. It is not that
-Codex fails to benefit — it pays, +1470 chars for one fragment. So a claim of "we cut the baseline"
+Codex fails to benefit — it pays, ~1500 chars per fragment (1462 and 1614 measured). And with 1225
+chars of headroom left on `AGENTS.md`, the next one overflows the cap. So a claim of "we cut the baseline"
 must name the family, the exit criterion below is the strongest form available rather than a
 hedge, and scoping is a deliberate _removal_ from the github.com Copilot surface — a guarantee
 change per fragment, not a refactor.
