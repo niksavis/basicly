@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.6.0 - 2026-07-31
+
+Delta: v0.5.1..v0.6.0
+
 ### Added
 
 - **The parallel factory.** `basicly supervise` runs a standing supervisor that
