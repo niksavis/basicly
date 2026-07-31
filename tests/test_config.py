@@ -327,7 +327,7 @@ def test_runner_config_codex_defaults_sandbox_and_approval(tmp_path: Path) -> No
     """The shipped codex adapter carries the guardrail defaults; others leave them unset."""
     by_name = {spec.name: spec for spec in load_runner_config(tmp_path).specs}
     assert by_name["codex"].sandbox == "workspace-write"
-    assert by_name["codex"].approval == "on-failure"
+    assert by_name["codex"].approval == "never"
     assert by_name["claude"].sandbox is None
     assert by_name["claude"].approval is None
 

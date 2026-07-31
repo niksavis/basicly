@@ -17,6 +17,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
@@ -180,14 +181,14 @@ def test_format_command_injects_sandbox_and_approval_after_binary() -> None:
         HEADLESS,
         ("codex", "exec", PROMPT_PLACEHOLDER),
         sandbox="workspace-write",
-        approval="on-failure",
+        approval="never",
     )
     assert runner.format_command(spec, "go") == [
         "codex",
         "--sandbox",
         "workspace-write",
         "-a",
-        "on-failure",
+        "never",
         "exec",
         "go",
     ]
@@ -199,39 +200,163 @@ def test_format_command_injects_sandbox_alone() -> None:
     assert runner.format_command(spec, "go") == ["codex", "--sandbox", "read-only", "exec", "go"]
 
 
-def test_codex_builtin_defaults_render_workspace_write_on_failure() -> None:
-    """The shipped codex adapter carries the guardrail defaults into its rendered argv."""
+def test_codex_builtin_defaults_render_workspace_write_never() -> None:
+    """The shipped codex adapter carries the guardrail defaults into its rendered argv.
+
+    ``never`` is pinned, not ``on-failure``: the latter is absent from the CLI's
+    approval enum, so it made every codex dispatch exit 2 at argument parsing
+    (basicly-jr0l.38).
+    """
     codex = next(s for s in runner.BUILTIN_RUNNERS if s.name == "codex")
     assert codex.sandbox == "workspace-write"
-    assert codex.approval == "on-failure"
+    assert codex.approval == "never"
     assert runner.format_command(codex, "do the work") == [
         "codex",
         "--sandbox",
         "workspace-write",
         "-a",
-        "on-failure",
+        "never",
         "exec",
         "do the work",
     ]
 
 
 def test_sandbox_approval_do_not_affect_capability_probe() -> None:
-    """Guardrail values live in fields, not command, so the --help probe ignores them."""
+    """Guardrail values live in fields, not command, so the --help flag probe ignores them.
+
+    They are checked separately, and only against a help text that actually
+    enumerates the flag — see the guardrail tests below.
+    """
     codex = next(s for s in runner.BUILTIN_RUNNERS if s.name == "codex")
     # A help text mentioning only the static command flag (`exec`) — not the
-    # `workspace-write`/`on-failure` values — must still confirm the runner.
+    # `--sandbox`/`--ask-for-approval` enums — must still confirm the runner.
     cap = runner.probe_capability(codex, run=lambda _binary: "usage: codex exec [prompt]")
     assert cap.flag_ok is True
+
+
+def _builtin(name: str) -> RunnerSpec:
+    return next(s for s in runner.BUILTIN_RUNNERS if s.name == name)
+
+
+# --- guardrail enum validation (basicly-jr0l.38) -----------------------------
+#
+# Verbatim `codex --help` extracts, at codex-cli 0.146.0. clap renders an enum
+# two ways and codex uses both, so both are fixtures: `--sandbox` inline, and
+# `--ask-for-approval` as an indented bullet list whose entries wrap.
+
+CODEX_HELP = """\
+Usage: codex [OPTIONS] [PROMPT]
+
+Options:
+  -s, --sandbox <SANDBOX_MODE>
+          Select the sandbox policy to use when executing model-generated shell commands
+
+          [possible values: read-only, workspace-write, danger-full-access]
+
+      --add-dir <DIR>
+          Additional directories that should be writable alongside the primary workspace
+
+  -a, --ask-for-approval <APPROVAL_POLICY>
+          Configure when the model requires human approval before executing a command
+
+          Possible values:
+          - untrusted:  Only run "trusted" commands (e.g. ls, cat, sed) without asking for user
+            approval. Will escalate to the user if the model proposes a command that is not in the
+            "trusted" set
+          - on-request: The model decides when to ask the user for approval
+          - never:      Never ask for user approval Execution failures are immediately returned to
+            the model
+
+  -h, --help
+          Print help
+"""
+
+
+def test_possible_values_reads_the_inline_enum_rendering() -> None:
+    """`--sandbox` documents its enum inline, in brackets on its own line."""
+    assert runner.possible_values(CODEX_HELP, "--sandbox") == (
+        "read-only",
+        "workspace-write",
+        "danger-full-access",
+    )
+
+
+def test_possible_values_reads_the_bulleted_enum_rendering() -> None:
+    """`--ask-for-approval` documents its enum as bullets whose descriptions wrap.
+
+    The wrapped continuation lines ("approval. Will escalate...") must not be
+    read as values, and the list must not bleed into the next option entry.
+    """
+    assert runner.possible_values(CODEX_HELP, "--ask-for-approval") == (
+        "untrusted",
+        "on-request",
+        "never",
+    )
+
+
+def test_possible_values_is_none_when_the_flag_enumerates_nothing() -> None:
+    """An absent flag and a flag with no enum are both "cannot tell", not "nothing accepted"."""
+    assert runner.possible_values(CODEX_HELP, "--no-such-flag") is None
+    assert runner.possible_values(CODEX_HELP, "--add-dir") is None
+
+
+def test_check_guardrails_names_the_rejected_approval_and_the_accepted_set() -> None:
+    """The regression: `on-failure` is not in the enum, so the check reports it by name.
+
+    This is the exact spec that shipped, and it exited 2 with no output on every
+    dispatch. The message must name the offending value so the fix is obvious
+    without re-running the CLI.
+    """
+    spec = replace(_builtin("codex"), approval="on-failure")
+    (problem,) = runner.check_guardrails(spec, help_text=CODEX_HELP)
+    assert "on-failure" in problem
+    assert "--ask-for-approval" in problem
+    assert "untrusted, on-request, never" in problem
+
+
+def test_check_guardrails_names_a_rejected_sandbox() -> None:
+    """The inline-rendered flag is validated the same way."""
+    spec = replace(_builtin("codex"), sandbox="wide-open")
+    (problem,) = runner.check_guardrails(spec, help_text=CODEX_HELP)
+    assert "wide-open" in problem
+    assert "read-only, workspace-write, danger-full-access" in problem
+
+
+def test_check_guardrails_passes_the_shipped_codex_spec() -> None:
+    """The adapter as shipped must be accepted by the CLI it targets."""
+    assert runner.check_guardrails(_builtin("codex"), help_text=CODEX_HELP) == ()
+
+
+def test_check_guardrails_stays_silent_without_positive_evidence() -> None:
+    """An unreadable probe or a help text without the enums never disproves a spec.
+
+    Same rule as the flag probe: guessing would false-skip a working agent.
+    """
+    codex = _builtin("codex")
+    assert runner.check_guardrails(codex, help_text=None) == ()
+    assert runner.check_guardrails(codex, help_text="usage: codex exec [prompt]") == ()
+    assert runner.probe_guardrails(codex, run=lambda _binary: None) == ()
+
+
+def test_probe_capability_fails_a_spec_the_cli_would_reject() -> None:
+    """A rejected guardrail makes the runner not capable, so `auto` skips it.
+
+    Selection falls through to the next candidate rather than picking an adapter
+    whose every dispatch dies at argument parsing.
+    """
+    spec = replace(_builtin("codex"), approval="on-failure")
+    cap = runner.probe_capability(spec, run=lambda _binary: CODEX_HELP)
+    assert cap.reachable is True
+    assert cap.flag_ok is False
+    assert "on-failure" in cap.detail
+    capable = runner.is_capable(spec, which=lambda _b: "/usr/bin/codex", run=lambda _b: CODEX_HELP)
+    assert capable is False
 
 
 # --- decider confinement (basicly-kjc5.16) ----------------------------------
 #
 # One case per supported agent family, asserted on the rendered argv rather than
 # on the field: what confines the decider is the flag the CLI actually receives.
-
-
-def _builtin(name: str) -> RunnerSpec:
-    return next(s for s in runner.BUILTIN_RUNNERS if s.name == name)
 
 
 def test_confine_for_decider_denies_claudes_whole_tool_surface() -> None:
@@ -270,8 +395,9 @@ def test_confine_for_decider_denies_copilot_shell_write_and_read() -> None:
 def test_confine_for_decider_puts_codex_in_a_read_only_sandbox() -> None:
     """Codex has no tool-deny flag, so it is confined by sandbox instead of blocklist.
 
-    ``never`` rather than the builtin ``on-failure``: headless exec has no
-    approver, so an escalation must fail closed instead of waiting for one.
+    The sandbox drops to ``read-only``; approval stays ``never``, as the builtin
+    already pins — headless exec has no approver, so an escalation must fail
+    closed instead of waiting for one.
     """
     confined = runner.confine_for_decider(_builtin("codex"))
     assert confined is not None

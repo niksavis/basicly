@@ -29,6 +29,7 @@ import contextlib
 import hashlib
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -136,8 +137,14 @@ class RunnerSpec:
     # by design, so safe defaults cannot be projected as committed catalog output;
     # the only seam is the invocation. format_command emits `--sandbox <mode>` and
     # `-a <policy>` after the binary when set. Defaulted for the codex runner
-    # (`workspace-write` disables network by default; `on-failure` fails safe in
-    # headless exec — no approver, so an escalation is denied, not auto-granted).
+    # (`workspace-write` disables network by default; `never` fails safe in
+    # headless exec — no approver, so an escalation is denied, not auto-granted,
+    # and execution failures are returned to the model instead). The intended
+    # `on-failure` is not in the CLI's enum, so every codex dispatch died at
+    # argument parsing until basicly-jr0l.38; of the three accepted values
+    # (untrusted, on-request, never) only `never` avoids escalating to an
+    # approver who cannot exist, with the sandbox as the real safety boundary.
+    # :func:`check_guardrails` now validates these against the installed CLI.
     # None on claude/copilot leaves their argv unchanged.
     sandbox: str | None = None
     approval: str | None = None
@@ -182,7 +189,7 @@ BUILTIN_RUNNERS: tuple[RunnerSpec, ...] = (
         HEADLESS,
         ("codex", "exec", PROMPT_PLACEHOLDER),
         sandbox="workspace-write",
-        approval="on-failure",
+        approval="never",
         usage_format=CODEX_JSONL,
         context_window=_CONTEXT_WINDOWS["codex"],
     ),
@@ -456,16 +463,112 @@ def _run_help(binary: str) -> str | None:
     return (proc.stdout or "") + (proc.stderr or "")
 
 
+# The guardrail attributes format_command injects, and the CLI flag whose
+# enumerated values govern each (basicly-jr0l.38). The spec carries the value;
+# only the installed CLI knows the accepted set, so it is read from `--help`.
+_GUARDRAIL_FLAGS: tuple[tuple[str, str], ...] = (
+    ("sandbox", "--sandbox"),
+    ("approval", "--ask-for-approval"),
+)
+
+# clap renders an option's enum two ways, and codex uses both: inline for
+# `--sandbox`, an indented bullet list for `--ask-for-approval`.
+_INLINE_VALUES = re.compile(r"\[possible values:\s*([^\]]*)\]", re.IGNORECASE)
+_VALUES_HEADING = re.compile(r"^\s*possible values:\s*$", re.IGNORECASE | re.MULTILINE)
+_VALUE_BULLET = re.compile(r"^\s*-\s+([A-Za-z0-9][\w-]*)\s*(?::|$)")
+# The start of the *next* option entry, which bounds one option's help slice. A
+# value bullet ("- never:") is not one: it is a single dash followed by a space.
+_NEXT_OPTION = re.compile(r"^(\s*)(?:-[A-Za-z0-9], --[\w-]+|--[\w-]+)")
+
+
+def possible_values(help_text: str, flag: str) -> tuple[str, ...] | None:
+    """The values *flag* enumerates in *help_text*, or None when it enumerates none.
+
+    None is the "cannot tell" answer and covers both a flag the help text never
+    mentions and one documented without an enum — callers must not read it as
+    "no value is accepted". Only a non-empty tuple is positive evidence.
+    """
+    lines = help_text.splitlines()
+    start = next((i for i, line in enumerate(lines) if _mentions_flag(line, flag)), None)
+    if start is None:
+        return None
+    indent = len(lines[start]) - len(lines[start].lstrip())
+    end = len(lines)
+    for i in range(start + 1, len(lines)):
+        match = _NEXT_OPTION.match(lines[i])
+        if match and len(match.group(1)) <= indent:
+            end = i
+            break
+    return _values_in("\n".join(lines[start:end]))
+
+
+def _mentions_flag(line: str, flag: str) -> bool:
+    """True when *line* is the option entry that defines *flag* (not a mere mention)."""
+    match = _NEXT_OPTION.match(line)
+    return match is not None and flag in re.split(r"[,\s=<]+", line.strip())
+
+
+def _values_in(slice_text: str) -> tuple[str, ...] | None:
+    """Parse either clap enum rendering out of one option's help slice."""
+    if inline := _INLINE_VALUES.search(slice_text):
+        values = tuple(v.strip() for v in inline.group(1).split(",") if v.strip())
+        return values or None
+    if heading := _VALUES_HEADING.search(slice_text):
+        bullets = tuple(
+            m.group(1)
+            for line in slice_text[heading.end() :].splitlines()
+            if (m := _VALUE_BULLET.match(line))
+        )
+        return bullets or None
+    return None
+
+
+def check_guardrails(spec: RunnerSpec, *, help_text: str | None = None) -> tuple[str, ...]:
+    """Guardrail values *spec* pins that the installed CLI's ``--help`` rejects.
+
+    One message per offending attribute, naming the value and the accepted set,
+    so a misconfiguration is reported at check time rather than as an opaque
+    exit 2 at dispatch. Empty means nothing was disproved: an unset guardrail, a
+    CLI whose help does not enumerate the flag, or an unreadable probe all pass,
+    on the same positive-evidence-only rule :func:`probe_capability` follows —
+    a check that guesses would false-skip a working agent.
+    """
+    if spec.kind != HEADLESS or spec.binary is None or help_text is None:
+        return ()
+    problems = []
+    for attr, flag in _GUARDRAIL_FLAGS:
+        value = getattr(spec, attr)
+        accepted = possible_values(help_text, flag)
+        if value is None or accepted is None or value in accepted:
+            continue
+        problems.append(
+            f"{spec.binary} {flag} rejects {attr} {value!r}; accepts {', '.join(accepted)}"
+        )
+    return tuple(problems)
+
+
+def probe_guardrails(
+    spec: RunnerSpec, *, run: Callable[[str], str | None] | None = None
+) -> tuple[str, ...]:
+    """:func:`check_guardrails` against a live ``--help`` probe of *spec*'s binary."""
+    if spec.kind != HEADLESS or spec.binary is None:
+        return ()
+    return check_guardrails(spec, help_text=(run or _run_help)(spec.binary))
+
+
 def probe_capability(
     spec: RunnerSpec, *, run: Callable[[str], str | None] | None = None
 ) -> Capability:
     """Confirm *spec*'s assumed headless flag by probing its binary with ``--help``.
 
-    ``flag_ok`` is False only on *positive* evidence — the probe ran and a flag
-    token is absent from the help output (the dropped/renamed-flag case this
-    guards). A handoff runner, a spec with no binary, or a probe that could not
-    run assumes capable, so a flaky or slow probe never false-skips a working
-    agent; PATH presence (:func:`is_available`) stays the primary signal.
+    ``flag_ok`` is False only on *positive* evidence — the probe ran and either a
+    flag token is absent from the help output (the dropped/renamed-flag case) or
+    a pinned sandbox/approval value is outside the enum the help advertises
+    (basicly-jr0l.38, where the codex adapter pinned an approval the CLI rejected
+    and every dispatch died at argument parsing). A handoff runner, a spec with
+    no binary, or a probe that could not run assumes capable, so a flaky or slow
+    probe never false-skips a working agent; PATH presence
+    (:func:`is_available`) stays the primary signal.
     """
     if spec.kind != HEADLESS or spec.binary is None:
         return Capability(reachable=True, flag_ok=True, detail="handoff; no probe needed")
@@ -483,6 +586,8 @@ def probe_capability(
             flag_ok=False,
             detail=f"{spec.binary} {HELP_FLAG} does not mention {', '.join(missing)}",
         )
+    if rejected := check_guardrails(spec, help_text=out):
+        return Capability(reachable=True, flag_ok=False, detail="; ".join(rejected))
     supported = ", ".join(flags) or "(none)"
     return Capability(reachable=True, flag_ok=True, detail=f"{spec.binary} supports {supported}")
 
