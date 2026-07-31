@@ -2603,6 +2603,49 @@ def _print_planned(planned: tuple[Any, ...]) -> None:
         print(f"      scope: {', '.join(child.spec.scope)}")
 
 
+def _spend_metrics(spend: Any) -> str:
+    """One child's predicted spend, with an unpredictable metric named as such."""
+    tokens = "tokens unknown" if spend.tokens is None else f"{spend.tokens} tokens"
+    cost = "cost unknown" if spend.cost is None else f"${spend.cost:.2f}"
+    clock = (
+        "wall clock unknown" if spend.wall_clock_s is None else f"{spend.wall_clock_s / 60:.0f} min"
+    )
+    return f"{tokens}, {cost}, {clock}"
+
+
+def _spend_sources(calibration: Any) -> str:
+    """Where this child's three ratios came from, collapsed when they agree."""
+    named = (
+        ("tokens", calibration.tokens_per_working_set_token),
+        ("cost", calibration.usd_per_million_tokens),
+        ("wall clock", calibration.seconds_per_million_tokens),
+    )
+    sources = {ratio.source for _, ratio in named}
+    body = (
+        sources.pop()
+        if len(sources) == 1
+        else ", ".join(f"{name}={ratio.source}" for name, ratio in named)
+    )
+    return f"{body} ({calibration.pairs} paired record(s) for {calibration.task_class})"
+
+
+def _print_spend_forecast(children: tuple[Any, ...], spend: tuple[Any, ...]) -> None:
+    """Print predicted spend per child, saying for each whether it was measured or seeded.
+
+    A seeded number that reads as measured is worse than no number (basicly-jr0l.21),
+    so the source travels with the forecast on the surface a human actually reads —
+    not only in the recorded marker.
+    """
+    if not spend:
+        return
+    model = spend[0].calibration.model or "unresolved"
+    print(f"forecast spend (model {model}):")
+    for spec, forecast in zip(children, spend, strict=True):
+        sources = _spend_sources(forecast.calibration)
+        print(f"  {spec.title}: {_spend_metrics(forecast)} — {sources}")
+    print(f"  declared prior: {spend[0].calibration.prior.basis}")
+
+
 def cmd_decompose(args: argparse.Namespace) -> int:
     """Decompose a feature into child issues + a computed dependency graph."""
     repo_root = _repo_root()
@@ -2624,6 +2667,7 @@ def cmd_decompose(args: argparse.Namespace) -> int:
                 f"  {spec.title}: {estimate.total} tokens "
                 f"(scope {estimate.scope_tokens} x build factor + overhead)"
             )
+        _print_spend_forecast(children, verdict.spend)
         if verdict.refused:
             print("verdict: REFUSED — the real run would not create these children:")
             for message in verdict.violations:
