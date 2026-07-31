@@ -7,7 +7,10 @@ and the single-extension decision cannot regress (architecture §4.2):
    ``*.fragment.md`` under ``core/fragments``, and no markdown under
    ``core/agents`` (rendered files belong at target roots only).
 2. One YAML extension: no ``*.yml`` under ``core`` (the catalog uses ``.yaml``).
-3. Every source validates against its JSON Schema in ``core/schemas``.
+3. Every source validates against its JSON Schema in ``core/schemas``. That walk
+   globs ``core`` only, so the agents *overlay* — which no schema walk covers —
+   gets its model tier checked against the same vocabulary directly
+   (basicly-axqe).
 4. Enforcement pointer (§3.1): a fragment that declares ``enforced_by`` must cite
    each listed command in its body — point at enforcement, don't restate it.
 5. Agent composition: block refs resolve, read-only postures grant no write
@@ -32,7 +35,7 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
 from . import agents, rubrics, skills
-from .schema import TECHNOLOGIES
+from .schema import MODEL_TIERS, TECHNOLOGIES
 
 # Agent Skills spec (https://agentskills.io/specification) name rule: 1-64 chars,
 # lowercase a-z0-9 and single hyphens, no leading/trailing/consecutive hyphen.
@@ -147,6 +150,55 @@ def _validate_agent_schemas(repo_root: Path) -> list[str]:
     return violations
 
 
+def _tier_violations(path: Path, data: object, repo_root: Path) -> list[str]:
+    """Flag a `tier:` value outside ``schema.MODEL_TIERS`` on one agent source.
+
+    A non-string value is a violation too, not an absence: normalizing it away
+    would let ``tier: 0`` read as "no tier declared", and a "cannot tell" must
+    never read as "safe to proceed" — ``models.resolve_model`` refuses an unknown
+    tier, so the typo has to be caught here where it names a file to fix.
+    """
+    if not isinstance(data, dict):
+        return []  # the agent lint (rule 5) reports a malformed source as a violation
+    tier = data.get("tier")
+    if tier is None:
+        return []  # `tier` is optional; absent means the runner's configured default
+    if not isinstance(tier, str) or tier.strip() not in MODEL_TIERS:
+        return [
+            f"{_rel(path, repo_root)}: model tier {tier!r} is not in the portable "
+            f"vocabulary; declare `tier: {' | '.join(MODEL_TIERS)}`"
+        ]
+    return []
+
+
+def _check_overlay_agent_tiers(repo_root: Path) -> list[str]:
+    """Enforce the model tier vocabulary on the agent roots no schema walk covers.
+
+    ``_validate_agent_schemas`` globs ``.basicly/core/agents`` only, so the
+    ``tier`` enum in ``agent.schema.json`` never reached the ``.basicly-local``
+    overlay: a core source with ``tier: turbo`` was rejected while the same
+    overlay source was accepted silently (basicly-axqe). Every root except the
+    schema-validated one is checked, so a third root added later is covered by
+    construction rather than by remembering to extend this.
+
+    The core path deliberately keeps reporting through the schema enum, so one
+    defect still yields one diagnostic; the vocabulary stays single-sourced
+    because that enum is tripwired against ``schema.MODEL_TIERS`` by a test.
+    """
+    schema_validated = repo_root / AGENTS_DIR
+    violations: list[str] = []
+    for root, _source in agents.default_agent_roots(repo_root):
+        if root == schema_validated or not root.is_dir():
+            continue
+        for path in sorted(root.glob(f"*/{agents.AGENT_SOURCE_FILE}")):
+            try:
+                data = yaml.safe_load(path.read_text(encoding="utf-8"))
+            except yaml.YAMLError:
+                continue  # rule 5 reports malformed YAML as a violation of its own
+            violations.extend(_tier_violations(path, data, repo_root))
+    return violations
+
+
 def lint_catalog(repo_root: Path) -> list[str]:
     """Return a list of catalog-lint violations (empty when the catalog is clean)."""
     violations: list[str] = []
@@ -190,6 +242,7 @@ def lint_catalog(repo_root: Path) -> list[str]:
         violations.extend(_validate(path, fragment_validator, repo_root))
 
     violations.extend(_validate_agent_schemas(repo_root))
+    violations.extend(_check_overlay_agent_tiers(repo_root))
     violations.extend(_validate_rubrics(repo_root))
 
     # 4. enforcement-pointer check (§3.1)

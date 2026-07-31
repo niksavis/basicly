@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 import yaml
 
 from basicly.catalog_lint import lint_catalog, skill_warnings
@@ -315,8 +316,10 @@ _AGENT_SLOTS = "".join(
 )
 
 
-def _agent_source(root: Path, slug: str, extra: str) -> Path:
-    path = root / ".basicly/core/agents" / slug / "agent.yaml"
+def _agent_source(
+    root: Path, slug: str, extra: str, agents_dir: str = ".basicly/core/agents"
+) -> Path:
+    path = root / agents_dir / slug / "agent.yaml"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         f"schema_version: 1\nname: {slug}\npurpose: Reviews things.\n"
@@ -369,3 +372,75 @@ def test_the_agent_schema_tier_enum_matches_the_model_tier_vocabulary() -> None:
         (REPO / ".basicly/core/schemas/agent.schema.json").read_text(encoding="utf-8")
     )
     assert schema["properties"]["tier"]["enum"] == list(MODEL_TIERS)
+
+
+# --- The tier vocabulary reaches the overlay too (basicly-axqe) ----------------
+
+_OVERLAY_AGENTS_DIR = ".basicly-local/agents"
+
+
+def test_an_unknown_tier_in_the_agents_overlay_fails_the_catalog_lint(tmp_path: Path) -> None:
+    """The asymmetry this rule closes: schema validation globs core only.
+
+    Measured before the fix — a core source with `tier: turbo` was rejected while
+    the same source in the overlay was accepted silently. All three things the
+    author needs are asserted: the file, the value they typed, and the vocabulary
+    that would have been accepted.
+    """
+    root = _catalog(tmp_path)
+    _agent_source(root, "reviewer", "tier: turbo\n", _OVERLAY_AGENTS_DIR)
+
+    violations = [v for v in lint_catalog(root) if "reviewer" in v]
+
+    assert len(violations) == 1, f"one defect must yield one diagnostic: {violations}"
+    assert ".basicly-local/agents/reviewer/agent.yaml" in violations[0]
+    assert "'turbo'" in violations[0]
+    # Spelled out rather than joined from MODEL_TIERS: an assertion derived from
+    # the same constant as the message would survive the vocabulary changing.
+    assert "tier: low | medium | high | maximum" in violations[0]
+
+
+def test_a_valid_tier_in_the_agents_overlay_passes_the_catalog_lint(tmp_path: Path) -> None:
+    """The check must accept the vocabulary, not merely reject outside it."""
+    root = _catalog(tmp_path)
+    _agent_source(root, "reviewer", "tier: high\n", _OVERLAY_AGENTS_DIR)
+
+    assert lint_catalog(root) == []
+
+
+def test_a_non_string_tier_in_the_agents_overlay_is_flagged(tmp_path: Path) -> None:
+    """`tier: 0` is a typo, not an absence, and must not read as "no tier declared"."""
+    root = _catalog(tmp_path)
+    _agent_source(root, "reviewer", "tier: 0\n", _OVERLAY_AGENTS_DIR)
+
+    violations = [v for v in lint_catalog(root) if "reviewer" in v]
+
+    assert len(violations) == 1, violations
+    assert "model tier 0 is not in the portable vocabulary" in violations[0]
+
+
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        ("- not a mapping\n", "agent source must be a YAML mapping"),
+        ("name: [unclosed\n", "invalid YAML"),
+    ],
+)
+def test_a_malformed_overlay_agent_source_lints_as_one_violation(
+    tmp_path: Path, content: str, expected: str
+) -> None:
+    """A source with no readable tier must fail the gate, and fail it exactly once.
+
+    The agent lint already reports both shapes (it loads the same overlay root),
+    so the tier check stays silent rather than adding a second diagnostic for one
+    defect — and a crash never stands in for the lint failure.
+    """
+    root = _catalog(tmp_path)
+    path = root / _OVERLAY_AGENTS_DIR / "reviewer" / "agent.yaml"
+    path.parent.mkdir(parents=True)
+    path.write_text(content, encoding="utf-8")
+
+    violations = [v for v in lint_catalog(root) if "reviewer" in v]
+
+    assert len(violations) == 1, violations
+    assert expected in violations[0]
