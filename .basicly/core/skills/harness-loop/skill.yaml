@@ -210,6 +210,21 @@ instructions: |
   the landing advance verifies the rebased tree in the worktree and records
   the required gate itself.
 
+  ## Re-verify a bead's third-party claims before building on them
+
+  A bead reads as authoritative because it passed the Definition-of-Ready gate, but
+  that gate checks structure, not facts: a claim about a third-party API, CLI or
+  schema can be wrong when filed and stale by the time the node is dispatched. So in
+  build, before implementing against one, measure it against the real endpoint or
+  binary, then record the check on the bead (`br comments add <id> "verified: ..."`)
+  so the next reader inherits it instead of repeating it.
+
+  `basicly-kjc5.61` asserted that models.dev "decisively" carries a `base_model`
+  field joining a provider serving id to the underlying model. Measured against the
+  live endpoint: present on **0 of 5911** records, and absent from the record schema
+  entirely. Dispatching on that text would have had the implementer build against a
+  phantom field and either fail or silently invent a fallback.
+
   ## Blocked on a missing fact — don't guess
 
   When a dispatched agent cannot resolve a required fact, it must not guess.
