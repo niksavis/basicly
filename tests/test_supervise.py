@@ -1009,6 +1009,15 @@ def test_dispatch_lanes_without_ready_lanes_is_a_no_op(
 
 
 def _codex_events(tokens: int) -> str:
+    """A codex stream whose last turn occupies *tokens* of the window.
+
+    Deliberately minimal, and deliberately not widened with the cache and
+    reasoning counts a real 0.146.0 turn carries (basicly-jr0l.37): these tests
+    drive the **context-ceiling** meter, which reads `input_tokens` alone because
+    that is the whole window re-sent that turn. Naming a ceiling fraction here
+    directly is what makes the threshold assertions readable; the observed
+    full-envelope fixture lives with the extractor, in `tests/test_runner.py`.
+    """
     event = {"type": "turn.completed", "usage": {"input_tokens": tokens, "output_tokens": 0}}
     return json.dumps(event)
 

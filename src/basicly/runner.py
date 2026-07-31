@@ -930,9 +930,28 @@ _CLAUDE_TOKEN_KEYS = (
     "cache_read_input_tokens",
     "output_tokens",
 )
-# Codex usage keys: cached_input_tokens is a subset of input_tokens (OpenAI
-# usage semantics), so adding it would double-count.
+# Codex usage keys summed into the total. Verified against codex-cli 0.146.0's
+# own arithmetic by a live probe (2026-07-31, basicly-jr0l.37): a turn reporting
+# input_tokens 12764, cached_input_tokens 9984, cache_write_input_tokens 0,
+# output_tokens 155 and reasoning_output_tokens 147 is accounted
+# total_tokens 12919 in the session rollout, and 12764 + 155 == 12919 exactly.
+# So cached_input_tokens is a subset of input_tokens and reasoning_output_tokens
+# is a subset of output_tokens (the probe's visible answer was 4 characters, so
+# 155 - 147 is the answer plus framing) — adding either would double-count.
 _CODEX_TOKEN_KEYS = ("input_tokens", "output_tokens")
+# codex `turn.completed` usage keys mapped onto Usage's split fields
+# (basicly-jr0l.37). `input_tokens` is the **superset**, exactly as copilot's
+# `inputTokens` is: it already contains the cached portion, so the uncached
+# remainder is `input_tokens - cache_read_tokens` rather than a fourth stored
+# number. Same convention for both providers, so a cost model can read the split
+# without knowing whose numbers these were.
+_CODEX_USAGE_KEYS = {
+    "input_tokens": "input_tokens",
+    "output_tokens": "output_tokens",
+    "cache_read_tokens": "cached_input_tokens",
+    "cache_write_tokens": "cache_write_input_tokens",
+    "reasoning_tokens": "reasoning_output_tokens",
+}
 # copilot `session.shutdown` per-model usage keys, mapped onto Usage's split
 # fields. Summation semantics, verified against 15 local 1.0.75 stores:
 # `inputTokens` *includes* both cache fields (inputTokens ==
@@ -1064,17 +1083,51 @@ def _codex_jsonl_usage(stdout: str) -> Usage | None:
     """Sum token usage over codex's ``--json`` event stream (JSONL).
 
     Each ``turn.completed`` event carries a usage object; input and output
-    tokens sum across turns. Codex reports no cost. None when no usage event
-    parses, so the caller falls back to the estimate.
+    tokens sum across turns onto ``tokens``, and the per-kind counts sum onto the
+    split fields (basicly-jr0l.37) so a cost model can price the cached portion
+    an order of magnitude cheaper than the uncached one. ``tokens`` stays
+    input + output — see :data:`_CODEX_TOKEN_KEYS` for the measured reason the
+    cache and reasoning counts are subsets, not addends. Codex reports no cost.
+    None when no usage event parses, so the caller falls back to the estimate.
     """
     total = 0
     found = False
-    for usage in _codex_turn_usages(stdout):
+    usages = _codex_turn_usages(stdout)
+    for usage in usages:
         values = [usage[key] for key in _CODEX_TOKEN_KEYS if isinstance(usage.get(key), int)]
         if values:
             total += sum(values)
             found = True
-    return Usage(tokens=total, cost=None, estimated=False) if found else None
+    if not found:
+        return None
+    split = _codex_usage_split(usages)
+    return Usage(
+        tokens=total,
+        cost=None,
+        estimated=False,
+        input_tokens=split["input_tokens"],
+        output_tokens=split["output_tokens"],
+        cache_read_tokens=split["cache_read_tokens"],
+        cache_write_tokens=split["cache_write_tokens"],
+        reasoning_tokens=split["reasoning_tokens"],
+    )
+
+
+def _codex_usage_split(usages: list[dict]) -> dict[str, int | None]:
+    """Sum codex's per-kind token counts across turns, leaving an absent kind null.
+
+    A count no turn reported stays None rather than 0, because those are
+    different claims: 0.146.0 reports a real ``reasoning_output_tokens`` of 0 for
+    a turn that did no reasoning, so a fabricated 0 for a build that omits the
+    field would be indistinguishable from that measurement.
+    """
+    split: dict[str, int | None] = dict.fromkeys(_CODEX_USAGE_KEYS)
+    for usage in usages:
+        for field, key in _CODEX_USAGE_KEYS.items():
+            value = usage.get(key)
+            if isinstance(value, int) and not isinstance(value, bool):
+                split[field] = (split[field] or 0) + value
+    return split
 
 
 def _codex_turn_usages(stdout: str) -> list[dict]:

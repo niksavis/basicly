@@ -625,9 +625,19 @@ Probed live and pinned during components 1 and `basicly-kjc5.14`:
   `session.usage_checkpoint` event is *not* the source: it survives a kill but carries credits
   and no tokens at all. The earlier "always meters by estimate" note held for the stdout
   envelope only and is superseded.
-- **codex** — extraction is fixture-based (`turn.completed`, with `cached_input_tokens` excluded
-  as an input subset); the CLI is not on this machine's PATH, so it is unverified live
-  (`basicly-0jiq`, deferred). A mismatch degrades to the estimate rather than failing.
+- **codex** — usage rides on each `--json` `turn.completed` event, and it is now **verified live**
+  against codex-cli 0.146.0 (`basicly-jr0l.37`), superseding the earlier "not on this machine's
+  PATH, so unverified" note and unblocking `basicly-0jiq`. The turn carries `input_tokens`,
+  `cached_input_tokens`, `cache_write_input_tokens`, `output_tokens` and
+  `reasoning_output_tokens`, all of which land on the split fields. Both cached input and
+  reasoning output are **subsets**, not addends: a probed turn reporting 12764 / 9984 / 155 / 147
+  is accounted `total_tokens` 12919 by codex itself, and 12764 + 155 == 12919 exactly, so the
+  total stays input + output — the same superset convention copilot's `inputTokens` follows,
+  which leaves uncached input as the derivable remainder rather than a fourth stored count.
+  Settling the reasoning half needed a probe forced to *do* reasoning
+  (`model_reasoning_effort=high`); every earlier sample reported 0, and the fixture composed from
+  the documented shape carried neither the cache-write nor the reasoning key, which is how the
+  dropped-split defect survived. A mismatch degrades to the estimate rather than failing.
 
 Usage capture is opt-in per call site (`capture_usage`), and deliberately so: it switches some
 adapters' stdout to JSON, which the rubric judge's plain-text line parser cannot read. The judge
