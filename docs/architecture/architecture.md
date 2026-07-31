@@ -83,9 +83,15 @@ process_ and _the state_, and enforces both in code:
   front matter. Most rungs of `derive_phase` are mechanical enough to express as
   data; the `verified` term is not. It reads
   `gates.can_advance and (worktree is not None or has_children)`, and the ship rung
-  adds `(worktree is None or verified)` — together the _landed_ invariant found by
-  incident `basicly-k35r`, where approving ship before the landing wedged the phase
-  with no route back to the merge. In YAML that becomes a boolean expression
+  adds `gates.can_advance and (worktree is None or verified)` — together the
+  _landed_ invariant found by incident `basicly-k35r`, where approving ship before
+  the landing wedged the phase with no route back to the merge. The leading
+  `gates.can_advance` on the ship rung is the second half of that invariant, added
+  after `basicly-jr0l.49`: a missing binding does not by itself mean _torn down
+  after the merge_, because a leaf that never built has no binding either, so
+  without it an out-of-order ship approval closed an unstarted bead with zero work
+  done. The green required gate is the discriminator — the build→verify landing
+  records it and nothing else does. In YAML that becomes a boolean expression
   language, and the invariant then lives where the type checker cannot see it, the
   test suite cannot easily target it, and review will not catch a subtle edit. The
   general form is worth stating once, because it applies past this decision:

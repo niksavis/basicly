@@ -126,12 +126,21 @@ def derive_phase(
     with no route back to the merge (basicly-k35r). "Landed" holds when the
     worktree is gone (torn down after merge, or a feature with no binding) or
     when verify is green on the still-bound worktree (merged, pending teardown).
+
+    A missing binding alone is *not* landed evidence, which is the hole k35r left
+    open (basicly-jr0l.49): a leaf that never built has no binding either, and
+    ``approve_checkpoint`` enforces no phase ordering, so a ship approval
+    recorded out of order on an unstarted leaf derived ``ship`` and closed the
+    bead with zero work done. The green required gate is what separates the two —
+    the build->verify landing records it, and nothing a never-built node has run
+    does — so every landed state must carry it.
     """
     if status == "closed":
         return "done"
     verified = gates.can_advance and (worktree is not None or has_children)
+    landed = gates.can_advance and (worktree is None or verified)
     ladder = (
-        ("ship", "ship" in checkpoints and (worktree is None or verified)),
+        ("ship", "ship" in checkpoints and landed),
         ("verify", verified),
         ("build", worktree is not None),
         ("decompose", "decompose" in checkpoints or has_children),

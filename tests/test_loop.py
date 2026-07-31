@@ -813,6 +813,53 @@ def test_ship_refuses_an_unmerged_worktree(
     assert "not merged" in result.detail
 
 
+def test_advance_refuses_to_close_a_leaf_that_never_built(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An out-of-order ship approval must not close an unstarted leaf (basicly-jr0l.49).
+
+    ``approve_checkpoint`` enforces no phase ordering, so ``ship`` can be recorded
+    on a bead that never built. Such a leaf has no worktree binding — the very
+    signal a node torn down after its merge shows — and the ladder read that as
+    landed, so the advance closed the bead with zero work done. The
+    basicly-o0q3 guard above could not catch it: that guard checks the binding's
+    branch, and here there is no binding to check.
+
+    The phase is *derived* rather than pinned, unlike the other tests in this
+    file: the defect was in the derivation, so pinning ``ship`` would assert the
+    bug back into place.
+    """
+    checkpoints = ("ship",)
+    gates = _gate(can_advance=False)  # the build->verify landing never ran
+    phase = loop.loop_state.derive_phase("open", checkpoints, None, gates, False)
+    assert phase != "ship"
+    at(
+        NodeState(
+            issue_id="i",
+            status="open",
+            issue_type="bug",
+            phase=phase,
+            worktree=None,
+            gates=gates,
+            checkpoints=checkpoints,
+            rework={},
+            agent_context=None,
+            has_children=False,
+        )
+    )
+
+    def _boom(*_a, **_k):
+        raise AssertionError("a leaf that never built must not be closed or torn down")
+
+    monkeypatch.setattr(worktree, "cleanup", _boom)
+    monkeypatch.setattr(loop, "_run_br", _boom)
+    monkeypatch.setattr(loop.merge, "commit_tracker_state", _boom)
+
+    result = _advance(tmp_path)
+    assert result.blocked
+    assert result.to_phase != "done"
+
+
 def test_ship_proceeds_when_the_worktree_landed(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
