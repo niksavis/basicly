@@ -10,7 +10,7 @@
     />
     <meta
       name="keywords"
-      content="coding agents, agent harness, harness engineering, agent SDLC, YAML catalog, git hooks, deterministic gates, worktree isolation, roadmap, CLAUDE.md, AGENTS.md, copilot-instructions"
+      content="coding agents, agent harness, harness engineering, agent SDLC, YAML catalog, git hooks, deterministic gates, worktree isolation, model tiers, CLAUDE.md, AGENTS.md, copilot-instructions"
     />
     <link rel="icon" type="image/svg+xml" href="assets/logo.svg" />
     <meta property="og:type" content="website" />
@@ -466,42 +466,14 @@
         color: var(--text-bright);
       }
 
-      /* ---------- roadmap: status legend + per-pillar chips ---------- */
-      /* Five states, each carrying a word as well as a colour, so the map is
-         readable without relying on hue alone. */
-      .legend {
-        margin-top: 1.5rem;
-        display: grid;
-        gap: 0.5rem;
-        padding: 0;
-        list-style: none;
-      }
-      .legend li {
-        display: flex;
-        gap: 0.85rem;
-        align-items: baseline;
-        font-size: 0.9rem;
-        color: var(--text-dim);
-      }
+      /* ---------- status: per-pillar shipped chips ---------- */
+      /* One state only — everything listed is running code — so the marker is a
+         tick rather than a word repeated down the column. */
       .st {
-        flex: 0 0 7.5rem;
+        flex: 0 0 auto;
         font-family: var(--mono);
-        font-size: 0.72rem;
-        letter-spacing: 0.07em;
-        text-transform: uppercase;
-        white-space: nowrap;
-      }
-      .shipped > .st {
+        font-size: 0.82rem;
         color: var(--green);
-      }
-      .building > .st {
-        color: var(--indigo);
-      }
-      .designed > .st {
-        color: var(--amber);
-      }
-      .research > .st {
-        color: var(--orange);
       }
       ul.chips {
         margin-top: 0.75rem;
@@ -521,19 +493,6 @@
          rows, and a stretched card leaves dead space inside its border. */
       #roadmap .grid.two {
         align-items: start;
-      }
-      @media (max-width: 620px) {
-        .legend li,
-        ul.chips li {
-          flex-direction: column;
-          gap: 0.15rem;
-        }
-        /* A column flex line reads `flex-basis` as a height, so the status
-           token must drop its fixed 7.5rem basis or it becomes 7.5rem tall. */
-        .legend .st,
-        ul.chips .st {
-          flex: 0 0 auto;
-        }
       }
 
       footer {
@@ -558,7 +517,7 @@
         </p>
         <div class="links">
           <a class="btn primary" href="#install">Get started</a>
-          <a class="btn ghost" href="#roadmap">Roadmap</a>
+          <a class="btn ghost" href="#roadmap">Status</a>
           <a class="btn ghost" href="https://github.com/niksavis/basicly"
             >GitHub</a
           >
@@ -856,104 +815,65 @@
 
     <section id="roadmap">
       <div class="wrap">
-        <p class="kicker">Roadmap</p>
-        <h2>What is built, and what is next</h2>
+        <p class="kicker">Status</p>
+        <h2>What has shipped</h2>
         <p class="lead">
-          No dates — this is a status map, not a schedule. The architecture
-          reference separates the system as it exists in code from where it is
-          going, and this map keeps that line visible per capability, along the
-          same four pillars. It moves as features land.
+          Running code only, along the same four pillars: every line below is in
+          the tree today and exercised on this project's own development.
+          Nothing planned, partial or under construction is listed here — where
+          the system is going lives in the architecture reference, not on this
+          page. The list moves as features land.
         </p>
-        <ul class="legend" aria-label="Status legend">
-          <li class="shipped">
-            <span class="st">&#10003; shipped</span>
-            <span
-              >Running code in the current release, exercised on this project's
-              own development.</span
-            >
-          </li>
-          <li class="building">
-            <span class="st">&#9654; building</span>
-            <span
-              >Sequenced into a phase being worked now, with an open work
-              package and written exit criteria.</span
-            >
-          </li>
-          <li class="designed">
-            <span class="st">&#9671; designed</span>
-            <span
-              >Settled in a design document but sequenced behind a later phase,
-              and nothing is built. A recorded decision is not evidence that
-              anything enforces it.</span
-            >
-          </li>
-          <li class="research">
-            <span class="st">? researching</span>
-            <span
-              >The deliverable is a number, not a capability: a measurement
-              whose result is allowed to cancel the work.</span
-            >
-          </li>
-        </ul>
 
         <div class="grid one">
           <div class="card accent">
             <h3><i>01</i> Guidance</h3>
             <ul class="chips">
-              <li class="shipped">
-                <span class="st">&#10003; shipped</span>
+              <li>
+                <span class="st" aria-hidden="true">&#10003;</span>
                 <span
                   >One catalog projected to Claude, Codex and Copilot</span
                 >
               </li>
-              <li class="shipped">
-                <span class="st">&#10003; shipped</span>
+              <li>
+                <span class="st" aria-hidden="true">&#10003;</span>
                 <span>Drift gate run by CI</span>
               </li>
-              <li class="shipped">
-                <span class="st">&#10003; shipped</span>
+              <li>
+                <span class="st" aria-hidden="true">&#10003;</span>
                 <span
                   >Path-scoped rules, so conditional guidance loads on a
                   matching file instead of always</span
                 >
               </li>
-              <li class="shipped">
-                <span class="st">&#10003; shipped</span>
+              <li>
+                <span class="st" aria-hidden="true">&#10003;</span>
                 <span
                   >An invocation axis per entry: only model-invoked entries pay
                   context load</span
                 >
               </li>
-              <li class="building">
-                <span class="st">&#9654; building</span>
+              <li>
+                <span class="st" aria-hidden="true">&#10003;</span>
                 <span
-                  >Deterministic routing evals — does an entry rank first for
-                  the prompt it exists for</span
+                  >A subagent's capability level is a portable tier —
+                  <code>low</code>, <code>medium</code>, <code>high</code>,
+                  <code>maximum</code> — never a provider model id. Pinning an id
+                  is refused at lint, because the same model is spelled
+                  differently on every surface that serves it</span
                 >
               </li>
-              <li class="building">
-                <span class="st">&#9654; building</span>
-                <span>An eval case file required per catalog entry</span>
-              </li>
-              <li class="building">
-                <span class="st">&#9654; building</span>
+              <li>
+                <span class="st" aria-hidden="true">&#10003;</span>
                 <span
-                  >Relieving the always-on baseline by scoping what is
-                  conditional</span
-                >
-              </li>
-              <li class="building">
-                <span class="st">&#9654; building</span>
-                <span
-                  >A tutorial and how-to layer from install to first shipped
-                  unit</span
-                >
-              </li>
-              <li class="research">
-                <span class="st">? researching</span>
-                <span
-                  >Whether an entry changes behaviour, and which baseline rules
-                  bind while an agent works</span
+                  >A committed model map that <code>basicly install</code> ships
+                  into your repo resolves that tier: 32 cells — four tiers across
+                  four vendors, each on the two surfaces that serve it, the
+                  vendor's own API and GitHub Copilot — every cell carrying that
+                  surface's own published cost and token limits. Five record a
+                  tier a surface does not serve and carry no model at all, so a
+                  lookup fails loudly instead of quietly running a different
+                  tier</span
                 >
               </li>
             </ul>
@@ -962,51 +882,29 @@
           <div class="card accent">
             <h3><i>02</i> Gates</h3>
             <ul class="chips">
-              <li class="shipped">
-                <span class="st">&#10003; shipped</span>
+              <li>
+                <span class="st" aria-hidden="true">&#10003;</span>
                 <span
                   >Git hook floor across pre-commit, commit-msg and
                   pre-push</span
                 >
               </li>
-              <li class="shipped">
-                <span class="st">&#10003; shipped</span>
+              <li>
+                <span class="st" aria-hidden="true">&#10003;</span>
                 <span>Agent hooks for Claude Code and Copilot</span>
               </li>
-              <li class="shipped">
-                <span class="st">&#10003; shipped</span>
+              <li>
+                <span class="st" aria-hidden="true">&#10003;</span>
                 <span
                   >Verify pipeline with <code>fast</code>, <code>full</code> and
                   <code>staged</code> modes</span
                 >
               </li>
-              <li class="building">
-                <span class="st">&#9654; building</span>
+              <li>
+                <span class="st" aria-hidden="true">&#10003;</span>
                 <span
-                  >Every gate classified by type, and a pre-flight gate that
-                  writes nothing</span
-                >
-              </li>
-              <li class="building">
-                <span class="st">&#9654; building</span>
-                <span
-                  >A required severity on judged output, and a lint against a
-                  pre-judging review prompt</span
-                >
-              </li>
-              <li class="building">
-                <span class="st">&#9654; building</span>
-                <span
-                  >Rework convergence detection from the open-finding set, not
-                  the count</span
-                >
-              </li>
-              <li class="building">
-                <span class="st">&#9654; building</span>
-                <span
-                  >Install reporting the capability tier it actually delivered —
-                  enforcement needs plugin-tier support, and degrades to advice
-                  without it</span
+                  >A check may declare a repair, so a mechanically fixable
+                  failure is fixed rather than reported</span
                 >
               </li>
             </ul>
@@ -1015,66 +913,48 @@
           <div class="card accent">
             <h3><i>03</i> The loop</h3>
             <ul class="chips">
-              <li class="shipped">
-                <span class="st">&#10003; shipped</span>
+              <li>
+                <span class="st" aria-hidden="true">&#10003;</span>
                 <span>Single-track loop, intake to retro, any agent</span>
               </li>
-              <li class="shipped">
-                <span class="st">&#10003; shipped</span>
+              <li>
+                <span class="st" aria-hidden="true">&#10003;</span>
                 <span>Worktree isolation per unit of work</span>
               </li>
-              <li class="shipped">
-                <span class="st">&#10003; shipped</span>
+              <li>
+                <span class="st" aria-hidden="true">&#10003;</span>
                 <span
                   >Parallel lanes behind a supervisor and a serial merge
                   queue</span
                 >
               </li>
-              <li class="shipped">
-                <span class="st">&#10003; shipped</span>
+              <li>
+                <span class="st" aria-hidden="true">&#10003;</span>
                 <span
                   >Autonomy grants with a spend ceiling, a decision queue and a
                   confined decider</span
                 >
               </li>
-              <li class="shipped">
-                <span class="st">&#10003; shipped</span>
+              <li>
+                <span class="st" aria-hidden="true">&#10003;</span>
+                <span
+                  >A checkpoint a grant declined says why it declined, so "no
+                  grant covers this" reads differently from "a covering grant
+                  refused over a wrinkle elsewhere in the session"</span
+                >
+              </li>
+              <li>
+                <span class="st" aria-hidden="true">&#10003;</span>
+                <span
+                  >Token telemetry read from each adapter's own usage report —
+                  including Copilot's AI-credit spend, and a cached-versus-reasoning
+                  split for Codex, so a cached token is not priced as a fresh
+                  one</span
+                >
+              </li>
+              <li>
+                <span class="st" aria-hidden="true">&#10003;</span>
                 <span>Release automation up to the annotated tag</span>
-              </li>
-              <li class="building">
-                <span class="st">&#9654; building</span>
-                <span
-                  >A per-model spend and wall-clock forecast, enforced when a
-                  pass is admitted</span
-                >
-              </li>
-              <li class="building">
-                <span class="st">&#9654; building</span>
-                <span
-                  >A multi-lane run with zero human interventions caused by a
-                  harness defect</span
-                >
-              </li>
-              <li class="designed">
-                <span class="st">&#9671; designed</span>
-                <span
-                  >A named role per judgment step, each with its own tool
-                  policy, tier and output contract</span
-                >
-              </li>
-              <li class="research">
-                <span class="st">? researching</span>
-                <span
-                  >Cost per landed package — the instrument every tier claim
-                  rests on</span
-                >
-              </li>
-              <li class="research">
-                <span class="st">? researching</span>
-                <span
-                  >Whether deterministic code localisation cuts what an
-                  implementer spends before its first edit</span
-                >
               </li>
             </ul>
           </div>
@@ -1082,43 +962,26 @@
           <div class="card accent">
             <h3><i>04</i> The work graph</h3>
             <ul class="chips">
-              <li class="shipped">
-                <span class="st">&#10003; shipped</span>
+              <li>
+                <span class="st" aria-hidden="true">&#10003;</span>
                 <span
                   >Issues, dependencies, gate results, checkpoints and evidence
                   in a tracked graph</span
                 >
               </li>
-              <li class="shipped">
-                <span class="st">&#10003; shipped</span>
+              <li>
+                <span class="st" aria-hidden="true">&#10003;</span>
                 <span
                   >Phase derived from that state, so resume is a read rather
                   than a replay</span
                 >
               </li>
-              <li class="building">
-                <span class="st">&#9654; building</span>
-                <span>The scheduler score and rank recorded per dispatch</span>
-              </li>
-              <li class="designed">
-                <span class="st">&#9671; designed</span>
+              <li>
+                <span class="st" aria-hidden="true">&#10003;</span>
                 <span
-                  >An owned in-process append-only event log, removing the
-                  external binary from the critical path</span
-                >
-              </li>
-              <li class="designed">
-                <span class="st">&#9671; designed</span>
-                <span
-                  >Provenance on every edge: extracted, inferred or
-                  ambiguous</span
-                >
-              </li>
-              <li class="designed">
-                <span class="st">&#9671; designed</span>
-                <span
-                  ><code>fsck</code> and <code>rebuild</code>, so "the log is
-                  the truth" is checkable</span
+                  >Why a lane went when it did, recorded on its run marker: the
+                  dispatch rank always, plus the scheduler's score and rank
+                  whenever the scheduler ranked that lane</span
                 >
               </li>
             </ul>
@@ -1134,16 +997,14 @@
             reason.
           </li>
           <li>
-            <strong>The authoritative copy</strong> of this map — with the
-            evidence each status requires, a pointer per row, and the items
-            deliberately deferred until someone asks for them — is
+            <strong>The evidence behind each line</strong> — what the capability
+            is and where it lives in the code — is in the
             <a
-              href="https://github.com/niksavis/basicly/blob/main/docs/architecture/architecture.md#15-roadmap--status-per-capability"
-              >architecture §15</a
-            >. The order the unbuilt rows get built in lives in the
-            <a
-              href="https://github.com/niksavis/basicly/blob/main/docs/plan/implementation-plan.md"
-              >implementation plan</a
+              href="https://github.com/niksavis/basicly/blob/main/docs/architecture/architecture.md"
+              >architecture reference</a
+            >, and every release is itemized in the
+            <a href="https://github.com/niksavis/basicly/blob/main/CHANGELOG.md"
+              >changelog</a
             >.
           </li>
         </ul>
@@ -1164,8 +1025,8 @@
               href="https://github.com/niksavis/basicly/blob/main/docs/architecture/architecture.md"
               >Architecture</a
             >
-            — the authoritative reference: current system, target state, then the
-            roadmap that tracks the gap between them
+            — the authoritative reference for the system as it exists in code,
+            and for where it is going
           </li>
           <li>
             <a

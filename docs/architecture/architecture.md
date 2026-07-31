@@ -340,6 +340,8 @@ and `src/basicly/` never contains catalog data.
     skills/<skill-name>/skill.yaml    # projected to SKILL.md at target roots, see below
     agents/<slug>/agent.yaml          # + agents/blocks/<id>.block.yaml (§5)
     hooks/*.py + hooks.yaml           # git-stage + agent hook scripts and their manifest
+    models/{anchors.yaml,model-map.json,model-map.schema.json}
+    permissions/permissions.yaml      # agent-permissions deny-list, see §8
     rubrics/*.rubric.yaml             # work-type behavioral rubrics (basicly-0122), advisory gate
     schemas/*.schema.json
     targets/{claude,copilot,codex}.yaml
@@ -455,7 +457,36 @@ spec `stage`, with an optional per-spec `matcher`), and `copilot` (managed
 `.github/hooks/basicly-<id>.json` files). The `tool-usage` hook rides both agent
 managers: a PostToolUse counter tallying every shell command's pipeline heads into the
 self-ignored `.basicly/usage/tool-usage.json` — token-free telemetry for culling idle
-tools/skills from the catalog with real data.
+tools/skills from the catalog with real data. A head is resolved _past a wrapper_ (`uv`,
+`npx`, `env`, and their subcommands, flags, flag values and `VAR=val` prefixes), so the
+wrapped tool is credited too and not only the wrapper: `env -C /repo uv run pytest -q`
+records `env`, `uv` and `pytest`, where it used to lose `pytest` entirely.
+
+**Model map**: `core/models/` resolves the portable **model tier** a catalog source
+declares (§5) to a concrete model. `anchors.yaml` is the reviewed input — one anchor
+model per (tier, vendor), plus the surface table and the capability rule — and
+[`.scripts/generate_model_map.py`](../../.scripts/generate_model_map.py) resolves it
+into the generated `model-map.json`, validated against its published
+`model-map.schema.json`. Three axes, because all three change the answer: **tier x
+vendor x surface**, which is 4 x 4 x 2 = **32 cells, 5 of them unavailable** (measured
+2026-07-31). Cost _and_ token limits are recorded **per surface** rather than per
+vendor, because both genuinely vary there — `gpt-5.6-luna` costs 0.2/1.2 USD per MTok
+on `openai` and 1/6 on `github-copilot`, and `github-copilot` caps
+`claude-haiku-4.5` input at 136,000 tokens where the Anthropic surface publishes no
+input cap. An unavailable cell records a `status` and a `reason` and deliberately
+carries **no `model` key**, so a consumer reading `["model"]` fails loudly instead of
+being silently demoted onto another tier's model. Two constraints keep it inside §3.8:
+the generator fetches models.dev at **authoring and check time only, never in the
+dispatch path**, so nothing that dispatches an agent depends on the network and there
+is deliberately no `[[verify.checks]]` entry for it; and `--check` **reports** drift
+and never writes, because a community-contributed upstream edit must surface as a red
+check rather than as a silent change to which model runs someone's code. The committed
+map's _shape_ is gated offline by `tests/test_model_map.py`. Being under `core/`, the
+map ships in the wheel and `basicly install` materializes it into a consumer repo (§9).
+`basicly.models` reads it at dispatch to resolve a declared tier into the one id the
+target surface accepts, and refuses the dispatch when the cell is unavailable rather
+than substituting another tier's model (§12.8). The lookup is a plain read of committed
+data, so the dispatch path stays offline and deterministic.
 
 #### 4.3 User overlay
 
@@ -577,11 +608,21 @@ hand-edited — from YAML sources:
   `posture`) the projector joins, so no part of a delegation-quality
   description can be forgotten. `tools` is a mandatory explicit allowlist —
   agents never silently inherit every tool. `tier` names the **model tier** the
-  agent needs (`low`, `medium`, `high`, `maximum` — roster design R5) and is
-  never emitted: no family receives a `model` line, because a provider model id
-  is not portable across agent families (models.dev spells one model
-  `claude-haiku-4.5` for Copilot and `claude-haiku-4-5` for Anthropic), so
-  catalog-lint rejects a `model:` key and names `tier` instead. A `claude:` map
+  agent needs (`low`, `medium`, `high`, `maximum` — roster design R5),
+  single-sourced from `schema.MODEL_TIERS` into a `tier` enum on
+  `agent.schema.json` and kept in step by a tripwire test. It is **never
+  emitted**: no family receives a `model` line, because a provider model id is
+  not portable across agent families (models.dev spells one model
+  `claude-haiku-4.5` for Copilot and `claude-haiku-4-5` for Anthropic); the
+  resolution from a tier to a concrete per-surface id lives in the model map
+  (§4.2). Replacing `model` with `tier` was a **breaking change** to the source
+  format, so the deprecation is engineered rather than just documented: `model`
+  is retained as a **deprecated** property on the schema — which sets
+  `additionalProperties: false` — purely so `catalog lint` owns the actionable
+  message ("declare the portable model tier instead") in place of a bare
+  "additional properties are not allowed", and `model` stays in
+  `agents.RESERVED_FRONTMATTER_KEYS` so the `claude:` passthrough cannot smuggle
+  a provider id back in. A `claude:` map
   passes Claude-only frontmatter (e.g. `memory`, `maxTurns`) through verbatim.
 - **Emission**: `.claude/agents/<slug>.md` only — the single root Claude Code
   and VS Code both parse natively (decided in `basicly-ajq` on the
@@ -766,7 +807,7 @@ names were removed, not aliased).
 | `basicly check` | Byte-for-byte staleness check of generated files + manifest; exit `1` on mismatch, no auto-fix |
 | `basicly skills-build [--root ...\|--all-default-roots]` / `skills-check` | Same build/check contract, applied to the skill catalog |
 | `basicly agents-build` / `agents-check` | Same build/check contract for the agent catalog: composes slot blocks into `.claude/agents/<slug>.md` (single-source emission, §5 agent composition model) |
-| `basicly hooks-build [--no-install]` / `hooks-check` | Materializes catalog hook scripts, merges a managed `repo: local` block into `.pre-commit-config.yaml` (foreign hooks preserved, idempotent), and then runs `pre-commit install` for every managed stage so the gates are actually active (`--no-install` skips activation; graceful when pre-commit is absent). `hooks-check` reports projection drift and warns (non-fatal) when the git hooks are not installed |
+| `basicly hooks-build [--no-install]` / `hooks-check` | Materializes catalog hook scripts, merges a managed `repo: local` block into `.pre-commit-config.yaml` (foreign hooks preserved, idempotent), and then runs `pre-commit install` for every managed stage so the gates are actually active (`--no-install` skips activation; graceful when pre-commit is absent). `hooks-check` reports projection drift and warns (non-fatal) when the git hooks are not installed. It skips the script content comparison when the installed catalog and the target are the same working-tree-relative path in the same git repository — basicly installed editable from its own checkout, where a difference is uncommitted or branch-local work rather than drift, so a hook-script change could not otherwise pass its own landing verify — and falls back to comparing whenever git cannot answer; path equality is required as well as repository identity, so a consumer with an in-repo `.venv` keeps the gate |
 | `basicly permissions-build` / `permissions-check` | Projects the catalog agent-permissions deny-list (`.basicly/core/permissions/permissions.yaml`) into the co-owned `.claude/settings.json` `permissions.deny`, the way hooks are managed: ensure-present (managed patterns merged in, consumer-added entries preserved, nothing pruned — an extra deny is fail-safe and a flat deny string has no per-entry marker), with a semantic subset-match drift check. Claude-only: Copilot CLI has no config-file deny (session-scoped `--deny-tool` flag only) and Codex forbids project-scope override of `sandbox_mode`/`approval_policy`, so those guardrails are invocation-only — the copilot runner injects the deny-list as `--deny-tool` flags at dispatch (`basicly-lqz5`), while Codex sandbox/approval defaults remain to wire (`basicly-t0kt`) |
 | `basicly usage report` | Reports the tool/skill counts recorded by the `tool-usage` agent hook (token-free telemetry in `.basicly/usage/`) and names never-used catalog skills — the culling input (§4.3) |
 | `basicly usage forecast` | Reports the forecast error per dispatch — actual spend over forecast working set, per bead/class/model, with a median — from the run records and the committed `[harness-run]` markers. Refuses to compute an error for a record missing either half and reports those as unpaired counts, so an empty report explains itself (§12.8.1, `basicly-jr0l.34`) |
@@ -986,7 +1027,13 @@ fix-later, and a bead is created for everything not ignored. Each _[human checkp
 approval (`policy checkpoint <issue> <name> --approve`) is gated on an interactive terminal:
 off a TTY — as any tool-invoked Bash runs — the command refuses and issues a one-time
 confirm code that a human must echo back with `--confirm`, so a subagent driving the loop
-cannot self-approve ship autonomously. This mitigates the shared-identity gap (a fork and its
+cannot self-approve ship autonomously. When an autonomy grant _was_ consulted and declined
+— an uncovered checkpoint, an issue outside the grant's session tree, a spent token budget,
+or a ship whose lights-out preconditions do not hold — the reason rides on the challenge's
+`detail` and is threaded through `loop advance` and the supervisor's decision queue, so an
+operator can tell _no grant_ from _a covering grant that refused_; a bare confirmation
+request made the two indistinguishable. No decision logic changed with it. This mitigates
+the shared-identity gap (a fork and its
 human share one OS/git identity); it does not defeat a process deliberately re-running with
 the code.
 
@@ -1126,9 +1173,22 @@ by an explicit `[[runner.agents]]` command template in `basicly.toml`. A runner 
 optional **`model`** (`[[runner.agents]] model = "opus"`): the invocation seam folds it into
 the command — substituting a `{model}` placeholder when the template has one (the escape hatch
 for an agent whose flag is not `--model`), otherwise injecting `--model <value>` right after
-the binary; no model leaves the argv unchanged. This is model/agent-property _awareness at the
-invocation seam_, not a token-level inference client — per-track model choice stays out of
-scope. There is no cross-agent CLI invocation standard, so an unknown agent's command is
+the binary; no model leaves the argv unchanged. Preferred over a pinned id is a portable
+**`tier`** (`low`/`medium`/`high`/`maximum`), resolved at dispatch through the committed map
+(§4.2) into the one spelling the target surface accepts — `claude-haiku-4-5` on the Anthropic
+surface, `claude-haiku-4.5` on Copilot's — with `[runner] default_tier` applied to any spec
+declaring none. Resolution is most-specific-first (`model` pin → `tier` → default) and it
+**refuses before spawning** when the tier resolves to nothing, naming the agent and the config
+key, because silently running on another tier's model is the failure the map's keyless
+`unavailable` cells exist to prevent. A tier aimed at a family that cannot pin one at all — the
+`manual` handoff — is recorded as _not honoured_ rather than as satisfied. The run record keeps
+the provenance, not just the id: the tier, which input decided it, and the model the adapter
+reported it **actually** used, which is measured per family rather than assumed (claude names it
+three ways and keys `modelUsage` by the dated build while carrying the short `canonicalModel`;
+copilot names it in its session store's `modelMetrics` keys and one dispatch may list several;
+codex 0.146.0 names it nowhere, so codex is recorded as _unobserved_ instead of assumed to
+match). This is model/agent-property _awareness at the invocation seam_, not a token-level
+inference client — per-track model choice stays out of scope. There is no cross-agent CLI invocation standard, so an unknown agent's command is
 **never guessed** — when
 nothing matches, selection falls back to a **`manual` handoff runner** that shells out to
 nothing and instead surfaces the exact prompt + worktree path,
@@ -1341,11 +1401,14 @@ this harness is measurably better than the others that also believe it.
 **14.2 The factory — built, and its remaining honesty gaps.** The supervisor,
 autonomy grant ledger, decision queue, lane mini-loop, and merge queue v2 have
 landed and have been exercised on this repo's own development, including a
-supervised multi-lane run. Two recorded gaps matter because a reader would otherwise
-believe the design is enforced: no model is pinned on any runner adapter, so the
-tier economics below rest on an unpinned mapping and a dispatch is not reproducible
-in its inputs; and coupling attribution still depends on intra-pass landing order,
-which the determinism rule forbids. `factory-design` §9 is the authoritative
+supervised multi-lane run. The tier-to-model mapping is published, drift-checked
+(§4.2) and now **bound**: a declared tier resolves to a concrete model at dispatch and
+an unresolvable one refuses rather than silently running on another tier's model
+(§12.8). What the binding does not yet give is a _chosen_ tier — no role or catalog
+entry declares one, so in practice every dispatch is still unpinned until a `tier` or
+`[runner] default_tier` is configured. One recorded gap remains, and it matters
+because a reader would otherwise believe the design is enforced: coupling attribution
+still depends on intra-pass landing order, which the determinism rule forbids. `factory-design` §9 is the authoritative
 reconciliation of decision against code.
 
 **14.3 The judgment layer — designed, unbuilt.** Today the factory dispatches one
