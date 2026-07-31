@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import commit
+from basicly import commit, run_record
 
 HOOK_PATH = Path(__file__).resolve().parent.parent / ".basicly" / "core" / "hooks" / "commit-msg.py"
 
@@ -365,3 +365,170 @@ def test_run_commit_reports_a_hook_rejection_without_retrying(
 
     assert result.committed is False
     assert "does not follow conventional commit format" in result.output
+
+
+# --- model provenance (basicly-kjc5.60) -------------------------------------
+
+
+def _dispatch(repo_root: Path, bead: str, **provenance: object) -> None:
+    """Record one dispatch for *bead* the way the engine's own writer does.
+
+    Goes through ``run_record`` rather than hand-writing the JSON so the fields the
+    trailer reads stay the fields a real dispatch persists.
+    """
+    entry = run_record.build_record(
+        agent="claude",
+        handoff=False,
+        returncode=0,
+        duration_s=1.0,
+        command=("claude", "-p", run_record.REDACTED_PROMPT),
+        **provenance,  # type: ignore[arg-type]
+    )
+    run_record.record(repo_root, bead, entry)
+
+
+def test_resolved_model_is_stamped_as_the_model_trailer(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The dispatch's resolved model reaches the message as a final-paragraph trailer."""
+    repo_root = _tracker(tmp_path, BOUND_TASK)
+    _dispatch(repo_root, "basicly-kjc5.42", phase="build", model="claude-haiku-4-5")
+    monkeypatch.setattr(commit, "git", _FakeGit("9\t1\tsrc/basicly/commit.py\n"))
+
+    envelope = commit.assemble(repo_root, "carry the resolved model")
+
+    assert envelope.model == "claude-haiku-4-5"
+    assert envelope.message == (
+        "feat(commit): carry the resolved model (basicly-kjc5.42)\n\n"
+        "Harness-Model: claude-haiku-4-5\n"
+    )
+    # The gate reads the first line only, so the trailer must not change its verdict.
+    assert _hook_module().validate(envelope.message)
+
+
+def test_the_pinned_value_is_stamped_verbatim_not_the_observed_one(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A surface spelling is carried character for character, and observed never wins.
+
+    Copilot's dotted id and the dated build the adapter reports back are the same
+    model under different spellings; the trailer states what was pinned.
+    """
+    repo_root = _tracker(tmp_path, BOUND_TASK)
+    _dispatch(
+        repo_root,
+        "basicly-kjc5.42",
+        phase="lane",
+        model="claude-haiku-4.5",
+        model_tier="fast",
+        model_source="agent-tier",
+        tier_honoured=True,
+        observed_models=("claude-haiku-4-5-20251001",),
+    )
+    monkeypatch.setattr(commit, "git", _FakeGit("9\t1\tsrc/basicly/commit.py\n"))
+
+    envelope = commit.assemble(repo_root, "carry the resolved model")
+
+    assert envelope.trailers == ("Harness-Model: claude-haiku-4.5",)
+
+
+def test_a_dispatch_that_asked_for_no_model_carries_no_trailer(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No tier and no pin means nothing was resolved because nothing was demanded.
+
+    The ordinary state of a repo that declares no tier, so it must commit exactly
+    as it did before the trailer existed — not be refused.
+    """
+    repo_root = _tracker(tmp_path, BOUND_TASK)
+    _dispatch(repo_root, "basicly-kjc5.42", phase="build")
+    monkeypatch.setattr(commit, "git", _FakeGit("9\t1\tsrc/basicly/commit.py\n"))
+
+    envelope = commit.assemble(repo_root, "carry the resolved model")
+
+    assert envelope.model is None
+    assert envelope.trailers == ()
+    assert envelope.message == "feat(commit): carry the resolved model (basicly-kjc5.42)"
+
+
+def test_an_unhonoured_tier_refuses_the_envelope_instead_of_an_empty_trailer(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A tier that pinned nothing is a demanded provenance nobody can answer."""
+    repo_root = _tracker(tmp_path, BOUND_TASK)
+    _dispatch(
+        repo_root,
+        "basicly-kjc5.42",
+        phase="build",
+        model_tier="fast",
+        model_source="agent-tier",
+        tier_honoured=False,
+    )
+    monkeypatch.setattr(commit, "git", _FakeGit("9\t1\tsrc/basicly/commit.py\n"))
+
+    with pytest.raises(ValueError, match="no model was pinned") as excinfo:
+        commit.assemble(repo_root, "carry the resolved model")
+
+    message = str(excinfo.value)
+    assert "'fast'" in message and "agent-tier" in message
+    assert "Harness-Model" in message, "the refusal names the trailer it would have emitted"
+
+
+def test_no_dispatch_record_at_all_carries_no_trailer(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A commit made outside a dispatch has no model provenance to claim."""
+    repo_root = _tracker(tmp_path, BOUND_TASK)
+    monkeypatch.setattr(commit, "git", _FakeGit("9\t1\tsrc/basicly/commit.py\n"))
+
+    envelope = commit.assemble(repo_root, "carry the resolved model")
+
+    assert envelope.trailers == ()
+
+
+def test_a_decider_dispatch_does_not_supply_the_work_commits_model(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A decision answered mid-build is the newest record but wrote none of the code."""
+    repo_root = _tracker(tmp_path, BOUND_TASK)
+    _dispatch(repo_root, "basicly-kjc5.42", phase="build", model="claude-opus-4-5")
+    _dispatch(repo_root, "basicly-kjc5.42", phase="decide", model="claude-haiku-4-5")
+    monkeypatch.setattr(commit, "git", _FakeGit("9\t1\tsrc/basicly/commit.py\n"))
+
+    envelope = commit.assemble(repo_root, "carry the resolved model")
+
+    assert envelope.model == "claude-opus-4-5"
+
+
+def test_a_worktree_reads_the_base_checkouts_run_records(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The dispatch was recorded in the main checkout; the commit happens in the worktree."""
+    base = tmp_path / "base"
+    base.mkdir()
+    _dispatch(base, "basicly-kjc5.42", phase="build", model="claude-opus-4-5")
+    worktree = _tracker(tmp_path / "worktree", BOUND_TASK)
+    monkeypatch.setattr(commit, "main_checkout", lambda _path: base)
+    monkeypatch.setattr(commit, "git", _FakeGit("9\t1\tsrc/basicly/commit.py\n"))
+
+    envelope = commit.assemble(worktree, "carry the resolved model")
+
+    assert envelope.model == "claude-opus-4-5"
+
+
+def test_the_body_and_the_trailers_are_separate_paragraphs() -> None:
+    """An authored body keeps the trailers as the message's own last paragraph."""
+    envelope = commit.Envelope(
+        type="feat",
+        scope="commit",
+        description="carry the resolved model",
+        bead="basicly-kjc5.42",
+        body="Reads the recorded provenance.",
+        model="claude-haiku-4-5",
+    )
+
+    assert envelope.message == (
+        "feat(commit): carry the resolved model (basicly-kjc5.42)\n\n"
+        "Reads the recorded provenance.\n\n"
+        "Harness-Model: claude-haiku-4-5\n"
+    )
