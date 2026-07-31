@@ -156,6 +156,66 @@ def test_python_c_and_m_inline_snippets_do_not_leak(tmp_path: Path) -> None:
     assert {tool: entry["count"] for tool, entry in _stats(tmp_path).items()} == {"python3": 2}
 
 
+def test_wrapper_flag_value_is_never_credited_as_the_tool(tmp_path: Path) -> None:
+    """`uv run --directory <worktree> pytest` credits pytest, not the worktree.
+
+    The flag was skipped but its separate-argv value was not, so this repo's own
+    multi-lane pattern counted one junk entry per worktree - 49 counts across 7
+    directory names - and never credited the tool it ran (basicly-m0p1). The
+    ``--flag=value`` form and a flag placed *before* the subcommand are the same
+    defect.
+    """
+    command = (
+        "uv run --directory /repos/basicly.worktrees/basicly-kjc5-61 pytest -q\n"
+        "uv run --directory=/repos/basicly.worktrees/basicly-jr0l-37 pytest -q\n"
+        "uv --directory /repos/basicly.worktrees/basicly-sy8c run pytest -q"
+    )
+    payload = {"tool_name": "Bash", "tool_input": {"command": command}}
+    assert _run(payload, tmp_path).returncode == 0
+    counts = {tool: entry["count"] for tool, entry in _stats(tmp_path).items()}
+    assert counts == {"uv": 3, "pytest": 3}
+
+
+def test_command_substitution_credits_the_command_not_its_subcommand(tmp_path: Path) -> None:
+    """`id=$(uv run br create ...)` credits br, not `run` or `create`.
+
+    A substitution glued to the assignment token left the wrapper subcommand as
+    the segment head: `run` reached 64 counts that way (basicly-m0p1).
+    """
+    command = 'id=$(uv run br create --title "add a thing")\nname=`gh repo view --json name`'
+    payload = {"tool_name": "Bash", "tool_input": {"command": command}}
+    assert _run(payload, tmp_path).returncode == 0
+    counts = {tool: entry["count"] for tool, entry in _stats(tmp_path).items()}
+    assert counts == {"uv": 1, "br": 1, "gh": 1}
+
+
+def test_shell_keywords_on_their_own_line_are_not_tools(tmp_path: Path) -> None:
+    """`continue`/`break` heading a line inside a loop body name no tool (basicly-m0p1)."""
+    command = "for f in a b; do\n  continue\ndone\nwhile true; do\n  break\ndone\nrg foo"
+    payload = {"tool_name": "Bash", "tool_input": {"command": command}}
+    assert _run(payload, tmp_path).returncode == 0
+    counts = {tool: entry["count"] for tool, entry in _stats(tmp_path).items()}
+    assert counts == {"rg": 1}
+
+
+def test_a_function_defined_in_the_command_is_not_a_tool(tmp_path: Path) -> None:
+    """Calling a function the same command text defines is not tool usage (basicly-m0p1)."""
+    command = "write_src() {\n  printf 'x' > f\n}\nwrite_src\nfunction emit {\n  wc -l f\n}\nemit"
+    payload = {"tool_name": "Bash", "tool_input": {"command": command}}
+    assert _run(payload, tmp_path).returncode == 0
+    counts = {tool: entry["count"] for tool, entry in _stats(tmp_path).items()}
+    assert counts == {"printf": 1, "wc": 1}
+
+
+def test_env_wrapper_resolves_the_command_behind_its_flags(tmp_path: Path) -> None:
+    """`env -C <dir> <cmd>` and `env VAR=x <cmd>` credit the wrapped command too."""
+    command = "env -C /repos/basicly.worktrees/basicly-2rn9 git status --short\nenv FOO=1 pytest -q"
+    payload = {"tool_name": "Bash", "tool_input": {"command": command}}
+    assert _run(payload, tmp_path).returncode == 0
+    counts = {tool: entry["count"] for tool, entry in _stats(tmp_path).items()}
+    assert counts == {"env": 2, "git": 1, "pytest": 1}
+
+
 # --- Interactive tracker-surface ledger (basicly-vkh0.1) ----------------------
 
 TRACKER_SPOOL = Path(".basicly/usage/tracker-usage.jsonl")
@@ -214,6 +274,19 @@ def test_tracker_ledger_sees_a_call_behind_a_wrapper_and_in_a_pipeline(tmp_path:
         ("br", "ready"),
         ("br", "dep add"),
     ]
+
+
+def test_tracker_ledger_sees_a_call_behind_a_wrapper_flag_value(tmp_path: Path) -> None:
+    """`uv run --directory <worktree> br show ...` is real tracker usage.
+
+    The unskipped flag value hid the head from the ledger too, so every lane's br
+    calls were dropped from the surface measurement (basicly-m0p1).
+    """
+    _optin(tmp_path)
+    command = "uv run --directory /repos/basicly.worktrees/basicly-m0p1 br show basicly-m0p1"
+    payload = {"tool_name": "Bash", "tool_input": {"command": command}}
+    assert _run(payload, tmp_path).returncode == 0
+    assert [(e["binary"], e["subcommand"]) for e in _tracker(tmp_path)] == [("br", "show")]
 
 
 def test_bv_is_recorded_alongside_br(tmp_path: Path) -> None:

@@ -92,6 +92,18 @@ SKIP_TOKENS = {
     "for",
     "case",
     "esac",
+    # Control-flow and declaration words that head their own line inside a
+    # multi-line loop or function body, where the newline split makes them a
+    # segment head of their own (basicly-m0p1).
+    "break",
+    "continue",
+    "declare",
+    "function",
+    "in",
+    "local",
+    "readonly",
+    "return",
+    "shift",
     "{",
     "}",
     "(",
@@ -99,14 +111,56 @@ SKIP_TOKENS = {
 }
 
 # Wrappers whose *argument* is the interesting tool (`uv run pytest` counts
-# both uv and pytest).
-WRAPPER_TOKENS = {"uv", "uvx", "npx", "sudo", "xargs", "command", "exec", "nohup", "time"}
+# both uv and pytest). `env` is one of them: `env -C <dir> <cmd>` and
+# `env FOO=1 <cmd>` were crediting env alone and losing the tool.
+WRAPPER_TOKENS = {
+    "uv",
+    "uvx",
+    "npx",
+    "env",
+    "sudo",
+    "xargs",
+    "command",
+    "exec",
+    "nohup",
+    "time",
+}
+
+# A wrapper's own subcommand names no tool: keep walking to the real command.
+WRAPPER_SUBCOMMANDS = {"run", "tool"}
+
+# Wrapper flags whose value is a *separate* argv item, so both must be skipped:
+# `uv run --directory <worktree> pytest` credited the worktree's basename as the
+# tool 49 times and never credited pytest (basicly-m0p1). The `--flag=value`
+# form needs no entry here — it is a single token the generic flag skip drops.
+WRAPPER_VALUE_FLAGS = {
+    "--directory",
+    "--project",
+    "--python",
+    "--with",
+    "--from",
+    "--package",
+    "-C",
+    "-u",
+}
+
+# Inline code, not a tool invocation: nothing after these is a command name.
+WRAPPER_STOP_TOKENS = {"python", "-m"}
 
 # `cmd <<TAG` / `cmd <<-'TAG'` / `cmd <<\TAG`: everything until the terminator
 # line is data, not commands — counting heredoc body lines as tools was
 # basicly-587. The optional backslash disables expansion (`<<\EOF`); missing it
 # left those bodies unstripped and leaked their keywords/terminator (basicly-v7eu).
 _HEREDOC = re.compile(r"<<-?\s*\\?(['\"]?)(?P<tag>[A-Za-z_][A-Za-z0-9_]*)\1")
+
+# `name() {` / `function name {`: a function defined in the command text is not a
+# tool, so neither is the call to it later in that same text (`write_src`, counted
+# 3 times as a terminal tool — basicly-m0p1).
+_FUNCTION_DEF = re.compile(
+    r"(?:^|[\n;&|])\s*"
+    r"(?:function\s+(?P<keyword>[A-Za-z_][A-Za-z0-9_]*)"
+    r"|(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\(\s*\))"
+)
 
 
 def _split_pipeline_segments(command: str) -> list[str]:
@@ -117,6 +171,11 @@ def _split_pipeline_segments(command: str) -> list[str]:
     ``--title "add x; ship it"`` — into fake segments whose first word is then
     miscounted as a command head (basicly-zcvo). Tracking quote state keeps
     quoted-string contents inside a single segment.
+
+    A command substitution opener (``$(``, a backtick) is also a boundary: it runs
+    a real command, and gluing it to the token before it — ``id=$(br create ...)``
+    — made the *subcommand* the head, which is how ``create`` and ``run`` (64
+    counts) entered the table instead of ``br`` (basicly-m0p1).
     """
     segments: list[str] = []
     buf: list[str] = []
@@ -129,6 +188,12 @@ def _split_pipeline_segments(command: str) -> list[str]:
             buf.append(ch)
             buf.append(command[i + 1])
             i += 2
+            continue
+        # Inside '...' a substitution is literal text, so quote state still decides.
+        if quote != "'" and (command[i : i + 2] == "$(" or ch == "`"):
+            segments.append("".join(buf))
+            buf = []
+            i += 2 if ch == "$" else 1
             continue
         if quote is not None:
             buf.append(ch)
@@ -173,6 +238,33 @@ def _strip_heredocs(command: str) -> str:
     return "\n".join(out)
 
 
+def _shell_functions(command: str) -> set[str]:
+    """Names of the shell functions *command* defines; calling one names no tool."""
+    return {match["keyword"] or match["name"] for match in _FUNCTION_DEF.finditer(command)}
+
+
+def _skip_wrapper_args(tokens: list[str]) -> list[str]:
+    """Advance past a wrapper's subcommands, flags, flag values and VAR=val prefixes.
+
+    One interleaved walk rather than one ordered pass per kind: a flag can precede
+    the subcommand (``uv --directory <path> run pytest``) and a flag's value can be
+    a separate argv item (``uv run --directory <path> pytest``), and the old fixed
+    order credited that value as the tool (basicly-m0p1).
+    """
+    while tokens:
+        head = tokens[0]
+        if head in WRAPPER_STOP_TOKENS:
+            return []
+        if head in WRAPPER_VALUE_FLAGS:
+            tokens = tokens[2:]  # the flag *and* the value that follows it
+            continue
+        if head in WRAPPER_SUBCOMMANDS or head.startswith("-") or "=" in head:
+            tokens = tokens[1:]
+            continue
+        break
+    return tokens
+
+
 def _command_from_payload(payload: dict) -> str | None:
     """Return the executed shell command from a Claude or Copilot payload."""
     tool = payload.get("tool_name") or payload.get("toolName") or ""
@@ -201,7 +293,9 @@ def _skill_from_payload(payload: dict) -> str | None:
 def tools_in_command(command: str) -> list[str]:
     """Head tokens (basenames) of every pipeline segment, wrappers unwrapped."""
     tools: list[str] = []
-    for segment in _split_pipeline_segments(_strip_heredocs(command)):
+    text = _strip_heredocs(command)
+    functions = _shell_functions(text)
+    for segment in _split_pipeline_segments(text):
         try:
             tokens = shlex.split(segment, posix=True)
         except ValueError:
@@ -211,8 +305,8 @@ def tools_in_command(command: str) -> list[str]:
             if "=" in head and not head.startswith("-"):
                 tokens.pop(0)  # VAR=val prefix: skip it and keep scanning for the head
                 continue
-            if head in SKIP_TOKENS or head.startswith("-"):
-                tokens = []  # a builtin or a stray flag head names no tool (basicly-v7eu)
+            if head in SKIP_TOKENS or head in functions or head.startswith("-"):
+                tokens = []  # a builtin, a local function, or a stray flag names no tool
             break
         while tokens:
             name = Path(tokens[0]).name
@@ -220,16 +314,7 @@ def tools_in_command(command: str) -> list[str]:
                 break
             tools.append(name)
             if name in WRAPPER_TOKENS:
-                tokens = tokens[1:]
-                # `uv run <tool>` / `uv tool run <tool>`: skip subcommand words
-                while tokens and tokens[0] in {"run", "tool", "python", "-m"}:
-                    if tokens[0] in {"python", "-m"}:
-                        tokens = []
-                        break
-                    tokens = tokens[1:]
-                # skip option flags between wrapper and tool
-                while tokens and tokens[0].startswith("-"):
-                    tokens = tokens[1:]
+                tokens = _skip_wrapper_args(tokens[1:])
                 continue
             break
     return tools
@@ -258,11 +343,7 @@ def tracker_invocations(command: str) -> list[tuple[str, list[str]]]:
                 tokens.pop(0)  # VAR=val prefix
                 continue
             if Path(head).name in WRAPPER_TOKENS:
-                tokens = tokens[1:]
-                while tokens and tokens[0] in {"run", "tool"}:
-                    tokens = tokens[1:]
-                while tokens and tokens[0].startswith("-"):
-                    tokens = tokens[1:]
+                tokens = _skip_wrapper_args(tokens[1:])
                 continue
             break
         if not tokens:
