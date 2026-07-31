@@ -35,9 +35,42 @@ CORE_HOOKS_DIR = Path(".basicly/core/hooks")
 REPO_ROOT = Path(__file__).parent.parent
 
 
-def _materialize_hooks(tmp_path: Path) -> None:
+# A bytecode cache is machine-local build output, never catalog content, so
+# `iter_catalog_files` keeps it out of the install and the drift comparison; a copy
+# that claims to mirror the install has to keep it out too (basicly-y1wk).
+_IGNORE_BYTECODE = shutil.ignore_patterns("__pycache__")
+
+
+def _copy_hooks(src: Path, dst: Path) -> None:
+    """Copy a catalog hooks tree the way `basicly install` does: no bytecode cache.
+
+    Skipping ``__pycache__`` is also what makes this copy safe to run concurrently:
+    CPython writes a bytecode cache to a uniquely named temp file and then renames it,
+    so a walk that descends into the cache can stat a name that is already gone by the
+    time it is opened. Several pytest workers import these hook scripts at once, which
+    made this copy flake (basicly-y1wk).
+    """
+    shutil.copytree(src, dst, ignore=_IGNORE_BYTECODE)
+
+
+def _materialize_hooks(tmp_path: Path, catalog: Path | None = None) -> None:
     """Copy the catalog hook scripts the way `basicly install` would."""
-    shutil.copytree(REPO_ROOT / CORE_HOOKS_DIR, tmp_path / CORE_HOOKS_DIR)
+    _copy_hooks(catalog or REPO_ROOT / CORE_HOOKS_DIR, tmp_path / CORE_HOOKS_DIR)
+
+
+def _write_bytecode_cache(hooks_dir: Path) -> list[str]:
+    """Put a ``__pycache__`` holding both bytecode-write shapes under *hooks_dir*.
+
+    A concurrent import can be seen mid-write (``<name>.pyc.<unique>``) or finished
+    (``<name>.pyc``), so both are test data: the exclusion is then proven by the file
+    set the copy and the check produce, with no timing assumption anywhere.
+    """
+    cache = hooks_dir / "__pycache__"
+    cache.mkdir(parents=True, exist_ok=True)
+    names = ["pre-commit.cpython-314.pyc", "pre-commit.cpython-314.pyc.140234567890123"]
+    for name in names:
+        (cache / name).write_bytes(b"bytecode, not catalog content")
+    return names
 
 
 def _local_hook_ids(config: dict) -> set[str]:
@@ -287,6 +320,38 @@ def test_check_reports_consumer_hook_script_drift(tmp_path: Path) -> None:
     assert reasons["commit-msg.py"] == "missing"
 
 
+def test_bytecode_cache_is_neither_materialized_nor_reported_as_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A ``__pycache__`` under the catalog hooks dir is invisible to sync and to check.
+
+    Regression (basicly-y1wk): materialization copied the catalog hooks tree wholesale, so
+    a bytecode cache another pytest worker was writing raced the copy and made this module
+    flake. The cache is machine-local build output rather than catalog content, so neither
+    side may see it — and a copy that never opens those names cannot lose a race to the
+    rename that produces them.
+    """
+    catalog = tmp_path / "catalog"
+    _copy_hooks(REPO_ROOT / CORE_HOOKS_DIR, catalog)
+    cached = _write_bytecode_cache(catalog)
+    monkeypatch.setattr(hooks_module, "_catalog_hooks_dir", lambda: catalog)
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _materialize_hooks(repo, catalog)
+    sync_hooks(repo, CORE_HOOKS_DIR)
+    materialized = repo / CORE_HOOKS_DIR
+
+    assert (materialized / "pre-commit.py").is_file()
+    assert [path.name for path in materialized.rglob("*") if path.name in cached] == []
+    assert not (materialized / "__pycache__").exists()
+    assert check_hooks(repo, CORE_HOOKS_DIR) == []
+
+    # Nor is a cache the consumer's own imports leave behind drift against the catalog.
+    _write_bytecode_cache(materialized)
+    assert check_hooks(repo, CORE_HOOKS_DIR) == []
+
+
 def test_check_ignores_a_hook_edit_in_a_sibling_worktree(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -326,7 +391,7 @@ def test_check_reports_drift_when_the_catalog_sits_inside_the_consumer_repo(
     _materialize_hooks(tmp_path)
     sync_hooks(tmp_path, CORE_HOOKS_DIR)
     vendored = tmp_path / ".venv/lib/site-packages/basicly/catalog/hooks"
-    shutil.copytree(tmp_path / CORE_HOOKS_DIR, vendored)
+    _copy_hooks(tmp_path / CORE_HOOKS_DIR, vendored)
     _init_repo(tmp_path)
     monkeypatch.setattr(hooks_module, "_catalog_hooks_dir", lambda: vendored)
     assert check_hooks(tmp_path, CORE_HOOKS_DIR) == []
