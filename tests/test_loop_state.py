@@ -106,6 +106,9 @@ def test_worktree_ref_rejects_unset_or_foreign(ref: str | None) -> None:
 # status, checkpoints, worktree, can-advance, has-children, then expected.
 _PHASE_CASES = [
     ("closed", ("ship",), None, True, True, "done"),
+    # Torn down after a proven merge: no binding, but the landing left the
+    # required gate green. This is the case the never-built leaf below is
+    # indistinguishable from unless the gate is consulted.
     ("in_progress", ("ship",), None, True, False, "ship"),
     # Ship approved but the node has not landed: the worktree is still bound and
     # its verify gate is not green (e.g. the build->verify landing failed on a
@@ -115,6 +118,18 @@ _PHASE_CASES = [
     # Ship approved and verify green on a still-bound worktree: merged, pending
     # teardown — legitimately ship.
     ("in_progress", ("ship",), WorktreeBinding("n", "b"), True, False, "ship"),
+    # Ship approved out of order on a node that never built (basicly-jr0l.49).
+    # It has no binding either, so `worktree is None` alone read as "torn down
+    # after the merge" and derived ship, and the advance then closed the bead
+    # with zero work done. Landed evidence is the green required gate, which
+    # only the build->verify landing records — so each of these derives the
+    # phase its own recorded evidence actually supports, never ship.
+    ("open", ("ship",), None, False, False, "intake"),
+    ("in_progress", ("classify", "ship"), None, False, False, "classify"),
+    ("in_progress", ("classify", "decompose", "ship"), None, False, False, "decompose"),
+    # Same hole one rung up: a feature whose children exist but whose own gate is
+    # not green has not landed either.
+    ("in_progress", ("ship",), None, False, True, "decompose"),
     ("in_progress", (), WorktreeBinding("n", "b"), True, False, "verify"),
     ("in_progress", (), WorktreeBinding("n", "b"), False, False, "build"),
     ("in_progress", ("decompose",), None, False, False, "decompose"),
