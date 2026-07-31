@@ -115,8 +115,13 @@ instructions: |
 
   1. **Show the exact command**, including the code.
   2. **Say what approving it does** in one line — which bead, which checkpoint, and
-     what happens next (a classify approval provisions a worktree; a ship approval
-     merges, closes and tears down).
+     what happens next. The challenge itself now prints this per checkpoint, so
+     read it off the prompt rather than paraphrasing from the phase name: a
+     classify approval provisions a worktree, and a ship approval tears the
+     worktree down and closes the bead. **Ship does not merge and does not
+     publish** — the merge already happened at the build→verify landing, and
+     `ship` naming it otherwise is what caused the recorded mis-approval
+     (`basicly-jr0l.39`).
   3. **Get an explicit yes.** Silence, "sounds good" about something else, or an
      earlier approval of a different checkpoint is not one. Approval covers the one
      checkpoint in front of you, never the next.

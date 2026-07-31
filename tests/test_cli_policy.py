@@ -89,6 +89,75 @@ def test_challenge_says_the_caller_may_run_it_once_a_human_approves(
     assert "must re-run" not in err
 
 
+def test_ship_challenge_says_the_merge_already_happened_and_nothing_is_published(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The ship prompt must state what approving does and does not do (basicly-jr0l.39).
+
+    The name reads as *release* or *publish*, and it sits after the merge it
+    sounds like it performs — the owner of this harness misread it off a live
+    prompt, and a consumer has strictly less context. The name is not changed
+    (that is deferred to basicly-kjc5.45); the prompt has to carry the meaning,
+    because the approval protocol asks the driver to say what approving does and
+    a bare phase name cannot answer that.
+    """
+    _no_tty(monkeypatch)
+    monkeypatch.setattr(policy, "_new_code", lambda: "cafe1234")
+    assert cli.main(["policy", "checkpoint", "basicly-x", "ship", "--approve"]) == 1
+    err = capsys.readouterr().err
+    # The merge is past, not what this approval performs.
+    assert "ALREADY happened" in err
+    assert "build->verify landing" in err
+    # What it does, and the three things it does not do.
+    assert "tears down the worktree and closes the bead" in err
+    assert "publishes nothing" in err
+    assert "no tag or release" in err
+    # The recorded incident: approving before `[merged]` wedges an unmerged node.
+    assert "'[merged]'" in err
+    assert "no un-approve" in err
+
+
+def test_classify_and_decompose_challenges_state_their_own_effect(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Every named checkpoint says what approving it does, not just ship.
+
+    Same defect class: "CONFIRMATION REQUIRED" plus a phase name leaves the
+    driver unable to satisfy the protocol's "say what approving it does".
+    """
+    _no_tty(monkeypatch)
+    monkeypatch.setattr(policy, "_new_code", lambda: "cafe1234")
+    assert cli.main(["policy", "checkpoint", "basicly-x", "classify", "--approve"]) == 1
+    err = capsys.readouterr().err
+    assert "provisions a worktree" in err
+    assert "No code changes yet" in err
+
+    assert cli.main(["policy", "checkpoint", "basicly-x", "decompose", "--approve"]) == 1
+    err = capsys.readouterr().err
+    assert "fans out the child beads" in err
+    assert "Nothing merges" in err
+
+
+def test_grant_challenge_carries_no_checkpoint_meaning(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The grant challenge keeps the generic block: it approves no checkpoint.
+
+    It is the one caller with no checkpoint name to look up, so the lookup must
+    degrade to nothing rather than mislabel what is being approved.
+    """
+    _no_tty(monkeypatch)
+    _allow_autonomy(monkeypatch)
+    monkeypatch.setattr(policy, "_new_code", lambda: "cafe1234")
+    grant = ["policy", "grant", "basicly-x", "--level", "L2", "--token-budget", "5000"]
+    assert cli.main(grant) == 1
+    err = capsys.readouterr().err
+    assert "grant: CONFIRMATION REQUIRED" in err
+    assert "A human must approve this decision" in err
+    assert "ALREADY happened" not in err
+    assert "publishes nothing" not in err
+
+
 def test_checkpoint_approve_with_valid_code_succeeds(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -2207,7 +2207,35 @@ def _cmd_policy_checkpoint(args: argparse.Namespace) -> int:
     return 0 if approved else 1
 
 
-def _print_challenge(label: str, issue: str, rerun: str) -> int:
+# What approving each checkpoint actually does, stated at the prompt
+# (basicly-jr0l.39). The protocol asks the driver to "say what approving it
+# does", which is unanswerable from a bare phase name — and the ship name is
+# actively misleading: it reads as *release* or *publish*, and it sits after the
+# merge it sounds like it performs. The owner of this harness misread it off a
+# live prompt, and a consumer has strictly less context. The word is not
+# changed here; the rename to `close` and its read-old/write-new migration are
+# deferred to basicly-kjc5.45, before v1.0.0 freezes the CLI surface.
+_CHECKPOINT_MEANING = {
+    "classify": (
+        "Approving records the work type and provisions a worktree. No code changes yet.",
+    ),
+    "decompose": ("Approving fans out the child beads. Nothing merges and nothing is published.",),
+    # The ship wording is the safety-relevant one. The recorded incident:
+    # approving before the landing printed `[merged]` short-circuits the derived
+    # phase to ship and wedges an unmerged node, and there is no un-approve. An
+    # operator who believes ship means publish has no reason to wait for that
+    # line, so the prompt has to say it.
+    "ship": (
+        "The merge to the base branch has ALREADY happened, at the build->verify landing.",
+        "Approving tears down the worktree and closes the bead. It publishes nothing,",
+        "pushes nothing, and creates no tag or release.",
+        "Do not approve unless you have seen a '[merged]' line for this bead: there is",
+        "no un-approve, and approving early wedges the node with its work unmerged.",
+    ),
+}
+
+
+def _print_challenge(label: str, issue: str, rerun: str, meaning: str | None = None) -> int:
     """Print the one-time-code challenge and return the caller's non-zero exit.
 
     The wording is load-bearing (basicly-kjc5.34). This gate exists to force a
@@ -2217,10 +2245,15 @@ def _print_challenge(label: str, issue: str, rerun: str) -> int:
     did, wasting a round trip and racing the code's TTL. A ship code really did
     expire between the ask and the paste. Say plainly that the caller may run it
     once approval is given, and name the protocol and the deadline.
+
+    *meaning* states what approving this particular checkpoint does, from
+    :data:`_CHECKPOINT_MEANING` (basicly-jr0l.39). Optional because the grant
+    challenge has no checkpoint name to look up.
     """
     minutes = int(policy.CONFIRM_TTL_SECONDS // 60)
     print(
         f"{label}: CONFIRMATION REQUIRED ({issue})\n"
+        f"{meaning or ''}"
         "  A human must approve this decision. The gate protects the decision, not the\n"
         "  keystrokes, so whoever is driving may run the command themselves once approval\n"
         "  is given: present it, say what approving it does, get an explicit yes, then\n"
@@ -2231,6 +2264,12 @@ def _print_challenge(label: str, issue: str, rerun: str) -> int:
         file=sys.stderr,
     )
     return 1
+
+
+def _checkpoint_meaning(name: str) -> str | None:
+    """The indented "what approving does" block for checkpoint *name*, if known."""
+    lines = _CHECKPOINT_MEANING.get(name)
+    return "".join(f"  {line}\n" for line in lines) if lines else None
 
 
 def _approve_checkpoint(repo_root: Path, args: argparse.Namespace) -> int:
@@ -2250,7 +2289,9 @@ def _approve_checkpoint(repo_root: Path, args: argparse.Namespace) -> int:
         rerun = (
             f"basicly policy checkpoint {args.issue} {args.name} --approve --confirm {result.code}"
         )
-        return _print_challenge(f"checkpoint {args.name}", args.issue, rerun)
+        return _print_challenge(
+            f"checkpoint {args.name}", args.issue, rerun, _checkpoint_meaning(args.name)
+        )
     print(f"checkpoint {args.name}: REFUSED ({args.issue}) - {result.detail}", file=sys.stderr)
     return 1
 
@@ -2622,7 +2663,12 @@ def _cmd_loop_run(args: argparse.Namespace) -> int:
     sys.stdout.flush()
     if result.challenge is not None:
         name, code = result.challenge
-        return _print_challenge(f"checkpoint {name}", args.issue, _ceremony_rerun(args, code))
+        return _print_challenge(
+            f"checkpoint {name}",
+            args.issue,
+            _ceremony_rerun(args, code),
+            _checkpoint_meaning(name),
+        )
     if result.refused is not None:
         name, why = result.refused
         print(f"checkpoint {name}: REFUSED ({args.issue}) - {why}", file=sys.stderr)
