@@ -2,12 +2,12 @@
 
 Agents are authored as non-discoverable ``agent.yaml`` sources whose body is
 composed from shared building blocks (``*.block.yaml``) filling five ordered
-slots. The projector renders each agent to ``.claude/agents/<slug>.md`` only —
-the one root Claude Code and VS Code both parse natively — decided in
-basicly-ajq on the single-source precedent of basicly-2f4: a second
-Claude-format root would double-load in VS Code, which dedupes only skills.
-Portability is kept in the *content* instead (the portable frontmatter core and
-the 30,000-char body cap), not by emitting a second copy.
+slots. The projector renders each agent into every root in
+``AGENTS_OUTPUT_ROOTS`` — ``.claude/agents/<slug>.md`` for the Claude family and
+``.github/agents/<slug>.agent.md`` for the GitHub Copilot family. Portability is
+still kept in the *content* (the portable frontmatter core and the 30,000-char
+body cap); the second root exists because the copilot cloud agent reads only its
+own root, not because the content differs.
 """
 
 from __future__ import annotations
@@ -22,29 +22,6 @@ from .schema import MODEL_TIERS, ValidationError, technology_selected, validate_
 
 CORE_AGENTS_DIR = Path(".basicly/core/agents")
 OVERLAY_AGENTS_DIR = Path(".basicly-local/agents")
-# Single output root, decided in basicly-ajq on the basicly-2f4 precedent:
-# Claude Code reads only .claude/agents and VS Code parses the same files
-# natively, so one copy serves both. Note that basicly-2f4 is not a
-# one-root-everywhere rule — it dual-emits skills precisely because Claude and
-# Codex have separate readers. The other native subagent roots were weighed and
-# declined, so re-opening this needs new facts, not a fresh reading:
-#   - .github/agents/*.md (GitHub cloud agent): the same markdown format but a
-#     separate root; basicly-ajq kept one root and bought portability in the
-#     content instead (portable frontmatter core + MAX_BODY_CHARS).
-#   - .codex/agents/*.toml (codex project subagents), decided in basicly-crkl
-#     (2026-07-31): a different serialization whose documented field set is
-#     name/description/developer_instructions. With no `tools` equivalent, a
-#     codex copy would silently drop the mandatory allowlist this module
-#     validates against a read-only posture (WRITE_TOOLS) — a lost guarantee,
-#     not just a format cost — and would fork the renderer, the drift check
-#     (agents-check would need skills-check's --all-default-roots treatment or a
-#     codex root drifts unnoticed) and the HTML-comment GENERATED_MARKER. The
-#     roster that grows this tier is deliberately catalog-source prompts, not
-#     agent-native files (docs/plan/implementation-plan.md, Phase 5), so codex
-#     gets the same guidance through AGENTS.md and .agents/skills. Reopen only
-#     for a real codex consumer whose need survives losing the tool allowlist.
-# Either way this costs no always-on budget: subagents are on-demand files.
-AGENTS_OUTPUT_ROOT = Path(".claude/agents")
 AGENT_SOURCE_FILE = "agent.yaml"
 BLOCK_SOURCE_GLOB = "*.block.yaml"
 # Shared blocks live in <root>/blocks/, so the name is reserved: no agent slug
@@ -65,21 +42,90 @@ DEPRECATED_MODEL_KEY = "model"
 # GitHub's cloud agent caps the prompt body at 30,000 characters; enforcing the
 # cap keeps every composed body portable to the strictest reader.
 MAX_BODY_CHARS = 30000
+# GitHub's published tool-alias table for copilot custom agents, pinned here as
+# reviewed data (reviewed 2026-07-31 against
+# docs.github.com/en/copilot/reference/custom-agents-configuration, basicly-8sxf).
+# The key fact: copilot accepts Claude Code's own PascalCase tool names as
+# first-class aliases and matches them case-insensitively, so projecting to the
+# copilot root needs *no* translation layer — the names we already declare
+# resolve on both families. Both a comma-separated string and a YAML array are
+# accepted; an unset `tools` defaults to all tools, which is why this module
+# refuses a source without an explicit allowlist.
+#
+# The table is pinned rather than assumed because copilot drops an unrecognised
+# entry *silently* — measured on the copilot CLI, whose `--log-level debug` logs
+# the granted tool schemas — where Claude Code refuses to launch and names the
+# unresolved entries. `resolve_copilot_tool` plus the lint rule in
+# `lint_agent_sources` restore the loud failure at authoring time. GitHub
+# publishes no enumerated tool list, so this alias table is the entire
+# vocabulary we can check a declared name against.
+#
+# Do NOT merge this with copilot's other tool vocabularies: VS Code chat uses
+# `#`-prefixed namespaced names and tool *sets* (`#read/readFile`), and the
+# copilot CLI's internal names are different again (view, grep, glob, bash,
+# create, edit, skill, sql). They are separate vocabularies for separate
+# surfaces; only this one is the config format for an agent file.
+COPILOT_TOOL_ALIASES: dict[str, frozenset[str]] = {
+    "execute": frozenset({"shell", "Bash", "powershell"}),
+    "read": frozenset({"Read", "NotebookRead"}),
+    "edit": frozenset({"Edit", "MultiEdit", "Write", "NotebookEdit"}),
+    "search": frozenset({"Grep", "Glob"}),
+    "agent": frozenset({"custom-agent", "Task"}),
+    "web": frozenset({"WebSearch", "WebFetch"}),
+    "todo": frozenset({"TodoWrite"}),
+}
+# Folded alias -> primary, so a declared name resolves in one lookup. A primary
+# is its own alias: `tools: [read]` is as valid as `tools: [Read]`.
+_COPILOT_TOOL_BY_ALIAS = {
+    alias.casefold(): primary
+    for primary, aliases in COPILOT_TOOL_ALIASES.items()
+    for alias in (primary, *aliases)
+}
+# The same names as *authored*, for the lint remedy: a folded key is not
+# something an author can copy into a source, and the PascalCase spellings are
+# the ones a Claude-shaped source already uses.
+_COPILOT_TOOL_NAMES = tuple(
+    sorted(
+        set(COPILOT_TOOL_ALIASES)
+        | {alias for aliases in COPILOT_TOOL_ALIASES.values() for alias in aliases},
+        key=str.casefold,
+    )
+)
+# What our allowlist does NOT control on copilot, all measured 2026-07-31 on the
+# copilot CLI against the logged tool schemas (basicly-8sxf). Record honestly:
+# a "read-only" agent there is narrower than an unconstrained one but is not the
+# read-only set this module names.
+#   - `skill` and `sql` are granted UNCONDITIONALLY and the allowlist cannot
+#     suppress them, so every agent we certify read-only holds two tools we never
+#     declared (`sql` writes a per-session SQLite db, not the repo).
+#   - `Bash` resolves to four tools — bash, read_bash, stop_bash, list_bash —
+#     the same capability class over a wider surface.
+#   - `NotebookEdit` alone resolves to both `create` AND `edit`, i.e. general
+#     filesystem write: Claude's narrowest write tool is copilot's broadest.
+#   - Expansion is not uniform: `Glob` did not pull in grep. A name with a 1:1
+#     CLI counterpart maps narrowly, one without falls back to the broader
+#     primary set.
+# The guarantee that does hold: an unrecognised entry fails SAFE. An
+# all-unrecognised list resolved to zero requested tools, with no grant-all
+# fallback, so a typo costs function, not the read-only posture.
+#
 # A posture that declares the agent read-only must not grant mutating tools.
-# Matched case-insensitively (basicly-e9jc): GitHub documents copilot's tool
-# aliases as case insensitive, so a lowercase `edit` grants exactly the writes
-# `Edit` does and has to fail the same check. Notes on the membership, measured
-# 2026-07-31 against docs.github.com/en/copilot/reference/custom-agents-configuration:
+# Matched case-insensitively (basicly-e9jc): copilot's aliases are case
+# insensitive, so a lowercase `edit` grants exactly the writes `Edit` does and
+# has to fail the same check. Notes on the membership:
 #   - `MultiEdit` is off Claude Code's published tool list but copilot still
 #     accepts it as an alias of `edit`, so dropping it would only reopen a hole.
-#   - `Create` is copilot's file-creating primary with no claude equivalent — the
-#     same write grant under a name this set would otherwise miss.
-#   - Tool breadth is not preserved across families: `NotebookEdit` alone
-#     resolves on the copilot CLI to both `create` and `edit`, i.e. general
-#     filesystem write, so the narrowest write tool on claude is the broadest
-#     there. Never reason about a tool's blast radius from its claude meaning.
+#   - `Create` is the copilot CLI's file-creating primary with no claude
+#     equivalent — the same write grant under a name this set would otherwise
+#     miss. It is deliberately not in COPILOT_TOOL_ALIASES: that table is
+#     GitHub's published config vocabulary, and `create` is not in it.
 WRITE_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit", "Create"})
-_WRITE_TOOLS_FOLDED = frozenset(tool.casefold() for tool in WRITE_TOOLS)
+# Unioned with every alias of copilot's `edit` primary so the pinned table drives
+# the posture check: if GitHub adds a write alias, updating COPILOT_TOOL_ALIASES
+# extends the check instead of leaving a hole only a reader would notice.
+_WRITE_TOOLS_FOLDED = frozenset(
+    tool.casefold() for tool in (*WRITE_TOOLS, "edit", *COPILOT_TOOL_ALIASES["edit"])
+)
 READ_ONLY_MARKER = "read-only"
 # Frontmatter keys the renderer owns; the claude passthrough map may not shadow
 # them. `model` stays on the list even though nothing renders it any more:
@@ -91,6 +137,66 @@ RESERVED_FRONTMATTER_KEYS = frozenset({"name", "description", "tools", "model"})
 GENERATED_MARKER = (
     "<!-- Generated by `basicly agents-build` from agent.yaml. Do not edit; edit the source. -->"
 )
+
+
+@dataclass(frozen=True)
+class AgentOutputRoot:
+    """One projected agent root: where files land, how they are named, what renders."""
+
+    family: str
+    path: Path
+    # Appended to the slug. Copilot's own template names the file
+    # `<name>.agent.md`; Claude Code reads a plain `<name>.md`.
+    suffix: str
+    # Whether this family honors the source's `claude:` frontmatter passthrough.
+    claude_passthrough: bool
+
+    def target(self, repo_root: Path, slug: str) -> Path:
+        """The projected file for *slug* under this root."""
+        return repo_root / self.path / f"{slug}{self.suffix}"
+
+
+# Every projected agent root. Both are written by `agents-build` and both are
+# compared by `agents-check` — there is deliberately no opt-in flag, because a
+# root only some commands write is exactly how a second root drifts unnoticed.
+#
+# basicly-ajq originally kept `.claude/agents` as the single root, on the reading
+# that Claude Code and VS Code both parse it natively so one copy serves both.
+# That was true and is still true, but it only ever covered VS Code. Reopened
+# with measured facts on basicly-8sxf (2026-07-31):
+#   - The copilot CLOUD agent reads only `.github/agents/<name>.agent.md` (the
+#     org/enterprise equivalent is a root `agents/` directory in a `.github`
+#     repo, which is not a repo-level projection target). Our subagents did not
+#     exist for it at all.
+#   - The copilot CLI does discover `.claude/agents/*.md`, measured — but GitHub
+#     documents only `.github/agents/` and `~/.copilot/agents/`. Depending on
+#     undocumented discovery that no gate would catch if it regressed is the real
+#     defect this root fixes.
+#   - Copilot custom agents support a `tools` allowlist (COPILOT_TOOL_ALIASES),
+#     so the read-only posture check survives the crossing. That removes the
+#     objection that declined the codex root in basicly-crkl.
+#   - Copilot cannot intercept a spawn, so static per-surface emission is the only
+#     path a declared `tier` can ever reach it by (basicly-a3yi).
+# The double-load worry does not materialise: GitHub documents that the config
+# file's name minus `.md`/`.agent.md` is the deduplication key, so `<slug>.md`
+# and `<slug>.agent.md` collapse to one agent.
+#
+# Still declined: `.codex/agents/*.toml` (codex project subagents, basicly-crkl,
+# 2026-07-31). Its documented field set is name/description/
+# developer_instructions with no `tools` equivalent, so a codex copy would
+# silently drop the mandatory allowlist this module validates against a read-only
+# posture — a lost guarantee, not just a format cost. Codex gets the same
+# guidance through AGENTS.md and .agents/skills. Reopen only for a real codex
+# consumer whose need survives losing the tool allowlist.
+#
+# Either way this costs no always-on budget: subagents are on-demand files.
+CLAUDE_AGENTS_ROOT = AgentOutputRoot(
+    family="claude", path=Path(".claude/agents"), suffix=".md", claude_passthrough=True
+)
+COPILOT_AGENTS_ROOT = AgentOutputRoot(
+    family="copilot", path=Path(".github/agents"), suffix=".agent.md", claude_passthrough=False
+)
+AGENTS_OUTPUT_ROOTS = (CLAUDE_AGENTS_ROOT, COPILOT_AGENTS_ROOT)
 
 
 @dataclass(frozen=True)
@@ -360,21 +466,39 @@ def compose_body(agent: AgentDefinition, blocks: dict[str, BlockDefinition]) -> 
     return "\n\n".join(parts)
 
 
-def render_agent_md(agent: AgentDefinition, blocks: dict[str, BlockDefinition]) -> str:
+def resolve_copilot_tool(tool: str) -> str | None:
+    """The copilot primary a declared tool name resolves to, or None if nothing.
+
+    Resolution is case-insensitive, per GitHub's published alias table. `None`
+    means copilot would drop the entry with no error, so callers should treat it
+    as an authoring defect rather than a working grant.
+    """
+    return _COPILOT_TOOL_BY_ALIAS.get(tool.casefold())
+
+
+def render_agent_md(
+    agent: AgentDefinition, blocks: dict[str, BlockDefinition], root: AgentOutputRoot
+) -> str:
     """Render the projected agent file (frontmatter + generated marker + body).
 
     Frontmatter carries the portable core every reader honors (name,
-    description, tools) plus the Claude-only extras. No family gets a `model`
-    line: a provider model id is not portable across agent families, so the
-    source's `tier` is catalog metadata that resolves to a concrete model
-    elsewhere, never a frontmatter key.
+    description, tools); only a root that declares ``claude_passthrough`` also
+    receives the source's Claude-only extras, so a Claude-specific key never
+    leaks into a copilot agent file. *root* is required rather than defaulting:
+    a caller that forgets it would quietly project only one family, which is the
+    drift this module now gates against.
+
+    No family gets a `model` line: a provider model id is not portable across
+    agent families, so the source's `tier` is catalog metadata that resolves to a
+    concrete model elsewhere, never a frontmatter key (basicly-kjc5.58).
     """
     front: dict[str, object] = {
         "name": agent.slug,
         "description": compose_description(agent),
         "tools": ", ".join(agent.tools),
     }
-    front.update(dict(agent.claude))
+    if root.claude_passthrough:
+        front.update(dict(agent.claude))
     frontmatter = yaml.safe_dump(front, sort_keys=False, width=100_000, allow_unicode=True)
     body = compose_body(agent, blocks)
     return f"---\n{frontmatter}---\n\n{GENERATED_MARKER}\n\n{body}\n"
@@ -387,7 +511,7 @@ def _is_generated_agent(path: Path) -> bool:
 def sync_agents(
     repo_root: Path, selection: frozenset[str] | None = None
 ) -> tuple[SyncResult, list[Path]]:
-    """Render selected source agents into the output root.
+    """Render selected source agents into every output root.
 
     Hand-authored files are never touched, but a previously projected agent the
     technology *selection* now excludes is pruned (generated-marker files only).
@@ -397,36 +521,40 @@ def sync_agents(
     blocks = discover_blocks(roots)
     result = SyncResult()
     pruned: list[Path] = []
-    base = repo_root / AGENTS_OUTPUT_ROOT
     for agent in discover_agents(roots):
-        target_path = base / f"{agent.slug}.md"
-        if technology_selected(agent.technologies, selection):
-            sync_file(target_path, render_agent_md(agent, blocks).encode("utf-8"), result)
-        elif _is_generated_agent(target_path):
-            target_path.unlink()
-            pruned.append(target_path)
+        selected = technology_selected(agent.technologies, selection)
+        for out_root in AGENTS_OUTPUT_ROOTS:
+            target_path = out_root.target(repo_root, agent.slug)
+            if selected:
+                sync_file(
+                    target_path, render_agent_md(agent, blocks, out_root).encode("utf-8"), result
+                )
+            elif _is_generated_agent(target_path):
+                target_path.unlink()
+                pruned.append(target_path)
     return result, pruned
 
 
 def check_synced_agents(
     repo_root: Path, selection: frozenset[str] | None = None
 ) -> list[tuple[Path, str]]:
-    """Return missing or stale projected agent files."""
+    """Return missing or stale projected agent files, across every output root."""
     roots = default_agent_roots(repo_root)
     blocks = discover_blocks(roots)
-    base = repo_root / AGENTS_OUTPUT_ROOT
     mismatches: list[tuple[Path, str]] = []
     for agent in discover_agents(roots):
-        target_path = base / f"{agent.slug}.md"
-        if not technology_selected(agent.technologies, selection):
-            if _is_generated_agent(target_path):
-                mismatches.append((target_path, "excluded by technology selection"))
-            continue
-        if not target_path.exists():
-            mismatches.append((target_path, "missing"))
-            continue
-        if target_path.read_bytes() != render_agent_md(agent, blocks).encode("utf-8"):
-            mismatches.append((target_path, "content mismatch"))
+        selected = technology_selected(agent.technologies, selection)
+        for out_root in AGENTS_OUTPUT_ROOTS:
+            target_path = out_root.target(repo_root, agent.slug)
+            if not selected:
+                if _is_generated_agent(target_path):
+                    mismatches.append((target_path, "excluded by technology selection"))
+                continue
+            if not target_path.exists():
+                mismatches.append((target_path, "missing"))
+                continue
+            if target_path.read_bytes() != render_agent_md(agent, blocks, out_root).encode("utf-8"):
+                mismatches.append((target_path, "content mismatch"))
     return mismatches
 
 
@@ -455,6 +583,19 @@ def lint_agent_sources(repo_root: Path) -> list[str]:
                 "model id or alias, which is not portable across agent families; declare the "
                 f"portable model tier instead — replace it with `tier: {' | '.join(MODEL_TIERS)}`"
             )
+        # Every declared name has to resolve through the pinned alias table, or
+        # the agent is weaker on the copilot root than it reads: copilot drops an
+        # unrecognised entry with no error and no warning, so nothing downstream
+        # would ever report it (basicly-8sxf).
+        unresolved = [tool for tool in agent.tools if resolve_copilot_tool(tool) is None]
+        if unresolved:
+            violations.append(
+                f"{rel}: tool(s) {', '.join(unresolved)} resolve to nothing in GitHub's "
+                f"published tool aliases, so the {COPILOT_AGENTS_ROOT.path.as_posix()} "
+                "projection would drop them with no error; declare one of "
+                f"{', '.join(_COPILOT_TOOL_NAMES)}"
+            )
+
         missing = unknown_block_refs(agent, blocks)
         for ref in missing:
             violations.append(f"{rel}: references unknown block '{ref}'")

@@ -624,15 +624,22 @@ hand-edited — from YAML sources:
   `agents.RESERVED_FRONTMATTER_KEYS` so the `claude:` passthrough cannot smuggle
   a provider id back in. A `claude:` map
   passes Claude-only frontmatter (e.g. `memory`, `maxTurns`) through verbatim.
-- **Emission**: `.claude/agents/<slug>.md` only — the single root Claude Code
-  and VS Code both parse natively (decided in `basicly-ajq` on the
-  `basicly-2f4` precedent; a second Claude-format root would double-load in VS
-  Code, which dedupes only skills). Rendered files carry the generated marker
-  inside the `protect-generated` hook's scan window, so tool-time edits are
-  blocked. **The other native subagent roots are declined, not overlooked**:
-  `.github/agents/*.md` (GitHub cloud agent) reads the same format but is a
-  separate root, and `basicly-ajq` chose to buy portability in the content
-  instead — the portable frontmatter core plus the 30,000-char cap.
+- **Emission**: two roots, both written by `agents-build` and both compared by
+  `agents-check` (`agents.AGENTS_OUTPUT_ROOTS`) — `.claude/agents/<slug>.md` for
+  the Claude family and `.github/agents/<slug>.agent.md` for GitHub Copilot, the
+  second added in `basicly-8sxf` (2026-07-31) after `basicly-ajq`'s single root
+  was reopened with measured facts: the Copilot **cloud** agent reads only its own
+  root, the Copilot CLI's discovery of `.claude/agents` is real but
+  **undocumented**, and Copilot custom agents support a `tools` allowlist so the
+  read-only posture check survives the crossing. The double-load worry does not
+  materialise — GitHub documents the config file name minus `.md`/`.agent.md` as
+  the deduplication key, so the two files collapse to one agent. There is
+  deliberately no root-selection flag (contrast `skills-build
+  --all-default-roots`): a root only some commands write is how a second root
+  drifts unnoticed. Only the Claude root receives the `claude:` passthrough; no
+  root receives a `model` line. Rendered files carry the generated marker inside
+  the `protect-generated` hook's scan window, so tool-time edits are blocked in
+  both roots. **The remaining native subagent root is declined, not overlooked**:
   `.codex/agents/*.toml` was decided against in `basicly-crkl` (2026-07-31):
   its documented field set (`name`, `description`, `developer_instructions`)
   has no `tools` equivalent, so a codex copy would silently drop the mandatory
@@ -641,12 +648,25 @@ hand-edited — from YAML sources:
   generated marker. The roster that grows this tier is deliberately
   catalog-source prompts rather than agent-native files
   ([plan](../plan/implementation-plan.md) Phase 5), so codex receives the same
-  guidance through `AGENTS.md` and `.agents/skills`. Neither root costs
-  always-on budget: subagent files are on-demand.
+  guidance through `AGENTS.md` and `.agents/skills`. No root costs always-on
+  budget: subagent files are on-demand.
+- **Tool names** are _not_ translated. GitHub's published alias table accepts
+  Claude's PascalCase names as first-class and matches case-insensitively, so the
+  names a source declares resolve on both families. The table is pinned as
+  reviewed data in `agents.COPILOT_TOOL_ALIASES` (reviewed 2026-07-31) for two
+  reasons: it drives the read-only posture check (every alias of Copilot's `edit`
+  primary fails it), and it lets lint refuse a name that resolves to nothing,
+  because Copilot drops an unrecognised entry with no error where Claude Code
+  refuses to launch and names it. An unrecognised entry fails **safe** (no
+  grant-all fallback), so the residual risk is a useless agent, not a lost
+  guarantee. What the allowlist does not control on Copilot is recorded beside the
+  table: `skill` and `sql` are granted unconditionally, `Bash` expands to four
+  tools, and `NotebookEdit` alone resolves to both `create` and `edit`.
 - **Lint** (`catalog lint`): schema validation for both source kinds, plus
-  composition rules — block refs must resolve, a `Read-only` posture may not
-  grant write tools, and the composed body must stay under 30,000 characters
-  (the strictest reader's prompt ceiling).
+  composition rules — block refs must resolve, every declared tool must resolve
+  through the pinned Copilot alias table, a `Read-only` posture may not grant
+  write tools, and the composed body must stay under 30,000 characters (the
+  strictest reader's prompt ceiling).
 
 ---
 
@@ -806,7 +826,7 @@ names were removed, not aliased).
 | `basicly build [--target NAME] [--verify]` | Renders enabled targets (or one), writes only changed bytes, updates the manifest, warns on size-cap overrun; `--verify` runs `catalog verify` first and writes nothing on failure |
 | `basicly check` | Byte-for-byte staleness check of generated files + manifest; exit `1` on mismatch, no auto-fix |
 | `basicly skills-build [--root ...\|--all-default-roots]` / `skills-check` | Same build/check contract, applied to the skill catalog |
-| `basicly agents-build` / `agents-check` | Same build/check contract for the agent catalog: composes slot blocks into `.claude/agents/<slug>.md` (single-source emission, §5 agent composition model) |
+| `basicly agents-build` / `agents-check` | Same build/check contract for the agent catalog: composes slot blocks into `.claude/agents/<slug>.md` and `.github/agents/<slug>.agent.md`, always both roots and with no root-selection flag (§5 agent composition model) |
 | `basicly hooks-build [--no-install]` / `hooks-check` | Materializes catalog hook scripts, merges a managed `repo: local` block into `.pre-commit-config.yaml` (foreign hooks preserved, idempotent), and then runs `pre-commit install` for every managed stage so the gates are actually active (`--no-install` skips activation; graceful when pre-commit is absent). `hooks-check` reports projection drift and warns (non-fatal) when the git hooks are not installed. It skips the script content comparison when the installed catalog and the target are the same working-tree-relative path in the same git repository — basicly installed editable from its own checkout, where a difference is uncommitted or branch-local work rather than drift, so a hook-script change could not otherwise pass its own landing verify — and falls back to comparing whenever git cannot answer; path equality is required as well as repository identity, so a consumer with an in-repo `.venv` keeps the gate |
 | `basicly permissions-build` / `permissions-check` | Projects the catalog agent-permissions deny-list (`.basicly/core/permissions/permissions.yaml`) into the co-owned `.claude/settings.json` `permissions.deny`, the way hooks are managed: ensure-present (managed patterns merged in, consumer-added entries preserved, nothing pruned — an extra deny is fail-safe and a flat deny string has no per-entry marker), with a semantic subset-match drift check. Claude-only: Copilot CLI has no config-file deny (session-scoped `--deny-tool` flag only) and Codex forbids project-scope override of `sandbox_mode`/`approval_policy`, so those guardrails are invocation-only — the copilot runner injects the deny-list as `--deny-tool` flags at dispatch (`basicly-lqz5`), while Codex sandbox/approval defaults remain to wire (`basicly-t0kt`) |
 | `basicly usage report` | Reports the tool/skill counts recorded by the `tool-usage` agent hook (token-free telemetry in `.basicly/usage/`) and names never-used catalog skills — the culling input (§4.3) |
