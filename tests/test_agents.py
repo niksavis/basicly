@@ -313,6 +313,34 @@ def test_lint_flags_read_only_posture_with_write_tools(tmp_path: Path) -> None:
     assert "read-only but tools grant Edit" in violations[0]
 
 
+@pytest.mark.parametrize("tool", ["edit", "WRITE", "MULTIEDIT", "notebookedit", "create"])
+def test_lint_flags_read_only_posture_with_a_write_tool_in_any_casing(
+    tmp_path: Path, tool: str
+) -> None:
+    """Casing is not a loophole: copilot resolves its tool aliases case insensitively.
+
+    A lowercase `edit` grants the same writes `Edit` does, so an exact-match
+    check would pass a read-only agent that really can write (basicly-e9jc).
+    `create` is copilot's file-creating primary and has no claude spelling at all.
+    """
+    core = tmp_path / ".basicly/core/agents"
+    _write_agent(core, "code-reviewer", _agent_yaml("code-reviewer", tools=f"[Read, {tool}]"))
+
+    violations = lint_agent_sources(tmp_path)
+
+    assert len(violations) == 1, violations
+    # Both halves the author needs: the offending tool as authored, and the
+    # posture claim it contradicts.
+    assert f"read-only but tools grant {tool}" in violations[0]
+
+
+def test_lint_accepts_read_tools_in_any_casing(tmp_path: Path) -> None:
+    """Folding the comparison must not turn a read tool into a violation."""
+    core = tmp_path / ".basicly/core/agents"
+    _write_agent(core, "code-reviewer", _agent_yaml("code-reviewer", tools="[read, GREP, Glob]"))
+    assert lint_agent_sources(tmp_path) == []
+
+
 def test_lint_flags_unknown_block_ref(tmp_path: Path) -> None:
     """A dangling block reference is a violation, not a crash."""
     core = tmp_path / ".basicly/core/agents"

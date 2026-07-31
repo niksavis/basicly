@@ -66,7 +66,20 @@ DEPRECATED_MODEL_KEY = "model"
 # cap keeps every composed body portable to the strictest reader.
 MAX_BODY_CHARS = 30000
 # A posture that declares the agent read-only must not grant mutating tools.
-WRITE_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
+# Matched case-insensitively (basicly-e9jc): GitHub documents copilot's tool
+# aliases as case insensitive, so a lowercase `edit` grants exactly the writes
+# `Edit` does and has to fail the same check. Notes on the membership, measured
+# 2026-07-31 against docs.github.com/en/copilot/reference/custom-agents-configuration:
+#   - `MultiEdit` is off Claude Code's published tool list but copilot still
+#     accepts it as an alias of `edit`, so dropping it would only reopen a hole.
+#   - `Create` is copilot's file-creating primary with no claude equivalent — the
+#     same write grant under a name this set would otherwise miss.
+#   - Tool breadth is not preserved across families: `NotebookEdit` alone
+#     resolves on the copilot CLI to both `create` and `edit`, i.e. general
+#     filesystem write, so the narrowest write tool on claude is the broadest
+#     there. Never reason about a tool's blast radius from its claude meaning.
+WRITE_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit", "Create"})
+_WRITE_TOOLS_FOLDED = frozenset(tool.casefold() for tool in WRITE_TOOLS)
 READ_ONLY_MARKER = "read-only"
 # Frontmatter keys the renderer owns; the claude passthrough map may not shadow
 # them. `model` stays on the list even though nothing renders it any more:
@@ -456,7 +469,11 @@ def lint_agent_sources(repo_root: Path) -> list[str]:
             )
 
         if READ_ONLY_MARKER in agent.posture.lower():
-            granted = sorted(set(agent.tools) & WRITE_TOOLS)
+            # Matched folded so no casing slips past the check, but reported as
+            # authored so the author can find the line (basicly-e9jc).
+            granted = sorted({
+                tool for tool in agent.tools if tool.casefold() in _WRITE_TOOLS_FOLDED
+            })
             if granted:
                 violations.append(
                     f"{rel}: posture declares read-only but tools grant {', '.join(granted)}"
