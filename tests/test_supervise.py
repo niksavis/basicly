@@ -1046,6 +1046,11 @@ def _worker_fixture(
     monkeypatch.setattr(
         supervise.loop, "record_run", lambda *a, **_k: seen.setdefault("recorded", a[1])
     )
+    # The lane's sizing read reaches the real br binary (basicly-jr0l.34), and this
+    # fixture stands in for the whole dispatch environment. Left live, every
+    # supervise test would spawn a subprocess and contend on br's machine-global
+    # lock — enough to perturb the stall-watchdog timing tests in this file.
+    monkeypatch.setattr(supervise.loop, "sizing_at_dispatch", lambda *_a: {})
     return br, seen
 
 
@@ -3054,3 +3059,34 @@ def test_stalled_lane_is_flagged_while_the_dispatch_still_completes(
     assert not stalls[0].pending
     assert stalls[0].answered_by == decisions.ENGINE_BY
     assert not decisions.has_pending(tmp_path, "epic.1")  # the next pass dispatches it
+
+
+def test_dispatch_lane_records_its_forecast_beside_its_actual(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The lane dispatch carries the forecast too (basicly-jr0l.34).
+
+    Not an afterthought: the measured 160-420x misses were all spent on lane
+    dispatches, so a forecast that reached only the loop's own dispatch would leave
+    exactly the expensive runs unpairable.
+    """
+    codex = _codex()
+    _worker_fixture(monkeypatch, tmp_path, stdout=_codex_events(50_000))
+    captured: dict = {}
+    monkeypatch.setattr(supervise.loop, "record_run", lambda *_a, **kw: captured.update(kw))
+    monkeypatch.setattr(
+        supervise.loop,
+        "sizing_at_dispatch",
+        lambda *_a: {
+            "scope_tokens": 9_000,
+            "forecast_tokens": 21_000,
+            "task_class": "task",
+            "forecast_source": "dispatch",
+        },
+    )
+
+    supervise._dispatch_lane(tmp_path, _session(_lane("epic.1")), _lane("epic.1"), codex, _sizing())
+
+    assert captured["forecast_tokens"] == 21_000
+    assert captured["task_class"] == "task"
+    assert captured["forecast_source"] == "dispatch"

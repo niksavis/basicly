@@ -1437,6 +1437,9 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
             repo_root, lane.issue_id, runner_config.stall_after, runner_config.runner_timeout
         ),
     )
+    # Read before the dispatch, not after: the sizing has to describe the tree the
+    # agent was handed, not the one it left behind (basicly-kjc5.30).
+    lane_sizing = loop.sizing_at_dispatch(repo_root, lane.issue_id)
     with watchdog, runner.process_budget().slot(runner.LANE):
         result = runner.run(
             spec, bundle.prompt, cwd, capture_usage=True, timeout=runner_config.runner_timeout
@@ -1449,6 +1452,10 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
         prompt=bundle.prompt,
         phase="lane",
         folded_info=tuple(_folded_ref(info) for info in bundle.folded),
+        # The lane dispatch is where the measured 160-420x forecast misses were
+        # spent, so it is the dispatch that most needs its forecast recorded beside
+        # its actual (basicly-jr0l.34).
+        **lane_sizing,
         **(ordering.as_inputs() if ordering else {}),
     )
     # The dispatch has ended, so any mid-run stall flag is moot — retire it here,

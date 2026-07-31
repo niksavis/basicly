@@ -765,6 +765,7 @@ names were removed, not aliased).
 | `basicly hooks-build [--no-install]` / `hooks-check` | Materializes catalog hook scripts, merges a managed `repo: local` block into `.pre-commit-config.yaml` (foreign hooks preserved, idempotent), and then runs `pre-commit install` for every managed stage so the gates are actually active (`--no-install` skips activation; graceful when pre-commit is absent). `hooks-check` reports projection drift and warns (non-fatal) when the git hooks are not installed |
 | `basicly permissions-build` / `permissions-check` | Projects the catalog agent-permissions deny-list (`.basicly/core/permissions/permissions.yaml`) into the co-owned `.claude/settings.json` `permissions.deny`, the way hooks are managed: ensure-present (managed patterns merged in, consumer-added entries preserved, nothing pruned — an extra deny is fail-safe and a flat deny string has no per-entry marker), with a semantic subset-match drift check. Claude-only: Copilot CLI has no config-file deny (session-scoped `--deny-tool` flag only) and Codex forbids project-scope override of `sandbox_mode`/`approval_policy`, so those guardrails are invocation-only — the copilot runner injects the deny-list as `--deny-tool` flags at dispatch (`basicly-lqz5`), while Codex sandbox/approval defaults remain to wire (`basicly-t0kt`) |
 | `basicly usage report` | Reports the tool/skill counts recorded by the `tool-usage` agent hook (token-free telemetry in `.basicly/usage/`) and names never-used catalog skills — the culling input (§4.3) |
+| `basicly usage forecast` | Reports the forecast error per dispatch — actual spend over forecast working set, per bead/class/model, with a median — from the run records and the committed `[harness-run]` markers. Refuses to compute an error for a record missing either half and reports those as unpaired counts, so an empty report explains itself (§12.8.1, `basicly-jr0l.34`) |
 | `basicly catalog list [fragment\|skill\|agent]` | Table of catalog sources of the given kind (default `fragment`); the authoring/inspection verbs live under the `catalog` group |
 | `basicly catalog new <fragment\|skill\|agent> NAME [--category C] [--description D]` | Scaffold a new `<id>.fragment.yaml` / `skill.yaml` / `agent.yaml` source (§4.2 source format); `--category` sets a fragment's category, `--description` seeds the one-line summary |
 | `basicly catalog lint` | Source-format gate: schema validation, no `.md`-named sources, single `.yaml` extension; wired as a pre-commit hook and CI step |
@@ -1153,6 +1154,30 @@ cumulative cost view (`basicly-kjc5.14`). A consumer pinning `claude-json` keeps
 telemetry and an inert ceiling. Only metadata is persisted — the command is stored with the prompt argument
 elided, never the prompt body or captured output. This is the correlation foundation for
 agent attribution, model provenance, and the cross-repo fleet rollup.
+
+**12.8.1 The forecast lands on the record its actual lands on** (`basicly-jr0l.34`). A dispatch
+records its **working-set forecast, task class and forecast source** alongside the scope
+read-cost it already froze, so one record carries the estimate and the outcome it produced.
+Before this they were written to disjoint classes of record — the governor froze an estimate on
+a _feature_ at decompose while tokens landed on a run record whose `forecast_tokens` field had
+no writer at all (measured non-null on **zero** of 149 records) — so the forecast error, which
+is the entire learning signal the spend forecast (`basicly-jr0l.21`) calibrates against, had
+never once been computable. `decompose.dispatch_sizing` resolves it: the estimate frozen for
+this content wins where one exists (marked `frozen`, evidence of prediction skill), otherwise
+the same formula is applied at dispatch (marked `dispatch`) — a distinction recorded rather than
+averaged away. A bead with no readable `## Scope` gets **no** forecast, because a forecast
+against an unknown scope is an invented number.
+
+`basicly usage forecast` reads the pair back, over local records **and** the committed
+`[harness-run]` markers, so a fresh clone computes the same error a teammate measured. It
+**refuses to compute an error for a record missing either half** — a forecast with no actual is
+a handoff or a killed run, an actual with no forecast is an un-sized helper dispatch — and
+reports those as unpaired counts instead, so an empty report says _why_ it is empty rather than
+looking like a passing calibration. Two things the report states, because misreading either is
+expensive: the ratio is **actual spend over forecast working set**, and since an agentic loop
+re-sends its context every turn it carries the turn multiplier (which nothing models yet) as
+well as any estimator error; and the summary is a **median**, because the measured misses span
+160x-420x and one such sample would drag a mean somewhere no dispatch has ever been.
 
 **Fleet rollup (`basicly-h0f0`).** `basicly status --fleet [--root PATH]` (`fleet.py`) is the
 cross-repo view dimension 3 calls for: it discovers the basicly-installed repos under a workspace

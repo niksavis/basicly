@@ -1663,10 +1663,67 @@ def _cmd_usage_tracker(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_usage_forecast(_args: argparse.Namespace) -> int:
+    """Report the forecast error per dispatch, and what could not be paired.
+
+    The unpaired counts print even when there is nothing to pair: an empty table
+    alone would read as "the forecast is fine" where it means "no dispatch has ever
+    carried both halves", which is the state basicly-jr0l.34 was filed about.
+    """
+    report = run_record.forecast_errors(_repo_root())
+    if report.errors:
+        ui.table(
+            f"Forecast error per dispatch ({report.paired})",
+            ["bead", "class", "model", "forecast", "actual", "ratio", "source"],
+            [
+                [
+                    error.bead,
+                    error.task_class or "-",
+                    error.model or "-",
+                    str(error.forecast_tokens),
+                    str(error.actual_tokens) + (" (est)" if error.estimated else ""),
+                    f"{error.ratio:.2f}x",
+                    error.forecast_source or "-",
+                ]
+                for error in report.errors
+            ],
+        )
+        median = report.median_ratio
+        if median is not None:
+            ui.say(f"Median actual/forecast: {median:.2f}x over {report.paired} pair(s).")
+            ui.say(
+                "The forecast is a working set and the actual is total spend, which an "
+                "agentic loop re-sends every turn — so this ratio carries the turn "
+                "multiplier as well as any estimator error (basicly-jr0l.21).",
+                style="muted",
+            )
+        for task_class, errors in report.by_task_class().items():
+            ratios = sorted(error.ratio for error in errors)
+            ui.say(
+                f"  {task_class}: {len(errors)} pair(s), {ratios[0]:.2f}x-{ratios[-1]:.2f}x",
+                style="muted",
+            )
+    else:
+        ui.say(
+            "No dispatch carries both a forecast and a measured actual, so no "
+            "forecast error is computable yet.",
+            style="warn",
+        )
+    ui.say(
+        f"Unpaired: {report.forecast_only} forecast with no actual, "
+        f"{report.actual_only} actual with no forecast, "
+        f"{report.unmetered} with neither (handoffs and un-sized helper dispatches).",
+        style="muted",
+    )
+    return 0
+
+
 def cmd_usage(args: argparse.Namespace) -> int:
     """Dispatch the usage telemetry subcommands."""
     if args.usage_command == "tracker":
         return _cmd_usage_tracker(args)
+    if args.usage_command == "forecast":
+        return _cmd_usage_forecast(args)
     if args.usage_command != "report":
         return 0
     repo_root = _repo_root()
@@ -3820,6 +3877,10 @@ def _add_usage_parser(subparsers: argparse._SubParsersAction) -> None:
     usage_sub = usage_parser.add_subparsers(dest="usage_command", required=True)
     usage_sub.add_parser(
         "report", help="Report recorded tool/skill counts and never-used catalog skills"
+    )
+    usage_sub.add_parser(
+        "forecast",
+        help="Report the forecast error per dispatch, and the records that cannot be paired",
     )
     tracker_parser = usage_sub.add_parser(
         "tracker", help="Report the measured br/bv surface Phase 6 freezes its scope from"

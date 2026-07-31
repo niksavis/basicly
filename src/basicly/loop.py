@@ -493,15 +493,17 @@ def _run_agent(ctx: _Ctx, issue_id: str, cwd: Path) -> _Dispatch:
     start from a fresh context that already sees the commits their predecessors
     made (D6/D7).
 
-    The scope read-cost is measured *before* the agent runs and recorded with the
-    dispatch (basicly-kjc5.30). It is the denominator of every calibration sample,
-    so measuring it later — against a tree this very dispatch is about to
-    change — is what let the build factors drift.
+    The sizing is measured *before* the agent runs and recorded with the dispatch
+    (basicly-kjc5.30, basicly-jr0l.34). The scope read-cost is the denominator of
+    every calibration sample, so measuring it later — against a tree this very
+    dispatch is about to change — is what let the build factors drift; and the
+    forecast has to be written here, beside the actual this same record will
+    receive, or the forecast error is not computable at all.
     """
     config = load_runner_config(ctx.repo_root)
     spec = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
     prompt = dispatch_prompt(issue_id)
-    scope_tokens = _scope_cost_at_dispatch(ctx.repo_root, issue_id)
+    sizing = sizing_at_dispatch(ctx.repo_root, issue_id)
     # A sub-task runner is the lane's own write agent (D7), so it draws on the
     # lane reservation like any lane dispatch (component 8, basicly-kjc5.11).
     with runner.process_budget().slot(runner.LANE):
@@ -519,23 +521,32 @@ def _run_agent(ctx: _Ctx, issue_id: str, cwd: Path) -> _Dispatch:
         result,
         prompt=prompt,
         phase="build",
-        scope_tokens=scope_tokens,
+        **sizing,
     )
     return _Dispatch(spec=spec, result=result, cwd=cwd, timeout=config.runner_timeout)
 
 
-def _scope_cost_at_dispatch(repo_root: Path, issue_id: str) -> int | None:
-    """The bead's declared-scope read cost right now, or None when it has no scope.
+def sizing_at_dispatch(repo_root: Path, issue_id: str) -> dict[str, object]:
+    """The bead's sizing inputs as ``record_dispatch`` keywords, empty when unreadable.
+
+    Shared with the supervisor's lane dispatch, so the two dispatch sites that size
+    real packages record the same fields — the forecast landing on only one of them
+    would leave exactly the expensive lane runs unpairable (basicly-jr0l.34).
 
     Telemetry on the critical path, so it never raises: a bead with no readable
-    ``## Scope`` section simply records nothing and calibration falls back to
-    measuring the tree, exactly as it did before.
+    ``## Scope`` section records nothing and calibration falls back to measuring the
+    tree, exactly as it did before.
     """
     with contextlib.suppress(RuntimeError, ValueError, OSError):
-        info = decompose.bead_class_and_scope(repo_root, issue_id)
-        if info is not None:
-            return decompose.scope_read_cost(repo_root, info[1])
-    return None
+        sizing = decompose.dispatch_sizing(repo_root, issue_id)
+        if sizing is not None:
+            return {
+                "scope_tokens": sizing.estimate.scope_tokens,
+                "forecast_tokens": sizing.estimate.total,
+                "task_class": sizing.task_class,
+                "forecast_source": sizing.source,
+            }
+    return {}
 
 
 def _runner_block(

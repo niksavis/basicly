@@ -781,3 +781,64 @@ def test_scope_read_cost_skips_unglobbable_patterns(tmp_path: Path) -> None:
     # it and the guard skips it).
     assert decompose.scope_read_cost(tmp_path, ("/etc/conf.py",)) == 10
     assert decompose.scope_read_cost(tmp_path, ("c:/nowhere/*.py",)) == 0
+
+
+# --- sizing carried into the dispatch record (basicly-jr0l.34) ---------------
+
+
+def _scoped_bead(*globs: str, issue_type: str = "task") -> _FakeBrShow:
+    body = "## Scope\n\n" + "\n".join(f"- `{glob}`" for glob in globs)
+    return _FakeBrShow({"b-1": (issue_type, body)})
+
+
+def test_dispatch_sizing_prefers_the_forecast_that_was_frozen(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A registered forecast is the one of record, and is marked as such.
+
+    A frozen estimate was committed to before the work started, so it is evidence of
+    prediction skill; one computed at dispatch is the same formula applied at the last
+    honest moment. A calibration that averaged the two would read as skill the
+    estimator has not shown, so the source travels with the number.
+    """
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _write(tmp_path, "src/a.py", 16_000)
+    frozen = decompose.govern_working_set(tmp_path, (_child("a", "src/a.py"),), feature_id="feat")
+    _export(tmp_path, {"id": "feat", "comments": [{"text": fake.comments["feat"][0]}]})
+
+    _install(monkeypatch, _scoped_bead("src/a.py"))
+    sizing = decompose.dispatch_sizing(tmp_path, "b-1")
+    assert sizing is not None
+    assert sizing.estimate == frozen[0]
+    assert sizing.source == decompose.FROZEN_FORECAST
+    assert sizing.task_class == "task"
+
+
+def test_dispatch_sizing_computes_a_forecast_when_none_was_frozen(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A hand-filed bead still yields a pairable forecast rather than a null."""
+    _install(monkeypatch, _scoped_bead("src/a.py", issue_type="bug"))
+    _write(tmp_path, "src/a.py", 16_000)
+    sizing = decompose.dispatch_sizing(tmp_path, "b-1")
+    assert sizing is not None
+    assert sizing.source == decompose.DISPATCH_FORECAST
+    assert sizing.task_class == "bug"
+    # 4_000 scope tokens at the seeded `bug` factor of 2.0, plus the overhead.
+    assert sizing.estimate.scope_tokens == 4_000
+    assert sizing.estimate.build_factor == 2.0
+    assert sizing.estimate.total == sizing.estimate.overhead_tokens + 8_000
+
+
+def test_dispatch_sizing_declines_a_bead_with_no_readable_scope(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No declared scope means no forecast — an invented one would poison calibration.
+
+    The forecast is a function of the scope read-cost, so a bead that declares no
+    scope has nothing to compute from. Recording overhead alone would look like a
+    forecast and be a guaranteed under-count of every such package.
+    """
+    _install(monkeypatch, _FakeBrShow({"b-1": ("task", "## Context\n\nno scope here")}))
+    assert decompose.dispatch_sizing(tmp_path, "b-1") is None
