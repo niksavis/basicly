@@ -12,19 +12,40 @@ would reject, naming the offending characters *before* a commit is attempted)
 rather than replacing them. The description charset here mirrors
 ``commit-msg.py`` exactly; ``tests/test_commit.py`` pins the two together so
 they cannot drift apart silently.
+
+The envelope also carries the dispatch's model provenance as a git trailer
+(basicly-kjc5.60). A run record lives in the self-ignored ``.basicly/usage/`` and
+does not survive a clone; the commit does, so the model that produced a landed
+change is evidence anyone who fetches the history can read.
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import loop_state
-from .worktree import git
+from . import loop_state, run_record
+from .worktree import git, main_checkout
 
 MIN_DESCRIPTION_LENGTH = 3
+
+# The trailer carrying model provenance. Same name ``merge.py`` stamps on a
+# landing commit (basicly-140a) on purpose: one trailer name with one meaning —
+# the model the harness *pinned* for the dispatch — so a reader of
+# ``git log --format='%(trailers)'`` gets the same fact off a work commit and off
+# the merge that landed it.
+MODEL_TRAILER = "Harness-Model"
+
+# The dispatch phases whose agent writes code, and therefore commits: a leaf's
+# build (``loop._run_agent``) and a supervised lane (``supervise``). Recorded
+# against the same bead are ``validate`` (the rubric judge) and ``decide`` (the
+# decider), either of which can be the *most recent* dispatch by the time the
+# build agent commits — a decision answered mid-build is exactly that sequence.
+# Neither wrote the code, so neither may supply the trailer.
+_WORK_PHASES = ("build", "lane")
 
 # Mirrors commit-msg.py: type vocabulary, the description charset, and the
 # lowercase-kebab-case scope shape.
@@ -65,6 +86,9 @@ class Envelope:
     bead: str
     breaking: bool = False
     body: str = ""
+    # The model the dispatch resolved, verbatim; None when it pinned none. Never
+    # an empty string or a placeholder — see :func:`dispatch_model`.
+    model: str | None = None
 
     @property
     def subject(self) -> str:
@@ -74,9 +98,27 @@ class Envelope:
         return f"{self.type}{scope}{breaking}: {self.description} ({self.bead})"
 
     @property
+    def trailers(self) -> tuple[str, ...]:
+        """The engine-stamped trailer lines, in emission order."""
+        return (f"{MODEL_TRAILER}: {self.model}",) if self.model else ()
+
+    @property
     def message(self) -> str:
-        """The full commit message: the header, plus the authored body if any."""
-        return f"{self.subject}\n\n{self.body.strip()}\n" if self.body.strip() else self.subject
+        """The full commit message: the header, the authored body, then the trailers.
+
+        The trailers are their own final paragraph, which is where git looks for
+        them (``git interpret-trailers``). Both commit-msg hooks read the first
+        line only, so nothing appended here can change their verdict —
+        ``tests/test_commit.py`` runs the real hook over the assembled message.
+        """
+        paragraphs = [self.subject]
+        if self.body.strip():
+            paragraphs.append(self.body.strip())
+        if self.trailers:
+            paragraphs.append("\n".join(self.trailers))
+        # A single-paragraph message is the bare subject, no trailing newline: git
+        # adds one, and the existing callers compare against exactly that.
+        return "\n\n".join(paragraphs) + ("\n" if len(paragraphs) > 1 else "")
 
 
 # --- description rules (the part an agent authors) --------------------------
@@ -326,6 +368,83 @@ def _record_for(repo_root: Path, bead: str) -> dict:
     )
 
 
+# --- model provenance (basicly-kjc5.60) ------------------------------------
+
+
+def _records_root(repo_root: Path) -> Path:
+    """Which checkout's ``.basicly/usage/`` holds the run records for *repo_root*.
+
+    The same shape as :func:`_beads_dir`, for the same reason: a harness worktree
+    has no telemetry of its own, because the engine that dispatched into it runs
+    from the base checkout and records there. Reading the main checkout is what
+    lets a commit made *inside* the worktree see the dispatch that produced it.
+    """
+    if (repo_root / run_record.RUN_RECORDS_FILE).is_file():
+        return repo_root
+    # Not a git repo (a unit test's tmp dir), or no git at all: there is simply no
+    # dispatch to attribute, which the caller already handles as "no trailer".
+    with contextlib.suppress(OSError, RuntimeError):
+        return main_checkout(repo_root)
+    return repo_root
+
+
+def _work_dispatch(repo_root: Path, bead: str) -> dict | None:
+    """The most recent code-writing dispatch recorded for *bead*, or None.
+
+    Telemetry is read raw here rather than through ``latest_record``: the latest
+    record of any kind is the wrong one (see :data:`_WORK_PHASES`), and only the
+    model fields are wanted.
+    """
+    data = run_record.load_run_records(_records_root(repo_root))
+    history = (data or {}).get(bead)
+    if not isinstance(history, list):
+        return None
+    work = [
+        entry for entry in history if isinstance(entry, dict) and entry.get("phase") in _WORK_PHASES
+    ]
+    return work[-1] if work else None
+
+
+def dispatch_model(repo_root: Path, bead: str) -> str | None:
+    """The model *bead*'s work dispatch resolved, or None when none was asked for.
+
+    Read off the recorded provenance (basicly-kjc5.59) rather than re-resolved:
+    re-resolving would read the model map a second time and could answer
+    differently from the dispatch that actually ran — and the commit is evidence
+    of that dispatch, not of the config as it stands now. The *pinned* model is
+    the answer even when the adapter reports a different observed one: the trailer
+    states what the harness asked for, in the surface spelling it asked with, and
+    the ``model_mismatch`` field of the run record is where a divergence belongs
+    (one trailer cannot carry the several models a session may switch between).
+
+    Raises ``ValueError`` when a tier *was* asked for and no model came of it —
+    ``resolve_model`` reports that as ``tier_honoured`` false, meaning the family
+    had no flag to pin the tier onto and the dispatch ran on the session's own
+    model. The envelope refuses there instead of emitting an empty or placeholder
+    trailer: an unanswerable provenance question must not be answered wrongly. A
+    dispatch that asked for no model at all is the different fact — nothing was
+    resolved because nothing was demanded — and carries no trailer rather than
+    blocking every commit in a repo that declares no tier.
+    """
+    entry = _work_dispatch(repo_root, bead)
+    if entry is None:
+        return None
+    model = entry.get("model")
+    if isinstance(model, str) and model:
+        return model
+    tier = entry.get("model_tier")
+    if isinstance(tier, str) and tier:
+        source = entry.get("model_source") or "config"
+        raise ValueError(
+            f"the dispatch for {bead} asked for model tier {tier!r} ({source}) but no "
+            f"model was pinned, so the {MODEL_TRAILER} trailer would have to be empty; "
+            "give the runner a tier its family can pin (or an explicit "
+            "[[runner.agents]] model) and re-dispatch, rather than landing a commit "
+            "whose model provenance is unknown"
+        )
+    return None
+
+
 # --- assembly --------------------------------------------------------------
 
 
@@ -342,10 +461,11 @@ def assemble(  # noqa: PLR0913 — every override is one independently overridab
     """Assemble the envelope for the staged change, validating every part.
 
     Derives what state determines — the bead from the branch's worktree binding,
-    the type from that bead's work class, the scope from the staged paths — and
-    takes only *description* (and an optional *body*) as authored input. Every
-    derived part can be overridden explicitly; an override is validated the same
-    way, so no path through here can emit a subject the hooks would reject.
+    the type from that bead's work class, the scope from the staged paths, the
+    model trailer from the dispatch's recorded provenance — and takes only
+    *description* (and an optional *body*) as authored input. Every derived part
+    can be overridden explicitly; an override is validated the same way, so no
+    path through here can emit a subject the hooks would reject.
 
     Raises ``ValueError`` with the offending part named, before any commit.
     """
@@ -370,6 +490,7 @@ def assemble(  # noqa: PLR0913 — every override is one independently overridab
         bead=bead,
         breaking=breaking,
         body=body,
+        model=dispatch_model(repo_root, bead),
     )
 
 
