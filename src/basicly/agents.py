@@ -18,7 +18,7 @@ from pathlib import Path
 import yaml
 
 from .projection import SyncResult, sync_file
-from .schema import ValidationError, technology_selected, validate_technologies
+from .schema import MODEL_TIERS, ValidationError, technology_selected, validate_technologies
 
 CORE_AGENTS_DIR = Path(".basicly/core/agents")
 OVERLAY_AGENTS_DIR = Path(".basicly-local/agents")
@@ -54,7 +54,14 @@ BLOCKS_DIR_NAME = "blocks"
 # independently by Anthropic's official subagent examples and the community
 # corpus best-in-class files (research on basicly-ajq).
 SLOT_ORDER = ("role", "startup", "process", "output_contract", "constraints")
-DEFAULT_MODEL = "inherit"
+# The deprecated per-agent model key, superseded by the portable `tier` (see
+# schema.MODEL_TIERS). It stays a *known* property in agent.schema.json rather
+# than being deleted: that schema sets additionalProperties: false, so deleting
+# it would fail a legacy source with a bare "Additional properties are not
+# allowed ('model' was unexpected)" that names no replacement, and
+# catalog_lint._missing_required can only suppress a `required` error. Keeping
+# the property lets lint_agent_sources own the actionable diagnostic instead.
+DEPRECATED_MODEL_KEY = "model"
 # GitHub's cloud agent caps the prompt body at 30,000 characters; enforcing the
 # cap keeps every composed body portable to the strictest reader.
 MAX_BODY_CHARS = 30000
@@ -62,7 +69,9 @@ MAX_BODY_CHARS = 30000
 WRITE_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
 READ_ONLY_MARKER = "read-only"
 # Frontmatter keys the renderer owns; the claude passthrough map may not shadow
-# them.
+# them. `model` stays on the list even though nothing renders it any more:
+# otherwise the passthrough is a back door that re-injects a provider model id
+# into frontmatter and defeats the lint rule below.
 RESERVED_FRONTMATTER_KEYS = frozenset({"name", "description", "tools", "model"})
 # Marker injected into every rendered agent file so a hand-edit of the projected
 # copy is obviously wrong — the YAML source is the thing to edit.
@@ -101,7 +110,10 @@ class AgentDefinition:
     returns: str
     posture: str
     tools: tuple[str, ...]
-    model: str
+    tier: str
+    # The deprecated `model` key as authored, empty when absent. Carried only so
+    # lint_agent_sources can name it; nothing renders or resolves it.
+    deprecated_model: str
     claude: tuple[tuple[str, object], ...]
     slots: tuple[tuple[str, tuple[SlotItem, ...]], ...]
     source: str
@@ -251,7 +263,8 @@ def _parse_agent(slug: str, data: dict, path: Path, source: str) -> AgentDefinit
         returns=_require_str(data.get("returns"), "returns", path).strip(),
         posture=_require_str(data.get("posture"), "posture", path).strip(),
         tools=tuple(tool.strip() for tool in tools),
-        model=str(data.get("model", DEFAULT_MODEL)).strip() or DEFAULT_MODEL,
+        tier=str(data.get("tier") or "").strip(),
+        deprecated_model=str(data.get(DEPRECATED_MODEL_KEY) or "").strip(),
         claude=tuple(sorted(claude.items())),
         slots=_parse_slots(data.get("slots"), path),
         source=data.get("source", source),
@@ -338,16 +351,16 @@ def render_agent_md(agent: AgentDefinition, blocks: dict[str, BlockDefinition]) 
     """Render the projected agent file (frontmatter + generated marker + body).
 
     Frontmatter carries the portable core every reader honors (name,
-    description, tools) plus the Claude-only extras; `model: inherit` is
-    Claude's documented default and is omitted.
+    description, tools) plus the Claude-only extras. No family gets a `model`
+    line: a provider model id is not portable across agent families, so the
+    source's `tier` is catalog metadata that resolves to a concrete model
+    elsewhere, never a frontmatter key.
     """
     front: dict[str, object] = {
         "name": agent.slug,
         "description": compose_description(agent),
         "tools": ", ".join(agent.tools),
     }
-    if agent.model != DEFAULT_MODEL:
-        front["model"] = agent.model
     front.update(dict(agent.claude))
     frontmatter = yaml.safe_dump(front, sort_keys=False, width=100_000, allow_unicode=True)
     body = compose_body(agent, blocks)
@@ -423,6 +436,12 @@ def lint_agent_sources(repo_root: Path) -> list[str]:
     violations: list[str] = []
     for agent in agents:
         rel = _rel(agent.source_path, repo_root)
+        if agent.deprecated_model:
+            violations.append(
+                f"{rel}: '{DEPRECATED_MODEL_KEY}: {agent.deprecated_model}' pins a provider "
+                "model id or alias, which is not portable across agent families; declare the "
+                f"portable model tier instead — replace it with `tier: {' | '.join(MODEL_TIERS)}`"
+            )
         missing = unknown_block_refs(agent, blocks)
         for ref in missing:
             violations.append(f"{rel}: references unknown block '{ref}'")

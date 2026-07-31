@@ -6,6 +6,28 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING: an agent source declares a model `tier`, not a provider `model`.**
+  `.basicly/core/agents/<slug>/agent.yaml` — and its `.basicly-local/agents`
+  overlay — now takes `tier: low | medium | high | maximum`, the portable model
+  tier from the roster design, and a `model:` key fails `basicly catalog lint`.
+  No projected agent file carries a `model` frontmatter line any more, for any
+  agent family.
+
+  **Migration.** Replace `model: <id-or-alias>` with the tier that alias sat in:
+  `haiku` → `low`, `sonnet` → `medium`, `opus` → `high`, `fable` → `maximum`.
+  Then run `basicly agents-build` to drop the `model` line from the projected
+  file. The lint failure names the source and spells the four tiers, so the fix
+  needs no reading of our docs.
+
+  A provider model id is never portable across agent families: models.dev spells
+  the same model `claude-haiku-4.5` for Copilot and `claude-haiku-4-5` for
+  Anthropic, and only Claude reads a `model` frontmatter key at all — so a
+  pinned id landed verbatim in one family's file and was invisible to every
+  other. Nothing resolves a tier to a concrete model yet; declaring it is what
+  makes that resolution possible later without re-authoring every source.
+
 ## v0.6.0 - 2026-07-31
 
 Delta: v0.5.1..v0.6.0

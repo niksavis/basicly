@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import yaml
 
 from basicly.catalog_lint import lint_catalog, skill_warnings
+from basicly.schema import MODEL_TIERS
 
 REPO = Path(__file__).parent.parent
 VALID_SKILL = (
@@ -22,7 +24,7 @@ def _catalog(tmp_path: Path) -> Path:
     """Build a minimal catalog with real schemas and one valid skill + fragment."""
     schemas = tmp_path / ".basicly/core/schemas"
     schemas.mkdir(parents=True)
-    for name in ("skill.schema.json", "fragment.schema.json"):
+    for name in ("skill.schema.json", "fragment.schema.json", "agent.schema.json"):
         (schemas / name).write_text(
             (REPO / ".basicly/core/schemas" / name).read_text(encoding="utf-8"), encoding="utf-8"
         )
@@ -303,3 +305,67 @@ def test_every_shipped_skill_declares_the_axis() -> None:
     for path in sorted((REPO / ".basicly/core/skills").glob("*/skill.yaml")):
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
         assert data.get("invocation") in {"model", "user"}, f"{path.parent.name} has no axis"
+
+
+# --- Model tier, not a provider model id (basicly-kjc5.58) --------------------
+
+_AGENT_SLOTS = "".join(
+    f"  {name}:\n    - text: the {name} slot\n"
+    for name in ("role", "startup", "process", "output_contract", "constraints")
+)
+
+
+def _agent_source(root: Path, slug: str, extra: str) -> Path:
+    path = root / ".basicly/core/agents" / slug / "agent.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"schema_version: 1\nname: {slug}\npurpose: Reviews things.\n"
+        f"triggers: Use proactively after changes.\nreturns: Returns findings.\n"
+        f"posture: Read-only.\ntools: [Read, Grep, Glob]\n{extra}slots:\n{_AGENT_SLOTS}",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_a_declared_model_tier_passes_the_catalog_lint(tmp_path: Path) -> None:
+    """The portable field is the accepted way to say how capable an agent must be."""
+    root = _catalog(tmp_path)
+    _agent_source(root, "reviewer", "tier: high\n")
+
+    assert lint_catalog(root) == []
+
+
+def test_an_agent_pinning_a_model_names_the_source_and_the_tier_field(tmp_path: Path) -> None:
+    """`model:` survives as a schema property only so this message can replace it.
+
+    The schema sets additionalProperties: false, so dropping the property would
+    fail the source with "Additional properties are not allowed ('model' was
+    unexpected)" — which names neither the replacement field nor its values. The
+    property stays known and the agent lint owns the actionable diagnostic.
+    """
+    root = _catalog(tmp_path)
+    _agent_source(root, "reviewer", "model: haiku\n")
+
+    violations = [v for v in lint_catalog(root) if "reviewer" in v]
+
+    assert len(violations) == 1, f"one defect must yield one diagnostic: {violations}"
+    assert ".basicly/core/agents/reviewer/agent.yaml" in violations[0]
+    assert "tier: low | medium | high | maximum" in violations[0]
+    assert "not allowed" not in violations[0]
+
+
+def test_no_shipped_agent_source_declares_a_model() -> None:
+    """The core catalog is the first consumer of its own rule."""
+    for path in sorted((REPO / ".basicly/core/agents").glob("*/agent.yaml")):
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert "model" not in data, f"{path.parent.name} pins a provider model id"
+        tier = data.get("tier")
+        assert tier is None or tier in MODEL_TIERS, f"{path.parent.name} has an unknown model tier"
+
+
+def test_the_agent_schema_tier_enum_matches_the_model_tier_vocabulary() -> None:
+    """The JSON Schema restates MODEL_TIERS, so a tripwire keeps the two in step."""
+    schema = json.loads(
+        (REPO / ".basicly/core/schemas/agent.schema.json").read_text(encoding="utf-8")
+    )
+    assert schema["properties"]["tier"]["enum"] == list(MODEL_TIERS)
