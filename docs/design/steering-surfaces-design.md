@@ -49,10 +49,11 @@ instruction files.
 ### 2.1 What we know and what we assume
 
 We manage the baseline against a soft character cap — 9000 for Claude and Copilot, 12000 for Codex —
-and we treat refilling it as a budgeting problem: trim here, scope out there. (Measured 2026-07-26:
-7209 / 7343 / 8484 chars for Claude / Copilot / Codex. The "roughly 1000 characters of headroom" this
-section used to cite was never right.) That framing assumes **adherence degrades smoothly with
-size**.
+and we treat refilling it as a budgeting problem: trim here, scope out there. (Measured 2026-07-31:
+7940 / 8074 / 10833 chars for Claude / Copilot / Codex, so roughly 1060 / 926 / 1167 characters of
+headroom; 7209 / 7343 / 8484 when §2.2's recall test ran. The "roughly 1000 characters of headroom"
+this section used to cite was never right, and is only now accidentally close.) That framing assumes
+**adherence degrades smoothly with size**.
 
 The field's consistent claim is that it does not. The reported thresholds: rules start dropping past
 roughly 80 lines; whole blocks are ignored past roughly 200 lines; adherence to dense rules

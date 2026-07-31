@@ -1234,8 +1234,9 @@ produced code against hostile input, so "less code" or "more decisive" can never
 bought by dropping validation.
 
 The single highest-leverage unknown sat here, and half of it has now been measured.
-The always-on baseline is 7209 / 7343 / 8484 characters for Claude / Copilot / Codex
-— on the order of 1100–1300 words of dense rules — against a consistent practitioner
+The always-on baseline is 7940 / 8074 / 10833 characters for Claude / Copilot / Codex
+(measured 2026-07-31; 7209 / 7343 / 8484 at the recall test below)
+— on the order of 1100–1600 words of dense rules — against a consistent practitioner
 finding that adherence to dense rules degrades well below that. **The "cliff already
 crossed" reading is refuted**: measured 2026-07-26, both families reproduce 93–98% of
 their baseline's rules when asked, against a 6–17% no-guidance control
