@@ -17,6 +17,10 @@ Cross-platform scripts for this repository.
   the `identity-guard` hook. Run `uv run python .scripts/setup_git_identity.py --help`.
 - [`generate_release_changelog.py`](generate_release_changelog.py) — release changelog
   helper (see the release-process skill).
+- [`generate_model_map.py`](generate_model_map.py) — resolve each model tier's anchor
+  against models.dev into the committed [`model-map.json`](../.basicly/core/models/README.md),
+  and `--check` it for upstream drift. Needs the network, so it runs at authoring and
+  check time only — never in the dispatch path and not as a commit-time gate.
 
 ## Git hooks
 

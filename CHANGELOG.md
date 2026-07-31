@@ -6,6 +6,41 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **A committed model map resolves a tier per vendor and per surface.**
+  `.basicly/core/models/anchors.yaml` names one anchor model per (tier, vendor)
+  and `.scripts/generate_model_map.py` resolves it against models.dev into
+  `.basicly/core/models/model-map.json`: 4 tiers x 4 vendors (Anthropic, OpenAI,
+  Moonshot AI, Google) x each surface serving them, with that surface's own
+  published input/output cost and token limits. This is what makes the declared
+  `tier` resolvable without pinning a provider id anywhere.
+
+  All three axes matter. The same model is `claude-haiku-4-5` to Anthropic and
+  `claude-haiku-4.5` to Copilot; **cost differs by surface too** — `gpt-5.6-luna`
+  is 0.2/1.2 USD per MTok direct from OpenAI and 1/6 through Copilot — so a single
+  per-vendor price would be wrong. And a tier can legitimately have **no** model
+  on a surface: Copilot serves exactly one Moonshot model, so five of the 32 cells
+  are `status: unavailable` with a reason and deliberately **no** `model` key. A
+  consumer reading it fails loudly instead of silently getting a different tier's
+  model. Vendors with a three-class ladder declare an explicit `collapse` of
+  `maximum` onto `high`, cross-checked against the ids, rather than repeating a
+  row silently. Anchors must clear a stated general-model rule (text in, text-only
+  out, tool calling), so an image, TTS or embedding model can never become a tier.
+
+  `--check` fetches and reports drift, naming the id and the change, and never
+  writes: models.dev is community-contributed, so a bad upstream edit must
+  surface as a red check rather than silently change which model runs your code.
+  It is deliberately not a `[[verify.checks]]` entry — it needs the network, and
+  a gate that needs the network must not run on every commit. The fetch happens
+  at authoring and check time only, never in the dispatch path, so nothing gains
+  a runtime network dependency.
+
+  `model-map.json` is a standalone, self-describing artifact: plain JSON with a
+  `schema_version`, a published schema beside it, a provenance stamp, and no
+  basicly-internal structure. Copy that one file into an unrelated project and
+  drive your own spawner from it — see `.basicly/core/models/README.md`.
+
 ### Changed
 
 - **BREAKING: an agent source declares a model `tier`, not a provider `model`.**
