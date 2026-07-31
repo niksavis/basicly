@@ -813,8 +813,6 @@ _CLAUDE_RESULT = json.dumps({
     },
 })
 
-# The documented `codex exec --json` JSONL event stream: usage rides on
-# turn.completed events; cached_input_tokens is a subset of input_tokens.
 # Shape of `claude -p ... --output-format stream-json --verbose`, pinned against a
 # live probe (2026-07-25): a plain-text warning line, then one event per turn
 # carrying that turn's usage, then the same result object the non-streaming
@@ -845,14 +843,63 @@ _CLAUDE_STREAM = "\n".join([
     }),
 ])
 
-_CODEX_EVENTS = "\n".join([
-    '{"type":"thread.started","thread_id":"t1"}',
-    '{"type":"item.completed","item":{"type":"agent_message","text":"ok"}}',
-    '{"type":"turn.completed","usage":'
-    '{"input_tokens":24763,"cached_input_tokens":24448,"output_tokens":122}}',
-    '{"type":"turn.completed","usage":'
-    '{"input_tokens":100,"cached_input_tokens":50,"output_tokens":7}}',
-])
+# Two `turn.completed` usage objects captured verbatim from live `codex exec
+# --json` probes of codex-cli 0.146.0 (2026-07-31 and 2026-07-29,
+# basicly-jr0l.37), each paired with the `total_tokens` codex's own session
+# rollout recorded for that same turn. That pairing is the evidence for how the
+# fields relate: the identity input_tokens + output_tokens == total_tokens holds
+# on both, and on all four turns this machine has recorded. So
+# `cached_input_tokens` is a subset of `input_tokens`, and
+# `reasoning_output_tokens` a subset of `output_tokens` — 12764 + 155 == 12919
+# even though 147 of those 155 output tokens were reasoning, and the visible
+# answer really was 4 characters long.
+#
+# The first probe forced a **non-zero** reasoning count
+# (`model_reasoning_effort=high` on multi-step arithmetic). Every earlier sample
+# on this machine reported 0, which is why the subset question could not be
+# settled from existing data — and why the fixture this replaced, composed from
+# the documented shape and never probed, carried no `cache_write_input_tokens`
+# and no `reasoning_output_tokens` at all, which is how the dropped-split defect
+# survived. Nothing from the prompt or the answer is copied here; the usage
+# objects are pure counts.
+_CODEX_TURNS = (
+    (
+        {
+            "input_tokens": 12764,
+            "cached_input_tokens": 9984,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 155,
+            "reasoning_output_tokens": 147,
+        },
+        12919,
+    ),
+    (
+        {
+            "input_tokens": 16824,
+            "cached_input_tokens": 10496,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 5,
+            "reasoning_output_tokens": 0,
+        },
+        16829,
+    ),
+)
+
+
+def _codex_stream(*usages: dict) -> str:
+    """A codex `--json` stream carrying *usages*, wrapped in the real event kinds.
+
+    The non-usage events are what a live run interleaves, so the reader has to
+    skip them rather than assume a stream of nothing but `turn.completed`.
+    """
+    lines = ['{"type":"thread.started","thread_id":"t1"}']
+    for usage in usages:
+        lines.append('{"type":"item.completed","item":{"type":"agent_message","text":"ok"}}')
+        lines.append(json.dumps({"type": "turn.completed", "usage": usage}))
+    return "\n".join(lines)
+
+
+_CODEX_EVENTS = _codex_stream(*(usage for usage, _total in _CODEX_TURNS))
 
 
 # Copied from a live copilot 1.0.75 session store on a developer box
@@ -1016,10 +1063,107 @@ def test_extract_usage_claude_json_without_usage_block_estimates() -> None:
     assert usage.estimated is True
 
 
-def test_extract_usage_codex_sums_turns_excluding_cached() -> None:
-    """Codex turn.completed events sum input+output; cached is a subset, not added."""
+@pytest.mark.parametrize(("turn", "total_tokens"), _CODEX_TURNS)
+def test_extract_usage_codex_total_matches_the_cli_own_total(turn: dict, total_tokens: int) -> None:
+    """A single observed turn totals exactly what codex itself accounted for it.
+
+    The identity that settles the summation semantics: codex's session rollout
+    recorded `total_tokens` for this very turn, and input + output reproduces it
+    to the token. Any addend beyond those two would overshoot it.
+    """
+    usage = runner.extract_usage(_codex_spec(), _executed(_codex_spec(), _codex_stream(turn)))
+    assert usage is not None
+    assert usage.tokens == total_tokens
+    assert usage.estimated is False
+
+
+def test_extract_usage_codex_records_reasoning_without_adding_it() -> None:
+    """`reasoning_output_tokens` lands on the split but never in the total.
+
+    Measured, not assumed (basicly-jr0l.37): the probed turn spent 147 of its 155
+    output tokens on reasoning, so summing the two would double-count 147 tokens
+    and inflate a 12919-token turn to 13066.
+    """
+    turn, total_tokens = _CODEX_TURNS[0]
+    usage = runner.extract_usage(_codex_spec(), _executed(_codex_spec(), _codex_stream(turn)))
+    assert usage is not None
+    assert usage.reasoning_tokens == 147
+    assert usage.tokens == total_tokens
+    assert usage.tokens != total_tokens + 147
+    # Subset of output, so the residue is the answer plus its framing.
+    assert usage.output_tokens is not None and usage.reasoning_tokens <= usage.output_tokens
+
+
+def test_extract_usage_codex_records_the_cache_split_without_adding_it() -> None:
+    """Cached input is the portion *inside* `input_tokens`, not a separate addend.
+
+    `input_tokens` is the superset (the same convention copilot's `inputTokens`
+    follows), so the uncached remainder the pricing model needs is derivable as
+    input minus cache-read rather than stored a fourth time — and adding
+    cache-read back in would report 22903 tokens for a 12919-token turn.
+    """
+    turn, total_tokens = _CODEX_TURNS[0]
+    usage = runner.extract_usage(_codex_spec(), _executed(_codex_spec(), _codex_stream(turn)))
+    assert usage is not None
+    assert (usage.input_tokens, usage.output_tokens) == (12764, 155)
+    assert (usage.cache_read_tokens, usage.cache_write_tokens) == (9984, 0)
+    assert usage.tokens == total_tokens
+    assert usage.tokens != total_tokens + 9984
+    # The uncached remainder is derivable, which is why it is not stored a fourth time.
+    assert usage.input_tokens is not None and usage.cache_read_tokens is not None
+    assert usage.input_tokens - usage.cache_read_tokens == 2780
+
+
+def test_extract_usage_codex_keeps_cache_write_out_of_the_total() -> None:
+    """Cache-write is recorded and, like cache-read, is not added to the total.
+
+    Synthetic on purpose, and the one codex assertion here **not** backed by an
+    observed number: every turn recorded on this machine reported
+    `cache_write_input_tokens` 0, so the total_tokens identity cannot speak to it.
+    The convention comes from the semantics the rest of the mapping follows —
+    cache-written tokens are prompt tokens, so they sit inside `input_tokens`,
+    which is verified outright on the copilot side (`inputTokens == input +
+    cacheRead + cacheWrite` on 15 stores). Pinned so a build that disagrees
+    reddens a test instead of silently under-counting a cache-warming turn.
+    """
+    stream = _codex_stream({
+        "input_tokens": 1000,
+        "cached_input_tokens": 600,
+        "cache_write_input_tokens": 300,
+        "output_tokens": 20,
+        "reasoning_output_tokens": 8,
+    })
+    usage = runner.extract_usage(_codex_spec(), _executed(_codex_spec(), stream))
+    assert usage is not None
+    assert usage.cache_write_tokens == 300
+    assert usage.tokens == 1000 + 20
+
+
+def test_extract_usage_codex_sums_the_split_across_turns() -> None:
+    """A multi-turn stream meters once, per kind, over every turn's usage."""
     usage = runner.extract_usage(_codex_spec(), _executed(_codex_spec(), _CODEX_EVENTS))
-    assert usage == runner.Usage(tokens=24763 + 122 + 100 + 7, cost=None, estimated=False)
+    assert usage is not None
+    assert (usage.input_tokens, usage.output_tokens) == (12764 + 16824, 155 + 5)
+    assert (usage.cache_read_tokens, usage.cache_write_tokens) == (9984 + 10496, 0)
+    assert usage.reasoning_tokens == 147 + 0
+    assert usage.tokens == 12764 + 155 + 16824 + 5
+    assert usage.cost is None and usage.credits is None
+
+
+def test_extract_usage_codex_leaves_an_unreported_kind_null() -> None:
+    """A build that emits no cache or reasoning counts records null, never zero.
+
+    0.146.0 reports a real `reasoning_output_tokens` of 0 for a turn that did no
+    reasoning, so a fabricated 0 would be indistinguishable from that measurement.
+    """
+    stream = _codex_stream({"input_tokens": 100, "output_tokens": 7})
+    usage = runner.extract_usage(_codex_spec(), _executed(_codex_spec(), stream))
+    assert usage is not None
+    assert (usage.input_tokens, usage.output_tokens) == (100, 7)
+    assert usage.cache_read_tokens is None
+    assert usage.cache_write_tokens is None
+    assert usage.reasoning_tokens is None
+    assert usage.tokens == 107
 
 
 def test_extract_usage_codex_without_usage_events_estimates() -> None:
@@ -1354,9 +1498,16 @@ def test_extract_usage_claude_stream_without_a_result_event_estimates() -> None:
 
 
 def test_context_occupancy_codex_reads_last_turn_only() -> None:
-    """Codex occupancy is the last turn's tokens; summing turns is the cost view."""
+    """Codex occupancy is the last turn's tokens; summing turns is the cost view.
+
+    Deliberately still input + output, not the split: occupancy is what the window
+    held, and `input_tokens` already carries the cached portion — re-adding
+    `cached_input_tokens` here would double-count *and* measure the wrong quantity.
+    """
+    last_turn, _total = _CODEX_TURNS[-1]
     occupancy = runner.context_occupancy(_codex_spec(), _executed(_codex_spec(), _CODEX_EVENTS))
-    assert occupancy == 100 + 7
+    assert occupancy == last_turn["input_tokens"] + last_turn["output_tokens"]
+    assert occupancy == 16829
 
 
 def test_context_occupancy_never_falls_back_to_the_transcript_estimate() -> None:
@@ -1695,6 +1846,32 @@ def test_record_dispatch_carries_copilot_measured_usage(
     # id is dispatch state, not something a metadata-only record needs to keep.
     assert runner.run_record.REDACTED_PROMPT in entry["command"]
     assert "--session-id" not in entry["command"]
+
+
+def test_record_dispatch_carries_the_codex_measured_split(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A completed codex dispatch records the per-kind split, not just the total.
+
+    End to end through the same ``record_dispatch`` every dispatch site calls, so
+    what lands on disk is what the spend forecast will calibrate against
+    (basicly-jr0l.37): the cached portion is visible, and ``tokens`` is still the
+    single summed total the D3 ceiling and the rollups read.
+    """
+    spec = _codex_spec()
+    result = _executed(spec, _codex_stream(_CODEX_TURNS[0][0]))
+    monkeypatch.setattr(runner.run_record, "record_marker", lambda *_a, **_k: None)
+
+    runner.record_dispatch(tmp_path, "basicly-jr0l.37", spec, result, prompt="p", phase="build")
+
+    (entry,) = (runner.run_record.load_run_records(tmp_path) or {})["basicly-jr0l.37"]
+    assert entry["estimated"] is False
+    assert entry["tokens"] == 12919
+    assert (entry["input_tokens"], entry["output_tokens"]) == (12764, 155)
+    assert (entry["cache_read_tokens"], entry["cache_write_tokens"]) == (9984, 0)
+    assert entry["reasoning_tokens"] == 147
+    # Codex bills in neither field the harness can read: no USD, no AI credits.
+    assert entry["cost"] is None and entry["credits"] is None
 
 
 def test_record_dispatch_records_a_missing_copilot_store_as_an_estimate(
