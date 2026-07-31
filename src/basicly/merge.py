@@ -51,7 +51,7 @@ from pathlib import Path
 
 from . import br, decompose, policy, run_record, verify
 from .config import PolicyConfig, load_policy_config
-from .worktree import current_branch, git, load_session
+from .worktree import Session, current_branch, git, load_session
 
 MERGE_GATE = "merge"
 
@@ -77,6 +77,22 @@ COUPLING_DEP_TYPE = "related"
 # three docs files and was escalated for an upstream tracker flake.
 VERIFY_UNRELIABLE = "verify-unreliable"
 
+# Status for a lane whose branch moved after the queue was formed. The queue ranked
+# it, and every earlier check read it, in a state that no longer exists — landing it
+# would merge commits this pass never looked at (basicly-jr0l.46). Like "not-ready"
+# it is a state and not a merit failure: the lane keeps its rework budget, and the
+# next pass re-reads the branch and lands it normally.
+STALE_BRANCH = "stale-branch"
+
+# Status for a merge whose own return code claimed success but whose result could
+# not be proved — after merging, the lane's head is still not reachable from the
+# base ref. This repo has twice recorded a bead closed with its code stranded
+# unmerged, and both times the only check that noticed was the ship gate, after the
+# fact (basicly-jr0l.46). Nothing here is evidence against the lane's work, so it
+# spends no rework, but it stops the pass: the base is in a state no further landing
+# should be stacked on.
+MERGE_UNPROVEN = "merge-unproven"
+
 
 @dataclass(frozen=True)
 class ProbeResult:
@@ -93,6 +109,7 @@ class MergeResult:
     name: str
     # "merged" | "not-ready" | "rebase-conflicts" | "verify-failed"
     # | "verify-unreliable" | "merge-conflicts" | "merge-failed"
+    # | "stale-branch" | "merge-unproven"
     status: str
     detail: str
     # Paths that collided, for a conflict status. Carried as data (not only in
@@ -173,6 +190,50 @@ def probe_merge(repo_root: Path, base: str, branch: str) -> ProbeResult:
     lines = proc.stdout.splitlines()
     conflicts = tuple(lines[1:] if len(lines) > 1 else lines)
     return ProbeResult(safe=False, conflicts=conflicts)
+
+
+def _session_branch_head(repo_root: Path, name: str) -> str | None:
+    """The head of worktree *name*'s branch, or None when it cannot be resolved.
+
+    None means "do not check staleness for this lane". Unreadable is not treated as
+    moved: a missing session is already reported by :func:`merge_worktree` with a
+    clear error, and inventing a mismatch here would replace it with a confusing
+    refusal. Skipping the check costs only the opportunistic pre-merge refusal — the
+    post-merge proof in :func:`_merge_and_prove` is the guard that cannot be skipped.
+    """
+    try:
+        session = load_session(name, repo_root)
+    except OSError, RuntimeError:
+        # worktree.run wraps any git failure in RuntimeError; outside a git checkout
+        # there is no branch to have moved.
+        return None
+    return branch_head(repo_root, session.branch) if session is not None else None
+
+
+def branch_head(repo_root: Path, branch: str) -> str | None:
+    """The commit *branch* points at, or None when the ref does not resolve.
+
+    Kept separate from :func:`head_sha` because this must not raise on a missing
+    ref: a lane whose branch is gone is a state the caller decides about, and a
+    ``None`` that reads as "unknown" is safer than an exception mid-landing.
+    """
+    proc = git(["rev-parse", "--verify", f"refs/heads/{branch}"], cwd=repo_root, check=False)
+    head = proc.stdout.strip()
+    return head if proc.returncode == 0 and head else None
+
+
+def is_ancestor(repo_root: Path, commit: str, target: str) -> bool:
+    """True when *commit* is reachable from *target* — the proof a merge landed.
+
+    ``git merge-base --is-ancestor`` exits 0 for an ancestor and 1 otherwise, so a
+    git failure of any other kind reads as *not* proved. That direction is
+    deliberate: this answers "may I claim this landed", and an unanswerable question
+    must never be read as yes (basicly-jr0l.46).
+    """
+    return (
+        git(["merge-base", "--is-ancestor", commit, target], cwd=repo_root, check=False).returncode
+        == 0
+    )
 
 
 def _assert_base_ready(repo_root: Path, base: str) -> None:
@@ -331,14 +392,103 @@ def _merge_message(
     return f"chore(worktree): merge a harness worktree back to its base\n\n{body}"
 
 
+def _pre_merge_state(
+    repo_root: Path, session: Session, expected_head: str | None
+) -> MergeResult | None:
+    """A state that must refuse the landing before base is touched, or None.
+
+    Both refusals here are operator-fixable states rather than merit failures, so
+    the queue leaves the lane queued and spends none of its rework budget.
+    """
+    name, base, branch, worktree_path = session.name, session.base, session.branch, session.path
+    # The agent's work must be committed on the branch before landing rebases it. A
+    # dirty tree or an empty branch is not a conflict or a verification failure, and
+    # bailing before base is mutated avoids leaving a redundant tracker commit
+    # behind (basicly-4psl).
+    not_ready = _worktree_land_readiness(worktree_path, repo_root, base, branch)
+    if not_ready is not None:
+        return MergeResult(name, "not-ready", not_ready)
+
+    # A lane that grew a commit after the queue was formed was ranked, ordered, and
+    # (for the lanes behind it) probed against a state that no longer exists. The
+    # next pass re-reads the branch and lands it normally (basicly-jr0l.46).
+    if expected_head is None:
+        return None
+    moved_to = branch_head(repo_root, branch)
+    if moved_to == expected_head:
+        return None
+    found = moved_to[:12] if moved_to else "(missing)"
+    return MergeResult(
+        name,
+        STALE_BRANCH,
+        f"{branch} moved since it was queued: expected {expected_head[:12]}, found "
+        f"{found} — requeue so the landing reads the branch it verified",
+    )
+
+
+def _merge_and_prove(
+    repo_root: Path, name: str, *, base: str, branch: str, bead: str
+) -> MergeResult:
+    """Merge *branch* into *base*, then prove it landed before claiming it did.
+
+    ``git merge`` exiting 0 is the merge's own account of itself. The only thing
+    that establishes the work landed is re-resolving the target ref afterwards and
+    finding the lane's head reachable from it, so ``merged`` is unreachable without
+    that proof (basicly-jr0l.46). Twice in this repo a bead closed with its code
+    stranded on a harness branch, and both times the sole check that noticed was the
+    ship gate, long after the fact.
+    """
+    # A failure (e.g. a commit-msg hook rejection) must not strand MERGE_HEAD.
+    # Attribute the dispatched runner (basicly-140a) from the run-record, best-effort.
+    record = run_record.latest_record(repo_root, bead)
+    proc = git(
+        ["merge", "--no-ff", branch, "-m", _merge_message(name, branch, base, bead, record)],
+        cwd=repo_root,
+        check=False,
+    )
+    if proc.returncode != 0:
+        git(["merge", "--abort"], cwd=repo_root, check=False)
+        return MergeResult(
+            name,
+            "merge-failed",
+            f"git merge of {branch} exited {proc.returncode}; aborted, base left clean",
+        )
+    landed_head = branch_head(repo_root, branch)
+    if landed_head is None or not is_ancestor(repo_root, landed_head, base):
+        where = landed_head[:12] if landed_head else "(unresolvable)"
+        return MergeResult(
+            name,
+            MERGE_UNPROVEN,
+            f"git merge of {branch} reported success but {where} is not reachable from "
+            f"{base}: the work is not landed — inspect base before landing anything else",
+        )
+    reconcile_beads(repo_root)
+    head = git(["rev-parse", "--short", "HEAD"], cwd=repo_root).stdout.strip()
+    return MergeResult(name, "merged", f"merged {branch} into {base} @ {head}")
+
+
 def merge_worktree(
-    repo_root: Path, name: str, *, bead: str, verify_mode: str = "full"
+    repo_root: Path,
+    name: str,
+    *,
+    bead: str,
+    verify_mode: str = "full",
+    expected_head: str | None = None,
 ) -> MergeResult:
     """Land worktree *name* onto its base: rebase, re-verify, probe, ``--no-ff`` merge.
 
     Runs from the base checkout. Returns a non-merged :class:`MergeResult` (never
     a partially applied merge) when the rebase conflicts, verification fails, or
     the conflict probe is not clean. Reconciles the tracker on success.
+
+    *expected_head* is the branch head recorded when the lane entered the queue.
+    When it is supplied and the branch has moved since, the landing is refused
+    (``STALE_BRANCH``) instead of merging commits this pass never examined.
+
+    A ``merged`` status is unreachable without proving it: after the merge, the
+    lane's head must be reachable from the base ref, or the result is
+    ``MERGE_UNPROVEN``. Trusting ``git merge``'s exit code alone is what let two
+    beads close with their code stranded on a harness branch (basicly-jr0l.46).
     """
     if not bead:
         raise SystemExit(
@@ -356,13 +506,11 @@ def merge_worktree(
         raise SystemExit(f"no worktree session named {name!r}")
     base, branch, worktree_path = session.base, session.branch, session.path
 
-    # The agent's work must be committed on the branch before landing rebases
-    # it. Check first, before mutating base: a dirty tree or an empty branch is
-    # an operator-fixable state, not a conflict or a rework-worthy failure, and
-    # bailing here avoids leaving a redundant tracker commit behind (basicly-4psl).
-    not_ready = _worktree_land_readiness(worktree_path, repo_root, base, branch)
-    if not_ready is not None:
-        return MergeResult(name, "not-ready", not_ready)
+    # Both pre-merge refusals are states, not merit failures, and both are checked
+    # before base is touched.
+    blocked = _pre_merge_state(repo_root, session, expected_head)
+    if blocked is not None:
+        return blocked
 
     # Tracker-only dirt in base is the loop's own state (claim, checkpoints,
     # gate records) — roll it up before the clean-tree check instead of
@@ -402,25 +550,8 @@ def merge_worktree(
             conflicts=probe.conflicts,
         )
 
-    # 4. Local --no-ff merge into the base from the base checkout. A failure
-    # (e.g. a commit-msg hook rejection) must not strand MERGE_HEAD. Attribute the
-    # dispatched runner (basicly-140a) from the run-record, best-effort.
-    record = run_record.latest_record(repo_root, bead)
-    proc = git(
-        ["merge", "--no-ff", branch, "-m", _merge_message(name, branch, base, bead, record)],
-        cwd=repo_root,
-        check=False,
-    )
-    if proc.returncode != 0:
-        git(["merge", "--abort"], cwd=repo_root, check=False)
-        return MergeResult(
-            name,
-            "merge-failed",
-            f"git merge of {branch} exited {proc.returncode}; aborted, base left clean",
-        )
-    reconcile_beads(repo_root)
-    head = git(["rev-parse", "--short", "HEAD"], cwd=repo_root).stdout.strip()
-    return MergeResult(name, "merged", f"merged {branch} into {base} @ {head}")
+    # 4/5. Merge, then prove the merge — a "merged" status is unreachable without it.
+    return _merge_and_prove(repo_root, name, base=base, branch=branch, bead=bead)
 
 
 @dataclass(frozen=True)
@@ -441,11 +572,12 @@ class QueueResult:
     def deferred(self) -> bool:
         """True when the lane was not landable yet and simply stays queued.
 
-        Covers both no-charge outcomes: work not yet committed on the branch, and
-        a gate that failed without reproducing (basicly-55yh). Neither faults the
-        lane, so neither spends an attempt.
+        Covers every no-charge outcome: work not yet committed on the branch, a
+        branch that moved after the queue was formed (basicly-jr0l.46), and a gate
+        that failed without reproducing (basicly-55yh). None of the three faults the
+        lane, so none spends an attempt.
         """
-        return self.result.status == "not-ready" or self.result.unreliable
+        return self.result.status in ("not-ready", STALE_BRANCH) or self.result.unreliable
 
 
 def unmerged_paths(cwd: Path) -> tuple[str, ...]:
@@ -708,18 +840,37 @@ def merge_queue(
     # (index in *results*, bead, conflicting paths) per bounce this pass. The
     # index is carried because a MergeResult names its worktree, not its bead.
     collisions: list[tuple[int, str, tuple[str, ...]]] = []
-    for name, bead in landing_order(repo_root, items):
-        result = merge_worktree(repo_root, name, bead=bead, verify_mode=verify_mode)
+    order = landing_order(repo_root, items)
+    # Snapshot every lane's branch head as the queue is formed, so a lane that grows
+    # a commit while an earlier lane is landing is refused rather than landed in a
+    # state this pass never examined (basicly-jr0l.46). Read once, up front: reading
+    # it per lane at its own turn would defeat the point.
+    queued_heads = {name: _session_branch_head(repo_root, name) for name, _ in order}
+    for name, bead in order:
+        result = merge_worktree(
+            repo_root,
+            name,
+            bead=bead,
+            verify_mode=verify_mode,
+            expected_head=queued_heads.get(name),
+        )
         if result.merged:
             landed.append(bead)
             results.append(QueueResult(result))
             continue
-        if result.status == "not-ready":
-            # Operator-fixable (work not committed on the branch), and nothing
-            # this pass can resolve: leave it queued, spend no rework attempt on
-            # it, and let the lanes behind it land.
+        if result.status in ("not-ready", STALE_BRANCH):
+            # Operator-fixable (work not committed on the branch), or the branch
+            # moved under the queue. Both are states rather than merit failures and
+            # nothing this pass can resolve: leave the lane queued, spend no rework
+            # attempt on it, and let the lanes behind it land.
             results.append(QueueResult(result))
             continue
+        if result.status == MERGE_UNPROVEN:
+            # The merge claimed success and could not be proved. No evidence against
+            # the lane, so charge nothing — but stop: base is in a state no further
+            # landing may be stacked on (basicly-jr0l.46).
+            results.append(QueueResult(result))
+            break
         if result.unreliable:
             # The gate failed and then passed unchanged, so there is no evidence
             # against this lane: record the flake and leave it queued rather than

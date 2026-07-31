@@ -352,6 +352,180 @@ def test_merge_worktree_not_ready_when_branch_has_no_commits(
     assert not fake.ran("rebase")
 
 
+# --- the merge must prove itself (basicly-jr0l.46) --------------------------
+
+
+def _landing_git(**overrides: _Proc) -> _FakeGit:
+    """A fake git where a landing runs cleanly to the merge, before the proof."""
+    responses = {
+        "status": _Proc(0, ""),
+        "rebase": _Proc(0),
+        "merge-tree": _Proc(0),
+        "merge": _Proc(0),
+        "rev-parse": _Proc(0, "def456"),
+        "merge-base": _Proc(0),
+    }
+    return _FakeGit({**responses, **overrides})
+
+
+@pytest.mark.usefixtures("base_ready")
+def test_a_merge_git_calls_successful_is_not_merged_until_it_is_proved(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The defect: `git merge` exited 0, so the old code called the lane landed.
+
+    This repo twice closed a bead with its code stranded on a harness branch. A
+    ``merged`` status must be unreachable while the lane's head is not reachable
+    from the base ref, no matter what the merge's own exit code claimed.
+    """
+    monkeypatch.setattr(merge, "git", _landing_git(**{"merge-base": _Proc(1)}))
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-onb.5")
+
+    assert result.merged is False
+    assert result.status == merge.MERGE_UNPROVEN
+    assert "not reachable" in result.detail
+    # Not a conflict, so it is never bounced back as a missed coupling.
+    assert result.conflicted is False
+
+
+@pytest.mark.usefixtures("base_ready")
+def test_a_merge_whose_branch_ref_will_not_resolve_is_not_proved(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An unresolvable head is 'unknown', and unknown must never read as landed."""
+    monkeypatch.setattr(merge, "git", _landing_git(**{"rev-parse": _Proc(128, "")}))
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-onb.5")
+
+    assert result.status == merge.MERGE_UNPROVEN
+    assert "unresolvable" in result.detail
+
+
+@pytest.mark.usefixtures("base_ready")
+def test_a_lane_whose_branch_moved_after_queueing_is_refused_before_base_is_touched(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A lane verified in a state that no longer exists must not land.
+
+    The refusal has to come before base is mutated, so nothing is rebased, merged,
+    or committed on the strength of a branch the queue never examined.
+    """
+    fake = _landing_git()
+    monkeypatch.setattr(merge, "git", fake)
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
+
+    result = merge.merge_worktree(
+        tmp_path, "feat", bead="basicly-onb.5", expected_head="0000000queued"
+    )
+
+    assert result.status == merge.STALE_BRANCH
+    assert "moved since it was queued" in result.detail
+    assert not fake.ran("rebase")
+    assert not fake.ran("merge")
+
+
+@pytest.mark.usefixtures("base_ready")
+def test_a_lane_whose_branch_is_unchanged_since_queueing_still_lands(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The staleness guard must not refuse the ordinary case it wraps."""
+    monkeypatch.setattr(merge, "git", _landing_git())
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-onb.5", expected_head="def456")
+
+    assert result.merged is True
+
+
+def test_is_ancestor_reads_any_git_failure_as_not_proved(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`may I claim this landed` must answer no when it cannot answer at all.
+
+    merge-base exits 1 for "not an ancestor" but other codes for a bad ref or a
+    broken repo; every one of them has to read as unproved, never as proved.
+    """
+    for code in (1, 128, 2):
+        monkeypatch.setattr(merge, "git", _FakeGit({"merge-base": _Proc(code)}))
+        assert merge.is_ancestor(tmp_path, "harness/feat", "main") is False
+    monkeypatch.setattr(merge, "git", _FakeGit({"merge-base": _Proc(0)}))
+    assert merge.is_ancestor(tmp_path, "harness/feat", "main") is True
+
+
+def test_branch_head_is_none_for_a_ref_that_does_not_resolve(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """None means unknown, and is what keeps a missing branch from reading as moved."""
+    monkeypatch.setattr(merge, "git", _FakeGit({"rev-parse": _Proc(128, "")}))
+    assert merge.branch_head(tmp_path, "harness/gone") is None
+    monkeypatch.setattr(merge, "git", _FakeGit({"rev-parse": _Proc(0, "abc123\n")}))
+    assert merge.branch_head(tmp_path, "harness/feat") == "abc123"
+
+
+def test_the_queue_snapshots_each_branch_head_when_the_queue_is_formed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Read up front, not at each lane's turn — reading late defeats the check.
+
+    The whole point is to notice a branch that moved *while an earlier lane was
+    landing*; a head read at the lane's own turn already includes that movement.
+    """
+    monkeypatch.setattr(merge, "_session_branch_head", lambda _r, name: f"head-{name}")
+    seen: dict[str, str | None] = {}
+
+    def fake_merge(_r, name, **kwargs):
+        seen[name] = kwargs.get("expected_head")
+        return merge.MergeResult(name, "merged", "ok")
+
+    monkeypatch.setattr(merge, "merge_worktree", fake_merge)
+
+    merge.merge_queue(tmp_path, [("a", "b1"), ("b", "b2")])
+
+    assert seen == {"a": "head-a", "b": "head-b"}
+
+
+def test_the_queue_leaves_a_moved_lane_queued_and_spends_no_rework(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A branch that moved is a state, not a merit failure: charge nothing, keep going."""
+    outcomes = {
+        "a": merge.MergeResult("a", merge.STALE_BRANCH, "harness/a moved since it was queued"),
+        "b": merge.MergeResult("b", "merged", "ok"),
+    }
+    monkeypatch.setattr(merge, "merge_worktree", lambda _r, name, **_kwargs: outcomes[name])
+    recorded: list = []
+    monkeypatch.setattr(policy, "record_rework", lambda *a, **_k: recorded.append(a) or 1)
+
+    results = merge.merge_queue(tmp_path, [("a", "b1"), ("b", "b2")])
+
+    assert [q.result.name for q in results] == ["a", "b"]  # the pass continues
+    assert results[0].deferred and results[0].attempts == 0 and results[0].escalate is False
+    assert results[1].result.merged is True
+    assert recorded == []
+
+
+def test_the_queue_stops_on_an_unproved_merge_without_charging_the_lane(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Base is in a contradictory state: stop, but do not blame the lane for it."""
+    outcomes = {
+        "a": merge.MergeResult("a", merge.MERGE_UNPROVEN, "not reachable from main"),
+        "b": merge.MergeResult("b", "merged", "ok"),
+    }
+    monkeypatch.setattr(merge, "merge_worktree", lambda _r, name, **_kwargs: outcomes[name])
+    recorded: list = []
+    monkeypatch.setattr(policy, "record_rework", lambda *a, **_k: recorded.append(a) or 1)
+
+    results = merge.merge_queue(tmp_path, [("a", "b1"), ("b", "b2")])
+
+    assert [q.result.name for q in results] == ["a"]  # stopped before "b"
+    assert results[0].attempts == 0 and results[0].escalate is False
+    assert recorded == []  # no evidence against the lane's work
+
+
 def test_merge_queue_defers_a_not_ready_lane_and_keeps_going(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
