@@ -66,6 +66,22 @@ class RunRecord:
     tokens: int | None = None
     cost: float | None = None
     estimated: bool | None = None
+    # Per-kind token split, null for an adapter that reports no split
+    # (basicly-2rn9). Provider-neutral on purpose: copilot fills them from its
+    # session store's ``session.shutdown`` model metrics, and codex's own split
+    # lands on these same fields. ``tokens`` above stays the single summed
+    # total — policy's grant ceiling, sizing calibration and the cost rollups all
+    # read that key, so redefining it would silently change every one of them.
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cache_read_tokens: int | None = None
+    cache_write_tokens: int | None = None
+    reasoning_tokens: int | None = None
+    # AI credits spent, **not** USD. ``cost`` above is USD (claude's
+    # total_cost_usd); copilot bills in AIU, which it reports as nano-AIU. Two
+    # currencies, two fields: summing them would be a silent accounting defect,
+    # and a rollup that reads ``cost`` stays in one unit.
+    credits: float | None = None
     # --- Reproducible dispatch inputs (D9, basicly-kjc5.28) ------------------
     # What the dispatch actually ran, so two attempts on one node are diffable:
     # when attempt 2 behaves differently, these say whether the *input* changed.
@@ -141,6 +157,12 @@ def build_record(  # noqa: PLR0913
     tokens: int | None = None,
     cost: float | None = None,
     estimated: bool | None = None,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
+    cache_read_tokens: int | None = None,
+    cache_write_tokens: int | None = None,
+    reasoning_tokens: int | None = None,
+    credits: float | None = None,
     adapter_version: str | None = None,
     prompt_sha256: str | None = None,
     phase: str | None = None,
@@ -161,7 +183,9 @@ def build_record(  # noqa: PLR0913
     module never sees the raw prompt. *model* is the runner's pinned model
     (basicly-45ld), null when it pins none. *tokens*/*cost*/*estimated* carry
     the run's token telemetry (basicly-kjc5.1, ``runner.extract_usage``); all
-    three null when nothing executed.
+    three null when nothing executed. The split counts and *credits* are the
+    same telemetry at finer grain (basicly-2rn9), null for an adapter that
+    reports no split and for a spend billed in USD rather than AI credits.
     """
     return RunRecord(
         agent=agent,
@@ -174,6 +198,12 @@ def build_record(  # noqa: PLR0913
         tokens=tokens,
         cost=cost,
         estimated=estimated,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cache_read_tokens=cache_read_tokens,
+        cache_write_tokens=cache_write_tokens,
+        reasoning_tokens=reasoning_tokens,
+        credits=credits,
         adapter_version=adapter_version,
         prompt_sha256=prompt_sha256,
         phase=phase,

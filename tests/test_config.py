@@ -387,6 +387,49 @@ def test_runner_config_usage_format_defaults_none_for_override(tmp_path: Path) -
     assert by_name["claude"].usage_format is None
 
 
+def test_runner_config_copilot_session_store_defaults_none(tmp_path: Path) -> None:
+    """Unset leaves the home-relative default, so no machine path is ever committed."""
+    by_name = {spec.name: spec for spec in load_runner_config(tmp_path).specs}
+    assert by_name["copilot"].session_store is None
+
+
+def test_runner_config_parses_copilot_session_store(tmp_path: Path) -> None:
+    """[runner] copilot_session_store redirects where measured usage is read from."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[runner]\ncopilot_session_store = "/opt/copilot/session-state"\n', encoding="utf-8"
+    )
+    by_name = {spec.name: spec for spec in load_runner_config(tmp_path).specs}
+    assert by_name["copilot"].session_store == Path("/opt/copilot/session-state")
+    assert by_name["claude"].session_store is None
+
+
+def test_local_config_overrides_copilot_session_store(tmp_path: Path) -> None:
+    """The gitignored overlay wins — the only place a machine-specific store path belongs.
+
+    This is why the key sits under [runner] and not [paths]: projection config
+    deliberately never reads the overlay, so a [paths] key could not be set
+    per-machine at all.
+    """
+    (tmp_path / CONFIG_FILE).write_text(
+        '[runner]\ncopilot_session_store = "shared/store"\n', encoding="utf-8"
+    )
+    (tmp_path / LOCAL_CONFIG_FILE).write_text(
+        '[runner]\ncopilot_session_store = "~/.copilot/session-state"\n', encoding="utf-8"
+    )
+    by_name = {spec.name: spec for spec in load_runner_config(tmp_path).specs}
+    # Left unexpanded on purpose: the reader expands it, so `~` stays portable.
+    assert by_name["copilot"].session_store == Path("~/.copilot/session-state")
+
+
+def test_runner_config_ignores_a_blank_copilot_session_store(tmp_path: Path) -> None:
+    """A blank value is not a path; it falls back to the default rather than to cwd."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[runner]\ncopilot_session_store = "   "\n', encoding="utf-8"
+    )
+    by_name = {spec.name: spec for spec in load_runner_config(tmp_path).specs}
+    assert by_name["copilot"].session_store is None
+
+
 def test_runner_config_parses_deny_style(tmp_path: Path) -> None:
     """A custom agent may declare its family's deny wire form (basicly-kjc5.16).
 

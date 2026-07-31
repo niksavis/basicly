@@ -611,9 +611,20 @@ Probed live and pinned during components 1 and `basicly-kjc5.14`:
   `cache_read` re-counts the whole context every turn. The reader must skip unrecognized lines —
   the stream can open with a plain-text warning and carries `system` and `rate_limit_event`
   kinds, and a killed dispatch leaves a truncated tail.
-- **copilot** — reports **no token counts at all** (probed 1.0.73; only `premiumRequests`), so
-  copilot lanes always meter by estimate. Calibration and any cross-arm cost comparison must
-  down-weight them.
+- **copilot** — reports no token counts *on stdout* (re-probed 1.0.75; its result event carries
+  only `premiumRequests`), but it is not unmeterable. Each dispatch's own session store ends in
+  a `session.shutdown` event whose `modelMetrics` carry the per-model
+  input/output/cache-read/cache-write/reasoning split and the AI-credit spend as `totalNanoAiu`
+  (credits = nanoAiu / 1e9), so copilot meters **out of band** (`basicly-2rn9`): the dispatch
+  supplies the new session's UUID with `--session-id`, which makes
+  `<store>/<sessionId>/events.jsonl` knowable before the store exists, and the reader joins on
+  it. Strictly stronger than switching stdout to JSON — the output stays plain text, so the
+  rubric judge's parser keeps working on a metered dispatch. `inputTokens` already includes both
+  cache counts (verified on 15 local stores), so the total is input + output. An absent or
+  unreadable store falls back to the flagged estimate, never to a fabricated measurement. The
+  `session.usage_checkpoint` event is *not* the source: it survives a kill but carries credits
+  and no tokens at all. The earlier "always meters by estimate" note held for the stdout
+  envelope only and is superseded.
 - **codex** — extraction is fixture-based (`turn.completed`, with `cached_input_tokens` excluded
   as an input subset); the CLI is not on this machine's PATH, so it is unverified live
   (`basicly-0jiq`, deferred). A mismatch degrades to the estimate rather than failing.
@@ -621,7 +632,9 @@ Probed live and pinned during components 1 and `basicly-kjc5.14`:
 Usage capture is opt-in per call site (`capture_usage`), and deliberately so: it switches some
 adapters' stdout to JSON, which the rubric judge's plain-text line parser cannot read. The judge
 and the catalog review therefore meter by estimate rather than setting the flag
-(`basicly-kjc5.31`).
+(`basicly-kjc5.31`). An out-of-band format is the way out of that trade-off rather than an
+exception to it: because a store-measured adapter leaves stdout alone, a text-parsing consumer
+could set the flag and still be metered exactly — copilot already can.
 
 ### 7.6 Finalize-protocol follow-up placement
 
