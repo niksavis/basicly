@@ -59,6 +59,23 @@ class RunRecord:
     # Model provenance, the pinned model the dispatch ran (basicly-45ld); null
     # when the runner pins no model.
     model: str | None = None
+    # How that pin was decided (basicly-kjc5.59). ``model`` above is the *what*;
+    # these are the *why*, and they cannot be re-derived later — the map, the
+    # config and the catalog all move on. ``model_tier`` is the declared tier,
+    # ``model_source`` which input decided it (an explicit pin, the agent's tier,
+    # the family default), and ``tier_honoured`` is False only when a tier was
+    # asked for and the family could not pin one at all, so the dispatch ran on
+    # the session's own model — recorded rather than reported as satisfied.
+    model_tier: str | None = None
+    model_source: str | None = None
+    tier_honoured: bool | None = None
+    # What the adapter said it actually ran, and any divergence from the pin.
+    # Empty means **unobserved**, not "matched": codex reports no model at all, so
+    # a mismatch there is unknowable and must not be invented. More than one
+    # entry is normal — a copilot dispatch can switch model mid-run and its store
+    # then names every model it used.
+    observed_models: tuple[str, ...] = ()
+    model_mismatch: str | None = None
     # Token telemetry (basicly-kjc5.1): total tokens and USD cost for the run,
     # from adapter-reported usage where the CLI emits it. estimated=True marks
     # a chars/4 transcript fallback (design 7.5) so calibration can down-weight
@@ -154,6 +171,11 @@ def build_record(  # noqa: PLR0913
     duration_s: float | None,
     command: tuple[str, ...],
     model: str | None = None,
+    model_tier: str | None = None,
+    model_source: str | None = None,
+    tier_honoured: bool | None = None,
+    observed_models: tuple[str, ...] = (),
+    model_mismatch: str | None = None,
     tokens: int | None = None,
     cost: float | None = None,
     estimated: bool | None = None,
@@ -195,6 +217,11 @@ def build_record(  # noqa: PLR0913
         command=tuple(command),
         timestamp=datetime.now(UTC).isoformat(),
         model=model,
+        model_tier=model_tier,
+        model_source=model_source,
+        tier_honoured=tier_honoured,
+        observed_models=tuple(observed_models),
+        model_mismatch=model_mismatch,
         tokens=tokens,
         cost=cost,
         estimated=estimated,

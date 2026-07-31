@@ -8,18 +8,20 @@ from pathlib import Path
 
 from . import permissions, session
 from .runner import (
+    AGENT_TIER,
     AUTO,
     BUILTIN_RUNNERS,
     DEFAULT_CONTEXT_WINDOW,
     DEFAULT_MAX_AGENT_PROCESSES,
     DEFAULT_STALL_AFTER,
     DENY_STYLES,
+    FAMILY_DEFAULT_TIER,
     HEADLESS,
     PROMPT_VIA,
     USAGE_FORMATS,
     RunnerSpec,
 )
-from .schema import TECHNOLOGIES
+from .schema import MODEL_TIERS, TECHNOLOGIES
 
 COPILOT_RUNNER = "copilot"
 
@@ -135,6 +137,13 @@ default = "auto"
 # prompt_via = "arg"   # or "stdin"
 # model = "opus"       # optional: injects `--model opus` after the binary,
 #                      # or substitutes a `{model}` placeholder if the command has one
+# tier = "high"        # optional, and preferred over `model`: a portable model tier
+#                      # (low | medium | high | maximum) resolved to the concrete id
+#                      # this family's surface accepts, via .basicly/core/models.
+#                      # A tier that resolves to nothing refuses the dispatch rather
+#                      # than falling back to another tier's model. `model` wins if both.
+# vendor = "openai"    # optional: whose model a tier resolves to. Only meaningful on a
+#                      # multi-vendor surface (copilot serves four); defaults per family.
 # sandbox = "workspace-write"   # optional: injects `--sandbox workspace-write` (codex
 #                               # defaults this); network is disabled by default in it
 # approval = "never"            # optional: injects `-a never` (codex defaults this).
@@ -857,6 +866,11 @@ class RunnerConfig:
     # stays the only terminal action, so a slow-but-working run is never killed
     # early — the human just learns about a wedge in minutes instead of an hour.
     stall_after: float = DEFAULT_STALL_AFTER
+    # Family fallback model tier (basicly-kjc5.59), used for an agent that
+    # declares none. None means no tier is implied at all, which leaves the
+    # dispatch unpinned exactly as before — a default tier here would silently
+    # start pinning models for every existing consumer.
+    default_tier: str | None = None
 
 
 def load_runner_config(repo_root: Path) -> RunnerConfig:
@@ -870,6 +884,13 @@ def load_runner_config(repo_root: Path) -> RunnerConfig:
     """
     section = _harness_section(repo_root, "runner")
 
+    default_tier = section.get("default_tier")
+    if default_tier is not None and default_tier not in MODEL_TIERS:
+        raise ValueError(
+            f"[runner] default_tier {default_tier!r} is not a known model tier; "
+            f"allowed: {list(MODEL_TIERS)}"
+        )
+
     specs = {spec.name: spec for spec in BUILTIN_RUNNERS}
     raw_agents = section.get("agents")
     if isinstance(raw_agents, list):
@@ -879,6 +900,7 @@ def load_runner_config(repo_root: Path) -> RunnerConfig:
 
     _inject_copilot_deny_tools(specs)
     _inject_copilot_session_store(specs, section)
+    _apply_default_tier(specs, default_tier)
 
     default = section.get("default")
     default = default.strip() if isinstance(default, str) and default.strip() else AUTO
@@ -904,6 +926,7 @@ def load_runner_config(repo_root: Path) -> RunnerConfig:
             section.get("max_agent_processes"), DEFAULT_MAX_AGENT_PROCESSES
         ),
         stall_after=_positive_float(section.get("stall_after"), DEFAULT_STALL_AFTER),
+        default_tier=default_tier,
     )
 
 
@@ -967,6 +990,8 @@ def _parse_runner_agent(entry: object) -> RunnerSpec:
         raise ValueError(f"runner agent {name!r} has a 'model' that must be a non-empty string")
     model = model.strip() if isinstance(model, str) else None
 
+    tier, vendor = _parse_model_tier(entry, name)
+
     # Optional sandbox/approval guardrail overrides (basicly-t0kt), injected as
     # `--sandbox <mode>` / `-a <policy>` by format_command. An explicit override
     # replaces the builtin default (e.g. codex's), so a null is not re-defaulted.
@@ -1020,6 +1045,9 @@ def _parse_runner_agent(entry: object) -> RunnerSpec:
         command=tuple(command),
         prompt_via=prompt_via,
         model=model,
+        tier=tier,
+        vendor=vendor,
+        tier_source=AGENT_TIER if tier is not None else None,
         deny_style=deny_style,
         sandbox=sandbox,
         approval=approval,
@@ -1028,6 +1056,42 @@ def _parse_runner_agent(entry: object) -> RunnerSpec:
         usage_format=usage_format,
         context_window=_context_window(entry, name),
     )
+
+
+def _apply_default_tier(specs: dict[str, RunnerSpec], default_tier: str | None) -> None:
+    """Fold ``[runner] default_tier`` onto every spec that declares no tier.
+
+    Applied to the spec, not passed at dispatch: every call site that invokes a
+    runner then honours the default for free, and one added later cannot forget
+    to thread it. A spec with its own ``tier`` keeps it — most specific wins — and
+    a spec pinning an explicit ``model`` is left alone because the pin would win
+    anyway, so giving it a tier would only misreport its provenance.
+    """
+    if default_tier is None:
+        return
+    for name, spec in specs.items():
+        if spec.tier is None and spec.model is None:
+            specs[name] = replace(spec, tier=default_tier, tier_source=FAMILY_DEFAULT_TIER)
+
+
+def _parse_model_tier(entry: dict, name: str) -> tuple[str | None, str | None]:
+    """The entry's portable model ``tier`` and resolving ``vendor`` (basicly-kjc5.59).
+
+    Validated at load rather than at dispatch: a typo in a tier name would
+    otherwise surface only once a lane was already running, and the point of a
+    tier is that the dispatch never has to guess. The vendor is only meaningful on
+    a multi-vendor surface, so it is checked for shape and left to
+    ``models.FAMILY_MODEL_SURFACES`` to default.
+    """
+    tier = entry.get("tier")
+    if tier is not None and tier not in MODEL_TIERS:
+        raise ValueError(
+            f"runner agent {name!r} has unknown model tier {tier!r}; allowed: {list(MODEL_TIERS)}"
+        )
+    vendor = entry.get("vendor")
+    if vendor is not None and (not isinstance(vendor, str) or not vendor.strip()):
+        raise ValueError(f"runner agent {name!r} has a 'vendor' that must be a non-empty string")
+    return tier, vendor.strip() if isinstance(vendor, str) else None
 
 
 def _context_window(entry: dict, name: str) -> int:

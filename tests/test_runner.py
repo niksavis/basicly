@@ -24,7 +24,7 @@ from typing import cast
 
 import pytest
 
-from basicly import runner
+from basicly import models, runner
 from basicly.runner import (
     BUILTIN_RUNNERS,
     CLAUDE_JSON,
@@ -2229,3 +2229,264 @@ def test_stall_watchdog_stops_cleanly_before_it_ever_fires() -> None:
         time.sleep(0.05)
     assert fired == []
     assert watchdog.flagged is False
+
+
+# --- Model tier resolution at dispatch (basicly-kjc5.59) ----------------------
+
+# Captured verbatim from `claude -p ... --output-format stream-json --verbose` on
+# 2.1.220, 2026-07-31, trimmed to the fields under test. Note the shape the
+# mismatch check has to survive: `modelUsage` is keyed by the DATED build while
+# `canonicalModel` carries the short id the map and the pin both use.
+_CLAUDE_MODEL_STREAM = (
+    '{"type":"system","subtype":"init","model":"claude-haiku-4-5-20251001"}\n'
+    '{"type":"assistant","message":{"model":"claude-haiku-4-5-20251001","usage":'
+    '{"input_tokens":10,"output_tokens":44}}}\n'
+    '{"type":"result","total_cost_usd":0.048,"usage":{"input_tokens":10,"output_tokens":44},'
+    '"modelUsage":{"claude-haiku-4-5-20251001":{"inputTokens":10,"outputTokens":44,'
+    '"canonicalModel":"claude-haiku-4-5"}}}\n'
+)
+
+
+def _tier_map(model: str = "claude-haiku-4-5", *, status: str = "available") -> dict:
+    """A one-cell map on the anthropic surface, so no test depends on the real one."""
+    cell: dict[str, object] = {"status": status}
+    if status == "available":
+        cell["model"] = model
+    else:
+        cell["reason"] = "the fixture marks this cell unavailable"
+    return {"tiers": {"low": {"vendors": {"anthropic": {"surfaces": {"anthropic": cell}}}}}}
+
+
+def test_a_resolvable_tier_pins_the_surface_spelling() -> None:
+    """The declared tier reaches the argv as a concrete id, with its provenance."""
+    spec = replace(runner.select_runner(runner.BUILTIN_RUNNERS, "claude"), tier="low")
+    resolution = runner.resolve_model(spec, mapping=_tier_map())
+
+    assert resolution.model == "claude-haiku-4-5"
+    assert resolution.tier == "low"
+    assert resolution.source == "agent tier"
+    assert resolution.honoured is True
+
+
+def test_an_unresolvable_tier_refuses_and_names_the_agent_and_the_config_key() -> None:
+    """No process may start, and the message must say what to change.
+
+    A refusal costs one clear error; dispatching unpinned costs a whole run done
+    by the wrong model, discovered later from telemetry if at all.
+    """
+    spec = replace(runner.select_runner(runner.BUILTIN_RUNNERS, "claude"), tier="low")
+    with pytest.raises(models.ModelResolutionError) as excinfo:
+        runner.resolve_model(spec, mapping=_tier_map(status="unavailable"))
+
+    message = str(excinfo.value)
+    assert "'claude'" in message  # the agent
+    assert "tier" in message  # the config key
+    assert "unavailable" in message  # the map's own reason, carried through
+
+
+def test_an_unresolvable_tier_starts_no_agent_process(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The refusal happens in run(), ahead of any spawn — the AC's operative half.
+
+    Guarded by making a spawn itself the failure, so this cannot pass merely
+    because the argv was never reached for some other reason.
+    """
+
+    def forbidden(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("run() spawned a process for an unresolvable tier")
+
+    monkeypatch.setattr(runner.subprocess, "Popen", forbidden)
+    spec = replace(
+        runner.select_runner(runner.BUILTIN_RUNNERS, "claude"),
+        tier="maximum",
+        vendor="moonshotai",  # Moonshot is not served on the anthropic surface at all
+    )
+
+    with pytest.raises(models.ModelResolutionError):
+        runner.run(spec, "go", tmp_path)
+
+
+def test_an_explicit_model_pin_wins_over_a_tier() -> None:
+    """A tier exists to avoid naming a provider id, so naming one is deliberate."""
+    spec = replace(runner.select_runner(runner.BUILTIN_RUNNERS, "claude"), tier="low", model="opus")
+    resolution = runner.resolve_model(spec, mapping=_tier_map())
+
+    assert resolution.model == "opus"
+    assert resolution.source == runner.AGENT_MODEL_PIN
+
+
+def test_a_defaulted_tier_records_that_it_came_from_the_family_default() -> None:
+    """The provenance distinction survives to the record, not just the id.
+
+    ``[runner] default_tier`` is folded onto the spec by the config loader, so what
+    reaches resolution is a tier plus where it came from.
+    """
+    spec = replace(
+        runner.select_runner(runner.BUILTIN_RUNNERS, "claude"),
+        tier="low",
+        tier_source=runner.FAMILY_DEFAULT_TIER,
+    )
+    resolution = runner.resolve_model(spec, mapping=_tier_map())
+
+    assert resolution.model == "claude-haiku-4-5"
+    assert resolution.source == runner.FAMILY_DEFAULT_TIER
+
+
+def test_a_refusal_names_default_tier_when_the_tier_was_defaulted() -> None:
+    """The message must point at the key the reader can actually change."""
+    spec = replace(
+        runner.select_runner(runner.BUILTIN_RUNNERS, "claude"),
+        tier="low",
+        tier_source=runner.FAMILY_DEFAULT_TIER,
+    )
+    with pytest.raises(models.ModelResolutionError, match="default_tier"):
+        runner.resolve_model(spec, mapping=_tier_map(status="unavailable"))
+
+
+def test_no_tier_and_no_model_leaves_the_dispatch_unpinned(tmp_path: Path) -> None:
+    """The pre-tier default must not change: an unconfigured repo pins nothing."""
+    spec = runner.select_runner(runner.BUILTIN_RUNNERS, "claude")
+    result = runner.run(spec, "go", tmp_path, dry_run=True)
+
+    assert result.model_resolution is None
+    assert "--model" not in result.command
+
+
+def test_a_family_that_cannot_express_a_tier_records_the_fallback(tmp_path: Path) -> None:
+    """A handoff runner has no argv to pin onto, so the tier is reported unhonoured.
+
+    The distinction the AC insists on: the dispatch ran on the session's own
+    model, which is not the same claim as the tier having been satisfied.
+    """
+    spec = replace(runner.select_runner(runner.BUILTIN_RUNNERS, "manual"), tier="low")
+    result = runner.run(spec, "go", tmp_path)
+
+    assert result.model_resolution is not None
+    assert result.model_resolution.honoured is False
+    assert result.model_resolution.tier == "low"
+    assert result.model_resolution.model is None
+    assert "not applied" in (result.model_resolution.note or "")
+
+
+def test_the_observed_model_comes_off_a_real_claude_envelope() -> None:
+    """`canonicalModel` is preferred over the dated modelUsage key."""
+    spec = runner.select_runner(runner.BUILTIN_RUNNERS, "claude")
+    result = runner.RunResult(
+        "claude", ("claude",), executed=True, returncode=0, stdout=_CLAUDE_MODEL_STREAM
+    )
+    assert runner.observed_models(spec, result) == ("claude-haiku-4-5",)
+
+
+def test_a_dated_build_of_the_pinned_model_is_not_a_mismatch() -> None:
+    """Otherwise every healthy claude dispatch would report a divergence."""
+    seen = ("claude-haiku-4-5",)
+    assert runner.model_mismatch("claude-haiku-4-5", seen) is None
+    assert runner.model_mismatch("haiku", seen) is None
+
+
+def test_a_different_observed_model_is_recorded_as_a_mismatch() -> None:
+    """The pin silently not taking is exactly what this record exists to catch."""
+    mismatch = runner.model_mismatch("claude-opus-5", ("claude-haiku-4-5",))
+    assert mismatch is not None
+    assert "claude-opus-5" in mismatch  # both sides named, or it is unactionable
+    assert "claude-haiku-4-5" in mismatch
+
+
+def test_codex_reports_no_model_so_nothing_is_observed_or_claimed() -> None:
+    """Measured on 0.146.0: no model field on any event of its --json stream.
+
+    Unobserved must stay distinct from "matched" — inventing a match here would
+    manufacture provenance the adapter never reported.
+    """
+    spec = runner.select_runner(runner.BUILTIN_RUNNERS, "codex")
+    stdout = (
+        '{"type":"thread.started","thread_id":"t"}\n'
+        '{"type":"turn.completed","usage":{"input_tokens":13239,"output_tokens":5}}\n'
+    )
+    result = runner.RunResult("codex", ("codex",), executed=True, returncode=0, stdout=stdout)
+
+    assert runner.observed_models(spec, result) == ()
+    assert runner.model_mismatch("gpt-5.6-terra", ()) is None
+
+
+def test_a_copilot_dispatch_that_switched_model_reports_both(tmp_path: Path) -> None:
+    """Copilot's modelMetrics can carry more than one key; a real local store did.
+
+    So the observed value is a tuple, and a pin matching any entry is honoured.
+    """
+    session = "11111111-2222-3333-4444-555555555555"
+    store = tmp_path / session
+    store.mkdir()
+    (store / runner.COPILOT_EVENTS_FILE).write_text(
+        json.dumps({
+            "type": "session.shutdown",
+            "data": {
+                "modelMetrics": {
+                    "claude-opus-5": {"usage": {"inputTokens": 10, "outputTokens": 2}},
+                    "claude-haiku-4.5": {"usage": {"inputTokens": 3, "outputTokens": 1}},
+                }
+            },
+        })
+        + "\n",
+        encoding="utf-8",
+    )
+    spec = replace(runner.select_runner(runner.BUILTIN_RUNNERS, "copilot"), session_store=tmp_path)
+    result = runner.RunResult(
+        "copilot", ("copilot",), executed=True, returncode=0, session_id=session
+    )
+
+    assert runner.observed_models(spec, result) == ("claude-opus-5", "claude-haiku-4.5")
+    assert runner.model_mismatch("claude-haiku-4-5", runner.observed_models(spec, result)) is None
+
+
+def test_record_dispatch_writes_the_model_provenance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End to end: what lands on disk is what a forecast calibration will read."""
+    monkeypatch.setattr(runner.run_record, "record_marker", lambda *_a, **_k: None)
+    spec = replace(runner.select_runner(runner.BUILTIN_RUNNERS, "claude"), tier="low")
+    result = runner.RunResult(
+        "claude",
+        ("claude",),
+        executed=True,
+        returncode=0,
+        stdout=_CLAUDE_MODEL_STREAM,
+        model_resolution=models.ModelResolution(
+            model="claude-haiku-4-5", tier="low", source="agent tier"
+        ),
+    )
+
+    runner.record_dispatch(tmp_path, "basicly-t", spec, result, prompt="p", phase="lane")
+
+    (entry,) = (runner.run_record.load_run_records(tmp_path) or {})["basicly-t"]
+    assert entry["model"] == "claude-haiku-4-5"
+    assert entry["model_tier"] == "low"
+    assert entry["model_source"] == "agent tier"
+    assert entry["tier_honoured"] is True
+    assert entry["observed_models"] == ["claude-haiku-4-5"]
+    assert entry["model_mismatch"] is None
+
+
+def test_record_dispatch_records_a_model_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A pin the adapter did not honour must reach the record, not be swallowed."""
+    monkeypatch.setattr(runner.run_record, "record_marker", lambda *_a, **_k: None)
+    spec = runner.select_runner(runner.BUILTIN_RUNNERS, "claude")
+    result = runner.RunResult(
+        "claude",
+        ("claude",),
+        executed=True,
+        returncode=0,
+        stdout=_CLAUDE_MODEL_STREAM,
+        model_resolution=models.ModelResolution(
+            model="claude-opus-5", tier="maximum", source="agent tier"
+        ),
+    )
+
+    runner.record_dispatch(tmp_path, "basicly-t", spec, result, prompt="p", phase="lane")
+
+    (entry,) = (runner.run_record.load_run_records(tmp_path) or {})["basicly-t"]
+    assert entry["model_mismatch"] is not None
+    assert "claude-opus-5" in entry["model_mismatch"]

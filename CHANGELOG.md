@@ -8,6 +8,32 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A declared model tier now resolves to a concrete model at dispatch, or the
+  dispatch refuses.** The seam that makes the tier vocabulary and the committed
+  map do something: `basicly.models` reads the map and resolves
+  (tier, vendor, surface) to the one id that surface accepts, and the runner pins
+  it. Resolution is most-specific-first — an explicit `model` on
+  `[[runner.agents]]`, then that agent's `tier`, then `[runner] default_tier`. An
+  explicit id still wins, because naming one when a tier exists is a deliberate
+  override.
+
+  **An unresolvable tier refuses before anything is spawned**, naming the agent
+  and the config key, so a dispatch never quietly runs on some other tier's
+  model — the silent demotion the map's keyless `unavailable` cells exist to
+  prevent. Nothing reads the network on this path; the map is committed data.
+
+  The run record now carries the provenance rather than just the id: the tier,
+  which input decided it, whether it was honoured, the models the adapter reported
+  it **actually** used, and any mismatch between the two. Measured per family
+  rather than assumed — claude reports its model three ways and keys `modelUsage`
+  by the *dated* build while carrying the short `canonicalModel`; copilot reports
+  it as its session store's `modelMetrics` keys, and one dispatch can name more
+  than one; codex 0.146.0 reports no model anywhere, so codex is recorded as
+  **unobserved** instead of assumed to match. Comparison tolerates a surface
+  spelling and a dated build, so a healthy run is never flagged while a genuinely
+  different model still is. A tier aimed at a family that cannot pin one at all
+  (the handoff runner) is recorded as *not honoured* rather than as satisfied.
+
 - **A committed model map resolves a tier per vendor and per surface.**
   `.basicly/core/models/anchors.yaml` names one anchor model per (tier, vendor)
   and `.scripts/generate_model_map.py` resolves it against models.dev into
