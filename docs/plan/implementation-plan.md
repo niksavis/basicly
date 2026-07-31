@@ -214,13 +214,20 @@ the same release.
 | --- | --- | --- |
 | before `v0.6.0` | housekeeping | `jr0l.32` + `jr0l.33` (owner asked for these first), the `a3ab.6`/`a3ab.7` retro pair where they do not disturb the release, and labelling the 14 unlabelled beads. Small catalog and tracker work; the review is done, so projection regeneration no longer corrupts anything. |
 | `v0.6.0` | release epic `m3od` | The narrow critical cut as scoped on `basicly-m3od`: `jr0l.38`, `jr0l.39`, **`jr0l.49`** (added 2026-07-30 — the destructive mechanism behind the trap `jr0l.39` renames), the breaking-change audit, the changelog curation. Unblocks 625 commits of accumulated value. |
-| `v0.7.0` | Phases 0, 6, parts of 1 and 7 | **Trustworthy factory, owned tracker.** Hardening batch (`jr0l.46`/`.47`/`.50`/`.51`/`.52`, `m4zv.12`/`.13`) → forecast chain (`jr0l.21`/`.22`/`.34`/`.35`, model provenance `kjc5.59`–`.61`) → the proof run (`u6jq.1`, under the delegated 10M-token L1 ceiling) → `vkh0.2` freeze → event log → import → shadow (vs the live tracker) → dual-write → flip. The flip removes `br` from the consumer floor — the single biggest 1.0.0 blocker. |
-| `v0.8.0` | Phases 1, 2, 3 | **Evidence, gates, docs.** `7bur` cost per landed package, `agzx.2` localisation, the Phase 2 deterministic gates (`m4zv.2`–`.6`) built against the owned tracker (the `m4zv.14` write-lock flake dissolves with the flip), the D4 amendment, `kjc5.13` absorption, the tutorial layer (`imnu.2`), capability tiers (`imnu.3` + `kjc5.58`), the ceremony threshold (`imnu.5`), and the fake-agent-CLI e2e test (`jr0l.43`, decided 2026-07-30). Measurements land before the phase they gate. |
+| `v0.7.0` | Phases 0, 6, parts of 1 and 7 | **Trustworthy factory, owned tracker.** Hardening batch (`jr0l.46`/`.47`/`.50`/`.51`/`.52`, `m4zv.12`/`.13`) → forecast chain (`jr0l.21`/`.22`/`.34`/`.35` and `.35`'s blocker `2rn9`, model provenance `kjc5.58` → `kjc5.61` → `kjc5.59`, with `kjc5.60` in parallel once `.58` lands) → the proof run (`u6jq.1`, under the delegated 10M-token L1 ceiling, also gated on `jr0l.16`) → `vkh0.2` freeze → event log → import → shadow (vs the live tracker) → dual-write → flip. The flip removes `br` from the consumer floor — the single biggest 1.0.0 blocker. |
+| `v0.8.0` | Phases 1, 2, 3 | **Evidence, gates, docs.** `7bur` cost per landed package, `agzx.2` localisation, the Phase 2 deterministic gates (`m4zv.2`–`.6`) built against the owned tracker (the `m4zv.14` write-lock flake dissolves with the flip), the D4 amendment, `kjc5.13` absorption, the tutorial layer (`imnu.2`), the delivered-install capability tier (`imnu.3`, which has no dependents and stays here — the model-tier bead `kjc5.58` it used to be paired with moved to `v0.7.0`), the ceremony threshold (`imnu.5`), and the fake-agent-CLI e2e test (`jr0l.43`, decided 2026-07-30). Measurements land before the phase they gate. |
 | `v0.9.0` | Phases 5, 4 | **The judgment layer and always-on relief.** The roster (`s2xf`), gated on `7bur`'s numbers by construction (§6); Phase 4 authoring and the empty-glob check; `jr0l.44`/`.45`. |
 | `v1.0.0` | Phase 8 | **Stabilize and declare.** The surface audit and semver freeze, the deprecation policy, the fresh-consumer acceptance test (Phase 8). 1.0 is a promise, so the last phase proves the promise instead of adding capability. |
 
 Phase 7's small fillers interleave throughout. Rough sizing: v0.7 ≈ 8–12 sessions, v0.8 ≈ 6–9,
 v0.9 ≈ 5–8, v1.0 ≈ 3–5 — sizing signals, not commitments (§0).
+
+**The ladder's invariant**: a release row must name every open bead its own entries are blocked
+on, so a reader who starts at the top of a row is never sent straight to a blocked bead. Check it
+against the tracker's edges rather than by eye — `kjc5.58`'s placement broke it once
+(`basicly-sy8c`), and the same check found `2rn9` and `jr0l.16` unlisted. A parent epic is exempt:
+it closes when its children do, so `7bur`'s edge to the `u6jq` epic is satisfied by `u6jq.1`
+sitting in `v0.7.0`.
 
 ### Phase 0 — Make an unattended run possible, and stop a live leak
 
@@ -378,6 +385,14 @@ reviewer bundle containing a suppression directive, and a rework loop that has s
 | Absorb the factory design into architecture; archive the source | `basicly-kjc5.13` | Ready now — its three blockers are closed. |
 | Tutorial and how-to layer (Diátaxis) | — (new) | `docs/` has no "your first loop" walkthrough and no task-focused how-to guides. For a distribution meant to be installed by other repos this is an adoption blocker independent of any capability in this plan. |
 | Declare a capability tier per agent family | — (new) | instruction-tier / skill-tier / plugin-tier. Our central claim is _enforcement_, which is plugin-tier; on an instruction-tier host the harness degrades to advice and we currently say so nowhere. `basicly install` should report the tier it installed and what is unavailable at it. |
+
+**One `phase-3` bead is pulled forward into `v0.7.0`'s forecast chain** (§4.0): `kjc5.58` (declare
+a model tier on a catalog entry instead of a model id). It is the root the whole model-provenance
+chain is blocked on — it establishes the tier vocabulary that `kjc5.61`'s generator resolves to a
+per-family model id, so `kjc5.61` has nothing to resolve without it, and `kjc5.61` blocks
+`kjc5.59` → `jr0l.21` → `jr0l.22`. The edges are correct; it was the ladder's placement that was
+wrong. Its phase label is unchanged; the release is just earlier. Mind the name collision with the
+table row above: `imnu.3` is the **install** capability tier, `kjc5.58` is the **model** tier.
 
 **Exit criteria.** `docs/design/factory-design.md` is archived, the architecture reference carries
 its content, a new consumer can follow a tutorial from install to first shipped bead, and
