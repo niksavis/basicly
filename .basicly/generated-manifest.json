@@ -1,6 +1,6 @@
 {
   "version": "1",
-  "generated_at": "2026-07-31T06:54:22.247847+00:00",
+  "generated_at": "2026-07-31T06:55:55.312075+00:00",
   "outputs": {
     ".claude/CLAUDE.md": {
       "hash": "sha256:df3c5906842d1e58af3accb54d615db0ea991b0af42cb2d4b36ea77a71b4f752",
@@ -25,6 +25,12 @@
         "tool-usage"
       ]
     },
+    ".claude/rules/external-review.md": {
+      "hash": "sha256:b866134c0537679310ea97033e655c7e93fd10c318b17f4ff7dcf479039cd1aa",
+      "source_fragments": [
+        "external-review"
+      ]
+    },
     ".claude/rules/platform-hermetic-tests.md": {
       "hash": "sha256:65871ee0f193ea61df38b305d0bf4ec213dcdd23ce9d9a06bd1e8e252444cc8b",
       "source_fragments": [
@@ -32,7 +38,7 @@
       ]
     },
     "AGENTS.md": {
-      "hash": "sha256:cccfde08339b4c2af7bd316d90d5f65614cf59f236ceb18ce314c731c5a5f206",
+      "hash": "sha256:26e51302f2f126f2eb3c635e02fbc810f574d77c49b5bf3d063f33e2a2f96ad5",
       "source_fragments": [
         "require-explicit-confirmation",
         "knowledge-priming",
@@ -42,6 +48,7 @@
         "commands",
         "git-discipline",
         "decision-protocol",
+        "external-review",
         "core-rules",
         "harness-loop",
         "quality-gate",
