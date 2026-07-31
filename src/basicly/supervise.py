@@ -1312,6 +1312,13 @@ def lane_activity(cwd: Path) -> str:
     return hashlib.sha256(f"{head.stdout}\n{dirty.stdout}".encode()).hexdigest()
 
 
+# The mid-run stall flag's question, named once so :func:`resolve_stall_flag` can
+# find the item :func:`flag_stalled_lane` queued. The two must agree exactly — the
+# queue keys items by (issue, kind, question) — and a copy of this string in two
+# places is a silent leak of pending items (basicly-jr0l.52).
+STALL_FLAG_QUESTION = "lane may be stuck: intervene now or let the hard kill arrive?"
+
+
 def flag_stalled_lane(
     repo_root: Path, issue_id: str, stall_after: float, runner_timeout: float
 ) -> decisions.DecisionItem:
@@ -1320,17 +1327,51 @@ def flag_stalled_lane(
     Idempotent per (issue, kind, question), so a lane is flagged once however many
     times it is sampled. The item names the hard kill deliberately: the human's
     real choice is whether to intervene now or let the timeout arrive.
+
+    Because the question is only meaningful *while* the run is in flight,
+    :func:`resolve_stall_flag` disposes of it as soon as the dispatch ends.
     """
     return decisions.enqueue(
         repo_root,
         issue_id,
         "stall",
-        "lane may be stuck: intervene now or let the hard kill arrive?",
+        STALL_FLAG_QUESTION,
         # :g rather than :.0f — a sub-second stall_after (tests, tight configs)
         # otherwise reads as "0s", which says the opposite of what happened.
         f"no commits and no file changes for {stall_after:g}s; the run continues "
         f"until runner_timeout ({runner_timeout:g}s), still holding a lane slot",
     )
+
+
+def resolve_stall_flag(repo_root: Path, issue_id: str) -> tuple[str, ...]:
+    """Auto-answer *issue_id*'s mid-run stall flags; the ids disposed of.
+
+    The flag asks whether to intervene *before* the hard kill arrives, so the moment
+    the dispatch ends the question can no longer be acted on — either the kill
+    arrived (and enqueued its own, answerable item) or the run finished and there is
+    nothing to intervene in. Left pending it is worse than useless: ``has_pending``
+    drops the lane from ``ready_lanes`` and from the carry, so a lane that was merely
+    slow parks until a human clears a question with no live subject
+    (basicly-jr0l.52).
+
+    Answered rather than deleted, so the audit trail still shows the lane was flagged
+    and why the flag stopped mattering. Scans by question instead of recomputing the
+    content-derived id, because a re-opened item carries a generation suffix.
+
+    The engine disposing of its own moot question is not a human decision, so it is
+    recorded as delegated and never lands in the human-wait column (D11).
+    """
+    disposed: list[str] = []
+    for item in decisions.items_on(repo_root, issue_id):
+        if item.kind == "stall" and item.question == STALL_FLAG_QUESTION and item.pending:
+            decisions.answer(
+                repo_root,
+                item.decision_id,
+                "dispatch ended; nothing left to intervene in before a hard kill",
+                by=decisions.ENGINE_BY,
+            )
+            disposed.append(item.decision_id)
+    return tuple(disposed)
 
 
 @dataclass(frozen=True)
@@ -1410,6 +1451,12 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
         folded_info=tuple(_folded_ref(info) for info in bundle.folded),
         **(ordering.as_inputs() if ordering else {}),
     )
+    # The dispatch has ended, so any mid-run stall flag is moot — retire it here,
+    # before the timeout branch below queues the answerable version. Unconditional on
+    # purpose: if the kill did arrive, the flag's "intervene before the hard kill?"
+    # is superseded by that item, and leaving both pending means answering one does
+    # not release the lane (basicly-jr0l.52).
+    resolve_stall_flag(repo_root, lane.issue_id)
     if result.timed_out:
         # Consume any sentinel the killed run managed to write — leaving it
         # would mis-attribute the fact to the *next* dispatch after triage.
