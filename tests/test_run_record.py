@@ -106,6 +106,62 @@ def test_build_record_carries_token_telemetry(tmp_path: Path) -> None:
     assert (latest.tokens, latest.cost, latest.estimated) == (30, None, True)
 
 
+def test_build_record_carries_the_token_split_and_credits(tmp_path: Path) -> None:
+    """The per-kind split and AI credits persist beside the summed total (basicly-2rn9).
+
+    `tokens` stays the single summed total every consumer reads (the D3 grant
+    ceiling, sizing calibration, the cost rollups), so the split is a sibling and
+    not a redefinition: it is deliberately *not* the sum of the split fields,
+    because copilot's inputTokens already contains both cache counts.
+    """
+    entry = run_record.build_record(
+        agent="copilot",
+        handoff=False,
+        returncode=0,
+        duration_s=1.0,
+        command=("copilot", "-p", REDACTED_PROMPT, "--session-id", "sid-1"),
+        tokens=24214,
+        estimated=False,
+        input_tokens=24210,
+        output_tokens=4,
+        cache_read_tokens=0,
+        cache_write_tokens=24208,
+        reasoning_tokens=0,
+        credits=6.0564,
+    )
+    run_record.record(tmp_path, "i", entry)
+
+    stored = _records(tmp_path)["i"][0]
+    assert stored["tokens"] == 24214
+    assert (stored["input_tokens"], stored["output_tokens"]) == (24210, 4)
+    # A zero is a measurement, so it must survive serialization, not be dropped.
+    assert (stored["cache_read_tokens"], stored["cache_write_tokens"]) == (0, 24208)
+    assert stored["reasoning_tokens"] == 0
+    # Credits are AI credits, never USD: `cost` stays null for a copilot dispatch.
+    assert stored["credits"] == 6.0564
+    assert stored["cost"] is None
+    latest = run_record.latest_record(tmp_path, "i")
+    assert latest is not None
+    assert (latest.credits, latest.cache_write_tokens) == (6.0564, 24208)
+
+
+def test_build_record_leaves_the_split_null_for_a_splitless_adapter(tmp_path: Path) -> None:
+    """An adapter reporting only a total records nulls, not zeros — absent is not zero."""
+    entry = run_record.build_record(
+        agent="codex",
+        handoff=False,
+        returncode=0,
+        duration_s=1.0,
+        command=("codex", "exec", REDACTED_PROMPT, "--json"),
+        tokens=24892,
+        estimated=False,
+    )
+    run_record.record(tmp_path, "i", entry)
+    stored = _records(tmp_path)["i"][0]
+    assert stored["tokens"] == 24892
+    assert stored["input_tokens"] is None and stored["credits"] is None
+
+
 # --- record (write) ---------------------------------------------------------
 
 

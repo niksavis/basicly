@@ -35,6 +35,7 @@ import signal
 import subprocess
 import threading
 import time
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -84,7 +85,24 @@ CLAUDE_JSON = "claude-json"  # `--output-format json`: one result object with a 
 # which is what the context-ceiling meter needs (basicly-kjc5.14).
 CLAUDE_STREAM_JSON = "claude-stream-json"
 CODEX_JSONL = "codex-jsonl"  # `--json`: JSONL event stream with turn.completed usage
-USAGE_FORMATS = (CLAUDE_JSON, CLAUDE_STREAM_JSON, CODEX_JSONL)
+# copilot reports nothing usable on stdout — its result event carries
+# premium-request counts, not tokens — but it writes a per-session event store,
+# and that store's terminating `session.shutdown` event carries the per-model
+# token split and the AI-credit spend (probed 1.0.75, present in 15 of 15 local
+# sessions). So this format measures out of band: `--session-id <uuid>` *sets*
+# the new session's id, which makes the store path known before the store
+# exists, and stdout stays plain text — which is what keeps the rubric judge's
+# text parser working on a metered dispatch (basicly-2rn9).
+COPILOT_SESSION_STORE = "copilot-session-store"
+USAGE_FORMATS = (CLAUDE_JSON, CLAUDE_STREAM_JSON, CODEX_JSONL, COPILOT_SESSION_STORE)
+
+# Where copilot keeps its per-session event stores, and the stream inside one.
+# Held unexpanded so no machine-specific path is committed and `Path.home()` is
+# never called at import: the reader expands it at the point of use, which also
+# lets a test (or `[runner] copilot_session_store`) redirect it to a temp dir.
+DEFAULT_COPILOT_SESSION_STORE = Path("~/.copilot/session-state")
+COPILOT_EVENTS_FILE = "events.jsonl"
+COPILOT_SHUTDOWN_EVENT = "session.shutdown"
 
 # Context-window defaults per adapter (factory design §6, basicly-kjc5.6): the
 # denominator for the context-ceiling meter. Conservative published windows;
@@ -103,6 +121,10 @@ _USAGE_FLAGS = {
     # claude refuses stream-json under -p without --verbose.
     CLAUDE_STREAM_JSON: ("--output-format", "stream-json", "--verbose"),
     CODEX_JSONL: ("--json",),
+    # The one format whose flag takes a value: the per-dispatch session UUID is
+    # appended by _apply_usage, because it is what extract_usage later reads the
+    # store by.
+    COPILOT_SESSION_STORE: ("--session-id",),
 }
 
 
@@ -157,11 +179,14 @@ class RunnerSpec:
     git_name: str | None = None
     git_email: str | None = None
     # Usage-report format for token telemetry (basicly-kjc5.1), one of
-    # USAGE_FORMATS or None. None — the CLI reports no token usage (copilot,
-    # probed 2026-07-22: its result event carries premium-request counts, not
-    # tokens) — makes a usage-capturing dispatch fall back to the chars/4
-    # transcript estimate (design 7.5).
+    # USAGE_FORMATS or None. None — the CLI reports no token usage in any
+    # envelope basicly can read — makes a usage-capturing dispatch fall back to
+    # the chars/4 transcript estimate (design 7.5).
     usage_format: str | None = None
+    # Base directory of the agent's own per-session usage store, for a
+    # ``copilot-session-store`` dispatch (basicly-2rn9). None uses
+    # DEFAULT_COPILOT_SESSION_STORE; ``[runner] copilot_session_store`` sets it.
+    session_store: Path | None = None
     # The model's context window in tokens (basicly-kjc5.6): the denominator for
     # the [policy.sizing] context_ceiling meter (design D8). Per-adapter defaults
     # in _CONTEXT_WINDOWS; config-overridable per agent.
@@ -198,6 +223,7 @@ BUILTIN_RUNNERS: tuple[RunnerSpec, ...] = (
         HEADLESS,
         ("copilot", "-p", PROMPT_PLACEHOLDER),
         deny_style=DENY_TOOL_FLAG,
+        usage_format=COPILOT_SESSION_STORE,
         context_window=_CONTEXT_WINDOWS["copilot"],
     ),
     RunnerSpec(MANUAL_RUNNER, HANDOFF),
@@ -222,9 +248,16 @@ class RunResult:
     # (basicly-kjc5.7, design section 6): the supervisor routes this to the
     # decision queue as a stall flag. returncode is None on a timeout.
     timed_out: bool = False
+    # The session id this dispatch supplied on its argv, when its usage format
+    # measures out of band (basicly-2rn9). It is the key
+    # :func:`extract_usage` reads the agent's own usage store by, so it has to
+    # survive the dispatch; None whenever no store was keyed.
+    session_id: str | None = None
 
 
-def format_command(spec: RunnerSpec, prompt: str, *, capture_usage: bool = False) -> list[str]:
+def format_command(
+    spec: RunnerSpec, prompt: str, *, capture_usage: bool = False, session_id: str | None = None
+) -> list[str]:
     """Return the exact argv *spec* would execute for *prompt*.
 
     Prompt injection is unchanged: an ``arg`` runner substitutes its
@@ -250,6 +283,11 @@ def format_command(spec: RunnerSpec, prompt: str, *, capture_usage: bool = False
     parse the agent's answer as plain text (rubric judging, catalog review)
     must not set it.
 
+    *session_id* is the store key for a usage format that measures out of band
+    rather than on stdout (``copilot-session-store``, basicly-2rn9). Data, never
+    generated here, so the argv stays a pure function of its inputs — :func:`run`
+    mints one per dispatch and hands the same value back on the result.
+
     Raises for a handoff runner (it has no command line) and for an arg-injected
     template missing its prompt placeholder — a silent drop would send an empty
     prompt.
@@ -268,16 +306,21 @@ def format_command(spec: RunnerSpec, prompt: str, *, capture_usage: bool = False
     # Model outermost so it stays "right after the binary" (its documented
     # contract); sandbox/approval and deny-tool flags then follow the model.
     argv = _apply_model(spec, _apply_sandbox(spec, _apply_deny_tools(spec, argv)))
-    return _apply_usage(spec, argv) if capture_usage else argv
+    return _apply_usage(spec, argv, session_id) if capture_usage else argv
 
 
-def _apply_usage(spec: RunnerSpec, argv: list[str]) -> list[str]:
+def _apply_usage(spec: RunnerSpec, argv: list[str], session_id: str | None) -> list[str]:
     """Append the usage-report flags for a usage-capturing dispatch (basicly-kjc5.1).
 
     No format leaves the argv unchanged — the dispatch still runs, and
     :func:`extract_usage` falls back to the transcript estimate. An unknown
     format raises: the config parser validates the value, so this is reachable
     only from a hand-built spec.
+
+    ``copilot-session-store`` is the one format whose flag carries a value: the
+    session id names the store the usage will be read from. Without one there is
+    no store to key on, so the flag is omitted and that dispatch meters by
+    estimate rather than by a store path nobody can find.
     """
     if spec.usage_format is None:
         return argv
@@ -287,6 +330,8 @@ def _apply_usage(spec: RunnerSpec, argv: list[str]) -> list[str]:
             f"runner {spec.name!r} has unknown usage_format {spec.usage_format!r}; "
             f"known: {list(USAGE_FORMATS)}"
         )
+    if spec.usage_format == COPILOT_SESSION_STORE:
+        return [*argv, *flags, session_id] if session_id else argv
     return [*argv, *flags]
 
 
@@ -777,9 +822,16 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     """
     if spec.kind == HANDOFF:
         return RunResult(spec.name, (), executed=False, handoff=True)
-    argv = format_command(spec, prompt, capture_usage=capture_usage)
+    # A store-measured format needs its store key minted *before* the dispatch:
+    # supplying the new session's UUID is what makes the store path knowable
+    # without scraping stdout, so the plain-text output stays plain text
+    # (basicly-2rn9). Formats that report on stdout need no key.
+    session_id = (
+        str(uuid.uuid4()) if capture_usage and spec.usage_format == COPILOT_SESSION_STORE else None
+    )
+    argv = format_command(spec, prompt, capture_usage=capture_usage, session_id=session_id)
     if dry_run:
-        return RunResult(spec.name, tuple(argv), executed=False)
+        return RunResult(spec.name, tuple(argv), executed=False, session_id=session_id)
     stdin = prompt if spec.prompt_via == "stdin" else None
     # An arg-prompt dispatch must get stdin *closed*, not inherited (basicly-jr0l.36).
     # Popen's stdin=None means inherit, and an agent CLI that reads stdin for extra
@@ -842,6 +894,7 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
         stderr=redact_secrets(stderr),
         duration_s=duration_s,
         timed_out=timed_out,
+        session_id=session_id,
     )
 
 
@@ -849,9 +902,24 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
 class Usage:
     """Token usage for one executed run: adapter-reported, or a chars/4 estimate."""
 
+    # The single summed total processed. Every consumer of the run-record's
+    # `tokens` reads it as that (the D3 grant ceiling, sizing calibration, the
+    # cost rollups), so the split fields below are siblings, never a redefinition.
     tokens: int
     cost: float | None
     estimated: bool
+    # Provider-neutral per-kind split, null for an adapter that reports no split
+    # (basicly-2rn9). Each family's own summation semantics are folded in by its
+    # extractor, so a reader never has to know whose numbers these were.
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cache_read_tokens: int | None = None
+    cache_write_tokens: int | None = None
+    reasoning_tokens: int | None = None
+    # AI credits, **not** USD. `cost` is USD (claude's total_cost_usd); copilot
+    # meters in AIU. They are different units, so they get different fields —
+    # adding them into one number would be a silent accounting defect.
+    credits: float | None = None
 
 
 # Claude usage-block keys: input_tokens excludes the cache fields (Anthropic
@@ -865,6 +933,24 @@ _CLAUDE_TOKEN_KEYS = (
 # Codex usage keys: cached_input_tokens is a subset of input_tokens (OpenAI
 # usage semantics), so adding it would double-count.
 _CODEX_TOKEN_KEYS = ("input_tokens", "output_tokens")
+# copilot `session.shutdown` per-model usage keys, mapped onto Usage's split
+# fields. Summation semantics, verified against 15 local 1.0.75 stores:
+# `inputTokens` *includes* both cache fields (inputTokens ==
+# tokenDetails.input + cacheReadTokens + cacheWriteTokens held on all 15), so
+# the total processed is inputTokens + outputTokens and adding the cache fields
+# would double-count — the same subset relationship codex's cached_input_tokens
+# has. `reasoningTokens` never exceeded `outputTokens`, so it is read as a
+# subset of output too and likewise not added.
+_COPILOT_USAGE_KEYS = {
+    "input_tokens": "inputTokens",
+    "output_tokens": "outputTokens",
+    "cache_read_tokens": "cacheReadTokens",
+    "cache_write_tokens": "cacheWriteTokens",
+    "reasoning_tokens": "reasoningTokens",
+}
+# copilot meters AI credits in nano-AIU: a `totalNanoAiu` of 6_056_400_000 is
+# 6.0564 credits (observed on the probe the test fixture was captured from).
+_NANO_AIU_PER_CREDIT = 1_000_000_000
 
 
 def extract_usage(spec: RunnerSpec, result: RunResult) -> Usage | None:
@@ -875,6 +961,12 @@ def extract_usage(spec: RunnerSpec, result: RunResult) -> Usage | None:
     that does not parse falls back to a chars/4 estimate over the captured
     transcript, flagged ``estimated`` so calibration can down-weight it
     (design 7.5).
+
+    ``copilot-session-store`` is measured out of band: the numbers come from the
+    agent's own session store rather than from the captured output, keyed by the
+    session id the dispatch supplied (basicly-2rn9). An absent or unreadable
+    store takes the very same estimate fallback, flagged the same way — a
+    measurement that could not be made is never reported as one that was.
     """
     if not result.executed:
         return None
@@ -885,6 +977,8 @@ def extract_usage(spec: RunnerSpec, result: RunResult) -> Usage | None:
         reported = _claude_json_usage(_claude_result_event(result.stdout))
     elif spec.usage_format == CODEX_JSONL:
         reported = _codex_jsonl_usage(result.stdout)
+    elif spec.usage_format == COPILOT_SESSION_STORE:
+        reported = _copilot_store_usage(spec, result.session_id)
     if reported is not None:
         return reported
     return Usage(tokens=(len(result.stdout) + len(result.stderr)) // 4, cost=None, estimated=True)
@@ -1002,6 +1096,91 @@ def _codex_turn_usages(stdout: str) -> list[dict]:
     return usages
 
 
+def _copilot_shutdown_data(spec: RunnerSpec, session_id: str | None) -> dict | None:
+    """The ``session.shutdown`` payload of one copilot session's store, or None.
+
+    The store lives at ``<session_store>/<session_id>/events.jsonl`` — the
+    directory name *is* the session id (checked on 15 of 15 local stores against
+    each one's ``session.start``), which is what makes a supplied id a sound
+    join. Scanned from the end because the shutdown event terminates the stream,
+    and unparseable lines are skipped rather than failing the read: a truncated
+    final line is normal for a killed dispatch.
+
+    None for no session id, a store that is absent or unreadable, or a stream
+    with no usable shutdown event. Never raises — the caller must be able to
+    degrade to the estimate, and telemetry may not fail a dispatch.
+    """
+    if not session_id:
+        return None
+    base = spec.session_store or DEFAULT_COPILOT_SESSION_STORE
+    events = base.expanduser() / session_id / COPILOT_EVENTS_FILE
+    try:
+        text = events.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    for line in reversed(text.splitlines()):
+        stripped = line.strip()
+        if not stripped.startswith("{"):
+            continue
+        try:
+            event = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict) and event.get("type") == COPILOT_SHUTDOWN_EVENT:
+            data = event.get("data")
+            if isinstance(data, dict):
+                return data
+    return None
+
+
+def _copilot_store_usage(spec: RunnerSpec, session_id: str | None) -> Usage | None:
+    """Measured usage for one copilot dispatch, read from its own session store.
+
+    Sums the shutdown event's ``modelMetrics`` blocks, so a dispatch that
+    switched model mid-run still meters once: per-kind tokens onto the split
+    fields, ``totalNanoAiu`` onto ``credits``. ``tokens`` is input + output only
+    (see :data:`_COPILOT_USAGE_KEYS` for why the cache and reasoning counts are
+    subsets, not addends), and ``cost`` stays null because copilot bills in AI
+    credits and that field is USD.
+
+    None when no model block yields a token count, so the caller falls back to
+    the flagged estimate.
+    """
+    data = _copilot_shutdown_data(spec, session_id)
+    metrics = data.get("modelMetrics") if data is not None else None
+    if not isinstance(metrics, dict):
+        return None
+    split = dict.fromkeys(_COPILOT_USAGE_KEYS, 0)
+    nano_aiu: float | None = None
+    measured = False
+    for entry in metrics.values():
+        if not isinstance(entry, dict):
+            continue
+        usage = entry.get("usage")
+        if isinstance(usage, dict):
+            for field, key in _COPILOT_USAGE_KEYS.items():
+                value = usage.get(key)
+                if isinstance(value, int) and not isinstance(value, bool):
+                    split[field] += value
+                    measured = True
+        aiu = entry.get("totalNanoAiu")
+        if isinstance(aiu, int | float) and not isinstance(aiu, bool):
+            nano_aiu = (nano_aiu or 0.0) + float(aiu)
+    if not measured:
+        return None
+    return Usage(
+        tokens=split["input_tokens"] + split["output_tokens"],
+        cost=None,
+        estimated=False,
+        input_tokens=split["input_tokens"],
+        output_tokens=split["output_tokens"],
+        cache_read_tokens=split["cache_read_tokens"],
+        cache_write_tokens=split["cache_write_tokens"],
+        reasoning_tokens=split["reasoning_tokens"],
+        credits=None if nano_aiu is None else nano_aiu / _NANO_AIU_PER_CREDIT,
+    )
+
+
 def context_occupancy(spec: RunnerSpec, result: RunResult) -> int | None:
     """The run's final context occupancy in tokens, or None when unknowable.
 
@@ -1023,6 +1202,13 @@ def context_occupancy(spec: RunnerSpec, result: RunResult) -> int | None:
     - ``codex-jsonl``: the **last** ``turn.completed`` usage; its
       ``input_tokens`` already carry the whole conversation re-sent that turn,
       so summing across turns (the cost view) would overstate occupancy.
+    - ``copilot-session-store``: **None**, deliberately, for now. The shutdown
+      event does carry a real occupancy view (``currentTokens`` alongside
+      ``systemTokens``/``conversationTokens``/``toolDefinitionsTokens``), so
+      wiring the copilot ceiling is a genuine follow-on rather than a
+      limitation — it is left out of basicly-2rn9 because that bead is scoped to
+      the cost meter, and turning a ceiling on is a behaviour change that wants
+      its own bead.
     - No usage format, nothing executed, or a parse miss: None. The chars/4
       transcript estimate is deliberately *not* used here — stdout length says
       nothing about window occupancy, and a false ceiling trigger would spin a
@@ -1105,8 +1291,9 @@ def record_dispatch(  # noqa: PLR0913 — one parameter per recorded dispatch in
     the session (basicly-kjc5.31).
 
     The command is redacted (the prompt elided) before it reaches the record, so
-    no prompt or secret is persisted. Usage is adapter-reported where the CLI
-    emits it and a flagged chars/4 estimate otherwise.
+    no prompt or secret is persisted. Usage is adapter-reported wherever the CLI
+    reports it — on stdout, or in its own session store — and a flagged chars/4
+    estimate otherwise.
 
     **Nothing here may raise.** This is telemetry on the critical path of every
     dispatch, so a defect in recording must never fail a landing. Deriving the
@@ -1133,6 +1320,12 @@ def record_dispatch(  # noqa: PLR0913 — one parameter per recorded dispatch in
         tokens=usage.tokens if usage else None,
         cost=usage.cost if usage else None,
         estimated=usage.estimated if usage else None,
+        input_tokens=usage.input_tokens if usage else None,
+        output_tokens=usage.output_tokens if usage else None,
+        cache_read_tokens=usage.cache_read_tokens if usage else None,
+        cache_write_tokens=usage.cache_write_tokens if usage else None,
+        reasoning_tokens=usage.reasoning_tokens if usage else None,
+        credits=usage.credits if usage else None,
         adapter_version=adapter_version(spec),
         prompt_sha256=digest,
         phase=phase,

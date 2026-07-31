@@ -280,7 +280,11 @@ def evaluate(
     whole pass, and its tokens never reached the session's spend. It deliberately
     does *not* set ``capture_usage`` — that switches some adapters' stdout to JSON,
     which :func:`parse_judged` cannot read — so the record carries the flagged
-    chars/4 estimate instead, the same honest fallback the copilot arm uses.
+    chars/4 estimate instead. That is a limitation of the *stdout* usage formats,
+    not of metering as such: copilot measures out of band from its own session
+    store (basicly-2rn9) precisely so a metered dispatch keeps plain-text output,
+    so a judge on a store-measured adapter could be metered exactly. Still left
+    unflagged, because the claude/codex arms would lose their answer.
 
     A timed-out judge resolves every judged check to UNKNOWN rather than NO: no
     agent answered, and inventing a failure would enqueue a dispute nobody made.

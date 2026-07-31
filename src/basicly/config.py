@@ -878,6 +878,7 @@ def load_runner_config(repo_root: Path) -> RunnerConfig:
             specs[spec.name] = spec
 
     _inject_copilot_deny_tools(specs)
+    _inject_copilot_session_store(specs, section)
 
     default = section.get("default")
     default = default.strip() if isinstance(default, str) and default.strip() else AUTO
@@ -921,6 +922,25 @@ def _inject_copilot_deny_tools(specs: dict[str, RunnerSpec]) -> None:
     deny = permissions.copilot_deny_specs(permissions.load_deny_rules())
     if deny:
         specs[COPILOT_RUNNER] = replace(spec, deny_tools=tuple(deny))
+
+
+def _inject_copilot_session_store(specs: dict[str, RunnerSpec], section: dict) -> None:
+    """Point the copilot runner at a non-default session store (basicly-2rn9).
+
+    ``[runner] copilot_session_store`` overrides the base directory
+    ``runner.extract_usage`` reads a dispatch's measured usage from. A
+    ``[runner]`` key rather than a ``[[runner.agents]]`` one for two reasons: the
+    section merges the gitignored ``basicly.local.toml`` overlay, which is the
+    only place a machine-specific store path belongs, and redirecting one path
+    should not force a consumer to restate the whole built-in adapter. A ``~`` is
+    left in place — the reader expands it, so a portable value stays portable.
+    Absent leaves the home-relative default.
+    """
+    value = section.get("copilot_session_store")
+    spec = specs.get(COPILOT_RUNNER)
+    if spec is None or not isinstance(value, str) or not value.strip():
+        return
+    specs[COPILOT_RUNNER] = replace(spec, session_store=Path(value.strip()))
 
 
 def _parse_runner_agent(entry: object) -> RunnerSpec:
