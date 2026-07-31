@@ -2,9 +2,12 @@
 
 Authored 2026-07-26 against `main` @ `b02b527`. Reviewed: every document in
 [`docs/design/`](../design/) and [`docs/research/`](../research/), the engine modules under
-`src/basicly/`, and every non-closed tracker record.
+`src/basicly/`, and every non-closed tracker record. **Reshaped 2026-07-30 against `main` @
+`31d441d`** to terminate at a defensible v1.0.0 (owner decisions in §1.1 and §7.2), after a
+second full review of the designs and the engine — six previously filed defect claims
+confirmed at HEAD, four new defects filed with evidence as `basicly-jr0l.49`–`.52`.
 
-**§2 last refreshed 2026-07-26 against `main` @ `13a4647`** (§8 makes this a standing
+**§2 last refreshed 2026-07-30 against `main` @ `31d441d`** (§8 makes this a standing
 obligation at the start of each phase; §2 states the commit it was measured at, and that
 stamp — not this header's — is the one to trust).
 
@@ -55,12 +58,50 @@ And three invariants that constrain _how_ any of it may be built:
 personas; an agent-writable catalog; a general-purpose issue tracker; a maintained TUI; an
 external database or daemon; agent-to-agent messaging. Reasons are in architecture §14.7.
 
+### 1.1 What v1.0.0 means — decided by the owner, 2026-07-30
+
+v1.0.0 is the first stable, production-ready release: no longer a pre-release, usable in a
+production setting. Three conditions, all required:
+
+1. **Every agreed design is implemented.** The architecture reference's §14 target state — the
+   owned tracker, the judgment layer, the evidence tiers, the gate taxonomy — is running code,
+   and each design document is absorbed and archived (§3.5).
+2. **The consumer criterion is demonstrated, not asserted** (`basicly-ctdz`): a fresh repo with
+   only git and a uv-provisioned Python interpreter installs basicly, runs every gate, and
+   drives the loop end to end — with no external `br` binary. This is what makes Phase 6 the
+   load-bearing 1.0.0 gate rather than a cost optimisation (§4, Phase 6).
+3. **A full semver contract.** The CLI surface, `basicly.toml`, the catalog source schemas, the
+   generated-file contract, and the owned ledger format are declared stable; breaking changes
+   after 1.0.0 land only at 2.0 behind a deprecation policy. This is the strongest of the three
+   candidate readings and was chosen deliberately: every one of those surfaces broke within the
+   last two minor versions, so the promise needs a real stabilization phase (Phase 8), not a
+   version-number ceremony.
+
 ## 2. Current state, measured
 
 Everything in this section was checked against the tree at `13a4647` rather than read from a
 design document, because figures the design documents carry turn out to be stale. Re-measured
 there on 2026-07-26; it was first measured at `b02b527`, and where a figure moved between the
 two the delta is shown, because the direction of travel is itself evidence.
+
+**Re-measured 2026-07-30 at `31d441d`.** Figures that moved since `13a4647`: 47 engine modules
+(was 40), 60 test files (was 57), 1557 collected tests (was 1416), 21,481 lines in
+`src/basicly/`; tracker 88 open / 3 deferred / 371 closed (was 60 / 6 / 332), 0 tombstones;
+625 commits unreleased since v0.5.1. The always-on baselines did not move — 8,484 / 7,209 /
+7,343 chars for `AGENTS.md` / `CLAUDE.md` / `copilot-instructions.md`, one scoped fragment.
+Two hygiene regressions: **14 non-closed beads carry no phase label** (was 4) — including the
+release epic `basicly-m3od`, both of its original blockers, and the model-tier cluster
+`kjc5.58`–`.61` — confirming §10's prediction that the continuation path keeps minting them;
+and the `vkh0` surface measurement (17 of 87 surfaces over 1,568 invocations) predates the
+`vkh0.8` spool fix, so it under-represents engine lane traffic and the freeze still waits on a
+supervised multi-lane run. The 2026-07-30 engine review confirmed all six filed adoptable
+claims at HEAD and found four new defects, filed with evidence: `basicly-jr0l.49` (an
+out-of-order ship approval closes a never-provisioned leaf with zero work — the destructive
+mechanism behind the trap `jr0l.39` renames), `jr0l.50` (a crash between merge and gate
+recording strands the lane as not-ready and burns rework), `jr0l.51` (a required gate accepts
+any provider, so a dispatched agent's forged `br gate report` passes it — the narrowest
+hardening of the engine-disposes constraint), and `jr0l.52` (a stall decision outliving a
+green run parks the lane on a moot question).
 
 **Shipped and dogfooded.** Catalog and projection with drift gates; the git and agent hook floor;
 the single-track loop; worktree isolation; the concurrent supervisor with lanes and a serial merge
@@ -155,6 +196,28 @@ it prevents.
 
 ## 4. The phases
 
+### 4.0 The release ladder — how phases become releases
+
+Decided 2026-07-30. A **phase** is a dependency cluster; a **release** is a shippable cut
+across the phases. The ladder below is the order the cuts happen in and the reason each sits
+where it does. The structural insight that produced it: **the `u6jq.1` unattended-run proof
+and the `vkh0.2` surface-freeze telemetry are the same supervised multi-lane run** — Phase 0's
+exit criterion and Phase 6's entry gate converge on one event, so everything that makes that
+run trustworthy and affordable lands immediately after v0.6.0, and the tracker follows it in
+the same release.
+
+| Release | Draws from | Content and reason |
+| --- | --- | --- |
+| before `v0.6.0` | housekeeping | `jr0l.32` + `jr0l.33` (owner asked for these first), the `a3ab.6`/`a3ab.7` retro pair where they do not disturb the release, and labelling the 14 unlabelled beads. Small catalog and tracker work; the review is done, so projection regeneration no longer corrupts anything. |
+| `v0.6.0` | release epic `m3od` | The narrow critical cut as scoped on `basicly-m3od`: `jr0l.38`, `jr0l.39`, **`jr0l.49`** (added 2026-07-30 — the destructive mechanism behind the trap `jr0l.39` renames), the breaking-change audit, the changelog curation. Unblocks 625 commits of accumulated value. |
+| `v0.7.0` | Phases 0, 6, parts of 1 and 7 | **Trustworthy factory, owned tracker.** Hardening batch (`jr0l.46`/`.47`/`.50`/`.51`/`.52`, `m4zv.12`/`.13`) → forecast chain (`jr0l.21`/`.22`/`.34`/`.35`, model provenance `kjc5.59`–`.61`) → the proof run (`u6jq.1`, under the delegated 10M-token L1 ceiling) → `vkh0.2` freeze → event log → import → shadow (vs the live tracker) → dual-write → flip. The flip removes `br` from the consumer floor — the single biggest 1.0.0 blocker. |
+| `v0.8.0` | Phases 1, 2, 3 | **Evidence, gates, docs.** `7bur` cost per landed package, `agzx.2` localisation, the Phase 2 deterministic gates (`m4zv.2`–`.6`) built against the owned tracker (the `m4zv.14` write-lock flake dissolves with the flip), the D4 amendment, `kjc5.13` absorption, the tutorial layer (`imnu.2`), capability tiers (`imnu.3` + `kjc5.58`), the ceremony threshold (`imnu.5`), and the fake-agent-CLI e2e test (`jr0l.43`, decided 2026-07-30). Measurements land before the phase they gate. |
+| `v0.9.0` | Phases 5, 4 | **The judgment layer and always-on relief.** The roster (`s2xf`), gated on `7bur`'s numbers by construction (§6); Phase 4 authoring and the empty-glob check; `jr0l.44`/`.45`. |
+| `v1.0.0` | Phase 8 | **Stabilize and declare.** The surface audit and semver freeze, the deprecation policy, the fresh-consumer acceptance test (Phase 8). 1.0 is a promise, so the last phase proves the promise instead of adding capability. |
+
+Phase 7's small fillers interleave throughout. Rough sizing: v0.7 ≈ 8–12 sessions, v0.8 ≈ 6–9,
+v0.9 ≈ 5–8, v1.0 ≈ 3–5 — sizing signals, not commitments (§0).
+
 ### Phase 0 — Make an unattended run possible, and stop a live leak
 
 **Priority: P0. Depends on: nothing. Size: 2–3 sessions.**
@@ -179,6 +242,14 @@ absolute path. Re-run the dogfood shape to prove it rather than reasoning about 
 
 **Why not later.** Phase 1 measures cost per landed package. If a lane can be charged rework for a
 flake and cannot be released once escalated, the measurement measures the defects.
+
+**Status 2026-07-30, and where the proof now sits.** All six work items above are closed; the
+phase's residue is the proof itself (`u6jq.1`), blocked on the forecast chain after the first
+attempt failed its criterion at $34.16 for 46.0M tokens (§5). Owner decision 2026-07-30: **the
+proof runs in `v0.7.0`**, after the forecast chain and the hardening batch land, under the
+already-delegated 10M-token L1 ceiling — and it doubles as the telemetry run `vkh0.2`'s
+surface freeze is gated on, because the `vkh0.8` spool fix means only a run from now on
+records engine lane traffic at all (§2).
 
 ### Phase 1 — Buy the numbers that decide the expensive phases
 
@@ -281,6 +352,13 @@ state where they should have blocked entry.
 **Prerequisite for 2d/2e:** the D4 amendment must land in the authoritative document first (see
 Phase 3), because validate is currently specified as a required gate whose judged half cannot fail
 it. Build against the amended shape, not the current one.
+
+**Two `phase-2` beads are pulled forward into `v0.7.0`'s hardening batch** (§4.0): `m4zv.12`
+(refuse a catalog path that escapes the repo root — the 2026-07-30 review confirmed the write
+happens _before_ the check that would catch it, `cli.py:304` vs `:307`) and `m4zv.13`
+(evidence-artifact presence). The proof run should not be attempted while a hostile overlay
+can write outside the repo and a lane can claim done with nothing to point at. Their phase
+label is unchanged; the release is just earlier.
 
 **Exit criteria.** CI fails on: a description that cannot route to its own realistic prompt, a
 colliding description pair, a catalog entry with no eval case, a judged verdict with no severity, a
@@ -393,6 +471,13 @@ The tracker _is_ the harness's state, so every guarantee in §1 is downstream of
 currently an unowned external binary in the critical path whose licence carries a rider
 restricting a class of users.
 
+**The 2026-07-30 consumer review hardened the rationale from cost to necessity.** The loop
+hard-requires the external `br` binary (`br.py:179-190` refuses without it), `basicly install`
+does not install it, and the pin is fragile in both directions — 0.2.19 rejects the harness's
+`gate report` call, and a 0.2.19 database has no supported downgrade path. A 1.0.0 declared
+before this phase lands would freeze a contract the roadmap already voids, so Phase 6 is the
+load-bearing 1.0.0 gate, not an optimisation (§1.1).
+
 **Hard constraint: a clean-room boundary applies.** The replacement must not be derived from
 `beads_rust` source. Sanctioned inputs are our own ledger's observable data, `br`'s documented CLI
 contract, and the genuine-MIT upstream original. **The boundary was signed off on `basicly-qk6y`
@@ -447,10 +532,19 @@ graph, which the determinism rule forbids.
 
 **Priority: P2–P3. Mostly independent. Size: ongoing.**
 
-The `basicly-jr0l` epic's 22 open children are largely small and self-contained, which makes them
-good capacity fillers between the phases above rather than a phase of their own. Four groups, with
+The `basicly-jr0l` epic's open children are largely small and self-contained, which makes them
+good capacity fillers between the phases above rather than a phase of their own. Five groups, with
 one placement warning.
 
+- **Engine hardening from the 2026-07-30 review — not fillers; pulled forward.**
+  `basicly-jr0l.46`/`.47` (previously filed) and `jr0l.50`/`.51`/`.52` (new) land in
+  `v0.7.0`'s hardening batch (§4.0), because each is a defect an unattended run would hit or a
+  hole that lets one lie; `jr0l.49` is a `v0.6.0` blocker (§7.2). `jr0l.43` is decided
+  (2026-07-30): build the fake-agent-CLI e2e test through the real subprocess seam — the
+  deciding evidence is `jr0l.38`, the codex adapter having never completed a dispatch, exactly
+  the defect class the test catches; it lands in `v0.8.0`. `jr0l.48` (the `derive_phase`
+  review) is narrowed by the same review: the ladder is not over-long; the scope is one
+  redundant conjunct and the overloaded ship predicate whose destructive half is `jr0l.49`.
 - **D9 determinism.** `basicly-kjc5.32` (attribute a missed coupling independently of landing
   order) is a live violation of a decision the architecture claims is enforced — treat it as P2 and
   land it before Phase 5 leans on coupling records. `basicly-kjc5.52` (fingerprint the environment
@@ -469,6 +563,27 @@ one placement warning.
   **`.46` should run through Phase 2's micro-test harness rather than inventing its own**.
   `basicly-5xcj`, `basicly-kvx5`, `basicly-sco6`, `basicly-g7os`, `basicly-kjc5.37`,
   `basicly-z25w`, `basicly-l7zo` are catalog-content beads that can land any time.
+
+### Phase 8 — Stabilize and declare 1.0.0
+
+**Priority: P1 once v0.9.0 ships. Depends on: everything above. Size: 3–5 sessions. New
+2026-07-30; no epic yet — file one at its decomposition.**
+
+1.0 is a promise (§1.1), so this phase proves it rather than adding capability. Nothing here
+is speculative; every item traces to a defect the 2026-07-30 consumer review found.
+
+| Work | Why |
+| --- | --- |
+| Surface audit and semver freeze | Enumerate and freeze the five public surfaces: the CLI commands and flags, `basicly.toml` plus the `basicly.local.toml` overlay contract, the four catalog source schemas, the generated-file/manifest contract, and the owned ledger format. Every one broke within the last two minors, so the audit means reading each surface against its consumers; the freeze is a written compatibility policy with a deprecation path. |
+| Breaking-marker discipline as a gate | The v0.6.0 audit exists because zero of 535 commits carried a `!` marker. After the freeze, a commit that changes a frozen surface without the marker must fail a deterministic check — or 2.0's audit repeats 0.6's. |
+| Forward-version CI job | The floor claim is "3.14+" and CI tests exactly 3.14. Add the next Python to the matrix so the claim is tested, not asserted. The floor itself stays (owner-confirmed 2026-07-30; E1 wontfix stands) — uv provisioning dissolves the adoption cost. |
+| Error-path polish | The two soft spots at the consumer trust boundary: `basicly check` in a never-installed repo points at `build` instead of `install`, and the CLI's blanket exception handler leaves no `--debug` escape hatch for diagnosing a genuine engine bug. |
+| The acceptance test | A fresh consumer repo — git plus a uv-provisioned interpreter, no `br` — installs basicly, runs every gate, and drives one unit of work through the loop to a landed commit. Exercise it as it will really be used, and publish nothing that was not exercised (`jr0l.33`'s rule, applied to our own release notes). |
+| Absorb and archive | Every design document folded into the architecture reference and archived (§3.5); the roadmap's rendered copies agree with architecture §15; §2 of this plan refreshed one final time. |
+
+**Exit criteria.** The acceptance test passes on a machine that has never seen this repo; the
+compatibility policy is published; a surface-breaking commit without a marker fails CI; and
+v1.0.0 is tagged by `basicly release` with both pushes explicitly owner-approved.
 
 ## 5. Dependency graph
 
@@ -530,6 +645,13 @@ so the measurement window has been accumulating; the sequencing question is no l
 telemetry but when `vkh0.2` freezes the surface, because everything after it is blocked on that one
 document.
 
+**The path to 1.0.0, restated as releases** (2026-07-30, §4.0): `v0.6.0` (`jr0l.38` +
+`jr0l.39` + `jr0l.49`) → `v0.7.0` (hardening → forecast chain → the `u6jq.1` proof run
+doubling as `vkh0.2` telemetry → event log → flip) → `v0.8.0` (`7bur` + Phase 2 gates +
+Phase 3 docs) → `v0.9.0` (roster + Phase 4) → `v1.0.0` (Phase 8 freeze + acceptance test).
+The two critical paths above did not change; the ladder is how they interleave into shippable
+cuts, and it puts the tracker path first per the owner's 2026-07-29 resequencing.
+
 ## 6. What to cut if capacity is short
 
 - **Must**: Phase 0 in full, `kjc5.29`, `7bur`, `2a`+`2b`, the D4 amendment, `kjc5.13`, **and
@@ -547,6 +669,9 @@ document.
   is no longer on this list**: it was deferred here pending a measured surface, `vkh0.1` supplied
   the measurement, and the owner then resequenced it (§4, Phase 6). Only `vkh0.4` (the cross-repo
   offer exchange) stays deferred, because nothing consumes it yet.
+- **For 1.0.0 specifically, nothing in Phase 8 is cuttable**: a 1.0 without the freeze, the
+  acceptance test, or the marker gate is a version number, not a promise (§1.1). If capacity
+  is short, v1.0.0 moves later; its content does not shrink.
 
 ## 7. Decisions still owed by the owner
 
@@ -591,6 +716,31 @@ RAM. Both are independent design errors in projects that happened also to be con
 correlation is real; the causation is not established. The reason to reject is the typed-invariant
 argument above — anyone revisiting this should attack that, not the correlation.
 
+### 7.2 Decided 2026-07-30: the shape of 1.0.0, and six items off this list
+
+Recorded here because §7 is where a reader checks what still blocks a phase.
+
+1. **What 1.0.0 means** — decided; §1.1. Full semver contract, all designs implemented, the
+   consumer criterion demonstrated on a fresh repo.
+2. **`u6jq.1` is required, in `v0.7.0`** — under the delegated 10M-token L1 ceiling; it
+   doubles as `vkh0.2`'s telemetry run (§4.0).
+3. **`jr0l.43` builds the fake-agent-CLI e2e test** — the declare-only option was rejected on
+   the `jr0l.38` evidence; recorded on the bead.
+4. **`jr0l.49` joins the `v0.6.0` blockers** — rationale recorded on `basicly-m3od`: renaming
+   the trap (`jr0l.39`) without closing the ladder hole leaves the incident possible.
+5. **The Python 3.14 floor stays** (E1 wontfix confirmed); Phase 8 adds the forward-version CI
+   job so the "+" in "3.14+" is a tested claim.
+6. **`a3ab.6`'s home is the path-scoped rules tier** (`docs/research/**` + `docs/design/**`),
+   recorded on the bead; the always-on baseline gains nothing, and Codex's inlining cost is
+   measured per the bead's AC.
+
+Two §7 items were resolved under the standing L3 grant, reversible on owner objection: the
+github.com Copilot surface question (item 2 above the line) becomes a per-fragment rule at
+Phase 4 — _a fragment that must bind in PR review stays unscoped_ — and the machine-local
+retro lane (item 4, `jr0l.28`) stays deferred past 1.0.0, on bypass-by-accretion risk and zero
+recorded demand. Still genuinely owed: the ceremony threshold's written form (`imnu.5`,
+`v0.8.0`) and Tier-2's rank-1 floor (item 5, deliberately post-measurement).
+
 ## 8. Risks, and how each is detected
 
 | Risk | Detection |
@@ -602,6 +752,7 @@ argument above — anyone revisiting this should attack that, not the correlatio
 | The roster is built on a guessed tier table | Phase 5 is gated on 1b by construction. If 1b slips, Phase 5 waits rather than proceeding on assumption. |
 | A design document drifts from shipped behaviour and misleads a future session | Each phase ends by absorbing into the architecture reference and archiving the source (§3.5). This session already found two such drifts — a tier claimed missing that was built, and a bead citation pointing at unrelated closed work. |
 | The plan itself goes stale after the tracker is replaced | This file is the durable copy; refresh §2 against the tree at the start of each phase rather than trusting it. |
+| A frozen surface turns out to need a breaking change during 1.x | The deprecation policy defines the escape (deprecate in 1.x, remove at 2.0), and Phase 8's marker gate makes an accidental break impossible to land silently. |
 
 ## 9. Appendix A — how a phase maps to the graph
 
@@ -630,6 +781,11 @@ phase, and which two epics pre-date the scheme:
 | 6 | `basicly-vkh0` | pre-dates the phase epics; labelled `phase-6` rather than renamed. **P0 — resequenced 2026-07-29 as the release after `v0.6.0`**; `vkh0.1` closed, `vkh0.2` is the gate, `vkh0.4` alone stays deferred |
 | 7 | `basicly-jr0l` | pre-dates the phase epics; labelled `phase-7` rather than renamed |
 | multi | `basicly-kjc5` | the original parallel-factory epic; labelled `phase-multi`, its children spread across phases |
+| 8 | — | new 2026-07-30 (§4, Phase 8); file its epic at decomposition time, when v0.9.0 ships |
+
+The release epic (`basicly-m3od` for `v0.6.0`, and its successors) sits outside the phase
+scheme on purpose: a release is a cut across phases (§4.0), so it blocks on beads rather than
+carrying a phase label.
 
 Nothing was re-parented — a bead's parent is still its epic of origin, and its phase is the label.
 So `kjc5` children appear in several phases, and the epics close when their children do.
