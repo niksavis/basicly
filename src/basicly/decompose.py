@@ -31,12 +31,17 @@ import re
 import statistics
 import tomllib
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from . import br, policy, run_record
+from . import br, policy, run_record, runner
 from .br import run_br as _run_br
-from .config import DEFAULT_BUILD_FACTOR, SizingConfig, load_sizing_config
+from .config import (
+    DEFAULT_BUILD_FACTOR,
+    SizingConfig,
+    load_runner_config,
+    load_sizing_config,
+)
 
 DEFAULT_CHILD_TYPE = "task"
 
@@ -588,14 +593,143 @@ def dispatch_sizing(repo_root: Path, issue_id: str) -> DispatchSizing | None:
     return DispatchSizing(task_class, estimate, DISPATCH_FORECAST)
 
 
-def freeze_estimate(repo_root: Path, feature_id: str, key: str, estimate: CostEstimate) -> None:
-    """Record *estimate* under *key* on *feature_id* (best-effort, never fatal)."""
+# --- Predicted spend beside the working set (basicly-jr0l.21) -----------------
+#
+# The working-set estimate above is an estimate of *context*, and context is not
+# what a run costs (see `run_record`'s spend-forecast section for the measured
+# 160-420x hole). So every sized package now also carries what it is predicted to
+# spend — tokens, USD and wall clock — computed from the same working-set number
+# through ratios calibrated per (model, task class), seeded from a declared prior
+# until enough paired records exist to replace it.
+#
+# Alongside, never instead of: the band verdict still governs on the working set,
+# because that is the quantity a context window bounds. Spend is the quantity a
+# budget bounds, and basicly-jr0l.22 is the pass that will admit a lane against it.
+
+
+def forecast_model(repo_root: Path) -> str | None:
+    """The model a dispatch in this repo would run on now, or None when unresolved.
+
+    The calibration key. Resolved from the configured default runner rather than
+    passed in, so both the CLI and the loop get it without either having to
+    remember — the same reason ``build_record`` stamps the session's config
+    overrides centrally.
+
+    PATH-only selection on purpose: ``select_runner``'s capability probe spawns the
+    agent binary, and sizing a plan must not shell out to three CLIs. A probe-driven
+    fallback to a different runner at build time therefore changes the model behind
+    the forecast — visible afterwards, because the run record carries the model that
+    actually ran (basicly-kjc5.59).
+
+    None whenever the runner pins no model (a handoff runner has no model flag at
+    all) or the config cannot be read. A null key measures against nothing and the
+    declared prior stands, which is honest: nothing has been recorded for a model
+    nobody can name.
+    """
+    try:
+        config = load_runner_config(repo_root)
+        spec = runner.select_runner(config.specs, config.default)
+        return runner.resolve_model(spec, repo_root=repo_root).model
+    except RuntimeError, ValueError, OSError:
+        return None
+
+
+@dataclass(frozen=True)
+class SpendForecast:
+    """What a package is predicted to spend, beside the working set it was sized on.
+
+    A metric is None when nothing declares or measures the ratio behind it, and when
+    the working set itself is zero — a package with no readable scope material. Both
+    are indeterminate answers, and a zero cost would read as a free package.
+    """
+
+    tokens: int | None
+    cost: float | None
+    wall_clock_s: float | None
+    # How each ratio was resolved, and the prior it was seeded from. Recorded with
+    # the forecast so a seeded number can never be mistaken for a measured one.
+    calibration: run_record.SpendCalibration
+
+    @property
+    def indeterminate(self) -> bool:
+        """True when no metric could be predicted at all."""
+        return self.tokens is None and self.cost is None and self.wall_clock_s is None
+
+
+def forecast_spend(
+    estimate: CostEstimate, calibration: run_record.SpendCalibration
+) -> SpendForecast:
+    """Predict tokens, USD and wall clock for *estimate* under *calibration*.
+
+    Money and time are derived from the predicted tokens rather than from the
+    working set, so the turn multiplier lives in exactly one ratio and the other two
+    stay a price and a rate — each independently replaceable by measured history.
+    """
+    multiplier = calibration.tokens_per_working_set_token.value
+    working_set = estimate.total
+    tokens = round(working_set * multiplier) if multiplier is not None and working_set > 0 else None
+    if tokens is None:
+        return SpendForecast(None, None, None, calibration)
+    usd = calibration.usd_per_million_tokens.value
+    seconds = calibration.seconds_per_million_tokens.value
+    return SpendForecast(
+        tokens=tokens,
+        cost=None if usd is None else tokens / 1_000_000 * usd,
+        wall_clock_s=None if seconds is None else tokens / 1_000_000 * seconds,
+        calibration=calibration,
+    )
+
+
+def spend_forecasts(
+    repo_root: Path,
+    children: tuple[ChildSpec, ...],
+    estimates: tuple[CostEstimate, ...],
+    sizing: SizingConfig,
+) -> tuple[SpendForecast, ...]:
+    """Forecast each child's spend, reading the paired history and the model once.
+
+    One history read for the whole plan: :func:`run_record.forecast_errors` walks the
+    tracker export, and doing that per child would re-parse it for every track.
+    """
+    report = run_record.forecast_errors(repo_root)
+    model = forecast_model(repo_root)
+    return tuple(
+        forecast_spend(
+            estimate,
+            run_record.calibrate_spend(
+                report,
+                model=model,
+                task_class=spec.type,
+                min_samples=sizing.calibration_min_samples,
+                window=sizing.calibration_window,
+            ),
+        )
+        for spec, estimate in zip(children, estimates, strict=True)
+    )
+
+
+def freeze_estimate(
+    repo_root: Path,
+    feature_id: str,
+    key: str,
+    estimate: CostEstimate,
+    spend: SpendForecast | None = None,
+) -> None:
+    """Record *estimate* under *key* on *feature_id* (best-effort, never fatal).
+
+    *spend* is recorded beside it, prior and all: the marker is the only carrier
+    that survives a clone, and a forecast whose seed is not written down cannot be
+    audited once the seed is replaced. First write still wins, so re-governing the
+    same plan later prints today's calibration but never rewrites the recorded one —
+    the number of record is the one the plan was accepted on (D9).
+    """
     payload = json.dumps(
         {
             "scope_tokens": estimate.scope_tokens,
             "overhead_tokens": estimate.overhead_tokens,
             "build_factor": estimate.build_factor,
             "total": estimate.total,
+            "spend": None if spend is None else asdict(spend),
         },
         sort_keys=True,
     )
@@ -624,6 +758,10 @@ class PlanVerdict:
     # governor can record only what it newly computed.
     keys: tuple[str, ...]
     frozen: dict[str, CostEstimate]
+    # Predicted spend per child, alongside the working-set estimate that gates
+    # (basicly-jr0l.21). Never consulted by the band check: a budget and a context
+    # window bound different quantities.
+    spend: tuple[SpendForecast, ...] = ()
 
     @property
     def refused(self) -> bool:
@@ -640,6 +778,10 @@ def estimate_plan(
     guidance strings as the real run, but nothing is refused and nothing is
     frozen. That makes it safe for ``--dry-run`` and makes divergence between the
     preview and the run impossible by construction rather than by discipline.
+
+    The verdict also carries each child's predicted spend (basicly-jr0l.21), which
+    the band check never reads — it is the number a budget is compared against, not
+    a reason to refuse a plan.
     """
     sizing = load_sizing_config(repo_root)
     frozen = frozen_estimates(repo_root, feature_id) if feature_id is not None else {}
@@ -659,7 +801,13 @@ def estimate_plan(
             )
         )
     )
-    return PlanVerdict(estimates=estimates, violations=violations, keys=keys, frozen=frozen)
+    return PlanVerdict(
+        estimates=estimates,
+        violations=violations,
+        keys=keys,
+        frozen=frozen,
+        spend=spend_forecasts(repo_root, children, estimates, sizing),
+    )
 
 
 def govern_working_set(
@@ -685,9 +833,11 @@ def govern_working_set(
     # Only an accepted plan is frozen: a refusal is the agent's cue to re-propose,
     # and freezing the numbers behind it would pin a verdict nothing acted on.
     if feature_id is not None:
-        for key, estimate in zip(verdict.keys, verdict.estimates, strict=True):
+        for key, estimate, spend in zip(
+            verdict.keys, verdict.estimates, verdict.spend, strict=True
+        ):
             if key not in verdict.frozen:
-                freeze_estimate(repo_root, feature_id, key, estimate)
+                freeze_estimate(repo_root, feature_id, key, estimate, spend)
     return verdict.estimates
 
 

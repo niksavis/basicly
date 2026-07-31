@@ -842,3 +842,201 @@ def test_dispatch_sizing_declines_a_bead_with_no_readable_scope(
     """
     _install(monkeypatch, _FakeBrShow({"b-1": ("task", "## Context\n\nno scope here")}))
     assert decompose.dispatch_sizing(tmp_path, "b-1") is None
+
+
+# --- predicted spend beside the working set (basicly-jr0l.21) ----------------
+
+
+def _manual_runner(repo: Path) -> None:
+    """Pin the repo to the handoff runner so the forecast model is resolvable and stable.
+
+    Without this the runner is ``auto``, which detects whichever agent binary the
+    machine happens to have on PATH — a test that reads the forecast model must not
+    depend on that.
+    """
+    (repo / "basicly.toml").write_text('[runner]\ndefault = "manual"\n', encoding="utf-8")
+
+
+def _estimate(total: int) -> decompose.CostEstimate:
+    """A working-set estimate whose total is exactly *total* tokens."""
+    return decompose.CostEstimate(scope_tokens=total, overhead_tokens=0, build_factor=1.0)
+
+
+def _calibration(
+    *, tokens: float | None = 100.0, usd: float | None = 2.0, seconds: float | None = 60.0
+) -> run_record.SpendCalibration:
+    """A seeded calibration: 100x the working set, at 2.00 USD and 60 s per million."""
+    seeded = run_record.PRIOR_RATIO
+    return run_record.SpendCalibration(
+        tokens_per_working_set_token=run_record.CalibratedRatio(tokens, seeded),
+        usd_per_million_tokens=run_record.CalibratedRatio(usd, seeded),
+        seconds_per_million_tokens=run_record.CalibratedRatio(seconds, seeded),
+        prior=run_record.DECLARED_SPEND_PRIOR,
+        model="claude-opus-5",
+        task_class="task",
+    )
+
+
+def _declared(ratio: str) -> float:
+    """One declared prior ratio, refusing a None so a test can compute against it."""
+    value = getattr(run_record.DECLARED_SPEND_PRIOR, ratio)
+    assert value is not None
+    return value
+
+
+def test_forecast_spend_multiplies_the_working_set_and_prices_the_tokens() -> None:
+    """Tokens come from the working set; money and time come from the tokens."""
+    spend = decompose.forecast_spend(_estimate(10_000), _calibration())
+    assert spend.tokens == 1_000_000  # 10_000 working set x 100
+    assert spend.cost == pytest.approx(2.0)  # 1M tokens at 2.00 USD/Mtok
+    assert spend.wall_clock_s == pytest.approx(60.0)  # 1M tokens at 60 s/Mtok
+    assert spend.indeterminate is False
+
+
+def test_forecast_spend_refuses_a_zero_working_set() -> None:
+    """A package with no readable scope material forecasts nothing, not a free package."""
+    spend = decompose.forecast_spend(_estimate(0), _calibration())
+    assert (spend.tokens, spend.cost, spend.wall_clock_s) == (None, None, None)
+    assert spend.indeterminate is True
+
+
+def test_forecast_spend_predicts_tokens_while_leaving_money_unknown() -> None:
+    """An undeclared, unmeasured ratio yields None for its metric and nothing else."""
+    spend = decompose.forecast_spend(_estimate(10_000), _calibration(usd=None))
+    assert spend.tokens == 1_000_000
+    assert spend.cost is None
+    assert spend.wall_clock_s == pytest.approx(60.0)
+    assert spend.indeterminate is False
+
+
+def test_forecast_model_is_none_when_the_runner_pins_no_model(tmp_path: Path) -> None:
+    """A handoff runner has no model flag, so there is no key — and none is invented."""
+    _manual_runner(tmp_path)
+    assert decompose.forecast_model(tmp_path) is None
+
+
+def test_estimate_plan_carries_predicted_spend_beside_the_working_set(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A sized package forecasts tokens, cost and wall clock, not the working set alone."""
+    _install(monkeypatch, _FakeBr())
+    _manual_runner(tmp_path)
+    _write(tmp_path, "src/a.py", 16_000)  # 4_000 scope tokens x seed 3.0 = 12_000
+
+    verdict = decompose.estimate_plan(tmp_path, (_child("a", "src/a.py"),))
+
+    assert verdict.estimates[0].total == 12_000
+    spend = verdict.spend[0]
+    tokens = round(12_000 * _declared("tokens_per_working_set_token"))
+    assert spend.tokens == tokens
+    assert spend.cost == pytest.approx(tokens / 1_000_000 * _declared("usd_per_million_tokens"))
+    assert spend.wall_clock_s == pytest.approx(
+        tokens / 1_000_000 * _declared("seconds_per_million_tokens")
+    )
+    # Seeded, and saying so: the model could not be resolved, so nothing measured it.
+    assert spend.calibration.tokens_per_working_set_token.source == run_record.PRIOR_RATIO
+    assert spend.calibration.model is None
+
+
+def test_govern_freezes_the_spend_forecast_and_the_prior_behind_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The recorded forecast carries its own provenance, so a seed cannot read as measured.
+
+    The sizing marker is the only carrier that survives a clone, so a spend number
+    recorded without the prior it came from could never be audited once the prior
+    was replaced.
+    """
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _manual_runner(tmp_path)
+    _write(tmp_path, "src/a.py", 16_000)
+
+    decompose.govern_working_set(tmp_path, (_child("a", "src/a.py"),), feature_id="feat")
+
+    payload = json.loads(fake.comments["feat"][0].partition("\n")[2])
+    spend = payload["spend"]
+    assert spend["tokens"] == round(12_000 * _declared("tokens_per_working_set_token"))
+    assert spend["cost"] is not None and spend["wall_clock_s"] is not None
+    assert spend["calibration"]["tokens_per_working_set_token"]["source"] == run_record.PRIOR_RATIO
+    assert spend["calibration"]["prior"]["basis"] == run_record.DECLARED_SPEND_PRIOR.basis
+
+
+# One paired sample, as a `task` on the named model: 5M tokens against a 100k
+# forecast (50x), 10 USD and 100 seconds (2.00 USD and 20 s per million tokens).
+_PAIR_TOKENS = 5_000_000
+_PAIR_FORECAST = 100_000
+_PAIR_RATIO = _PAIR_TOKENS / _PAIR_FORECAST
+
+
+def _record_paired_run(repo: Path, bead_id: str, model: str, *, cost: float | None = None) -> None:
+    """Record a dispatch carrying both halves of the pair, keyed to *model*."""
+    run_record.record(
+        repo,
+        bead_id,
+        run_record.build_record(
+            agent="claude",
+            handoff=False,
+            returncode=0,
+            duration_s=100.0,
+            command=("claude",),
+            tokens=_PAIR_TOKENS,
+            estimated=False,
+            model=model,
+            task_class="task",
+            forecast_tokens=_PAIR_FORECAST,
+            cost=cost,
+        ),
+    )
+
+
+def test_measured_history_replaces_the_prior_once_the_minimum_is_paired(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Past calibration_min_samples the forecast is measured for that model, not seeded.
+
+    The prior would predict ~334x the working set; three paired records on this model
+    say 50x, and it is the measured number the forecast must carry.
+    """
+    _install(monkeypatch, _FakeBr())
+    (tmp_path / "basicly.toml").write_text(
+        '[runner]\ndefault = "manual"\n\n[policy.sizing]\ncalibration_min_samples = 3\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(decompose, "forecast_model", lambda _repo: "claude-opus-5")
+    _write(tmp_path, "src/a.py", 16_000)  # 12_000 working set at the task seed
+    for index in range(3):
+        _record_paired_run(tmp_path, f"b-{index}", "claude-opus-5", cost=10.0)
+
+    verdict = decompose.estimate_plan(tmp_path, (_child("a", "src/a.py"),))
+
+    spend = verdict.spend[0]
+    calibration = spend.calibration
+    assert calibration.pairs == 3
+    assert calibration.tokens_per_working_set_token.source == run_record.MEASURED_RATIO
+    assert calibration.tokens_per_working_set_token.value == pytest.approx(_PAIR_RATIO)
+    tokens = round(12_000 * _PAIR_RATIO)
+    assert spend.tokens == tokens
+    # 10 USD and 100 seconds per 5M tokens -> 2.00 USD and 20 s per million.
+    assert calibration.usd_per_million_tokens.value == pytest.approx(2.0)
+    assert spend.cost == pytest.approx(tokens / 1_000_000 * 2.0)
+    assert spend.wall_clock_s == pytest.approx(tokens / 1_000_000 * 20.0)
+
+
+def test_a_foreign_models_history_leaves_the_forecast_seeded(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Calibration is per model: another model's landings cannot move this forecast."""
+    _install(monkeypatch, _FakeBr())
+    (tmp_path / "basicly.toml").write_text(
+        '[runner]\ndefault = "manual"\n\n[policy.sizing]\ncalibration_min_samples = 3\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(decompose, "forecast_model", lambda _repo: "claude-opus-5")
+    _write(tmp_path, "src/a.py", 16_000)
+    for index in range(3):
+        _record_paired_run(tmp_path, f"b-{index}", "some-other-model")
+
+    spend = decompose.estimate_plan(tmp_path, (_child("a", "src/a.py"),)).spend[0]
+    assert spend.calibration.pairs == 0
+    assert spend.calibration.tokens_per_working_set_token.source == run_record.PRIOR_RATIO

@@ -675,6 +675,12 @@ class ForecastError:
     # True when the actual was a chars/4 transcript estimate rather than
     # adapter-reported usage, so a consumer can down-weight the sample (design 7.5).
     estimated: bool = False
+    # The money and time the same dispatch spent, carried on the pair rather than
+    # looked up again (basicly-jr0l.21): a spend forecast needs a price and a rate
+    # per model, and the pair is the only sample set that already knows which model
+    # and which class produced them. Null when the adapter metered neither.
+    actual_cost: float | None = None
+    actual_wall_clock_s: float | None = None
 
     @property
     def ratio(self) -> float:
@@ -773,6 +779,8 @@ def forecast_errors(repo_root: Path) -> ForecastErrorReport:
                     model=_text(entry, "model"),
                     forecast_source=_text(entry, "forecast_source"),
                     estimated=entry.get("estimated") is True,
+                    actual_cost=_positive_float(entry, "cost"),
+                    actual_wall_clock_s=_positive_float(entry, "duration_s"),
                 )
             )
     return ForecastErrorReport(
@@ -787,3 +795,204 @@ def _text(entry: Mapping[str, object], key: str) -> str | None:
     """*entry*'s value at *key* when it is a non-empty string, else None."""
     value = entry.get(key)
     return value if isinstance(value, str) and value else None
+
+
+def _positive_float(entry: Mapping[str, object], key: str) -> float | None:
+    """*entry*'s value at *key* as a positive float, else None.
+
+    A zero is dropped along with a missing value: a metered cost or duration of
+    exactly zero is a recording artefact (a run that never started), and averaging
+    it into a per-token price would quietly halve the forecast.
+    """
+    value = entry.get(key)
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+        return None
+    return float(value)
+
+
+# --- Spend forecast, calibrated per model (basicly-jr0l.21) -------------------
+#
+# What the D8 governor forecasts is a *working set* — the context a lane needs —
+# and that is not what a run costs. Measured on the basicly-u6jq.1 proof run, the
+# working-set number under-shot actual context by 2.8-4.8x, and because an agentic
+# loop re-sends its context every turn, total spend is context times turn count
+# with nothing in the engine modelling the turn count at all. Spend landed 160-420x
+# the forecast. Every `forecast` field on the shipped cost rollups is null.
+#
+# So this turns a working-set estimate into predicted spend with three ratios:
+# tokens per working-set token (the whole turn multiplier, empirically), USD per
+# million tokens, and seconds per million tokens. Money and time hang off the token
+# prediction rather than off the working set, so a single multiplier carries the
+# loop's behaviour and the other two stay what they are — a price and a rate.
+#
+# **Keyed per (model, task class), never in aggregate.** The same work costs
+# different amounts on different models and models are replaced constantly, so a
+# cross-model average is noise. A record whose model was never recorded cannot join
+# a key: `model` was null on all 122 historical records, and folding those in would
+# reintroduce exactly the aggregate this is built to avoid.
+#
+# Cold start is unavoidable, so each ratio is *seeded from a declared prior* and
+# replaced by the measured median only once `calibration_min_samples` paired records
+# exist for that key. The prior travels inside the calibration and each ratio names
+# its own source, because a seeded number that reads as measured is worse than no
+# number. And an undeclared ratio with too little history stays None: fail closed on
+# an indeterminate answer rather than publish a confident zero.
+
+# Where one ratio's value came from. Recorded per ratio, not per forecast: history
+# accumulates unevenly (copilot bills credits and reports no USD at all), so a
+# forecast is routinely measured in tokens and still seeded in money.
+PRIOR_RATIO = "prior"
+MEASURED_RATIO = "measured"
+UNDECLARED_RATIO = "undeclared"
+
+
+@dataclass(frozen=True)
+class SpendPrior:
+    """The declared seed for the three spend ratios, before any history exists.
+
+    A ratio declared None is deliberately unknown — the forecast then reports no
+    number for it rather than inventing one. *basis* is the provenance the numbers
+    were derived from, recorded with every forecast so a reader can re-derive them.
+    """
+
+    tokens_per_working_set_token: float | None
+    usd_per_million_tokens: float | None
+    seconds_per_million_tokens: float | None
+    basis: str
+
+
+# The declared prior, derived from the only fully metered packages the tracker
+# holds: the three basicly-u6jq.1 lanes (basicly-kjc5.32/.50/.51), whose
+# `[harness-cost]` rollups carry the actual tokens, USD and wall clock. Their
+# forecast fields are null — that is the hole this closes — so the working-set
+# column is the governor's number as recorded in basicly-jr0l.21. Per-lane ratios,
+# median taken (a mean of a 162x and a 421x sample lands where no lane has been):
+#
+#   lane        working set   tokens      mult    USD/Mtok   s/Mtok
+#   kjc5.32          57_965    9_430_203  162.7      0.820    109.9
+#   kjc5.50          47_847   16_002_352  334.4      0.733     92.2
+#   kjc5.51          48_897   20_594_047  421.2      0.714     72.1
+#
+# Wall clock is summed dispatch duration, so it is agent-busy seconds for the
+# package, not calendar time for the lane.
+DECLARED_SPEND_PRIOR = SpendPrior(
+    tokens_per_working_set_token=334.4,
+    usd_per_million_tokens=0.733,
+    seconds_per_million_tokens=92.2,
+    basis="basicly-u6jq.1 proof run, 3 metered packages, per-lane medians",
+)
+
+
+@dataclass(frozen=True)
+class CalibratedRatio:
+    """One spend ratio, with where it came from and how much history backs it."""
+
+    value: float | None
+    # :data:`PRIOR_RATIO`, :data:`MEASURED_RATIO` or :data:`UNDECLARED_RATIO`.
+    source: str
+    # Samples that could have measured this ratio — reported even when the prior
+    # won, so "9 of 10" is distinguishable from "nothing has ever been metered".
+    samples: int = 0
+
+
+@dataclass(frozen=True)
+class SpendCalibration:
+    """The ratios one package's spend forecast is computed with, and their provenance."""
+
+    tokens_per_working_set_token: CalibratedRatio
+    usd_per_million_tokens: CalibratedRatio
+    seconds_per_million_tokens: CalibratedRatio
+    # The prior in force, recorded even where it was replaced: it is what a later
+    # reader needs to tell a seeded forecast from a measured one, and to audit the
+    # seed itself once the measured numbers disagree with it.
+    prior: SpendPrior
+    model: str | None = None
+    task_class: str | None = None
+    # Paired records that matched (model, task_class) inside the window.
+    pairs: int = 0
+
+    @property
+    def measured(self) -> bool:
+        """True when history replaced at least one ratio."""
+        return any(
+            ratio.source == MEASURED_RATIO
+            for ratio in (
+                self.tokens_per_working_set_token,
+                self.usd_per_million_tokens,
+                self.seconds_per_million_tokens,
+            )
+        )
+
+
+def _calibrated(values: list[float], prior: float | None, minimum: int) -> CalibratedRatio:
+    """One ratio: the measured median past *minimum* samples, else the prior, else None.
+
+    A median rather than a mean, for the reason :attr:`ForecastErrorReport.median_ratio`
+    gives: the measured spread is 160x to 420x and one sample would drag a mean
+    somewhere no dispatch has ever been. An empty sample set never measures, whatever
+    *minimum* says — there is no median of nothing.
+    """
+    if values and len(values) >= minimum:
+        return CalibratedRatio(statistics.median(values), MEASURED_RATIO, len(values))
+    if prior is None:
+        return CalibratedRatio(None, UNDECLARED_RATIO, len(values))
+    return CalibratedRatio(prior, PRIOR_RATIO, len(values))
+
+
+# The calibration bounds arrive as the two ints `[policy.sizing]` declares rather
+# than as a SizingConfig: `config` imports `runner`, which imports this module, so
+# typing them here would close an import cycle. Same stance as build_record — one
+# keyword per input, and no module above pulled downwards.
+def calibrate_spend(  # noqa: PLR0913
+    report: ForecastErrorReport,
+    *,
+    model: str | None,
+    task_class: str | None,
+    min_samples: int,
+    window: int,
+    prior: SpendPrior = DECLARED_SPEND_PRIOR,
+) -> SpendCalibration:
+    """Resolve the spend ratios for one (*model*, *task_class*) from *report*.
+
+    The sample set is the paired records — a record carrying both a forecast and a
+    measured actual — for exactly this model and class, the newest *window* of them,
+    with chars/4-estimated actuals excluded (the same down-weighting
+    :func:`calibrated_build_factors` applies, at its simplest). Below *min_samples*
+    the declared prior stands, per ratio.
+
+    A null *model* or *task_class* matches nothing rather than everything: an
+    unrecorded model is unknown provenance, and pooling those samples would rebuild
+    the cross-model average this calibration exists to avoid.
+    """
+    pairs: list[ForecastError] = []
+    if model and task_class:
+        pairs = [
+            error
+            for error in report.errors
+            if error.model == model and error.task_class == task_class and not error.estimated
+        ]
+        # report.errors is timestamp-sorted, so the tail is the newest window.
+        pairs = pairs[-window:]
+    costs = [
+        error.actual_cost / error.actual_tokens * 1_000_000
+        for error in pairs
+        if error.actual_cost is not None
+    ]
+    seconds = [
+        error.actual_wall_clock_s / error.actual_tokens * 1_000_000
+        for error in pairs
+        if error.actual_wall_clock_s is not None
+    ]
+    return SpendCalibration(
+        tokens_per_working_set_token=_calibrated(
+            [error.ratio for error in pairs], prior.tokens_per_working_set_token, min_samples
+        ),
+        usd_per_million_tokens=_calibrated(costs, prior.usd_per_million_tokens, min_samples),
+        seconds_per_million_tokens=_calibrated(
+            seconds, prior.seconds_per_million_tokens, min_samples
+        ),
+        prior=prior,
+        model=model,
+        task_class=task_class,
+        pairs=len(pairs),
+    )
