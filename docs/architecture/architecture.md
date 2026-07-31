@@ -1317,7 +1317,7 @@ this harness is measurably better than the others that also believe it.
 
 | Pillar | Today | Target | Owning design doc |
 | --- | --- | --- | --- |
-| Catalog (guidance) | projected + structurally gated | routing and behaviour measured per entry; a third, path-scoped tier in use | [`catalog-efficacy`](../design/catalog-efficacy-design.md), [`steering-surfaces`](../design/steering-surfaces-design.md) |
+| Catalog (guidance) | projected + structurally gated; the path-scoped tier in use on two fragments | routing and behaviour measured per entry | [`catalog-efficacy`](../design/catalog-efficacy-design.md), [`steering-surfaces`](../design/steering-surfaces-design.md) |
 | Gates (enforcement) | deterministic, per-site behaviour | classified by type, with stall detection and a severity contract | [`gates-and-rework`](../design/gates-and-rework-design.md) |
 | Loop / factory (SDLC) | parallel lanes, autonomy grants, merge queue — dogfooded | named roles per judgment step; release automation reachable under a grant | [`factory-design`](../design/factory-design.md), [`agent-roster`](../design/agent-roster-design.md) |
 | Tracker (state) | external `br` binary in the critical path | owned, in-process, append-only event log | [`work-tracker`](../design/work-tracker.md) |
@@ -1396,11 +1396,21 @@ open.
 
 Relatedly, and cheaper than the design documents assume: the **path-scoped tier is
 already built** — targets declare a `scoped_rules` output and the planner routes
-fragments carrying a `scope` — and **no fragment declares one**. Moving conditional
-guidance (subprocess discipline, test isolation, catalog authoring) out of the
-always-on baseline is therefore authoring work, not engine work, and it improves
-both cost _and_ adherence: a rule injected because a matching file was opened
-competes with far less than the same rule buried in a dense always-on block.
+fragments carrying a `scope` — and **two fragments now declare one**: `external-review`
+on `docs/research/**` + `docs/design/**`, and `platform-hermetic-tests` on `tests/**`.
+Moving conditional guidance (subprocess discipline, test isolation, catalog authoring)
+out of the always-on baseline is therefore authoring work, not engine work.
+
+Its cost effect is **asymmetric across families, not a blanket improvement** (§7
+detail 1): scoping removes a fragment from the Claude and Copilot baselines and
+**adds** it to Codex's, which has no glob scoping at all and therefore inlines scoped
+fragments into `AGENTS.md` — measured 1462 and 1614 characters for the two that exist,
+against 1225 characters of remaining headroom, so the **next** scoped fragment
+overflows the Codex cap. Whether scoping also improves **adherence** is a hypothesis
+this repo cannot yet assert: the only measurement is recall under a direct cue, which
+`catalog-efficacy` §4.1 bars from standing as evidence of quality, and at 98% / 93%
+there is no headroom left to improve — which is why Phase 4's exit criterion asks only
+that recall be **not degraded**.
 
 **14.5 Owning the tracker.** The tracker is not a peripheral integration — it _is_
 the harness's state, so every guarantee above is downstream of it, and it is
@@ -1491,7 +1501,7 @@ Pillar 01 — **guidance**:
 | --- | --- | --- |
 | One catalog projected to Claude, Codex and Copilot — instructions, skills, subagents, permissions | `shipped` | §§4–7, §9 |
 | Drift gate (`basicly check`) run by CI | `shipped` | §6 |
-| Path-scoped rules tier, so conditional guidance loads on a matching file instead of always | `shipped` | §7 detail 4 — engine built, one fragment uses it today |
+| Path-scoped rules tier, so conditional guidance loads on a matching file instead of always | `shipped` | §7 detail 4 — engine built, two fragments use it today; cost falls for claude and copilot and rises for codex (§14.4) |
 | Invocation axis per entry: model-invoked pays context load, user-invoked does not | `shipped` | §4.2 (skills) — declared on skill sources today, not yet on fragments |
 | Deterministic lexical routing evals — rank-1 rate in CI, no embeddings | `building` | §14.4, [`catalog-efficacy`](../design/catalog-efficacy-design.md) |
 | An eval case file per catalog entry, enforced as a structural failure | `building` | §14.4 |
