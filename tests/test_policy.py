@@ -14,6 +14,7 @@ import pytest
 from basicly import policy, rubrics, run_record, verify
 from basicly.config import (
     ENGINE_GATE_PROVIDERS,
+    LOOP_PHASES,
     RUBRIC_GATE_PROVIDER,
     VERIFY_GATE_PROVIDER,
     PolicyConfig,
@@ -1625,3 +1626,160 @@ def test_record_wait_rejects_an_unknown_kind(
             by=policy.HUMAN_BY,
             delegated=False,
         )
+
+
+# --- declared evidence artifacts (basicly-m4zv.13) --------------------------
+
+
+def _evidence_config(**declarations: str) -> PolicyConfig:
+    return PolicyConfig(required_gates=("verify",), max_rework=2, evidence=dict(declarations))
+
+
+def test_a_phase_that_declares_nothing_is_satisfied(tmp_path: Path) -> None:
+    """The mechanism is opt-in: no declaration is not a failure, and costs no I/O."""
+    status = policy.evidence_status(tmp_path, CONFIG, "verify")
+    assert status.satisfied and status.declared is None and status.path is None
+
+
+def test_a_declared_artifact_that_is_present_and_non_empty_satisfies(tmp_path: Path) -> None:
+    """The whole positive case: the file is there, so the phase may report success."""
+    (tmp_path / "run.log").write_text("2 passed", encoding="utf-8")
+    status = policy.evidence_status(tmp_path, _evidence_config(verify="run.log"), "verify")
+    assert status.satisfied and status.declared == "run.log"
+    assert status.path == tmp_path / "run.log"
+
+
+def test_a_declared_artifact_that_is_missing_refuses_with_the_remedy(tmp_path: Path) -> None:
+    """The refusal names the path and what to do, not just that something is wrong."""
+    status = policy.evidence_status(tmp_path, _evidence_config(verify="run.log"), "verify")
+    assert not status.satisfied
+    assert "run.log" in status.reason
+    assert "produce it before advancing" in status.reason
+    assert "[policy.evidence] verify declaration" in status.reason
+
+
+def test_a_declared_artifact_that_is_empty_refuses(tmp_path: Path) -> None:
+    """An empty file is the shape a redirect that captured nothing leaves behind."""
+    (tmp_path / "run.log").write_text("", encoding="utf-8")
+    status = policy.evidence_status(tmp_path, _evidence_config(verify="run.log"), "verify")
+    assert not status.satisfied and "is empty" in status.reason
+
+
+def test_a_directory_is_not_an_artifact(tmp_path: Path) -> None:
+    """`mkdir -p` on the declared path must not read as evidence."""
+    (tmp_path / "evidence").mkdir()
+    status = policy.evidence_status(tmp_path, _evidence_config(verify="evidence"), "verify")
+    assert not status.satisfied and "not a readable file" in status.reason
+
+
+def test_the_engine_never_looks_inside_the_artifact(tmp_path: Path) -> None:
+    """Presence only: unparseable bytes satisfy it exactly as a tidy report would.
+
+    Pinned because the cheapness of this gate *is* the absence of a parser — the
+    moment content is judged, a schema and a verdict move onto the deterministic
+    side of the gate contract.
+    """
+    (tmp_path / "run.log").write_bytes(b"\x00\xff not json, not text")
+    assert policy.evidence_status(tmp_path, _evidence_config(verify="run.log"), "verify").satisfied
+
+
+def test_an_absolute_declared_path_is_refused(tmp_path: Path) -> None:
+    """`Path(root) / '/etc/hostname'` is `/etc/hostname` — a gate satisfied forever."""
+    status = policy.evidence_status(tmp_path, _evidence_config(verify="/etc/hostname"), "verify")
+    assert not status.satisfied and "absolute path" in status.reason
+
+
+def test_a_traversing_declared_path_is_refused(tmp_path: Path) -> None:
+    """Refused after resolution, so it does not depend on spotting a literal '..'."""
+    outside = tmp_path.parent / "outside.log"
+    outside.write_text("x", encoding="utf-8")
+    status = policy.evidence_status(
+        tmp_path, _evidence_config(verify=f"../{outside.name}"), "verify"
+    )
+    assert not status.satisfied and "outside the checkout" in status.reason
+
+
+def test_containment_holds_for_a_checkout_reached_through_a_symlink(tmp_path: Path) -> None:
+    """A symlinked checkout must not fail its own containment test.
+
+    macOS `/tmp` is a symlink to `/private/tmp`, so comparing an unresolved root
+    against a resolved candidate would refuse every declaration there — a
+    platform-only break, made test data rather than left to CI (basicly-m4zv.12
+    hit exactly this shape).
+    """
+    real = tmp_path / "real"
+    real.mkdir()
+    (real / "run.log").write_text("x", encoding="utf-8")
+    link = tmp_path / "linked"
+    try:
+        link.symlink_to(real, target_is_directory=True)
+    except OSError, NotImplementedError:  # pragma: no cover - unprivileged Windows
+        pytest.skip("symlinks not available on this platform")
+    assert policy.evidence_status(link, _evidence_config(verify="run.log"), "verify").satisfied
+
+
+def test_a_declaration_naming_the_checkout_itself_is_reported_as_not_a_file(
+    tmp_path: Path,
+) -> None:
+    """`verify = "."` resolves to the root, which is inside it — so say what is wrong.
+
+    Pins the ordering in the containment check: comparing membership alone would
+    report the checkout root as being outside itself.
+    """
+    status = policy.evidence_status(tmp_path, _evidence_config(verify="."), "verify")
+    assert not status.satisfied and "not a readable file" in status.reason
+
+
+def test_an_empty_declaration_refuses_rather_than_reading_as_absent(tmp_path: Path) -> None:
+    """`verify = ""` is a declaration, so it blocks; silently ignoring it would be a lie."""
+    status = policy.evidence_status(tmp_path, _evidence_config(verify=""), "verify")
+    assert not status.satisfied and "declares an empty path" in status.reason
+
+
+def test_a_misspelled_phase_refuses_every_phase(tmp_path: Path) -> None:
+    """Fail closed: the engine cannot tell which phase `verfiy` meant.
+
+    The alternative is worse than strict — a requirement the operator believes is
+    on and that never fires once. So the refusal covers phases the typo does not
+    name, and says which key to fix.
+    """
+    config = PolicyConfig(required_gates=("verify",), max_rework=2, evidence={"verfiy": "run.log"})
+    for phase in ("intake", "build", "verify", "ship"):
+        status = policy.evidence_status(tmp_path, config, phase)
+        assert not status.satisfied
+        assert "verfiy" in status.reason and "unknown phase" in status.reason
+
+
+def test_unknown_evidence_phases_lists_only_the_unknown_ones() -> None:
+    """Every real phase name is accepted, so the guard cannot reject a valid config."""
+    config = PolicyConfig(
+        required_gates=("verify",),
+        max_rework=2,
+        evidence=dict.fromkeys(LOOP_PHASES, "run.log") | {"zzz": "x", "aaa": "y"},
+    )
+    assert policy.unknown_evidence_phases(config) == ("aaa", "zzz")
+
+
+def test_record_evidence_writes_one_marker_and_is_idempotent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The path is recorded on the bead once, so a re-entered advance cannot stack it."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    assert policy.record_evidence(tmp_path, "i", "verify", ".basicly/evidence/verify.log")
+    assert not policy.record_evidence(tmp_path, "i", "verify", ".basicly/evidence/verify.log")
+    assert fake.comments == [
+        f"{policy.EVIDENCE_MARKER} phase=verify path=.basicly/evidence/verify.log"
+    ]
+
+
+def test_record_evidence_keeps_one_marker_per_phase(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Two phases declaring artifacts leave two markers, not one shadowing the other."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    policy.record_evidence(tmp_path, "i", "verify", "v.log")
+    policy.record_evidence(tmp_path, "i", "build", "b.log")
+    assert len(fake.comments) == 2
+    assert any("phase=build" in text for text in fake.comments)

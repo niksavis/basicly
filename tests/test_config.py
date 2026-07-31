@@ -760,3 +760,51 @@ def test_runner_config_runner_timeout(tmp_path: Path) -> None:
     assert load_runner_config(tmp_path).runner_timeout == 120.0
     (tmp_path / CONFIG_FILE).write_text("[runner]\nrunner_timeout = -5\n", encoding="utf-8")
     assert load_runner_config(tmp_path).runner_timeout == 3600.0
+
+
+# --- [policy.evidence] declarations (basicly-m4zv.13) -------------------------
+
+
+def test_policy_evidence_is_empty_by_default(tmp_path: Path) -> None:
+    """Opt-in: with nothing declared the evidence mechanism is inert."""
+    assert load_policy_config(tmp_path).evidence == {}
+
+
+def test_policy_evidence_declarations_parse_per_phase(tmp_path: Path) -> None:
+    """A phase -> path table lands on the config, one entry per declaring phase."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[policy.evidence]\nverify = ".basicly/evidence/verify.log"\nbuild = "build.log"\n',
+        encoding="utf-8",
+    )
+    assert load_policy_config(tmp_path).evidence == {
+        "verify": ".basicly/evidence/verify.log",
+        "build": "build.log",
+    }
+
+
+def test_policy_evidence_keeps_a_value_it_cannot_make_sense_of(tmp_path: Path) -> None:
+    """A nonsense value is carried through, not dropped.
+
+    Dropping it would turn a typo into a requirement that never fires — the one
+    failure mode this mechanism exists to remove. It is carried as a string so
+    ``policy.evidence_status`` refuses it with a diagnostic instead.
+    """
+    (tmp_path / CONFIG_FILE).write_text("[policy.evidence]\nverify = 3\n", encoding="utf-8")
+    assert load_policy_config(tmp_path).evidence == {"verify": "3"}
+
+
+def test_policy_evidence_ignores_a_non_table_section(tmp_path: Path) -> None:
+    """`evidence = "x"` is not a declaration table, so it declares nothing."""
+    (tmp_path / CONFIG_FILE).write_text('[policy]\nevidence = "x"\n', encoding="utf-8")
+    assert load_policy_config(tmp_path).evidence == {}
+
+
+def test_policy_evidence_is_overridable_by_the_local_overlay(tmp_path: Path) -> None:
+    """A machine-local overlay can retarget (or clear) the declaration wholesale."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[policy.evidence]\nverify = "shared.log"\n', encoding="utf-8"
+    )
+    (tmp_path / LOCAL_CONFIG_FILE).write_text(
+        '[policy.evidence]\nverify = "local.log"\n', encoding="utf-8"
+    )
+    assert load_policy_config(tmp_path).evidence == {"verify": "local.log"}

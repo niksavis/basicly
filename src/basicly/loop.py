@@ -175,6 +175,27 @@ def _moved(ctx: _Ctx, to_phase: str, action: str, detail: str = "") -> AdvanceRe
     return AdvanceResult(ctx.issue_id, ctx.state.phase, to_phase, action, detail)
 
 
+def _evidence_block(ctx: _Ctx, root: Path | None = None) -> AdvanceResult | None:
+    """Refuse the step when this phase's declared evidence artifact is absent (m4zv.13).
+
+    None when the phase declares nothing — the default, and then this costs one
+    dict lookup and touches neither disk nor tracker. When a declaration *is*
+    satisfied the path is recorded on the bead here, before the transition rather
+    than after it: ``_on_ship`` commits the tracker state, so a marker written
+    afterwards would sit in the local db only (the ordering
+    :func:`_record_cost_rollup` needs, for the same reason).
+
+    *root* is the checkout the phase's work happened in; ``None`` means the one the
+    advance is running in.
+    """
+    status = policy.evidence_status(root or ctx.repo_root, ctx.config, ctx.state.phase)
+    if not status.satisfied:
+        return _blocked(ctx, status.reason, needs_input="evidence")
+    if status.declared is not None:
+        policy.record_evidence(ctx.repo_root, ctx.issue_id, ctx.state.phase, status.declared)
+    return None
+
+
 def _record_gate(ctx: _Ctx, issue_id: str, report: verify.VerifyReport) -> str | None:
     """Record *report* as the verify gate; return a reason when the tracker refused.
 
@@ -594,6 +615,55 @@ def dispatch_prompt(issue_id: str) -> str:
     )
 
 
+def _build_evidence_block(ctx: _Ctx, worktree_name: str) -> AdvanceResult | None:
+    """The ``build`` phase's evidence precondition, resolved against its worktree.
+
+    A build artifact is produced in the lane's own worktree, so it is checked
+    there — the merge that would bring it into base is the very step this decides
+    whether to run (basicly-m4zv.13). The session is read only when something is
+    declared, so the default configuration pays nothing for this.
+    """
+    root = ctx.repo_root
+    if ctx.config.evidence.get("build"):
+        session = worktree.load_session(worktree_name, ctx.repo_root)
+        if session is None:
+            return _blocked(
+                ctx,
+                f"worktree {worktree_name!r} has no session record, so the declared "
+                "build evidence artifact cannot be located; re-provision the worktree",
+            )
+        root = Path(session.worktree_path)
+    return _evidence_block(ctx, root)
+
+
+def _unreliable_landing_block(ctx: _Ctx, result: merge.MergeResult) -> AdvanceResult:
+    """Record an unreliable landing gate and hold, escalating at the bound.
+
+    The gate failed and then passed unchanged, so nothing here faults this work:
+    record the flake and block for another landing attempt rather than spending the
+    node's bounded budget on it (basicly-55yh).
+    """
+    events = policy.record_unreliable_gate(
+        ctx.repo_root, ctx.issue_id, merge.MERGE_GATE, result.detail
+    )
+    # ...but "block and try again" with nothing counting the tries is a livelock
+    # (basicly-jr0l.41). No budget is spent, so no cap is reached, so a chronically
+    # unreliable gate defers its lane forever while looking merely slow. At the bound
+    # the lane escalates to the same queue an exhausted budget uses, so a human sees
+    # an untrustworthy gate rather than a lane that never finishes.
+    if events >= policy.MAX_UNRELIABLE_GATE_EVENTS:
+        question = policy.unreliable_gate_escalation_question(merge.MERGE_GATE)
+        decisions.enqueue(
+            ctx.repo_root,
+            ctx.issue_id,
+            policy.REWORK_ESCALATION_KIND,
+            question,
+            result.detail,
+        )
+        return _blocked(ctx, f"escalated: {question}", landing=result)
+    return _blocked(ctx, result.detail, landing=result)
+
+
 def _verify_and_land(
     ctx: _Ctx, worktree_name: str, *, verify_mode: str | None = None
 ) -> AdvanceResult:
@@ -602,7 +672,18 @@ def _verify_and_land(
     Idempotent across an interruption: if a previous attempt merged and died before
     recording the gate, this resumes at the gate rather than re-reading the branch as
     empty (basicly-jr0l.50).
+
+    The single funnel for the build->verify transition — both the plain leaf and a
+    lane's ``_integrate_lane`` reach the landing through here — which is why the
+    ``build`` phase's evidence check lives at the top of it rather than in
+    :func:`advance` (basicly-m4zv.13). It runs before the merge, so a refusal has
+    spent nothing. It also deliberately outranks the ``jr0l.50`` forward recovery:
+    where the commits already sit does not change that the declared artifact is
+    missing, and holding costs only the artifact, which is what was asked for.
     """
+    held = _build_evidence_block(ctx, worktree_name)
+    if held is not None:
+        return held
     mode = verify_mode or ctx.inputs.verify_mode
     result = merge.merge_worktree(ctx.repo_root, worktree_name, bead=ctx.issue_id, verify_mode=mode)
     if result.status == merge.ALREADY_LANDED:
@@ -615,29 +696,7 @@ def _verify_and_land(
         # do not burn a rework attempt on an operator-fixable state (basicly-4psl).
         return _blocked(ctx, result.detail, landing=result)
     if result.unreliable:
-        # The gate failed and then passed unchanged, so nothing here faults this
-        # work: record the flake and block for another landing attempt rather
-        # than spending the node's bounded budget on it (basicly-55yh).
-        events = policy.record_unreliable_gate(
-            ctx.repo_root, ctx.issue_id, merge.MERGE_GATE, result.detail
-        )
-        # ...but "block and try again" with nothing counting the tries is a
-        # livelock (basicly-jr0l.41). No budget is spent, so no cap is reached, so
-        # a chronically unreliable gate defers its lane forever while looking
-        # merely slow. The count has always been returned here; at the bound the
-        # lane escalates to the same queue an exhausted budget uses, so a human
-        # sees an untrustworthy gate rather than a lane that never finishes.
-        if events >= policy.MAX_UNRELIABLE_GATE_EVENTS:
-            question = policy.unreliable_gate_escalation_question(merge.MERGE_GATE)
-            decisions.enqueue(
-                ctx.repo_root,
-                ctx.issue_id,
-                policy.REWORK_ESCALATION_KIND,
-                question,
-                result.detail,
-            )
-            return _blocked(ctx, f"escalated: {question}", landing=result)
-        return _blocked(ctx, result.detail, landing=result)
+        return _unreliable_landing_block(ctx, result)
     if not result.merged:
         return _rework(ctx, merge.MERGE_GATE, f"merge failed: {result.detail}", landing=result)
     return _record_verify(ctx, result.detail, verify_mode=mode)
@@ -1081,6 +1140,17 @@ def advance(
             "and re-run 'basicly loop advance'",
             needs_input="base-checkout",
         )
+    # Evidence is a precondition on *leaving* a phase, so it is checked before the
+    # handler runs and can spend nothing (basicly-m4zv.13). ``build`` is the one
+    # phase whose handler also takes steps that stay inside it — a lane runs its
+    # sub-tasks through ``_on_build`` — and those steps are what produce a build
+    # artifact in the first place, so checking here would deadlock the lane on its
+    # own evidence. Its check sits at the single funnel for the build->verify
+    # transition instead (``_verify_and_land``).
+    if state.phase != "build":
+        held = _evidence_block(ctx)
+        if held is not None:
+            return held
     return _HANDLERS[state.phase](ctx)
 
 

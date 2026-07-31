@@ -27,7 +27,7 @@ from basicly import (
     verify,
     worktree,
 )
-from basicly.config import PolicyConfig, RunnerConfig, WorktreeConfig
+from basicly.config import LOOP_PHASES, PolicyConfig, RunnerConfig, WorktreeConfig
 from basicly.loop_state import NodeState, WorktreeBinding
 from basicly.policy import DoRResult, GateStatus
 from basicly.worktree import Session
@@ -1868,3 +1868,183 @@ def test_a_chronically_unreliable_gate_escalates_instead_of_deferring_forever(
     assert "escalated" in result.detail
     # That it is never charged as rework is pinned at the policy level, where the
     # tracker is faked — asserting it here would drag a real br call into a unit test.
+
+
+# --- declared evidence artifacts (basicly-m4zv.13) --------------------------
+
+
+def _evidence_config(**declarations: str) -> PolicyConfig:
+    return PolicyConfig(required_gates=("verify",), max_rework=2, evidence=dict(declarations))
+
+
+def _session_at(path: Path, name: str = "i") -> Session:
+    """A worktree session whose checkout is a real directory a test can populate."""
+    return Session(
+        name=name,
+        branch=f"harness/{name}",
+        base="main",
+        base_head="abc",
+        worktree_path=str(path),
+        created_at="2026-07-14T00:00:00Z",
+    )
+
+
+def test_the_default_configuration_records_no_evidence(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Opt-in means the ordinary advance neither reads disk nor writes a marker."""
+    at(_state("verify"))
+    monkeypatch.setattr(policy, "checkpoint_approved", lambda *_a: True)
+    monkeypatch.setattr(
+        policy, "record_evidence", lambda *_a: pytest.fail("nothing was declared to record")
+    )
+    assert _advance(tmp_path).to_phase == "ship"
+
+
+def test_a_declared_artifact_refuses_the_advance_before_the_handler_runs(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Evidence is a precondition, so it is decided before the phase can spend anything."""
+    at(_state("verify"))
+    monkeypatch.setattr(
+        policy,
+        "checkpoint_approved",
+        lambda *_a: pytest.fail("the phase handler must not run without its evidence"),
+    )
+    result = loop.advance(tmp_path, "i", config=_evidence_config(verify="run.log"))
+    assert result.blocked and result.needs_input == "evidence"
+    assert "run.log" in result.detail
+
+
+def test_a_present_artifact_lets_the_phase_advance_and_records_its_path(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The satisfied path is recorded on the bead, so a closed issue names its evidence."""
+    at(_state("verify"))
+    (tmp_path / "run.log").write_text("2 passed", encoding="utf-8")
+    monkeypatch.setattr(policy, "checkpoint_approved", lambda *_a: True)
+    recorded: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        policy,
+        "record_evidence",
+        lambda _r, _i, phase, declared: bool(recorded.append((phase, declared))),
+    )
+    result = loop.advance(tmp_path, "i", config=_evidence_config(verify="run.log"))
+    assert result.to_phase == "ship"
+    assert recorded == [("verify", "run.log")]
+
+
+def test_the_evidence_marker_is_written_before_ship_commits_the_tracker(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Order pinned: a marker written after ship's tracker commit would never travel.
+
+    ``_on_ship`` runs ``br close`` and then commits ``.beads/``. A comment added
+    after that commit sits in the local db only, which is the failure the ship-time
+    cost rollup is ordered around too.
+    """
+    at(_state("ship"))
+    (tmp_path / "ship.log").write_text("shipped", encoding="utf-8")
+    events: list[str] = []
+    monkeypatch.setattr(
+        policy, "record_evidence", lambda *_a: bool(events.append("evidence")) or True
+    )
+    monkeypatch.setattr(loop, "_run_br", lambda _r, args, **_k: events.append(args[0]))
+    monkeypatch.setattr(
+        loop.merge, "commit_tracker_state", lambda *_a, **_k: bool(events.append("commit")) or True
+    )
+    result = loop.advance(tmp_path, "i", config=_evidence_config(ship="ship.log"))
+    assert result.to_phase == "done"
+    assert events == ["evidence", "close", "commit"]
+
+
+def test_a_misspelled_phase_refuses_the_advance_of_every_phase(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Fail closed at the loop boundary, not only inside the status helper."""
+    at(_state("verify"))
+    monkeypatch.setattr(policy, "checkpoint_approved", lambda *_a: True)
+    config = PolicyConfig(required_gates=("verify",), max_rework=2, evidence={"verfiy": "run.log"})
+    result = loop.advance(tmp_path, "i", config=config)
+    assert result.blocked and "verfiy" in result.detail
+
+
+def test_a_missing_build_artifact_refuses_before_the_merge(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The build check runs at the landing funnel, so the refusal merges nothing."""
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    checkout = tmp_path / "wt"
+    checkout.mkdir()
+    monkeypatch.setattr(worktree, "load_session", lambda *_a, **_k: _session_at(checkout))
+    monkeypatch.setattr(
+        merge, "merge_worktree", lambda *_a, **_k: pytest.fail("the merge must not be attempted")
+    )
+    result = loop.advance(tmp_path, "i", config=_evidence_config(build="build.log"))
+    assert result.blocked and result.needs_input == "evidence"
+
+
+def test_a_build_artifact_is_looked_for_in_the_lane_worktree_not_the_base(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The build's evidence is produced where the build ran, and is checked there.
+
+    Checking base instead would be unsatisfiable by construction: the merge that
+    would bring the artifact into base is the step this check gates.
+    """
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    checkout = tmp_path / "wt"
+    checkout.mkdir()
+    (checkout / "build.log").write_text("built", encoding="utf-8")
+    monkeypatch.setattr(worktree, "load_session", lambda *_a, **_k: _session_at(checkout))
+    monkeypatch.setattr(
+        merge, "merge_worktree", lambda *_a, **_k: merge.MergeResult("i", "merged", "landed")
+    )
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
+    monkeypatch.setattr(verify, "report_gate", lambda *_a, **_k: (True, "ok"))
+    monkeypatch.setattr(policy, "record_evidence", lambda *_a: True)
+    result = loop.advance(tmp_path, "i", config=_evidence_config(build="build.log"))
+    assert result.to_phase == "verify" and result.action == "merged"
+
+
+def test_a_declared_build_artifact_does_not_block_a_lanes_own_subtasks(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The deadlock guard: a lane's sub-task steps are steps *within* build.
+
+    Checking evidence before ``_on_build`` would refuse the very dispatches that
+    produce a build artifact, so the lane could never satisfy its own requirement.
+    The check therefore sits at the build->verify funnel instead.
+    """
+    at(_lane())
+    calls = _pin_lane(monkeypatch, subtasks=[("i.1", "open"), ("i.2", "open")], committed=("i.1",))
+    _pin_runner(monkeypatch, "claude")
+    monkeypatch.setattr(
+        runner, "run", lambda *_a, **_k: pytest.fail("a committed sub-task must not re-dispatch")
+    )
+    result = loop.advance(tmp_path, "i", config=_evidence_config(build="build.log"))
+    assert result.action == "sub-task" and not result.blocked
+    assert calls["closed"] == ["i.1"]
+
+
+def test_a_build_declaration_without_a_session_record_fails_closed(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Cannot locate the artifact is not the same as does not need one."""
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    monkeypatch.setattr(worktree, "load_session", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        merge, "merge_worktree", lambda *_a, **_k: pytest.fail("the merge must not be attempted")
+    )
+    result = loop.advance(tmp_path, "i", config=_evidence_config(build="build.log"))
+    assert result.blocked and "no session record" in result.detail
+
+
+def test_every_loop_phase_has_a_handler_and_vice_versa() -> None:
+    """``[policy.evidence]`` is validated against LOOP_PHASES, so it must not drift.
+
+    A phase added to the handler table and not to LOOP_PHASES could never have an
+    artifact declared for it; the reverse would refuse every advance as an unknown
+    phase. Neither has a symptom that names its cause.
+    """
+    assert set(loop._HANDLERS) == set(LOOP_PHASES)

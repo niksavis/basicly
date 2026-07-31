@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import tomllib
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import permissions, session
@@ -394,6 +394,14 @@ DEFAULT_CONTEXT_CEILING = 0.6
 # The three human checkpoints the loop enforces (architecture §12.2).
 CHECKPOINTS = ("classify", "decompose", "ship")
 
+# The loop's phases, in the order they run (architecture §12.2). ``done`` is the
+# terminal state, not a phase with a transition out of it, so it is absent. Named
+# here rather than in ``loop`` so ``[policy.evidence]`` can be validated against
+# the same set ``loop._HANDLERS`` dispatches on — the jr0l.51 stance: a rename
+# must not be able to desynchronise a validator from the thing it validates, and
+# a test pins the two together.
+LOOP_PHASES = ("intake", "classify", "decompose", "build", "verify", "ship")
+
 # Autonomy levels for the session grant ledger (factory design D3,
 # basicly-kjc5.3), lowest to highest. [policy] autonomy is the repo's grantable
 # ceiling; the default keeps every checkpoint human (today's behavior).
@@ -599,6 +607,11 @@ class PolicyConfig:
     decider_max_decisions: int = DEFAULT_DECIDER_MAX_DECISIONS
     # Sanity bound on the sub-task beads one lane may run in sequence (D7).
     max_subtasks_per_lane: int = DEFAULT_MAX_SUBTASKS_PER_LANE
+    # Per-phase evidence artifact declarations (basicly-m4zv.13): loop phase ->
+    # repo-relative path that must exist and be non-empty before the loop may
+    # advance past that phase. Empty by default, so the mechanism is inert until a
+    # consumer declares something.
+    evidence: dict[str, str] = field(default_factory=dict)
 
 
 def load_policy_config(repo_root: Path) -> PolicyConfig:
@@ -632,11 +645,24 @@ def load_policy_config(repo_root: Path) -> PolicyConfig:
     ):
         notify_command = tuple(raw_notify)
 
+    # Every declared entry is carried through as a string, including a nonsense
+    # one. Dropping what this loader cannot make sense of would turn a typo into a
+    # gate that silently does not apply, which is the one failure mode
+    # [policy.evidence] exists to prevent; ``policy.evidence_status`` refuses an
+    # unusable declaration instead, so a bad value blocks rather than disappears.
+    raw_evidence = section.get("evidence")
+    evidence = (
+        {str(phase): str(path).strip() for phase, path in raw_evidence.items()}
+        if isinstance(raw_evidence, dict)
+        else {}
+    )
+
     return PolicyConfig(
         required_gates=required_gates,
         max_rework=max_rework,
         autonomy=autonomy,
         notify_command=notify_command,
+        evidence=evidence,
         decider_max_decisions=_positive_int(
             section.get("decider_max_decisions"), DEFAULT_DECIDER_MAX_DECISIONS
         ),

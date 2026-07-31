@@ -11,6 +11,10 @@ comment markers.
 results overwrite in ``br`` (no history), so rework attempts and checkpoint
 approvals are recorded as inspectable comment markers rather than derived from
 gate history. The block-vs-advise policy lives here; ``br`` only stores verdicts.
+
+Two things block an advance, and they answer different questions:
+:func:`gate_status` asks whether the required gates passed, and
+:func:`evidence_status` asks whether the phase has an artifact to point at.
 """
 
 from __future__ import annotations
@@ -31,6 +35,7 @@ from .config import (
     AUTONOMY_LEVELS,
     CHECKPOINTS,
     ENGINE_GATE_PROVIDERS,
+    LOOP_PHASES,
     PolicyConfig,
     SizingConfig,
     load_policy_config,
@@ -1354,6 +1359,174 @@ def session_wait_summary(
         delegated_wait_s=_wall_clock_seconds(tuple(e for e in events if e.delegated)),
         dispatch_s=session_dispatch_seconds(repo_root, root_issue, ids=ids),
     )
+
+
+# --- Declared evidence artifacts (basicly-m4zv.13) ---------------------------
+#
+# Archon's ``evidence_policy.required`` reduced to the single property that needs
+# neither a schema nor a judgment: a phase may *declare* a file, and the engine
+# asserts it is there before that phase may report success. A lane could otherwise
+# reach ship having recorded a passing gate with nothing to point at — the gate
+# records a status, not an artifact — and when a landing is later questioned the
+# evidence is whatever happened to be committed.
+#
+# Opt-in, blocking where declared (owner decision 2026-07-31). Nothing is declared
+# by default, so the mechanism is inert until a consumer writes
+# ``[policy.evidence]``, and removing the declaration removes the requirement.
+# Blocking every phase was rejected as too strict, record-only as toothless.
+#
+# **Presence only.** The engine stats the artifact and never opens it. Anything
+# more would put a parser — and with it a schema, and a verdict about content — on
+# the deterministic side of the gate contract. The corollary, stated rather than
+# hidden: an ``echo x >`` satisfies this, exactly as a forged provider string
+# satisfies a required gate. What it buys is that "verified" can no longer be
+# claimed with an empty disk behind it.
+#
+# Archon's own completion gate is ``signalDetected || bashComplete``, which lets a
+# model's self-emitted DONE short-circuit the deterministic half. That disjunction
+# is rejected; only the evidence requirement is adopted.
+
+EVIDENCE_MARKER = f"{MARKER} evidence"
+
+
+@dataclass(frozen=True)
+class EvidenceStatus:
+    """Whether one phase's declared evidence artifact is present. Presence only."""
+
+    phase: str
+    # The path as declared, or None when the phase declares nothing.
+    declared: str | None = None
+    satisfied: bool = True
+    # Why it is unsatisfied, with the remedy; empty when satisfied.
+    reason: str = ""
+    # The joined (unresolved) path, set only when satisfied.
+    path: Path | None = None
+
+
+def unknown_evidence_phases(config: PolicyConfig) -> tuple[str, ...]:
+    """Keys in ``[policy.evidence]`` that name no loop phase, sorted."""
+    return tuple(sorted(p for p in config.evidence if p not in LOOP_PHASES))
+
+
+def evidence_status(root: Path, config: PolicyConfig, phase: str) -> EvidenceStatus:
+    """Evaluate *phase*'s ``[policy.evidence]`` declaration against *root*.
+
+    Satisfied when the phase declares nothing: the mechanism is opt-in, so an
+    absent declaration is not a failure. Every other answer fails closed — a
+    declaration this function cannot honour refuses the advance rather than
+    degrading to "no requirement", because a gate the operator believes is on and
+    is not is the exact failure this mechanism exists to remove.
+
+    That is also why a **misspelled phase name refuses every phase**, not just its
+    own: ``verfiy = "..."`` would otherwise be a requirement that never fires. The
+    engine cannot tell which phase was meant, so it declines to let any of them
+    report success. Holding costs one line of TOML, named in the message; passing
+    costs an unverifiable landing.
+
+    An escaping path is refused too. Not as a security boundary — the declaration
+    and the artifact belong to the same operator — but because an artifact outside
+    the repo neither travels with a clone nor can be found by whoever later
+    questions the landing, and an absolute path is the spelling that looks least
+    like an escape (``Path('/repo') / '/etc/hostname'`` is ``/etc/hostname``;
+    ``planner.contained_output_path`` documents the same pathlib trap on the
+    projection side, where the path is written rather than read).
+
+    *root* is the checkout the phase's own work happened in, which is not always
+    the base: a ``build`` artifact is produced in the lane's worktree and is
+    checked there, before the merge that would bring it into base.
+    """
+    unknown = unknown_evidence_phases(config)
+    if unknown:
+        return EvidenceStatus(
+            phase,
+            config.evidence.get(phase),
+            False,
+            f"[policy.evidence] names unknown phase(s) {', '.join(unknown)}; every advance "
+            f"is refused until they are corrected or removed — expected one of "
+            f"{', '.join(LOOP_PHASES)}",
+        )
+    declared = config.evidence.get(phase)
+    if declared is None:
+        return EvidenceStatus(phase)
+    return _artifact_status(root, phase, declared)
+
+
+def _artifact_status(root: Path, phase: str, declared: str) -> EvidenceStatus:
+    """Whether *declared* names a usable, present, non-empty artifact under *root*.
+
+    The presence half of :func:`evidence_status`, split out from the declaration
+    half so neither reads as a wall of branches. Every branch is a refusal; the
+    engine never opens the file.
+    """
+    remedy = (
+        f"produce it before advancing past {phase!r}, or drop the "
+        f"[policy.evidence] {phase} declaration"
+    )
+    if not declared:
+        return EvidenceStatus(
+            phase,
+            declared,
+            False,
+            f"[policy.evidence] {phase} declares an empty path; {remedy}",
+        )
+    candidate = Path(declared)
+    if candidate.is_absolute() or candidate.drive or candidate.root:
+        return EvidenceStatus(
+            phase,
+            declared,
+            False,
+            f"[policy.evidence] {phase} is {declared!r}, an absolute path; an evidence "
+            f"artifact must be relative to the checkout so it travels with the repo",
+        )
+    joined = root / candidate
+    base = root.resolve()
+    resolved = joined.resolve()
+    # ``resolved != base`` first, so a declaration that resolves to the checkout
+    # root itself falls through to the is-a-file check below and gets the accurate
+    # diagnostic rather than being reported as outside the repo.
+    if resolved != base and base not in resolved.parents:
+        return EvidenceStatus(
+            phase,
+            declared,
+            False,
+            f"[policy.evidence] {phase} is {declared!r}, which resolves to {resolved}, "
+            f"outside the checkout {base}; an evidence artifact must stay inside it",
+        )
+    if not joined.is_file():
+        return EvidenceStatus(
+            phase,
+            declared,
+            False,
+            f"declared evidence artifact {declared!r} for phase {phase!r} is not a readable "
+            f"file under {root}; {remedy}",
+        )
+    if joined.stat().st_size == 0:
+        return EvidenceStatus(
+            phase,
+            declared,
+            False,
+            f"declared evidence artifact {declared!r} for phase {phase!r} is empty; {remedy}",
+        )
+    return EvidenceStatus(phase, declared, True, "", joined)
+
+
+def record_evidence(repo_root: Path, issue_id: str, phase: str, declared: str) -> bool:
+    """Record that *phase*'s declared artifact was present, on the bead (idempotent).
+
+    The declaration lives in ``basicly.toml`` and says nothing about *this* bead, so
+    without this a closed issue carries no trace of which file its phase's success
+    rested on. ``br`` exports comments, so the marker travels with a clone while a
+    local artifact may not (D11) — it records the path, never the content.
+
+    Written *before* the phase's own transition runs, for the reason the ship-time
+    cost rollup is: ``_on_ship`` commits the tracker state, and a marker added after
+    that commit would sit in the local db only. Returns True when it wrote one.
+    """
+    body = f"{EVIDENCE_MARKER} phase={phase} path={declared}"
+    if any(_marker_matches(text, body) for text in _comment_texts(repo_root, issue_id)):
+        return False
+    _run_br(repo_root, ["comments", "add", issue_id, body])
+    return True
 
 
 def load_policy(repo_root: Path) -> PolicyConfig:

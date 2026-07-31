@@ -1026,6 +1026,44 @@ them, so the commit carries the fixed bytes and no agent cycle is ever spent re-
 repair a script can make. The check itself is unchanged, so unformatted input from outside
 the harness still fails in CI, and a non-mechanical failure (lint, type, test) still blocks.
 
+**12.4.1 Declared evidence artifacts.** A gate records a status, not an artifact, so a lane
+could reach ship having recorded a passing verify with nothing on disk to point at — and when
+a landing was later questioned, the evidence was whatever happened to be committed. A phase
+may therefore **declare** a file the engine asserts is present before that phase may report
+success (`basicly-m4zv.13`, adapted from Archon's `evidence_policy.required`):
+
+```toml
+[policy.evidence]
+verify = ".basicly/evidence/verify.log"
+```
+
+**Opt-in, blocking where declared.** Nothing is declared by default, so the mechanism is
+inert until a consumer writes the table, and deleting the line removes the requirement.
+Blocking every phase was rejected as too strict, record-only as toothless.
+
+**Presence only** — the engine stats the artifact and never opens it. Anything more would put
+a parser, a schema and a verdict about content on the deterministic side of §12.4's contract.
+The corollary, stated rather than hidden: an `echo` satisfies this, exactly as a forged
+provider string satisfies a required gate (same acknowledged class). What it buys is that
+"verified" can no longer be claimed with an empty disk behind it. Archon's own completion gate
+is `signalDetected || bashComplete`, which lets a model's self-emitted DONE short-circuit the
+deterministic half; that disjunction is rejected, only the evidence requirement adopted.
+
+The check is a precondition on **leaving** a phase, so it is decided before the phase handler
+runs and a refusal has spent nothing — the work type is not recorded, the merge is not
+attempted. `build` is the exception in placement only: a lane's sub-task steps stay inside
+`build` and are what produce a build artifact, so checking them would deadlock the lane on its
+own evidence; its check sits at the single build→verify funnel (`loop._verify_and_land`, before
+the merge) and resolves the path against the **lane's worktree**, since that is where the
+build's evidence is produced. Everything fails closed: an empty declaration, a path escaping
+the checkout, a directory, and a misspelled phase name all refuse rather than degrade to "no
+requirement" — a gate the operator believes is on and that never fires is the exact failure
+this removes, so a typo refuses _every_ phase and names the key to fix. A satisfied path is
+recorded on the bead as a `[harness-policy] evidence` marker before the transition runs, so it
+travels with the tracker export (`br` comments) rather than landing after ship's own commit.
+`verify` streams its output to the terminal and captures nothing today, so a producer for it is
+tracked separately (`basicly-m0s4`); this is the mechanism, not its first user.
+
 **12.5 Work isolation.** Non-trivial work runs in a **sibling** git worktree
 `<repo>.worktrees/<name>` on branch `harness/<name>` (never in-repo `.claude/worktrees/`,
 which pollutes basicly's own tree-walk and provisions no deps). Creating a worktree provisions
