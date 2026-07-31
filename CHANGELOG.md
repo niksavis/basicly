@@ -6,6 +6,52 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **The parallel factory.** `basicly supervise` runs a standing supervisor that
+  dispatches several beads concurrently, one worktree per lane, ranked by the
+  tracker's scheduler and capped by configured concurrency. It records the score
+  and rank behind every dispatch, meters each lane's context occupancy against
+  the model's window, flags a stalled lane instead of waiting for the hard kill,
+  cancels a lane whose merge a sibling landing broke, and carries a held lane to
+  the next pass rather than re-dispatching it (`basicly-kjc5.5`,
+  `basicly-kjc5.6`, `basicly-kjc5.7`, `basicly-vkh0.3`).
+- **A serial merge queue.** Lanes land one at a time in dependency order.
+  Conflicts are detected mechanically — no model sits in the merge path — and a
+  colliding lane is bounced back to its owner alone, with the missed coupling
+  attributed from the declared scopes rather than from landing order
+  (`basicly-kjc5.32`).
+- **A decision queue.** `basicly decisions`, `basicly decide` and `basicly
+  answer` let a lane that cannot resolve a judgment park it for a human instead
+  of guessing, and let a second session answer it (`basicly-kjc5.4`).
+- **Autonomy grants, L0–L3, with a spend ceiling.** `basicly policy grant`
+  issues a session grant that may resolve the checkpoints its level delegates,
+  bounded by a token budget metered from issuance. The ceiling is enforced at
+  dispatch admission, so a grant cannot overspend by racing (`basicly-kjc5.3`,
+  `basicly-jr0l.15`, `basicly-jr0l.17`).
+- **`basicly loop run`** drives a whole phase boundary from one command,
+  resolving every checkpoint it is authorized to resolve on the way.
+- **`basicly commit`** assembles the commit envelope from engine state, and
+  **`basicly release`** automates a release up to (and not past) the annotated
+  tag — it never pushes (`basicly-kjc5.42`).
+- **Work sizing.** A working-set estimator and Definition-of-Ready governor size
+  a package before dispatch; `basicly decompose --dry-run` reports the sizing
+  band verdict, frozen against calibration drift; `basicly policy scaffold`
+  prints the sections a work type owes (`basicly-kjc5.2`).
+- **Cost and effort evidence.** Run records carry token telemetry read from each
+  adapter's own usage report, a forecast-versus-actual rollup written onto the
+  bead at ship, and the human wait time behind a session (`basicly-kjc5.1`,
+  `basicly-kjc5.50`, `basicly-kjc5.51`).
+- **A path-scoped rules tier.** A fragment may declare `paths:` and project to
+  `.claude/rules/*.md`, activating only when a matching file is read — guidance
+  that costs an always-on surface nothing (`basicly-a3ab.6`).
+- **The invocation axis on skills**, a recall eval measured against a
+  no-guidance control, and a committed ledger of the tracker surface the harness
+  actually uses (`basicly-m4zv.1`, `basicly-agzx.1`, `basicly-vkh0.1`,
+  `basicly-vkh0.2`).
+- **`internal-info-scan`**, a hook that keeps internal-only identifiers out of
+  committed content (`basicly-0n3d`).
+
 ### Changed
 
 - **BREAKING: `invocation` is now a required field on every skill source.** Every
@@ -25,6 +71,115 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   There is deliberately no default and no migration command. The field exists so
   that "does this entry route correctly" is a well-posed question, and a
   defaulted value would answer it by inertia rather than by declaration.
+
+- **BREAKING: acceptance criteria are now required on every bead, including a
+  `chore`.** The Definition-of-Ready check previously derived its required
+  sections from the per-work-type template, and a `chore` was never asked for
+  acceptance criteria. Every type is now asked, in either carrier — `br`'s
+  structured `acceptance_criteria` field or an `## Acceptance Criteria` heading
+  in the description body.
+
+  **Migration.** An in-flight bead without them blocks at the classify
+  checkpoint rather than failing loudly, so add them to anything already open:
+  `br update <id> --acceptance-criteria "Given ... when ... then ..."`. The
+  reason for the change is that a rubric's validate gate asks whether the change
+  evidences its acceptance criteria, and a bead with none makes that gate read as
+  green having proved nothing (`basicly-kjc5.36`).
+
+- **BREAKING: two new hooks run on every commit.** `tracker-path-scan` refuses a
+  tracker export carrying machine-specific absolute paths, and
+  `internal-info-scan` refuses internal-only identifiers in committed content.
+  Both are `always_run`, so a commit that passed on v0.5.1 can now fail
+  (`basicly-vkh0.5`, `basicly-0n3d`).
+
+  The `markdownlint` hook also changed how it starts: it now runs
+  `.basicly/core/hooks/markdownlint.py`, which resolves node itself, instead of
+  `npx --no-install markdownlint-cli2`. A hook shell has no profile, so with nvm
+  off `PATH` a WSL interop lookup resolved `npx` to the Windows nodejs, which
+  cannot express a worktree's UNC path. Re-run `basicly hooks-build` to pick up
+  both (`basicly-jr0l.14`).
+
+- **BREAKING: every rubric must carry at least one deterministic check.** A
+  judged-only rubric is refused at load. Its gate could never fail — gate status
+  is deterministic-first — so promoting it to required bought nothing and read as
+  green having proved nothing. A consumer's judged-only rubric now fails
+  `basicly catalog lint`; add a `verify_mode` or `command` check to it.
+
+  In the same change a deterministic check gained a portable form: `verify_mode`
+  runs the consumer repo's own configured verify checks instead of a fixed
+  command. This matters because rubrics ship in the core catalog to every
+  consumer, and the bug rubric's hardcoded `uv run pytest` would have answered
+  "no" in any repo that is not this one (`basicly-kjc5.19`).
+
+- **The ship phase derives only on evidence that the node landed.** A bead with a
+  ship checkpoint recorded but no green required gate now derives a *lower* phase
+  than it did before, so the next advance re-runs the landing instead of closing
+  the bead. This re-interprets recorded tracker state, not just new work: a
+  missing worktree binding used to mean "torn down after the merge", but a node
+  that never built has no binding either, and an out-of-order ship approval
+  therefore closed it with zero work done. The checkpoint prompt now also states
+  that the merge has already happened and that approving publishes nothing
+  (`basicly-k35r`, `basicly-jr0l.49`, `basicly-jr0l.39`).
+
+- **Generated `SKILL.md` bytes differ per destination root.** A user-invoked
+  skill projects with no `description` to `.claude/skills` (Claude loads it and
+  still lists it by name) and with a short synthesized one to `.agents/skills`
+  (codex rejects the file outright without the field). `basicly skills-check`
+  reports drift until you re-run `basicly skills-build --all-default-roots`
+  (`basicly-m4zv.10`).
+
+- **`basicly verify --mode full` now runs the four projection gates locally.**
+  They were CI-only, which left a fragment edit with no rebuild passing every
+  local hook and reaching the remote stale. Verify can now fail where it passed
+  (`basicly-m4zv.11`).
+
+- **A check may declare `fix_command`.** When it does, the pre-commit hook
+  applies the repair to staged files and `basicly verify --fix` applies it ahead
+  of the checks, so a mechanically fixable failure is fixed rather than reported.
+  Opt-in: a config without the key behaves as before (`basicly-kjc5.43`).
+
+- **The codex adapter now passes `--sandbox workspace-write -a never`.** The
+  sandbox is the safety boundary and `never` fails closed in headless exec, where
+  there is no approver to escalate to. Note that the approval value shipped
+  wrong for most of this range — `on-failure` is not in the CLI's enum, so every
+  codex dispatch exited at argument parsing until it was fixed; `basicly runner
+  dry-run` now validates both values against the installed CLI and names a
+  rejected one (`basicly-t0kt`, `basicly-jr0l.36`, `basicly-jr0l.38`).
+
+- **The pinned `br` version is stated in one place** and any drift from it warns
+  once per process. It is a warning, not a gate — the harness still runs
+  (`basicly-o7z5`).
+
+### Fixed
+
+- **A dispatch no longer hangs on inherited stdin.** `codex exec` reads
+  additional input from stdin, so an arg-prompt dispatch blocked until the
+  timeout. Stdin is now closed for it (`basicly-jr0l.36`).
+- **A timed-out dispatch kills its whole process tree**, with a portable fallback
+  signal, instead of leaving orphans behind.
+- **An unreliable gate no longer spends a lane's rework budget or livelocks it.**
+  A gate that fails for a known dependency defect is scored as unreliable and
+  escalates rather than consuming an attempt (`basicly-55yh`, `basicly-jr0l.41`).
+- **A `br` clock rejection is retried within a bounded deadline** and a
+  chronically unreliable gate escalates (`basicly-jr0l.41`, `basicly-jr0l.42`).
+- **The tracker export no longer commits machine-specific absolute paths**
+  (`basicly-vkh0.5`).
+- **A piped run stays observable**: stdout is line-buffered, so step lines are
+  not withheld behind a block buffer (`basicly-8veb`).
+- **A worktree is provisioned against the caller's repo root, not the process
+  cwd**, and a worktree teardown keeps its telemetry by following the tracker
+  redirect (`basicly-vkh0.8`).
+- **Phase epics no longer gate their own children** (`basicly-axf1`), a
+  decomposed child carries its parent's labels and priority
+  (`basicly-jr0l.25`, `basicly-jr0l.26`), and an answered rework retry is
+  executable (`basicly-4tjt`).
+- **A skipped tracker-state commit is surfaced rather than omitted**
+  (`basicly-f7li`), and the loop blocks when the tracker refuses the verify gate
+  (`basicly-o7z5`).
+- **`pytest` workers are capped** so the tracker's global write lock stops
+  timing out under `-n auto` (`basicly-9s59`).
+- **A confirm-code challenge says the caller may run it** once a human approves,
+  instead of reading as "hand this over and wait" (`basicly-kjc5.34`).
 
 ## v0.5.1 - 2026-07-20
 
