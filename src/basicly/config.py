@@ -137,7 +137,10 @@ default = "auto"
 #                      # or substitutes a `{model}` placeholder if the command has one
 # sandbox = "workspace-write"   # optional: injects `--sandbox workspace-write` (codex
 #                               # defaults this); network is disabled by default in it
-# approval = "on-failure"       # optional: injects `-a on-failure` (codex defaults this)
+# approval = "never"            # optional: injects `-a never` (codex defaults this).
+#                               # Validated against the CLI's own enum by
+#                               # `basicly runner dry-run`: a value it rejects
+#                               # fails every dispatch at argument parsing.
 # git_name = "opencode-bot"        # optional bot git identity: dispatched commits
 # git_email = "bot@example.com"    # use it (both keys or neither). Must satisfy
 #                                  # basicly.identityAllowEmail when strict mode is on.

@@ -18,6 +18,31 @@ def _no_config(monkeypatch: pytest.MonkeyPatch, tmp_path):
     monkeypatch.chdir(tmp_path)
 
 
+@pytest.fixture(autouse=True)
+def _no_help_probe(monkeypatch: pytest.MonkeyPatch):
+    """Never shell out to a real agent CLI for the dry-run guardrail check.
+
+    An unreadable probe is the "cannot tell" answer, so the check stays silent
+    and these tests assert CLI wiring only — on a machine with or without any
+    agent installed (basicly-jr0l.38).
+    """
+    monkeypatch.setattr(runner, "_run_help", lambda _binary: None)
+
+
+# Enough of `codex --help` to carry the approval enum; the full fixture and the
+# parser's own cases live in test_runner.py.
+CODEX_APPROVAL_HELP = """\
+Options:
+  -a, --ask-for-approval <APPROVAL_POLICY>
+          Configure when the model requires human approval
+
+          Possible values:
+          - untrusted:  Only run "trusted" commands
+          - on-request: The model decides when to ask
+          - never:      Never ask for user approval
+"""
+
+
 def test_runner_dry_run_prints_exact_command(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -100,8 +125,36 @@ def test_runner_dry_run_surfaces_codex_sandbox_and_approval(
     assert cli.main(["runner", "dry-run", "--runner", "codex", "--prompt", "do it"]) == 0
     out = capsys.readouterr().out
     assert "sandbox: workspace-write" in out
-    assert "approval: on-failure" in out
-    assert "codex --sandbox workspace-write -a on-failure exec" in out
+    assert "approval: never" in out
+    assert "codex --sandbox workspace-write -a never exec" in out
+
+
+def test_runner_dry_run_accepts_the_shipped_codex_guardrails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Checked against the CLI's real enum, the shipped adapter passes and exits 0."""
+    monkeypatch.setattr(runner, "_run_help", lambda _binary: CODEX_APPROVAL_HELP)
+    assert cli.main(["runner", "dry-run", "--runner", "codex", "--prompt", "do it"]) == 0
+
+
+def test_runner_dry_run_rejects_an_approval_the_cli_does_not_accept(
+    monkeypatch: pytest.MonkeyPatch, tmp_path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The regression, at the surface meant to catch it (basicly-jr0l.38).
+
+    An approval outside the CLI's enum made every dispatch exit 2 with no output.
+    Dry-run now names the value and the accepted set, and exits non-zero so a
+    script or CI can branch on it, instead of printing an argv that cannot run.
+    """
+    (tmp_path / "basicly.toml").write_text(
+        '[[runner.agents]]\nname = "codex"\ncommand = ["codex", "exec", "{prompt}"]\n'
+        'sandbox = "workspace-write"\napproval = "on-failure"\n'
+    )
+    monkeypatch.setattr(runner, "_run_help", lambda _binary: CODEX_APPROVAL_HELP)
+    assert cli.main(["runner", "dry-run", "--runner", "codex", "--prompt", "do it"]) == 1
+    captured = capsys.readouterr()
+    assert "on-failure" in captured.err
+    assert "untrusted, on-request, never" in captured.err
 
 
 def test_runner_list_surfaces_pinned_model(

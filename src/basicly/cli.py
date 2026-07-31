@@ -3047,6 +3047,14 @@ def _cmd_runner_dry_run(args: argparse.Namespace) -> int:
     if spec.approval:
         print(f"  approval: {spec.approval}")
     print(f"  {shlex.join(result.command)}")
+    # A pinned sandbox/approval outside the CLI's enum makes every dispatch exit
+    # at argument parsing (basicly-jr0l.38). Dry-run is where that is meant to
+    # surface — at authoring time, by name — so it fails rather than printing an
+    # argv that cannot run.
+    if rejected := runner.probe_guardrails(spec):
+        for problem in rejected:
+            print(f"  guardrail: {problem}", file=sys.stderr)
+        return 1
     return 0
 
 
