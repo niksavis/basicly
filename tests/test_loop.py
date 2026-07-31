@@ -1005,7 +1005,11 @@ def test_worktree_landed_ancestor_of_base_is_landed(monkeypatch: pytest.MonkeyPa
     def git(_args, **_k):
         return SimpleNamespace(returncode=0)  # show-ref exists (0), merge-base is-ancestor (0)
 
+    # Two seams: `show-ref` runs through worktree.git, while the ancestry proof is
+    # now shared with the landing via merge.is_ancestor, which binds git in merge's
+    # own namespace (basicly-jr0l.46).
     monkeypatch.setattr(worktree, "git", git)
+    monkeypatch.setattr(merge, "git", git)
     monkeypatch.setattr(worktree, "load_session", lambda *_a, **_k: _session("i"))
     assert loop._worktree_landed(Path("/x"), WorktreeBinding("i", "harness/i")) is True
 
@@ -1018,6 +1022,7 @@ def test_worktree_landed_non_ancestor_is_stranded(monkeypatch: pytest.MonkeyPatc
         return SimpleNamespace(returncode=0 if args[0] == "show-ref" else 1)
 
     monkeypatch.setattr(worktree, "git", git)
+    monkeypatch.setattr(merge, "git", git)
     monkeypatch.setattr(worktree, "load_session", lambda *_a, **_k: _session("i"))
     assert loop._worktree_landed(Path("/x"), WorktreeBinding("i", "harness/i")) is False
 

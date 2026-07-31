@@ -282,6 +282,10 @@ def _worktree_landed(repo_root: Path, binding: loop_state.WorktreeBinding) -> bo
     existing branch counts as landed only when its tip is an ancestor of the base
     HEAD, i.e. ``_verify_and_land`` really ran ``merge.merge_worktree``. This is
     the deterministic signal ``_on_ship`` uses to refuse closing a stranded node.
+
+    Shares :func:`merge.is_ancestor` with the landing's own post-merge proof
+    (basicly-jr0l.46), so the two places that decide whether work landed cannot
+    answer the question differently.
     """
     branch = binding.branch
     exists = (
@@ -296,12 +300,7 @@ def _worktree_landed(repo_root: Path, binding: loop_state.WorktreeBinding) -> bo
         return True
     session = worktree.load_session(binding.name, repo_root)
     base = session.base if session is not None else worktree.current_branch(repo_root)
-    return (
-        worktree.git(
-            ["merge-base", "--is-ancestor", branch, base], cwd=repo_root, check=False
-        ).returncode
-        == 0
-    )
+    return merge.is_ancestor(repo_root, branch, base)
 
 
 def _on_ship(ctx: _Ctx) -> AdvanceResult:
