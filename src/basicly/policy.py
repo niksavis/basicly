@@ -316,6 +316,22 @@ def _comment_texts(repo_root: Path, issue_id: str) -> list[str]:
     return [str(c.get("text", "")) for c in _comments(repo_root, issue_id)]
 
 
+def _issue_is_closed(repo_root: Path, issue_id: str) -> bool:
+    """True when ``br`` reports *issue_id* closed.
+
+    One reader for one rule the engine states in two places: a marker on closed
+    work is history, not live state. :func:`active_grant` retires a grant on a
+    closed root issue whatever its markers say (basicly-hsrs), and
+    :func:`_live_session_violations` retires a closed bead's escalations on the
+    same test (basicly-i1s8) — sharing the reader is what keeps the two from
+    drifting into two similar-looking special cases.
+    """
+    proc = _run_br(repo_root, ["show", issue_id, "--json"])
+    data = json.loads(proc.stdout)
+    record = data[0] if isinstance(data, list) and data else data
+    return isinstance(record, dict) and str(record.get("status", "")) == "closed"
+
+
 def _rework_marker(gate: str) -> str:
     return f"{MARKER} rework gate={gate}"
 
@@ -736,10 +752,7 @@ def active_grant(repo_root: Path, root_issue: str) -> Grant | None:
     regardless of markers — without this, an old session's L3 grant would stay
     live forever unless someone remembered to revoke it.
     """
-    proc = _run_br(repo_root, ["show", root_issue, "--json"])
-    data = json.loads(proc.stdout)
-    record = data[0] if isinstance(data, list) else data
-    if isinstance(record, dict) and str(record.get("status", "")) == "closed":
+    if _issue_is_closed(repo_root, root_issue):
         return None
     grant: Grant | None = None
     for text in _comment_texts(repo_root, root_issue):
@@ -1028,6 +1041,47 @@ def record_needs_input(repo_root: Path, issue_id: str, fact: str) -> None:
     _run_br(repo_root, ["comments", "add", issue_id, f"{_NEEDS_INPUT_MARKER} {fact}"])
 
 
+def _live_session_violations(repo_root: Path, issue_id: str, config: PolicyConfig) -> list[str]:
+    """The session-wide precondition violations *issue_id* still contributes.
+
+    Both markers this reads are append-only and nothing ever records one as
+    resolved, so a bead that once reached ``max_rework`` reported a live
+    session-wide violation forever: one shipped child (basicly-kjc5.56, closed
+    2026-07-27) dropped every later ship under its 55-child epic to a human and
+    permanently degraded L3 to L2 (basicly-i1s8). Closing the bead *is* the
+    resolution, so a closed bead's markers are discounted by the same rule that
+    makes a grant on a closed root issue dead whatever its markers say
+    (basicly-hsrs) — a marker on closed work is history, not live state.
+
+    needs-input is discounted on the same rule rather than being left behind. It
+    has exactly the same staleness: a closed bead's missing fact was either
+    supplied or its work was abandoned, and neither is live. Treating one carrier
+    of resolved history as history while the other stays live would leave the same
+    permanent poisoning in place for any long epic.
+
+    Deliberately narrow — only *closed* work is discounted, so an escalation or a
+    missing fact on open work still refuses a delegated ship. Status is read last
+    and only when a violation was actually found, so it costs one extra ``br show``
+    for a bead carrying markers and nothing at all for the ordinary bead, which
+    stays at the single ``br comments list`` it already cost on every ship.
+    """
+    texts = _comment_texts(repo_root, issue_id)
+    violations: list[str] = []
+    needs = sum(1 for text in texts if _marker_matches(text, _NEEDS_INPUT_MARKER))
+    if needs:
+        violations.append(f"{needs} needs-input event(s) recorded on {issue_id}")
+    for gate in config.required_gates:
+        marker = _rework_marker(gate)
+        attempts = sum(1 for text in texts if _marker_matches(text, marker))
+        if attempts >= config.max_rework:
+            violations.append(
+                f"rework escalation on {issue_id} (gate {gate}: {attempts}/{config.max_rework})"
+            )
+    if violations and _issue_is_closed(repo_root, issue_id):
+        return []
+    return violations
+
+
 def lights_out_violations(
     repo_root: Path,
     root_issue: str,
@@ -1039,9 +1093,10 @@ def lights_out_violations(
     """The deterministic reasons an L3 ship delegation must refuse (D3).
 
     Two preconditions are session-wide — zero rework escalations and zero
-    needs-input events on *any* session bead — so any wrinkle anywhere drops ship
-    back to a human. The gate check is scoped to *shipping*, the node actually
-    being shipped (default: the root, for a single-node session).
+    needs-input events on any still-*open* session bead — so any live wrinkle
+    anywhere drops ship back to a human, while a closed bead's resolved markers do
+    not (:func:`_live_session_violations`). The gate check is scoped to *shipping*,
+    the node actually being shipped (default: the root, for a single-node session).
 
     Scoping that one check is deliberate (basicly-kjc5.39, owner decision
     2026-07-25). Checking the root's gates could never hold mid-session: an
@@ -1064,17 +1119,7 @@ def lights_out_violations(
             detail += f" (disregarded a result from provider {foreign}: not the engine's own)"
         violations.append(detail)
     for issue_id in ids if ids is not None else _session_issue_ids(repo_root, root_issue):
-        texts = _comment_texts(repo_root, issue_id)
-        needs = sum(1 for text in texts if _marker_matches(text, _NEEDS_INPUT_MARKER))
-        if needs:
-            violations.append(f"{needs} needs-input event(s) recorded on {issue_id}")
-        for gate in config.required_gates:
-            marker = _rework_marker(gate)
-            attempts = sum(1 for text in texts if _marker_matches(text, marker))
-            if attempts >= config.max_rework:
-                violations.append(
-                    f"rework escalation on {issue_id} (gate {gate}: {attempts}/{config.max_rework})"
-                )
+        violations.extend(_live_session_violations(repo_root, issue_id, config))
     return tuple(violations)
 
 
