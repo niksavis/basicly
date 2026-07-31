@@ -116,6 +116,13 @@ delegated decisions occur — the session drops to human-only until re-granted.
 > a decision class this ladder cannot express: one
 > that **no** level auto-disposes, an exception to the L0–L3 progression rather than a rung in
 > it, so an autonomy grant can never hand the catalog to the decider.
+>
+> **A decline says why since `basicly-5ltn`.** The refusal itself is unchanged; only its
+> diagnostics are new. A grant that existed, covered the checkpoint, and declined now names the
+> violated precondition **and the bead it belongs to** on the challenge — two of the three
+> preconditions are session-wide, so the wrinkle is usually in a sibling of the node being
+> shipped, and a bare `CONFIRMATION REQUIRED` left that indistinguishable from having no grant
+> at all. Given no grant the output is unchanged.
 
 ### D4 — Verify vs. validate
 

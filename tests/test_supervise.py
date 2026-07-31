@@ -1380,6 +1380,45 @@ def test_route_green_lane_without_a_grant_queues_the_ship_checkpoint(
     assert "awaits a human" in routed[0].detail
 
 
+def test_a_queued_ship_item_carries_why_the_grant_declined(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The human answering the item is the one who needs the reason (basicly-5ltn).
+
+    In a multi-lane session the violated precondition is usually on another lane's
+    bead, so the queued question is unanswerable without it.
+    """
+    monkeypatch.setattr(
+        supervise.loop,
+        "advance",
+        lambda _r, issue_id, **_k: _advance_result(issue_id, "merged", "verify", "landed"),
+    )
+    monkeypatch.setattr(
+        supervise.policy,
+        "approve_checkpoint_guarded",
+        lambda *_a, **_k: policy.ApprovalResult(
+            "challenge",
+            code="abc",
+            detail="the active L3 grant covers ship but declined it: escalation on epic.2",
+        ),
+    )
+    details: list[str] = []
+    monkeypatch.setattr(
+        supervise.decisions,
+        "enqueue",
+        lambda _r, issue, kind, _question, detail="", **_k: (
+            details.append(detail),
+            decisions_item(issue, kind),
+        )[1],
+    )
+
+    supervise.route_outcomes(tmp_path, _session(_lane("epic.1")), (_executed_outcome("epic.1"),))
+
+    assert details == [
+        "landed; the active L3 grant covers ship but declined it: escalation on epic.2"
+    ]
+
+
 def decisions_item(issue: str, kind: str) -> supervise.decisions.DecisionItem:
     """A minimal queue item for enqueue fakes."""
     return supervise.decisions.DecisionItem(

@@ -1207,6 +1207,29 @@ def test_run_ceremony_stops_on_a_challenge_and_carries_the_code(
     assert len(served) == 1
 
 
+def test_run_ceremony_carries_why_a_grant_declined_the_challenge(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The reason must survive the ceremony, or ``loop run`` reprints a bare ask.
+
+    That is the surface the incident was measured on (basicly-5ltn): the operator
+    drove ``loop run``, so dropping the detail here would leave the fix invisible.
+    """
+    _script_advance(
+        monkeypatch,
+        loop.AdvanceResult("i", "verify", "verify", "blocked", checkpoint="ship"),
+    )
+    _script_approval(
+        monkeypatch,
+        policy.ApprovalResult("challenge", code="c0ffee", detail="rework escalation on i.2"),
+    )
+
+    result = loop.run_ceremony(tmp_path, "i", config=CONFIG)
+
+    assert result.challenge == ("ship", "c0ffee")
+    assert result.challenge_reason == "rework escalation on i.2"
+
+
 def test_run_ceremony_stops_on_a_refused_checkpoint(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

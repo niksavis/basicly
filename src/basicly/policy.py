@@ -24,7 +24,7 @@ import os
 import re
 import secrets
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -589,6 +589,9 @@ class ApprovalResult:
 
     status: str  # "approved" | "challenge" | "rejected"
     code: str | None = None  # the confirm code to relay, when status == "challenge"
+    # Why this outcome. On a "challenge" it is the reason a *grant* did not
+    # approve — empty when there was no grant, so a challenge with no grant
+    # behind it reads exactly as it always has (basicly-5ltn).
     detail: str = ""
 
 
@@ -613,6 +616,11 @@ def approve_checkpoint_guarded(  # noqa: PLR0913 — mirrors the CLI surface
     else is ``rejected`` with no marker recorded. Already-approved checkpoints
     short-circuit to ``approved`` (idempotent).
 
+    A grant that existed and declined says why on the challenge's ``detail``
+    (basicly-5ltn): a bare confirmation request left the operator unable to tell
+    "no grant" from "a covering grant refused because of a wrinkle in a sibling
+    issue", which took several tool calls to diagnose by hand.
+
     Every path through here is also where the human-wait clock starts and stops
     (basicly-kjc5.51): the challenge is the moment the harness began waiting, and
     an approval is the moment it stopped.
@@ -626,11 +634,15 @@ def approve_checkpoint_guarded(  # noqa: PLR0913 — mirrors the CLI surface
         record_checkpoint_wait(repo_root, issue_id, name, by=HUMAN_BY, delegated=False)
         return ApprovalResult("approved")
     if confirm is None:
-        delegated = _grant_approval(repo_root, issue_id, name, grant_root or issue_id)
+        delegated, declined = _grant_approval(repo_root, issue_id, name, grant_root or issue_id)
         if delegated is not None:
             return delegated
         record_wait_request(repo_root, issue_id, name)
-        return ApprovalResult("challenge", code=_issue_confirm_code(repo_root, issue_id, name))
+        return ApprovalResult(
+            "challenge",
+            code=_issue_confirm_code(repo_root, issue_id, name),
+            detail=declined,
+        )
     if _consume_confirm_code(repo_root, issue_id, name, confirm):
         approve_checkpoint(repo_root, issue_id, name)
         record_checkpoint_wait(repo_root, issue_id, name, by=HUMAN_BY, delegated=False)
@@ -820,10 +832,25 @@ def revoke_grant(repo_root: Path, root_issue: str) -> None:
     _run_br(repo_root, ["comments", "add", root_issue, _REVOKE_MARKER])
 
 
+def _grant_declined(grant: Grant, name: str, reasons: Sequence[str], *, scope: str = "") -> str:
+    """Why a grant that covers *name* declined it anyway, quoting *reasons* verbatim.
+
+    Verbatim so the vocabulary stays owned by the check that produced it
+    (:func:`lights_out_violations`, :func:`spend_status`) instead of being
+    re-worded here and drifting from it. *scope* names where the reasons were
+    looked for, when that is not the checkpoint's own issue.
+    """
+    where = f" ({scope})" if scope else ""
+    return (
+        f"the active {grant.level} grant covers {name} but declined it{where}, so the "
+        f"decision returns to a human: {'; '.join(reasons)}"
+    )
+
+
 def _grant_approval(
     repo_root: Path, issue_id: str, name: str, root_issue: str
-) -> ApprovalResult | None:
-    """A delegated approval under the root's grant, or None to fall back to a challenge.
+) -> tuple[ApprovalResult | None, str]:
+    """A delegated approval under the root's grant, or None plus why it declined.
 
     None (no grant, or the level does not cover *name*) drops to the normal
     challenge path. A covering grant still refuses — also via the challenge
@@ -831,19 +858,30 @@ def _grant_approval(
     run-record spend has reached the grant's token budget, or when a ship
     approval finds any lights-out precondition violated (any wrinkle drops
     ship back to human — D3).
+
+    The second element is why, for the caller to carry on the challenge it mints
+    (basicly-5ltn) — every decline a *grant* made, since the operator has no
+    other way to see that one was consulted at all. Empty when there was no
+    grant, so that case stays exactly as bare as it was.
     """
     grant = active_grant(repo_root, root_issue)
-    if grant is None or name not in GRANT_COVERAGE.get(grant.level, ()):
-        return None
+    if grant is None:
+        return None, ""
+    if name not in GRANT_COVERAGE.get(grant.level, ()):
+        return None, f"the active {grant.level} grant on {root_issue} does not delegate {name}"
     session_ids = _session_issue_ids(repo_root, root_issue)
     if issue_id not in session_ids:
         # grant_root is caller-supplied: a grant must never authorize approvals
         # outside its own session (and the preconditions below are keyed on the
         # session, so approving a foreign issue would also check the wrong one).
-        return None
+        return None, (
+            f"the active {grant.level} grant on {root_issue} does not cover {issue_id}: "
+            "it is not in that session's issue tree"
+        )
     config = load_policy_config(repo_root)
-    if spend_status(repo_root, root_issue, grant=grant, ids=session_ids).halted:
-        return None  # spend halt: human-only until re-granted
+    spend = spend_status(repo_root, root_issue, grant=grant, ids=session_ids)
+    if spend.halted:
+        return None, _grant_declined(grant, name, (spend.detail,))
     if name == "ship":
         # Gates are checked on the node being shipped, not on the grant root
         # (basicly-kjc5.39): an epic's verify gate cannot exist until the epic
@@ -854,7 +892,15 @@ def _grant_approval(
             repo_root, root_issue, config, ids=session_ids, shipping=issue_id
         )
         if violations:
-            return None
+            # Named, because those preconditions are session-wide: the issue a
+            # violation points at is usually a sibling of the one being shipped,
+            # and finding that by hand cost several tool calls (basicly-5ltn).
+            return None, _grant_declined(
+                grant,
+                name,
+                violations,
+                scope=f"lights-out preconditions across session {root_issue}",
+            )
     marker = f"{_checkpoint_marker(name)} under grant {grant.level}"
     _run_br(repo_root, ["comments", "add", issue_id, marker])
     # Nothing to close on the first ask — the grant approves before any challenge
@@ -862,7 +908,7 @@ def _grant_approval(
     # when the grant only became able to approve later (a spend halt lifted by a
     # re-grant), and that wait is the harness's, not the human's.
     record_checkpoint_wait(repo_root, issue_id, name, by=f"grant:{grant.level}", delegated=True)
-    return ApprovalResult("approved", detail=f"delegated under {grant.level} grant")
+    return ApprovalResult("approved", detail=f"delegated under {grant.level} grant"), ""
 
 
 # --- Session accounting for grants: spend, needs-input, preconditions --------

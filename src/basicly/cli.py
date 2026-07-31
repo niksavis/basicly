@@ -2299,7 +2299,18 @@ _CHECKPOINT_MEANING = {
 }
 
 
-def _print_challenge(label: str, issue: str, rerun: str, meaning: str | None = None) -> int:
+def _reason_block(reason: str) -> str:
+    """The indented line saying why a grant declined this decision, or nothing.
+
+    Nothing when there is no reason: an ungranted session never consulted a
+    grant, and its challenge must read exactly as it always has (basicly-5ltn).
+    """
+    return f"  {reason}\n" if reason else ""
+
+
+def _print_challenge(
+    label: str, issue: str, rerun: str, meaning: str | None = None, reason: str = ""
+) -> int:
     """Print the one-time-code challenge and return the caller's non-zero exit.
 
     The wording is load-bearing (basicly-kjc5.34). This gate exists to force a
@@ -2313,10 +2324,16 @@ def _print_challenge(label: str, issue: str, rerun: str, meaning: str | None = N
     *meaning* states what approving this particular checkpoint does, from
     :data:`_CHECKPOINT_MEANING` (basicly-jr0l.39). Optional because the grant
     challenge has no checkpoint name to look up.
+
+    *reason* is why an autonomy grant did not resolve this itself, when one
+    existed and declined (basicly-5ltn). It comes first because it is the only
+    part an operator can act on: without it a ship refused by a wrinkle in a
+    *sibling* issue is indistinguishable from having no grant at all.
     """
     minutes = int(policy.CONFIRM_TTL_SECONDS // 60)
     print(
         f"{label}: CONFIRMATION REQUIRED ({issue})\n"
+        f"{_reason_block(reason)}"
         f"{meaning or ''}"
         "  A human must approve this decision. The gate protects the decision, not the\n"
         "  keystrokes, so whoever is driving may run the command themselves once approval\n"
@@ -2354,7 +2371,11 @@ def _approve_checkpoint(repo_root: Path, args: argparse.Namespace) -> int:
             f"basicly policy checkpoint {args.issue} {args.name} --approve --confirm {result.code}"
         )
         return _print_challenge(
-            f"checkpoint {args.name}", args.issue, rerun, _checkpoint_meaning(args.name)
+            f"checkpoint {args.name}",
+            args.issue,
+            rerun,
+            _checkpoint_meaning(args.name),
+            result.detail,
         )
     print(f"checkpoint {args.name}: REFUSED ({args.issue}) - {result.detail}", file=sys.stderr)
     return 1
@@ -2732,6 +2753,7 @@ def _cmd_loop_run(args: argparse.Namespace) -> int:
             args.issue,
             _ceremony_rerun(args, code),
             _checkpoint_meaning(name),
+            result.challenge_reason,
         )
     if result.refused is not None:
         name, why = result.refused
