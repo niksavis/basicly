@@ -25,7 +25,7 @@ from basicly.config import (
     load_worktree_config,
     record_technology_selection,
 )
-from basicly.runner import BUILTIN_RUNNERS
+from basicly.runner import AGENT_TIER, BUILTIN_RUNNERS, FAMILY_DEFAULT_TIER
 
 
 def test_default_config_toml_matches_builtin_defaults(tmp_path: Path) -> None:
@@ -302,6 +302,74 @@ def test_runner_config_parses_optional_model(tmp_path: Path) -> None:
     )
     by_name = {spec.name: spec for spec in load_runner_config(tmp_path).specs}
     assert by_name["claude"].model == "opus"
+
+
+def test_runner_config_parses_a_model_tier_and_vendor(tmp_path: Path) -> None:
+    """An entry may declare a portable tier instead of a provider model id."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[runner.agents]]\nname = "copilot"\n'
+        'command = ["copilot", "-p", "{prompt}"]\ntier = "high"\nvendor = "openai"\n',
+        encoding="utf-8",
+    )
+    by_name = {spec.name: spec for spec in load_runner_config(tmp_path).specs}
+    assert by_name["copilot"].tier == "high"
+    assert by_name["copilot"].vendor == "openai"
+    assert by_name["copilot"].model is None  # a tier is not a pin
+
+
+def test_runner_config_rejects_an_unknown_model_tier(tmp_path: Path) -> None:
+    """Caught at load, not at dispatch — a typo must not surface mid-lane."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[runner.agents]]\nname = "x"\ncommand = ["x", "{prompt}"]\ntier = "ludicrous"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="unknown model tier"):
+        load_runner_config(tmp_path)
+
+
+def test_runner_config_rejects_an_unknown_default_tier(tmp_path: Path) -> None:
+    """The family fallback is validated on the same terms as a per-agent tier."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[runner]\ndefault_tier = "turbo"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="not a known model tier"):
+        load_runner_config(tmp_path)
+
+
+def test_runner_config_default_tier_is_absent_by_default(tmp_path: Path) -> None:
+    """An unconfigured repo implies no tier, so nothing starts getting pinned."""
+    (tmp_path / CONFIG_FILE).write_text("[runner]\n", encoding="utf-8")
+    config = load_runner_config(tmp_path)
+    assert config.default_tier is None
+    assert all(spec.tier is None for spec in config.specs)
+
+
+def test_a_default_tier_lands_on_every_spec_that_declares_none(tmp_path: Path) -> None:
+    """Defaulting happens on the spec, so every dispatch site honours it for free.
+
+    A dispatch site added later cannot forget to thread a parameter that does not
+    exist, which is why this is applied at load rather than passed to run().
+    """
+    (tmp_path / CONFIG_FILE).write_text(
+        '[runner]\ndefault_tier = "medium"\n'
+        '[[runner.agents]]\nname = "pinned"\n'
+        'command = ["pinned", "{prompt}"]\nmodel = "opus"\n'
+        '[[runner.agents]]\nname = "tiered"\n'
+        'command = ["tiered", "{prompt}"]\ntier = "maximum"\n',
+        encoding="utf-8",
+    )
+    by_name = {spec.name: spec for spec in load_runner_config(tmp_path).specs}
+
+    # A built-in that declares nothing inherits the default, labelled as such.
+    assert by_name["claude"].tier == "medium"
+    assert by_name["claude"].tier_source == FAMILY_DEFAULT_TIER
+    # Its own tier wins, and keeps its own provenance.
+    assert by_name["tiered"].tier == "maximum"
+    assert by_name["tiered"].tier_source == AGENT_TIER
+    # An explicit model pin is left alone: the pin wins, so a tier here would only
+    # misreport where the model came from.
+    assert by_name["pinned"].tier is None
 
 
 def test_runner_config_model_defaults_none(tmp_path: Path) -> None:

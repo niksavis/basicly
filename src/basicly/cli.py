@@ -3198,8 +3198,19 @@ def _cmd_runner_dry_run(args: argparse.Namespace) -> int:
         )
         return 0
     print(f"runner '{spec.name}':")
-    if spec.model:
+    # Read the model off the resolution, not the spec: a tier is resolved inside
+    # run(), so the spec still says None and printing that would contradict the
+    # argv below (basicly-kjc5.59). This is the surface the config comment points
+    # a consumer at to check a tier before a live run, so it has to show the id.
+    resolution = result.model_resolution
+    if resolution is not None and resolution.tier:
+        print(f"  tier: {resolution.tier} ({resolution.source})")
+    if resolution is not None and resolution.model:
+        print(f"  model: {resolution.model}")
+    elif spec.model:
         print(f"  model: {spec.model}")
+    if resolution is not None and not resolution.honoured:
+        print(f"  tier not honoured: {resolution.note}")
     if spec.sandbox:
         print(f"  sandbox: {spec.sandbox}")
     if spec.approval:

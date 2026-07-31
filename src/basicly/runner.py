@@ -40,7 +40,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from . import run_record
+from . import models, run_record
 from .redact import redact_secrets
 
 # Marker replaced by the prompt when a runner injects it as a command argument.
@@ -142,6 +142,23 @@ class RunnerSpec:
     # `{model}` placeholder is substituted, otherwise `--model <value>` is
     # injected right after the binary. None leaves the argv unchanged.
     model: str | None = None
+    # Optional portable model tier (`schema.MODEL_TIERS`), resolved to a concrete
+    # model at dispatch through the committed map (basicly-kjc5.59). The whole
+    # point of a tier is that no provider model id lives in a projected agent
+    # file, so this is the declaration and `model` above is the resolved result:
+    # an explicit `model` therefore wins, and a tier that cannot resolve refuses
+    # the dispatch rather than falling back to some other tier's model.
+    tier: str | None = None
+    # Which vendor's model a tier resolves to. Only meaningful on a multi-vendor
+    # surface — copilot serves four vendors — so None takes the family default
+    # from models.FAMILY_MODEL_SURFACES.
+    vendor: str | None = None
+    # Where `tier` above came from, for the run record's provenance. Set by the
+    # config loader, which is also what applies `[runner] default_tier` to a spec
+    # declaring none: defaulting on the *spec* rather than at each call site means
+    # every dispatch path gets it without threading a parameter through seven of
+    # them, and a dispatch site added later cannot forget to.
+    tier_source: str | None = None
     # Invocation-time tool-deny specs (basicly-lqz5). format_command emits them
     # after the binary in this family's `deny_style` wire form. Populated for the
     # copilot runner from permissions.yaml at config load, and for any family by
@@ -253,6 +270,12 @@ class RunResult:
     # :func:`extract_usage` reads the agent's own usage store by, so it has to
     # survive the dispatch; None whenever no store was keyed.
     session_id: str | None = None
+    # How this dispatch's model was decided (basicly-kjc5.59). Carried on the
+    # result rather than recomputed by the recorder, because resolution happens
+    # once — inside run(), before anything is spawned — and its provenance (which
+    # tier, from which input, honoured or not) is the part telemetry needs and
+    # cannot re-derive afterwards. None when no model and no tier were in play.
+    model_resolution: models.ModelResolution | None = None
 
 
 def format_command(
@@ -348,6 +371,83 @@ def _apply_model(spec: RunnerSpec, argv: list[str]) -> list[str]:
     if has_placeholder:
         return [spec.model if part == MODEL_PLACEHOLDER else part for part in argv]
     return [argv[0], "--model", spec.model, *argv[1:]]
+
+
+# Provenance labels for a resolved model, recorded verbatim on the run record.
+AGENT_MODEL_PIN = "agent model pin"
+AGENT_TIER = "agent tier"
+FAMILY_DEFAULT_TIER = "family default tier"
+
+
+def model_family(spec: RunnerSpec) -> str:
+    """Which runner family *spec* belongs to, for the model-surface lookup.
+
+    The binary decides it, not the agent name: a ``[[runner.agents]]`` entry may
+    call itself anything while still shelling out to ``copilot``, and it is the
+    binary that fixes which model spelling is accepted. Falls back to the name for
+    a handoff runner, which has no binary at all.
+    """
+    binary = spec.binary
+    if binary is None:
+        return spec.name
+    return Path(binary).stem.lower()
+
+
+def resolve_model(
+    spec: RunnerSpec,
+    *,
+    repo_root: Path | None = None,
+    mapping: dict | None = None,
+) -> models.ModelResolution:
+    """Decide the model for one dispatch of *spec*, or refuse.
+
+    Order, most specific first (basicly-kjc5.59): an explicit ``model`` pin, then
+    the spec's ``tier``. An explicit pin wins because a tier exists to *avoid*
+    naming a provider id — so someone who named one anyway has overridden the
+    mechanism deliberately. ``[runner] default_tier`` is already folded onto the
+    spec by the config loader, which is why there is no third branch here and no
+    dispatch site has to remember to pass it.
+
+    Raises :class:`models.ModelResolutionError` when a tier was asked for and no
+    model can be pinned, naming the agent and the config key. Nothing has been
+    spawned at that point, which is the whole value of resolving up front.
+
+    A tier aimed at a family that cannot express a model at all — the handoff
+    runner has no argv — comes back ``honoured=False`` with the reason, so the
+    run record says the dispatch ran on the session's own model rather than
+    implying the tier was satisfied.
+    """
+    if spec.model is not None:
+        return models.ModelResolution(model=spec.model, source=AGENT_MODEL_PIN)
+    tier = spec.tier
+    if tier is None:
+        return models.ModelResolution()
+    source = spec.tier_source or AGENT_TIER
+    family = model_family(spec)
+    surfaces = models.FAMILY_MODEL_SURFACES.get(family)
+    if spec.kind == HANDOFF or surfaces is None:
+        return models.ModelResolution(
+            tier=tier,
+            source=source,
+            honoured=False,
+            note=(
+                f"runner {spec.name!r} has no model flag to pin a tier onto, so the "
+                f"dispatch ran on the session's own model and tier {tier!r} was not applied"
+            ),
+        )
+    surface, default_vendor = surfaces
+    vendor = spec.vendor or default_vendor
+    try:
+        model = models.model_for(tier, vendor, surface, mapping=mapping, repo_root=repo_root)
+    except (models.ModelUnavailableError, models.ModelMapError) as exc:
+        key = "default_tier" if source == FAMILY_DEFAULT_TIER else "tier"
+        raise models.ModelResolutionError(
+            f"runner {spec.name!r} declares model tier {tier!r} ({source}) but it "
+            f"resolves to no model: {exc}. Set a reachable tier or an explicit model on "
+            f"[[runner.agents]] {key} for {spec.name!r}, or point it at a vendor that "
+            f"serves that tier on the {surface!r} surface"
+        ) from exc
+    return models.ModelResolution(model=model, tier=tier, source=source)
 
 
 def _apply_deny_tools(spec: RunnerSpec, argv: list[str]) -> list[str]:
@@ -819,9 +919,21 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     The kill takes the dispatch's **whole process tree** with it — see
     :func:`_kill_tree`; an agent CLI's children must not outlive the stall that
     was queued for it (basicly-kjc5.15).
+
+    A declared model tier is resolved here, before anything is spawned
+    (basicly-kjc5.59): an unresolvable tier raises
+    :class:`models.ModelResolutionError` and no agent process starts, so the
+    dispatch never silently runs on the wrong model. The tier is read off the
+    spec, where the config loader has already applied ``[runner] default_tier``.
     """
+    # Resolve first, and ahead of the handoff return, so a refusal costs no
+    # process and a handoff still records that its tier could not be honoured.
+    resolution = resolve_model(spec, repo_root=cwd)
+    carried = resolution if (resolution.model or resolution.tier) else None
+    if resolution.model is not None:
+        spec = replace(spec, model=resolution.model)
     if spec.kind == HANDOFF:
-        return RunResult(spec.name, (), executed=False, handoff=True)
+        return RunResult(spec.name, (), executed=False, handoff=True, model_resolution=carried)
     # A store-measured format needs its store key minted *before* the dispatch:
     # supplying the new session's UUID is what makes the store path knowable
     # without scraping stdout, so the plain-text output stays plain text
@@ -831,7 +943,13 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     )
     argv = format_command(spec, prompt, capture_usage=capture_usage, session_id=session_id)
     if dry_run:
-        return RunResult(spec.name, tuple(argv), executed=False, session_id=session_id)
+        return RunResult(
+            spec.name,
+            tuple(argv),
+            executed=False,
+            session_id=session_id,
+            model_resolution=carried,
+        )
     stdin = prompt if spec.prompt_via == "stdin" else None
     # An arg-prompt dispatch must get stdin *closed*, not inherited (basicly-jr0l.36).
     # Popen's stdin=None means inherit, and an agent CLI that reads stdin for extra
@@ -895,6 +1013,7 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
         duration_s=duration_s,
         timed_out=timed_out,
         session_id=session_id,
+        model_resolution=carried,
     )
 
 
@@ -1234,6 +1353,104 @@ def _copilot_store_usage(spec: RunnerSpec, session_id: str | None) -> Usage | No
     )
 
 
+# --- Observed model: what the adapter says it actually ran (basicly-kjc5.59) ---
+#
+# Probed against the installed CLIs 2026-07-31 rather than assumed, because the
+# three families differ in kind and one of them cannot answer at all:
+#
+# - claude 2.1.220 reports it three ways on `-p --output-format stream-json`: the
+#   `system` init event's `model`, every `assistant` event's `message.model`, and
+#   the terminating `result` event's `modelUsage` map. `modelUsage` is read first
+#   because it is keyed per model and so survives a mid-run switch, and each
+#   block's `canonicalModel` is preferred over the key: the key is the **dated**
+#   build (`claude-haiku-4-5-20251001`) while `canonicalModel`
+#   (`claude-haiku-4-5`) is exactly the map's anthropic-surface spelling.
+# - copilot 1.0.77 reports it as the `session.shutdown` `modelMetrics` **keys**
+#   (28 of 28 local stores that carried metrics). A single dispatch can list more
+#   than one, so this returns a tuple rather than a single id.
+# - codex 0.146.0 reports it **nowhere**: its whole `--json` stream is
+#   thread.started / turn.started / item.completed / turn.completed, with no model
+#   field on any of them. So codex yields `()` — unobserved, never fabricated.
+
+
+def observed_models(spec: RunnerSpec, result: RunResult) -> tuple[str, ...]:
+    """The models the adapter reports this dispatch actually used, in stream order.
+
+    Empty when nothing executed, when the family reports no model (codex), or when
+    the envelope did not parse. Empty means *unobserved*, which is deliberately
+    distinct from "ran the model we pinned" — a mismatch cannot be claimed either
+    way without evidence.
+    """
+    if not result.executed:
+        return ()
+    if spec.usage_format in (CLAUDE_JSON, CLAUDE_STREAM_JSON):
+        streaming = spec.usage_format == CLAUDE_STREAM_JSON
+        return _claude_observed_models(result.stdout, streaming=streaming)
+    if spec.usage_format == COPILOT_SESSION_STORE:
+        return _copilot_observed_models(spec, result.session_id)
+    return ()
+
+
+def _dedup(names: list[str]) -> tuple[str, ...]:
+    """The names in first-seen order, without repeats."""
+    seen: dict[str, None] = {}
+    for name in names:
+        if isinstance(name, str) and name:
+            seen.setdefault(name, None)
+    return tuple(seen)
+
+
+def _claude_observed_models(stdout: str, *, streaming: bool) -> tuple[str, ...]:
+    """Models named by a claude envelope: `modelUsage` first, then the turns."""
+    payload = _claude_result_event(stdout) if streaming else stdout
+    found: list[str] = []
+    try:
+        obj = json.loads(payload.strip() or "null")
+    except json.JSONDecodeError:
+        obj = None
+    if isinstance(obj, dict):
+        usage_by_model = obj.get("modelUsage")
+        if isinstance(usage_by_model, dict):
+            for key, block in usage_by_model.items():
+                canonical = block.get("canonicalModel") if isinstance(block, dict) else None
+                found.append(canonical if isinstance(canonical, str) and canonical else key)
+    if not found and streaming:
+        for event in _claude_stream_events(stdout):
+            message = event.get("message")
+            if event.get("type") == "assistant" and isinstance(message, dict):
+                model = message.get("model")
+                if isinstance(model, str):
+                    found.append(model)
+            elif event.get("type") == "system" and isinstance(event.get("model"), str):
+                found.append(event["model"])
+    return _dedup(found)
+
+
+def _copilot_observed_models(spec: RunnerSpec, session_id: str | None) -> tuple[str, ...]:
+    """Models named by a copilot session store: the `modelMetrics` keys."""
+    data = _copilot_shutdown_data(spec, session_id)
+    metrics = data.get("modelMetrics") if data is not None else None
+    if not isinstance(metrics, dict):
+        return ()
+    return _dedup(list(metrics))
+
+
+def model_mismatch(pinned: str | None, observed: tuple[str, ...]) -> str | None:
+    """A description of the pin the adapter did not honour, or None.
+
+    None when nothing was pinned, when nothing was observed, or when the pin
+    matches an observed model under :func:`models.same_model` — which tolerates
+    the surface spellings and dated builds that make literal equality useless
+    here. A real divergence returns prose rather than a bool so the run record
+    names both sides, because "the model differed" is unactionable without them.
+    """
+    if pinned is None or not observed:
+        return None
+    if any(models.same_model(pinned, seen) for seen in observed):
+        return None
+    return f"pinned {pinned!r} but the adapter reported {', '.join(repr(o) for o in observed)}"
+
+
 def context_occupancy(spec: RunnerSpec, result: RunResult) -> int | None:
     """The run's final context occupancy in tokens, or None when unknowable.
 
@@ -1363,13 +1580,24 @@ def record_dispatch(  # noqa: PLR0913 — one parameter per recorded dispatch in
             command = tuple(format_command(spec, run_record.REDACTED_PROMPT, capture_usage=True))
     usage = extract_usage(spec, result)
     digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest() if prompt is not None else None
+    # Model provenance comes off the result, where run() left it, rather than being
+    # re-resolved: re-resolving would read the map a second time and could answer
+    # differently from the dispatch that actually happened (basicly-kjc5.59).
+    resolution = result.model_resolution
+    pinned = resolution.model if resolution is not None else spec.model
+    seen = observed_models(spec, result)
     entry = run_record.build_record(
         agent=spec.name,
         handoff=result.handoff,
         returncode=result.returncode,
         duration_s=result.duration_s,
         command=command,
-        model=spec.model,
+        model=pinned,
+        model_tier=resolution.tier if resolution is not None else None,
+        model_source=resolution.source if resolution is not None else None,
+        tier_honoured=resolution.honoured if resolution is not None else None,
+        observed_models=seen,
+        model_mismatch=model_mismatch(pinned, seen),
         tokens=usage.tokens if usage else None,
         cost=usage.cost if usage else None,
         estimated=usage.estimated if usage else None,
