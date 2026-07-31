@@ -56,6 +56,21 @@ instructions: |
     after the fix it pins, delete the fix and watch it fail for the stated reason
     before trusting it.
 
+  ## A zero result needs a positive control
+
+  - A search, scan or query that finds nothing proves nothing by itself. It is
+    evidence only if the same method, run the same way, finds a control you already
+    know is present; without that control the honest finding is "the method was
+    inconclusive", not "the thing is absent".
+  - The incident: `strings` over the copilot CLI binary found no hook identifiers,
+    and that was reported as the capability being absent. A control retracted it —
+    strings the CLI had been directly observed emitting (`allow-all-tools`,
+    `premiumRequests`) also returned zero matches, because the payload is a
+    compressed JS bundle.
+  - The same trap in a test: an assertion that something is *absent* passes just as
+    happily when the locator is wrong, so pin the locator with a case that must
+    match before trusting the case that must not.
+
   ## A seam is not duplication
 
   - A module-level alias or thin wrapper around an external dependency — a CLI, a

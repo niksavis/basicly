@@ -131,6 +131,18 @@ br sync --merge                           # 3-way merge of .beads/issues.jsonl a
   `br` auto-imports it on the next command, so a change made only to the DB can be
   silently reverted. Make sure the JSONL reflects the change (`br sync --flush-only`,
   or `--hard` for deletes) before you rely on it or stage it.
+- **Deciding tracker semantics by grepping the export.** `.beads/issues.jsonl` is a
+  record, not the interpreter: grants, gate results and derived phase are computed
+  from _ordered_ comment markers under rules a regex cannot see — the last grant or
+  revocation marker wins, and a grant on a closed root issue is dead whatever the
+  markers say. A regex over the export reported `basicly-jr0l` as an L1 grant with a
+  5M budget, where `basicly policy grant basicly-jr0l` reports **L3 with 4M**,
+  because the regex surfaced an earlier marker. Read semantics through the engine:
+  `basicly policy grant <id>`, `basicly policy gate <id>` / `br gate list <id>`,
+  `basicly loop status <id>`. Reading the export directly stays correct for
+  whole-tracker **counting** (`br list --json` caps its result set and drops closed
+  records, so the file is the only bulk read) — count from the file, interpret
+  through the API.
 - **Creating ids with `br create --slug ...`.** It produces multi-hyphen ids
   (`basicly-my-thing-9li`) that the `commit-msg` hook rejects. Let `br` generate the
   default single-hyphen `basicly-<hash>` id; never pass `--slug`.
