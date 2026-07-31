@@ -341,8 +341,17 @@ def test_merge_worktree_not_ready_when_work_uncommitted(
 def test_merge_worktree_not_ready_when_branch_has_no_commits(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A clean branch with nothing ahead of base is 'not-ready', not a conflict."""
-    fake = _FakeGit({"status": _Proc(0, ""), "rev-list": _Proc(0, "0")})
+    """A clean branch with nothing ahead of base is 'not-ready', not a conflict.
+
+    The branch is deliberately *not* an ancestor of base (``merge-base`` exits
+    non-zero): nothing ahead and not merged is the genuinely-empty branch, which is a
+    different situation from the half-landed one below (basicly-jr0l.50).
+    """
+    fake = _FakeGit({
+        "status": _Proc(0, ""),
+        "rev-list": _Proc(0, "0"),
+        "merge-base": _Proc(1),
+    })
     monkeypatch.setattr(merge, "git", fake)
 
     result = merge.merge_worktree(tmp_path, "feat", bead="basicly-onb.5")
@@ -350,6 +359,86 @@ def test_merge_worktree_not_ready_when_branch_has_no_commits(
     assert result.status == "not-ready"
     assert "no committed work" in result.detail
     assert not fake.ran("rebase")
+
+
+# --- forward recovery of a half-landed lane (basicly-jr0l.50) ----------------
+
+
+@pytest.mark.usefixtures("base_ready")
+def test_a_branch_already_merged_with_no_gate_is_recognised_not_called_empty(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The defect: a landing that succeeded looked like a branch with no work.
+
+    A crash between the merge and the verify-gate record leaves the branch an
+    ancestor of base with nothing ahead of it. Reading only ``rev-list`` reported "no
+    committed work to land" — wrong, and under the supervisor it charged the lane a
+    rework attempt for a landing that had worked.
+    """
+    fake = _FakeGit({
+        "status": _Proc(0, ""),
+        "rev-list": _Proc(0, "0"),
+        "merge-base": _Proc(0),  # the branch *is* an ancestor of base: it merged
+    })
+    monkeypatch.setattr(merge, "git", fake)
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-onb.5")
+
+    assert result.status == merge.ALREADY_LANDED
+    assert "already an ancestor" in result.detail
+    # Nothing is re-attempted: there is no second merge to make and no rebase to run.
+    assert not fake.ran("rebase")
+    assert not fake.ran("merge")
+    # And it is not a failure shape, so no caller can score it as one.
+    assert result.conflicted is False
+
+
+@pytest.mark.usefixtures("base_ready")
+def test_a_half_landed_branch_is_not_refused_as_stale(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Recovery must outrank the staleness guard, or the two fixes cancel out.
+
+    A branch that already merged has necessarily moved relative to whatever head the
+    queue recorded, so checking staleness first would refuse the very state this
+    recovers — re-stranding it (basicly-jr0l.46 + basicly-jr0l.50 interaction).
+    """
+    monkeypatch.setattr(
+        merge,
+        "git",
+        _FakeGit({
+            "status": _Proc(0, ""),
+            "rev-list": _Proc(0, "0"),
+            "merge-base": _Proc(0),
+            "rev-parse": _Proc(0, "movedsincequeued"),
+        }),
+    )
+
+    result = merge.merge_worktree(
+        tmp_path, "feat", bead="basicly-onb.5", expected_head="whatthequeuesaw"
+    )
+
+    assert result.status == merge.ALREADY_LANDED
+
+
+def test_the_queue_finishes_a_half_landed_lane_without_charging_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A lane whose work is already in base costs no rework and stops nothing."""
+    outcomes = {
+        "a": merge.MergeResult("a", merge.ALREADY_LANDED, "harness/a is already an ancestor"),
+        "b": merge.MergeResult("b", "merged", "ok"),
+    }
+    monkeypatch.setattr(merge, "merge_worktree", lambda _r, name, **_kwargs: outcomes[name])
+    recorded: list = []
+    monkeypatch.setattr(policy, "record_rework", lambda *a, **_k: recorded.append(a) or 1)
+
+    results = merge.merge_queue(tmp_path, [("a", "b1"), ("b", "b2")])
+
+    assert [q.result.name for q in results] == ["a", "b"]  # the pass continues
+    assert results[0].attempts == 0 and results[0].escalate is False
+    assert results[1].result.merged is True
+    assert recorded == []
 
 
 # --- the merge must prove itself (basicly-jr0l.46) --------------------------

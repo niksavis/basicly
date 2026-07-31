@@ -93,6 +93,14 @@ STALE_BRANCH = "stale-branch"
 # should be stacked on.
 MERGE_UNPROVEN = "merge-unproven"
 
+# Status for a lane whose branch is already an ancestor of base with no verify gate
+# recorded — the half-landed state a crash between the merge and the gate record
+# leaves behind (basicly-jr0l.50). It is a *success* the engine failed to finish
+# writing down, not a failure: `rev-list base..branch == 0` used to read it as "no
+# committed work to land", which both misled the operator and charged a supervised
+# lane a rework attempt for a landing that worked. The landing resumes at the gate.
+ALREADY_LANDED = "already-landed"
+
 
 @dataclass(frozen=True)
 class ProbeResult:
@@ -109,7 +117,7 @@ class MergeResult:
     name: str
     # "merged" | "not-ready" | "rebase-conflicts" | "verify-failed"
     # | "verify-unreliable" | "merge-conflicts" | "merge-failed"
-    # | "stale-branch" | "merge-unproven"
+    # | "stale-branch" | "merge-unproven" | "already-landed"
     status: str
     detail: str
     # Paths that collided, for a conflict status. Carried as data (not only in
@@ -250,31 +258,49 @@ def _assert_base_ready(repo_root: Path, base: str) -> None:
 
 
 def _worktree_land_readiness(
-    worktree_path: Path, repo_root: Path, base: str, branch: str
-) -> str | None:
-    """Why *branch* is not ready to land, or None when it is.
+    name: str, worktree_path: Path, repo_root: Path, base: str, branch: str
+) -> MergeResult | None:
+    """The landing outcome *branch*'s current state forces, or None when it may land.
 
     Landing rebases the branch, so the agent's work must be committed on it. A
     tree with uncommitted tracked changes makes ``git rebase`` abort with
-    "unstaged changes", and a branch with no commits ahead of base has nothing
-    to merge. Both are operator-fixable states, not conflicts or verification
-    failures — the caller blocks with guidance rather than burning a rework
-    attempt (basicly-4psl). Untracked files are ignored: ``git rebase`` does
+    "unstaged changes". That is an operator-fixable state, not a conflict or a
+    verification failure — the caller blocks with guidance rather than burning a
+    rework attempt (basicly-4psl). Untracked files are ignored: ``git rebase`` does
     not abort on them.
+
+    A branch with no commits ahead of base is two different situations, and reading
+    them as one is what made a successful landing look like a failed one
+    (basicly-jr0l.50). If the branch is already an ancestor of base, the merge
+    happened and only the gate record is missing — a crash between the two leaves
+    exactly this state, so the landing forward-recovers (``ALREADY_LANDED``) instead
+    of reporting "no committed work to land" and charging the lane for it. If it is
+    not an ancestor, there genuinely is nothing to merge.
     """
     dirty = git(["status", "--porcelain", "--untracked-files=no"], cwd=worktree_path).stdout.strip()
     if dirty:
-        return (
+        return MergeResult(
+            name,
+            "not-ready",
             f"worktree has uncommitted changes; commit the work on {branch} before "
-            f"landing (the loop does not auto-commit):\n{dirty}"
+            f"landing (the loop does not auto-commit):\n{dirty}",
         )
     ahead = git(["rev-list", "--count", f"{base}..{branch}"], cwd=repo_root).stdout.strip()
-    if ahead == "0":
-        return (
-            f"no committed work to land: {branch} has no commits ahead of {base} "
-            "(commit the build's changes on the branch first)"
+    if ahead != "0":
+        return None
+    if is_ancestor(repo_root, branch, base):
+        return MergeResult(
+            name,
+            ALREADY_LANDED,
+            f"{branch} is already an ancestor of {base}: the merge landed and only the "
+            "gate record is missing, so the landing resumes at the gate",
         )
-    return None
+    return MergeResult(
+        name,
+        "not-ready",
+        f"no committed work to land: {branch} has no commits ahead of {base} "
+        "(commit the build's changes on the branch first)",
+    )
 
 
 def reconcile_beads(repo_root: Path) -> None:
@@ -395,19 +421,24 @@ def _merge_message(
 def _pre_merge_state(
     repo_root: Path, session: Session, expected_head: str | None
 ) -> MergeResult | None:
-    """A state that must refuse the landing before base is touched, or None.
+    """The outcome the lane's current state forces before base is touched, or None.
 
-    Both refusals here are operator-fixable states rather than merit failures, so
-    the queue leaves the lane queued and spends none of its rework budget.
+    Nothing decided here is a merit failure, so the queue spends none of the lane's
+    rework budget on any of it: two are operator-fixable states that stay queued, and
+    one (``ALREADY_LANDED``) is a landing that already succeeded and only needs its
+    gate written down.
     """
     name, base, branch, worktree_path = session.name, session.base, session.branch, session.path
     # The agent's work must be committed on the branch before landing rebases it. A
     # dirty tree or an empty branch is not a conflict or a verification failure, and
     # bailing before base is mutated avoids leaving a redundant tracker commit
-    # behind (basicly-4psl).
-    not_ready = _worktree_land_readiness(worktree_path, repo_root, base, branch)
-    if not_ready is not None:
-        return MergeResult(name, "not-ready", not_ready)
+    # behind (basicly-4psl). This also recognises the half-landed branch, and it must
+    # stay ahead of the staleness check below: a branch that already merged has
+    # necessarily "moved" relative to whatever head the queue recorded, and refusing
+    # it as stale would re-strand the very state this recovers (basicly-jr0l.50).
+    forced = _worktree_land_readiness(name, worktree_path, repo_root, base, branch)
+    if forced is not None:
+        return forced
 
     # A lane that grew a commit after the queue was formed was ranked, ordered, and
     # (for the lanes behind it) probed against a state that no longer exists. The
@@ -856,6 +887,14 @@ def merge_queue(
         )
         if result.merged:
             landed.append(bead)
+            results.append(QueueResult(result))
+            continue
+        if result.status == ALREADY_LANDED:
+            # This lane's work is in base from an earlier, interrupted pass. Charge
+            # nothing and keep going — writing the gate down is the loop's job, not
+            # the queue's (basicly-jr0l.50). Deliberately not added to *landed*: the
+            # couplings are attributed against the prefix a lane landed on, and that
+            # prefix belonged to the earlier pass, not this one (D9).
             results.append(QueueResult(result))
             continue
         if result.status in ("not-ready", STALE_BRANCH):

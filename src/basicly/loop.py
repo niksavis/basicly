@@ -597,9 +597,19 @@ def dispatch_prompt(issue_id: str) -> str:
 def _verify_and_land(
     ctx: _Ctx, worktree_name: str, *, verify_mode: str | None = None
 ) -> AdvanceResult:
-    """Land the worktree (merge re-verifies internally), then record the required gate."""
+    """Land the worktree (merge re-verifies internally), then record the required gate.
+
+    Idempotent across an interruption: if a previous attempt merged and died before
+    recording the gate, this resumes at the gate rather than re-reading the branch as
+    empty (basicly-jr0l.50).
+    """
     mode = verify_mode or ctx.inputs.verify_mode
     result = merge.merge_worktree(ctx.repo_root, worktree_name, bead=ctx.issue_id, verify_mode=mode)
+    if result.status == merge.ALREADY_LANDED:
+        # The merge already happened and the process died before the gate record.
+        # Finish the landing forward: re-merging is impossible and re-running the
+        # build is wrong, because the work is already in base (basicly-jr0l.50).
+        return _record_verify(ctx, result.detail, verify_mode=mode)
     if result.status == "not-ready":
         # The build's work is not committed on the branch: block with guidance,
         # do not burn a rework attempt on an operator-fixable state (basicly-4psl).

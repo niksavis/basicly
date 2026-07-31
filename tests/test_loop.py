@@ -699,6 +699,35 @@ def test_not_ready_landing_carries_the_merge_attempt(
     assert result.blocked and result.landing is attempt and not attempt.conflicted
 
 
+def test_a_landing_interrupted_before_the_gate_resumes_at_the_gate(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The interruption this recovers: merged, then killed before recording the gate.
+
+    On the retry the branch is already an ancestor of base with nothing ahead of it.
+    The landing must finish forward — record the gate and advance — instead of
+    blocking on a branch it reads as empty and charging the lane for it
+    (basicly-jr0l.50).
+    """
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    attempt = merge.MergeResult(
+        "i", merge.ALREADY_LANDED, "harness/i is already an ancestor of main"
+    )
+    monkeypatch.setattr(merge, "merge_worktree", lambda *_a, **_k: attempt)
+    charged: list = []
+    monkeypatch.setattr(policy, "record_rework", lambda *a, **_k: charged.append(a) or 1)
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
+    recorded: list = []
+    monkeypatch.setattr(verify, "report_gate", lambda *a, **_k: recorded.append(a) or (True, "ok"))
+
+    result = _advance(tmp_path)
+
+    assert not result.blocked  # it completes rather than parking the lane
+    assert result.to_phase == "verify" and result.action == "merged"
+    assert charged == []  # a landing that worked is never charged for working
+    assert recorded, "the missing verify gate is what this resumes to record"
+
+
 def test_an_unreliable_gate_spends_no_rework_and_records_the_flake(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
