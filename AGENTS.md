@@ -113,6 +113,8 @@ uv run basicly hooks-check
 - Run the repo's existing checks on anything touched, and re-run after the final edit — a later change can break what passed. Point at gates, don't restate them.
 - Confirm success from the explicit pass/fail summary line; truncated output can hide a failure.
 - State only the verification scope actually exercised — say what you did not run; never upgrade "expected to work" to "works".
+- In a plan you ask someone to approve, mark the parts resting on code you have not read as assumptions, not as design; an approval spent on a false premise costs the checkpoint and the rework budget behind it.
+- The same rule covers a capability claim on a consumer-facing surface (README, site, release notes, repo description): exercise it before publishing — a false claim in code is caught by a gate, one in a README is caught by a consumer.
 
 ## Use
 
