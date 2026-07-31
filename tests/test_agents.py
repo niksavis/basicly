@@ -7,9 +7,15 @@ from pathlib import Path
 import pytest
 
 from basicly.agents import (
+    AGENTS_OUTPUT_ROOTS,
+    CLAUDE_AGENTS_ROOT,
+    COPILOT_AGENTS_ROOT,
+    COPILOT_TOOL_ALIASES,
     GENERATED_MARKER,
     MAX_BODY_CHARS,
     SLOT_ORDER,
+    WRITE_TOOLS,
+    AgentOutputRoot,
     check_synced_agents,
     compose_body,
     compose_description,
@@ -18,6 +24,7 @@ from basicly.agents import (
     discover_blocks,
     lint_agent_sources,
     render_agent_md,
+    resolve_copilot_tool,
     sync_agents,
     unknown_block_refs,
 )
@@ -328,10 +335,11 @@ def test_lint_flags_read_only_posture_with_a_write_tool_in_any_casing(
 
     violations = lint_agent_sources(tmp_path)
 
-    assert len(violations) == 1, violations
     # Both halves the author needs: the offending tool as authored, and the
-    # posture claim it contradicts.
-    assert f"read-only but tools grant {tool}" in violations[0]
+    # posture claim it contradicts. `create` additionally trips the alias
+    # resolution rule (it is absent from GitHub's published table), so the count
+    # is not asserted here.
+    assert any(f"read-only but tools grant {tool}" in v for v in violations), violations
 
 
 def test_lint_accepts_read_tools_in_any_casing(tmp_path: Path) -> None:
@@ -382,11 +390,12 @@ def test_default_agent_roots_are_core_then_overlay(tmp_path: Path) -> None:
     ]
 
 
-def test_render_agent_md_shape(tmp_path: Path) -> None:
-    """Frontmatter, marker, and body render in the documented shape."""
+@pytest.mark.parametrize("root", AGENTS_OUTPUT_ROOTS, ids=lambda root: root.family)
+def test_render_agent_md_shape(tmp_path: Path, root: AgentOutputRoot) -> None:
+    """Frontmatter, marker, and body render in the documented shape, in every root."""
     _write_agent(tmp_path / "core", "code-reviewer")
     (agent,) = discover_agents(_roots(tmp_path))
-    rendered = render_agent_md(agent, {})
+    rendered = render_agent_md(agent, {}, root)
     lines = rendered.split("\n")
     assert lines[0] == "---"
     assert lines[1] == "name: code-reviewer"
@@ -405,31 +414,89 @@ def test_render_agent_md_shape(tmp_path: Path) -> None:
     assert not rendered.endswith("\n\n")
 
 
-def test_render_omits_the_model_line_for_a_tier_source(tmp_path: Path) -> None:
-    """A declared model tier projects no `model:` (and no `tier:`) frontmatter key."""
+@pytest.mark.parametrize("root", AGENTS_OUTPUT_ROOTS, ids=lambda root: root.family)
+def test_render_omits_the_model_line_for_a_tier_source(
+    tmp_path: Path, root: AgentOutputRoot
+) -> None:
+    """A declared model tier projects no `model:` (and no `tier:`) frontmatter key.
+
+    Copilot's frontmatter has a `model` slot where Claude's does not, so this has
+    to hold per root: the tier is the portable capability level and a provider
+    model id never reaches any projected file (basicly-kjc5.58, basicly-8sxf).
+    """
     _write_agent(
         tmp_path / "core",
         "code-reviewer",
         _agent_yaml("code-reviewer", extra="tier: maximum\n"),
     )
     (agent,) = discover_agents(_roots(tmp_path))
-    rendered = render_agent_md(agent, {})
+    rendered = render_agent_md(agent, {}, root)
     assert "model" not in rendered
     assert "tier" not in rendered
     assert "maximum" not in rendered
 
 
-def test_render_marker_stays_in_protect_generated_window(tmp_path: Path) -> None:
-    """The generated marker lands within the first 10 lines (hook scan window)."""
+@pytest.mark.parametrize("root", AGENTS_OUTPUT_ROOTS, ids=lambda root: root.family)
+def test_render_marker_stays_in_protect_generated_window(
+    tmp_path: Path, root: AgentOutputRoot
+) -> None:
+    """The generated marker lands within the first 10 lines (hook scan window).
+
+    Both `protect-generated` guards key on the marker, not on a path, so the
+    second root inherits the protection only if its marker stays in the window.
+    """
     _write_agent(
         tmp_path / "core",
         "code-reviewer",
         _agent_yaml("code-reviewer", extra="tier: low\nclaude:\n  memory: project\n"),
     )
     (agent,) = discover_agents(_roots(tmp_path))
-    head = render_agent_md(agent, {}).split("\n")[:10]
+    head = render_agent_md(agent, {}, root).split("\n")[:10]
     assert any(GENERATED_MARKER in line for line in head)
-    assert "memory: project" in head
+
+
+@pytest.mark.parametrize("root", AGENTS_OUTPUT_ROOTS, ids=lambda root: root.family)
+def test_projected_read_only_agent_grants_no_write_tool(
+    tmp_path: Path, root: AgentOutputRoot
+) -> None:
+    """The read-only posture survives the crossing into every root.
+
+    The source lint refuses a read-only agent that *declares* a write tool, but
+    the renderer is a second place the grant could widen: a per-family `tools`
+    line built from anything but `agent.tools` would defeat the lint silently and
+    no drift check would notice, because the projected file would still match its
+    own renderer. So assert on the projected frontmatter, resolved through the
+    pinned copilot alias table (basicly-8sxf).
+    """
+    _write_agent(tmp_path / "core", "code-reviewer")
+    (agent,) = discover_agents(_roots(tmp_path))
+
+    (line,) = [
+        line for line in render_agent_md(agent, {}, root).split("\n") if line.startswith("tools: ")
+    ]
+    projected = [name.strip() for name in line.removeprefix("tools: ").split(",")]
+
+    assert projected == list(agent.tools)
+    assert [name for name in projected if resolve_copilot_tool(name) == "edit"] == []
+    folded_writes = {tool.casefold() for tool in WRITE_TOOLS}
+    assert [name for name in projected if name.casefold() in folded_writes] == []
+
+
+def test_claude_passthrough_reaches_only_the_claude_root(tmp_path: Path) -> None:
+    """A Claude-only frontmatter key must not leak into the copilot agent file.
+
+    Copilot's frontmatter schema is a superset in places but `memory` is not in
+    it, and an unknown key on a surface we do not control is a liability with no
+    upside — the passthrough is declared claude-only, so it renders claude-only.
+    """
+    _write_agent(
+        tmp_path / "core",
+        "code-reviewer",
+        _agent_yaml("code-reviewer", extra="claude:\n  memory: project\n"),
+    )
+    (agent,) = discover_agents(_roots(tmp_path))
+    assert "memory: project" in render_agent_md(agent, {}, CLAUDE_AGENTS_ROOT)
+    assert "memory" not in render_agent_md(agent, {}, COPILOT_AGENTS_ROOT)
 
 
 def test_claude_passthrough_may_not_shadow_rendered_keys(tmp_path: Path) -> None:
@@ -455,38 +522,52 @@ def _repo_with_agent(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def test_sync_agents_writes_and_is_idempotent(tmp_path: Path) -> None:
-    """sync_agents writes the projected file once and reports no changes after."""
+def _targets(repo: Path, slug: str = "code-reviewer") -> list[Path]:
+    """Every root's projected path for *slug*, in AGENTS_OUTPUT_ROOTS order."""
+    return [root.target(repo, slug) for root in AGENTS_OUTPUT_ROOTS]
+
+
+def test_sync_agents_writes_every_root_and_is_idempotent(tmp_path: Path) -> None:
+    """sync_agents writes one file per root once, and reports no changes after."""
     repo = _repo_with_agent(tmp_path)
+    expected = _targets(repo)
+    assert expected == [
+        repo / ".claude/agents/code-reviewer.md",
+        repo / ".github/agents/code-reviewer.agent.md",
+    ]
+
     first, _pruned = sync_agents(repo)
-    assert first.written == [repo / ".claude/agents/code-reviewer.md"]
-    rendered = (repo / ".claude/agents/code-reviewer.md").read_text(encoding="utf-8")
-    assert "Say so if clean." in rendered
+    assert first.written == expected
+    for target in expected:
+        assert "Say so if clean." in target.read_text(encoding="utf-8")
+
     second, _pruned = sync_agents(repo)
     assert second.written == []
-    assert second.unchanged == [repo / ".claude/agents/code-reviewer.md"]
+    assert second.unchanged == expected
 
 
-def test_sync_agents_filters_and_prunes_by_selection(tmp_path: Path) -> None:
-    """A tagged agent outside the selection is skipped and its projection pruned."""
+def test_sync_agents_filters_and_prunes_every_root_by_selection(tmp_path: Path) -> None:
+    """A tagged agent outside the selection is skipped and pruned from every root."""
     repo = _repo_with_agent(tmp_path)
     source = repo / ".basicly/core/agents/code-reviewer/agent.yaml"
     source.write_text(
         "technologies: [node]\n" + source.read_text(encoding="utf-8"), encoding="utf-8"
     )
-    target = repo / ".claude/agents/code-reviewer.md"
+    targets = _targets(repo)
 
     sync_agents(repo)  # no selection recorded: the tagged agent still ships
-    assert target.is_file()
+    assert all(target.is_file() for target in targets)
 
     selection = frozenset({"python"})
-    assert check_synced_agents(repo, selection) == [(target, "excluded by technology selection")]
+    assert check_synced_agents(repo, selection) == [
+        (target, "excluded by technology selection") for target in targets
+    ]
     _result, pruned = sync_agents(repo, selection)
-    assert pruned == [target] and not target.exists()
+    assert pruned == targets and not any(target.exists() for target in targets)
     assert check_synced_agents(repo, selection) == []
 
     _result, pruned = sync_agents(repo, frozenset({"node"}))
-    assert pruned == [] and target.is_file()
+    assert pruned == [] and all(target.is_file() for target in targets)
 
 
 def test_discover_agents_rejects_unknown_technology(tmp_path: Path) -> None:
@@ -503,9 +584,87 @@ def test_discover_agents_rejects_unknown_technology(tmp_path: Path) -> None:
 def test_check_synced_agents_flags_missing_and_stale(tmp_path: Path) -> None:
     """Check reports missing before build, clean after, stale after a hand-edit."""
     repo = _repo_with_agent(tmp_path)
-    target = repo / ".claude/agents/code-reviewer.md"
-    assert check_synced_agents(repo) == [(target, "missing")]
+    targets = _targets(repo)
+    assert check_synced_agents(repo) == [(target, "missing") for target in targets]
     sync_agents(repo)
     assert check_synced_agents(repo) == []
+    for target in targets:
+        target.write_text(target.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    assert check_synced_agents(repo) == [(target, "content mismatch") for target in targets]
+
+
+@pytest.mark.parametrize("root", AGENTS_OUTPUT_ROOTS, ids=lambda root: root.family)
+def test_check_synced_agents_catches_a_hand_edit_in_each_root_alone(
+    tmp_path: Path, root: AgentOutputRoot
+) -> None:
+    """Each root is compared on its own: a gate that cannot fail is not covering it.
+
+    Parametrized rather than asserted on the pair, because a check that only ever
+    compared the claude root would still pass the both-roots-edited case above
+    (basicly-8sxf).
+    """
+    repo = _repo_with_agent(tmp_path)
+    sync_agents(repo)
+    target = root.target(repo, "code-reviewer")
+
     target.write_text(target.read_text(encoding="utf-8") + "\n", encoding="utf-8")
     assert check_synced_agents(repo) == [(target, "content mismatch")]
+
+    target.unlink()
+    assert check_synced_agents(repo) == [(target, "missing")]
+
+
+def test_copilot_tool_aliases_resolve_the_names_we_ship() -> None:
+    """The pinned alias table is asserted against, not just documented.
+
+    Every tool our core agents declare must resolve to a copilot primary, because
+    copilot drops an unrecognised entry silently. The expected primaries are
+    spelled out rather than derived from the table, so a wrong edit to the table
+    fails here instead of agreeing with itself.
+    """
+    assert resolve_copilot_tool("Read") == "read"
+    assert resolve_copilot_tool("Grep") == "search"
+    assert resolve_copilot_tool("Glob") == "search"
+    assert resolve_copilot_tool("Bash") == "execute"
+    # Case-insensitive per GitHub's published table, and a primary is its own alias.
+    assert resolve_copilot_tool("bASH") == "execute"
+    assert resolve_copilot_tool("read") == "read"
+    assert resolve_copilot_tool("NotAToolAtAll") is None
+
+
+def test_every_copilot_edit_alias_fails_the_read_only_posture_check(tmp_path: Path) -> None:
+    """The pinned table drives the posture check, so a new write alias cannot slip in.
+
+    Guards the derivation in `_WRITE_TOOLS_FOLDED`: if GitHub adds an alias to the
+    `edit` primary and someone updates COPILOT_TOOL_ALIASES, the read-only check
+    has to widen with it rather than leave a hole.
+    """
+    core = tmp_path / ".basicly/core/agents"
+    for tool in sorted({"edit", *COPILOT_TOOL_ALIASES["edit"], *WRITE_TOOLS}):
+        _write_agent(core, "code-reviewer", _agent_yaml("code-reviewer", tools=f"[Read, {tool}]"))
+        # Membership, not equality: `Create` is the copilot CLI's internal write
+        # primary and is deliberately absent from GitHub's published alias table,
+        # so it also trips the resolution rule below.
+        assert (
+            ".basicly/core/agents/code-reviewer/agent.yaml: posture declares read-only "
+            f"but tools grant {tool}"
+        ) in lint_agent_sources(tmp_path), tool
+
+
+def test_lint_flags_a_tool_that_resolves_to_nothing_on_copilot(tmp_path: Path) -> None:
+    """A name copilot would silently drop is an authoring defect, reported loudly here.
+
+    Claude Code refuses to launch and names an unresolved entry; copilot drops it
+    with no error, so without this rule a typo would ship as a quietly useless
+    agent on that root (basicly-8sxf).
+    """
+    core = tmp_path / ".basicly/core/agents"
+    _write_agent(core, "code-reviewer", _agent_yaml("code-reviewer", tools="[Read, Raed]"))
+
+    violations = lint_agent_sources(tmp_path)
+
+    assert len(violations) == 1, violations
+    assert "tool(s) Raed resolve to nothing" in violations[0]
+    assert ".github/agents" in violations[0]
+    # The remedy has to name an accepted spelling, not just the refusal.
+    assert "Grep" in violations[0]

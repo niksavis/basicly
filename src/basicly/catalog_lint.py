@@ -220,7 +220,7 @@ def lint_catalog(repo_root: Path) -> list[str]:
             continue
         violations.append(
             f"{_rel(path, repo_root)}: agent sources must be agent.yaml or *.block.yaml, "
-            "not markdown (the projector renders .claude/agents)"
+            "not markdown (the projector renders the markdown into every agent root)"
         )
     for path in sorted((repo_root / RUBRICS_DIR).rglob("*.md")):
         violations.append(

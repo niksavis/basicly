@@ -109,7 +109,7 @@ scaffolded VS Code tasks/CI workflow (only when still unedited).
 - Generated agent instruction files (`CLAUDE.md`, `AGENTS.md`,
   `.github/copilot-instructions.md`) rendered from shared fragments.
 - Projected skills at `.claude/skills/` and `.agents/skills/`, and subagents at
-  `.claude/agents/`.
+  `.claude/agents/` and `.github/agents/`.
 - Activated hooks across three surfaces: git stages (pre-commit, commit-msg,
   pre-push — wired through the [pre-commit framework](https://pre-commit.com),
   whose config file is fixed at `.pre-commit-config.yaml`; the *tool* is named

@@ -1218,18 +1218,19 @@ def _remove_projected_skills(repo_root: Path) -> int:
 
 
 def _remove_projected_agents(repo_root: Path) -> int:
-    """Delete projected agent files (generated marker only; hand-authored stay)."""
-    base = repo_root / agents.AGENTS_OUTPUT_ROOT
-    if not base.is_dir():
-        return 0
+    """Delete projected agent files in every output root (generated marker only)."""
     removed = 0
-    for agent_md in sorted(base.glob("*.md")):
-        if agents.GENERATED_MARKER not in agent_md.read_text(encoding="utf-8"):
+    for out_root in agents.AGENTS_OUTPUT_ROOTS:
+        base = repo_root / out_root.path
+        if not base.is_dir():
             continue
-        agent_md.unlink()
-        removed += 1
-        print(f"Removed {_format_path(agent_md, repo_root)}")
-        _remove_empty_parents(agent_md.parent, repo_root)
+        for agent_md in sorted(base.glob(f"*{out_root.suffix}")):
+            if agents.GENERATED_MARKER not in agent_md.read_text(encoding="utf-8"):
+                continue
+            agent_md.unlink()
+            removed += 1
+            print(f"Removed {_format_path(agent_md, repo_root)}")
+            _remove_empty_parents(agent_md.parent, repo_root)
     return removed
 
 
@@ -1898,7 +1899,12 @@ def cmd_agents_list(_args: argparse.Namespace) -> int:
 
 
 def cmd_agents_build(_args: argparse.Namespace) -> int:
-    """Project agents from the core and overlay sources into .claude/agents."""
+    """Project agents from the core and overlay sources into every agent root.
+
+    There is no root-selection flag on purpose (unlike `skills-build`): the roots
+    are a fixed pair and `agents-check` compares both, so a partial build could
+    only ever manufacture drift (basicly-8sxf).
+    """
     repo_root = _repo_root()
     result, pruned = agents.sync_agents(repo_root, load_technology_selection(repo_root))
     for path in pruned:
@@ -3452,10 +3458,11 @@ def _add_lifecycle_parsers(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _add_agents_parsers(subparsers: argparse._SubParsersAction) -> None:
+    roots = ", ".join(root.path.as_posix() for root in agents.AGENTS_OUTPUT_ROOTS)
     subparsers.add_parser(
-        "agents-build", help="Project agents from .basicly/core/agents into .claude/agents"
+        "agents-build", help=f"Project agents from .basicly/core/agents into {roots}"
     )
-    subparsers.add_parser("agents-check", help="Check projected agents are up to date")
+    subparsers.add_parser("agents-check", help=f"Check projected agents are up to date in {roots}")
 
 
 def _add_skill_root_args(parser: argparse.ArgumentParser) -> None:
