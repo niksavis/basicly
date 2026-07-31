@@ -48,6 +48,7 @@ Three rules, all from the design:
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -954,6 +955,136 @@ def finalize_followup(
     return followup_id
 
 
+# --- The working-set band at dispatch (D8 at the dispatch, basicly-jr0l.16) ---
+#
+# The sizing governor refuses an out-of-band *plan* at decompose, and nothing used
+# to check the band again when a lane was dispatched — so the band bound only work
+# that arrived through decompose. A supervised pass over pre-existing leaf beads,
+# which is exactly what this module does over a ready set, started whatever the
+# scheduler ranked first at any size. Re-measured on this repo's own ready set with
+# the band at 8000..64000, the top-ranked lane estimates 108605 working-set tokens —
+# 70% over the ceiling a plan would have been refused for — and three of its
+# siblings are over it too. So the check belongs here, before anything spawns,
+# exactly where ``runner.run`` refuses a dispatch whose model tier resolves to
+# nothing (basicly-kjc5.59): cost is bounded by sizing the work, never by killing a
+# working agent.
+#
+# The two ends of the band deliberately earn different severities:
+#
+# - **Above the ceiling the dispatch is refused.** The run would overflow the very
+#   window it was sized against, so the tokens buy a partial answer at best. The
+#   remedy — split the package — is a decompose action no engine can take, so the
+#   lane is held by a *pending* queue item until a human takes it.
+# - **Below the floor the dispatch is escalated and then proceeds.** An under-size
+#   lane succeeds; it merely wastes the per-lane overhead that merging it with a
+#   sibling would have saved. Holding it would strand deliverable work behind a
+#   human answer over an economic inefficiency, and a ready set of small beads
+#   would wedge a whole supervised run — the expensive failure in the cheap
+#   direction.
+#
+# A lane whose scope cannot be read at all is **admitted**. That is not the same
+# indeterminate answer as an estimate that lands outside the band: 60 of this
+# repo's 87 open beads carry no ``## Scope`` section — including basicly-jr0l.16
+# itself — so failing closed on a missing estimate would turn a sizing governor
+# into a ban on hand-filed work, strictly worse than the gap it closes. The model
+# precedent refuses because a *declared* tier resolved to nothing; an absent scope
+# declares nothing to contradict.
+
+
+# The queue question an out-of-band lane asks, named once because
+# :func:`decisions.enqueue` keys items by (issue, kind, question) — a second copy of
+# this string would leak a pending item that nothing can find (basicly-jr0l.52).
+# The numbers stay in the *detail*, which is not part of the id, so re-deriving the
+# same pass finds the item it already queued instead of a fresh generation of it.
+# Every remedy it names changes the check's own inputs, deliberately: this is a
+# deterministic gate, so an answer releases the lane but never overrides the
+# arithmetic — a lane answered without a re-scope refuses again on its next pass.
+SIZING_QUESTION = "working set is outside the configured band: re-scope it or widen the band?"
+
+
+@dataclass(frozen=True)
+class WorkingSetAdmission:
+    """Whether a lane's estimated working set admits a dispatch (D8 at dispatch).
+
+    *violation* is :func:`policy.check_working_set`'s own guidance message, so the
+    band rule and its wording stay in one place; *refused* only classifies which end
+    of the band was crossed, which is what decides severity.
+    """
+
+    issue_id: str
+    # None when the bead's task class or declared ``## Scope`` cannot be read.
+    sizing: decompose.DispatchSizing | None
+    violation: str | None
+    refused: bool
+
+    @property
+    def record_inputs(self) -> dict[str, object]:
+        """The dispatch record's sizing keywords; empty when nothing was estimable."""
+        return {} if self.sizing is None else self.sizing.record_inputs()
+
+
+def admit_working_set(repo_root: Path, issue_id: str, sizing: SizingConfig) -> WorkingSetAdmission:
+    """Estimate *issue_id*'s working set and judge it against the band (pure read).
+
+    Reuses :func:`decompose.dispatch_sizing` — the same estimator whose forecast the
+    dispatch record already carries (basicly-jr0l.34) — so the number that gates a
+    dispatch and the number recorded beside its actual cannot disagree. That also
+    means no new tracker read: this *is* the read the dispatch already made, moved
+    ahead of the bundle.
+
+    Never raises. An unreadable tracker or tree yields an indeterminate admission
+    that admits, on the reasoning in this section's header.
+    """
+    resolved: decompose.DispatchSizing | None = None
+    with contextlib.suppress(RuntimeError, ValueError, OSError):
+        resolved = decompose.dispatch_sizing(repo_root, issue_id)
+    if resolved is None:
+        return WorkingSetAdmission(issue_id, None, None, refused=False)
+    estimate = resolved.estimate
+    violation = policy.check_working_set(issue_id, estimate.total, estimate.scope_tokens, sizing)
+    return WorkingSetAdmission(
+        issue_id,
+        resolved,
+        violation,
+        # `check_working_set` still decides *whether* the band was crossed; this
+        # comparison only says which end, because only the ceiling refuses.
+        refused=violation is not None and estimate.total > sizing.working_set_max,
+    )
+
+
+def escalate_working_set(
+    repo_root: Path, admission: WorkingSetAdmission
+) -> decisions.DecisionItem | None:
+    """Queue an out-of-band lane's sizing verdict; None when it fits or is unknown.
+
+    A refusal stays **pending**, and that is what holds the lane: ``ready_lanes``
+    drops a lane with an unanswered item, so the package is not dispatched again
+    until someone re-scopes it. The under-size advisory is retired by the engine in
+    the same breath — recorded for the audit trail, charged to the delegated column
+    rather than a human's wait (D11), and out of ``has_pending`` — the same disposal
+    :func:`resolve_stall_flag` makes of its own moot question.
+    """
+    if admission.violation is None:
+        return None
+    item = decisions.enqueue(
+        repo_root,
+        admission.issue_id,
+        "escalation",
+        SIZING_QUESTION,
+        admission.violation,
+        human_required=admission.refused,
+    )
+    if not admission.refused:
+        decisions.answer(
+            repo_root,
+            item.decision_id,
+            "dispatched anyway: under-cutting the floor wastes per-lane overhead, "
+            "but the package is deliverable and holding it would strand it",
+            by=decisions.ENGINE_BY,
+        )
+    return item
+
+
 # --- Concurrent dispatch: fan ready lanes out up to the cap ------------------
 
 
@@ -976,6 +1107,11 @@ class LaneOutcome:
     # no runner ran, so a null result means "nothing to implement", not
     # "the dispatch failed" (basicly-kjc5.18).
     dispatched: bool = True
+    # True when the engine refused to start this lane at all — nothing spawned, and
+    # a queue item now holds it. Distinct from a failed run (basicly-jr0l.16): a
+    # deterministic refusal cannot be fixed by re-running it, so it must route to
+    # the queue rather than burn the bounded dispatch retries.
+    refused: bool = False
 
 
 def ready_lanes(
@@ -1423,6 +1559,27 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
             followup_id=None,
             detail=f"worktree {lane.binding.name!r} has no session record; re-provision the lane",
         )
+    # Sized before the dispatch, not after: the estimate has to describe the tree the
+    # agent was handed, not the one it left behind (basicly-kjc5.30). And before the
+    # bundle rather than beside the run, because the band now *gates* the dispatch
+    # (basicly-jr0l.16) — a refusal should cost no prompt assembly, for the same
+    # reason ``runner.run`` resolves its model before it spawns anything.
+    admission = admit_working_set(repo_root, lane.issue_id, sizing)
+    queued = escalate_working_set(repo_root, admission)
+    if admission.refused:
+        held = f"; held by {queued.decision_id}" if queued is not None else ""
+        return LaneOutcome(
+            issue_id=lane.issue_id,
+            runner_name=spec.name,
+            result=None,
+            needs_fact=None,
+            occupancy=None,
+            overrun=False,
+            followup_id=None,
+            detail=f"dispatch refused before it started: {admission.violation}{held}",
+            refused=True,
+        )
+    lane_sizing = admission.record_inputs
     known = frozenset({session.root_issue, *(cid for cid, _ in session.children)})
     bundle = build_bundle(repo_root, lane.issue_id, known_ids=known)
     cwd = Path(record.worktree_path)
@@ -1437,9 +1594,6 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
             repo_root, lane.issue_id, runner_config.stall_after, runner_config.runner_timeout
         ),
     )
-    # Read before the dispatch, not after: the sizing has to describe the tree the
-    # agent was handed, not the one it left behind (basicly-kjc5.30).
-    lane_sizing = loop.sizing_at_dispatch(repo_root, lane.issue_id)
     with watchdog, runner.process_budget().slot(runner.LANE):
         result = runner.run(
             spec, bundle.prompt, cwd, capture_usage=True, timeout=runner_config.runner_timeout
@@ -1876,8 +2030,16 @@ def _route_one(
         return RoutedOutcome(issue_id, "handoff", outcome.detail)
     # Held-by-the-queue shapes come before the failure branch: a nonzero exit
     # that also wrote the sentinel is waiting on the fact, not on a retry —
-    # burning a dispatch-rework attempt on it would be double jeopardy.
-    if (result is not None and result.timed_out) or outcome.needs_fact is not None:
+    # burning a dispatch-rework attempt on it would be double jeopardy. A lane the
+    # engine refused on its size is the same shape for a stronger reason
+    # (basicly-jr0l.16): the refusal is deterministic arithmetic, so every retry
+    # would reach the identical verdict and only delay the escalation that already
+    # holds the lane.
+    if (
+        outcome.refused
+        or (result is not None and result.timed_out)
+        or outcome.needs_fact is not None
+    ):
         return RoutedOutcome(issue_id, "decision", outcome.detail)
     if result is None or result.returncode != 0:
         return _route_failed(repo_root, issue_id, outcome)

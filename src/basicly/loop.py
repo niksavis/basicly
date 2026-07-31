@@ -529,9 +529,11 @@ def _run_agent(ctx: _Ctx, issue_id: str, cwd: Path) -> _Dispatch:
 def sizing_at_dispatch(repo_root: Path, issue_id: str) -> dict[str, object]:
     """The bead's sizing inputs as ``record_dispatch`` keywords, empty when unreadable.
 
-    Shared with the supervisor's lane dispatch, so the two dispatch sites that size
-    real packages record the same fields — the forecast landing on only one of them
-    would leave exactly the expensive lane runs unpairable (basicly-jr0l.34).
+    The keywords themselves come from :meth:`decompose.DispatchSizing.record_inputs`,
+    which is what keeps this identical to the supervisor's lane dispatch — that one
+    resolves the same sizing to *gate* on it (basicly-jr0l.16) and records the
+    verdict's own numbers, so a forecast reaching only one of the two sites would
+    leave exactly the expensive lane runs unpairable (basicly-jr0l.34).
 
     Telemetry on the critical path, so it never raises: a bead with no readable
     ``## Scope`` section records nothing and calibration falls back to measuring the
@@ -540,12 +542,7 @@ def sizing_at_dispatch(repo_root: Path, issue_id: str) -> dict[str, object]:
     with contextlib.suppress(RuntimeError, ValueError, OSError):
         sizing = decompose.dispatch_sizing(repo_root, issue_id)
         if sizing is not None:
-            return {
-                "scope_tokens": sizing.estimate.scope_tokens,
-                "forecast_tokens": sizing.estimate.total,
-                "task_class": sizing.task_class,
-                "forecast_source": sizing.source,
-            }
+            return sizing.record_inputs()
     return {}
 
 

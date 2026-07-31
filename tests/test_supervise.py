@@ -22,6 +22,7 @@ import pytest
 
 from basicly import (
     decisions,
+    decompose,
     loop,
     loop_state,
     merge,
@@ -619,6 +620,22 @@ def _sizing(ceiling: float = 0.6) -> SizingConfig:
     )
 
 
+def _dispatch_sizing(total: int, scope_tokens: int = 1_000) -> decompose.DispatchSizing:
+    """A lane sizing whose working set is exactly *total* tokens.
+
+    Built by naming the total the band is judged against, so a band test never has
+    to reproduce ``CostEstimate``'s overhead-plus-factor arithmetic to land on one
+    side of a threshold.
+    """
+    return decompose.DispatchSizing(
+        task_class="task",
+        estimate=decompose.CostEstimate(
+            scope_tokens=scope_tokens, overhead_tokens=total - scope_tokens, build_factor=1.0
+        ),
+        source=decompose.DISPATCH_FORECAST,
+    )
+
+
 def test_ceiling_tokens_is_the_window_fraction() -> None:
     """The finalize trigger is context_ceiling of the runner's window."""
     claude = next(s for s in runner.BUILTIN_RUNNERS if s.name == "claude")
@@ -1058,8 +1075,11 @@ def _worker_fixture(
     # The lane's sizing read reaches the real br binary (basicly-jr0l.34), and this
     # fixture stands in for the whole dispatch environment. Left live, every
     # supervise test would spawn a subprocess and contend on br's machine-global
-    # lock — enough to perturb the stall-watchdog timing tests in this file.
-    monkeypatch.setattr(supervise.loop, "sizing_at_dispatch", lambda *_a: {})
+    # lock — enough to perturb the stall-watchdog timing tests in this file. Stubbed
+    # at the estimator rather than at the recorded keywords, because the band gate
+    # now reads the same call (basicly-jr0l.16); None is the unreadable-scope answer,
+    # which admits the dispatch and records no sizing, exactly as before.
+    monkeypatch.setattr(supervise.decompose, "dispatch_sizing", lambda *_a: None)
     return br, seen
 
 
@@ -3077,6 +3097,12 @@ def test_stalled_lane_is_flagged_while_the_dispatch_still_completes(
 
     monkeypatch.setattr(supervise.worktree, "load_session", lambda *_a, **_k: _WtSession())
     monkeypatch.setattr(supervise.loop, "record_run", lambda *_a, **_k: None)
+    # The band gate reads the estimator before the dispatch (basicly-jr0l.16), and
+    # `decompose` keeps its own br alias — left live this timing test would spawn a
+    # real br and contend on its machine-global lock. In-band, so the lane dispatches.
+    monkeypatch.setattr(
+        supervise.decompose, "dispatch_sizing", lambda *_a: _dispatch_sizing(20_000)
+    )
     # A dispatch that runs long enough to be sampled and makes no progress.
     monkeypatch.setattr(supervise, "lane_activity", lambda _cwd: "frozen")
 
@@ -3123,14 +3149,7 @@ def test_dispatch_lane_records_its_forecast_beside_its_actual(
     captured: dict = {}
     monkeypatch.setattr(supervise.loop, "record_run", lambda *_a, **kw: captured.update(kw))
     monkeypatch.setattr(
-        supervise.loop,
-        "sizing_at_dispatch",
-        lambda *_a: {
-            "scope_tokens": 9_000,
-            "forecast_tokens": 21_000,
-            "task_class": "task",
-            "forecast_source": "dispatch",
-        },
+        supervise.decompose, "dispatch_sizing", lambda *_a: _dispatch_sizing(21_000, 9_000)
     )
 
     supervise._dispatch_lane(tmp_path, _session(_lane("epic.1")), _lane("epic.1"), codex, _sizing())
@@ -3138,3 +3157,192 @@ def test_dispatch_lane_records_its_forecast_beside_its_actual(
     assert captured["forecast_tokens"] == 21_000
     assert captured["task_class"] == "task"
     assert captured["forecast_source"] == "dispatch"
+
+
+# --- The working-set band at dispatch (basicly-jr0l.16) ------------------------
+#
+# The D8 sizing governor refused an out-of-band decompose *plan*, so the band bound
+# only work that arrived through decompose; a supervised pass over pre-existing leaf
+# beads started whatever the scheduler ranked first at any size. Measured on this
+# repo's own ready set at 8000..64000, the top-ranked lane estimated 108605
+# working-set tokens and the supervisor would have started it without a word.
+
+
+def _band_fixture(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    sizing: decompose.DispatchSizing | None,
+    *,
+    spawn_is_a_failure: bool = False,
+) -> list[str]:
+    """A lane dispatch environment whose estimator answers *sizing*.
+
+    Returns the list every spawn appends its runner name to. With
+    *spawn_is_a_failure* the spawn **raises**: a refusal is only proved by making a
+    started process the failure, never by reading back a flag the test itself set.
+    """
+    _install_br(monkeypatch, _FakeBr({"epic.1": _issue("epic.1")}))
+    monkeypatch.setattr(decisions, "_notify", lambda *_a, **_k: None)
+    monkeypatch.setattr(policy, "record_wait", lambda *_a, **_k: None)
+    (tmp_path / "wt").mkdir(exist_ok=True)
+
+    class _WtSession:
+        worktree_path = str(tmp_path / "wt")
+
+    monkeypatch.setattr(supervise.worktree, "load_session", lambda *_a, **_k: _WtSession())
+    monkeypatch.setattr(
+        supervise, "build_bundle", lambda *_a, **_k: supervise.DispatchBundle("epic.1", "p", ())
+    )
+    monkeypatch.setattr(supervise.loop, "record_run", lambda *_a, **_k: None)
+    monkeypatch.setattr(supervise.decompose, "dispatch_sizing", lambda *_a: sizing)
+    spawned: list[str] = []
+
+    def spawn(spec, _prompt, _cwd, **_kw):
+        spawned.append(spec.name)
+        if spawn_is_a_failure:
+            raise AssertionError(f"a refused lane must not start {spec.name}")
+        return runner.RunResult(spec.name, (spec.name,), executed=True, returncode=0, stdout="")
+
+    monkeypatch.setattr(supervise.runner, "run", spawn)
+    return spawned
+
+
+def _dispatch_epic1(tmp_path: Path) -> supervise.LaneOutcome:
+    return supervise._dispatch_lane(
+        tmp_path, _session(_lane("epic.1")), _lane("epic.1"), _codex(), _sizing()
+    )
+
+
+def test_dispatch_refuses_a_lane_above_the_working_set_ceiling(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The acceptance criterion, expensive end: no process starts, and it says why.
+
+    Over-size is the direction that costs money — the run would overflow the very
+    window it was sized against — so the band blocks rather than advises, the same
+    shape as refusing a dispatch whose model tier resolves to nothing
+    (basicly-kjc5.59).
+    """
+    spawned = _band_fixture(
+        monkeypatch, tmp_path, _dispatch_sizing(100_000), spawn_is_a_failure=True
+    )
+
+    outcome = _dispatch_epic1(tmp_path)
+
+    assert spawned == []  # nothing was started, so nothing was spent
+    assert outcome.refused is True
+    assert outcome.result is None
+    # Both numbers the operator has to act on: the estimate and the band it broke.
+    assert "100000" in outcome.detail
+    assert "64000" in outcome.detail
+    assert "refused" in outcome.detail
+    # And it is held, not merely reported: an unanswered item drops the lane from
+    # the ready set, so the next pass does not re-derive the same refusal.
+    items = decisions.items_on(tmp_path, "epic.1")
+    assert [(i.kind, i.pending) for i in items] == [("escalation", True)]
+    assert decisions.has_pending(tmp_path, "epic.1") is True
+    assert items[0].decision_id in outcome.detail
+
+
+def test_dispatch_escalates_but_still_runs_a_lane_below_the_floor(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The acceptance criterion, cheap end: escalated, recorded, and not wedged.
+
+    An under-size lane succeeds; it only wastes the per-lane overhead a merge with a
+    sibling would have saved. Blocking it would strand deliverable work behind a
+    human answer, and a ready set of small beads would wedge a whole supervised run —
+    so the advisory is recorded and retired by the engine in the same breath.
+    """
+    spawned = _band_fixture(monkeypatch, tmp_path, _dispatch_sizing(3_000))
+
+    outcome = _dispatch_epic1(tmp_path)
+
+    assert spawned == ["codex"]  # the work still ran
+    assert outcome.refused is False
+    assert outcome.detail == "finished; ready to land"
+    items = decisions.items_on(tmp_path, "epic.1")
+    assert len(items) == 1
+    assert items[0].kind == "escalation"
+    assert "3000" in items[0].detail  # the estimate...
+    assert "8000" in items[0].detail  # ...and the band it broke
+    # Retired by the engine, so it never lands in a human's wait column and never
+    # holds the lane out of the next pass.
+    assert items[0].answered_by == decisions.ENGINE_BY
+    assert decisions.has_pending(tmp_path, "epic.1") is False
+
+
+def test_dispatch_runs_an_in_band_lane_without_a_word(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The control: a lane inside the band dispatches with nothing queued.
+
+    Without this, a gate that refused *everything* would pass every other test in
+    this section.
+    """
+    spawned = _band_fixture(monkeypatch, tmp_path, _dispatch_sizing(20_000))
+
+    outcome = _dispatch_epic1(tmp_path)
+
+    assert spawned == ["codex"]
+    assert outcome.refused is False
+    assert decisions.items_on(tmp_path, "epic.1") == ()
+
+
+def test_dispatch_admits_a_lane_whose_working_set_cannot_be_estimated(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An unreadable scope admits — a missing estimate is not an out-of-band one.
+
+    60 of this repo's 87 open beads carry no ``## Scope`` section, so failing closed
+    here would turn a sizing governor into a ban on hand-filed work: strictly worse
+    than the gap it closes. The model precedent refuses because a *declared* tier
+    resolved to nothing; an absent scope declares nothing to contradict.
+    """
+    spawned = _band_fixture(monkeypatch, tmp_path, None)
+
+    outcome = _dispatch_epic1(tmp_path)
+
+    assert spawned == ["codex"]
+    assert outcome.refused is False
+    assert decisions.items_on(tmp_path, "epic.1") == ()
+
+
+def test_dispatch_admits_a_lane_whose_estimator_cannot_be_read(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A broken tracker read must not wedge the whole supervised run either."""
+
+    def unreadable(*_a: object) -> decompose.DispatchSizing:
+        raise RuntimeError("br export failed")
+
+    spawned = _band_fixture(monkeypatch, tmp_path, None)
+    monkeypatch.setattr(supervise.decompose, "dispatch_sizing", unreadable)
+
+    assert _dispatch_epic1(tmp_path).refused is False
+    assert spawned == ["codex"]
+
+
+def test_route_a_refused_lane_to_the_queue_rather_than_a_retry(tmp_path: Path) -> None:
+    """A deterministic refusal cannot be re-run into a pass, so it must not retry.
+
+    Every retry would reach the identical verdict and only delay the escalation that
+    already holds the lane — and a retriable route would keep the standing loop
+    spinning on a lane nothing can change.
+    """
+    refused = supervise.LaneOutcome(
+        issue_id="epic.1",
+        runner_name="codex",
+        result=None,
+        needs_fact=None,
+        occupancy=None,
+        overrun=False,
+        followup_id=None,
+        detail="dispatch refused before it started",
+        refused=True,
+    )
+
+    routed = supervise.route_outcomes(tmp_path, _session(_lane("epic.1")), (refused,))
+
+    assert [r.route for r in routed] == ["decision"]
+    assert supervise.should_continue(routed) is False

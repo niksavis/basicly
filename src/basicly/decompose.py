@@ -563,6 +563,20 @@ class DispatchSizing:
     # :data:`FROZEN_FORECAST` or :data:`DISPATCH_FORECAST`.
     source: str
 
+    def record_inputs(self) -> dict[str, object]:
+        """These inputs as ``record_dispatch`` keywords.
+
+        On the sizing itself rather than at each dispatch site: both sites record
+        the same four fields, and a second copy of this mapping is precisely how
+        the two would drift apart (basicly-jr0l.16).
+        """
+        return {
+            "scope_tokens": self.estimate.scope_tokens,
+            "forecast_tokens": self.estimate.total,
+            "task_class": self.task_class,
+            "forecast_source": self.source,
+        }
+
 
 def dispatch_sizing(repo_root: Path, issue_id: str) -> DispatchSizing | None:
     """*issue_id*'s class and working-set forecast as of now, or None when unreadable.
