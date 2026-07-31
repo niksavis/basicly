@@ -2929,6 +2929,74 @@ def test_flag_stalled_lane_queues_one_item_and_names_the_hard_kill(
     assert first.pending  # it is the human's to act on
 
 
+def test_a_stall_flag_is_retired_once_its_dispatch_has_ended(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The flag asks about a hard kill that can no longer arrive, so it must not linger.
+
+    Left pending, ``has_pending`` drops the lane from ``ready_lanes`` and from the
+    carry, parking a lane that was merely slow on a question with no live subject.
+    """
+    br = _FakeBr({"epic.1": _issue("epic.1")})
+    _install_br(monkeypatch, br)
+    monkeypatch.setattr(decisions, "_notify", lambda *_a, **_k: None)
+    flagged = supervise.flag_stalled_lane(tmp_path, "epic.1", 900.0, 3600.0)
+    assert flagged.pending
+    assert decisions.has_pending(tmp_path, "epic.1")
+
+    disposed = supervise.resolve_stall_flag(tmp_path, "epic.1")
+
+    assert disposed == (flagged.decision_id,)
+    assert not decisions.has_pending(tmp_path, "epic.1")  # the lane is dispatchable again
+    # Answered, not deleted: the audit trail still shows the lane was flagged.
+    item = decisions.get(tmp_path, flagged.decision_id)
+    assert item is not None and not item.pending
+    assert item.answered_by == decisions.ENGINE_BY
+
+
+def test_retiring_a_stall_flag_is_idempotent_and_leaves_other_items_alone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """It may only retire its own moot question — never a live one.
+
+    The hard-kill item asks something a human still has to answer, so the engine must
+    walk past it. Answering that would be the engine disposing of a real decision.
+    """
+    br = _FakeBr({"epic.1": _issue("epic.1")})
+    _install_br(monkeypatch, br)
+    monkeypatch.setattr(decisions, "_notify", lambda *_a, **_k: None)
+    supervise.flag_stalled_lane(tmp_path, "epic.1", 900.0, 3600.0)
+    hard_kill = decisions.enqueue(
+        tmp_path, "epic.1", "stall", "runner claude hit runner_timeout (3600s): retry?"
+    )
+
+    assert len(supervise.resolve_stall_flag(tmp_path, "epic.1")) == 1
+    assert supervise.resolve_stall_flag(tmp_path, "epic.1") == ()  # nothing left to retire
+
+    still_open = decisions.get(tmp_path, hard_kill.decision_id)
+    assert still_open is not None and still_open.pending
+
+
+def test_an_engine_retired_stall_flag_is_not_charged_as_human_wait(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No human waited on it, so counting the interval would overstate human wait (D11)."""
+    br = _FakeBr({"epic.1": _issue("epic.1")})
+    _install_br(monkeypatch, br)
+    monkeypatch.setattr(decisions, "_notify", lambda *_a, **_k: None)
+    recorded: list = []
+    monkeypatch.setattr(
+        policy, "record_wait", lambda *_a, **kwargs: recorded.append(kwargs) or None
+    )
+    supervise.flag_stalled_lane(tmp_path, "epic.1", 900.0, 3600.0)
+
+    supervise.resolve_stall_flag(tmp_path, "epic.1")
+
+    assert len(recorded) == 1
+    assert recorded[0]["delegated"] is True
+    assert recorded[0]["by"] == decisions.ENGINE_BY
+
+
 def test_stalled_lane_is_flagged_while_the_dispatch_still_completes(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -2979,3 +3047,10 @@ def test_stalled_lane_is_flagged_while_the_dispatch_still_completes(
     assert outcome.result is not None
     assert outcome.result.returncode == 0
     assert outcome.result.stdout == "done"
+    # ...and the flag did not outlive the dispatch. This is the held-landing case:
+    # the run finished green and nothing merged it, which is exactly when the stale
+    # item used to park the lane on a hard kill that could no longer arrive
+    # (basicly-jr0l.52). The record survives; only the pending question does not.
+    assert not stalls[0].pending
+    assert stalls[0].answered_by == decisions.ENGINE_BY
+    assert not decisions.has_pending(tmp_path, "epic.1")  # the next pass dispatches it

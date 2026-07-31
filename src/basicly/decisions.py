@@ -236,7 +236,10 @@ def _record_wait(repo_root: Path, item: DecisionItem, by: str) -> None:
 
     A delegated answer is recorded as one: the decider disposing of an item is the
     wait an autonomy grant removed from the human's column, which is the whole
-    point of measuring the two apart.
+    point of measuring the two apart. The engine retiring its own moot question
+    counts the same way and for the same reason — no human waited on it, so charging
+    the interval to the human column would overstate the very number the wait meter
+    exists to measure (basicly-jr0l.52).
     """
     policy.record_wait(
         repo_root,
@@ -246,7 +249,7 @@ def _record_wait(repo_root: Path, item: DecisionItem, by: str) -> None:
         subject=item.kind,
         requested_at=item.queued_at,
         by=by,
-        delegated=by.startswith(DECIDER_BY_PREFIX),
+        delegated=by.startswith(DECIDER_BY_PREFIX) or by == ENGINE_BY,
     )
 
 
@@ -404,6 +407,13 @@ def _notify(repo_root: Path, item: DecisionItem) -> None:
 # The decider's attribution prefix; answers it records count against
 # [policy] decider_max_decisions.
 DECIDER_BY_PREFIX = "decider:"
+
+# Attribution for an item the engine itself disposes of because the fact it asked
+# about stopped being actionable — not a judgment, so it is deliberately *not* a
+# decider answer and never counts against the decider budget (basicly-jr0l.52).
+# It carries no model authority: the engine may only retire its own moot questions,
+# never answer one that still has a live subject.
+ENGINE_BY = "engine"
 
 
 @dataclass(frozen=True)
