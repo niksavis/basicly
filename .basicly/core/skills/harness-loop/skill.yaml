@@ -172,6 +172,15 @@ instructions: |
   > with no commit) makes the landing block with "commit the work on
   > `<branch>` before landing"; it no longer misreports it as a rebase
   > conflict or spends a rework attempt on it (basicly-4psl).
+  >
+  > **A change to the landing-scoring code is scored by the pre-merge version.**
+  > `loop run` imports `merge`/`verify`/`loop` from base at process start and
+  > never reloads them, so the landing that merges your fix to those modules ran
+  > the *old* code. Do not read that verdict as evidence the fix is broken, and
+  > do not spend rework retrying it — on basicly-kjc5.56 that burned the whole
+  > budget proving nothing. Exercise the new behaviour by calling it from base
+  > *after* the merge, then record the gate with
+  > `basicly verify --mode full --issue <id>` from base and `loop advance`.
 
   Leaf types (bug/chore/task) build directly in their own worktree; features
   decompose into children and, once every child closes, land the child worktrees
