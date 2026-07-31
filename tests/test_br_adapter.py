@@ -142,7 +142,17 @@ def test_export_comment_texts_reads_only_well_formed_comments() -> None:
 
 # --- br's clock-skew rejection (basicly-jr0l.41) -------------------------------
 
-_SKEW_STDERR = "Error: Validation failed: updated_at: cannot be before created_at"
+# br's real output, copied from an observed failure rather than composed (basicly-aswc).
+# The previous fixture read "Error: Validation failed: updated_at: cannot be before
+# created_at", which br has never printed — it prints a Rust struct with the field and
+# the message as separate members. Every test below passed against that invented string
+# while the recogniser matched nothing in the field, so the retry was dead code and the
+# suite said otherwise. A fixture for a dependency's error text has to be observed.
+_SKEW_STDERR = (
+    'Error: Validation errors: [ValidationError { field: "updated_at", message: '
+    '"cannot be before created_at" }, ValidationError { field: "closed_at", message: '
+    '"cannot be before created_at" }]'
+)
 
 
 def _skewed_run(monkeypatch: pytest.MonkeyPatch, failures: int, stderr: str) -> list[list[str]]:
@@ -269,3 +279,53 @@ def test_a_soft_call_site_tolerates_the_same_skew(
 
     assert proc is not None and proc.returncode == 0
     assert len(calls) == 2
+
+
+# --- the recogniser must match what br actually prints (basicly-aswc) --------
+
+
+def test_the_recogniser_matches_the_error_br_really_emits() -> None:
+    """The regression: the marker never appeared in br's output, so nothing was retried.
+
+    Pinned against the observed text directly, not through the retry loop, because
+    the loop passed for two releases while this returned False — a fixture composed
+    from the field name and the message joined by a colon matched the recogniser and
+    nothing else.
+    """
+    proc = subprocess.CompletedProcess(["br"], 1, "", _SKEW_STDERR)
+    assert br._is_clock_skew(proc) is True
+
+
+def test_the_recogniser_matches_the_message_on_closed_at_alone() -> None:
+    """A `br close` reports the same message against closed_at; that is still the skew."""
+    stderr = (
+        'Error: Validation errors: [ValidationError { field: "closed_at", '
+        'message: "cannot be before created_at" }]'
+    )
+    assert br._is_clock_skew(subprocess.CompletedProcess(["br"], 1, "", stderr)) is True
+
+
+def test_the_recogniser_reads_stdout_as_well_as_stderr() -> None:
+    """Validation failures have arrived on either stream; neither may be missed."""
+    proc = subprocess.CompletedProcess(["br"], 1, _SKEW_STDERR, "")
+    assert br._is_clock_skew(proc) is True
+
+
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        "Error: issue not found",
+        # A validation error that is not a backwards clock step: the message is the
+        # discriminator, and a widened matcher that keyed off the field alone would
+        # retry this one until the deadline.
+        'Error: Validation errors: [ValidationError { field: "updated_at", '
+        'message: "must be an RFC3339 timestamp" }]',
+        # ...and the mirror case: the right message attributed to a field that has
+        # nothing to do with timestamp ordering.
+        'Error: Validation errors: [ValidationError { field: "title", '
+        'message: "cannot be before created_at" }]',
+    ],
+)
+def test_an_unrelated_failure_is_not_read_as_clock_skew(stderr: str) -> None:
+    """This is one defect's escape hatch, not a retry policy for every br error."""
+    assert br._is_clock_skew(subprocess.CompletedProcess(["br"], 1, "", stderr)) is False

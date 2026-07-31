@@ -133,14 +133,37 @@ def _spawn(
 # deadline below can stop being a guess. Requirements input for the replacement
 # (basicly-vkh0.6), which must never branch on a wall-clock comparison at all —
 # the rule D3 already states for the event log.
-_CLOCK_SKEW_MARKER = "updated_at: cannot be before created_at"
+# Recognised from the *message* plus a timestamp field it was reported against, not
+# from one joined phrase (basicly-aswc). The phrase this used to look for —
+# "updated_at: cannot be before created_at" — never appears in br's output: br prints
+# a Rust struct, `ValidationError { field: "updated_at", message: "cannot be before
+# created_at" }`, so the substring was absent, :func:`_is_clock_skew` always answered
+# False, and everything above was dead code on the only error it exists for. That is
+# why the defect recurred after both basicly-jr0l.41 and basicly-jr0l.42 "fixed" it,
+# and why jr0l.42's attempt-count instrumentation would have read zero attempts.
+# Matching the two halves independently survives a re-spelling of the wrapper.
+_CLOCK_SKEW_MESSAGE = "cannot be before created_at"
+# br reports the same message against `closed_at` as well, in the same response: a
+# `br close` on a backwards-stepped clock fails on both fields at once.
+_CLOCK_SKEW_FIELDS = ("updated_at", "closed_at")
 _CLOCK_SKEW_DEADLINE_S = 5.0
 _CLOCK_SKEW_FIRST_WAIT_S = 0.05
 _CLOCK_SKEW_MAX_WAIT_S = 1.0
 
 
 def _is_clock_skew(proc: subprocess.CompletedProcess[str]) -> bool:
-    return _CLOCK_SKEW_MARKER in f"{proc.stderr or ''}{proc.stdout or ''}"
+    """True when br refused this write because the host clock stepped backwards.
+
+    Deliberately narrow: the timestamp-ordering message *and* a timestamp field it was
+    reported against must both be present, so an unrelated validation failure still
+    fails fast instead of being retried until the deadline. The message alone would
+    not do — it has to be attributed to a timestamp field rather than to some later
+    field that reuses the wording.
+    """
+    output = f"{proc.stderr or ''}{proc.stdout or ''}"
+    if _CLOCK_SKEW_MESSAGE not in output:
+        return False
+    return any(field in output for field in _CLOCK_SKEW_FIELDS)
 
 
 def _spawn_tolerating_clock_skew(
