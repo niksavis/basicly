@@ -3,9 +3,11 @@
 Agents are authored as non-discoverable ``agent.yaml`` sources whose body is
 composed from shared building blocks (``*.block.yaml``) filling five ordered
 slots. The projector renders each agent to ``.claude/agents/<slug>.md`` only —
-the one root Claude Code and VS Code both parse natively — per the
-single-source emission policy (basicly-2f4): a second root would double-load
-in VS Code, which dedupes only skills.
+the one root Claude Code and VS Code both parse natively — decided in
+basicly-ajq on the single-source precedent of basicly-2f4: a second
+Claude-format root would double-load in VS Code, which dedupes only skills.
+Portability is kept in the *content* instead (the portable frontmatter core and
+the 30,000-char body cap), not by emitting a second copy.
 """
 
 from __future__ import annotations
@@ -20,8 +22,28 @@ from .schema import ValidationError, technology_selected, validate_technologies
 
 CORE_AGENTS_DIR = Path(".basicly/core/agents")
 OVERLAY_AGENTS_DIR = Path(".basicly-local/agents")
-# Single output root (basicly-2f4 policy): Claude Code reads only .claude/agents
-# and VS Code parses the same files natively, so one copy serves both.
+# Single output root, decided in basicly-ajq on the basicly-2f4 precedent:
+# Claude Code reads only .claude/agents and VS Code parses the same files
+# natively, so one copy serves both. Note that basicly-2f4 is not a
+# one-root-everywhere rule — it dual-emits skills precisely because Claude and
+# Codex have separate readers. The other native subagent roots were weighed and
+# declined, so re-opening this needs new facts, not a fresh reading:
+#   - .github/agents/*.md (GitHub cloud agent): the same markdown format but a
+#     separate root; basicly-ajq kept one root and bought portability in the
+#     content instead (portable frontmatter core + MAX_BODY_CHARS).
+#   - .codex/agents/*.toml (codex project subagents), decided in basicly-crkl
+#     (2026-07-31): a different serialization whose documented field set is
+#     name/description/developer_instructions. With no `tools` equivalent, a
+#     codex copy would silently drop the mandatory allowlist this module
+#     validates against a read-only posture (WRITE_TOOLS) — a lost guarantee,
+#     not just a format cost — and would fork the renderer, the drift check
+#     (agents-check would need skills-check's --all-default-roots treatment or a
+#     codex root drifts unnoticed) and the HTML-comment GENERATED_MARKER. The
+#     roster that grows this tier is deliberately catalog-source prompts, not
+#     agent-native files (docs/plan/implementation-plan.md, Phase 5), so codex
+#     gets the same guidance through AGENTS.md and .agents/skills. Reopen only
+#     for a real codex consumer whose need survives losing the tool allowlist.
+# Either way this costs no always-on budget: subagents are on-demand files.
 AGENTS_OUTPUT_ROOT = Path(".claude/agents")
 AGENT_SOURCE_FILE = "agent.yaml"
 BLOCK_SOURCE_GLOB = "*.block.yaml"

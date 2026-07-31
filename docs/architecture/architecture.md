@@ -580,10 +580,24 @@ hand-edited — from YAML sources:
   (omitted from output); a `claude:` map passes Claude-only frontmatter
   (e.g. `memory`, `maxTurns`) through verbatim.
 - **Emission**: `.claude/agents/<slug>.md` only — the single root Claude Code
-  and VS Code both parse natively (same single-source policy as
-  `basicly-2f4`; a second root would double-load in VS Code, which dedupes
-  only skills). Rendered files carry the generated marker inside the
-  `protect-generated` hook's scan window, so tool-time edits are blocked.
+  and VS Code both parse natively (decided in `basicly-ajq` on the
+  `basicly-2f4` precedent; a second Claude-format root would double-load in VS
+  Code, which dedupes only skills). Rendered files carry the generated marker
+  inside the `protect-generated` hook's scan window, so tool-time edits are
+  blocked. **The other native subagent roots are declined, not overlooked**:
+  `.github/agents/*.md` (GitHub cloud agent) reads the same format but is a
+  separate root, and `basicly-ajq` chose to buy portability in the content
+  instead — the portable frontmatter core plus the 30,000-char cap.
+  `.codex/agents/*.toml` was decided against in `basicly-crkl` (2026-07-31):
+  its documented field set (`name`, `description`, `developer_instructions`)
+  has no `tools` equivalent, so a codex copy would silently drop the mandatory
+  allowlist the lint checks against a `Read-only` posture — a lost guarantee,
+  not a format cost — while forking the renderer, the drift check and the
+  generated marker. The roster that grows this tier is deliberately
+  catalog-source prompts rather than agent-native files
+  ([plan](../plan/implementation-plan.md) Phase 5), so codex receives the same
+  guidance through `AGENTS.md` and `.agents/skills`. Neither root costs
+  always-on budget: subagent files are on-demand.
 - **Lint** (`catalog lint`): schema validation for both source kinds, plus
   composition rules — block refs must resolve, a `Read-only` posture may not
   grant write tools, and the composed body must stay under 30,000 characters
