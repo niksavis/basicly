@@ -2190,6 +2190,13 @@ def _cmd_policy_gate(args: argparse.Namespace) -> int:
     for verdict in status.advisory:
         state = "pass" if verdict.passed else "fail"
         print(f"advisory: {verdict.gate} [{verdict.provider}] = {state}")
+    for verdict in status.disregarded:
+        state = "pass" if verdict.passed else "fail"
+        print(
+            f"DISREGARDED: {verdict.gate} [{verdict.provider}] = {state} — a required "
+            "gate counts only the engine's own result; re-run `basicly verify "
+            f"--issue {args.issue}` from the base checkout to record one"
+        )
     if status.can_advance:
         print("advance: ALLOWED")
         return 0

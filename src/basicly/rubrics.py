@@ -31,7 +31,7 @@ import yaml
 
 from . import br, runner, verify
 from .catalog import bundled_catalog_root
-from .config import VerifyCheck, load_runner_config
+from .config import RUBRIC_GATE_PROVIDER, VerifyCheck, load_runner_config
 
 RUBRICS_DIRNAME = "rubrics"
 RUBRIC_GLOB = "*.rubric.yaml"
@@ -66,7 +66,10 @@ RUBRIC_GATE = "rubric"
 # Before the split, D4 promoted one gate to required whose judged checks could
 # not fail it — so it could pass having checked nothing.
 RUBRIC_JUDGED_GATE = "rubric-judged"
-GATE_PROVIDER = "basicly-rubric"
+# Single-sourced in config so policy.gate_status can recognise it as engine-owned
+# without importing this module — which is what keeps the promotion of
+# RUBRIC_GATE to required satisfiable (basicly-jr0l.51).
+GATE_PROVIDER = RUBRIC_GATE_PROVIDER
 
 # Answers for a check verdict.
 YES = "yes"

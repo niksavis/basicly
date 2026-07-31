@@ -27,7 +27,14 @@ from pathlib import Path
 
 from . import run_record
 from .br import run_br as _run_br
-from .config import AUTONOMY_LEVELS, CHECKPOINTS, PolicyConfig, SizingConfig, load_policy_config
+from .config import (
+    AUTONOMY_LEVELS,
+    CHECKPOINTS,
+    ENGINE_GATE_PROVIDERS,
+    PolicyConfig,
+    SizingConfig,
+    load_policy_config,
+)
 
 # Prefix for the harness's own comment markers, so they are both machine-parseable
 # and obvious to a human reading the issue's comments.
@@ -232,6 +239,11 @@ class GateStatus:
     required_failed: tuple[str, ...]
     required_missing: tuple[str, ...]
     advisory: tuple[GateVerdict, ...]
+    # Results on a *required* gate that were not counted, because their provider is
+    # not the engine's own (basicly-jr0l.51). Carried so a caller can explain a gate
+    # reading missing while ``br gate list`` shows a result for it; nothing here
+    # ever affects ``can_advance``.
+    disregarded: tuple[GateVerdict, ...] = ()
 
 
 def gate_status(repo_root: Path, issue_id: str, config: PolicyConfig) -> GateStatus:
@@ -239,23 +251,45 @@ def gate_status(repo_root: Path, issue_id: str, config: PolicyConfig) -> GateSta
 
     A required gate that is missing or failed blocks advancement. Any recorded
     gate not in the required set is advisory and never affects ``can_advance``.
+
+    A required gate counts only the engine's own results — those whose provider is
+    in ``ENGINE_GATE_PROVIDERS``. ``br gate report`` authenticates nothing and a
+    dispatched lane agent shares the real tracker through the worktree beads
+    redirect, so counting any provider let a single report from inside a dispatch
+    satisfy a required gate (basicly-jr0l.51). A foreign result on a required gate
+    is reported as ``disregarded`` rather than dropped silently, because when it is
+    the only result recorded the gate reads missing while the tracker plainly shows
+    a pass — an operator needs to be told which result is being ignored and why.
+    Advisory gates still accept any provider.
     """
     proc = _run_br(repo_root, ["gate", "list", issue_id, "--robot"])
-    results = {
-        r["gate"]: GateVerdict(r["gate"], r.get("provider", ""), bool(r["passed"]))
+    rows = [
+        GateVerdict(r["gate"], r.get("provider", ""), bool(r["passed"]))
         for r in json.loads(proc.stdout).get("results", [])
-    }
+    ]
     required = config.required_gates
-    passed = tuple(g for g in required if g in results and results[g].passed)
-    failed = tuple(g for g in required if g in results and not results[g].passed)
-    missing = tuple(g for g in required if g not in results)
-    advisory = tuple(v for g, v in results.items() if g not in required)
+    # br keeps one result per (gate, provider), not one per gate — measured, not
+    # assumed: reporting verify under two providers leaves two rows, in no
+    # guaranteed order. So the engine's own result is selected independently rather
+    # than by collapsing every row for the gate and taking the last, which is what
+    # the previous reader did — a foreign row landing last became the authoritative
+    # one even alongside a genuine engine record.
+    engine = {v.gate: v for v in rows if v.provider in ENGINE_GATE_PROVIDERS}
+    latest = {v.gate: v for v in rows}
+    passed = tuple(g for g in required if g in engine and engine[g].passed)
+    failed = tuple(g for g in required if g in engine and not engine[g].passed)
+    missing = tuple(g for g in required if g not in engine)
+    advisory = tuple(v for g, v in latest.items() if g not in required)
+    disregarded = tuple(
+        v for v in rows if v.gate in required and v.provider not in ENGINE_GATE_PROVIDERS
+    )
     return GateStatus(
         can_advance=not failed and not missing,
         required_passed=passed,
         required_failed=failed,
         required_missing=missing,
         advisory=advisory,
+        disregarded=disregarded,
     )
 
 
@@ -971,7 +1005,13 @@ def lights_out_violations(
     status = gate_status(repo_root, gated, config)
     if not status.can_advance:
         pending = ", ".join((*status.required_failed, *status.required_missing))
-        violations.append(f"required gates not green on {gated}: {pending}")
+        detail = f"required gates not green on {gated}: {pending}"
+        if status.disregarded:
+            # Otherwise this reads as a plain missing gate while br shows a pass for
+            # it, and the operator has nothing to act on (basicly-jr0l.51).
+            foreign = ", ".join(sorted({v.provider or "(none)" for v in status.disregarded}))
+            detail += f" (disregarded a result from provider {foreign}: not the engine's own)"
+        violations.append(detail)
     for issue_id in ids if ids is not None else _session_issue_ids(repo_root, root_issue):
         texts = _comment_texts(repo_root, issue_id)
         needs = sum(1 for text in texts if _marker_matches(text, _NEEDS_INPUT_MARKER))

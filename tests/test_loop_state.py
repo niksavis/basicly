@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from basicly import loop_state, policy
-from basicly.config import PolicyConfig
+from basicly.config import VERIFY_GATE_PROVIDER, PolicyConfig
 from basicly.loop_state import WorktreeBinding
 from basicly.policy import GateStatus
 
@@ -157,7 +157,9 @@ def test_read_node_state_folds_all_signals(monkeypatch: pytest.MonkeyPatch, tmp_
     fake = _FakeBr(
         status="in_progress",
         external_ref=loop_state.format_worktree_ref("feat", "harness/feat"),
-        gates=[{"gate": "verify", "provider": "ci", "passed": True}],
+        # The engine's own provider — a required gate no longer counts a foreign
+        # one (basicly-jr0l.51).
+        gates=[{"gate": "verify", "provider": VERIFY_GATE_PROVIDER, "passed": True}],
         comments=[
             "[harness-policy] checkpoint=classify approved",
             "[harness-policy] rework gate=verify",

@@ -945,7 +945,15 @@ type, build; the existing commit-msg/identity/beads hooks) report a **required**
 `br gate report --status pass|fail`; a failed required gate blocks loop advancement.
 AI-semantic verification reports a **non-required** gate — advisory, never blocking (§3.3
 deterministic-first, semantic-second, applied to the loop). The block-vs-advise policy and
-the n=2 rework rule live in the harness engine; `br gate` only stores the verdicts. A check
+the n=2 rework rule live in the harness engine; `br gate` only stores the verdicts. Because
+`br gate report` authenticates nothing and a dispatched lane agent shares the real tracker
+through the worktree `.beads` redirect, a **required** gate counts only results carrying the
+engine's own provider (`basicly-verify`, `basicly-rubric` — `config.ENGINE_GATE_PROVIDERS`);
+a foreign result on a required gate is surfaced as _disregarded_ rather than counted, so
+invariant 3 of §1 is enforced rather than left to agent good behaviour. Advisory gates still
+accept any provider. Forging one of those provider strings is still possible: that is the
+same acknowledged class as grant and checkpoint marker forgery, and authenticated gate
+results are the only real fix. A check
 whose repair is purely mechanical and lossless also declares a **`fix_command`** (a
 formatter's write mode): the pre-commit hook applies it to the staged files and re-stages
 them, so the commit carries the fixed bytes and no agent cycle is ever spent re-running a
