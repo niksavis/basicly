@@ -56,6 +56,17 @@ TECHNOLOGIES = {
     "zsh",
 }
 
+# Ordered model-capability vocabulary for agent sources (roster design R5),
+# cheapest first. A provider model id is never portable across agent families —
+# models.dev spells one model `claude-haiku-4.5` for Copilot and
+# `claude-haiku-4-5` for Anthropic — so a source declares a *model tier* and the
+# concrete model behind each tier stays configuration. Distinct from the
+# instruction/skill/plugin "capability tier" `basicly install` delivers: the name
+# collides, the mechanism does not, so prefer "model tier" in prose.
+# `.basicly/core/schemas/agent.schema.json` necessarily restates these values as
+# an `enum`; a tripwire test keeps the two in step.
+MODEL_TIERS = ("low", "medium", "high", "maximum")
+
 DEFAULT_SCOPE = ["**"]
 
 

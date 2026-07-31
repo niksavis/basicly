@@ -6,7 +6,7 @@ triggers: Use after code changes when you need a pass/fail verdict without readi
 returns: Returns the counts line, each failure with its location and likely cause, and nothing else.
 posture: Read-only apart from executing the tests.
 tools: [Read, Grep, Glob, Bash]
-model: haiku
+tier: low
 slots:
   role:
     - text: |

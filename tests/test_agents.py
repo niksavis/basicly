@@ -110,14 +110,23 @@ def test_overlay_block_with_override_replaces_core(tmp_path: Path) -> None:
 
 
 def test_discover_agents_parses_full_agent(tmp_path: Path) -> None:
-    """A well-formed agent parses with tools, model default, and ordered slots."""
+    """A well-formed agent parses with tools, an unset model tier, and ordered slots."""
     _write_agent(tmp_path / "core", "code-reviewer")
     agents = discover_agents(_roots(tmp_path))
     assert [agent.slug for agent in agents] == ["code-reviewer"]
     agent = agents[0]
     assert agent.tools == ("Read", "Grep", "Glob")
-    assert agent.model == "inherit"
+    assert agent.tier == ""
     assert tuple(name for name, _ in agent.slots) == SLOT_ORDER
+
+
+def test_discover_agents_parses_the_model_tier(tmp_path: Path) -> None:
+    """A declared model tier loads onto the definition (nothing resolves it yet)."""
+    _write_agent(
+        tmp_path / "core", "code-reviewer", _agent_yaml("code-reviewer", extra="tier: low\n")
+    )
+    (agent,) = discover_agents(_roots(tmp_path))
+    assert agent.tier == "low" and agent.deprecated_model == ""
 
 
 def test_agent_name_must_match_directory(tmp_path: Path) -> None:
@@ -239,6 +248,62 @@ def test_lint_clean_sources_pass(tmp_path: Path) -> None:
     assert lint_agent_sources(tmp_path) == []
 
 
+def test_lint_flags_a_declared_model_and_names_the_tier_field(tmp_path: Path) -> None:
+    """A provider model id is unportable, so the refusal must carry the replacement.
+
+    models.dev spells the same model `claude-haiku-4.5` for Copilot and
+    `claude-haiku-4-5` for Anthropic, so no `model:` value can be projected for
+    every family. The author has to be told the field to use and its values —
+    reaching into our schema to learn what to type is not a migration.
+    """
+    core = tmp_path / ".basicly/core/agents"
+    _write_agent(core, "code-reviewer", _agent_yaml("code-reviewer", extra="model: haiku\n"))
+
+    violations = lint_agent_sources(tmp_path)
+
+    assert len(violations) == 1, violations
+    assert violations[0].startswith(".basicly/core/agents/code-reviewer/agent.yaml: ")
+    assert "model: haiku" in violations[0]
+    # Spelled out, not joined from MODEL_TIERS: an assertion derived from the same
+    # constant as the message would survive the vocabulary changing under it.
+    assert "tier: low | medium | high | maximum" in violations[0]
+
+
+def test_lint_flags_a_declared_model_in_the_overlay(tmp_path: Path) -> None:
+    """The overlay is why this rule lives here: schema validation globs core only."""
+    overlay = tmp_path / ".basicly-local/agents"
+    _write_agent(overlay, "code-reviewer", _agent_yaml("code-reviewer", extra="model: sonnet\n"))
+
+    violations = lint_agent_sources(tmp_path)
+
+    assert len(violations) == 1, violations
+    assert violations[0].startswith(".basicly-local/agents/code-reviewer/agent.yaml: ")
+    assert "tier" in violations[0]
+
+
+def test_lint_reports_a_declared_model_alongside_the_other_defects(tmp_path: Path) -> None:
+    """The rule is not a parse-time raise, so one bad source still yields every finding."""
+    core = tmp_path / ".basicly/core/agents"
+    _write_agent(
+        core,
+        "code-reviewer",
+        _agent_yaml("code-reviewer", tools="[Read, Edit]", extra="model: haiku\n"),
+    )
+
+    violations = lint_agent_sources(tmp_path)
+
+    assert len(violations) == 2, violations
+    assert any("tier" in v for v in violations)
+    assert any("read-only but tools grant Edit" in v for v in violations)
+
+
+def test_lint_accepts_a_declared_model_tier(tmp_path: Path) -> None:
+    """The replacement field is not itself a violation."""
+    core = tmp_path / ".basicly/core/agents"
+    _write_agent(core, "code-reviewer", _agent_yaml("code-reviewer", extra="tier: low\n"))
+    assert lint_agent_sources(tmp_path) == []
+
+
 def test_lint_flags_read_only_posture_with_write_tools(tmp_path: Path) -> None:
     """Read-only posture with a write tool is a violation."""
     core = tmp_path / ".basicly/core/agents"
@@ -305,9 +370,25 @@ def test_render_agent_md_shape(tmp_path: Path) -> None:
     assert lines[4] == "---"
     assert lines[5] == ""
     assert lines[6] == GENERATED_MARKER
-    assert "model:" not in rendered  # inherit is Claude's default and is omitted
+    # No family ever receives a model line: a provider model id is not portable,
+    # so the tier is catalog metadata and never reaches frontmatter.
+    assert "model:" not in rendered
     assert rendered.endswith("The constraints slot.\n")
     assert not rendered.endswith("\n\n")
+
+
+def test_render_omits_the_model_line_for_a_tier_source(tmp_path: Path) -> None:
+    """A declared model tier projects no `model:` (and no `tier:`) frontmatter key."""
+    _write_agent(
+        tmp_path / "core",
+        "code-reviewer",
+        _agent_yaml("code-reviewer", extra="tier: maximum\n"),
+    )
+    (agent,) = discover_agents(_roots(tmp_path))
+    rendered = render_agent_md(agent, {})
+    assert "model" not in rendered
+    assert "tier" not in rendered
+    assert "maximum" not in rendered
 
 
 def test_render_marker_stays_in_protect_generated_window(tmp_path: Path) -> None:
@@ -315,12 +396,11 @@ def test_render_marker_stays_in_protect_generated_window(tmp_path: Path) -> None
     _write_agent(
         tmp_path / "core",
         "code-reviewer",
-        _agent_yaml("code-reviewer", extra="model: haiku\nclaude:\n  memory: project\n"),
+        _agent_yaml("code-reviewer", extra="tier: low\nclaude:\n  memory: project\n"),
     )
     (agent,) = discover_agents(_roots(tmp_path))
     head = render_agent_md(agent, {}).split("\n")[:10]
     assert any(GENERATED_MARKER in line for line in head)
-    assert "model: haiku" in head
     assert "memory: project" in head
 
 

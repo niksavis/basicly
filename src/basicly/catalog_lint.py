@@ -1,6 +1,6 @@
 """Catalog source lint — the deterministic gate that keeps the YAML contract.
 
-Enforces six invariants across the managed core catalog so the double-load fix
+Enforces eight invariants across the managed core catalog so the double-load fix
 and the single-extension decision cannot regress (architecture §4.2):
 
 1. No discoverable-name *sources*: no ``SKILL.md`` under ``core/skills``, no
@@ -11,8 +11,11 @@ and the single-extension decision cannot regress (architecture §4.2):
 4. Enforcement pointer (§3.1): a fragment that declares ``enforced_by`` must cite
    each listed command in its body — point at enforcement, don't restate it.
 5. Agent composition: block refs resolve, read-only postures grant no write
-   tools, composed bodies stay under the portable size cap.
-6. Invocation axis (basicly-m4zv.1): every skill declares ``model`` or ``user``,
+   tools, composed bodies stay under the portable size cap, and no source pins a
+   provider model id instead of a portable model tier.
+6. Technology tags stay inside the controlled vocabulary (§9 scoping).
+7. Agent Skills spec naming/size constraints JSON Schema cannot express.
+8. Invocation axis (basicly-m4zv.1): every skill declares ``model`` or ``user``,
    and only a model-invoked entry carries a description.
 
 ``README.md`` and other documentation files are not sources and are left alone.

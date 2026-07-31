@@ -576,9 +576,13 @@ hand-edited — from YAML sources:
 - **Description**: authored as four fields (`purpose`, `triggers`, `returns`,
   `posture`) the projector joins, so no part of a delegation-quality
   description can be forgotten. `tools` is a mandatory explicit allowlist —
-  agents never silently inherit every tool. `model` defaults to `inherit`
-  (omitted from output); a `claude:` map passes Claude-only frontmatter
-  (e.g. `memory`, `maxTurns`) through verbatim.
+  agents never silently inherit every tool. `tier` names the **model tier** the
+  agent needs (`low`, `medium`, `high`, `maximum` — roster design R5) and is
+  never emitted: no family receives a `model` line, because a provider model id
+  is not portable across agent families (models.dev spells one model
+  `claude-haiku-4.5` for Copilot and `claude-haiku-4-5` for Anthropic), so
+  catalog-lint rejects a `model:` key and names `tier` instead. A `claude:` map
+  passes Claude-only frontmatter (e.g. `memory`, `maxTurns`) through verbatim.
 - **Emission**: `.claude/agents/<slug>.md` only — the single root Claude Code
   and VS Code both parse natively (decided in `basicly-ajq` on the
   `basicly-2f4` precedent; a second Claude-format root would double-load in VS
