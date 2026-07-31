@@ -527,6 +527,102 @@ def test_cleanup_refuses_a_worktree_with_uncommitted_work(
     assert not session.path.exists()
 
 
+# --- a transient git failure must never authorize a deletion (basicly-jr0l.47) --
+#
+# The classifier is pure, so each fail-closed branch is asserted directly rather
+# than through a repo fixture. The cost of getting one wrong is committed work that
+# no longer exists, which no later test can detect.
+
+
+def test_a_failed_status_query_holds_the_worktree_instead_of_clearing_it() -> None:
+    """The defect: a non-zero git status read as 'nothing to keep'.
+
+    A lock held by a concurrent lane, an interrupted index write, or a filesystem
+    hiccup makes this query fail. The old reader returned "" — no pending changes —
+    and handed `git worktree remove --force` a tree it was never allowed to discard,
+    losing the branch and its commits silently and unrecoverably.
+    """
+    verdict = worktree.classify_worktree_tree(128, "")
+    assert verdict.may_remove is False
+    assert verdict.indeterminate is True
+    assert "exit 128" in verdict.holds
+
+
+def test_an_unparsable_status_line_holds_the_worktree() -> None:
+    """A status this cannot read may be the status that matters."""
+    verdict = worktree.classify_worktree_tree(0, "?\n")
+    assert verdict.may_remove is False
+    assert verdict.indeterminate is True
+    assert "cannot parse" in verdict.holds
+
+
+def test_real_pending_work_holds_the_worktree_and_is_not_called_indeterminate() -> None:
+    """Both refuse, but 'there is work here' is a different report from 'cannot tell'."""
+    verdict = worktree.classify_worktree_tree(0, "?? wip.txt\n M src/app.py\n")
+    assert verdict.may_remove is False
+    assert verdict.indeterminate is False
+    assert "wip.txt" in verdict.holds and "src/app.py" in verdict.holds
+
+
+def test_a_clean_tree_and_expected_noise_may_be_removed() -> None:
+    """The guard must not refuse the ordinary teardown it wraps."""
+    assert worktree.classify_worktree_tree(0, "").may_remove is True
+    noise = "?? .venv/\n?? node_modules/\n M .beads/issues.jsonl\n"
+    verdict = worktree.classify_worktree_tree(0, noise)
+    assert verdict.may_remove is True and verdict.holds == ""
+
+
+def test_cleanup_refuses_when_git_cannot_report_the_worktree_state(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End to end: an indeterminate query leaves the worktree and its branch intact."""
+    monkeypatch.chdir(git_repo)
+    session = worktree.create("unknowable")
+
+    real_git = worktree.git
+
+    def flaky_git(args, **kwargs):
+        if args[:2] == ["status", "--porcelain"]:
+            return subprocess.CompletedProcess(args, 128, "", "fatal: index.lock exists")
+        return real_git(args, **kwargs)
+
+    monkeypatch.setattr(worktree, "git", flaky_git)
+
+    with pytest.raises(SystemExit, match="git status could not be read"):
+        worktree.cleanup("unknowable")
+    # Nothing was discarded: the tree, the branch, and the record all survive.
+    assert session.path.exists()
+    assert worktree.load_session("unknowable", git_repo) is not None
+
+
+def test_an_unanswerable_branch_check_keeps_the_session_record(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A show-ref that errors is not proof the branch is gone.
+
+    Reading any non-zero exit as "absent" dropped the session record while the
+    branch survived — an orphaned branch nothing points at, and the same fail-open
+    class as the tree check.
+    """
+    monkeypatch.chdir(git_repo)
+    worktree.create("orphanrisk")
+
+    real_git = worktree.git
+
+    def flaky_git(args, **kwargs):
+        if args[:1] == ["branch"]:  # deletion refuses (unmerged)
+            return subprocess.CompletedProcess(args, 1, "", "error: not fully merged")
+        if args[:1] == ["show-ref"]:  # and the follow-up cannot answer
+            return subprocess.CompletedProcess(args, 128, "", "fatal: bad repository")
+        return real_git(args, **kwargs)
+
+    monkeypatch.setattr(worktree, "git", flaky_git)
+
+    worktree.cleanup("orphanrisk")
+
+    assert worktree.load_session("orphanrisk", git_repo) is not None
+
+
 def test_cleanup_ignores_dep_dirs_and_tracker_export(
     git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

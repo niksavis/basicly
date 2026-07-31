@@ -351,26 +351,101 @@ def stale_sessions(cwd: Path | str | None = None) -> list[Session]:
     return [s for s in list_sessions(cwd) if not s.path.exists()]
 
 
-def _uncommitted_changes(worktree: Path) -> str:
-    """Pending changes in *worktree*, ignoring the provisioned dep dirs.
+@dataclass(frozen=True)
+class RemovalVerdict:
+    """Whether a worktree's tree may be discarded, and what stands in the way.
 
-    ``git worktree remove --force`` discards whatever this reports, so cleanup
-    must refuse on a non-empty result unless explicitly forced. The dep dirs
-    (and the tracker export, which provisioning syncs from base) are expected
-    noise, not work.
+    ``holds`` is the human-readable reason to refuse — pending work, or the fact
+    that it could not be determined. Empty exactly when ``may_remove`` is true.
     """
-    proc = git(["status", "--porcelain"], cwd=worktree, check=False)
-    if proc.returncode != 0:
-        return ""
+
+    may_remove: bool
+    holds: str
+    # True when git could not answer, as distinct from answering "there is work
+    # here". Both refuse; only this one is a broken query rather than a full tree,
+    # and the operator needs to be told which (basicly-jr0l.47).
+    indeterminate: bool = False
+
+
+def classify_worktree_tree(returncode: int, stdout: str) -> RemovalVerdict:
+    """Classify a ``git status --porcelain`` result from a worktree, fail-closed.
+
+    Pure: takes the raw result, touches nothing, so every branch below is directly
+    testable — which is the point, because the cost of getting one wrong is
+    committed work that no longer exists.
+
+    **A transient git error must never authorize a deletion** (basicly-jr0l.47). A
+    lock held by a concurrent lane, an interrupted index write, or a filesystem
+    hiccup makes this query fail; reading that as "nothing to keep" hands
+    ``git worktree remove --force`` a tree it was never allowed to discard. So a
+    non-zero exit holds the worktree instead of clearing it. Holding costs disk;
+    deleting costs work, and only one of the two is recoverable.
+
+    An unparsable porcelain line holds for the same reason: the format is
+    ``XY <path>``, so anything shorter carries a status this cannot read, and a
+    status it cannot read may be the one that matters.
+
+    The provisioned dep dirs and the tracker export (which provisioning syncs from
+    base) are expected noise rather than work, and never hold a teardown.
+    """
+    if returncode != 0:
+        return RemovalVerdict(
+            may_remove=False,
+            holds=(
+                f"git status could not be read in the worktree (exit {returncode}); "
+                "refusing to remove a tree whose contents are unknown — a lock held by "
+                "a concurrent lane is the usual cause, so retry, or pass force to "
+                "discard the tree regardless"
+            ),
+            indeterminate=True,
+        )
     expected_noise = (*DEP_DIRS, ".beads")
     noise_prefixes = tuple(f"{d}/" for d in expected_noise)
-    lines = []
-    for line in proc.stdout.splitlines():
+    pending: list[str] = []
+    unparsable: list[str] = []
+    for line in stdout.splitlines():
+        if not line.strip():
+            continue
+        if len(line) < 4:  # "XY p" is the shortest a real entry can be
+            unparsable.append(line)
+            continue
         path = line[3:].strip().strip('"')
         if path in expected_noise or path.startswith(noise_prefixes):
             continue
-        lines.append(line)
-    return "\n".join(lines)
+        pending.append(line)
+    if unparsable:
+        return RemovalVerdict(
+            may_remove=False,
+            holds=(
+                "git status returned a line this cannot parse, so the worktree's state "
+                "is unknown; refusing to remove it:\n" + "\n".join(unparsable)
+            ),
+            indeterminate=True,
+        )
+    if pending:
+        return RemovalVerdict(may_remove=False, holds="\n".join(pending))
+    return RemovalVerdict(may_remove=True, holds="")
+
+
+def _worktree_removal_verdict(worktree: Path) -> RemovalVerdict:
+    """Ask git about *worktree*'s tree and classify the answer, fail-closed.
+
+    The only impure part: a git failure that raises (git absent, unreadable path)
+    is caught and classified as indeterminate rather than escaping, so no caller can
+    reach a removal by way of an exception it swallowed elsewhere.
+    """
+    try:
+        proc = git(["status", "--porcelain"], cwd=worktree, check=False)
+    except OSError, RuntimeError:
+        return RemovalVerdict(
+            may_remove=False,
+            holds=(
+                "git could not be run in the worktree, so its contents are unknown; "
+                "refusing to remove it (pass force to discard the tree regardless)"
+            ),
+            indeterminate=True,
+        )
+    return classify_worktree_tree(proc.returncode, proc.stdout)
 
 
 def cleanup(name: str, *, force: bool = False, repo_root: Path | str | None = None) -> None:
@@ -398,12 +473,21 @@ def cleanup(name: str, *, force: bool = False, repo_root: Path | str | None = No
     worktree, branch = _resolve_worktree(name, main, repo_root)
 
     if worktree.exists():
-        pending = _uncommitted_changes(worktree)
-        if pending and not force:
+        verdict = _worktree_removal_verdict(worktree)
+        if not verdict.may_remove and not force:
+            if verdict.indeterminate:
+                # Not "has changes" — "cannot tell", which is a different thing to
+                # tell the operator and a different thing to do about it
+                # (basicly-jr0l.47).
+                raise SystemExit(f"worktree {name!r} not removed: {verdict.holds}")
             raise SystemExit(
                 f"worktree {name!r} has uncommitted changes; commit them or pass "
-                f"force to discard:\n{pending}"
+                f"force to discard:\n{verdict.holds}"
             )
+        if verdict.indeterminate:
+            # Forced past an unknown state: say so, so a discarded tree is never a
+            # surprise found later.
+            print(f"  warning: forcing removal of {name!r} despite {verdict.holds}")
         git(["worktree", "remove", "--force", str(worktree)], cwd=main)
     git(["worktree", "prune"], cwd=main, check=False)
 
@@ -424,7 +508,12 @@ def cleanup(name: str, *, force: bool = False, repo_root: Path | str | None = No
                 cwd=main,
                 check=False,
             )
-            branch_removed = exists.returncode != 0
+            # Only exit 1 means "the ref is absent". Any other failure means the
+            # question was not answered, and treating that as absent drops the
+            # session record while the branch survives — an orphaned branch nothing
+            # points at, which is the same fail-open class as the tree check above
+            # (basicly-jr0l.47).
+            branch_removed = exists.returncode == 1
         if not branch_removed:
             detail = (deleted.stderr or deleted.stdout).strip()
             print(f"  note: branch {branch} not deleted ({detail})")
