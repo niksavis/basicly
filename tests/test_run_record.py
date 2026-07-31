@@ -614,3 +614,125 @@ def test_landed_package_cost_without_an_export(tmp_path: Path) -> None:
     """No tracker export means no landed packages, not a crash."""
     landed = run_record.landed_package_cost(tmp_path)
     assert landed.packages == 0 and landed.per_package("cost") is None
+
+
+# --- forecast error, per dispatch record (basicly-jr0l.34) -------------------
+
+
+def test_a_dispatch_record_carries_the_forecast_beside_the_actual(tmp_path: Path) -> None:
+    """The join this bead exists for: one record holds both halves and the class.
+
+    Before this, `forecast_tokens` was a declared field with no writer, so the two
+    numbers lived on disjoint records and no forecast error was ever computable.
+    """
+    entry = _entry(
+        tokens=9_430_203,
+        forecast_tokens=57_965,
+        scope_tokens=19_000,
+        task_class="task",
+        forecast_source="dispatch",
+    )
+    run_record.record(tmp_path, "b-1", entry)
+    stored = _records(tmp_path)["b-1"][0]
+    assert stored["forecast_tokens"] == 57_965
+    assert stored["tokens"] == 9_430_203
+    assert stored["task_class"] == "task"
+    assert stored["forecast_source"] == "dispatch"
+
+
+def test_forecast_errors_pairs_a_complete_record(tmp_path: Path) -> None:
+    """A record with both halves yields a ratio and a signed miss."""
+    run_record.record(
+        tmp_path,
+        "b-1",
+        _entry(tokens=200_000, forecast_tokens=50_000, task_class="task", model="opus"),
+    )
+    report = run_record.forecast_errors(tmp_path)
+    assert report.paired == 1
+    error = report.errors[0]
+    assert error.bead == "b-1"
+    assert error.ratio == pytest.approx(4.0)
+    assert error.error_tokens == 150_000
+    assert error.task_class == "task" and error.model == "opus"
+
+
+def test_forecast_errors_refuses_a_record_missing_either_half(tmp_path: Path) -> None:
+    """Counting a missing half as zero would fabricate an error; it is reported unpaired.
+
+    The three shapes are real: a forecast with no actual is a handoff or a killed
+    run, an actual with no forecast is an un-sized helper dispatch (the rubric judge,
+    the decider), and neither is a handoff that was never sized.
+    """
+    run_record.record(tmp_path, "b-1", _entry(forecast_tokens=50_000))
+    run_record.record(tmp_path, "b-2", _entry(tokens=200_000))
+    run_record.record(tmp_path, "b-3", _entry())
+    report = run_record.forecast_errors(tmp_path)
+    assert report.paired == 0 and report.errors == ()
+    assert (report.forecast_only, report.actual_only, report.unmetered) == (1, 1, 1)
+
+
+def test_forecast_errors_refuses_a_zero_forecast_rather_than_dividing_by_it(
+    tmp_path: Path,
+) -> None:
+    """A zero forecast is a recording defect, not a prediction, and cannot be a divisor."""
+    run_record.record(tmp_path, "b-1", _entry(tokens=200_000, forecast_tokens=0))
+    report = run_record.forecast_errors(tmp_path)
+    assert report.paired == 0 and report.actual_only == 1
+
+
+def test_forecast_errors_reports_the_median_ratio_not_the_mean(tmp_path: Path) -> None:
+    """One 400x sample must not drag the summary somewhere no dispatch has been."""
+    for bead, tokens in (("b-1", 100_000), ("b-2", 200_000), ("b-3", 40_000_000)):
+        run_record.record(tmp_path, bead, _entry(tokens=tokens, forecast_tokens=100_000))
+    report = run_record.forecast_errors(tmp_path)
+    assert report.median_ratio == pytest.approx(2.0)
+
+
+def test_forecast_errors_has_no_median_without_a_pair(tmp_path: Path) -> None:
+    """None, never zero: nothing measured must not read as a perfect forecast."""
+    assert run_record.forecast_errors(tmp_path).median_ratio is None
+
+
+def test_forecast_errors_groups_by_task_class_and_drops_the_unclassed(
+    tmp_path: Path,
+) -> None:
+    """Calibration is per class, and a sample with no class recorded cannot join one."""
+    run_record.record(
+        tmp_path, "b-1", _entry(tokens=200_000, forecast_tokens=100_000, task_class="task")
+    )
+    run_record.record(
+        tmp_path, "b-2", _entry(tokens=300_000, forecast_tokens=100_000, task_class="bug")
+    )
+    run_record.record(tmp_path, "b-3", _entry(tokens=400_000, forecast_tokens=100_000))
+    grouped = run_record.forecast_errors(tmp_path).by_task_class()
+    assert sorted(grouped) == ["bug", "task"]
+    assert len(grouped["task"]) == 1
+
+
+def test_forecast_errors_sees_a_dispatch_only_the_tracker_carries(tmp_path: Path) -> None:
+    """A teammate's dispatch pairs too: the export travels where .basicly/usage does not."""
+    _export(
+        tmp_path,
+        {
+            "id": "b-9",
+            "comments": [
+                _run_comment(
+                    tokens=250_000,
+                    forecast_tokens=50_000,
+                    task_class="chore",
+                    timestamp="2026-07-26T09:00:00+00:00",
+                )
+            ],
+        },
+    )
+    report = run_record.forecast_errors(tmp_path)
+    assert report.paired == 1 and report.errors[0].bead == "b-9"
+    assert report.errors[0].ratio == pytest.approx(5.0)
+
+
+def test_forecast_errors_flags_an_estimated_actual(tmp_path: Path) -> None:
+    """A chars/4 actual is a weaker sample and must be identifiable as one (design 7.5)."""
+    run_record.record(
+        tmp_path, "b-1", _entry(tokens=200_000, forecast_tokens=100_000, estimated=True)
+    )
+    assert run_record.forecast_errors(tmp_path).errors[0].estimated is True

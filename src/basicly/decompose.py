@@ -292,19 +292,25 @@ class CostEstimate:
         return self.overhead_tokens + round(self.scope_tokens * self.build_factor)
 
 
+def build_factor_for(task_class: str, factors: dict[str, float]) -> float:
+    """The build factor for *task_class*.
+
+    An unlisted task class uses the ``task`` factor (the most conservative seed),
+    falling back to :data:`DEFAULT_BUILD_FACTOR` when even that is absent. Shared by
+    :func:`estimate_cost` and :func:`dispatch_sizing` so a plan's estimate and the
+    same package's dispatch-time forecast cannot be computed two different ways.
+    """
+    return factors.get(task_class, factors.get(DEFAULT_CHILD_TYPE, DEFAULT_BUILD_FACTOR))
+
+
 def estimate_cost(
     repo_root: Path, spec: ChildSpec, factors: dict[str, float], overhead: int
 ) -> CostEstimate:
-    """Estimate *spec*'s working-set cost from its declared scope and task class.
-
-    An unlisted task class uses the ``task`` factor (the most conservative seed),
-    falling back to :data:`DEFAULT_BUILD_FACTOR` when even that is absent.
-    """
-    factor = factors.get(spec.type, factors.get(DEFAULT_CHILD_TYPE, DEFAULT_BUILD_FACTOR))
+    """Estimate *spec*'s working-set cost from its declared scope and task class."""
     return CostEstimate(
         scope_tokens=scope_read_cost(repo_root, spec.scope),
         overhead_tokens=overhead,
-        build_factor=factor,
+        build_factor=build_factor_for(spec.type, factors),
     )
 
 
@@ -523,6 +529,63 @@ def forecast_for(repo_root: Path, task_class: str, scope: tuple[str, ...]) -> Co
             if parsed is not None and parsed[0] == key:
                 return parsed[1]
     return None
+
+
+# --- Sizing carried into the dispatch record (basicly-jr0l.34) ----------------
+#
+# The forecast and the actual were written to disjoint classes of record: the
+# governor's estimate was frozen on a feature at decompose, and the tokens a
+# dispatch really spent landed on a run record that carried no forecast at all
+# (`forecast_tokens` was a declared field with no writer — measured non-null on
+# zero of 149 records). So the forecast error, which is the whole learning signal
+# jr0l.21's calibration needs, has never once been computable. These are the
+# inputs that put both halves on one carrier.
+
+# Where a dispatch's forecast came from. A frozen estimate was registered before
+# the work started and is evidence of prediction skill; one computed at dispatch
+# is the same formula applied at the last honest moment, and a calibration must be
+# able to tell them apart rather than average them together.
+FROZEN_FORECAST = "frozen"
+DISPATCH_FORECAST = "dispatch"
+
+
+@dataclass(frozen=True)
+class DispatchSizing:
+    """One dispatch's task class and working-set forecast, resolved at dispatch time."""
+
+    task_class: str
+    estimate: CostEstimate
+    # :data:`FROZEN_FORECAST` or :data:`DISPATCH_FORECAST`.
+    source: str
+
+
+def dispatch_sizing(repo_root: Path, issue_id: str) -> DispatchSizing | None:
+    """*issue_id*'s class and working-set forecast as of now, or None when unreadable.
+
+    Prefers the estimate the governor froze for this content — the forecast of
+    record, on :func:`frozen_estimates`' rule that the earliest freeze is the
+    verdict — and otherwise computes one from the current calibrated factors, so a
+    package that never went through ``decompose`` still yields a pairable forecast
+    instead of a null.
+
+    None when the bead's task class or declared ``## Scope`` cannot be read: a
+    forecast against an unknown scope would be an invented number, and an absent
+    half is what the error report is built to skip.
+    """
+    info = bead_class_and_scope(repo_root, issue_id)
+    if info is None:
+        return None
+    task_class, scope = info
+    frozen = forecast_for(repo_root, task_class, scope)
+    if frozen is not None:
+        return DispatchSizing(task_class, frozen, FROZEN_FORECAST)
+    sizing = load_sizing_config(repo_root)
+    estimate = CostEstimate(
+        scope_tokens=scope_read_cost(repo_root, scope),
+        overhead_tokens=instruction_overhead(repo_root),
+        build_factor=build_factor_for(task_class, calibrated_build_factors(repo_root, sizing)),
+    )
+    return DispatchSizing(task_class, estimate, DISPATCH_FORECAST)
 
 
 def freeze_estimate(repo_root: Path, feature_id: str, key: str, estimate: CostEstimate) -> None:

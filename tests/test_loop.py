@@ -2048,3 +2048,67 @@ def test_every_loop_phase_has_a_handler_and_vice_versa() -> None:
     phase. Neither has a symptom that names its cause.
     """
     assert set(loop._HANDLERS) == set(LOOP_PHASES)
+
+
+# --- the forecast reaches the dispatch record (basicly-jr0l.34) --------------
+
+
+def test_the_dispatch_records_its_forecast_beside_the_scope_it_measured(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A dispatch carries the forecast onto the record its actual will land on.
+
+    The join this bead exists for. `forecast_tokens` was a declared field with no
+    writer, so the estimate and the outcome lived on disjoint records and the forecast
+    error was never computable.
+    """
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    monkeypatch.setattr(
+        decompose,
+        "dispatch_sizing",
+        lambda *_a: decompose.DispatchSizing(
+            task_class="task",
+            estimate=decompose.CostEstimate(
+                scope_tokens=9_000, overhead_tokens=3_000, build_factor=2.0
+            ),
+            source=decompose.FROZEN_FORECAST,
+        ),
+    )
+    recorded: dict = {}
+    monkeypatch.setattr(loop, "record_run", lambda *_a, **kw: recorded.update(kw))
+    _pin_runner(monkeypatch, "claude")
+    monkeypatch.setattr(
+        runner,
+        "run",
+        lambda spec, *_a, **_k: runner.RunResult(
+            spec.name, tuple(spec.command), executed=True, returncode=0
+        ),
+    )
+    monkeypatch.setattr(merge, "merge_worktree", lambda *_a, **_k: pytest.fail("no landing here"))
+
+    loop._run_agent(loop._Ctx(tmp_path, "i", _state("build"), CONFIG, loop.Inputs()), "i", tmp_path)
+
+    assert recorded["scope_tokens"] == 9_000
+    assert recorded["forecast_tokens"] == 21_000  # 3_000 overhead + 9_000 x 2.0
+    assert recorded["task_class"] == "task"
+    assert recorded["forecast_source"] == decompose.FROZEN_FORECAST
+
+
+def test_sizing_at_dispatch_is_empty_when_the_bead_declares_no_scope(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No forecast rather than a fabricated one; the record simply carries neither half."""
+    monkeypatch.setattr(decompose, "dispatch_sizing", lambda *_a: None)
+    assert loop.sizing_at_dispatch(tmp_path, "i") == {}
+
+
+def test_sizing_at_dispatch_never_raises_on_a_tracker_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Telemetry sits on the critical path of every dispatch and must never fail one."""
+
+    def _boom(*_a):
+        raise RuntimeError("br is unavailable")
+
+    monkeypatch.setattr(decompose, "dispatch_sizing", _boom)
+    assert loop.sizing_at_dispatch(tmp_path, "i") == {}

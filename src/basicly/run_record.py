@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import statistics
 import threading
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, fields
@@ -76,6 +77,15 @@ class RunRecord:
     # re-derive them against a changed tree (D8 drift, basicly-kjc5.30).
     scope_tokens: int | None = None
     forecast_tokens: int | None = None
+    # The class the forecast was computed for, and where the forecast came from
+    # (``decompose.FROZEN_FORECAST`` / ``DISPATCH_FORECAST``). Recorded rather than
+    # re-derived because calibration reads a sample long after the fact and a closed
+    # or compacted bead may no longer answer for its own class (basicly-jr0l.34).
+    # The source separates a forecast registered before the work from one computed
+    # at dispatch; averaging the two would read as prediction skill the estimator
+    # does not have.
+    task_class: str | None = None
+    forecast_source: str | None = None
     # Ids of the found-info records folded into the bundle. Bundle assembly
     # truncates to the newest N, so without this the prompt is unexplainable.
     folded_info: tuple[str, ...] = ()
@@ -136,6 +146,8 @@ def build_record(  # noqa: PLR0913
     phase: str | None = None,
     scope_tokens: int | None = None,
     forecast_tokens: int | None = None,
+    task_class: str | None = None,
+    forecast_source: str | None = None,
     folded_info: tuple[str, ...] = (),
     dispatch_rank: int | None = None,
     scheduler_rank: int | None = None,
@@ -167,6 +179,8 @@ def build_record(  # noqa: PLR0913
         phase=phase,
         scope_tokens=scope_tokens,
         forecast_tokens=forecast_tokens,
+        task_class=task_class,
+        forecast_source=forecast_source,
         folded_info=tuple(folded_info),
         dispatch_rank=dispatch_rank,
         scheduler_rank=scheduler_rank,
@@ -560,3 +574,159 @@ def landed_package_cost(repo_root: Path) -> LandedCost:
         cost=sum(cost) if cost else None,
         wall_clock_s=sum(wall_clock) if wall_clock else None,
     )
+
+
+# --- Forecast error, per dispatch record (basicly-jr0l.34) --------------------
+#
+# The learning signal jr0l.21's calibration is built on, and until this landed it
+# did not exist: `forecast_tokens` was a declared field with no writer (measured
+# non-null on zero of 149 records), while the actual tokens landed on the same
+# record from a different code path. Nothing paired the estimate with the outcome,
+# so a forecast could be wrong by two orders of magnitude and no report could say
+# so. A dispatch now carries both halves, and this reads them back.
+#
+# The rule that makes the report trustworthy is that it **refuses to compute an
+# error for a record missing either half**. A record with a forecast and no actual
+# is a handoff or a killed run; one with an actual and no forecast is a helper
+# dispatch (the rubric judge, the decider) that was never sized. Either would be a
+# fabricated error if it were counted as zero, so both are reported as unpaired
+# instead — a report that says "0 pairs, 137 unmetered" is honest, and one that
+# quietly showed no rows would look like a passing calibration.
+#
+# **The two halves do not measure the same quantity, and a reader must be told so.**
+# The forecast is a *working set* — the context a package needs — while the actual
+# is *total spend*, and an agentic loop re-sends its context every turn, so spend is
+# roughly working set times turn count. A ratio of 200x therefore does not mean the
+# working-set estimator is wrong by 200x; it is mostly the turn multiplier, which
+# nothing models yet (basicly-jr0l.21). This module deliberately calls the quantity
+# a *ratio* rather than an error rate, and the CLI says what it is, because reading
+# it as estimator error is how a session concludes the sizing governor is broken and
+# rewrites the wrong thing.
+
+
+@dataclass(frozen=True)
+class ForecastError:
+    """One dispatch whose forecast and actual are both known, so its ratio is real."""
+
+    bead: str
+    timestamp: str
+    forecast_tokens: int
+    actual_tokens: int
+    task_class: str | None = None
+    model: str | None = None
+    forecast_source: str | None = None
+    # True when the actual was a chars/4 transcript estimate rather than
+    # adapter-reported usage, so a consumer can down-weight the sample (design 7.5).
+    estimated: bool = False
+
+    @property
+    def ratio(self) -> float:
+        """Actual spend over forecast working set. A forecast of zero never reaches here.
+
+        Not an estimator error rate: see the section comment above. The turn count an
+        agentic loop re-sends its context for lives in this number too.
+        """
+        return self.actual_tokens / self.forecast_tokens
+
+    @property
+    def error_tokens(self) -> int:
+        """Signed miss in tokens: positive when the dispatch spent more than forecast."""
+        return self.actual_tokens - self.forecast_tokens
+
+
+@dataclass(frozen=True)
+class ForecastErrorReport:
+    """Every computable forecast error, plus what was skipped and why."""
+
+    errors: tuple[ForecastError, ...] = ()
+    # Records deliberately not turned into an error, counted so an empty report
+    # explains itself rather than reading as "no error".
+    forecast_only: int = 0
+    actual_only: int = 0
+    unmetered: int = 0
+
+    @property
+    def paired(self) -> int:
+        """How many records yielded an error."""
+        return len(self.errors)
+
+    @property
+    def median_ratio(self) -> float | None:
+        """Median actual/forecast across the pairs; None with no pairs.
+
+        A median rather than a mean: the measured misses span 160x to 420x, and one
+        such sample would drag a mean somewhere no individual dispatch has ever been.
+        """
+        if not self.errors:
+            return None
+        return statistics.median(error.ratio for error in self.errors)
+
+    def by_task_class(self) -> dict[str, tuple[ForecastError, ...]]:
+        """The pairs grouped by task class, dropping records with no class recorded."""
+        grouped: dict[str, list[ForecastError]] = {}
+        for error in self.errors:
+            if error.task_class:
+                grouped.setdefault(error.task_class, []).append(error)
+        return {name: tuple(items) for name, items in sorted(grouped.items())}
+
+
+def _positive_int(entry: Mapping[str, object], key: str) -> int | None:
+    """*entry*'s value at *key* when it is a usable positive count, else None.
+
+    A zero forecast is rejected along with a missing one: it cannot be divided by,
+    and a "forecast" of zero tokens is a recording defect rather than a prediction.
+    """
+    value = entry.get(key)
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        return None
+    return value
+
+
+def forecast_errors(repo_root: Path) -> ForecastErrorReport:
+    """Pair every dispatch's forecast with its actual, over the whole known history.
+
+    Reads :func:`dispatch_history`, so it sees the committed tracker markers as well
+    as this machine's local records — a fresh clone can compute the same error a
+    teammate measured, which is the property that makes the calibration shared
+    rather than per-machine (D11).
+    """
+    errors: list[ForecastError] = []
+    forecast_only = actual_only = unmetered = 0
+    for bead_id, history in sorted(dispatch_history(repo_root).items()):
+        for entry in history:
+            if not isinstance(entry, Mapping):
+                continue
+            forecast = _positive_int(entry, "forecast_tokens")
+            actual = _positive_int(entry, "tokens")
+            if forecast is None or actual is None:
+                if forecast is not None:
+                    forecast_only += 1
+                elif actual is not None:
+                    actual_only += 1
+                else:
+                    unmetered += 1
+                continue
+            errors.append(
+                ForecastError(
+                    bead=bead_id,
+                    timestamp=str(entry.get("timestamp", "")),
+                    forecast_tokens=forecast,
+                    actual_tokens=actual,
+                    task_class=_text(entry, "task_class"),
+                    model=_text(entry, "model"),
+                    forecast_source=_text(entry, "forecast_source"),
+                    estimated=entry.get("estimated") is True,
+                )
+            )
+    return ForecastErrorReport(
+        errors=tuple(sorted(errors, key=lambda error: (error.timestamp, error.bead))),
+        forecast_only=forecast_only,
+        actual_only=actual_only,
+        unmetered=unmetered,
+    )
+
+
+def _text(entry: Mapping[str, object], key: str) -> str | None:
+    """*entry*'s value at *key* when it is a non-empty string, else None."""
+    value = entry.get(key)
+    return value if isinstance(value, str) and value else None

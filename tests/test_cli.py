@@ -1145,6 +1145,73 @@ def test_cli_usage_report_notes_missing_data(work_repo: Path) -> None:
     assert "No usage data" in result.stdout
 
 
+def _run_records(work_repo: Path, records: dict) -> None:
+    """Seed the whole dispatch history the report reads, and nothing else.
+
+    Both halves are replaced: `dispatch_history` unions the local log with the
+    committed tracker markers (D11), and the fixture copies this repo's real export,
+    so leaving it in place would mix ~90 live dispatches into the counts.
+    """
+    usage_dir = work_repo / ".basicly" / "usage"
+    shutil.rmtree(usage_dir, ignore_errors=True)
+    usage_dir.mkdir(parents=True)
+    (usage_dir / "run-records.json").write_text(json.dumps(records), encoding="utf-8")
+    beads = work_repo / ".beads"
+    # The redirect is why blanking the export alone is not enough: `br` follows it to
+    # the base checkout's tracker, so a fixture copied out of a harness worktree reads
+    # the live repo's ~90 dispatches however empty its own export is.
+    (beads / "redirect").unlink(missing_ok=True)
+    (beads / "issues.jsonl").write_text("", encoding="utf-8")
+
+
+def test_cli_usage_forecast_reports_the_ratio_per_paired_dispatch(work_repo: Path) -> None:
+    """The forecast error report, over a dispatch that carries both halves (jr0l.34)."""
+    _run_records(
+        work_repo,
+        {
+            "b-1": [
+                {
+                    "agent": "claude",
+                    "outcome": "executed",
+                    "timestamp": "2026-07-26T09:00:00+00:00",
+                    "forecast_tokens": 50_000,
+                    "tokens": 200_000,
+                    "task_class": "task",
+                    "forecast_source": "dispatch",
+                }
+            ]
+        },
+    )
+    result = run_basicly(work_repo, "usage", "forecast")
+    assert result.returncode == 0, result.stderr
+    assert "b-1" in result.stdout and "4.00x" in result.stdout
+    assert "Median actual/forecast" in result.stdout
+    # The ratio must never be presented as pure estimator error: the actual is total
+    # spend and the forecast is a working set, so the turn multiplier is in there too.
+    assert "turn multiplier" in result.stdout
+
+
+def test_cli_usage_forecast_explains_an_empty_report(work_repo: Path) -> None:
+    """An empty table alone would read as a healthy forecast; the counts say otherwise."""
+    _run_records(
+        work_repo,
+        {
+            "b-1": [
+                {
+                    "agent": "claude",
+                    "outcome": "executed",
+                    "timestamp": "2026-07-26T09:00:00+00:00",
+                    "tokens": 200_000,
+                }
+            ]
+        },
+    )
+    result = run_basicly(work_repo, "usage", "forecast")
+    assert result.returncode == 0, result.stderr
+    assert "no forecast error is computable yet" in result.stdout
+    assert "1 actual with no forecast" in result.stdout
+
+
 def test_cli_status_reports_authoring_repo(work_repo: Path) -> None:
     """In the authoring repo, status names the repo kind and skips install state."""
     result = run_basicly(work_repo, "status")
