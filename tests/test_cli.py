@@ -1376,6 +1376,50 @@ def test_cli_status_never_writes(tmp_path: Path) -> None:
     assert snapshot() == before
 
 
+def test_cli_hooks_check_names_the_command_that_can_fix_script_drift(
+    work_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Script drift must not be blamed on `hooks-build`, which never copies scripts.
+
+    Regression (basicly-9o6s): the report told the reader to run `basicly hooks-build`,
+    which cannot fix a script mismatch at all — while the command that does,
+    `basicly install`, overwrites the local script and so silently destroys a
+    deliberate hook-script edit as it turns the gate green.
+    """
+    monkeypatch.chdir(work_repo)
+    script = work_repo / ".basicly/core/hooks/pre-commit.py"
+    script.write_text("# drifted\n", encoding="utf-8")
+
+    assert cli.main(["hooks-check"]) == 1
+    err = " ".join(capsys.readouterr().err.split())
+    assert "`basicly hooks-build` does not copy hook scripts" in err
+    assert "`basicly install` re-materializes them" in err
+    assert "edit the catalog source" in err
+    assert "Run `basicly hooks-build` to sync hooks" not in err
+
+
+def test_cli_hooks_check_still_points_wiring_drift_at_hooks_build(
+    work_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Wiring drift keeps the remedy that actually fixes it."""
+    monkeypatch.chdir(work_repo)
+    config = work_repo / ".pre-commit-config.yaml"
+    data = yaml.safe_load(config.read_text(encoding="utf-8"))
+    for repo in data["repos"]:
+        if repo.get("repo") == "local":
+            repo["hooks"] = [h for h in repo["hooks"] if h["id"] != "pre-push-script"]
+    config.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+    assert cli.main(["hooks-check"]) == 1
+    err = " ".join(capsys.readouterr().err.split())
+    assert "Run `basicly hooks-build` to sync hooks" in err
+    assert "does not copy hook scripts" not in err
+
+
 def test_cli_hooks_check_warns_when_uv_is_missing(
     work_repo: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -259,6 +259,83 @@ def test_check_detects_wiring_drift(tmp_path: Path) -> None:
     assert any(reason == "managed hook 'pre-push-script' missing" for _, reason in mismatches)
 
 
+def _git(cwd: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)  # nosec B603 B607
+
+
+def _init_repo(root: Path) -> None:
+    """Turn *root* into a git repo with one commit holding everything already there."""
+    _git(root, "init", "-b", "main")
+    _git(root, "config", "user.name", "Test")
+    _git(root, "config", "user.email", "test@example.com")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-m", "init", "--no-verify")
+
+
+def test_check_reports_consumer_hook_script_drift(tmp_path: Path) -> None:
+    """A consumer's materialized hook scripts are a projection and must be checked."""
+    _materialize_hooks(tmp_path)
+    sync_hooks(tmp_path, CORE_HOOKS_DIR)
+    assert check_hooks(tmp_path, CORE_HOOKS_DIR) == []
+
+    edited = tmp_path / CORE_HOOKS_DIR / "pre-commit.py"
+    edited.write_text("# hand-edited in the consumer\n", encoding="utf-8")
+    (tmp_path / CORE_HOOKS_DIR / "commit-msg.py").unlink()
+
+    reasons = {path.name: reason for path, reason in check_hooks(tmp_path, CORE_HOOKS_DIR)}
+    assert reasons["pre-commit.py"] == "differs from catalog"
+    assert reasons["commit-msg.py"] == "missing"
+
+
+def test_check_ignores_a_hook_edit_in_a_sibling_worktree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A hook-script edit in a linked worktree is branch-local work, not projection drift.
+
+    Regression (basicly-9o6s): basicly is installed editable from the base checkout, so
+    the landing verify compared the base's pre-merge script against the worktree's
+    changed one and reported the change itself as drift — which made any hook-script
+    change structurally unlandable through the harness loop, while telling the operator
+    to run a command that would overwrite the change.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _materialize_hooks(repo)
+    sync_hooks(repo, CORE_HOOKS_DIR)
+    _init_repo(repo)
+    monkeypatch.setattr(hooks_module, "_catalog_hooks_dir", lambda: repo / CORE_HOOKS_DIR)
+    assert check_hooks(repo, CORE_HOOKS_DIR) == []
+
+    linked = tmp_path / "repo.worktrees" / "wt"
+    _git(repo, "worktree", "add", "-b", "harness/wt", str(linked))
+    script = linked / CORE_HOOKS_DIR / "pre-commit.py"
+    script.write_text(script.read_text(encoding="utf-8") + "\n# the change under review\n", "utf-8")
+
+    assert check_hooks(linked, CORE_HOOKS_DIR) == []
+
+
+def test_check_reports_drift_when_the_catalog_sits_inside_the_consumer_repo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sharing a repository with the catalog is not enough to silence the gate.
+
+    A consumer's in-repo ``.venv`` puts the *packaged* catalog inside the consumer's own
+    git repository, so keying the skip on repository identity alone would disable this
+    check for them. The skip needs the same working-tree-relative path as well.
+    """
+    _materialize_hooks(tmp_path)
+    sync_hooks(tmp_path, CORE_HOOKS_DIR)
+    vendored = tmp_path / ".venv/lib/site-packages/basicly/catalog/hooks"
+    shutil.copytree(tmp_path / CORE_HOOKS_DIR, vendored)
+    _init_repo(tmp_path)
+    monkeypatch.setattr(hooks_module, "_catalog_hooks_dir", lambda: vendored)
+    assert check_hooks(tmp_path, CORE_HOOKS_DIR) == []
+
+    edited = tmp_path / CORE_HOOKS_DIR / "pre-commit.py"
+    edited.write_text("# drifted from the wheel's catalog\n", encoding="utf-8")
+    assert (edited, "differs from catalog") in check_hooks(tmp_path, CORE_HOOKS_DIR)
+
+
 def test_hook_entry_quotes_paths_with_spaces() -> None:
     """A core path containing a space must survive pre-commit's shell-split."""
     specs = [HookSpec(id="pre-commit-script", script="pre-commit.py", stage="pre-commit")]

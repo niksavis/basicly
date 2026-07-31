@@ -1396,6 +1396,32 @@ def cmd_hooks_build(_args: argparse.Namespace) -> int:
     return 0
 
 
+HOOKS_WIRING_REMEDY = "Stale hook projection detected. Run `basicly hooks-build` to sync hooks."
+# `hooks-build` deliberately does not copy hook scripts (they are core content owned
+# by `basicly install`, provenance-guarded), so naming it here sent the reader at a
+# command that cannot fix a script mismatch — and `basicly install` overwrites the
+# local script, which for a deliberate hook-script edit destroys the change while
+# turning the gate green. Say which command actually applies, and to what
+# (basicly-9o6s).
+HOOKS_SCRIPT_REMEDY = (
+    "Hook scripts differ from the installed basicly catalog; `basicly hooks-build` does not "
+    "copy hook scripts and will not fix this. `basicly install` re-materializes them from the "
+    "installed catalog, overwriting the local copies — so if the local version is the change "
+    "you want, edit the catalog source it is built from instead of running it."
+)
+
+
+def _hooks_stale_message(mismatches: list[tuple[Path, str]], core_hooks_dir: Path) -> str:
+    """Pick the hooks-check remedy from what actually drifted: scripts, wiring, or both."""
+    resolved = core_hooks_dir.resolve()
+    scripts = [path for path, _ in mismatches if path.resolve().is_relative_to(resolved)]
+    if not scripts:
+        return HOOKS_WIRING_REMEDY
+    if len(scripts) == len(mismatches):
+        return HOOKS_SCRIPT_REMEDY
+    return f"{HOOKS_SCRIPT_REMEDY} The remaining wiring drift is fixed by `basicly hooks-build`."
+
+
 def cmd_hooks_check(_args: argparse.Namespace) -> int:
     """Check that projected hooks and their wiring are up to date."""
     repo_root = _repo_root()
@@ -1421,7 +1447,7 @@ def cmd_hooks_check(_args: argparse.Namespace) -> int:
     if _report_mismatches(
         mismatches,
         repo_root,
-        stale_message="Stale hook projection detected. Run `basicly hooks-build` to sync hooks.",
+        stale_message=_hooks_stale_message(mismatches, repo_root / _core_hooks_dir(paths)),
     ):
         return 1
 

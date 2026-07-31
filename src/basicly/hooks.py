@@ -619,6 +619,58 @@ def remove_managed_hooks(repo_root: Path) -> str | None:
     return note if ok else f"{note}; {message}"
 
 
+def _tracked_identity(path: Path, cwd: Path) -> tuple[Path, str] | None:
+    """Identify *path* as a tracked location: (git common dir, working-tree-relative path).
+
+    *cwd* is an existing directory in the same working tree as *path* (*path* itself
+    need not exist yet). Returns ``None`` when git cannot answer — not a repository,
+    git not on PATH, or *path* outside the working tree — in which case the caller has
+    no evidence about the relationship and must compare contents.
+    """
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir", "--show-toplevel"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )  # nosec B603 B607
+    except OSError:
+        return None
+    lines = [line for line in proc.stdout.splitlines() if line.strip()]
+    if proc.returncode != 0 or len(lines) != 2:
+        return None
+    common = Path(lines[0])
+    if not common.is_absolute():
+        common = cwd / common
+    try:
+        relative = path.resolve().relative_to(Path(lines[1]).resolve())
+    except ValueError:
+        return None
+    return common.resolve(), relative.as_posix()
+
+
+def _is_same_tracked_path(src: Path, dst: Path, repo_root: Path) -> bool:
+    """True when the catalog dir and its target are one tracked path in two working trees.
+
+    Comparing contents only means something when *dst* is a *projection* of *src* —
+    a consumer's materialized copy, which can drift from the installed catalog. It is
+    not a projection when both are the same working-tree-relative path in the same git
+    repository: then they are the same tracked file seen through two checkouts, and any
+    difference is uncommitted or branch-local work, not drift. basicly installed
+    editable from its own checkout hits this on every harness worktree that edits a
+    hook script (basicly-9o6s); ``src is dst`` is the degenerate case of it.
+
+    Path equality is required as well as repository identity: a consumer's in-repo
+    ``.venv`` puts the *packaged* catalog inside the consumer's own repository, and
+    keying on repository identity alone would disable this gate for them.
+    """
+    if src.resolve() == dst.resolve():
+        return True
+    catalog = _tracked_identity(src, src if src.is_dir() else src.parent)
+    return catalog is not None and catalog == _tracked_identity(dst, repo_root)
+
+
 def check_hooks(
     repo_root: Path, core_hooks_dir: Path, selection: frozenset[str] | None = None
 ) -> list[tuple[Path, str]]:
@@ -627,7 +679,7 @@ def check_hooks(
     src = _catalog_hooks_dir()
     dst = repo_root / core_hooks_dir
 
-    if src.resolve() != dst.resolve():
+    if not _is_same_tracked_path(src, dst, repo_root):
         for path in iter_catalog_files(src):
             target = dst / path.relative_to(src)
             if not target.exists():
