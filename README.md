@@ -99,10 +99,17 @@ scaffolded VS Code tasks/CI workflow (only when still unedited).
 
 ## What install gives you
 
-- The managed core catalog under `.basicly/` (fragments, skills, hook scripts).
+- The managed core catalog under `.basicly/` (fragments, skills, subagents, hook
+  scripts).
+- A model map at `.basicly/core/models/` — a subagent source declares a portable
+  model tier (`low`, `medium`, `high`, `maximum`) rather than a provider model id,
+  and the map records which concrete model that tier is per vendor and per
+  surface, with that surface's own published cost and token limits. Plain JSON
+  beside its schema, so any tool can read it.
 - Generated agent instruction files (`CLAUDE.md`, `AGENTS.md`,
   `.github/copilot-instructions.md`) rendered from shared fragments.
-- Projected skills at `.claude/skills/` and `.agents/skills/`.
+- Projected skills at `.claude/skills/` and `.agents/skills/`, and subagents at
+  `.claude/agents/`.
 - Activated hooks across three surfaces: git stages (pre-commit, commit-msg,
   pre-push — wired through the [pre-commit framework](https://pre-commit.com),
   whose config file is fixed at `.pre-commit-config.yaml`; the *tool* is named
@@ -188,7 +195,7 @@ capability sits under the pillar it belongs to, grouped by what it currently is:
 
 | Pillar | `✓` shipped | `▶` building | `◇` designed · `?` researching |
 | --- | --- | --- | --- |
-| **01 · guidance** | one catalog → 3 agent families<br>drift gate in CI<br>path-scoped rules tier<br>invocation axis per entry | lexical routing evals<br>an eval case per entry<br>always-on baseline relief<br>tutorial and how-to layer | `?` do entries change behaviour |
+| **01 · guidance** | one catalog → 3 agent families<br>drift gate in CI<br>path-scoped rules tier<br>invocation axis per entry<br>model tiers · committed model map | lexical routing evals<br>an eval case per entry<br>always-on baseline relief<br>tutorial and how-to layer | `?` do entries change behaviour |
 | **02 · gates** | git hooks · commit · push<br>agent hooks · Claude · Copilot<br>verify pipeline · 3 modes | gate taxonomy by type<br>severity on judged output<br>rework convergence check<br>install reports its tier | — |
 | **03 · the loop** | single-track loop<br>worktree isolation<br>parallel lanes · merge queue<br>autonomy grants · spend cap<br>release automation | per-model spend forecast<br>unattended multi-lane run | `◇` a named role per judgment step<br>`?` cost per landed package<br>`?` deterministic AST localisation |
 | **04 · the work graph** | issues · deps · gates<br>phase derived from state | dispatch score recorded | `◇` owned in-process event log<br>`◇` provenance on every edge<br>`◇` fsck and rebuild |
