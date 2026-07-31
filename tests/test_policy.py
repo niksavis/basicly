@@ -11,8 +11,14 @@ from pathlib import Path
 
 import pytest
 
-from basicly import policy, run_record
-from basicly.config import PolicyConfig, SizingConfig
+from basicly import policy, rubrics, run_record, verify
+from basicly.config import (
+    ENGINE_GATE_PROVIDERS,
+    RUBRIC_GATE_PROVIDER,
+    VERIFY_GATE_PROVIDER,
+    PolicyConfig,
+    SizingConfig,
+)
 
 
 class _Proc:
@@ -258,12 +264,16 @@ def test_compose_body_puts_a_preamble_above_the_first_heading() -> None:
 def test_gate_status_advances_when_required_pass(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A passing required gate advances; an advisory gate never blocks."""
+    """A passing required gate advances; an advisory gate never blocks.
+
+    The advisory result keeps a non-engine provider deliberately: an advisory gate
+    accepts any provider, and only the required set is filtered (basicly-jr0l.51).
+    """
     _install(
         monkeypatch,
         _FakeBr(
             gates=[
-                {"gate": "verify", "provider": "ci", "passed": True},
+                {"gate": "verify", "provider": VERIFY_GATE_PROVIDER, "passed": True},
                 {"gate": "review", "provider": "ai", "passed": False},
             ]
         ),
@@ -272,13 +282,17 @@ def test_gate_status_advances_when_required_pass(
     assert status.can_advance is True
     assert status.required_passed == ("verify",)
     assert [(v.gate, v.passed) for v in status.advisory] == [("review", False)]
+    assert status.disregarded == ()
 
 
 def test_gate_status_blocks_on_failed_required(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A failed required gate blocks advancement."""
-    _install(monkeypatch, _FakeBr(gates=[{"gate": "verify", "provider": "ci", "passed": False}]))
+    _install(
+        monkeypatch,
+        _FakeBr(gates=[{"gate": "verify", "provider": VERIFY_GATE_PROVIDER, "passed": False}]),
+    )
     status = policy.gate_status(tmp_path, "i", CONFIG)
     assert status.can_advance is False
     assert status.required_failed == ("verify",)
@@ -292,6 +306,109 @@ def test_gate_status_blocks_on_missing_required(
     status = policy.gate_status(tmp_path, "i", CONFIG)
     assert status.can_advance is False
     assert status.required_missing == ("verify",)
+
+
+def test_a_required_gate_ignores_a_pass_from_a_foreign_provider(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The forgery this closes: one ``br gate report`` from inside a dispatch.
+
+    A dispatched lane agent shares the real tracker through the worktree beads
+    redirect, so before basicly-jr0l.51 a single report satisfied a required gate
+    and no model-authority constraint stood in its way. The gate must read
+    unsatisfied, and the disregarded result must be surfaced rather than dropped:
+    when it is the only result recorded, a bare "missing" contradicts what `br gate
+    list` plainly shows, leaving the operator nothing to act on.
+    """
+    _install(
+        monkeypatch,
+        _FakeBr(gates=[{"gate": "verify", "provider": "lane-agent", "passed": True}]),
+    )
+    status = policy.gate_status(tmp_path, "i", CONFIG)
+    assert status.can_advance is False
+    assert status.required_missing == ("verify",)
+    assert status.required_passed == ()
+    assert [(v.gate, v.provider) for v in status.disregarded] == [("verify", "lane-agent")]
+    # A required gate's foreign result is not quietly reclassified as advisory —
+    # that would let it read as an accepted verdict somewhere.
+    assert status.advisory == ()
+
+
+def test_a_required_gate_counts_the_engine_rubric_provider(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Promoting the rubric gate to required must stay satisfiable.
+
+    ``rubrics.RUBRIC_GATE`` is documented as promotable into ``[policy]
+    required_gates`` by a consumer, and its deterministic pre-flight half is
+    recorded by the engine under its own provider. Filtering to the verify provider
+    alone would make that documented promotion permanently unsatisfiable.
+    """
+    config = PolicyConfig(required_gates=("verify", "rubric"), max_rework=2)
+    _install(
+        monkeypatch,
+        _FakeBr(
+            gates=[
+                {"gate": "verify", "provider": VERIFY_GATE_PROVIDER, "passed": True},
+                {"gate": "rubric", "provider": RUBRIC_GATE_PROVIDER, "passed": True},
+            ]
+        ),
+    )
+    status = policy.gate_status(tmp_path, "i", config)
+    assert status.can_advance is True
+    assert status.required_passed == ("verify", "rubric")
+    assert status.disregarded == ()
+
+
+def test_a_foreign_pass_cannot_shadow_the_engines_own_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The engine's verdict is selected independently of the rest of the rows.
+
+    br keeps one result per (gate, provider) — verified against the real tracker,
+    which returns both rows in no guaranteed order — so a gate genuinely carries a
+    foreign row *alongside* the engine's. The previous reader collapsed every row
+    for a gate and took the last, so a forged pass recorded after a real failure
+    became the authoritative verdict. This is the ordering that must not decide it.
+    """
+    _install(
+        monkeypatch,
+        _FakeBr(
+            gates=[
+                {"gate": "verify", "provider": VERIFY_GATE_PROVIDER, "passed": False},
+                {"gate": "verify", "provider": "lane-agent", "passed": True},
+            ]
+        ),
+    )
+    status = policy.gate_status(tmp_path, "i", CONFIG)
+    assert status.can_advance is False
+    assert status.required_failed == ("verify",)
+
+
+def test_the_recogniser_and_the_recorders_share_one_provider_string() -> None:
+    """A rename of either recorder's provider must not desynchronise the filter.
+
+    ``gate_status`` recognises engine results by string. If ``verify`` or
+    ``rubrics`` grew its own literal again, a rename there would silently stop
+    every required gate from ever counting — the loop would block forever with no
+    failing test to say why.
+    """
+    assert verify.GATE_PROVIDER in ENGINE_GATE_PROVIDERS
+    assert rubrics.GATE_PROVIDER in ENGINE_GATE_PROVIDERS
+
+
+def test_a_disregarded_result_is_explained_in_a_grant_violation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A blocked ship must say *why* the gate did not count, not just that it didn't."""
+    _install(
+        monkeypatch,
+        _FakeBr(gates=[{"gate": "verify", "provider": "lane-agent", "passed": True}]),
+    )
+    violations = policy.lights_out_violations(tmp_path, "basicly-x", CONFIG, ids=())
+    assert len(violations) == 1
+    assert "lane-agent" in violations[0]
+    assert "not the engine's own" in violations[0]
 
 
 def test_rework_counts_and_escalates(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -616,7 +733,10 @@ def test_check_working_set_floor_skips_greenfield_scope() -> None:
 
 
 L3_CONFIG = PolicyConfig(required_gates=("verify",), max_rework=2, autonomy="L3")
-_VERIFY_GREEN = [{"gate": "verify", "provider": "t", "passed": True}]
+# The engine's own provider, because these tests stand in for a gate the engine
+# recorded; a foreign provider no longer counts toward a required gate
+# (basicly-jr0l.51).
+_VERIFY_GREEN = [{"gate": "verify", "provider": VERIFY_GATE_PROVIDER, "passed": True}]
 
 
 def test_active_grant_last_marker_wins_and_revocation_turns_it_off(

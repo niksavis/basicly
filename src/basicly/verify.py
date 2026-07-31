@@ -23,10 +23,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import br, worktree
-from .config import VerifyCheck, VerifyConfig, load_verify_config
+from .config import VERIFY_GATE_PROVIDER, VerifyCheck, VerifyConfig, load_verify_config
 
 DEFAULT_GATE = "verify"
-GATE_PROVIDER = "basicly-verify"
+# Single-sourced in config so policy.gate_status can recognise it as engine-owned
+# without importing this module (basicly-jr0l.51).
+GATE_PROVIDER = VERIFY_GATE_PROVIDER
 
 
 def linked_worktree_guard(repo_root: Path) -> str | None:

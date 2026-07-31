@@ -43,6 +43,7 @@ from pathlib import Path
 import pytest
 
 from basicly import br, loop, loop_state, merge, policy, runner, supervise, worktree
+from basicly.config import VERIFY_GATE_PROVIDER
 from basicly.decompose import ChildSpec
 
 needs_br = pytest.mark.skipif(
@@ -244,6 +245,10 @@ def test_ship_refuses_a_leaf_whose_branch_never_merged(harness_repo: Path) -> No
     )
 
     # The out-of-band gate record that derives the phase straight past the merge.
+    # It carries the engine's own provider because that is the route still open
+    # after basicly-jr0l.51: a foreign provider no longer counts toward a required
+    # gate, but `basicly verify --issue` run by hand from base records under
+    # exactly this provider — which is the trap this guard exists to backstop.
     _br(
         repo,
         "gate",
@@ -252,7 +257,7 @@ def test_ship_refuses_a_leaf_whose_branch_never_merged(harness_repo: Path) -> No
         "--gate",
         "verify",
         "--provider",
-        "by-hand",
+        VERIFY_GATE_PROVIDER,
         "--status",
         "pass",
     )

@@ -351,6 +351,29 @@ VERIFY_MODES = ("fast", "full", "staged")
 DEFAULT_REQUIRED_GATES = ("verify",)
 DEFAULT_MAX_REWORK = 2
 
+# Gate providers the engine itself records under — re-exported as
+# ``verify.GATE_PROVIDER`` and ``rubrics.GATE_PROVIDER``, which are the only two
+# call sites that write a gate result. They live here so ``policy.gate_status``
+# can recognise them without importing either module, and so a rename cannot
+# desynchronise the recogniser from the recorder (basicly-jr0l.51).
+#
+# A *required* gate counts only when its result carries one of these. ``br gate
+# report`` authenticates nothing and a dispatched lane agent shares the real
+# tracker through the worktree beads redirect, so without this filter one br
+# call from inside a dispatch satisfies a required gate — the constraint that no
+# model holds authority over a required gate would hold only by agent good
+# behaviour. Forging one of these provider strings is still possible; that is
+# the same acknowledged class as grant and checkpoint marker forgery, and this
+# is the narrowest hardening available without authenticated gate results.
+#
+# Both are engine-owned, not just the verify one: the deterministic pre-flight
+# half of the rubric gate is documented as promotable into [policy]
+# required_gates by a consumer (rubrics.RUBRIC_GATE), and filtering it out would
+# make that promotion permanently unsatisfiable.
+VERIFY_GATE_PROVIDER = "basicly-verify"
+RUBRIC_GATE_PROVIDER = "basicly-rubric"
+ENGINE_GATE_PROVIDERS = frozenset({VERIFY_GATE_PROVIDER, RUBRIC_GATE_PROVIDER})
+
 # Working-set sizing defaults (factory design D8/section 6, basicly-kjc5.2):
 # the govern band is absolute tokens of material to reason over, NOT a fraction
 # of the context window (the 50-70 percent folk rule was researched and refuted).
