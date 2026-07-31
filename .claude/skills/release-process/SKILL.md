@@ -22,11 +22,22 @@ projections, rewrites the `@vX.Y.Z` pins in `README.md`, `site/index.html` **and
 bootstrap shims**, upserts the dated `CHANGELOG.md` section, commits, and creates the
 annotated tag. It **never pushes**.
 
-Three things it deliberately does not do, which stay with you:
+## Curate the changelog *before* you run it — under `## [Unreleased]`
+
+The run promotes the `## [Unreleased]` body into the dated `## vX.Y.Z - <date>`
+section and leaves `[Unreleased]` empty; the commit-subject dump is only the
+fallback for a release nobody wrote notes for. So write the prose first, under
+`[Unreleased]`, in the `### Added` / `### Fixed` shape the older sections use.
+
+Curating afterwards does not work and is the trap this replaced (`basicly-m3od.1`):
+the commit and the annotated tag are one step, and `.github/workflows/release.yml`
+reads `CHANGELOG.md` from the **tagged** commit — so anything added in a later
+commit never reaches the published release body. A re-run keeps an already-curated
+section rather than overwriting it with the dump.
+
+Two things it deliberately does not do, which stay with you:
 
 - **Push.** Publishing is irreversible; run the two `git push` commands it prints.
-- **Curate the changelog.** It guarantees the section exists and is dated and
-  lint-clean; the `### Highlights` prose is yours to write before pushing.
 - **Decide the version.** Pass it explicitly; the command refuses one that does not
   move forward.
 

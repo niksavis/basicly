@@ -33,8 +33,28 @@ _CHANGELOG_WITH_UNRELEASED = (
 )
 
 
+_CURATED_NOTE = "- **A curated highlight** somebody wrote by hand (`basicly-abcd`)."
+
+_CHANGELOG_WITH_CURATED_UNRELEASED = _CHANGELOG_WITH_UNRELEASED.replace(
+    "## [Unreleased]\n\n",
+    f"## [Unreleased]\n\n### Added\n\n{_CURATED_NOTE}\n\n",
+)
+
+
 def _heading_order(text: str) -> list[str]:
     return [line for line in text.splitlines() if line.startswith("## ")]
+
+
+def _section_body(text: str, heading: str) -> list[str]:
+    """Return the lines of the named section, exclusive of its own heading."""
+    lines = text.splitlines()
+    start = lines.index(heading)
+    body: list[str] = []
+    for line in lines[start + 1 :]:
+        if line.startswith("## "):
+            break
+        body.append(line)
+    return [line for line in body if line.strip()]
 
 
 def test_new_section_lands_after_unreleased_not_above_it() -> None:
@@ -103,3 +123,73 @@ def test_rerunning_same_tag_replaces_in_place_keeping_order() -> None:
     assert "second (999999)" in second
     assert "first (def456)" not in second
     assert "\n\n\n" not in second
+
+
+def test_curated_unreleased_body_is_promoted_into_the_dated_section() -> None:
+    """The notes a human wrote land in the tagged section, not stranded under Unreleased.
+
+    The release commit and the annotated tag are one step and the release workflow
+    reads CHANGELOG.md from the tagged commit, so a curated body left behind is
+    never published (basicly-m3od.1).
+    """
+    m = _load_module()
+    out = m.upsert_release_section(
+        _CHANGELOG_WITH_CURATED_UNRELEASED, "v0.6.0", "2026-07-22", "v0.5.1", ["raw (def456)"]
+    )
+
+    assert _section_body(out, "## v0.6.0 - 2026-07-22") == [
+        "Delta: v0.5.1..v0.6.0",
+        "### Added",
+        _CURATED_NOTE,
+    ]
+    assert "raw (def456)" not in out
+    assert "### Changes" not in out
+
+
+def test_promotion_empties_unreleased_and_keeps_it_pinned_on_top() -> None:
+    """Unreleased survives as an empty heading, ready for the next cycle."""
+    m = _load_module()
+    out = m.upsert_release_section(
+        _CHANGELOG_WITH_CURATED_UNRELEASED, "v0.6.0", "2026-07-22", "v0.5.1", ["raw (def456)"]
+    )
+
+    assert _heading_order(out) == [
+        "## [Unreleased]",
+        "## v0.6.0 - 2026-07-22",
+        "## v0.5.1 - 2026-07-20",
+    ]
+    assert _section_body(out, "## [Unreleased]") == []
+    assert "\n\n\n" not in out
+
+
+def test_empty_unreleased_still_generates_the_commit_delta_skeleton() -> None:
+    """With nothing curated, the commit-subject list remains the traceability fallback."""
+    m = _load_module()
+    out = m.upsert_release_section(
+        _CHANGELOG_WITH_UNRELEASED, "v0.6.0", "2026-07-22", "v0.5.1", ["raw (def456)"]
+    )
+
+    assert _section_body(out, "## v0.6.0 - 2026-07-22") == [
+        "Delta: v0.5.1..v0.6.0",
+        "### Changes",
+        "- raw (def456)",
+    ]
+
+
+def test_rerun_does_not_replace_a_curated_section_with_a_commit_dump() -> None:
+    """A retried release keeps the promoted notes; only a generated section is refreshed."""
+    m = _load_module()
+    promoted = m.upsert_release_section(
+        _CHANGELOG_WITH_CURATED_UNRELEASED, "v0.6.0", "2026-07-22", "v0.5.1", ["raw (def456)"]
+    )
+    again = m.upsert_release_section(
+        promoted, "v0.6.0", "2026-07-22", "v0.5.1", ["second (999999)"]
+    )
+
+    assert _section_body(again, "## v0.6.0 - 2026-07-22") == [
+        "Delta: v0.5.1..v0.6.0",
+        "### Added",
+        _CURATED_NOTE,
+    ]
+    assert "second (999999)" not in again
+    assert _heading_order(again) == _heading_order(promoted)

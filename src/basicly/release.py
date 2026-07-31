@@ -363,8 +363,12 @@ def _write_changelog(repo_root: Path, plan: ReleasePlan) -> None:
 
     Reused rather than reimplemented: it already computes the commit delta from
     the nearest previous semantic tag and upserts the section idempotently, and it
-    has its own tests. The `### Highlights` prose it leaves is a human's to curate
-    before publishing — this only guarantees the section exists and is dated.
+    has its own tests.
+
+    It promotes whatever sits under `## [Unreleased]` into the dated section, so the
+    prose a human curated *before* this run is what the tag carries. Curating
+    afterwards cannot work: this commit and the annotated tag are one step, and the
+    release workflow reads CHANGELOG.md from the tagged commit (basicly-m3od.1).
     """
     worktree.run(
         [sys.executable, str(repo_root / CHANGELOG_SCRIPT), "--tag", plan.tag, "--date", plan.date],

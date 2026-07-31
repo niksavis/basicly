@@ -11,6 +11,12 @@ from pathlib import Path
 
 TAG_PATTERN = re.compile(r"^v\d+\.\d+\.\d+$")
 
+UNRELEASED_HEADING = "## [Unreleased]"
+
+# The one marker that tells a generated section from a curated one, so a re-run
+# cannot overwrite release notes a human wrote (basicly-m3od.1).
+GENERATED_HEADING = "### Changes"
+
 CHANGELOG_INTRO: str = (
     "# Changelog\n\nAll notable user-facing changes are documented in this file by release tag.\n"
 )
@@ -65,21 +71,31 @@ def _build_section(
     release_date: str,
     previous_tag: str | None,
     commits: list[str],
+    curated: list[str] | None = None,
 ) -> list[str]:
-    """Build a markdown changelog section for the target release tag."""
+    """Build a markdown changelog section for the target release tag.
+
+    *curated* is the promoted ``[Unreleased]`` body. When it is present it **is**
+    the section's content: the commit-subject list is only a traceability fallback
+    for a release nobody wrote notes for.
+    """
     delta_start = previous_tag or "initial"
     section = [
         f"## {tag} - {release_date}",
         "",
         f"Delta: {delta_start}..{tag}",
         "",
-        "### Changes",
-        # markdownlint runs repo-wide on any staged .md, and MD022/MD032 require a
-        # blank line after a heading and before a list. The manual flow never hit
-        # this because a human curated the section into a second commit; an
-        # automated release commits this text as generated (basicly-kjc5.12).
-        "",
     ]
+    if curated:
+        section.extend(curated)
+        section.append("")
+        return section
+
+    # markdownlint runs repo-wide on any staged .md, and MD022/MD032 require a
+    # blank line after a heading and before a list. The manual flow never hit
+    # this because a human curated the section into a second commit; an
+    # automated release commits this text as generated (basicly-kjc5.12).
+    section.extend([GENERATED_HEADING, ""])
     if commits:
         section.extend([f"- {commit}" for commit in commits])
     else:
@@ -128,7 +144,7 @@ def _insert_index(lines: list[str]) -> int:
     ``[Unreleased]`` (basicly-pui7).
     """
     for idx, line in enumerate(lines):
-        if line.startswith("## [Unreleased]"):
+        if line.startswith(UNRELEASED_HEADING):
             nxt = idx + 1
             while nxt < len(lines) and not lines[nxt].startswith("## "):
                 nxt += 1
@@ -172,6 +188,67 @@ def _upsert_section(existing_text: str, tag: str, section_lines: list[str]) -> s
     return "\n".join(_collapse_blank_runs(updated)).rstrip() + "\n"
 
 
+def _take_unreleased_body(lines: list[str]) -> tuple[list[str], list[str]]:
+    """Split the ``[Unreleased]`` body out of *lines*, leaving the heading in place.
+
+    Returns ``(body, remaining_lines)``. Promoting the body is what makes the
+    release tag carry the notes a human wrote: the release commit and the tag are
+    one step, and the release workflow reads ``CHANGELOG.md`` from the *tagged*
+    commit, so curation left under ``[Unreleased]`` is never published
+    (basicly-m3od.1). The heading stays so it keeps its pinned position at the top
+    and the next cycle has somewhere to accumulate.
+    """
+    for idx, line in enumerate(lines):
+        if not line.startswith(UNRELEASED_HEADING):
+            continue
+        end = idx + 1
+        while end < len(lines) and not lines[end].startswith("## "):
+            end += 1
+        body = list(lines[idx + 1 : end])
+        while body and body[0].strip() == "":
+            body.pop(0)
+        while body and body[-1].strip() == "":
+            body.pop()
+        if not body:
+            return [], lines
+        return body, [*lines[: idx + 1], "", *lines[end:]]
+    return [], lines
+
+
+def _is_curated(section: list[str]) -> bool:
+    """Report whether an existing dated section holds prose rather than the skeleton."""
+    return not any(line.startswith(GENERATED_HEADING) for line in section)
+
+
+def upsert_release_section(
+    existing_text: str,
+    tag: str,
+    release_date: str,
+    previous_tag: str | None,
+    commits: list[str],
+) -> str:
+    """Return the changelog text with *tag*'s dated section present and curated.
+
+    Three cases, in order of precedence:
+
+    1. The dated section already exists and is curated — left untouched, so a
+       re-run (a corrected ``--date``, a retried release) cannot replace release
+       notes with a commit dump.
+    2. ``[Unreleased]`` has a body — promoted into the dated section, Keep a
+       Changelog's own release step, and ``[Unreleased]`` is emptied.
+    3. Neither — the commit-delta skeleton is generated, as before.
+    """
+    lines = _ensure_changelog_header(existing_text.splitlines())
+
+    start, end = _find_section_bounds(lines, tag)
+    if start is not None and end is not None and _is_curated(lines[start:end]):
+        return "\n".join(_collapse_blank_runs(lines)).rstrip() + "\n"
+
+    curated, lines = _take_unreleased_body(lines)
+    section_lines = _build_section(tag, release_date, previous_tag, commits, curated=curated)
+    return _upsert_section("\n".join(lines), tag, section_lines)
+
+
 def _parse_args() -> argparse.Namespace:
     """Parse CLI arguments."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -204,8 +281,7 @@ def main() -> int:
 
     previous_tag = _nearest_previous_tag(args.tag)
     commits = _collect_commit_subjects(previous_tag)
-    section_lines = _build_section(args.tag, args.date, previous_tag, commits)
-    new_text = _upsert_section(existing_text, args.tag, section_lines)
+    new_text = upsert_release_section(existing_text, args.tag, args.date, previous_tag, commits)
 
     changelog_path.write_text(new_text, encoding="utf-8")
     print(f"Updated {changelog_path} for {args.tag} ({args.date})")
