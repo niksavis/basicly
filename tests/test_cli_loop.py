@@ -166,6 +166,53 @@ def test_loop_run_challenge_reprints_the_whole_command_to_rerun(
     assert "may run the command themselves" in err
 
 
+def test_loop_run_prints_why_a_grant_declined_the_challenge(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The reason reaches the operator on the surface the incident was measured on.
+
+    ``loop run`` is what the driver ran (basicly-5ltn); a challenge that carries a
+    reason and prints it nowhere would leave the diagnostic in the engine only.
+    """
+    _ceremony(
+        monkeypatch,
+        loop.CeremonyResult(
+            (AdvanceResult("basicly-x", "verify", "verify", "blocked", checkpoint="ship"),),
+            challenge=("ship", "c0ffee"),
+            challenge_reason=(
+                "the active L3 grant covers ship but declined it: "
+                "rework escalation on basicly-sib (gate verify: 2/2)"
+            ),
+        ),
+    )
+
+    assert cli.main(["loop", "run", "basicly-x", "--root", "basicly-epic"]) == 1
+
+    err = capsys.readouterr().err
+    assert "the active L3 grant covers ship but declined it" in err
+    assert "rework escalation on basicly-sib (gate verify: 2/2)" in err
+    assert "--confirm c0ffee" in err
+
+
+def test_loop_run_challenge_without_a_grant_prints_no_reason_line(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """No grant, no new line: the ungranted challenge is byte-for-byte as it was."""
+    _ceremony(
+        monkeypatch,
+        loop.CeremonyResult(
+            (AdvanceResult("basicly-x", "verify", "verify", "blocked", checkpoint="ship"),),
+            challenge=("ship", "c0ffee"),
+        ),
+    )
+
+    assert cli.main(["loop", "run", "basicly-x"]) == 1
+
+    lines = capsys.readouterr().err.splitlines()
+    assert lines[0] == "checkpoint ship: CONFIRMATION REQUIRED (basicly-x)"
+    assert lines[1].startswith("  The merge to the base branch has ALREADY happened")
+
+
 def test_loop_run_reports_a_refusal_on_stderr(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

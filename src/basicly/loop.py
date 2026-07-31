@@ -1226,6 +1226,10 @@ class CeremonyResult:
     # The checkpoint that challenged, with the one-time code a human must relay
     # back. Set only when the ceremony stopped for want of authorization.
     challenge: tuple[str, str] | None = None
+    # Why a grant did not resolve that challenge itself, when one existed and
+    # declined it (basicly-5ltn). Empty when no grant was consulted, so the
+    # ungranted challenge stays as bare as it was.
+    challenge_reason: str = ""
     # The checkpoint that refused, with why — a bad or expired code, or a grant
     # precondition that does not hold.
     refused: tuple[str, str] | None = None
@@ -1272,7 +1276,8 @@ def run_ceremony(  # noqa: PLR0913 — mirrors the CLI surface
     :func:`policy.approve_checkpoint_guarded` (TTY, a covering grant on
     *grant_root*, or a matching one-time code from *confirms*) and, when that
     approves, the loop keeps going. Stops on a challenge or a refusal — carrying
-    the code to relay, or the reason — and on any block that is not a checkpoint:
+    the code to relay (plus why a grant declined to resolve it, when one did), or
+    the reason — and on any block that is not a checkpoint:
     a missing input, a red gate, or the handoff that awaits the agent's work.
 
     Never mints more than one challenge per call: a challenged checkpoint blocks
@@ -1304,7 +1309,11 @@ def run_ceremony(  # noqa: PLR0913 — mirrors the CLI surface
             grant_root=grant_root,
         )
         if approval.status == "challenge":
-            return CeremonyResult(tuple(events), challenge=(name, approval.code or ""))
+            return CeremonyResult(
+                tuple(events),
+                challenge=(name, approval.code or ""),
+                challenge_reason=approval.detail,
+            )
         if approval.status != "approved":
             return CeremonyResult(tuple(events), refused=(name, approval.detail))
         resolved.add(name)

@@ -117,6 +117,54 @@ def test_ship_challenge_says_the_merge_already_happened_and_nothing_is_published
     assert "no un-approve" in err
 
 
+class _GrantedBr(_FakeBr):
+    """The base fake plus ``gate list``, so a real grant decision can be reached."""
+
+    def __call__(self, repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
+        if args[:2] == ["gate", "list"]:
+            return _Proc(json.dumps({"results": []}))  # verify missing: a real wrinkle
+        return super().__call__(repo_root, args, _check=_check)
+
+
+def test_ship_challenge_names_the_precondition_the_grant_declined_on(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A grant that covered ship and declined must say so on the operator's surface.
+
+    The measured incident (basicly-5ltn): the operator saw only CONFIRMATION
+    REQUIRED, with nothing to distinguish "no grant" from "a covering grant
+    refused because a lights-out precondition is violated".
+    """
+    _no_tty(monkeypatch)
+    monkeypatch.setattr(policy, "_new_code", lambda: "cafe1234")
+    fake = _GrantedBr()
+    monkeypatch.setattr(policy, "_run_br", fake)
+    fake.comments.append("[harness-policy] grant level=L3 budget=1000000")
+
+    assert cli.main(["policy", "checkpoint", "basicly-x", "ship", "--approve"]) == 1
+
+    err = capsys.readouterr().err
+    assert "CONFIRMATION REQUIRED" in err
+    assert "the active L3 grant covers ship but declined it" in err
+    assert "required gates not green on basicly-x: verify" in err
+    # The code still has to come back: the message is new, the gate is not.
+    assert "--confirm cafe1234" in err
+
+
+def test_a_challenge_with_no_grant_prints_no_reason_line(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Given no grant the output is unchanged: nothing new between header and meaning."""
+    _no_tty(monkeypatch)
+    monkeypatch.setattr(policy, "_new_code", lambda: "cafe1234")
+
+    assert cli.main(["policy", "checkpoint", "basicly-x", "ship", "--approve"]) == 1
+
+    lines = capsys.readouterr().err.splitlines()
+    assert lines[0] == "checkpoint ship: CONFIRMATION REQUIRED (basicly-x)"
+    assert lines[1].startswith("  The merge to the base branch has ALREADY happened")
+
+
 def test_classify_and_decompose_challenges_state_their_own_effect(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -2110,7 +2110,10 @@ def _land_green(
             outcome.issue_id,
             "checkpoint",
             f"approve the ship checkpoint for {outcome.issue_id}",
-            landing.detail,
+            # The approval's own detail says why a grant declined, when one did
+            # (basicly-5ltn) — the human answering this item is the one who needs
+            # it, and the wrinkle is often in a sibling lane's bead.
+            "; ".join(part for part in (landing.detail, approval.detail) if part),
         )
         return RoutedOutcome(
             outcome.issue_id,

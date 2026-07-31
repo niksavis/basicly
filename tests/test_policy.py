@@ -1058,6 +1058,141 @@ def test_l3_child_ship_still_refuses_on_a_session_wide_wrinkle(
     assert result.status == "challenge"
 
 
+class _PerIssueBr(_FakeBr):
+    """A fake whose comments are per bead, so a violation can name a *sibling*.
+
+    The base fake shares one comment list across every issue, which cannot express
+    the incident this diagnostic exists for (basicly-5ltn): the wrinkle sits on a
+    different bead than the one being shipped.
+    """
+
+    def __init__(self, comments: dict[str, list[str]], **kwargs: object) -> None:
+        super().__init__(**kwargs)  # type: ignore[arg-type]
+        self.per_issue = comments
+
+    def __call__(self, repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
+        if args[:2] == ["comments", "list"]:
+            texts = self.per_issue.get(args[2], [])
+            return _Proc(json.dumps([{"text": t, "created_at": _EPOCH} for t in texts]))
+        if args[:2] == ["comments", "add"]:
+            self.per_issue.setdefault(args[2], []).append(args[-1])
+            return _Proc("")
+        return super().__call__(repo_root, args, _check=_check)
+
+
+def _epic_with_a_wrinkled_sibling() -> _PerIssueBr:
+    """An L3-granted epic, a green child to ship, and a rework escalation on its sibling."""
+    children = [
+        {"id": "root.1", "dependency_type": "parent-child", "status": "open"},
+        {"id": "root.2", "dependency_type": "parent-child", "status": "open"},
+    ]
+    return _PerIssueBr(
+        {
+            "root": ["[harness-policy] grant level=L3 budget=1000000"],
+            "root.2": ["[harness-policy] rework gate=verify"] * 2,
+        },
+        records={
+            "root": {"status": "open", "dependents": children},
+            "root.1": {"status": "open", "dependents": []},
+            "root.2": {"status": "open", "dependents": []},
+        },
+        gates_by_issue={"root": [], "root.1": _VERIFY_GREEN, "root.2": []},
+    )
+
+
+def test_a_declined_child_ship_names_the_precondition_and_its_sibling_bead(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The measured incident (basicly-5ltn): a bare confirmation request said nothing.
+
+    A grant existed, covered ship, was not spend-halted, and declined because of a
+    rework escalation on another bead in the epic's session - which took several
+    tool calls to find by hand. The decision is unchanged; only the reason is new.
+    """
+    _install(monkeypatch, _epic_with_a_wrinkled_sibling())
+
+    result = policy.approve_checkpoint_guarded(
+        tmp_path, "root.1", "ship", interactive=False, grant_root="root"
+    )
+
+    assert result.status == "challenge"
+    assert "the active L3 grant covers ship but declined it" in result.detail
+    assert "lights-out preconditions across session root" in result.detail
+    # The wrinkle is on a sibling, not on the node being shipped: naming the bead
+    # is the whole point of the message.
+    assert "rework escalation on root.2 (gate verify: 2/2)" in result.detail
+    # Still refused, with no marker recorded: a code must still come back.
+    assert result.code
+    assert not policy.checkpoint_approved(tmp_path, "root.1", "ship")
+
+
+def test_a_challenge_with_no_grant_carries_no_reason(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No grant means nothing was consulted, so the challenge stays exactly as bare."""
+    _install(monkeypatch, _FakeBr(gates=_VERIFY_GREEN))
+
+    result = policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
+
+    assert result.status == "challenge"
+    assert result.detail == ""
+
+
+def test_a_spend_halted_grant_says_so_on_the_challenge(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A halt is the other silent decline: it quotes spend_status's own wording."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    fake.comments.append("[harness-policy] grant level=L2 budget=100")
+    run_record.record(
+        tmp_path,
+        "root",
+        run_record.build_record(
+            agent="t", handoff=False, returncode=0, duration_s=1.0, command=("t",), tokens=150
+        ),
+    )
+
+    result = policy.approve_checkpoint_guarded(
+        tmp_path, "root", "classify", interactive=False, grant_root="root"
+    )
+
+    assert result.status == "challenge"
+    assert "the active L2 grant covers classify but declined it" in result.detail
+    assert "token_budget spent (150/100 tokens" in result.detail
+
+
+def test_a_grant_that_does_not_delegate_the_checkpoint_says_which_level_it_is(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An L2 grant and a ship ask: the operator is told the level, not left guessing."""
+    fake = _FakeBr(gates=_VERIFY_GREEN)
+    _install(monkeypatch, fake)
+    fake.comments.append("[harness-policy] grant level=L2 budget=100000")
+
+    result = policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
+
+    assert result.status == "challenge"
+    assert "the active L2 grant on i does not delegate ship" in result.detail
+
+
+def test_a_grant_outside_its_session_says_the_issue_is_not_in_the_tree(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The foreign-issue refusal is silent too, and reads as "no grant" without this."""
+    fake = _FakeBr()  # no dependents: the session is just "root"
+    _install(monkeypatch, fake)
+    fake.comments.append("[harness-policy] grant level=L2 budget=100000")
+
+    result = policy.approve_checkpoint_guarded(
+        tmp_path, "unrelated", "classify", interactive=False, grant_root="root"
+    )
+
+    assert result.status == "challenge"
+    assert "the active L2 grant on root does not cover unrelated" in result.detail
+    assert "not in that session's issue tree" in result.detail
+
+
 def test_lights_out_gate_check_defaults_to_the_root(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
