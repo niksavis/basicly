@@ -1080,21 +1080,29 @@ class _PerIssueBr(_FakeBr):
         return super().__call__(repo_root, args, _check=_check)
 
 
-def _epic_with_a_wrinkled_sibling() -> _PerIssueBr:
-    """An L3-granted epic, a green child to ship, and a rework escalation on its sibling."""
+def _epic_with_a_wrinkled_sibling(
+    *, sibling_status: str = "open", wrinkle: str = "[harness-policy] rework gate=verify"
+) -> _PerIssueBr:
+    """An L3-granted epic, a green child to ship, and a wrinkle on its sibling.
+
+    *sibling_status* is the whole distinction basicly-i1s8 turns on: the same two
+    markers are a live violation while root.2 is open and resolved history once it
+    is closed. *wrinkle* swaps the carrier, since needs-input is discounted on the
+    same rule.
+    """
     children = [
         {"id": "root.1", "dependency_type": "parent-child", "status": "open"},
-        {"id": "root.2", "dependency_type": "parent-child", "status": "open"},
+        {"id": "root.2", "dependency_type": "parent-child", "status": sibling_status},
     ]
     return _PerIssueBr(
         {
             "root": ["[harness-policy] grant level=L3 budget=1000000"],
-            "root.2": ["[harness-policy] rework gate=verify"] * 2,
+            "root.2": [wrinkle] * 2,
         },
         records={
             "root": {"status": "open", "dependents": children},
             "root.1": {"status": "open", "dependents": []},
-            "root.2": {"status": "open", "dependents": []},
+            "root.2": {"status": sibling_status, "dependents": []},
         },
         gates_by_issue={"root": [], "root.1": _VERIFY_GREEN, "root.2": []},
     )
@@ -1124,6 +1132,55 @@ def test_a_declined_child_ship_names_the_precondition_and_its_sibling_bead(
     # Still refused, with no marker recorded: a code must still come back.
     assert result.code
     assert not policy.checkpoint_approved(tmp_path, "root.1", "ship")
+
+
+def test_a_rework_escalation_counts_only_while_its_bead_is_open(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """basicly-i1s8, both directions of the one rule, on identical markers.
+
+    Rework markers are append-only and nothing marks an escalation resolved, so the
+    escalation on a bead that was fixed, shipped and closed read as a live
+    session-wide violation forever (basicly-kjc5.56 poisoned every ship under
+    basicly-kjc5). Closing the bead resolves it; leaving it open does not.
+    """
+    _install(monkeypatch, _epic_with_a_wrinkled_sibling(sibling_status="open"))
+    live = policy.lights_out_violations(tmp_path, "root", CONFIG, shipping="root.1")
+    assert live == ("rework escalation on root.2 (gate verify: 2/2)",)
+
+    _install(monkeypatch, _epic_with_a_wrinkled_sibling(sibling_status="closed"))
+    assert policy.lights_out_violations(tmp_path, "root", CONFIG, shipping="root.1") == ()
+
+
+def test_a_needs_input_event_counts_only_while_its_bead_is_open(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The other append-only carrier is discounted on the same rule, not left behind."""
+    missing_fact = "[harness-policy] needs-input which flag"
+    _install(monkeypatch, _epic_with_a_wrinkled_sibling(wrinkle=missing_fact))
+    live = policy.lights_out_violations(tmp_path, "root", CONFIG, shipping="root.1")
+    assert live == ("2 needs-input event(s) recorded on root.2",)
+
+    _install(
+        monkeypatch,
+        _epic_with_a_wrinkled_sibling(sibling_status="closed", wrinkle=missing_fact),
+    )
+    assert policy.lights_out_violations(tmp_path, "root", CONFIG, shipping="root.1") == ()
+
+
+def test_a_closed_siblings_escalation_lets_the_grant_delegate_the_child_ship(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The consequence the fix exists for: L3 stops degrading to L2 for the epic's life."""
+    _install(monkeypatch, _epic_with_a_wrinkled_sibling(sibling_status="closed"))
+
+    result = policy.approve_checkpoint_guarded(
+        tmp_path, "root.1", "ship", interactive=False, grant_root="root"
+    )
+
+    assert result.status == "approved"
+    assert result.detail == "delegated under L3 grant"
+    assert policy.checkpoint_approved(tmp_path, "root.1", "ship")
 
 
 def test_a_challenge_with_no_grant_carries_no_reason(
