@@ -1198,6 +1198,22 @@ known-good floor): a `br` that ignores the file would silently run a divergent t
 provisioning probes `br where --json` from the new worktree and aborts with upgrade guidance
 when the answer is not the base `.beads`.
 
+**12.6.2 Owned vs shared scope.** Grouping is the transitive closure of scope overlap, so a
+single path several children declare made every one of them overlap every other and collapsed a
+wholly parallel plan into one serial chain — worst for the most honest plan, because a careful
+author is _more_ likely to declare the manifest they will touch (basicly-jr0l.45). A child may
+therefore list part of its `scope` as `shared`: paths it touches but does not own, and overlap
+through a path **both** sides declared shared does not serialize them (ccpm's designated-owner
+rule, read from the other side — one child _owning_ the path still blocks everyone who touches
+it). The escape hatch is deliberately narrow so no agent-authored plan can use it to hide a real
+collision: an entry must appear verbatim in `scope` (the recorded `## Scope` stays the whole truth
+for read-cost sizing and merge attribution) and must be one literal path, never a glob, so no
+subtree can be exempted behind a wildcard. Independently of the declaration, every decompose
+surface **names the load-bearing path**: `decompose.collapsing_paths` reports each declared glob
+whose removal would leave the plan in more groups, marking the ones a `shared` declaration already
+defused — the original failure was silent, and a serial chain with no stated reason is the reason
+nobody made the one-line fix.
+
 **12.7 State & resumability.** `br` is the single source of truth — the harness keeps no
 durable side-state. In-flight worktree/branch bindings are stashed on the issue via
 `br update --external-ref`; design/architecture constraints ride _down_ a dependency tree via
