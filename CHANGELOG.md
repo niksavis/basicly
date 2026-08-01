@@ -8,6 +8,22 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`basicly loop preflight <root>` answers the whole pre-run checklist as a command.**
+  Read-only — it dispatches nothing, provisions nothing and writes no tracker state — and
+  it exits non-zero when a run would be blocked, so CI or a wrapper can gate on it. One
+  invocation reports the clean base (a dirty one refuses the landing *after* the lanes
+  have already cost money), live worktrees, stale bindings that will be repaired, the
+  resolved runner and its timeout, the grant and what remains under it, whether a metered
+  runner has no budget covering it, how many lanes are dispatchable versus merely
+  seedable, the measured per-lane cost, and either the live pass bound or a forecast for a
+  full fan-out.
+
+  Every one of those was previously an operator's recollection. A consumer installs the
+  engine and inherits none of it, which makes such knowledge an undocumented runtime
+  dependency — so the deterministic parts belong in a command, not a note (`basicly-ze8z`,
+  which carries the audit classifying what the repo already enforces, what it does not,
+  and what was never about running basicly).
+
 - **A declared model tier now resolves to a concrete model at dispatch, or the
   dispatch refuses.** The seam that makes the tier vocabulary and the committed
   map do something: `basicly.models` reads the map and resolves
@@ -360,6 +376,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   export, which stays correct only for whole-tracker counting (`basicly-hsrs`).
 
 ### Fixed
+
+- **A projected Claude hook resolves from any working directory.** The command was
+  rendered with a **relative** script path, justified by mirroring the pre-commit entries.
+  That precedent does not transfer: a pre-commit hook always runs from the repo root, while
+  a Claude Code handler runs in the *current* directory — so every consumer's managed hook
+  failed the moment the working directory drifted. Seen here as `tool-usage.py` failing
+  from a subdirectory; the `PreToolUse` case is worse in kind, because `protect-generated`
+  is a guard and a guard that cannot start protects nothing.
+
+  Now `uv run --no-project --no-python-downloads python
+  "${CLAUDE_PROJECT_DIR}/<path>"` — the host substitutes the placeholder as a plain string
+  before any shell sees it, so it also holds under PowerShell, and no machine-specific
+  absolute path lands in a tracked file. `basicly-dukb` had already established this from
+  the vendor docs and the tier-injection kit already shipped it, so the repo simply was not
+  eating its own dog food. Re-projection replaces the old form instead of duplicating it,
+  because the managed-group matcher keys on the relpath-qualified script the new command
+  still contains (`basicly-f3mi`).
 
 - **An unsizeable lane no longer defeats both dispatch cost gates.** Both keyed on
   `decompose.dispatch_sizing`, which returns `None` for any bead with no `## Scope`
