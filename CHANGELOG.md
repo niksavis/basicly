@@ -198,6 +198,25 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   so failing closed on a missing estimate would turn a sizing governor into a ban on
   hand-filed work (`basicly-jr0l.16`).
 
+- **A supervisor pass is admitted on what it is about to spend, not only on what it
+  has spent.** The D3 ceiling compared spend *already recorded* against the grant's
+  budget, so a pass was admitted whenever the previous ones happened to fit: a
+  5000000-token ceiling admitted a pass that then spent 46026602 and halted on the
+  pass after the money was gone. With concurrent lanes one pass can spend an
+  unbounded multiple of a budget nothing checked it against. A pass now sums the
+  forecast spend of the lanes it is about to start and refuses when that will not
+  fit the remainder.
+
+  **No running agent is ever interrupted.** The check runs before anything spawns,
+  in-flight lanes still land through the routing layer, and a refusal costs no
+  prompt assembly — cost is bounded by sizing the work, never by killing a working
+  agent. Two rules keep the sum honest: a lane the working-set band already refuses
+  is not counted, because it will not dispatch and charging the pass for it would
+  refuse over money nobody was going to spend; and a lane with no forecast is named
+  rather than guessed at, with the message saying the real total is higher. When
+  nothing can be forecast at all the pass is admitted, on the same reasoning the
+  band admits an un-estimatable lane (`basicly-jr0l.22`).
+
 - **Three verification rules were added to the shipped skills**, each traceable to a
   wrong statement that reached a human. `harness-loop` now says to re-measure a
   bead's third-party claims before building on them and to record the check on the
