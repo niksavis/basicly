@@ -222,6 +222,36 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **A dispatch says which model ran, and a running lane reports itself.** The dispatch
+  line named the adapter (`via claude`) and nothing about the model, so a run that
+  resolved to a cheaper or dearer model than its declared tier read exactly like a correct
+  one — and tier resolution is the entire point of the model map. It now carries the
+  requested tier, which input decided it, the resolved id, the models actually observed
+  when they disagree with the pin, and an explicit flag when the tier was **not** honoured
+  (`basicly-e5a6`).
+
+  Separately, a lane emitted nothing between adoption and completion: a healthy 519.6s run
+  was indistinguishable from a wedge, and `pgrep` was the only way to tell. Each in-flight
+  lane now reports its elapsed time on the heartbeat that already ticks during dispatch,
+  stamped inside the worker so a lane queued behind the concurrency cap is not credited
+  with run time, and measured on a monotonic clock. Tokens-so-far is `basicly-wctc`: the
+  runner drains its pipes only after the process is down, so there is nothing incremental
+  to read without restructuring the kill and timeout paths (`basicly-vu6u`).
+
+- **`--runner` and `--autonomy` work on every loop command that can dispatch**, not only
+  `supervise`. One committed `[runner] default` had to serve two incompatible modes — a
+  real agent so a supervised pass dispatches at all, and the handoff so an interactive
+  build does not re-implement the node in a second process — and the only escape was an
+  uncommitted `basicly.local.toml` that no consumer inherits. `--runner manual` now
+  restores the handoff for one invocation, and an unknown name is refused rather than
+  silently read as the default (`basicly-nvm1`).
+
+- **The scaffolded and built-in `[worktree] concurrency` default is 5**, up from 4, so a
+  consumer inherits the parallelism this repo runs. Five also matches the default agent
+  process budget of 8, which splits into exactly 5 lane slots plus the reserved decider and
+  helper slots — the worktree cap and the process budget now agree instead of one silently
+  throttling the other (`basicly-nvm1`).
+
 - **The committed runner default is a real agent, so a supervised run dispatches
   out of the box.** `basicly.toml` shipped `[runner] default = "manual"` and the
   working default lived in a gitignored `basicly.local.toml`, which meant the
@@ -314,10 +344,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   prompt assembly — cost is bounded by sizing the work, never by killing a working
   agent. Two rules keep the sum honest: a lane the working-set band already refuses
   is not counted, because it will not dispatch and charging the pass for it would
-  refuse over money nobody was going to spend; and a lane with no forecast is named
-  rather than guessed at, with the message saying the real total is higher. When
-  nothing can be forecast at all the pass is admitted, on the same reasoning the
-  band admits an un-estimatable lane (`basicly-jr0l.22`).
+  refuse over money nobody was going to spend; and a lane whose scope cannot be read is
+  counted at a conservative measured bound and **named as an assumption**, never
+  presented as a forecast (`basicly-jr0l.22`, corrected by `basicly-vz78` below — this
+  gate originally admitted a pass it could not forecast at all, which made it inert for
+  most of a real tracker).
 
 - **Three verification rules were added to the shipped skills**, each traceable to a
   wrong statement that reached a human. `harness-loop` now says to re-measure a
@@ -329,6 +360,60 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   export, which stays correct only for whole-tracker counting (`basicly-hsrs`).
 
 ### Fixed
+
+- **An unsizeable lane no longer defeats both dispatch cost gates.** Both keyed on
+  `decompose.dispatch_sizing`, which returns `None` for any bead with no `## Scope`
+  heading — 56 of 83 open beads here — and both read that as "nothing to compare" and
+  admitted. `PassSpendAdmission.refused` is `violation is not None`, so a pass of
+  hand-filed lanes had **no forward bound at all**, and nothing printed the missing
+  coverage. Measured: one lane spent **4079243 tokens against a 3000000-token ceiling**,
+  a 36% overrun the ceiling could not prevent, because dispatch admission is read once
+  per pass before any runner starts and no running lane is interrupted.
+
+  Such a lane is now counted at `decompose.unsized_lane_tokens` — the median of recent
+  measured lane actuals, falling back to a declared seed — and the coverage is reported
+  on **every** pass, admitted ones included, because an unbounded pass previously looked
+  identical to a checked one. The statistic is deliberately a central estimate, not a
+  worst case: the lane population is bimodal (leaves 856182–4079243 tokens, lane
+  packages driving sub-tasks 7674671–20594047) and nothing in a run record tells them
+  apart, so a maximum would set every leaf's bound from a package and refuse passes that
+  genuinely fit. It is one layer of three — `runner_timeout` bounds a lane hard, and the
+  retrospective halt bounds the session — and it still refuses the case that failed
+  (`basicly-vz78`).
+
+- **`loop supervise` can start work.** It could not: `ready_lanes` returns only lanes at
+  phase `build`, a bead reaches `build` only by acquiring a worktree binding, and the code
+  that provisions one sits on no supervise path — so a cold root printed "no ready lanes
+  and nothing to land" and exited while dozens of dependency-unblocked children sat at
+  `intake`. Three handovers documented that command as the one that runs the factory. The
+  pass now seeds by delegating to the root's own advance, so the decompose checkpoint, the
+  worktree cap and the ready-set filter keep their single definition; a root that cannot
+  seed reports why and stops rather than spinning (`basicly-t73d`).
+
+- **A metered dispatch requires a token budget.** Both halves of the spend ceiling key on
+  the grant — `spend_status` reports `halted=False` and `check_pass_spend` admits any
+  forecast against a `None` remainder — so an ungranted session had no bound whatsoever.
+  Latent while the supervisor could not seed itself; one command deep once it could. A
+  headless dispatch now refuses without a covering budget and says how to issue one, while
+  a handoff proceeds because it spends nothing. Checked **before** provisioning, so a
+  doomed pass no longer pays for a `uv sync` and an `npm install` per lane
+  (`basicly-kkux`).
+
+- **A worktree binding that outlives its worktree no longer wedges its bead.**
+  `derive_phase` reaches the `build` rung on the *binding*, which is tracker state, while
+  the worktree is filesystem state — so a bead whose worktree vanished derived `build`
+  forever, invisible to `ready_lanes` (non-live) and skipped by `advance_parked`: past
+  classify and undispatchable at once. `derive_session` already flagged the case and its
+  own comment said such a lane "needs a re-dispatch, not an adoption"; nothing acted on
+  it. The supervisor now disposes of it, clearing the ref when the branch proves nothing
+  is unlanded and escalating when commits could be orphaned (`basicly-1koh`).
+
+- **The wait meter no longer fails the verify gate on clock granularity.**
+  `_assert_interval` gave the upper bound slack for real `br` round-trip cost but left the
+  lower bound bare, which asserted that the tracker's whole-second stamp can never land
+  ahead of the local clock reading. Under four-worker load it did: `600 <= 599`. A flake
+  inside `verify` is a factory defect rather than a test annoyance, because a flaky gate
+  consumes a lane's rework budget as if the work were wrong (`basicly-5h0g`).
 
 - **An autonomy grant now covers a track assembled from gating edges, and says how
   many beads it covers.** A grant's session was its root plus that root's
