@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import statistics
 from collections.abc import Callable
 from pathlib import Path
 
@@ -1040,3 +1041,99 @@ def test_a_foreign_models_history_leaves_the_forecast_seeded(
     spend = decompose.estimate_plan(tmp_path, (_child("a", "src/a.py"),)).spend[0]
     assert spend.calibration.pairs == 0
     assert spend.calibration.tokens_per_working_set_token.source == run_record.PRIOR_RATIO
+
+
+# --- The unsizeable-lane bound (basicly-vz78) ----------------------------------
+
+
+def _record_lane_tokens(repo: Path, bead_id: str, tokens: int, *, estimated: bool = False) -> None:
+    """One adapter-reported *lane* dispatch — the shape the bound harvests."""
+    run_record.record(
+        repo,
+        bead_id,
+        run_record.build_record(
+            agent="claude",
+            handoff=False,
+            returncode=0,
+            duration_s=1.0,
+            command=("claude",),
+            tokens=tokens,
+            estimated=estimated,
+            phase="lane",
+        ),
+    )
+
+
+def test_the_unsized_bound_falls_back_to_the_declared_seed(tmp_path: Path) -> None:
+    """With no lane history there is nothing to measure, and it says so."""
+    tokens, source = decompose.unsized_lane_tokens(tmp_path, _sizing())
+
+    assert (tokens, source) == (decompose.UNSIZED_LANE_TOKENS_SEED, "seed")
+
+
+def test_the_unsized_bound_is_a_sample_some_lane_really_incurred(tmp_path: Path) -> None:
+    """`median_high`, so the figure is always a real observation rather than a mean."""
+    _record_lane_tokens(tmp_path, "b-1", 1_000)
+    _record_lane_tokens(tmp_path, "b-2", 9_000)
+    _record_lane_tokens(tmp_path, "b-3", 2_000)
+
+    tokens, source = decompose.unsized_lane_tokens(tmp_path, _sizing())
+
+    assert (tokens, source) == (2_000, "measured")
+    assert tokens != statistics.mean((1_000, 9_000, 2_000))
+
+
+def test_one_pathological_lane_does_not_own_the_unsized_bound(tmp_path: Path) -> None:
+    """A central estimate, not a max — because the lane population is bimodal.
+
+    Leaf lanes ran 856182-4079243 tokens on this repo while lane packages driving
+    sub-tasks ran 7674671-20594047, and no field in a run record tells them apart. Only
+    leaves reach this gate (``ready_lanes`` excludes a lane with sub-tasks), so a max or
+    high quantile would set every leaf's bound from a package and refuse passes that
+    genuinely fit — the ban on hand-filed work the old fail-open behaviour was
+    protecting against (basicly-vz78).
+    """
+    for i in range(9):
+        _record_lane_tokens(tmp_path, f"b-{i}", 1_000)
+    _record_lane_tokens(tmp_path, "b-outlier", 20_000_000)
+
+    tokens, _source = decompose.unsized_lane_tokens(tmp_path, _sizing())
+
+    assert tokens == 1_000, "a single outlier must not become the bound for every lane"
+
+
+def test_the_unsized_bound_still_refuses_the_overrun_that_motivated_it(
+    tmp_path: Path,
+) -> None:
+    """The one case that must not regress, in its measured numbers (basicly-vz78).
+
+    One lane spent 4079243 tokens against a 3000000 remainder and the gate admitted it,
+    because an unsizeable lane contributed nothing to the pass total. Whatever statistic
+    the bound uses, that pass has to refuse.
+    """
+    _record_lane_tokens(tmp_path, "b-1", 4_079_243)
+
+    tokens, _source = decompose.unsized_lane_tokens(tmp_path, _sizing())
+
+    assert tokens > 3_000_000
+
+
+def test_the_unsized_bound_ignores_an_estimated_sample(tmp_path: Path) -> None:
+    """A chars/4 figure is not an observation, so it must not set the ceiling."""
+    _record_lane_tokens(tmp_path, "b-1", 5_000)
+    _record_lane_tokens(tmp_path, "b-2", 90_000, estimated=True)
+
+    assert decompose.unsized_lane_tokens(tmp_path, _sizing()) == (5_000, "measured")
+
+
+def test_the_unsized_bound_needs_no_declared_scope(tmp_path: Path) -> None:
+    """The point of the bound: an actual is an observation whatever the scope says.
+
+    Calibration needs a readable ``## Scope`` because it divides tokens by scope
+    read-cost. A raw ceiling does not, which is why this can bound the very beads
+    ``dispatch_sizing`` refuses to size (basicly-vz78).
+    """
+    _record_lane_tokens(tmp_path, "b-1", 7_000)
+
+    # No tracker at all under tmp_path, so no bead here has a readable scope.
+    assert decompose.unsized_lane_tokens(tmp_path, _sizing()) == (7_000, "measured")

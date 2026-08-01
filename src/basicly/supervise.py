@@ -1131,15 +1131,22 @@ PASS_SPEND_QUESTION = (
 class PassSpendAdmission:
     """Whether the lanes a pass is about to start fit the grant's remaining budget."""
 
-    # None when nothing in the pass could be forecast at all.
+    # None only when the pass has no lanes to start at all. Every dispatching lane
+    # now contributes either a forecast or a conservative assumed bound.
     forecast_tokens: int | None
     # None when no ceiling applies: no grant, or an L1 grant with no budget.
     remaining_tokens: int | None
-    # The lanes whose forecasts make up *forecast_tokens*, and the ones that had
-    # none — kept apart so the message can never imply a coverage it does not have.
+    # The lanes whose real forecasts make up part of *forecast_tokens*, and the ones
+    # counted at the unsizeable-lane bound instead — kept apart so a message can never
+    # present an assumption as a measurement.
     counted: tuple[str, ...]
     unforecast: tuple[str, ...]
     violation: str | None
+    # Lanes with no readable scope, counted at `decompose.unsized_lane_tokens` rather
+    # than skipped. Skipping them is what left a pass unbounded (basicly-vz78).
+    assumed: tuple[str, ...] = ()
+    # Whether that bound came from measured lane actuals or from the declared seed.
+    assumed_source: str = ""
 
     @property
     def refused(self) -> bool:
@@ -1147,17 +1154,39 @@ class PassSpendAdmission:
         return self.violation is not None
 
     @property
+    def coverage(self) -> str:
+        """How this pass's total was arrived at — reported whether or not it refused.
+
+        Printed on every pass, because the failure mode this closes was *silent*: a
+        pass with no forecast at all returned ``violation=None``, which is
+        indistinguishable at the surface from a pass that was checked and fitted
+        (basicly-vz78). An operator has to be able to see that a number is an
+        assumption before it is the only thing standing between them and the bill.
+        """
+        if self.forecast_tokens is None:
+            return "no lanes to start"
+        parts = [f"{self.forecast_tokens} tokens forecast"]
+        if self.remaining_tokens is not None:
+            parts.append(f"{self.remaining_tokens} remaining under the grant")
+        else:
+            parts.append("no ceiling applies")
+        if self.counted:
+            parts.append(f"sized: {', '.join(self.counted)}")
+        if self.assumed:
+            parts.append(
+                f"assumed at the unsizeable-lane bound ({self.assumed_source}): "
+                f"{', '.join(self.assumed)}"
+            )
+        if self.unforecast:
+            parts.append(f"UNBOUNDED, no figure at all: {', '.join(self.unforecast)}")
+        return "; ".join(parts)
+
+    @property
     def detail(self) -> str:
         """The violation with its forecast coverage spelled out, for the queue item."""
         if self.violation is None:
             return ""
-        counted = f"forecast covers {len(self.counted)} lane(s): {', '.join(self.counted)}"
-        if not self.unforecast:
-            return f"{self.violation} ({counted})"
-        return (
-            f"{self.violation} ({counted}; no forecast for "
-            f"{', '.join(self.unforecast)}, so the real total is higher)"
-        )
+        return f"{self.violation} ({self.coverage})"
 
 
 def admit_pass_spend(
@@ -1172,10 +1201,18 @@ def admit_pass_spend(
     forecast is built on the estimate that gates each lane rather than on a second
     reading of the same beads.
 
-    Never raises. An unreadable history or model yields forecasts of None, which
-    reads as "nothing to compare" and admits.
+    A lane whose scope cannot be read is counted at :func:`decompose.unsized_lane_tokens`
+    instead of being dropped. Dropping it is what made the gate inert for most of a
+    real tracker: with nothing counted the function returned ``violation=None``, which
+    ``refused`` reads as "admit", so a pass of unsizeable lanes had no forward bound at
+    all (basicly-vz78). An assumed bound can be wrong; no bound cannot be right.
+
+    Never raises. An unreadable history still yields a bound, because the fallback's
+    own seed needs no I/O.
     """
     dispatching = tuple(item for item in working_sets if not item.refused)
+    if not dispatching:
+        return PassSpendAdmission(None, status.remaining_tokens, (), (), None)
     sized = tuple(item for item in dispatching if item.sizing is not None)
     forecasts: tuple[decompose.SpendForecast, ...] = ()
     if sized:
@@ -1194,17 +1231,27 @@ def admit_pass_spend(
                 continue
             counted.append(item.issue_id)
             total += forecast.tokens
-    unforecast = tuple(
+    # Everything the real forecast could not cover — an absent scope, a None-token
+    # forecast, or a suppressed read — is bounded at the same conservative figure
+    # rather than waved through.
+    assumed = tuple(
         item.issue_id for item in dispatching if item.issue_id not in frozenset(counted)
     )
-    if not counted:
-        return PassSpendAdmission(None, status.remaining_tokens, (), unforecast, None)
+    assumed_source = ""
+    if assumed:
+        per_lane, assumed_source = decompose.unsized_lane_tokens(repo_root, sizing)
+        total += per_lane * len(assumed)
     return PassSpendAdmission(
         forecast_tokens=total,
         remaining_tokens=status.remaining_tokens,
         counted=tuple(counted),
-        unforecast=unforecast,
+        # Nothing is left without a figure now; the field stays for a caller that
+        # still wants to distinguish "no bound" and for the message to stay honest if
+        # a future path reintroduces one.
+        unforecast=(),
         violation=policy.check_pass_spend(total, status),
+        assumed=assumed,
+        assumed_source=assumed_source,
     )
 
 
@@ -1485,6 +1532,7 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
     cap: int | None = None,
     skip: frozenset[str] = frozenset(),
     admission: policy.SpendStatus | None = None,
+    report: Callable[[str], None] | None = None,
 ) -> tuple[LaneOutcome, ...]:
     """Dispatch the session's ready lanes concurrently, honoring the cap.
 
@@ -1509,6 +1557,12 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
     dispatch path can bypass the ceiling by forgetting to check.
 
     *skip* excludes lanes the caller lands without a runner (basicly-kjc5.18).
+
+    *report* receives the pass's spend coverage before anything is dispatched — how
+    the total was reached, and which lanes are counted at an assumed bound rather than
+    a real forecast. Emitted on the admitted path too, deliberately: the defect this
+    closes was that an unbounded pass looked exactly like a checked one
+    (basicly-vz78).
     """
     lanes = ready_lanes(repo_root, session, skip=skip)
     if not lanes:
@@ -1534,6 +1588,8 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
     # about the pass rather than the lane.
     working_sets = tuple(admit_working_set(repo_root, lane.issue_id, sizing) for lane in lanes)
     pass_spend = admit_pass_spend(repo_root, working_sets, admission, sizing)
+    if report is not None:
+        report(f"spend:    {pass_spend.coverage}")
     if pass_spend.refused:
         record_pass_refusal(repo_root, session.root_issue, pass_spend)
         return ()

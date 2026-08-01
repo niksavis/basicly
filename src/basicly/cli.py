@@ -2961,7 +2961,12 @@ def _cmd_loop_supervise(args: argparse.Namespace) -> int:
             # progress and re-derives instead of reporting itself blocked.
             repaired = supervise.repair_stale_bindings(repo_root, state)
             outcomes = supervise.dispatch_lanes(
-                repo_root, state, beat=hb.check, skip=carried, admission=admission
+                repo_root,
+                state,
+                beat=hb.check,
+                skip=carried,
+                admission=admission,
+                report=print,
             )
             _print_dispatch(outcomes, carried=carried, admission=admission)
             routed = repaired + supervise.route_outcomes(

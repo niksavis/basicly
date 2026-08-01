@@ -2674,9 +2674,16 @@ def test_dispatch_lanes_halts_when_the_grant_budget_is_spent(
 def test_dispatch_lanes_admits_a_grant_still_inside_its_budget(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Under budget is not halted — the ceiling must not stop a funded session."""
+    """Under budget is not halted — the ceiling must not stop a funded session.
+
+    Scoped to the *retrospective* half: the forward pass-spend bound is pinned small
+    so this cannot be reading the other gate's verdict. Left unpinned, the assumed
+    bound for an unsizeable lane is read from this repo's real run records and dwarfs
+    any budget a unit test would name (basicly-vz78).
+    """
     _patch_readiness(monkeypatch, ranked=((1, "epic.1"),))
     monkeypatch.setattr(supervise.runner, "select_runner", lambda *_a, **_k: _MANUAL_SPEC)
+    monkeypatch.setattr(supervise.decompose, "unsized_lane_tokens", lambda *_a: (10, "measured"))
     monkeypatch.setattr(
         supervise, "_dispatch_lane", lambda _r, _s, lane, *_a, **_kw: _outcome(lane.issue_id)
     )
@@ -2687,7 +2694,7 @@ def test_dispatch_lanes_admits_a_grant_still_inside_its_budget(
     )
 
     outcomes = supervise.dispatch_lanes(
-        Path(), _session(_lane("epic.1")), admission=_granted("L2", 5000, 4999)
+        Path(), _session(_lane("epic.1")), admission=_granted("L2", 5000, 4000)
     )
 
     assert [o.issue_id for o in outcomes] == ["epic.1"]
@@ -3389,14 +3396,23 @@ def _pass_fixture(
     sizings: dict[str, decompose.DispatchSizing | None],
     forecasts: dict[str, int | None],
     dispatch_is_a_failure: bool = False,
+    unsized_tokens: int = 1_000,
 ) -> list[tuple[str, str]]:
     """A pass whose lanes size and forecast as given; returns the queue-item log.
 
     With *dispatch_is_a_failure* any dispatch **raises**: a refusal is only proved
     by making a started lane the failure, never by reading back a flag the test set.
+
+    *unsized_tokens* pins the bound an unsizeable lane is counted at. Pinned rather
+    than left real, because the live implementation reads this repo's own run records
+    — so an unpatched test would size its lanes from whatever the last supervised run
+    happened to cost, and change verdict as that history grows.
     """
     monkeypatch.setattr(supervise.runner, "select_runner", lambda *_a, **_k: _MANUAL_SPEC)
     monkeypatch.setattr(supervise, "load_sizing_config", lambda _r: _sizing())
+    monkeypatch.setattr(
+        supervise.decompose, "unsized_lane_tokens", lambda *_a: (unsized_tokens, "measured")
+    )
     monkeypatch.setattr(
         supervise.decompose, "dispatch_sizing", lambda _r, issue_id: sizings.get(issue_id)
     )
@@ -3517,11 +3533,12 @@ def test_pass_forecast_ignores_a_lane_the_band_already_refuses(
 def test_pass_names_the_lanes_it_could_not_forecast(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A partial total must never be presented as a complete one.
+    """An assumed bound must never be presented as a measured forecast.
 
-    Most open beads carry no ``## Scope``, so a missing forecast is the common case.
-    The gate still refuses on what it *can* see, and says the real total is higher —
-    the same seeded-vs-measured honesty basicly-jr0l.21 built into the forecast.
+    Most open beads carry no ``## Scope``, so an unsizeable lane is the common case.
+    It is counted at the conservative bound rather than skipped (basicly-vz78), and
+    the message keeps the two apart — the same seeded-vs-measured honesty
+    basicly-jr0l.21 built into the forecast.
     """
     _patch_readiness(monkeypatch, ranked=((1, "epic.1"), (2, "epic.2")))
     queued = _pass_fixture(
@@ -3541,32 +3558,90 @@ def test_pass_names_the_lanes_it_could_not_forecast(
     )
 
     _question, detail = queued[0]
-    assert "9000" in detail
-    assert "no forecast for epic.2" in detail
-    assert "the real total is higher" in detail
+    # 9000 measured for epic.1 plus the 1000 bound assumed for epic.2.
+    assert "10000 tokens forecast" in detail
+    assert "sized: epic.1" in detail
+    assert "assumed at the unsizeable-lane bound (measured): epic.2" in detail
 
 
-def test_pass_is_admitted_when_nothing_can_be_forecast(
+def test_an_unsizeable_lane_is_bounded_rather_than_waved_through(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """No forecast at all admits, on the band's own reasoning about missing estimates.
+    """The pass that made this gate inert: no forecast used to mean no ceiling.
 
-    Failing closed on an absent forecast would turn a spend governor into a ban on
-    hand-filed work — strictly worse than the gap it closes.
+    ``dispatch_sizing`` returns None for any bead with no ``## Scope``, and the gate
+    read that as "nothing to compare" and admitted — so a pass of hand-filed lanes had
+    no forward bound at all, and one lane spent 4079243 tokens against a 3000000
+    ceiling (basicly-vz78). An assumed bound can be wrong; no bound cannot be right.
     """
     _patch_readiness(monkeypatch, ranked=((1, "epic.1"),))
     queued = _pass_fixture(
         monkeypatch,
         sizings={"epic.1": None},
         forecasts={},
+        dispatch_is_a_failure=True,
+        unsized_tokens=5_000,
+    )
+
+    assert (
+        supervise.dispatch_lanes(
+            Path(), _session(_lane("epic.1")), admission=_granted("L3", 10_000, 9_999)
+        )
+        == ()
+    )
+
+    _question, detail = queued[0]
+    assert "assumed at the unsizeable-lane bound (measured): epic.1" in detail
+
+
+def test_an_unsizeable_lane_still_dispatches_when_the_budget_covers_its_bound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bounding is not banning — the distinction the fail-open behaviour was defending.
+
+    Failing closed on an absent forecast would turn a spend governor into a ban on
+    hand-filed work, which is why it used to admit unconditionally. Counting the lane
+    at a conservative figure keeps hand-filed work dispatchable while still refusing
+    the case that actually overruns: a remainder too small to fund one lane.
+    """
+    _patch_readiness(monkeypatch, ranked=((1, "epic.1"),))
+    queued = _pass_fixture(
+        monkeypatch,
+        sizings={"epic.1": None},
+        forecasts={},
+        unsized_tokens=1_000,
     )
 
     outcomes = supervise.dispatch_lanes(
-        Path(), _session(_lane("epic.1")), admission=_granted("L3", 10_000, 9_999)
+        Path(), _session(_lane("epic.1")), admission=_granted("L3", 10_000, 0)
     )
 
     assert [o.issue_id for o in outcomes] == ["epic.1"]
     assert queued == []
+
+
+def test_the_pass_reports_its_spend_coverage_even_when_it_admits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The silence was half the defect: an unbounded pass looked like a checked one.
+
+    ``violation=None`` reads identically whether the gate compared real forecasts or
+    had nothing to compare, and no caller printed the difference (basicly-vz78). The
+    coverage line is therefore emitted on the admitted path too.
+    """
+    _patch_readiness(monkeypatch, ranked=((1, "epic.1"),))
+    _pass_fixture(monkeypatch, sizings={"epic.1": None}, forecasts={}, unsized_tokens=1_000)
+    lines: list[str] = []
+
+    supervise.dispatch_lanes(
+        Path(),
+        _session(_lane("epic.1")),
+        admission=_granted("L3", 10_000, 0),
+        report=lines.append,
+    )
+
+    assert any("assumed at the unsizeable-lane bound" in line for line in lines)
+    assert any("epic.1" in line for line in lines)
 
 
 def test_pass_spend_is_not_enforced_without_a_budget(

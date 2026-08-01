@@ -753,6 +753,90 @@ def dispatch_spend_forecasts(
     )
 
 
+# The spend assumed for a lane whose scope cannot be read, when no measured lane
+# actual exists yet to bound it with. Seeded from the first supervised lane this
+# repo ever measured — 4079243 tokens for one leaf bug (basicly-jr0l.40,
+# 2026-08-01) — and rounded down to a flat figure so it never reads as a
+# measurement. Deliberately high: this feeds a *ceiling* check, where erring low
+# admits an unbounded pass and erring high only asks a human to widen the grant or
+# scope the bead. That asymmetry is the whole reason a seed is acceptable here.
+UNSIZED_LANE_TOKENS_SEED = 4_000_000
+
+
+def unsized_lane_tokens(repo_root: Path, sizing: SizingConfig) -> tuple[int, str]:
+    """A conservative token bound for one unsizeable lane, and how it was derived.
+
+    ``dispatch_sizing`` returns None for any bead with no ``## Scope`` heading, which
+    is most hand-filed beads — and both dispatch cost gates consumed that None as
+    "nothing to compare" and admitted. A lane with no forecast was therefore
+    completely unbounded, which is how one lane spent 4079243 tokens against a
+    3000000 ceiling (basicly-vz78).
+
+    The bound does not need the scope. Calibration does — it divides tokens by scope
+    read-cost to get a ratio — but a raw *actual* is already an observation of what a
+    lane costs, whatever the tracker says about its scope. So this reads the measured
+    lane actuals directly and takes the **maximum** over the recent window: a ceiling
+    check wants a high-water mark, not a central estimate, and a median would admit
+    the pass that the worst lane blows.
+
+    The statistic is the **median of the most recent window**, and it is deliberately a
+    central estimate rather than a worst case. Measured on this repo's own 13 lane
+    actuals the population is bimodal — leaf lanes ran 856182 to 4079243 tokens while
+    lane *packages* driving sub-tasks ran 7674671 to 20594047 — and nothing in a run
+    record distinguishes the two, so a quantile high enough to bound a package sets
+    every leaf's bound at a figure no realistic grant funds. Only leaves ever reach this
+    gate (``ready_lanes`` excludes a lane with sub-tasks), so a max or p90 would refuse
+    passes that genuinely fit, which is the ban on hand-filed work the old fail-open
+    behaviour was protecting against.
+
+    So this is one layer of three, and the only one that is an estimate:
+
+    * **forward, here** — keeps a pass's *expected* total inside the grant. Best effort:
+      a lane above the median can still overspend, and that is accepted.
+    * **hard, per lane** — ``[runner] runner_timeout``. At the measured ~7850 tokens per
+      second a 1800s cap bounds one lane near 14M tokens whatever this returns.
+    * **hard, per session** — the retrospective halt in :func:`policy.spend_status`,
+      which stops the *next* pass once recorded spend reaches the budget.
+
+    Being an estimate is still decisive for the case that actually failed: one lane at
+    4079243 measured tokens against a 3000000 remainder is refused, where the old gate
+    admitted it and lost the money.
+
+    Ordered by the record's own timestamp before the window is taken. Slicing the flat
+    list would have windowed by whatever order the records file enumerates, which is
+    per-bead and not chronological — so "recent" would not have meant recent.
+
+    Returns ``(tokens, source)`` where *source* is ``"measured"`` or ``"seed"``, so a
+    caller can report which it used and never present the seed as evidence.
+    """
+    records = run_record.load_run_records(repo_root) or {}
+    observed: list[tuple[str, int]] = []
+    for history in records.values():
+        if not isinstance(history, list):
+            continue
+        for entry in history:
+            if not isinstance(entry, dict):
+                continue
+            tokens = entry.get("tokens")
+            # Adapter-reported only: a chars/4 estimate is not an observation, and a
+            # helper or handoff dispatch is not a lane.
+            if (
+                entry.get("estimated") is False
+                and entry.get("phase") == "lane"
+                and isinstance(tokens, int)
+                and tokens > 0
+            ):
+                observed.append((str(entry.get("timestamp", "")), tokens))
+    if not observed:
+        return UNSIZED_LANE_TOKENS_SEED, "seed"
+    observed.sort()
+    window = [tokens for _stamp, tokens in observed[-sizing.calibration_window :]]
+    # `median_high` rather than `median`: it returns an actual sample rather than the
+    # mean of the middle two, so the bound is always a spend some lane really incurred
+    # and stays an int without a rounding rule to argue about.
+    return statistics.median_high(window), "measured"
+
+
 def freeze_estimate(
     repo_root: Path,
     feature_id: str,
