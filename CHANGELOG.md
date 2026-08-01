@@ -222,6 +222,22 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The committed runner default is a real agent, so a supervised run dispatches
+  out of the box.** `basicly.toml` shipped `[runner] default = "manual"` and the
+  working default lived in a gitignored `basicly.local.toml`, which meant the
+  committed intent never took effect and no consumer inherited it. The default is
+  now `auto` — claude, then codex, then copilot on `PATH` — keeping the choice
+  agent-agnostic rather than pinning one vendor, and `[worktree] concurrency` rises
+  from 4 to 5.
+
+  `[runner] runner_timeout` drops from the 3600s default to **1800s**. That is a
+  cost control, not a preference: while an unsizeable lane defeats both dispatch
+  cost gates (`basicly-vz78`), a per-lane wall clock bound is the only ceiling a
+  runaway lane actually meets. Measured on the first supervised lane under this
+  config — 4079243 tokens and 3.66 USD in 519.6s against a 3000000-token grant
+  ceiling, a 36% overrun the ceiling could not prevent, because dispatch admission
+  is read once per pass before any runner starts (`basicly-euyt`).
+
 - **BREAKING: an agent source declares a model `tier`, not a provider `model`.**
   `.basicly/core/agents/<slug>/agent.yaml` — and its `.basicly-local/agents`
   overlay — now takes `tier: low | medium | high | maximum`, the portable model
