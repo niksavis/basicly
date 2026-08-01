@@ -31,6 +31,25 @@ What is still substituted, and why it is not the thing under test:
 
 ``provision_deps`` is left alone: the fixture carries no ``pyproject.toml`` or
 ``package.json``, so the real function runs and correctly installs nothing.
+
+The last section drops the second substitution too (basicly-jr0l.43). Its
+``standin_repo`` fixture configures ``tests/standin_agent.py`` as a
+``[[runner.agents]]`` adapter, so ``runner.run`` spawns a real child process
+through the real ``subprocess.Popen``, hands it the real prompt, and lands the
+commit that process really made. Until then every dispatch in the suite replaced
+that call, and the only evidence the loop could drive an agent CLI at all was the
+basicly-kjc5.22 dogfood run — real, but a one-off that cannot regress-detect.
+
+What that section proves, and what it does not. It proves the loop's own half:
+the argv assembled, the prompt carrying the bead id and the sentinel path, the
+process spawned in the right worktree with the right environment, the exit code
+and stdout read back, the usage envelope extracted, and the resulting commit
+landed through the merge queue — including concurrently, across two lanes in one
+supervisor pass. It cannot prove anything about a *particular* vendor CLI: a
+stand-in agrees with whatever this repo assumes about ``claude``/``codex``/
+``copilot``, so a renamed flag or a rejected guardrail value (basicly-jr0l.38)
+stays the business of ``runner.check_guardrails`` against a live ``--help``, and
+of the dogfood run.
 """
 
 from __future__ import annotations
@@ -42,9 +61,22 @@ from pathlib import Path
 
 import pytest
 
-from basicly import br, loop, loop_state, merge, policy, runner, supervise, worktree
-from basicly.config import VERIFY_GATE_PROVIDER
+from basicly import (
+    br,
+    decisions,
+    loop,
+    loop_state,
+    merge,
+    needs_input,
+    policy,
+    run_record,
+    runner,
+    supervise,
+    worktree,
+)
+from basicly.config import VERIFY_GATE_PROVIDER, load_policy_config
 from basicly.decompose import ChildSpec
+from tests import standin_agent
 
 needs_br = pytest.mark.skipif(
     br.which() is None, reason="the beads tracker (br) is not installed on this machine"
@@ -56,7 +88,7 @@ needs_br = pytest.mark.skipif(
 SENTINEL = "BROKEN"
 _PROBE = f"import pathlib,sys; sys.exit(1 if pathlib.Path({SENTINEL!r}).exists() else 0)"
 
-CONFIG = f"""\
+_BASE_CONFIG = f"""\
 [worktree]
 base_branch = "main"
 concurrency = 4
@@ -69,14 +101,44 @@ modes = ["fast", "full"]
 [policy]
 required_gates = ["verify"]
 max_rework = 2
+# Raised so the stand-in section can issue the L2 grant a supervisor pass needs
+# to dispatch a metered runner at all. Inert for every other test here: without a
+# grant on the bead, the ceiling this opts into is never reached.
+autonomy = "L2"
 
 [policy.sizing]
 # The fixture's files are tiny; without this floor the sizing governor refuses
 # every plan as under-scoped before a child is ever created.
 working_set_min = 1
+"""
 
+_MANUAL_RUNNER_CONFIG = """
 [runner]
 default = "manual"
+"""
+
+# The stand-in adapter: a real command line, resolved to this interpreter and the
+# fixture script beside this module. `as_posix` so a Windows path carries no
+# backslash into TOML, and the interpreter is argv[0] because it is the only
+# executable spawnable on all three platforms without a PATH shim — a bare `.py`
+# is not one on Windows, and a `.bat` wrapper is resolved by neither CreateProcess
+# nor `shutil.which` the same way. That choice costs one thing, deliberately: the
+# entry must set no `model`, `sandbox`, `approval` or `deny_tools`, because
+# `format_command` injects those "right after the binary" — which here is between
+# the interpreter and the script it is being asked to run.
+_STANDIN_RUNNER_CONFIG = f"""
+[runner]
+default = "standin"
+
+[[runner.agents]]
+name = "standin"
+command = [
+  {Path(sys.executable).as_posix()!r},
+  {(Path(__file__).parent / "standin_agent.py").as_posix()!r},
+  "-p",
+  "{{prompt}}",
+]
+usage_format = "claude-stream-json"
 """
 
 
@@ -145,8 +207,7 @@ def _subtasks_by_title(repo: Path, parent: str) -> dict[str, str]:
     }
 
 
-@pytest.fixture
-def harness_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def _seed_repo(tmp_path: Path, runner_config: str) -> Path:
     """A consumer repo with real git history, a real br workspace, and a config."""
     repo = tmp_path / "consumer"
     repo.mkdir()
@@ -154,7 +215,7 @@ def harness_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     _git(repo, "config", "user.name", "Harness Test")
     _git(repo, "config", "user.email", "harness@example.invalid")
     _git(repo, "config", "commit.gpgsign", "false")
-    (repo / "basicly.toml").write_text(CONFIG, encoding="utf-8")
+    (repo / "basicly.toml").write_text(_BASE_CONFIG + runner_config, encoding="utf-8")
     (repo / "app.txt").write_text("start\n", encoding="utf-8")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-m", "chore: seed the fixture repo")
@@ -163,11 +224,16 @@ def harness_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     _br(repo, "sync", "--flush-only")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-m", "chore: initialize the beads workspace")
+    return repo
 
+
+@pytest.fixture
+def harness_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """The fixture repo with the manual handoff runner: the test plays the agent."""
     # pre-commit installing the bundled hook manifest into a repo that has no
     # .pre-commit-config.yaml, over the network. Not the engine under test.
     monkeypatch.setattr(worktree, "install_worktree_hooks", lambda _wt: "hooks: stubbed")
-    return repo
+    return _seed_repo(tmp_path, _MANUAL_RUNNER_CONFIG)
 
 
 def _to_build(repo: Path, issue_id: str) -> loop.AdvanceResult:
@@ -744,3 +810,224 @@ def test_a_discovered_coupling_gates_and_orders_the_bead_it_names(harness_repo: 
 
     # Re-reading the same record on a later pass proposes nothing new.
     assert supervise.propose_coupling_edges(repo, supervise.derive_session(repo, root)) == ()
+
+
+# --- A real agent CLI: dispatched, metered, and landed (basicly-jr0l.43) ------
+
+
+@pytest.fixture
+def standin_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """The fixture repo wired to ``tests/standin_agent.py`` as its headless runner.
+
+    Nothing between the loop and the agent is substituted here: ``runner.run``
+    spawns the stand-in with ``subprocess.Popen`` exactly as it would spawn
+    ``claude``. The process budget is reset because it is a module global, so a
+    lane slot leaked by an earlier test would otherwise hold this one's dispatch.
+    """
+    monkeypatch.setattr(worktree, "install_worktree_hooks", lambda _wt: "hooks: stubbed")
+    runner.reset_process_budget()
+    return _seed_repo(tmp_path, _STANDIN_RUNNER_CONFIG)
+
+
+def _set_modes(monkeypatch: pytest.MonkeyPatch, **modes: str) -> None:
+    """Tell the stand-in how to behave, keyed by bead id (``default`` for the rest)."""
+    monkeypatch.setenv(standin_agent.MODES_ENV, json.dumps(modes))
+
+
+def _dispatches(repo: Path, issue_id: str) -> list[dict]:
+    """The run-records this bead's dispatches wrote, oldest first."""
+    return run_record.dispatch_history(repo).get(issue_id, [])
+
+
+def _merge_commits(repo: Path) -> list[str]:
+    """The landings on ``main``, read off its first-parent history.
+
+    The "nothing landed" assertion has to be made here rather than with
+    :func:`_is_merged`: a branch that never received a commit is still an
+    ancestor of ``main``, so that probe answers True for a lane whose agent
+    wrote nothing at all.
+    """
+    subjects = _git(repo, "log", "--format=%s", "--first-parent", "main").splitlines()
+    return [subject for subject in subjects if subject.startswith("chore(worktree):")]
+
+
+@needs_br
+def test_a_dispatched_agent_cli_commits_and_the_loop_lands_it(standin_repo: Path) -> None:
+    """The whole seam: a real child process writes the commit, the merge queue lands it.
+
+    This is the assertion the basicly-kjc5.22 dogfood run was the only evidence
+    for. Everything between the bead and ``main`` is real — the argv, the process,
+    its exit code, its stdout, the commit it made, and the merge.
+    """
+    repo = standin_repo
+    issue = _create_bead(repo, "let the agent do the work")
+
+    dispatched = _to_build(repo, issue)
+    assert dispatched.blocked
+    assert "advance again to land it" in dispatched.detail, dispatched.detail
+
+    state = loop_state.read_node_state(repo, issue)
+    assert state.worktree is not None
+    session = worktree.load_session(state.worktree.name, repo)
+    assert session is not None
+    tree = Path(session.worktree_path)
+    # The child really ran, in the lane's worktree, and really committed there.
+    assert (tree / f"{issue}.txt").read_text(encoding="utf-8") == f"work for {issue}\n"
+    assert _git(tree, "log", "-1", "--format=%s").strip() == f"feat: stand-in work ({issue})"
+    assert not _is_merged(repo, session.branch)
+
+    landed = loop.advance(repo, issue)
+    assert landed.action == "merged", landed.detail
+    assert landed.to_phase == "verify"
+    assert (repo / f"{issue}.txt").read_text(encoding="utf-8") == f"work for {issue}\n"
+    assert _is_merged(repo, session.branch)
+    assert loop_state.read_node_state(repo, issue).gates.required_passed == ("verify",)
+
+    # And the dispatch was metered off the CLI's own usage envelope, not guessed
+    # from stdout length: an adapter reporting nothing readable falls back to a
+    # chars/4 estimate, which is indistinguishable from a real read without this.
+    records = _dispatches(repo, issue)
+    assert len(records) == 1, records
+    assert records[0]["agent"] == "standin"
+    assert records[0]["outcome"] == run_record.EXECUTED
+    assert records[0]["returncode"] == 0
+    assert records[0]["estimated"] is False
+    assert records[0]["tokens"] == standin_agent.DEFAULT_OCCUPANCY
+
+    policy.approve_checkpoint(repo, issue, "ship")
+    shipped = loop.advance(repo, issue)
+    assert shipped.action == "tore-down", shipped.detail
+    assert _status(repo, issue) == "closed"
+
+
+@needs_br
+def test_a_dispatched_agent_that_exits_non_zero_blocks_and_lands_nothing(
+    standin_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An adapter whose dispatch never completes must stop the track, not pass it.
+
+    The failure mode basicly-jr0l.38 took for weeks: every codex dispatch died at
+    argument parsing, and nothing repeatable said so. The cause was vendor-specific
+    and stays out of reach of a stand-in, but the consequence is the loop's own
+    contract — a non-zero exit blocks, quoting the agent, and merges nothing.
+    """
+    repo = standin_repo
+    _set_modes(monkeypatch, default=standin_agent.FAIL)
+    issue = _create_bead(repo, "watch the agent fall over")
+
+    blocked = _to_build(repo, issue)
+    assert blocked.blocked
+    assert f"exit {standin_agent.FAIL_CODE}" in blocked.detail, blocked.detail
+    assert standin_agent.FAIL_MESSAGE in blocked.detail, blocked.detail
+
+    state = loop_state.read_node_state(repo, issue)
+    assert state.worktree is not None
+    session = worktree.load_session(state.worktree.name, repo)
+    assert session is not None
+    tree = Path(session.worktree_path)
+    assert _git(tree, "log", "--format=%s", f"main..{session.branch}").strip() == ""
+    assert _merge_commits(repo) == []
+    assert _status(repo, issue) != "closed"
+    # A failed dispatch is not a failed landing: the bounded rework budget is for
+    # a gate the work missed, and spending it here would cost the retry instead.
+    assert policy.rework_attempts(repo, issue, merge.MERGE_GATE) == 0
+
+    records = _dispatches(repo, issue)
+    assert [record["outcome"] for record in records] == [run_record.FAILED]
+    assert records[0]["returncode"] == standin_agent.FAIL_CODE
+
+
+@needs_br
+def test_a_dispatched_agent_that_cannot_resolve_a_fact_surfaces_it(
+    standin_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The block-don't-guess contract, driven from the prompt the agent actually read.
+
+    The stand-in takes the sentinel path out of the dispatch prompt rather than
+    from its argv, so this fails if the prompt ever stops naming it — the one
+    place that instruction can rot without any other test noticing.
+    """
+    repo = standin_repo
+    _set_modes(monkeypatch, default=standin_agent.NEEDS_INPUT)
+    issue = _create_bead(repo, "make the agent block")
+
+    blocked = _to_build(repo, issue)
+    assert blocked.needs_input == standin_agent.NEEDS_FACT, blocked.detail
+    assert standin_agent.NEEDS_DETAIL in blocked.detail
+
+    # Queued for a human (or the decider) rather than swallowed...
+    queued = [item for item in decisions.pending(repo, issue) if item.kind == "needs-input"]
+    assert [item.question for item in queued] == [standin_agent.NEEDS_FACT]
+    # ...the sentinel consumed, so a re-dispatch starts clean...
+    state = loop_state.read_node_state(repo, issue)
+    assert state.worktree is not None
+    session = worktree.load_session(state.worktree.name, repo)
+    assert session is not None
+    tree = Path(session.worktree_path)
+    assert not (tree / needs_input.SENTINEL_FILE).exists()
+    # ...and nothing was committed or landed on a guess.
+    assert _git(tree, "log", "--format=%s", f"main..{session.branch}").strip() == ""
+    assert _merge_commits(repo) == []
+
+
+@needs_br
+def test_a_supervisor_pass_runs_two_agent_processes_and_lands_both(
+    standin_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two lanes, two real agent processes in one pass, both landed by the merge queue.
+
+    The claim the whole factory rests on — "it runs multiple agents concurrently
+    and lands their work" — asserted end to end rather than cited from a one-off
+    run. The lanes are provisioned with the stand-in idle so the pass, not the
+    provisioning advance, is what dispatches them.
+    """
+    repo = standin_repo
+    _set_modes(monkeypatch, default=standin_agent.IDLE)
+    root = _create_bead(repo, "the concurrent root", issue_type="epic")
+    first = _create_bead(repo, "lane one")
+    second = _create_bead(repo, "lane two")
+    for child in (first, second):
+        _br(repo, "dep", "add", child, root, "-t", "parent-child")
+        provisioned = _to_build(repo, child)
+        assert provisioned.blocked, provisioned.detail
+
+    # A metered runner needs a budget to be metered against, or the pass refuses
+    # to dispatch at all (basicly-kkux). Issued the way a human issues one, and
+    # deliberately generous: neither ceiling is what this test exercises, and a
+    # lane whose bead declares no `## Scope` is forecast at the conservative
+    # unsizeable-lane bound, which is millions of tokens apiece.
+    granted = policy.issue_grant_guarded(
+        repo, root, "L2", 100_000_000, load_policy_config(repo), interactive=True
+    )
+    assert granted.status == "approved", granted.detail
+
+    _set_modes(monkeypatch, default=standin_agent.COMMIT)
+    session_state = supervise.derive_session(repo, root)
+    outcomes = supervise.dispatch_lanes(repo, session_state)
+
+    assert {outcome.issue_id for outcome in outcomes} == {first, second}
+    for outcome in outcomes:
+        assert outcome.result is not None, outcome.detail
+        assert outcome.result.executed, outcome.detail
+        assert outcome.result.returncode == 0, outcome.detail
+        assert outcome.detail == "finished; ready to land"
+        # A dispatched process, not a synthesized outcome: the argv the pass built
+        # starts with the very interpreter the adapter was configured with.
+        assert outcome.result.command[0] == Path(sys.executable).as_posix()
+
+    routed = supervise.route_outcomes(repo, session_state, outcomes)
+    assert {r.issue_id for r in routed} == {first, second}
+    assert [r.route for r in routed] == ["merged", "merged"], [r.detail for r in routed]
+
+    # Both agents' commits are in the base checkout, each through its own merge.
+    # Each file is named for the bead whose prompt that process was handed, so
+    # two distinct files is also the proof the lanes ran in separate worktrees.
+    for child in (first, second):
+        assert (repo / f"{child}.txt").read_text(encoding="utf-8") == f"work for {child}\n"
+        assert loop_state.read_node_state(repo, child).gates.required_passed == ("verify",)
+        # Two dispatches apiece: the idle provisioning run, then the pass's own.
+        assert [record["outcome"] for record in _dispatches(repo, child)] == [
+            run_record.EXECUTED,
+            run_record.EXECUTED,
+        ]
+    assert len(_merge_commits(repo)) == 2
