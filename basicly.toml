@@ -23,7 +23,7 @@ technologies = ["python", "node"]
 # Branch new harness/<name> worktrees fork from. Empty = the current branch.
 base_branch = ""
 # Cap on how many worktrees may exist at once.
-concurrency = 4
+concurrency = 5
 
 # Deterministic verify gate. Each check runs in the listed modes; a "staged"
 # check with staged_suffix runs only against staged files of that suffix. A check
@@ -145,6 +145,13 @@ max_rework = 2
 # agent). Add or override an agent with [[runner.agents]]; verify any command
 # with `basicly runner dry-run` before a live run.
 [runner]
-# Manual in this repo: the loop is driven interactively by the agent itself, so
-# auto-dispatching a second headless agent at build time would double-run it.
-default = "manual"
+# Agent-agnostic detection (claude -> codex -> copilot on PATH), so a supervised
+# run dispatches without a session override and a consumer inherits a working
+# default rather than the handoff. Interactive driving is the case this costs:
+# `loop run`/`loop advance` take no `--runner`, so the handoff can only be
+# restored from config (basicly-nvm1).
+default = "auto"
+# Hard wall-clock bound per lane. Lower than the 3600s default while an
+# unsizeable lane still defeats both dispatch cost gates (basicly-vz78): with no
+# forward forecast, this timeout is the only per-lane ceiling on a runaway run.
+runner_timeout = 1800
