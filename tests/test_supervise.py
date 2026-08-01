@@ -890,6 +890,12 @@ def _patch_readiness(
     # Ungranted sessions have no ceiling to enforce, which is the state these
     # tests are about; the halt itself is pinned separately, below.
     monkeypatch.setattr(supervise.policy, "spend_status", lambda *_a, **_k: _UNGRANTED)
+    # A pass now sizes every lane before it dispatches any (basicly-jr0l.22), so an
+    # unstubbed estimator here would spawn a real `br` per lane in tests that are
+    # about scheduling — the same trap an unstubbed tracker read set for jr0l.16.
+    # "Unreadable" admits, which is the state these tests want; the sizing-dependent
+    # behaviour is pinned with explicit sizings below.
+    monkeypatch.setattr(supervise.decompose, "dispatch_sizing", lambda *_a: None)
 
 
 # No grant, so no D3 ceiling: dispatch admission is not what is under test here.
@@ -1154,7 +1160,7 @@ def test_dispatch_lanes_records_one_ranking_for_the_whole_pass(
     monkeypatch.setattr(supervise.runner, "select_runner", lambda *_a, **_k: _MANUAL_SPEC)
     seen: dict[str, supervise.DispatchOrdering | None] = {}
 
-    def fake_dispatch(_repo, _session, lane, _spec, _sizing, *, ordering=None):
+    def fake_dispatch(_repo, _session, lane, _spec, _sizing, *, ordering=None, **_kw):
         seen[lane.issue_id] = ordering
         return _outcome(lane.issue_id)
 
@@ -3346,3 +3352,276 @@ def test_route_a_refused_lane_to_the_queue_rather_than_a_retry(tmp_path: Path) -
 
     assert [r.route for r in routed] == ["decision"]
     assert supervise.should_continue(routed) is False
+
+
+# --- The spend ceiling at pass admission (basicly-jr0l.22) --------------------
+#
+# D3's ceiling was retrospective: it compared spend *already recorded* against the
+# budget, so a pass was admitted whenever the previous ones happened to fit. The
+# basicly-u6jq.1 proof run admitted a pass against a 5000000-token ceiling that then
+# spent 46026602, and halted on the pass after the money was gone. These pin the
+# forward half — and that it never buys the fix by interrupting a running agent.
+
+
+def _forecast(tokens: int | None) -> decompose.SpendForecast:
+    """A spend forecast of exactly *tokens*, with the calibration left unread.
+
+    Only ``tokens`` is summed by the pass gate, so building a real calibration here
+    would pin arithmetic these tests are not about.
+    """
+    return decompose.SpendForecast(
+        tokens=tokens,
+        cost=None,
+        wall_clock_s=None,
+        calibration=run_record.calibrate_spend(
+            run_record.ForecastErrorReport(),
+            model=None,
+            task_class="task",
+            min_samples=10,
+            window=50,
+        ),
+    )
+
+
+def _pass_fixture(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    sizings: dict[str, decompose.DispatchSizing | None],
+    forecasts: dict[str, int | None],
+    dispatch_is_a_failure: bool = False,
+) -> list[tuple[str, str]]:
+    """A pass whose lanes size and forecast as given; returns the queue-item log.
+
+    With *dispatch_is_a_failure* any dispatch **raises**: a refusal is only proved
+    by making a started lane the failure, never by reading back a flag the test set.
+    """
+    monkeypatch.setattr(supervise.runner, "select_runner", lambda *_a, **_k: _MANUAL_SPEC)
+    monkeypatch.setattr(supervise, "load_sizing_config", lambda _r: _sizing())
+    monkeypatch.setattr(
+        supervise.decompose, "dispatch_sizing", lambda _r, issue_id: sizings.get(issue_id)
+    )
+
+    def fake_forecasts(_repo, items, _sizing):
+        # Keyed by the estimate the caller passed, so a gate that forecast the wrong
+        # lane's sizing would mis-total rather than quietly pass.
+        by_total = {sizing.estimate.total: issue for issue, sizing in sizings.items() if sizing}
+        return tuple(_forecast(forecasts.get(by_total[item.estimate.total])) for item in items)
+
+    monkeypatch.setattr(supervise.decompose, "dispatch_spend_forecasts", fake_forecasts)
+    if dispatch_is_a_failure:
+        monkeypatch.setattr(
+            supervise,
+            "_dispatch_lane",
+            lambda *_a, **_k: pytest.fail("a refused pass must not start any lane"),
+        )
+    else:
+        monkeypatch.setattr(
+            supervise, "_dispatch_lane", lambda _r, _s, lane, *_a, **_kw: _outcome(lane.issue_id)
+        )
+    queued: list[tuple[str, str]] = []
+
+    def fake_enqueue(
+        _repo: Path, issue: str, kind: str, question: str, detail: str = "", **_kw: object
+    ) -> decisions.DecisionItem:
+        queued.append((question, detail))
+        return decisions.DecisionItem("epic#p", issue, kind, question, detail)
+
+    monkeypatch.setattr(supervise.decisions, "enqueue", fake_enqueue)
+    return queued
+
+
+def test_pass_is_refused_when_its_forecast_exceeds_the_remaining_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The acceptance criterion: nothing dispatches, and the message carries both numbers.
+
+    Two lanes forecast 4000 tokens each against 5000 remaining. Neither alone
+    overruns — that is exactly the shape the retrospective gate admitted, because it
+    only ever compared what had already been spent.
+    """
+    _patch_readiness(monkeypatch, ranked=((1, "epic.1"), (2, "epic.2")))
+    queued = _pass_fixture(
+        monkeypatch,
+        sizings={"epic.1": _dispatch_sizing(20_000), "epic.2": _dispatch_sizing(30_000)},
+        forecasts={"epic.1": 4_000, "epic.2": 4_000},
+        dispatch_is_a_failure=True,
+    )
+
+    outcomes = supervise.dispatch_lanes(
+        Path(),
+        _session(_lane("epic.1"), _lane("epic.2")),
+        admission=_granted("L3", 10_000, 5_000),
+    )
+
+    assert outcomes == ()  # no lane started, so no money was spent
+    assert len(queued) == 1
+    question, detail = queued[0]
+    assert question == supervise.PASS_SPEND_QUESTION
+    assert "8000" in detail  # the combined forecast...
+    assert "5000" in detail  # ...and the remainder it will not fit
+    assert "epic.1" in detail and "epic.2" in detail
+
+
+def test_pass_is_admitted_when_its_forecast_fits_the_remainder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The control: a gate that refused every pass would pass the test above.
+
+    Same two lanes, same remainder, forecasts that fit — every lane must dispatch
+    and nothing may be queued.
+    """
+    _patch_readiness(monkeypatch, ranked=((1, "epic.1"), (2, "epic.2")))
+    queued = _pass_fixture(
+        monkeypatch,
+        sizings={"epic.1": _dispatch_sizing(20_000), "epic.2": _dispatch_sizing(30_000)},
+        forecasts={"epic.1": 2_000, "epic.2": 2_000},
+    )
+
+    outcomes = supervise.dispatch_lanes(
+        Path(),
+        _session(_lane("epic.1"), _lane("epic.2")),
+        admission=_granted("L3", 10_000, 5_000),
+    )
+
+    assert sorted(o.issue_id for o in outcomes) == ["epic.1", "epic.2"]
+    assert queued == []
+
+
+def test_pass_forecast_ignores_a_lane_the_band_already_refuses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A lane that will not dispatch cannot be charged to the pass.
+
+    ``epic.2`` is above the working-set ceiling, so the band holds it and it spends
+    nothing. Counting its forecast anyway would refuse the pass over money nobody
+    was going to spend, and the two gates would compound into a wedge.
+    """
+    _patch_readiness(monkeypatch, ranked=((1, "epic.1"), (2, "epic.2")))
+    queued = _pass_fixture(
+        monkeypatch,
+        sizings={"epic.1": _dispatch_sizing(20_000), "epic.2": _dispatch_sizing(100_000)},
+        forecasts={"epic.1": 4_000, "epic.2": 90_000},
+    )
+
+    outcomes = supervise.dispatch_lanes(
+        Path(),
+        _session(_lane("epic.1"), _lane("epic.2")),
+        admission=_granted("L3", 10_000, 5_000),
+    )
+
+    # The in-band lane still runs: 4000 fits the 5000 remainder on its own.
+    assert [o.issue_id for o in outcomes] == ["epic.1", "epic.2"]
+    assert queued == []
+
+
+def test_pass_names_the_lanes_it_could_not_forecast(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A partial total must never be presented as a complete one.
+
+    Most open beads carry no ``## Scope``, so a missing forecast is the common case.
+    The gate still refuses on what it *can* see, and says the real total is higher —
+    the same seeded-vs-measured honesty basicly-jr0l.21 built into the forecast.
+    """
+    _patch_readiness(monkeypatch, ranked=((1, "epic.1"), (2, "epic.2")))
+    queued = _pass_fixture(
+        monkeypatch,
+        sizings={"epic.1": _dispatch_sizing(20_000), "epic.2": None},
+        forecasts={"epic.1": 9_000},
+        dispatch_is_a_failure=True,
+    )
+
+    assert (
+        supervise.dispatch_lanes(
+            Path(),
+            _session(_lane("epic.1"), _lane("epic.2")),
+            admission=_granted("L3", 10_000, 5_000),
+        )
+        == ()
+    )
+
+    _question, detail = queued[0]
+    assert "9000" in detail
+    assert "no forecast for epic.2" in detail
+    assert "the real total is higher" in detail
+
+
+def test_pass_is_admitted_when_nothing_can_be_forecast(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No forecast at all admits, on the band's own reasoning about missing estimates.
+
+    Failing closed on an absent forecast would turn a spend governor into a ban on
+    hand-filed work — strictly worse than the gap it closes.
+    """
+    _patch_readiness(monkeypatch, ranked=((1, "epic.1"),))
+    queued = _pass_fixture(
+        monkeypatch,
+        sizings={"epic.1": None},
+        forecasts={},
+    )
+
+    outcomes = supervise.dispatch_lanes(
+        Path(), _session(_lane("epic.1")), admission=_granted("L3", 10_000, 9_999)
+    )
+
+    assert [o.issue_id for o in outcomes] == ["epic.1"]
+    assert queued == []
+
+
+def test_pass_spend_is_not_enforced_without_a_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An ungranted session has no ceiling, so an enormous forecast still dispatches."""
+    _patch_readiness(monkeypatch, ranked=((1, "epic.1"),))
+    queued = _pass_fixture(
+        monkeypatch,
+        sizings={"epic.1": _dispatch_sizing(20_000)},
+        forecasts={"epic.1": 10_000_000},
+    )
+
+    outcomes = supervise.dispatch_lanes(Path(), _session(_lane("epic.1")), admission=_UNGRANTED)
+
+    assert [o.issue_id for o in outcomes] == ["epic.1"]
+    assert queued == []
+
+
+def test_pass_sizes_each_lane_exactly_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The band admission is computed at the pass and handed down, not re-derived.
+
+    Estimating twice would double the tracker reads a pass makes and let the gate
+    that sums the forecast disagree with the gate that admits the lane.
+    """
+    _patch_readiness(monkeypatch, ranked=((1, "epic.1"), (2, "epic.2")))
+    _pass_fixture(
+        monkeypatch,
+        sizings={"epic.1": _dispatch_sizing(20_000), "epic.2": _dispatch_sizing(30_000)},
+        forecasts={"epic.1": 1_000, "epic.2": 1_000},
+    )
+    sized: list[str] = []
+    real = supervise.admit_working_set
+
+    def counting(repo_root, issue_id, sizing):
+        sized.append(issue_id)
+        return real(repo_root, issue_id, sizing)
+
+    def dispatch(_repo, _session, lane, _spec, _sizing, **kw):
+        # A lane handed no admission would have to estimate again, so record that
+        # here rather than trusting the parameter to be threaded.
+        if kw.get("working_set") is None:
+            sized.append(f"{lane.issue_id}:re-sized")
+        return _outcome(lane.issue_id)
+
+    monkeypatch.setattr(supervise, "admit_working_set", counting)
+    monkeypatch.setattr(supervise, "_dispatch_lane", dispatch)
+
+    supervise.dispatch_lanes(
+        Path(),
+        _session(_lane("epic.1"), _lane("epic.2")),
+        admission=_granted("L3", 10_000, 0),
+        cap=1,
+    )
+
+    assert sorted(sized) == ["epic.1", "epic.2"]
