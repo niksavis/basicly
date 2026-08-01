@@ -9,17 +9,22 @@ non-zero exit so scripts and CI can branch on it. These tests fake ``advance`` /
 
 from __future__ import annotations
 
+import argparse
 import json
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 
 from basicly import cli, decompose, loop, loop_state, supervise
-from basicly.config import CHECKPOINTS
+from basicly.config import CHECKPOINTS, RunnerSpec
 from basicly.decisions import DecisionItem
 from basicly.decompose import ChildSpec
 from basicly.loop import AdvanceResult, Inputs
 from basicly.loop_state import NodeState, RankedNode, WorktreeBinding
-from basicly.policy import GateStatus
+from basicly.policy import GateStatus, Grant, SpendStatus
+from basicly.runner import HEADLESS
 
 
 def _node_state(**overrides: object) -> NodeState:
@@ -446,3 +451,116 @@ def test_loop_session_json_emits_the_whole_observation(
     )
     # A derived property asdict would drop, and the one flag a machine client acts on.
     assert payload["supervised"] is True
+
+
+# --- Preflight: the run checklist as a command, not a recollection (basicly-p8ck) ---
+
+
+@dataclass(frozen=True)
+class _Preflight:
+    """The probes a preflight makes, pinned so the verdict is the only variable."""
+
+    dirty: str = ""
+    grant: Grant | None = None
+    halted: bool = False
+    metered: str | None = None
+    lanes: tuple[object, ...] = ()
+
+
+def _preflight_fixture(monkeypatch: pytest.MonkeyPatch, pinned: _Preflight) -> None:
+    """Pin every probe `_cmd_loop_preflight` makes against the repo and the tracker."""
+    dirty, grant, halted, metered, lanes = (
+        pinned.dirty,
+        pinned.grant,
+        pinned.halted,
+        pinned.metered,
+        pinned.lanes,
+    )
+    # Bound rather than constructed in the lambda: `Path(".")` autofixes to `Path()`,
+    # which then reads as a redundant lambda, and the two rules chase each other.
+    root = Path()
+    monkeypatch.setattr(cli, "_repo_root", lambda: root)
+    monkeypatch.setattr(
+        cli.worktree,
+        "git",
+        lambda argv, **_kw: subprocess.CompletedProcess(
+            argv, 0, dirty if "status" in argv else "0", ""
+        ),
+    )
+    monkeypatch.setattr(cli.worktree, "list_sessions", lambda _r: [])
+    monkeypatch.setattr(
+        cli.supervise,
+        "derive_session",
+        lambda _r, root: supervise.SessionState(root, "open", (("c.1", "open"),), ()),
+    )
+    monkeypatch.setattr(
+        cli.runner, "select_runner", lambda *_a, **_k: RunnerSpec("claude", HEADLESS)
+    )
+    monkeypatch.setattr(
+        cli.policy,
+        "spend_status",
+        lambda *_a, **_k: SpendStatus(grant=grant, spent_tokens=0, halted=halted),
+    )
+    monkeypatch.setattr(cli.supervise, "metered_without_a_budget", lambda *_a: metered)
+    monkeypatch.setattr(cli.supervise, "ready_lanes", lambda *_a, **_k: lanes)
+    monkeypatch.setattr(cli.decompose, "unsized_lane_tokens", lambda *_a: (1_000, "measured"))
+
+
+def test_preflight_is_ready_when_nothing_blocks(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The happy path has to exit 0, or a wrapper gating on it can never proceed."""
+    _preflight_fixture(monkeypatch, _Preflight(grant=Grant(level="L1", token_budget=10_000)))
+
+    code = cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "VERDICT:   ready" in out
+
+
+def test_preflight_refuses_a_dirty_base_before_any_lane_runs(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A dirty base refuses the landing *after* the lanes have already cost money."""
+    _preflight_fixture(
+        monkeypatch,
+        _Preflight(dirty="M a.py\nM b.py\n", grant=Grant(level="L1", token_budget=10_000)),
+    )
+
+    code = cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "base:      DIRTY - 2 path(s)" in out
+    assert "base checkout is dirty" in out
+
+
+def test_preflight_refuses_a_metered_runner_with_no_budget(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The `kkux` hazard, surfaced before the run instead of during it."""
+    _preflight_fixture(monkeypatch, _Preflight(metered="claude"))
+
+    code = cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "budget:    MISSING" in out
+
+
+def test_preflight_forecasts_a_full_fan_out_when_no_lane_is_dispatchable_yet(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The number a budget must be minted for, before it is minted.
+
+    Sizing a grant is exactly where the old plan went wrong by 2.4x, so the forecast
+    has to be available *cold* — with nothing dispatchable yet.
+    """
+    _preflight_fixture(monkeypatch, _Preflight(grant=Grant(level="L1", token_budget=10_000)))
+
+    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+
+    out = capsys.readouterr().out
+    assert "forecast:" in out
+    assert "if all" in out and "lanes start" in out

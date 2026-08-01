@@ -65,6 +65,7 @@ from .config import (
     load_policy_config,
     load_project_paths,
     load_runner_config,
+    load_sizing_config,
     load_technology_selection,
     load_verify_config,
     load_worktree_config,
@@ -2717,6 +2718,7 @@ def cmd_loop(args: argparse.Namespace) -> int:
         "advance": _cmd_loop_advance,
         "run": _cmd_loop_run,
         "supervise": _cmd_loop_supervise,
+        "preflight": _cmd_loop_preflight,
         "session": _cmd_loop_session,
         "decisions": _cmd_loop_decisions,
         "answer": _cmd_loop_answer,
@@ -2741,6 +2743,106 @@ def _format_advance(result: loop.AdvanceResult) -> str:
     if result.needs_input:
         line += f" (needs input: {result.needs_input})"
     return line
+
+
+def _print_preflight_spend(
+    repo_root: Path, state: supervise.SessionState, status: policy.SpendStatus
+) -> None:
+    """Report what a pass would cost: the live bound, or a forecast for a full fan-out.
+
+    Split from :func:`_cmd_loop_preflight` to keep one statement budget per concern
+    rather than widening the lint cap.
+
+    The two branches answer different questions. With lanes already dispatchable, the
+    real admission is shown — the same figure the gate will use. With none yet, the
+    interesting number is what a *full* fan-out would need, because that is what a
+    budget has to be minted for, and discovering it mid-run is how a ceiling gets set
+    too low.
+    """
+    sizing = load_sizing_config(repo_root)
+    lanes = supervise.ready_lanes(repo_root, state)
+    per_lane, source = decompose.unsized_lane_tokens(repo_root, sizing)
+    print(f"lanes:     {len(lanes)} dispatchable now, {len(state.open_children)} open child(ren)")
+    print(f"per-lane:  {per_lane} tokens assumed for an unsizeable lane ({source})")
+    if lanes:
+        working_sets = tuple(
+            supervise.admit_working_set(repo_root, lane.issue_id, sizing) for lane in lanes
+        )
+        pass_spend = supervise.admit_pass_spend(repo_root, working_sets, status, sizing)
+        print(f"spend:     {pass_spend.coverage}")
+        return
+    cap = load_worktree_config(repo_root).concurrency
+    print(f"forecast:  ~{per_lane * cap} tokens if all {cap} lanes start (cap x per-lane)")
+
+
+def _cmd_loop_preflight(args: argparse.Namespace) -> int:
+    """Answer, from the repo alone, everything a supervised run needs checked first.
+
+    This exists because the answers used to live in an operator's head. Every line below
+    is a question that previously had to be recalled — is the base clean, will the runner
+    meter spend, is there a budget, how many lanes would start, what will they cost — and
+    a consumer who installs basicly inherits the engine but none of the recollection.
+    Deterministic, so it is a command rather than a note (basicly-p8ck).
+
+    Read-only: it dispatches nothing, provisions nothing and writes no tracker state, so
+    it is free to run before every session. Exit is non-zero when something would block a
+    run, so CI or a wrapper can gate on it.
+    """
+    repo_root = _repo_root()
+    blockers: list[str] = []
+
+    dirty = worktree.git(["status", "--porcelain"], cwd=repo_root, check=False).stdout.strip()
+    if dirty:
+        # A dirty base refuses a landing (basicly-4psl), and the refusal arrives *after*
+        # the lanes have already run, which is the expensive place to learn it.
+        count = len(dirty.splitlines())
+        print(f"base:      DIRTY - {count} path(s); a landing will refuse until committed")
+        blockers.append("base checkout is dirty")
+    else:
+        print("base:      clean")
+
+    sessions = worktree.list_sessions(repo_root)
+    print(f"worktrees: {len(sessions)} live")
+
+    state = supervise.derive_session(repo_root, args.issue)
+    stale = [lane.issue_id for lane in state.adopted if not lane.live]
+    if stale:
+        print(f"stale:     {', '.join(stale)} - binding outlived its worktree, will be repaired")
+
+    config = load_runner_config(repo_root)
+    spec = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
+    print(f"runner:    {spec.name} ({spec.kind}), timeout {config.runner_timeout:.0f}s")
+
+    status = policy.spend_status(repo_root, args.issue)
+    grant = status.grant
+    if grant is None:
+        print("grant:     NONE - every checkpoint is human")
+    else:
+        spent = status.spent_tokens - grant.spent_at_issue
+        remaining = (
+            "no ceiling" if status.remaining_tokens is None else f"{status.remaining_tokens}"
+        )
+        print(f"grant:     {grant.level}, spent {spent} under it, remaining {remaining}")
+    if status.halted:
+        print(f"halted:    {status.detail}")
+        blockers.append("the grant's budget is spent")
+    if (metered := supervise.metered_without_a_budget(repo_root, status)) is not None:
+        print(f"budget:    MISSING - the {metered!r} runner meters spend and no budget covers it")
+        blockers.append("a metered runner needs a grant with a token budget")
+
+    _print_preflight_spend(repo_root, state, status)
+
+    ahead = worktree.git(
+        ["rev-list", "--count", "@{upstream}..HEAD"], cwd=repo_root, check=False
+    ).stdout.strip()
+    if ahead and ahead != "0":
+        print(f"unpushed:  {ahead} commit(s)")
+
+    if blockers:
+        print(f"VERDICT:   not ready - {'; '.join(blockers)}")
+        return 1
+    print("VERDICT:   ready")
+    return 0
 
 
 def _cmd_loop_status(args: argparse.Namespace) -> int:
@@ -3909,6 +4011,12 @@ def _add_loop_parser(subparsers: argparse._SubParsersAction) -> None:
         "status", help="Show an issue's reconstructed loop state (read-only)"
     )
     l_status.add_argument("issue")
+    l_pre = loop_sub.add_parser(
+        "preflight",
+        help="Check everything a supervised run needs before it starts: clean base, "
+        "runner, grant, budget, lane count and forecast spend (read-only)",
+    )
+    l_pre.add_argument("issue", help="Root issue the session would be bound to")
     l_advance = loop_sub.add_parser(
         "advance", help="Advance one loop step (exit non-zero when blocked)"
     )
