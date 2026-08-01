@@ -21,6 +21,13 @@ Run it::
   spawns agents. ``--user`` is the deliberate opt-in to that wider scope, and is
   safe because ``claude_tier_hook.py`` only answers for a directory tree that has
   its own committed map.
+
+  **The two scopes are written differently, on purpose** (basicly-dukb). The
+  repository's file is committed and shared, so it gets a command that names the
+  hook through ``${CLAUDE_PROJECT_DIR}`` and runs it with ``uv`` — no absolute
+  path, nothing machine-specific, identical on Windows, Linux and macOS. The
+  user's file is machine-local, so it keeps absolute paths and needs nothing on
+  ``PATH``. ``--interpreter`` overrides the command for a consumer without uv.
 - **GitHub Copilot CLI**: installs **nothing**, and reports why. Copilot cannot
   intercept a spawn today: a repo-level ``.github/hooks/*.json`` hook never fired
   across three probes (basicly-wbsz), and on 1.0.77 there is no hook surface at
@@ -65,6 +72,22 @@ HOOK_EVENT = "PreToolUse"
 HOOK_MATCHER = "Agent"
 HOOKS_KEY = "hooks"
 
+# Claude substitutes this itself, as a plain string, before any shell sees it.
+# That is what makes it the one way to name a file inside the repository that is
+# neither absolute nor dependent on the directory the spawn happened in - and it
+# keeps working under PowerShell, where the brace form is not shell syntax.
+PROJECT_DIR_PLACEHOLDER = "${CLAUDE_PROJECT_DIR}"
+
+# uv, not a bare `python3` (owner, basicly-dukb). Every committer to a
+# basicly-managed repo already needs uv on PATH because the projected git hooks
+# run `uv run python`, so for a consumer this adds nothing; and Windows ships no
+# `python3.exe` from the python.org installer, where the name instead hits an App
+# Execution Alias that opens the Microsoft Store - a worse failure than a clean
+# one. `--no-project` keeps a spawn out of virtualenv resolution, and
+# `--no-python-downloads` keeps the spawn path network-free: it fails closed
+# rather than fetching an interpreter mid-spawn.
+DEFAULT_INTERPRETER = "uv run --no-project --no-python-downloads python"
+
 # Hosts this kit knows about but cannot install for, and the measured reason.
 # Kept as data so `--host copilot` gets an answer rather than an unknown-host
 # error, which would read as "you typed it wrong" instead of "it cannot work".
@@ -80,16 +103,62 @@ CANNOT_INTERCEPT = {
 HOSTS = ("claude", *sorted(CANNOT_INTERCEPT))
 
 
-def hook_command(hook_path: Path, interpreter: str | None = None) -> str:
-    """The shell command the host runs for one spawn.
+def hook_command(
+    hook_path: Path,
+    interpreter: str | None = None,
+    *,
+    root: Path | None = None,
+    user: bool = False,
+) -> str:
+    """The shell command the host runs for one spawn, rendered for its scope.
 
-    Both halves are absolute and forward-slashed. A relative path would break the
-    moment a spawn happened in a subdirectory, and a backslash would be eaten by
-    the shell that runs this — the reason the kit's own tests pin the rendering
-    rather than the platform.
+    The two scopes want opposite things, which is why this is not one rendering.
+
+    ``~/.claude/settings.json`` is machine-local by definition, so the user scope
+    keeps both halves absolute: nothing needs to be on ``PATH``, and the very
+    interpreter that ran the installer is the one that runs the hook.
+
+    A repository's ``.claude/settings.json`` is a **committed, shared** file, so
+    an absolute path there leaks a username into a commit and is wrong on every
+    other machine (basicly-dukb). A bare relative path is not the fix either: the
+    host documents that handlers run in the *current* directory rather than the
+    project root, and this repository has already watched its own relative hook
+    fail once the working directory drifted. ``${CLAUDE_PROJECT_DIR}`` is what
+    resolves both halves of that - Claude expands it to the project root whatever
+    the working directory is.
+
+    Every path is forward-slashed, because a backslash would be eaten by the
+    shell that runs this.
+
+    Raises:
+        ValueError: when a project-scope install cannot name the hook relative to
+            *root*. Refusing beats falling back to the absolute rendering, which
+            is the defect this function exists to fix.
     """
-    python = Path(interpreter or sys.executable).as_posix()
-    return f'"{python}" "{Path(hook_path).resolve().as_posix()}"'
+    if user:
+        python = Path(interpreter or sys.executable).as_posix()
+        return f'"{python}" "{Path(hook_path).resolve().as_posix()}"'
+    script = f"{PROJECT_DIR_PLACEHOLDER}/{_within(hook_path, root)}"
+    return f'{interpreter or DEFAULT_INTERPRETER} "{script}"'
+
+
+def _within(hook_path: Path, root: Path | None) -> str:
+    """*hook_path* named relative to *root*, forward-slashed.
+
+    Derived from the two paths rather than from a constant, so a consumer who
+    copied the kit somewhere other than basicly's own layout still gets a command
+    that resolves.
+    """
+    if root is None:
+        raise ValueError("a project-scope command needs the repository it is written into")
+    resolved = Path(hook_path).resolve()
+    try:
+        return resolved.relative_to(Path(root).resolve()).as_posix()
+    except ValueError as error:
+        raise ValueError(
+            f"{resolved} is outside {Path(root).resolve()}, so no project-relative command "
+            f"can name it; install with --user, or copy the kit into the repository"
+        ) from error
 
 
 def settings_path(root: Path, *, user: bool) -> Path:
@@ -162,7 +231,9 @@ def merge_hook(settings: dict, command: str) -> dict:
     return merged
 
 
-def install_claude(root: Path, *, user: bool, dry_run: bool) -> tuple[bool, str]:
+def install_claude(
+    root: Path, *, user: bool, dry_run: bool, interpreter: str | None = None
+) -> tuple[bool, str]:
     """Install the hook for Claude Code; return ``(installed, message)``."""
     hook = Path(__file__).resolve().parent / HOOK_FILENAME
     if not hook.is_file():
@@ -170,7 +241,7 @@ def install_claude(root: Path, *, user: bool, dry_run: bool) -> tuple[bool, str]
     path = settings_path(root, user=user)
     scope = "user" if user else "project"
     current = load_settings(path)
-    updated = merge_hook(current, hook_command(hook))
+    updated = merge_hook(current, hook_command(hook, interpreter, root=root, user=user))
     if updated == current:
         return True, f"claude: already installed ({scope} scope) in {path}"
     if dry_run:
@@ -180,7 +251,14 @@ def install_claude(root: Path, *, user: bool, dry_run: bool) -> tuple[bool, str]
     return True, f"claude: wrote the {HOOK_EVENT}/{HOOK_MATCHER} hook ({scope} scope) to {path}"
 
 
-def install(hosts: list[str], root: Path, *, user: bool, dry_run: bool) -> tuple[bool, list[str]]:
+def install(
+    hosts: list[str],
+    root: Path,
+    *,
+    user: bool,
+    dry_run: bool,
+    interpreter: str | None = None,
+) -> tuple[bool, list[str]]:
     """Install for each requested host; return ``(any_installed, report lines)``."""
     lines = []
     installed = False
@@ -189,7 +267,7 @@ def install(hosts: list[str], root: Path, *, user: bool, dry_run: bool) -> tuple
         if reason is not None:
             lines.append(f"{host}: nothing installed - {reason}")
             continue
-        ok, message = install_claude(root, user=user, dry_run=dry_run)
+        ok, message = install_claude(root, user=user, dry_run=dry_run, interpreter=interpreter)
         installed = installed or ok
         lines.append(message)
     return installed, lines
@@ -212,6 +290,14 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     parser.add_argument("--root", help="repository to install into (default: cwd)")
     parser.add_argument(
+        "--interpreter",
+        help=(
+            "command that runs the hook script, for a consumer without uv "
+            f"(default at project scope: {DEFAULT_INTERPRETER!r}; "
+            "at user scope, the interpreter running this installer)"
+        ),
+    )
+    parser.add_argument(
         "--dry-run", action="store_true", help="report what would be written and write nothing"
     )
     return parser.parse_args(argv)
@@ -227,7 +313,11 @@ def main(argv: list[str] | None = None) -> int:
     root = Path(args.root) if args.root else Path.cwd()
     try:
         installed, lines = install(
-            list(args.host or HOSTS), root, user=args.user, dry_run=args.dry_run
+            list(args.host or HOSTS),
+            root,
+            user=args.user,
+            dry_run=args.dry_run,
+            interpreter=args.interpreter,
         )
     except ValueError as error:
         print(str(error), file=sys.stderr)

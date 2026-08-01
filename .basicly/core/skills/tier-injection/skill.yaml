@@ -34,8 +34,22 @@ instructions: |
   rather than the default. Re-running converges: it never duplicates the hook and
   never touches one you wrote yourself.
 
-  **Restart the host after installing.** Settings load at session start, so the
-  hook does nothing until the next session.
+  **The two scopes are written differently, on purpose.** The repository's file is
+  committed and shared, so it gets a command with nothing machine-specific in it —
+  the hook is named through `${CLAUDE_PROJECT_DIR}`, which the host expands to the
+  project root whatever the working directory is, and it runs under `uv`:
+
+  ```json
+  "command": "uv run --no-project --no-python-downloads python \"${CLAUDE_PROJECT_DIR}/.basicly/core/kit/claude_tier_hook.py\""
+  ```
+
+  The user's file is machine-local, so it keeps absolute paths and needs nothing on
+  `PATH`. Pass `--interpreter` if you have no `uv` — for example
+  `--interpreter "py -3"` on a Windows box.
+
+  **Quit and relaunch the host after installing** — the whole CLI process, not just
+  the conversation. Hooks and agent definitions are read when the process starts, so
+  clearing the conversation reloads nothing and the hook will appear to do nothing.
 
   ## What It Does And Does Not Cover
 
