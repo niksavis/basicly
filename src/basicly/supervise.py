@@ -2556,8 +2556,9 @@ def seed_lanes(
 
     Runs only when there is genuinely nothing to dispatch: with lanes already in flight,
     re-advancing the root would provision past what the cap intends. Termination is why
-    the route depends on progress — a root that cannot seed returns a non-retriable
-    outcome, so the pass says why and stops rather than spinning.
+    the route depends on what was provisioned rather than on the attempt having been
+    made — a root that seeds nothing dispatchable returns a non-retriable outcome, so the
+    pass says why and stops rather than spinning. :func:`_seeding_outcome` decides which.
 
     *admission* short-circuits the whole step when the dispatch it would feed cannot
     start anyway. Provisioning is not cheap — a ``uv sync`` and an ``npm install`` per
@@ -2574,8 +2575,55 @@ def seed_lanes(
     final = steps[-1] if steps else None
     if final is None:
         return ()
-    if any(step.progressed for step in steps):
-        return (RoutedOutcome(session.root_issue, "seeded", final.detail),)
+    return _seeding_outcome(repo_root, session, steps, final, skip=skip)
+
+
+def _seeding_outcome(
+    repo_root: Path,
+    session: SessionState,
+    steps: list[loop.AdvanceResult],
+    final: loop.AdvanceResult,
+    *,
+    skip: frozenset[str],
+) -> tuple[RoutedOutcome, ...]:
+    """Route a completed seeding attempt on what it *provisioned* (basicly-jr0l.57).
+
+    The route used to depend on whether the **root's own** advance progressed, and a
+    package root parked awaiting its children can never progress — ``run_until_blocked``
+    returns its steps as blocked by construction. So a pass that had just created N
+    worktrees reported ``seed-blocked``, and because that route is deliberately *not*
+    retriable, the session ended and discarded the lanes it had built. Observed on
+    basicly-jr0l: five worktrees provisioned, then ``seed-blocked - no lane could be
+    provisioned from 28 open child(ren)`` — a message false in its own terms — while the
+    identical command dispatched all four fundable lanes on its second run. That second
+    run is the whole tell: the state was right and only the verdict was wrong.
+
+    Re-derived rather than read off *session*, because the entire point of seeding is
+    that the bindings did not exist when this pass derived its state. Termination is
+    unaffected: :func:`_seeding_declined` returns early once a pass starts with ready
+    lanes, so the ``seeded`` route can be taken at most once per lane set.
+
+    A lane set that exists but is wholly undispatchable still terminates — nothing
+    another pass could change — but it says so rather than claiming nothing was built.
+    """
+    live_before = frozenset(lane.issue_id for lane in session.adopted if lane.live)
+    derived = derive_session(repo_root, session.root_issue)
+    dispatchable = ready_lanes(repo_root, derived, skip=skip)
+    if any(step.progressed for step in steps) or dispatchable:
+        detail = final.detail
+        if dispatchable:
+            detail = f"provisioned {len(dispatchable)} dispatchable lane(s) - {detail}"
+        return (RoutedOutcome(session.root_issue, "seeded", detail),)
+    gained = frozenset(lane.issue_id for lane in derived.adopted if lane.live) - live_before
+    if gained:
+        return (
+            RoutedOutcome(
+                session.root_issue,
+                "seed-blocked",
+                f"provisioned {len(gained)} lane(s) but none is dispatchable "
+                f"({', '.join(sorted(gained))}) - {final.detail}",
+            ),
+        )
     return (
         RoutedOutcome(
             session.root_issue,
