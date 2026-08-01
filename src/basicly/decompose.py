@@ -437,6 +437,7 @@ INSTRUCTIONS_FILE = "AGENTS.md"
 
 # One scope-glob line as _child_body records it under "## Scope".
 _SCOPE_LINE = re.compile(r"^- `([^`]+)`$")
+_SCOPE_HEADING = "## Scope"
 
 
 def _text_tokens(text: str) -> int:
@@ -545,13 +546,43 @@ def parse_scope_section(description: str) -> tuple[str, ...]:
     for line in description.splitlines():
         stripped = line.strip()
         if stripped.startswith("## "):
-            in_scope = stripped == "## Scope"
+            in_scope = stripped == _SCOPE_HEADING
             continue
         if in_scope:
             match = _SCOPE_LINE.match(stripped)
             if match:
                 scope.append(match.group(1))
     return tuple(scope)
+
+
+def unparsed_scope_warning(description: str) -> str | None:
+    """What to tell an author whose ``## Scope`` heading yielded no readable glob.
+
+    Heading present, entries absent. That is almost always an authoring error rather
+    than a deliberate empty scope, and nothing downstream can tell the two apart:
+    :func:`parse_scope_section` returns an empty tuple for both, so the bead sizes,
+    groups and lands exactly as one that never declared a scope at all — while its
+    author reads the heading back and believes the lane is sized (basicly-tuy6).
+
+    Detecting it needs the heading, which the parser discards, so the check lives
+    here beside the pattern rather than in the gates that consume the result.
+
+    Returns None when there is nothing to say: no heading (the ordinary state of a
+    bead nobody decomposed, and not an error), or a heading that parsed. **Advisory
+    by construction** — it returns prose, never a verdict. Refusing on it would
+    block most of an existing tracker, which is the objection that settled
+    basicly-vz78.
+    """
+    if not any(line.strip() == _SCOPE_HEADING for line in description.splitlines()):
+        return None
+    if parse_scope_section(description):
+        return None
+    return (
+        f"the `{_SCOPE_HEADING}` section parsed to no globs, so every gate reading it "
+        "treats this bead as declaring no scope at all — its lane cannot be sized and "
+        "the landing scope check is inert. Write each entry as a backticked glob on "
+        f"its own line, e.g. {policy.SCOPE_LINE_EXAMPLE}"
+    )
 
 
 # Why a bead yields no class-and-scope pair. One None used to answer for both, and

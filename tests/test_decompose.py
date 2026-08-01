@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import decompose, run_record
+from basicly import decompose, policy, run_record
 from basicly.config import SizingConfig, load_sizing_config
 from basicly.decompose import ChildSpec
 
@@ -555,6 +555,52 @@ def test_parse_scope_section_round_trips_child_body() -> None:
     body = decompose._child_body(spec)
     assert decompose.parse_scope_section(body) == ("src/**/*.py", "tests/test_x.py")
     assert decompose.parse_scope_section("no scope section here") == ()
+
+
+def test_scope_line_example_is_a_line_the_parser_actually_accepts() -> None:
+    """The example an author is shown must parse, or it teaches the mistake it prevents.
+
+    ``policy`` owns the example because it scaffolds the section; ``decompose`` owns
+    the pattern. Nothing but this test holds the two together (basicly-tuy6).
+    """
+    assert decompose.parse_scope_section(f"## Scope\n\n{policy.SCOPE_LINE_EXAMPLE}\n") != ()
+
+
+def test_unparsed_scope_warning_fires_when_the_heading_yielded_no_glob() -> None:
+    """Heading present, entries prose: the silent case that cost a whole tracker its sizing.
+
+    Both spellings measured on the real tracker are covered — a bare path, and a
+    backticked path with a trailing parenthetical note (basicly-jr0l.60's own body).
+    """
+    bare = "## Scope\n\n- src/basicly/loop.py\n"
+    annotated = "## Scope\n\n- `src/basicly/supervise.py`  (admit_working_set only)\n"
+    for description in (bare, annotated):
+        assert decompose.parse_scope_section(description) == ()
+        warning = decompose.unparsed_scope_warning(description)
+        assert warning is not None
+        assert policy.SCOPE_LINE_EXAMPLE in warning
+
+
+def test_unparsed_scope_warning_is_silent_when_there_is_nothing_to_say() -> None:
+    """No heading is the ordinary state of an undecomposed bead, not an authoring error.
+
+    Warning on it would fire on most of the tracker and train the reader to ignore
+    the one case that matters.
+    """
+    assert decompose.unparsed_scope_warning("no scope section here") is None
+    assert decompose.unparsed_scope_warning(decompose._child_body(_child("t", "src/a.py"))) is None
+
+
+def test_scaffolded_scope_hint_does_not_itself_read_as_a_declared_scope() -> None:
+    """A scaffold nobody filled in must warn, not pass as a bead that declared a scope.
+
+    The hint names the format by example, so it necessarily contains a backticked
+    path; if it sat on its own line the parser would read it as a real entry and the
+    unfilled scaffold would size a lane against ``src/basicly/cli.py``.
+    """
+    body = policy.scaffold_body("task")
+    assert decompose.parse_scope_section(body) == ()
+    assert decompose.unparsed_scope_warning(body) is not None
 
 
 def test_child_body_carries_the_sections_the_childs_own_type_requires() -> None:

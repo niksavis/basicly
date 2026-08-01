@@ -458,11 +458,12 @@ def test_policy_rework_refuses_record_and_allow_retry_together(
 def test_policy_scaffold_prints_the_body_for_the_work_type(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The command emits the DoR structure on stdout, ready to pipe into br create."""
+    """The command emits the DoR structure plus ``## Scope``, ready to pipe into br create."""
     assert cli.main(["policy", "scaffold", "--type", "bug"]) == 0
     out = capsys.readouterr().out
-    assert out == policy.compose_body("bug")
+    assert out == policy.scaffold_body("bug")
     assert "## Steps to Reproduce" in out and "## Acceptance Criteria" in out
+    assert "## Scope" in out
 
 
 def test_policy_scaffold_rejects_a_type_outside_the_br_taxonomy() -> None:
@@ -495,6 +496,54 @@ def test_dor_refusal_names_the_scaffold_command_for_the_issues_own_type(
     err = capsys.readouterr().err
     assert "## Steps to Reproduce" in err
     assert "basicly policy scaffold --type bug" in err
+
+
+def test_dor_warns_about_a_scope_that_parsed_to_nothing_without_changing_the_verdict(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A ready bead with an unreadable scope must still read READY, and still say so.
+
+    The failure basicly-tuy6 fixes is silent, so the warning has to reach an author
+    on the path they already run. It is advisory: it cannot flip the verdict or the
+    exit code, or it becomes the fail-closed refusal basicly-vz78 rejected.
+    """
+    monkeypatch.setattr(
+        policy,
+        "_run_br",
+        lambda _root, args, **_kw: _Proc(
+            json.dumps({"results": [{"missing": []}]})
+            if args[:1] == ["lint"]
+            else json.dumps([{"description": "## Acceptance Criteria\n\nx"}])
+        ),
+    )
+    record = _Proc(json.dumps([{"type": "task", "description": "## Scope\n\n- src/a.py\n"}]))
+    monkeypatch.setattr(cli.br, "try_run_br", lambda _root, _args: record)
+
+    assert cli.main(["policy", "dor", "basicly-x"]) == 0
+    captured = capsys.readouterr()
+    assert "DoR: READY" in captured.out
+    assert "parsed to no globs" in captured.err
+
+
+def test_dor_stays_quiet_when_the_scope_parsed(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The control: a bead whose entries are backticked globs earns no warning."""
+    monkeypatch.setattr(
+        policy,
+        "_run_br",
+        lambda _root, args, **_kw: _Proc(
+            json.dumps({"results": [{"missing": []}]})
+            if args[:1] == ["lint"]
+            else json.dumps([{"description": "## Acceptance Criteria\n\nx"}])
+        ),
+    )
+    body = f"## Scope\n\n{policy.SCOPE_LINE_EXAMPLE}\n"
+    record = _Proc(json.dumps([{"type": "task", "description": body}]))
+    monkeypatch.setattr(cli.br, "try_run_br", lambda _root, _args: record)
+
+    assert cli.main(["policy", "dor", "basicly-x"]) == 0
+    assert "parsed to no globs" not in capsys.readouterr().err
 
 
 def test_dor_refusal_still_offers_the_scaffold_when_the_type_is_unreadable(

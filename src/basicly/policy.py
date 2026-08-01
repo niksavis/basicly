@@ -144,6 +144,21 @@ _TYPE_SECTIONS: dict[str, tuple[str, ...]] = {
 # and :func:`definition_of_ready` (each only looks for the heading), so a body
 # nobody filled in would otherwise clear the gate having stated nothing.
 _TODO = "TODO"
+
+# Scaffolded, but deliberately absent from :func:`required_sections`. An author has
+# to be *shown* the section and its exact line format — being told only that a scope
+# exists is what produced a tracker of headings that parse to nothing (basicly-tuy6)
+# — while the Definition-of-Ready must not refuse a bead for omitting it, because
+# fail-closed here blocks most of an existing tracker (the objection that settled
+# basicly-vz78).
+_SCOPE_SECTION = "## Scope"
+
+# The one scope line ``decompose._SCOPE_LINE`` accepts, quoted wherever an author is
+# told to write one. Stated once and imported by the parser's own warning, because two
+# copies of an example are two things to drift — and an example that stopped parsing
+# would teach exactly the mistake it exists to prevent. A test pins it to the pattern.
+SCOPE_LINE_EXAMPLE = "- `src/basicly/cli.py`"
+
 _SECTION_HINTS: dict[str, str] = {
     "## Steps to Reproduce": (
         f"{_TODO}: the exact commands run, the observed result, and the expected one."
@@ -151,6 +166,13 @@ _SECTION_HINTS: dict[str, str] = {
     "## Success Criteria": f"{_TODO}: the high-level outcomes that close this epic.",
     _ACCEPTANCE_CRITERIA_SECTION: (
         f"- {_TODO}: Given <starting state> when <action> then <observable result>"
+    ),
+    # States the format by example, inline rather than as its own line — and so is
+    # itself unparseable, on purpose. A scaffold nobody filled in must not read as a
+    # declared scope, so it earns the same warning a hand-written prose scope does.
+    _SCOPE_SECTION: (
+        f"- {_TODO}: one entry per line in exactly this form: {SCOPE_LINE_EXAMPLE} "
+        "— an entry that is not a backticked glob parses to nothing."
     ),
 }
 
@@ -165,6 +187,19 @@ def required_sections(work_type: str) -> tuple[str, ...]:
     scaffolded body reads in the same order as the refusal it prevents.
     """
     return (*_TYPE_SECTIONS.get(work_type, ()), _ACCEPTANCE_CRITERIA_SECTION)
+
+
+def scaffold_body(work_type: str) -> str:
+    """The body an author starts from: every DoR-required section, plus ``## Scope``.
+
+    ``## Scope`` is emitted here and absent from :func:`required_sections`, and that
+    split is the whole point. The scope is what sizes a lane and what the landing
+    check reads, so an author needs the heading *and* its exact line format put in
+    front of them; but the Definition-of-Ready cannot require it without refusing
+    most of an existing tracker. Show it, warn when it parsed to nothing, never
+    block on it (basicly-tuy6).
+    """
+    return compose_body(work_type, {_SCOPE_SECTION: ""})
 
 
 def compose_body(
