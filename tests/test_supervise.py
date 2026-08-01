@@ -2737,6 +2737,35 @@ def test_dispatch_halt_is_one_idempotent_queue_item(
     assert len(br.comments["epic"]) == 1
 
 
+def test_an_unmeterable_halt_asks_its_own_question(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A ceiling that cannot bind is a different ask from one that is spent (jr0l.35).
+
+    Items are keyed by (issue, kind, question), so sharing the budget wording would
+    also fold the two halts into one item and hide whichever arrived second.
+    """
+    br = _FakeBr({"epic": _issue("epic")})
+    monkeypatch.setattr(decisions, "_run_br", br)
+    monkeypatch.setattr(loop_state, "_run_br", br)
+    monkeypatch.setattr(decisions, "_notify", lambda *_a, **_k: None)
+    spent = _granted("L2", 5000, 6000)
+    unmetered = policy.SpendStatus(
+        grant=policy.Grant(level="L2", token_budget=5000),
+        spent_tokens=0,
+        halted=True,
+        detail="L2 grant cannot be metered: 1 dispatch(es) under it reported no measurable usage",
+        unmetered_dispatches=1,
+    )
+
+    budget_item = supervise.record_dispatch_halt(tmp_path, "epic", spent)
+    unmetered_item = supervise.record_dispatch_halt(tmp_path, "epic", unmetered)
+
+    assert budget_item.decision_id != unmetered_item.decision_id
+    assert "no measurable usage" in unmetered_item.question
+    assert len(br.comments["epic"]) == 2
+
+
 # --- Autonomous delegation: the decider in the pass (basicly-kjc5.40) ---------
 
 

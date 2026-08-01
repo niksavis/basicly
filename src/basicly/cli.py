@@ -2825,7 +2825,11 @@ def _cmd_loop_preflight(args: argparse.Namespace) -> int:
         print(f"grant:     {grant.level}, spent {spent} under it, remaining {remaining}")
     if status.halted:
         print(f"halted:    {status.detail}")
-        blockers.append("the grant's budget is spent")
+        blockers.append(
+            "a dispatch under this grant could not be metered"
+            if status.unmetered_dispatches
+            else "the grant's budget is spent"
+        )
     if (metered := supervise.metered_without_a_budget(repo_root, status)) is not None:
         print(f"budget:    MISSING - the {metered!r} runner meters spend and no budget covers it")
         blockers.append("a metered runner needs a grant with a token budget")

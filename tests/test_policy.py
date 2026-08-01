@@ -859,7 +859,7 @@ def test_grant_spend_halt_drops_delegation_to_human(
     )
     run_record.record(tmp_path, "root", entry)
 
-    assert policy.session_spend_tokens(tmp_path, "root") == 150
+    assert policy.session_spend(tmp_path, "root").measured_tokens == 150
     result = policy.approve_checkpoint_guarded(
         tmp_path, "root", "classify", interactive=False, grant_root="root"
     )
@@ -944,7 +944,7 @@ def test_session_spend_sums_the_children_too(
             agent="t", handoff=False, returncode=0, duration_s=1.0, command=("t",), tokens=tokens
         )
         run_record.record(tmp_path, issue_id, entry)
-    assert policy.session_spend_tokens(tmp_path, "root") == 100
+    assert policy.session_spend(tmp_path, "root").measured_tokens == 100
 
 
 def test_l3_ship_delegates_only_when_preconditions_hold(
@@ -1328,7 +1328,7 @@ def test_session_ids_walk_the_tree_transitively(
         agent="t", handoff=False, returncode=0, duration_s=1.0, command=("t",), tokens=70
     )
     run_record.record(tmp_path, "root.1.1", entry)
-    assert policy.session_spend_tokens(tmp_path, "root") == 70
+    assert policy.session_spend(tmp_path, "root").measured_tokens == 70
 
 
 def _gating_track() -> _FakeBr:
@@ -1431,7 +1431,7 @@ def test_gating_spend_counts_toward_the_budget(
         agent="t", handoff=False, returncode=0, duration_s=1.0, command=("t",), tokens=70
     )
     run_record.record(tmp_path, "standalone", entry)
-    assert policy.session_spend_tokens(tmp_path, "root") == 70
+    assert policy.session_spend(tmp_path, "root").measured_tokens == 70
 
 
 def test_grant_confirm_code_binds_level_and_budget(
@@ -1539,7 +1539,7 @@ def test_the_two_escalations_stay_distinguishable_in_one_queue() -> None:
 
 def _with_spend(monkeypatch: pytest.MonkeyPatch, total: int) -> None:
     """Pin the session's run-record spend total."""
-    monkeypatch.setattr(policy, "session_spend_tokens", lambda *_a, **_k: total)
+    monkeypatch.setattr(policy, "session_spend", lambda *_a, **_k: policy.SpendMeter(total, 0, 0))
 
 
 def test_a_fresh_grant_admits_dispatch_on_a_historically_expensive_session(
@@ -1601,7 +1601,9 @@ def test_the_baseline_round_trips_through_the_grant_marker(
 ) -> None:
     """The ledger is comment markers, so the baseline has to survive a write/read."""
     _install(monkeypatch, _FakeBr())
-    monkeypatch.setattr(policy, "session_spend_tokens", lambda *_a, **_k: 30_705_839)
+    monkeypatch.setattr(
+        policy, "session_spend", lambda *_a, **_k: policy.SpendMeter(30_705_839, 0, 0)
+    )
     result = policy.issue_grant_guarded(
         tmp_path, "root", "L1", 5_000_000, L3_CONFIG, interactive=True
     )
@@ -1618,7 +1620,7 @@ def test_a_grant_with_no_prior_spend_records_no_baseline(
 ) -> None:
     """A clean session's marker stays exactly as it was before this change."""
     _install(monkeypatch, _FakeBr())
-    monkeypatch.setattr(policy, "session_spend_tokens", lambda *_a, **_k: 0)
+    monkeypatch.setattr(policy, "session_spend", lambda *_a, **_k: policy.SpendMeter(0, 0, 0))
     policy.issue_grant_guarded(tmp_path, "root", "L1", 5_000_000, L3_CONFIG, interactive=True)
 
     assert "baseline=" not in policy._run_br.comments[-1]  # type: ignore[attr-defined]
@@ -1636,7 +1638,7 @@ def test_nothing_in_the_spend_gate_reads_a_clock() -> None:
     scanning the raw text flagged exactly that.
     """
     banned = {"timestamp", "datetime", "created_at", "updated_at", "time", "now"}
-    for func in (policy.spend_status, policy.session_spend_tokens):
+    for func in (policy.spend_status, policy.session_spend):
         tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
         used = {
             node.id if isinstance(node, ast.Name) else node.attr
@@ -1645,6 +1647,163 @@ def test_nothing_in_the_spend_gate_reads_a_clock() -> None:
         }
         leaked = used & banned
         assert not leaked, f"{func.__name__} reads a clock: {leaked}"
+
+
+# --- An estimate is not a measurement (basicly-jr0l.35) ----------------------
+#
+# The numbers below are the ones the defect was measured with on a live copilot
+# probe (2026-07-29): a dispatch that really consumed 24210 input tokens captured
+# 5514 bytes of stdout, which the chars/4 fallback reads as 1378 — 17.6x under.
+# Counted at face value that sample tells a 100000-token ceiling it has 98622 left.
+
+
+def _dispatch(tmp_path: Path, tokens: int, *, estimated: bool, issue_id: str = "root") -> None:
+    """Record one executed dispatch's usage on *issue_id*."""
+    run_record.record(
+        tmp_path,
+        issue_id,
+        run_record.build_record(
+            agent="t",
+            handoff=False,
+            returncode=0,
+            duration_s=1.0,
+            command=("t",),
+            tokens=tokens,
+            estimated=estimated,
+        ),
+    )
+
+
+def test_an_unmeterable_dispatch_halts_instead_of_metering_its_estimate(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The reported defect: a chars/4 floor was counted as if it were spend."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    fake.comments.append("[harness-policy] grant level=L2 budget=100000")
+    _dispatch(tmp_path, 24_210, estimated=False)
+    _dispatch(tmp_path, 1_378, estimated=True)
+
+    status = policy.spend_status(tmp_path, "root")
+
+    assert status.halted is True
+    assert status.unmetered_dispatches == 1
+    # The floor is neither added into the total nor allowed to buy the remainder.
+    assert status.spent_tokens == 24_210
+    assert status.remaining_tokens == 0
+    assert "no measurable usage" in status.detail
+    assert "1378 estimated" in status.detail
+
+
+def test_a_fully_measured_session_meters_exactly_as_before(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The other half: with every sample measured, nothing about the ceiling moves."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    fake.comments.append("[harness-policy] grant level=L2 budget=100")
+    _dispatch(tmp_path, 60, estimated=False)
+    _dispatch(tmp_path, 30, estimated=False)
+
+    under = policy.spend_status(tmp_path, "root")
+    assert (under.spent_tokens, under.halted, under.unmetered_dispatches) == (90, False, 0)
+    assert under.remaining_tokens == 10
+
+    _dispatch(tmp_path, 10, estimated=False)
+    at_budget = policy.spend_status(tmp_path, "root")
+    assert (at_budget.spent_tokens, at_budget.halted) == (100, True)
+    assert "token_budget spent (100/100 tokens" in at_budget.detail
+
+
+def test_a_legacy_record_with_no_usage_provenance_still_meters(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A record predating the ``estimated`` field keeps the behaviour it was written with.
+
+    Every writer since sets the flag whenever tokens are present, so an absent one
+    means an older basicly, not an unmeasured dispatch — reading it as unmeasurable
+    would halt a session over history nothing can go back and measure.
+    """
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    fake.comments.append("[harness-policy] grant level=L2 budget=100000")
+    run_record.record(
+        tmp_path,
+        "root",
+        run_record.build_record(
+            agent="t", handoff=False, returncode=0, duration_s=1.0, command=("t",), tokens=90
+        ),
+    )
+
+    status = policy.spend_status(tmp_path, "root")
+
+    assert (status.spent_tokens, status.halted, status.unmetered_dispatches) == (90, False, 0)
+
+
+def test_without_a_ceiling_an_unmeterable_dispatch_halts_nothing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No grant, and an L1 grant with no budget, have no ceiling for this to protect."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _dispatch(tmp_path, 1_378, estimated=True)
+
+    assert policy.spend_status(tmp_path, "root").halted is False
+
+    fake.comments.append("[harness-policy] grant level=L1")
+    assert policy.spend_status(tmp_path, "root").halted is False
+
+
+def test_re_granting_answers_for_the_dispatches_already_unmetered(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The halt is answerable: a new grant baselines the count, and the next one halts again.
+
+    Without the baseline one unmeasurable dispatch would hold every future grant on
+    this root halted forever, which is a wedge rather than a ceiling.
+    """
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _dispatch(tmp_path, 1_378, estimated=True)
+
+    policy.issue_grant_guarded(tmp_path, "root", "L1", 5_000_000, L3_CONFIG, interactive=True)
+    assert "unmetered=1" in fake.comments[-1]
+
+    grant = policy.active_grant(tmp_path, "root")
+    assert grant is not None and grant.unmetered_at_issue == 1
+    assert policy.spend_status(tmp_path, "root").halted is False
+
+    _dispatch(tmp_path, 2_000, estimated=True)
+    assert policy.spend_status(tmp_path, "root").halted is True
+
+
+def test_a_session_with_nothing_unmetered_records_no_unmetered_baseline(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A measured session's marker stays exactly as it was before this change."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _dispatch(tmp_path, 24_210, estimated=False)
+
+    policy.issue_grant_guarded(tmp_path, "root", "L1", 5_000_000, L3_CONFIG, interactive=True)
+
+    assert "unmetered=" not in fake.comments[-1]
+
+
+def test_the_forward_gate_calls_the_remainder_unknown_not_spent() -> None:
+    """A pass refused for an unmeterable dispatch must not read as an exhausted budget."""
+    status = policy.SpendStatus(
+        grant=policy.Grant(level="L2", token_budget=100_000),
+        spent_tokens=0,
+        halted=True,
+        unmetered_dispatches=1,
+    )
+
+    violation = policy.check_pass_spend(50_000, status)
+
+    assert violation is not None
+    assert "unknown remainder" in violation
+    assert "re-scope" not in violation
 
 
 # --- Human wait time (basicly-kjc5.51, D11) ----------------------------------
