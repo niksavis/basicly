@@ -377,6 +377,25 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A declared scope no longer counts the virtualenv, dependency trees or caches as the
+  lane's working set.** `decompose._scope_files` globbed with no ignore list, so
+  `SCOPE_EXCLUDED_DIRS` (`.git`, `.venv`, `venv`, `node_modules`, `__pycache__`, the tool
+  caches) now drops those paths. Measured here: `**/*.py` matched **2229** files of which
+  **2077 were the virtualenv** — 147 were source; after the fix it reads 147 files and
+  710,316 tokens instead of 6,337,230. `tests/**` fell from 1,796,401 to 383,569 tokens,
+  because `__pycache__` `.pyc` files were being read as text via `errors="replace"`.
+
+  This was not merely a wrong number. The band refuses a lane over `working_set_max` and
+  that refusal sets `human_required` on the queued escalation, so an inflated estimate held
+  a lane pending a human; the same read-cost feeds `calibrated_build_factors`, so every
+  calibration sample inherited it.
+
+  Exclusion is by **directory name**, never by a leading dot — `.basicly`, `.claude`,
+  `.github` and `.beads` are legitimate scope, and excluding them would silently zero their
+  read-cost. `dist`, `build` and `site` are deliberately **not** excluded: basicly installs
+  into consumer repositories where each can be a real source package, and a wrong exclusion
+  under-reads a lane and admits work the band should have refused (`basicly-jr0l.63`).
+
 - **Fan-out provisioning now picks the highest-ranked dispatchable children, and skips a
   lane the band refuses.** `_ensure_child_worktrees` computed `loop_state.ready_ranked` —
   documented as "ranked by `br scheduler` (highest priority first)" — and then reduced it

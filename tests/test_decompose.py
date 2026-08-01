@@ -1026,6 +1026,32 @@ def test_scope_read_cost_keeps_dot_directory_scopes(tmp_path: Path) -> None:
     assert decompose.scope_read_cost(tmp_path, ("./src/a.py",)) == 10
 
 
+def test_scope_read_cost_excludes_dependency_and_cache_trees(tmp_path: Path) -> None:
+    """A virtualenv, dependency tree or cache under a glob is not the lane's work."""
+    _write(tmp_path, "src/a.py", 40)
+    _write(tmp_path, ".venv/lib/dep.py", 4000)
+    _write(tmp_path, "node_modules/pkg/index.py", 4000)
+    _write(tmp_path, "src/__pycache__/a.cpython-314.pyc", 4000)
+    _write(tmp_path, ".git/hooks/thing.py", 4000)
+    # Only src/a.py is the project's own file, so the recursive glob costs 10 —
+    # not the 4010 the same glob measured before the exclusion.
+    assert decompose.scope_read_cost(tmp_path, ("**/*.py",)) == 10
+
+
+def test_scope_read_cost_keeps_project_authored_dot_directories(tmp_path: Path) -> None:
+    """Exclusion is by directory name, so .basicly and .claude are still counted."""
+    _write(tmp_path, ".basicly/core/skills/s/skill.yaml", 400)
+    _write(tmp_path, ".claude/rules/python.md", 400)
+    assert decompose.scope_read_cost(tmp_path, (".basicly/**",)) == 100
+    assert decompose.scope_read_cost(tmp_path, (".claude/**",)) == 100
+
+
+def test_scope_read_cost_reads_a_file_named_like_an_excluded_dir(tmp_path: Path) -> None:
+    """The name check covers directories only, so a file called venv is still read."""
+    _write(tmp_path, "src/venv", 40)
+    assert decompose.scope_read_cost(tmp_path, ("src/**",)) == 10
+
+
 def test_scope_read_cost_skips_unglobbable_patterns(tmp_path: Path) -> None:
     """An anchored or engine-rejected pattern is skipped, never fatal."""
     _write(tmp_path, "etc/conf.py", 40)
