@@ -1172,6 +1172,62 @@ def band_coverage(working_sets: tuple[WorkingSetAdmission, ...]) -> str:
     return "; ".join(parts)
 
 
+def band_report(working_sets: tuple[WorkingSetAdmission, ...]) -> tuple[str, ...]:
+    """One line per candidate: its working-set estimate and what the band would do.
+
+    :func:`band_coverage` answers "did the band look?" in a single line, which is the
+    right shape *during* a pass. Before one, the operator is deciding whether to mint a
+    budget at all, and that decision needs the per-lane numbers — an aggregate forecast
+    built from the unsizeable-lane assumption reads exactly like a measurement of lanes
+    nobody measured (basicly-prnm, the same silent shape as basicly-jr0l.60).
+
+    Ordered largest estimate first, then the unsized: the big lanes decide the budget,
+    and the absent ones are the authoring fix that changes the budget most.
+    """
+    sized = sorted(
+        (w for w in working_sets if w.sizing is not None),
+        key=lambda w: w.sizing.estimate.total if w.sizing else 0,
+        reverse=True,
+    )
+    lines = [
+        f"  {w.issue_id:<22} {w.sizing.estimate.total:>9} tok  {_band_verdict(w)}"
+        for w in sized
+        if w.sizing is not None
+    ]
+    # Named, never folded into a count: an undeclared scope is an authoring fix that
+    # takes a minute, and it is the largest single lever on what a pass costs.
+    lines += [
+        f"  {w.issue_id:<22} {'unsized':>9}      no scope the estimator can read"
+        for w in working_sets
+        if w.sizing is None
+    ]
+    return tuple(lines)
+
+
+def _band_verdict(admission: WorkingSetAdmission) -> str:
+    """What the band would do with one sized lane, worded for the pre-run table.
+
+    The floor is deliberately skipped when a scope matches nothing on disk, so a
+    greenfield package is not refused for having nothing to read yet
+    (:func:`policy.check_working_set`). That leaves a *broken* glob indistinguishable
+    from a greenfield one at the surface: both estimate to bare overhead and both read
+    as a comfortably small "in band" lane. Measured on this repo's own tracker, four
+    candidates sat at exactly the overhead figure. Say it instead, because the fix
+    differs — one needs a corrected path, the other needs nothing (the gate that
+    refuses an empty glob outright is basicly-a3ab.3).
+    """
+    if admission.refused:
+        return "REFUSED - too large, split it"
+    if admission.violation is not None:
+        # Only the ceiling refuses (see :func:`admit_working_set`), so a lane under the
+        # floor still dispatches while carrying the band's advice. Printing a bare
+        # "in band" for it would report the opposite of what the band actually said.
+        return "under the floor - dispatches, but merge it with a sibling"
+    if admission.sizing is not None and admission.sizing.estimate.scope_tokens == 0:
+        return "in band, but its scope matched no file"
+    return "in band"
+
+
 # --- The spend ceiling at pass admission (D3 looking forward, basicly-jr0l.22) ---
 #
 # ``policy.spend_status`` compares spend *already recorded* against the grant's
