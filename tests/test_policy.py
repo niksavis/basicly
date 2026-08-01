@@ -2239,6 +2239,43 @@ def test_record_evidence_keeps_one_marker_per_phase(
     assert any("phase=build" in text for text in fake.comments)
 
 
+# --- Declared file scope, checked at the landing (basicly-jr0l.44) -----------
+
+
+def test_record_scope_violation_writes_one_marker_and_is_idempotent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The landing is retried per advance, so a per-attempt comment would bury it."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    assert policy.record_scope_violation(tmp_path, "i", ("src/a.py", "src/b.py"))
+    assert not policy.record_scope_violation(tmp_path, "i", ("src/a.py", "src/b.py"))
+    assert fake.comments == [f"{policy.SCOPE_VIOLATION_MARKER} paths=src/a.py,src/b.py"]
+
+
+def test_record_scope_violation_names_the_lanes_that_declared_the_ground(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A lonely overreach and a live-lane collision are different findings."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    policy.record_scope_violation(tmp_path, "i", ("src/a.py",), ("other-1", "other-2"))
+    assert fake.comments == [
+        f"{policy.SCOPE_VIOLATION_MARKER} paths=src/a.py collides=other-1,other-2"
+    ]
+
+
+def test_record_scope_violation_records_a_changed_finding_again(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A lane that reached further after rework has produced new evidence, not a repeat."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    policy.record_scope_violation(tmp_path, "i", ("src/a.py",))
+    assert policy.record_scope_violation(tmp_path, "i", ("src/a.py", "src/b.py"))
+    assert len(fake.comments) == 2
+
+
 # --- D3 looking forward: the remainder and the pass predicate (basicly-jr0l.22) ---
 
 

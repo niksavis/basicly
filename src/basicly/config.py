@@ -429,6 +429,16 @@ DEFAULT_DECIDER_MAX_DECISIONS = 50
 # runaway lane decomposition from turning one package into dozens of dispatches.
 DEFAULT_MAX_SUBTASKS_PER_LANE = 10
 
+# What a landing does when a lane's committed changes reach outside its declared
+# ``## Scope`` *and* into another live lane's declared scope (basicly-jr0l.44).
+# The out-of-scope paths are recorded as evidence either way; this governs only
+# the collision, which is the case that actually produces a merge conflict later.
+# "block" refuses before the merge (deterministic checks are authoritative);
+# "warn" lands anyway, for a repo whose plans are routinely incomplete and would
+# rather pay the conflict than the rework cycle.
+SCOPE_COLLISION_POLICIES = ("block", "warn")
+DEFAULT_SCOPE_COLLISION = "block"
+
 # The fixed br work classes the classifier may assign (architecture §12.1).
 # bug/chore are leaf tracks; task/feature/epic nest fractally.
 WORK_TYPES = ("bug", "chore", "task", "feature", "epic")
@@ -624,6 +634,9 @@ class PolicyConfig:
     # advance past that phase. Empty by default, so the mechanism is inert until a
     # consumer declares something.
     evidence: dict[str, str] = field(default_factory=dict)
+    # How the build->verify landing answers an out-of-scope edit that reaches into
+    # another live lane's declared scope (basicly-jr0l.44).
+    scope_collision: str = DEFAULT_SCOPE_COLLISION
 
 
 def load_policy_config(repo_root: Path) -> PolicyConfig:
@@ -669,12 +682,24 @@ def load_policy_config(repo_root: Path) -> PolicyConfig:
         else {}
     )
 
+    # Unlike [policy.evidence], an unrecognised value falls back to the default
+    # rather than refusing: the strict half of this mechanism is the *evidence*,
+    # which is recorded whatever the policy says, so a typo here cannot make a
+    # landing look checked when it was not.
+    raw_collision = section.get("scope_collision")
+    scope_collision = (
+        raw_collision.strip()
+        if isinstance(raw_collision, str) and raw_collision.strip() in SCOPE_COLLISION_POLICIES
+        else DEFAULT_SCOPE_COLLISION
+    )
+
     return PolicyConfig(
         required_gates=required_gates,
         max_rework=max_rework,
         autonomy=autonomy,
         notify_command=notify_command,
         evidence=evidence,
+        scope_collision=scope_collision,
         decider_max_decisions=_positive_int(
             section.get("decider_max_decisions"), DEFAULT_DECIDER_MAX_DECISIONS
         ),

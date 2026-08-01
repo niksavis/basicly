@@ -866,6 +866,50 @@ def test_coupled_lanes_ignores_a_tracker_collision() -> None:
     assert merge.coupled_lanes((".beads/issues.jsonl", "src/x.py"), scopes, bounced="me") == ("b",)
 
 
+def test_out_of_scope_paths_reports_only_what_no_declared_glob_covers() -> None:
+    """The declared scope is finally held against the diff it was a plan for (jr0l.44)."""
+    scope = ("src/basicly/merge.py", "tests/test_merge.py")
+    changed = ("src/basicly/merge.py", "tests/test_merge.py", "src/basicly/loop.py", "README.md")
+    assert merge.out_of_scope_paths(changed, scope) == ("README.md", "src/basicly/loop.py")
+    assert merge.out_of_scope_paths(("src/basicly/merge.py",), scope) == ()
+    assert merge.out_of_scope_paths((), scope) == ()
+
+
+def test_out_of_scope_paths_is_sorted_and_deduplicated() -> None:
+    """A finding recorded on a bead must be a function of the inputs alone (D9)."""
+    changed = ("z.py", "a.py", "z.py", "  m.py  ", "")
+    assert merge.out_of_scope_paths(changed, ("src/**",)) == ("a.py", "m.py", "z.py")
+
+
+def test_out_of_scope_paths_says_nothing_when_nothing_was_declared() -> None:
+    """A bead with no ``## Scope`` — a hand-filed leaf — contradicts no plan."""
+    assert merge.out_of_scope_paths(("anything.py", "else.py"), ()) == ()
+
+
+def test_out_of_scope_paths_never_faults_a_lane_for_the_tracker() -> None:
+    """The harness rewrites .beads on every landing, so no plan declares it."""
+    changed = (".beads/issues.jsonl", ".beads/metadata.json", "src/x.py")
+    assert merge.out_of_scope_paths(changed, ("docs/**",)) == ("src/x.py",)
+
+
+def test_branch_changed_paths_diffs_against_the_merge_base(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Three-dot: a base that moved on after the fork is not the lane's work."""
+    fake = _FakeGit({"diff": _Proc(0, "b.py\na.py\n\n")})
+    monkeypatch.setattr(merge, "git", fake)
+    assert merge.branch_changed_paths(tmp_path, "main", "harness/feat") == ("a.py", "b.py")
+    assert fake.calls == [["diff", "--name-only", "main...harness/feat"]]
+
+
+def test_branch_changed_paths_is_empty_when_git_cannot_answer(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Best-effort like every read on this path: it costs a finding, never the pass."""
+    monkeypatch.setattr(merge, "git", _FakeGit({"diff": _Proc(128, "fatal: bad revision\n")}))
+    assert merge.branch_changed_paths(tmp_path, "main", "harness/gone") == ()
+
+
 def test_attribute_couplings_considers_every_landing_of_the_pass(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

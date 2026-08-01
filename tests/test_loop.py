@@ -2073,6 +2073,164 @@ def test_every_loop_phase_has_a_handler_and_vice_versa() -> None:
     assert set(loop._HANDLERS) == set(LOOP_PHASES)
 
 
+# --- declared scope, verified at the landing (basicly-jr0l.44) ---------------
+
+
+def _scope_config(collision: str = "block") -> PolicyConfig:
+    return PolicyConfig(required_gates=("verify",), max_rework=2, scope_collision=collision)
+
+
+def _pin_scope(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    scopes: dict[str, tuple[str, ...] | None],
+    changed: tuple[str, ...],
+    live: tuple[str, ...] = ("i",),
+) -> list[tuple[tuple[str, ...], tuple[str, ...]]]:
+    """Pin the landing's scope inputs; return the violations recorded on the bead.
+
+    *scopes* maps bead id to its declared globs (``None`` for a bead that declared
+    none), *changed* is what this lane's branch touched since its merge base, and
+    *live* names the beads whose worktree still exists.
+    """
+    monkeypatch.setattr(worktree, "load_session", lambda *_a, **_k: _session())
+    monkeypatch.setattr(
+        decompose,
+        "bead_class_and_scope",
+        lambda _r, bead: None if scopes.get(bead) is None else ("task", scopes[bead]),
+    )
+    monkeypatch.setattr(
+        merge, "branch_changed_paths", lambda *_a: pytest.fail("the diff must not be read")
+    )
+    if scopes.get("i") is not None:
+        monkeypatch.setattr(merge, "branch_changed_paths", lambda *_a: changed)
+    monkeypatch.setattr(merge, "known_bead_ids", lambda _r: set(scopes))
+    monkeypatch.setattr(worktree, "list_sessions", lambda _r: [_session(name) for name in live])
+    recorded: list[tuple[tuple[str, ...], tuple[str, ...]]] = []
+
+    def _record(_repo_root, _issue, paths, colliding=()):
+        recorded.append((tuple(paths), tuple(colliding)))
+        return True
+
+    monkeypatch.setattr(policy, "record_scope_violation", _record)
+    return recorded
+
+
+def _pin_clean_landing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Let the landing itself succeed, so only the scope check can hold it."""
+    monkeypatch.setattr(
+        merge, "merge_worktree", lambda *_a, **_k: merge.MergeResult("i", "merged", "landed")
+    )
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
+    monkeypatch.setattr(verify, "report_gate", lambda *_a, **_k: (True, "ok"))
+
+
+def test_an_out_of_scope_edit_into_a_live_lanes_ground_refuses_the_landing(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The collision that later becomes a merge conflict is caught while it is free.
+
+    Two lanes were declared parallel-safe on disjoint scopes; this one wrote into
+    the other's. Refusing before the merge spends nothing, and the message says
+    the plan is wrong rather than the merge.
+    """
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    recorded = _pin_scope(
+        monkeypatch,
+        scopes={"i": ("src/a.py",), "j": ("src/b.py",)},
+        changed=("src/a.py", "src/b.py"),
+        live=("i", "j"),
+    )
+    monkeypatch.setattr(
+        merge, "merge_worktree", lambda *_a, **_k: pytest.fail("the merge must not be attempted")
+    )
+    result = loop.advance(tmp_path, "i", config=_scope_config())
+    assert result.blocked and result.needs_input == "scope"
+    assert "src/b.py" in result.detail and "j" in result.detail
+    assert recorded == [(("src/b.py",), ("j",))]
+
+
+def test_an_out_of_scope_edit_nobody_else_declared_is_recorded_and_lands(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An agent's plan is sometimes legitimately incomplete, so this is advisory.
+
+    Blocking every incomplete declaration would convert each one into a rework
+    cycle; the finding still travels with the bead.
+    """
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    recorded = _pin_scope(
+        monkeypatch,
+        scopes={"i": ("src/a.py",), "j": ("src/b.py",)},
+        changed=("src/a.py", "docs/x.md"),
+        live=("i", "j"),
+    )
+    _pin_clean_landing(monkeypatch)
+    result = loop.advance(tmp_path, "i", config=_scope_config())
+    assert result.to_phase == "verify" and result.action == "merged"
+    assert recorded == [(("docs/x.md",), ())]
+
+
+def test_a_collision_with_a_torn_down_lane_is_not_a_collision(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Only a lane still holding a worktree can be written out from under."""
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    recorded = _pin_scope(
+        monkeypatch,
+        scopes={"i": ("src/a.py",), "j": ("src/b.py",)},
+        changed=("src/b.py",),
+        live=("i",),
+    )
+    _pin_clean_landing(monkeypatch)
+    result = loop.advance(tmp_path, "i", config=_scope_config())
+    assert result.action == "merged"
+    assert recorded == [(("src/b.py",), ())]
+
+
+def test_the_configured_policy_can_land_on_the_collision_instead(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``warn`` trades the refusal for the conflict — but never for the evidence."""
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    recorded = _pin_scope(
+        monkeypatch,
+        scopes={"i": ("src/a.py",), "j": ("src/b.py",)},
+        changed=("src/b.py",),
+        live=("i", "j"),
+    )
+    _pin_clean_landing(monkeypatch)
+    result = loop.advance(tmp_path, "i", config=_scope_config("warn"))
+    assert result.action == "merged"
+    assert recorded == [(("src/b.py",), ("j",))]
+
+
+def test_a_bead_that_declared_no_scope_is_not_checked_at_all(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A hand-filed leaf contradicts no plan, and must not pay a diff to prove it."""
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    recorded = _pin_scope(monkeypatch, scopes={"i": None}, changed=("anything.py",))
+    _pin_clean_landing(monkeypatch)
+    result = loop.advance(tmp_path, "i", config=_scope_config())
+    assert result.action == "merged"
+    assert recorded == []
+
+
+def test_a_lane_that_stayed_inside_its_scope_writes_nothing(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The common case costs one diff and no tracker write."""
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    recorded = _pin_scope(
+        monkeypatch, scopes={"i": ("src/**",)}, changed=("src/a.py", "src/b.py", ".beads/x.jsonl")
+    )
+    _pin_clean_landing(monkeypatch)
+    result = loop.advance(tmp_path, "i", config=_scope_config())
+    assert result.action == "merged"
+    assert recorded == []
+
+
 # --- the forecast reaches the dispatch record (basicly-jr0l.34) --------------
 
 
