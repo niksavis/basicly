@@ -12,13 +12,13 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
 
 from basicly import cli, decompose, loop, loop_state, supervise
-from basicly.config import CHECKPOINTS, RunnerSpec
+from basicly.config import CHECKPOINTS, RunnerSpec, load_sizing_config
 from basicly.decisions import DecisionItem
 from basicly.decompose import ChildSpec
 from basicly.loop import AdvanceResult, Inputs
@@ -465,6 +465,8 @@ class _Preflight:
     halted: bool = False
     metered: str | None = None
     lanes: tuple[object, ...] = ()
+    # issue_id -> the band verdict to pin for it; anything absent sizes to nothing.
+    admissions: dict[str, object] = field(default_factory=dict)
 
 
 def _preflight_fixture(monkeypatch: pytest.MonkeyPatch, pinned: _Preflight) -> None:
@@ -504,6 +506,17 @@ def _preflight_fixture(monkeypatch: pytest.MonkeyPatch, pinned: _Preflight) -> N
     monkeypatch.setattr(cli.supervise, "metered_without_a_budget", lambda *_a: metered)
     monkeypatch.setattr(cli.supervise, "ready_lanes", lambda *_a, **_k: lanes)
     monkeypatch.setattr(cli.decompose, "unsized_lane_tokens", lambda *_a: (1_000, "measured"))
+    # Preflight now sizes each candidate for the band table, which is a real `br show`
+    # per child unless it is pinned here. Left live, the suite would spawn br for every
+    # preflight test — the trap basicly-jr0l's notes call out for any new tracker read
+    # on a dispatch path. Pinned per-issue so a test can vary one candidate's verdict.
+    monkeypatch.setattr(
+        cli.supervise,
+        "admit_working_set",
+        lambda _r, issue_id, _s: pinned.admissions.get(
+            issue_id, supervise.WorkingSetAdmission(issue_id, None, None, refused=False)
+        ),
+    )
 
 
 def test_preflight_is_ready_when_nothing_blocks(
@@ -517,6 +530,144 @@ def test_preflight_is_ready_when_nothing_blocks(
     out = capsys.readouterr().out
     assert code == 0
     assert "VERDICT:   ready" in out
+
+
+def _sized(
+    issue_id: str,
+    total: int,
+    *,
+    refused: bool,
+    violation: str = "",
+    scope_tokens: int | None = None,
+) -> object:
+    """A pinned band verdict carrying a real estimate, for the preflight table."""
+    estimate = decompose.CostEstimate(
+        scope_tokens=total if scope_tokens is None else scope_tokens,
+        overhead_tokens=0 if scope_tokens is None else total,
+        build_factor=1.0,
+    )
+    sizing = decompose.DispatchSizing(task_class="task", estimate=estimate, source="dispatch")
+    return supervise.WorkingSetAdmission(issue_id, sizing, violation or None, refused=refused)
+
+
+def test_preflight_sizes_each_candidate_when_none_is_dispatchable_yet(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The aggregate forecast describes no lane when the candidates declare no scope.
+
+    With a halted grant there are no ready lanes, so preflight used to print only
+    `forecast: ~N tokens if all 5 lanes start` — the unsizeable-lane assumption times
+    the cap, which reads exactly like a measurement. The operator's real question is
+    which candidates the band would take, and that has to be answerable *before* a
+    budget is minted (basicly-prnm).
+    """
+    _preflight_fixture(
+        monkeypatch,
+        _Preflight(
+            grant=Grant(level="L1", token_budget=10_000),
+            admissions={"c.1": _sized("c.1", 95_379, refused=True, violation="above")},
+        ),
+    )
+
+    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+
+    out = capsys.readouterr().out
+    # Read the band off the config rather than pinning 8000..64000 here: the numbers are
+    # deliberately tunable (basicly-3ifz), and a test that hardcodes them turns a
+    # calibration change into an unrelated failure.
+    band = load_sizing_config(Path())
+    assert f"band:      {band.working_set_min}..{band.working_set_max}" in out
+    assert "c.1" in out and "95379 tok" in out
+    assert "REFUSED - too large, split it" in out
+
+
+def test_preflight_distinguishes_an_admitted_candidate_from_a_refused_one(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The control: a lane inside the band must not read as one the band would refuse.
+
+    Without this the report could mark everything REFUSED and every other assertion
+    here would still pass — a table that says the same thing about every row tells the
+    operator nothing about which lanes to start.
+    """
+    _preflight_fixture(
+        monkeypatch,
+        _Preflight(
+            grant=Grant(level="L1", token_budget=10_000),
+            admissions={"c.1": _sized("c.1", 12_884, refused=False)},
+        ),
+    )
+
+    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+
+    out = capsys.readouterr().out
+    assert "12884 tok  in band" in out
+    assert "REFUSED" not in out
+
+
+def test_preflight_separates_an_under_floor_lane_from_one_inside_the_band(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Only the ceiling refuses, so an under-floor lane still dispatches — say both.
+
+    ``admit_working_set`` sets ``refused`` on the ceiling alone, so a lane below
+    ``working_set_min`` carries a violation and dispatches anyway. Reading ``refused``
+    as the whole verdict printed "in band" for exactly the lanes the band had advised
+    merging, which is the opposite of what it said.
+    """
+    _preflight_fixture(
+        monkeypatch,
+        _Preflight(
+            grant=Grant(level="L1", token_budget=10_000),
+            admissions={"c.1": _sized("c.1", 3_512, refused=False, violation="below")},
+        ),
+    )
+
+    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+
+    out = capsys.readouterr().out
+    assert "under the floor - dispatches, but merge it with a sibling" in out
+    assert "3512 tok  in band" not in out
+
+
+def test_preflight_flags_a_candidate_whose_scope_matched_no_file(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Bare overhead must not read as a comfortably small lane.
+
+    The band's floor is skipped when a scope matches nothing, so a broken glob and a
+    greenfield package both estimate to overhead alone and both would otherwise print
+    a plain "in band". Measured on the real tracker, four candidates sat at exactly the
+    overhead figure — the surface said they were ready to dispatch.
+    """
+    _preflight_fixture(
+        monkeypatch,
+        _Preflight(
+            grant=Grant(level="L1", token_budget=10_000),
+            admissions={"c.1": _sized("c.1", 2_693, refused=False, scope_tokens=0)},
+        ),
+    )
+
+    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+
+    assert "in band, but its scope matched no file" in capsys.readouterr().out
+
+
+def test_preflight_names_a_candidate_the_estimator_cannot_size(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unsized candidate is named, not folded into a count.
+
+    It is the cheapest thing an operator can fix and the largest lever on what a pass
+    costs, so a bare tally would hide the one actionable item.
+    """
+    _preflight_fixture(monkeypatch, _Preflight(grant=Grant(level="L1", token_budget=10_000)))
+
+    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+
+    out = capsys.readouterr().out
+    assert "c.1" in out
+    assert "no scope the estimator can read" in out
 
 
 def test_preflight_refuses_a_dirty_base_before_any_lane_runs(

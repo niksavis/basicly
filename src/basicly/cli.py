@@ -62,6 +62,7 @@ from .config import (
     VSCODE_TASKS_JSON,
     WORK_TYPES,
     ProjectPaths,
+    SizingConfig,
     load_policy_config,
     load_project_paths,
     load_runner_config,
@@ -2810,9 +2811,30 @@ def _print_preflight_spend(
         )
         pass_spend = supervise.admit_pass_spend(repo_root, working_sets, status, sizing)
         print(f"spend:     {pass_spend.coverage}")
+        _print_band_report(working_sets, sizing)
         return
     cap = load_worktree_config(repo_root).concurrency
     print(f"forecast:  ~{per_lane * cap} tokens if all {cap} lanes start (cap x per-lane)")
+    # That forecast is the unsizeable-lane assumption times the cap whenever the
+    # candidates declare no readable scope — a number describing none of them, which
+    # reads exactly like one that does. So size the candidates here too: before a budget
+    # is minted is the only point where the operator can still act on it (basicly-prnm).
+    candidates = tuple(
+        supervise.admit_working_set(repo_root, issue_id, sizing) for issue_id in state.open_children
+    )
+    _print_band_report(candidates, sizing)
+
+
+def _print_band_report(
+    working_sets: tuple[supervise.WorkingSetAdmission, ...], sizing: SizingConfig
+) -> None:
+    """Print the per-lane band table, headed by the band the verdicts are against."""
+    lines = supervise.band_report(working_sets)
+    if not lines:
+        return
+    print(f"band:      {sizing.working_set_min}..{sizing.working_set_max} working-set tokens")
+    for line in lines:
+        print(line)
 
 
 def _cmd_loop_preflight(args: argparse.Namespace) -> int:
