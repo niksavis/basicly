@@ -989,6 +989,24 @@ def finalize_followup(
 # into a ban on hand-filed work, strictly worse than the gap it closes. The model
 # precedent refuses because a *declared* tier resolved to nothing; an absent scope
 # declares nothing to contradict.
+#
+# It is admitted **visibly**, though, and that is basicly-jr0l.60. Admitting was only
+# half a decision: nothing distinguished a lane the band had checked and passed from
+# one it had never looked at, in the admission, the queue or the pass output. Measured
+# on the 2026-08-01 four-lane proof run, every dispatched lane was unsizeable, so the
+# band checked *nothing* and reported exactly what it reports when everything fits —
+# and all four then overran the context ceiling they were never compared against. So:
+#
+# * The **undeclared** case (the bead read fine and declares no scope) is a fact about
+#   the bead, and it is escalated: recorded on the lane and named in the pass output,
+#   then retired by the engine so the lane still dispatches. Same disposal as the
+#   under-floor advisory, for the same reason — holding the majority of a real tracker
+#   behind a human answer is the ban failing closed would have been. It is charged to
+#   the engine rather than notified for the same reason: a notification per hand-filed
+#   lane is a ban by noise.
+# * The **unreadable** case (the read itself failed) stays genuinely indeterminate and
+#   is not escalated. A transient br failure is not a finding about the package, and
+#   queuing one would put a tracker hiccup in the audit trail as a sizing defect.
 
 
 # The queue question an out-of-band lane asks, named once because
@@ -1001,6 +1019,23 @@ def finalize_followup(
 # arithmetic — a lane answered without a re-scope refuses again on its next pass.
 SIZING_QUESTION = "working set is outside the configured band: re-scope it or widen the band?"
 
+# The queue question a never-checked lane asks — a distinct string, so an unsized lane
+# and an out-of-band one are separate items rather than two generations of one, and an
+# operator reading the queue can tell "too big" from "never measured".
+UNSIZED_QUESTION = "working set was never checked: declare this package's scope?"
+
+# How the engine retires each advisory it does not hold the lane for. The wording is
+# the disposal reasoning, recorded where the decision is (D11).
+_UNDERSIZE_DISPOSAL = (
+    "dispatched anyway: under-cutting the floor wastes per-lane overhead, "
+    "but the package is deliverable and holding it would strand it"
+)
+_UNSIZED_DISPOSAL = (
+    "dispatched anyway: an undeclared scope is the normal state of a hand-filed bead, "
+    "so holding it would ban hand-filed work rather than size it — recorded so this "
+    "dispatch is not mistaken for one the band checked"
+)
+
 
 @dataclass(frozen=True)
 class WorkingSetAdmission:
@@ -1012,34 +1047,56 @@ class WorkingSetAdmission:
     """
 
     issue_id: str
-    # None when the bead's task class or declared ``## Scope`` cannot be read.
+    # None when the bead declares no ``## Scope`` or could not be read at all.
     sizing: decompose.DispatchSizing | None
     violation: str | None
     refused: bool
+    # Which absence left this lane unsized: ``decompose.SCOPE_UNDECLARED`` or
+    # ``decompose.SCOPE_UNREADABLE``. Empty when *sizing* is there — so
+    # :attr:`checked` reads off the estimate, not off this.
+    absence: str = ""
 
     @property
     def record_inputs(self) -> dict[str, object]:
         """The dispatch record's sizing keywords; empty when nothing was estimable."""
         return {} if self.sizing is None else self.sizing.record_inputs()
 
+    @property
+    def checked(self) -> bool:
+        """True when a real estimate was actually compared against the band.
+
+        The distinction the surface used to lack (basicly-jr0l.60): ``violation is
+        None`` answers "nothing was wrong", which is also what a lane nobody measured
+        looks like.
+        """
+        return self.sizing is not None
+
 
 def admit_working_set(repo_root: Path, issue_id: str, sizing: SizingConfig) -> WorkingSetAdmission:
     """Estimate *issue_id*'s working set and judge it against the band (pure read).
 
-    Reuses :func:`decompose.dispatch_sizing` — the same estimator whose forecast the
-    dispatch record already carries (basicly-jr0l.34) — so the number that gates a
-    dispatch and the number recorded beside its actual cannot disagree. That also
-    means no new tracker read: this *is* the read the dispatch already made, moved
-    ahead of the bundle.
+    Reuses :func:`decompose.resolve_dispatch_sizing` — the same estimator whose
+    forecast the dispatch record already carries (basicly-jr0l.34) — so the number
+    that gates a dispatch and the number recorded beside its actual cannot disagree.
+    That also means no new tracker read: this *is* the read the dispatch already made,
+    moved ahead of the bundle.
 
-    Never raises. An unreadable tracker or tree yields an indeterminate admission
-    that admits, on the reasoning in this section's header.
+    Never raises. Neither absence refuses, on the reasoning in this section's header,
+    but they are not the same admission: an undeclared scope carries the never-checked
+    notice that :func:`escalate_working_set` records, while a failed read carries
+    nothing, because it is a fact about the tracker rather than about the package.
     """
-    resolved: decompose.DispatchSizing | None = None
+    lookup = decompose.SizingLookup(None, decompose.SCOPE_UNREADABLE)
     with contextlib.suppress(RuntimeError, ValueError, OSError):
-        resolved = decompose.dispatch_sizing(repo_root, issue_id)
+        lookup = decompose.resolve_dispatch_sizing(repo_root, issue_id)
+    resolved = lookup.sizing
     if resolved is None:
-        return WorkingSetAdmission(issue_id, None, None, refused=False)
+        unchecked = (
+            policy.unchecked_working_set(issue_id, sizing)
+            if lookup.absence == decompose.SCOPE_UNDECLARED
+            else None
+        )
+        return WorkingSetAdmission(issue_id, None, unchecked, refused=False, absence=lookup.absence)
     estimate = resolved.estimate
     violation = policy.check_working_set(issue_id, estimate.total, estimate.scope_tokens, sizing)
     return WorkingSetAdmission(
@@ -1055,22 +1112,27 @@ def admit_working_set(repo_root: Path, issue_id: str, sizing: SizingConfig) -> W
 def escalate_working_set(
     repo_root: Path, admission: WorkingSetAdmission
 ) -> decisions.DecisionItem | None:
-    """Queue an out-of-band lane's sizing verdict; None when it fits or is unknown.
+    """Queue an out-of-band or never-checked lane's sizing verdict; None when it fits.
 
     A refusal stays **pending**, and that is what holds the lane: ``ready_lanes``
     drops a lane with an unanswered item, so the package is not dispatched again
-    until someone re-scopes it. The under-size advisory is retired by the engine in
-    the same breath — recorded for the audit trail, charged to the delegated column
+    until someone re-scopes it. Every other advisory — under the floor, or never
+    checked at all because the bead declares no scope — is retired by the engine in
+    the same breath: recorded for the audit trail, charged to the delegated column
     rather than a human's wait (D11), and out of ``has_pending`` — the same disposal
     :func:`resolve_stall_flag` makes of its own moot question.
+
+    None also for a lane whose read failed: ``admit_working_set`` leaves that
+    violation None precisely so a tracker hiccup is not filed as a sizing finding.
     """
     if admission.violation is None:
         return None
+    unsized = admission.absence == decompose.SCOPE_UNDECLARED
     item = decisions.enqueue(
         repo_root,
         admission.issue_id,
         "escalation",
-        SIZING_QUESTION,
+        UNSIZED_QUESTION if unsized else SIZING_QUESTION,
         admission.violation,
         human_required=admission.refused,
     )
@@ -1078,11 +1140,36 @@ def escalate_working_set(
         decisions.answer(
             repo_root,
             item.decision_id,
-            "dispatched anyway: under-cutting the floor wastes per-lane overhead, "
-            "but the package is deliverable and holding it would strand it",
+            _UNSIZED_DISPOSAL if unsized else _UNDERSIZE_DISPOSAL,
             by=decisions.ENGINE_BY,
         )
     return item
+
+
+def band_coverage(working_sets: tuple[WorkingSetAdmission, ...]) -> str:
+    """Which of this pass's lanes the band actually measured, and which it could not.
+
+    Reported on every pass for the same reason :attr:`PassSpendAdmission.coverage` is:
+    the failure this closes was silent. A pass of lanes the band never looked at
+    printed nothing at all, so it was indistinguishable at the surface from a pass
+    where every estimate fitted — and on the run that measured it, all four lanes were
+    the former and all four overran (basicly-jr0l.60).
+    """
+    if not working_sets:
+        return "no lanes to check"
+    by_absence: dict[str, list[str]] = {}
+    checked: list[str] = []
+    for item in working_sets:
+        if item.checked:
+            checked.append(item.issue_id)
+        else:
+            by_absence.setdefault(item.absence, []).append(item.issue_id)
+    parts = []
+    if checked:
+        parts.append(f"checked: {', '.join(checked)}")
+    for absence, ids in sorted(by_absence.items()):
+        parts.append(f"NEVER CHECKED ({absence}): {', '.join(ids)}")
+    return "; ".join(parts)
 
 
 # --- The spend ceiling at pass admission (D3 looking forward, basicly-jr0l.22) ---
@@ -1253,6 +1340,23 @@ def admit_pass_spend(
         assumed=assumed,
         assumed_source=assumed_source,
     )
+
+
+def _report_coverage(
+    report: Callable[[str], None] | None,
+    working_sets: tuple[WorkingSetAdmission, ...],
+    pass_spend: PassSpendAdmission,
+) -> None:
+    """Emit what each cost gate covered, before the pass dispatches anything.
+
+    Both lines together, because they answer one question in two halves — what the
+    band measured, and what the spend total is made of — and an operator who sees only
+    one of them is back to reading a partial check as a complete one.
+    """
+    if report is None:
+        return
+    report(f"band:     {band_coverage(working_sets)}")
+    report(f"spend:    {pass_spend.coverage}")
 
 
 UNGRANTED_QUESTION = (
@@ -1648,10 +1752,11 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
 
     *skip* excludes lanes the caller lands without a runner (basicly-kjc5.18).
 
-    *report* receives the pass's spend coverage before anything is dispatched — how
-    the total was reached, and which lanes are counted at an assumed bound rather than
-    a real forecast. Emitted on the admitted path too, deliberately: the defect this
-    closes was that an unbounded pass looked exactly like a checked one
+    *report* receives the pass's band and spend coverage before anything is dispatched
+    — which lanes the band measured and which it could not (basicly-jr0l.60), then how
+    the spend total was reached and which lanes are counted at an assumed bound rather
+    than a real forecast. Emitted on the admitted path too, deliberately: the defect
+    both close was that an unbounded pass looked exactly like a checked one
     (basicly-vz78).
     """
     lanes = ready_lanes(repo_root, session, skip=skip)
@@ -1691,8 +1796,7 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
     # about the pass rather than the lane.
     working_sets = tuple(admit_working_set(repo_root, lane.issue_id, sizing) for lane in lanes)
     pass_spend = admit_pass_spend(repo_root, working_sets, admission, sizing)
-    if report is not None:
-        report(f"spend:    {pass_spend.coverage}")
+    _report_coverage(report, working_sets, pass_spend)
     if pass_spend.refused:
         record_pass_refusal(repo_root, session.root_issue, pass_spend)
         return ()

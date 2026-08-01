@@ -636,6 +636,18 @@ def _dispatch_sizing(total: int, scope_tokens: int = 1_000) -> decompose.Dispatc
     )
 
 
+def _lookup(
+    sizing: decompose.DispatchSizing | None, absence: str = decompose.SCOPE_UNREADABLE
+) -> decompose.SizingLookup:
+    """What the estimator answers for one lane: a sizing, or which absence it hit.
+
+    *absence* defaults to the unreadable case, which is the answer that admits and
+    escalates nothing — so a test that is not about sizing keeps saying what it said
+    before the undeclared case was split out (basicly-jr0l.60).
+    """
+    return decompose.SizingLookup(sizing, "" if sizing is not None else absence)
+
+
 def test_ceiling_tokens_is_the_window_fraction() -> None:
     """The finalize trigger is context_ceiling of the runner's window."""
     claude = next(s for s in runner.BUILTIN_RUNNERS if s.name == "claude")
@@ -893,9 +905,9 @@ def _patch_readiness(
     # A pass now sizes every lane before it dispatches any (basicly-jr0l.22), so an
     # unstubbed estimator here would spawn a real `br` per lane in tests that are
     # about scheduling — the same trap an unstubbed tracker read set for jr0l.16.
-    # "Unreadable" admits, which is the state these tests want; the sizing-dependent
-    # behaviour is pinned with explicit sizings below.
-    monkeypatch.setattr(supervise.decompose, "dispatch_sizing", lambda *_a: None)
+    # "Unreadable" admits and escalates nothing, which is the state these tests want;
+    # the sizing-dependent behaviour is pinned with explicit sizings below.
+    monkeypatch.setattr(supervise.decompose, "resolve_dispatch_sizing", lambda *_a: _lookup(None))
 
 
 # No grant, so no D3 ceiling: dispatch admission is not what is under test here.
@@ -1083,9 +1095,9 @@ def _worker_fixture(
     # supervise test would spawn a subprocess and contend on br's machine-global
     # lock — enough to perturb the stall-watchdog timing tests in this file. Stubbed
     # at the estimator rather than at the recorded keywords, because the band gate
-    # now reads the same call (basicly-jr0l.16); None is the unreadable-scope answer,
-    # which admits the dispatch and records no sizing, exactly as before.
-    monkeypatch.setattr(supervise.decompose, "dispatch_sizing", lambda *_a: None)
+    # now reads the same call (basicly-jr0l.16); the unreadable answer admits the
+    # dispatch, records no sizing and queues nothing, exactly as before.
+    monkeypatch.setattr(supervise.decompose, "resolve_dispatch_sizing", lambda *_a: _lookup(None))
     return br, seen
 
 
@@ -3143,7 +3155,9 @@ def test_stalled_lane_is_flagged_while_the_dispatch_still_completes(
     # `decompose` keeps its own br alias — left live this timing test would spawn a
     # real br and contend on its machine-global lock. In-band, so the lane dispatches.
     monkeypatch.setattr(
-        supervise.decompose, "dispatch_sizing", lambda *_a: _dispatch_sizing(20_000)
+        supervise.decompose,
+        "resolve_dispatch_sizing",
+        lambda *_a: _lookup(_dispatch_sizing(20_000)),
     )
     # A dispatch that runs long enough to be sampled and makes no progress.
     monkeypatch.setattr(supervise, "lane_activity", lambda _cwd: "frozen")
@@ -3191,7 +3205,9 @@ def test_dispatch_lane_records_its_forecast_beside_its_actual(
     captured: dict = {}
     monkeypatch.setattr(supervise.loop, "record_run", lambda *_a, **kw: captured.update(kw))
     monkeypatch.setattr(
-        supervise.decompose, "dispatch_sizing", lambda *_a: _dispatch_sizing(21_000, 9_000)
+        supervise.decompose,
+        "resolve_dispatch_sizing",
+        lambda *_a: _lookup(_dispatch_sizing(21_000, 9_000)),
     )
 
     supervise._dispatch_lane(tmp_path, _session(_lane("epic.1")), _lane("epic.1"), codex, _sizing())
@@ -3216,8 +3232,12 @@ def test_an_unsizeable_lane_records_the_bound_it_was_gated_on(
     _worker_fixture(monkeypatch, tmp_path, stdout=_codex_events(50_000))
     captured: dict = {}
     monkeypatch.setattr(supervise.loop, "record_run", lambda *_a, **kw: captured.update(kw))
-    # No readable scope: exactly the beads dispatch_sizing declines to size.
-    monkeypatch.setattr(supervise.decompose, "dispatch_sizing", lambda *_a: None)
+    # No declared scope: exactly the beads the estimator declines to size.
+    monkeypatch.setattr(
+        supervise.decompose,
+        "resolve_dispatch_sizing",
+        lambda *_a: _lookup(None, decompose.SCOPE_UNDECLARED),
+    )
     monkeypatch.setattr(
         supervise.decompose, "unsized_lane_tokens", lambda *_a: (16_002_352, "measured")
     )
@@ -3238,14 +3258,74 @@ def test_an_unsizeable_lane_records_the_bound_it_was_gated_on(
 # working-set tokens and the supervisor would have started it without a word.
 
 
+def test_admit_working_set_never_checked_a_bead_that_declares_no_scope(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The gate's own defect, through the real estimator (basicly-jr0l.60).
+
+    Measured on the 2026-08-01 four-lane proof run, every dispatched lane came back
+    ``sizing=None, violation=None, refused=False`` — a verdict indistinguishable from
+    "checked and fits" — and all four then crossed the context ceiling. Deliberately
+    not the stubbed lookup: the conflation lived in the estimator's answer, so only a
+    real scopeless record proves it is gone.
+    """
+    monkeypatch.setattr(
+        decompose,
+        "_run_br",
+        lambda _r, args, **_k: _Proc(
+            json.dumps([
+                {"id": args[1], "issue_type": "task", "description": "## Context\n\nhand-filed"}
+            ])
+        ),
+    )
+
+    admission = supervise.admit_working_set(tmp_path, "epic.1", _sizing())
+
+    assert admission.sizing is None
+    assert admission.checked is False
+    assert admission.absence == decompose.SCOPE_UNDECLARED
+    # Still admitted — failing closed here bans hand-filed work — but no longer silent.
+    assert admission.refused is False
+    assert admission.violation is not None
+    assert "never checked" in admission.violation
+    assert "8000..64000" in admission.violation
+
+
+def test_admit_working_set_stays_indeterminate_when_the_bead_cannot_be_read(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A failed read is not a finding about the package, and must not read as one.
+
+    The distinction the fix rests on: an undeclared scope is structural and re-reading
+    will not change it, while a tracker failure says nothing at all about the lane's
+    size — so it carries no notice and nothing to escalate.
+    """
+
+    def broken(*_a: object, **_k: object) -> _Proc:
+        raise RuntimeError("br show failed")
+
+    monkeypatch.setattr(decompose, "_run_br", broken)
+
+    admission = supervise.admit_working_set(tmp_path, "epic.1", _sizing())
+
+    assert admission.checked is False
+    assert admission.absence == decompose.SCOPE_UNREADABLE
+    assert admission.violation is None
+    assert admission.refused is False
+
+
 def _band_fixture(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     sizing: decompose.DispatchSizing | None,
     *,
     spawn_is_a_failure: bool = False,
+    absence: str = decompose.SCOPE_UNREADABLE,
 ) -> list[str]:
     """A lane dispatch environment whose estimator answers *sizing*.
+
+    With *sizing* None, *absence* says which unsizeable answer it is — the two are
+    admitted differently (basicly-jr0l.60).
 
     Returns the list every spawn appends its runner name to. With
     *spawn_is_a_failure* the spawn **raises**: a refusal is only proved by making a
@@ -3264,7 +3344,9 @@ def _band_fixture(
         supervise, "build_bundle", lambda *_a, **_k: supervise.DispatchBundle("epic.1", "p", ())
     )
     monkeypatch.setattr(supervise.loop, "record_run", lambda *_a, **_k: None)
-    monkeypatch.setattr(supervise.decompose, "dispatch_sizing", lambda *_a: sizing)
+    monkeypatch.setattr(
+        supervise.decompose, "resolve_dispatch_sizing", lambda *_a: _lookup(sizing, absence)
+    )
     spawned: list[str] = []
 
     def spawn(spec, _prompt, _cwd, **_kw):
@@ -3362,35 +3444,72 @@ def test_dispatch_runs_an_in_band_lane_without_a_word(
 def test_dispatch_admits_a_lane_whose_working_set_cannot_be_estimated(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """An unreadable scope admits — a missing estimate is not an out-of-band one.
+    """An unsizeable lane still dispatches — a missing estimate is not an out-of-band one.
 
     60 of this repo's 87 open beads carry no ``## Scope`` section, so failing closed
     here would turn a sizing governor into a ban on hand-filed work: strictly worse
     than the gap it closes. The model precedent refuses because a *declared* tier
     resolved to nothing; an absent scope declares nothing to contradict.
     """
-    spawned = _band_fixture(monkeypatch, tmp_path, None)
+    spawned = _band_fixture(monkeypatch, tmp_path, None, absence=decompose.SCOPE_UNDECLARED)
 
     outcome = _dispatch_epic1(tmp_path)
 
     assert spawned == ["codex"]
     assert outcome.refused is False
-    assert decisions.items_on(tmp_path, "epic.1") == ()
+
+
+def test_dispatch_does_not_silently_admit_a_lane_that_declares_no_scope(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The acceptance criterion: unsized is not the same report as in-band.
+
+    Admitting was only half a decision (basicly-jr0l.60). On the 2026-08-01 four-lane
+    proof run every dispatched lane was unsizeable, so the band checked nothing and
+    said nothing, and all four then overran the ceiling they were never compared
+    against. The lane still runs — the alternative bans hand-filed work — but it now
+    carries a recorded notice naming the band it was never measured against, retired
+    by the engine so nothing wedges.
+    """
+    spawned = _band_fixture(monkeypatch, tmp_path, None, absence=decompose.SCOPE_UNDECLARED)
+
+    outcome = _dispatch_epic1(tmp_path)
+
+    assert spawned == ["codex"]  # the work still ran
+    assert outcome.refused is False
+    items = decisions.items_on(tmp_path, "epic.1")
+    assert len(items) == 1
+    assert items[0].kind == "escalation"
+    # Its own question, not a second generation of the out-of-band one: an operator
+    # reading the queue has to be able to tell "too big" from "never measured".
+    assert items[0].question == supervise.UNSIZED_QUESTION
+    assert "never" in items[0].detail
+    assert "8000..64000" in items[0].detail  # the band nothing was compared against
+    # Retired by the engine, so it never lands in a human's wait column and never
+    # holds the lane out of the next pass.
+    assert items[0].answered_by == decisions.ENGINE_BY
+    assert decisions.has_pending(tmp_path, "epic.1") is False
 
 
 def test_dispatch_admits_a_lane_whose_estimator_cannot_be_read(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A broken tracker read must not wedge the whole supervised run either."""
+    """A broken tracker read must not wedge the whole supervised run either.
 
-    def unreadable(*_a: object) -> decompose.DispatchSizing:
+    And it queues nothing: a transient br failure is a fact about the tracker, not a
+    finding about the package, so filing it as a sizing notice would put a hiccup in
+    the lane's audit trail (basicly-jr0l.60).
+    """
+
+    def unreadable(*_a: object) -> decompose.SizingLookup:
         raise RuntimeError("br export failed")
 
     spawned = _band_fixture(monkeypatch, tmp_path, None)
-    monkeypatch.setattr(supervise.decompose, "dispatch_sizing", unreadable)
+    monkeypatch.setattr(supervise.decompose, "resolve_dispatch_sizing", unreadable)
 
     assert _dispatch_epic1(tmp_path).refused is False
     assert spawned == ["codex"]
+    assert decisions.items_on(tmp_path, "epic.1") == ()
 
 
 def test_route_a_refused_lane_to_the_queue_rather_than_a_retry(tmp_path: Path) -> None:
@@ -3460,6 +3579,9 @@ def _pass_fixture(
     With *dispatch_is_a_failure* any dispatch **raises**: a refusal is only proved
     by making a started lane the failure, never by reading back a flag the test set.
 
+    A None sizing is the *undeclared* absence, since a bead nobody decomposed is what
+    an unsizeable lane really is on this tracker (basicly-jr0l.60).
+
     *unsized_tokens* pins the bound an unsizeable lane is counted at. Pinned rather
     than left real, because the live implementation reads this repo's own run records
     — so an unpatched test would size its lanes from whatever the last supervised run
@@ -3471,7 +3593,9 @@ def _pass_fixture(
         supervise.decompose, "unsized_lane_tokens", lambda *_a: (unsized_tokens, "measured")
     )
     monkeypatch.setattr(
-        supervise.decompose, "dispatch_sizing", lambda _r, issue_id: sizings.get(issue_id)
+        supervise.decompose,
+        "resolve_dispatch_sizing",
+        lambda _r, issue_id: _lookup(sizings.get(issue_id), decompose.SCOPE_UNDECLARED),
     )
 
     def fake_forecasts(_repo, items, _sizing):
@@ -3736,6 +3860,36 @@ def test_the_pass_reports_its_spend_coverage_even_when_it_admits(
 
     assert any("assumed at the unsizeable-lane bound" in line for line in lines)
     assert any("epic.1" in line for line in lines)
+
+
+def test_the_pass_reports_which_lanes_the_band_never_checked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The same silence, one gate over: nothing said which lanes were measured.
+
+    The band printed nothing at all, so a pass where every lane was unsizeable read
+    exactly like one where every estimate fitted — and on the run that measured it all
+    four lanes were the former (basicly-jr0l.60).
+    """
+    _patch_readiness(monkeypatch, ranked=((1, "epic.1"), (2, "epic.2")))
+    _pass_fixture(
+        monkeypatch,
+        sizings={"epic.1": _dispatch_sizing(20_000), "epic.2": None},
+        forecasts={"epic.1": 9_000},
+        unsized_tokens=1_000,
+    )
+    lines: list[str] = []
+
+    supervise.dispatch_lanes(
+        Path(),
+        _session(_lane("epic.1"), _lane("epic.2")),
+        admission=_granted("L3", 100_000, 0),
+        report=lines.append,
+    )
+
+    band = next(line for line in lines if line.startswith("band:"))
+    assert "checked: epic.1" in band
+    assert f"NEVER CHECKED ({decompose.SCOPE_UNDECLARED}): epic.2" in band
 
 
 def test_pass_spend_is_not_enforced_without_a_budget(

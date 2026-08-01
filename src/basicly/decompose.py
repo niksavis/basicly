@@ -554,26 +554,62 @@ def parse_scope_section(description: str) -> tuple[str, ...]:
     return tuple(scope)
 
 
-def _class_and_scope_of(issue: object) -> tuple[str, tuple[str, ...]] | None:
-    """The task class and declared scope carried by one issue record, if both are there."""
+# Why a bead yields no class-and-scope pair. One None used to answer for both, and
+# the sizing gates read that None as "nothing to compare" and admitted — so the band
+# never once looked at a hand-filed bead (basicly-jr0l.60). The two are not the same
+# answer:
+#
+# * **unreadable** — the record did not come back, or came back without the fields.
+#   Transient, and it says nothing at all about the lane's size.
+# * **undeclared** — the record read fine and carries no scope
+#   :func:`parse_scope_section` can read: no ``## Scope`` heading, or one whose entries
+#   are prose rather than backticked globs. Structural, and the normal state of a bead
+#   nobody decomposed. A gate can act on it, because re-reading will not change it.
+SCOPE_UNREADABLE = "unreadable"
+SCOPE_UNDECLARED = "undeclared"
+
+
+def _read_class_and_scope(issue: object) -> tuple[tuple[str, tuple[str, ...]] | None, str]:
+    """One issue record's class-and-scope pair, plus which absence explains a missing one.
+
+    The absence is :data:`SCOPE_UNREADABLE` or :data:`SCOPE_UNDECLARED`, and empty
+    when the pair is there.
+    """
     if not isinstance(issue, dict):
-        return None
+        return None, SCOPE_UNREADABLE
     task_class = issue.get("issue_type")
     description = issue.get("description")
     if not (isinstance(task_class, str) and task_class and isinstance(description, str)):
-        return None
+        return None, SCOPE_UNREADABLE
     scope = parse_scope_section(description)
-    return (task_class, scope) if scope else None
+    if not scope:
+        return None, SCOPE_UNDECLARED
+    return (task_class, scope), ""
 
 
-def bead_class_and_scope(repo_root: Path, bead_id: str) -> tuple[str, tuple[str, ...]] | None:
-    """The task class and declared scope of *bead_id*, or None when unreadable."""
+def _class_and_scope_of(issue: object) -> tuple[str, tuple[str, ...]] | None:
+    """The task class and declared scope carried by one issue record, if both are there."""
+    return _read_class_and_scope(issue)[0]
+
+
+def _read_bead(repo_root: Path, bead_id: str) -> tuple[tuple[str, tuple[str, ...]] | None, str]:
+    """*bead_id*'s class-and-scope pair from the tracker, with the absence that explains it."""
     try:
         proc = _run_br(repo_root, ["show", bead_id, "--json"])
         data = json.loads(proc.stdout)
     except RuntimeError, ValueError, OSError:
-        return None
-    return _class_and_scope_of(data[0] if isinstance(data, list) and data else data)
+        return None, SCOPE_UNREADABLE
+    return _read_class_and_scope(data[0] if isinstance(data, list) and data else data)
+
+
+def bead_class_and_scope(repo_root: Path, bead_id: str) -> tuple[str, tuple[str, ...]] | None:
+    """The task class and declared scope of *bead_id*, or None when either is absent.
+
+    Callers that must tell an unreadable bead from one declaring no scope want
+    :func:`resolve_dispatch_sizing` — this collapses both to None on purpose, for the
+    callers (grouping, coupling, merge) to which an absent scope is simply an empty one.
+    """
+    return _read_bead(repo_root, bead_id)[0]
 
 
 def calibrated_build_factors(repo_root: Path, sizing: SizingConfig) -> dict[str, float]:
@@ -797,8 +833,22 @@ class DispatchSizing:
         }
 
 
-def dispatch_sizing(repo_root: Path, issue_id: str) -> DispatchSizing | None:
-    """*issue_id*'s class and working-set forecast as of now, or None when unreadable.
+@dataclass(frozen=True)
+class SizingLookup:
+    """A lane's dispatch sizing, or which absence explains it having none.
+
+    The pair exists because a gate has to act differently on the two absences
+    :data:`SCOPE_UNREADABLE` and :data:`SCOPE_UNDECLARED` (basicly-jr0l.60), and a
+    bare None could not tell them apart.
+    """
+
+    sizing: DispatchSizing | None
+    # "" when *sizing* is there; else SCOPE_UNREADABLE or SCOPE_UNDECLARED.
+    absence: str = ""
+
+
+def resolve_dispatch_sizing(repo_root: Path, issue_id: str) -> SizingLookup:
+    """*issue_id*'s class and working-set forecast as of now, or why there is none.
 
     Prefers the estimate the governor froze for this content — the forecast of
     record, on :func:`frozen_estimates`' rule that the earliest freeze is the
@@ -806,24 +856,36 @@ def dispatch_sizing(repo_root: Path, issue_id: str) -> DispatchSizing | None:
     package that never went through ``decompose`` still yields a pairable forecast
     instead of a null.
 
-    None when the bead's task class or declared ``## Scope`` cannot be read: a
-    forecast against an unknown scope would be an invented number, and an absent
-    half is what the error report is built to skip.
+    Unsized when the bead's task class or declared ``## Scope`` is absent: a forecast
+    against an unknown scope would be an invented number, and an absent half is what
+    the error report is built to skip. Which absence it was travels in
+    :attr:`SizingLookup.absence`, because a bead that declares no scope is a fact a
+    gate can act on and a failed read is not.
     """
-    info = bead_class_and_scope(repo_root, issue_id)
+    info, absence = _read_bead(repo_root, issue_id)
     if info is None:
-        return None
+        return SizingLookup(None, absence)
     task_class, scope = info
     frozen = forecast_for(repo_root, task_class, scope)
     if frozen is not None:
-        return DispatchSizing(task_class, frozen, FROZEN_FORECAST)
+        return SizingLookup(DispatchSizing(task_class, frozen, FROZEN_FORECAST))
     sizing = load_sizing_config(repo_root)
     estimate = CostEstimate(
         scope_tokens=scope_read_cost(repo_root, scope),
         overhead_tokens=instruction_overhead(repo_root),
         build_factor=build_factor_for(task_class, calibrated_build_factors(repo_root, sizing)),
     )
-    return DispatchSizing(task_class, estimate, DISPATCH_FORECAST)
+    return SizingLookup(DispatchSizing(task_class, estimate, DISPATCH_FORECAST))
+
+
+def dispatch_sizing(repo_root: Path, issue_id: str) -> DispatchSizing | None:
+    """*issue_id*'s class and working-set forecast as of now, or None when unsized.
+
+    The sizing alone, for callers that record a forecast rather than gate on one.
+    A caller that gates wants :func:`resolve_dispatch_sizing`, whose absence says
+    whether re-reading could change the answer.
+    """
+    return resolve_dispatch_sizing(repo_root, issue_id).sizing
 
 
 # --- Predicted spend beside the working set (basicly-jr0l.21) -----------------
