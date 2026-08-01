@@ -1827,6 +1827,46 @@ def record_evidence(repo_root: Path, issue_id: str, phase: str, declared: str) -
     return True
 
 
+# --- Declared file scope, checked at the landing (basicly-jr0l.44) -----------
+
+SCOPE_VIOLATION_MARKER = f"{MARKER} scope-violation"
+
+
+def record_scope_violation(
+    repo_root: Path,
+    issue_id: str,
+    paths: Sequence[str],
+    colliding: Sequence[str] = (),
+) -> bool:
+    """Record the paths a lane changed outside its declared scope (idempotent).
+
+    Evidence about the **plan**, not about the code: the lane declared a file
+    scope at decompose time, the landing is the first moment the actual diff can
+    be held against it, and without a durable record the mismatch would surface
+    only later as a merge conflict with no trace of who declared what
+    (basicly-jr0l.44). ``br`` exports comments, so this travels with a clone (D11).
+
+    Written whatever ``[policy] scope_collision`` then decides, because the
+    evidence is the half that must not depend on the policy — a repo that sets
+    ``warn`` still gets an auditable record of every landing that reached outside
+    its plan. *colliding* names the live lanes whose own declared scope covers one
+    of the paths, so the record says whether this was a lonely overreach or the
+    collision that produces a conflict.
+
+    Idempotent on the whole body, like :func:`record_evidence`: the landing is
+    retried on every advance, and one comment per attempt would bury the finding
+    in its own repetitions. A *different* set of paths is a different finding and
+    is recorded again. Returns True when it wrote one.
+    """
+    body = f"{SCOPE_VIOLATION_MARKER} paths={','.join(paths)}"
+    if colliding:
+        body += f" collides={','.join(colliding)}"
+    if any(_marker_matches(text, body) for text in _comment_texts(repo_root, issue_id)):
+        return False
+    _run_br(repo_root, ["comments", "add", issue_id, body])
+    return True
+
+
 def load_policy(repo_root: Path) -> PolicyConfig:
     """Convenience re-export so callers need only import this module."""
     return load_policy_config(repo_root)

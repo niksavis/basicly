@@ -195,6 +195,20 @@ by the existing rework cap, then escalates. The missed coupling is recorded as a
 edge so the graph learns. Optional later refinement: deterministic auto-resolution for
 mechanical conflict classes (lockfiles, generated files) — never semantic ones.
 
+**The declaration is verified, not trusted** (`basicly-jr0l.44`). Decompose treats a child's
+declared file scope as a planning input — grouping and sizing read it, and nothing checked it
+again — so a wrong or stale declaration was not detected when it was made. It surfaced later
+and indirectly, as one of the conflicts above, by which point two lanes had already done work
+that fights. The build→verify landing therefore diffs the lane against its merge base and
+holds the result against its declared `## Scope`, before the merge, so a refusal has spent
+nothing. Every out-of-scope path is recorded on the bead as a `[harness-policy]
+scope-violation` marker — evidence about the *plan* (D11), and unconditional, because a repo
+that opts out of the refusal still needs the audit trail. Only the **collision** — an
+out-of-scope path that also falls inside another *live* lane's declared scope — is a refusal,
+and `[policy] scope_collision` decides it. The asymmetry is deliberate: an agent-authored plan
+is sometimes legitimately incomplete, and blocking every incomplete declaration would convert
+each one into a rework cycle, while the collision is exactly the case that becomes a conflict.
+
 ### D6 — Cross-lane freshness: fresh at boundaries, never mutated mid-flight
 
 Never inject information into a running lane's context (unreproducible, can invalidate
@@ -507,6 +521,7 @@ New parameters (all in the overridable sections per the dual-use constraint):
 | `[policy.sizing]` | `calibration_min_samples` | `10` per class     | Measured factors override seeds only past this                          |
 | `[policy.sizing]` | `calibration_window`      | `50` runs          | Rolling window per task class                                           |
 | `[policy]`        | `max_subtasks_per_lane`   | `10`               | Sanity bound; sizing governor is the real limit                         |
+| `[policy]`        | `scope_collision`         | `"block"`          | Landing-time declared-scope check: refuse when an out-of-scope path is in another live lane's scope; `"warn"` lands on the finding |
 | `[verify]`        | level→mode mapping        | sub-task `fast`; lane `full`+validate; ship `full`+validate; merge re-verify `full` | D4: deterministic by change class |
 
 Stall detection (`basicly-kjc5.25`) is `runner.StallWatchdog`, started around each lane

@@ -804,6 +804,26 @@ def test_policy_config_autonomy_unknown_value_falls_back(tmp_path: Path) -> None
     assert load_policy_config(tmp_path).autonomy == "L0"
 
 
+# --- [policy] scope_collision (basicly-jr0l.44) -------------------------------
+
+
+def test_policy_config_scope_collision_defaults_to_block(tmp_path: Path) -> None:
+    """Deterministic checks are authoritative, so the collision case refuses by default."""
+    assert load_policy_config(tmp_path).scope_collision == "block"
+
+
+def test_policy_config_scope_collision_parses_warn(tmp_path: Path) -> None:
+    """A repo that would rather pay the conflict than the rework cycle can opt out."""
+    (tmp_path / CONFIG_FILE).write_text('[policy]\nscope_collision = "warn"\n', encoding="utf-8")
+    assert load_policy_config(tmp_path).scope_collision == "warn"
+
+
+def test_policy_config_scope_collision_unknown_value_falls_back(tmp_path: Path) -> None:
+    """A typo lands on the default; the evidence half is recorded whatever it says."""
+    (tmp_path / CONFIG_FILE).write_text('[policy]\nscope_collision = "shrug"\n', encoding="utf-8")
+    assert load_policy_config(tmp_path).scope_collision == "block"
+
+
 # --- decision-queue knobs (basicly-kjc5.4, design 7.1/7.3/§6) ------------------
 
 

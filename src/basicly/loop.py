@@ -683,6 +683,81 @@ def _build_evidence_block(ctx: _Ctx, worktree_name: str) -> AdvanceResult | None
     return _evidence_block(ctx, root)
 
 
+def _live_lane_scopes(ctx: _Ctx) -> dict[str, tuple[str, ...]]:
+    """Declared scopes of the *other* beads that currently hold a worktree.
+
+    A collision only means something against a lane that is still building: a bead
+    whose worktree is gone has landed or been torn down, and nobody is about to
+    write into its scope. So the live set is the worktree session records on disk —
+    what ``worktree.create`` wrote — mapped back to beads through the same
+    derivation the loop provisions with.
+
+    The tracker export cannot serve as the index here: the ``worktree:`` binding is
+    written with ``br update --external-ref`` and is not flushed to
+    ``issues.jsonl`` until the next tracker commit, so a freshly provisioned lane —
+    exactly the one most likely to be mid-edit — would be invisible. Bead *ids* are
+    stable in the export, which is all this needs.
+    """
+    live = {session.name for session in worktree.list_sessions(ctx.repo_root)}
+    if not live:
+        return {}
+    known = merge.known_bead_ids(ctx.repo_root) or set()
+    lanes = sorted(bead for bead in known if bead != ctx.issue_id and _worktree_name(bead) in live)
+    return merge.declared_scopes(ctx.repo_root, lanes)
+
+
+def _scope_block(ctx: _Ctx, worktree_name: str) -> AdvanceResult | None:
+    """Hold the lane's committed changes against its declared scope (basicly-jr0l.44).
+
+    ``decompose`` treated the declared ``## Scope`` as a planning input and nothing
+    ever checked it again, so a wrong or stale declaration was not detected when it
+    was made — it surfaced later and indirectly, as a merge-queue conflict, by which
+    point two lanes had already done work that fights. This is that check, at the
+    one moment the lane's real diff exists: the build->verify landing, before the
+    merge, so a refusal has spent nothing.
+
+    Two outcomes, and only one of them is a refusal:
+
+    - **Every** out-of-scope path is recorded on the bead as evidence, and that
+      alone: a plan authored by an agent will sometimes be legitimately incomplete,
+      and refusing each of those would convert it into a rework cycle that costs
+      more than the finding is worth.
+    - A path that also falls inside **another live lane's** declared scope is the
+      case that actually causes the collision, and ``[policy] scope_collision``
+      decides it deterministically: ``block`` refuses here, ``warn`` lands.
+
+    Inert for a bead with no readable declared scope — a hand-filed leaf declares
+    no plan and so contradicts none — which is also what keeps this from costing a
+    tracker read on repos that never decompose.
+    """
+    declared = decompose.bead_class_and_scope(ctx.repo_root, ctx.issue_id)
+    if declared is None or not declared[1]:
+        return None
+    session = worktree.load_session(worktree_name, ctx.repo_root)
+    if session is None:
+        # The landing itself refuses a missing session with a better message; this
+        # check has nothing to compute and must not pre-empt it with a worse one.
+        return None
+    changed = merge.branch_changed_paths(ctx.repo_root, session.base, session.branch)
+    outside = merge.out_of_scope_paths(changed, declared[1])
+    if not outside:
+        return None
+    colliding = merge.coupled_lanes(outside, _live_lane_scopes(ctx), bounced=ctx.issue_id)
+    policy.record_scope_violation(ctx.repo_root, ctx.issue_id, outside, colliding)
+    if not colliding or ctx.config.scope_collision != "block":
+        return None
+    return _blocked(
+        ctx,
+        f"{ctx.issue_id} changed {', '.join(outside)} outside its declared scope "
+        f"({', '.join(declared[1])}), and {', '.join(colliding)} declared that ground: "
+        "the plan is wrong, not the merge. Widen this bead's '## Scope' when the work "
+        "really belongs here, or move those edits to the lane that owns them, then "
+        'advance again (set [policy] scope_collision = "warn" to land on the finding '
+        "instead)",
+        needs_input="scope",
+    )
+
+
 def _unreliable_landing_block(ctx: _Ctx, result: merge.MergeResult) -> AdvanceResult:
     """Record an unreliable landing gate and hold, escalating at the bound.
 
@@ -727,10 +802,15 @@ def _verify_and_land(
     spent nothing. It also deliberately outranks the ``jr0l.50`` forward recovery:
     where the commits already sit does not change that the declared artifact is
     missing, and holding costs only the artifact, which is what was asked for.
+
+    The declared-scope check (:func:`_scope_block`, basicly-jr0l.44) sits here for
+    the same two reasons — one funnel, and before the merge — and after the
+    evidence check, so a landing missing both is held on the cheaper one first.
     """
-    held = _build_evidence_block(ctx, worktree_name)
-    if held is not None:
-        return held
+    for precondition in (_build_evidence_block, _scope_block):
+        held = precondition(ctx, worktree_name)
+        if held is not None:
+            return held
     mode = verify_mode or ctx.inputs.verify_mode
     result = merge.merge_worktree(ctx.repo_root, worktree_name, bead=ctx.issue_id, verify_mode=mode)
     if result.status == merge.ALREADY_LANDED:

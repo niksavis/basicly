@@ -1158,6 +1158,32 @@ update a branch checked out in another worktree, so the merge/ship transitions m
 the **base checkout**; `advance` refuses the `build` and `ship` phases when invoked from a
 linked worktree (git-dir ≠ git-common-dir), blocking cleanly rather than stranding a commit.
 
+The declared scope those disjointness claims rest on is **verified at the landing, not trusted
+from the plan** (`basicly-jr0l.44`). `decompose` reads a child's `## Scope` globs to group and
+size the plan and then never looks again, so a wrong or stale declaration used to surface only
+later and indirectly — as a merge-queue conflict, after two lanes had already done work that
+fights. The build→verify funnel (`loop._scope_block`, beside the evidence check and likewise
+before the merge, so a refusal spends nothing) diffs the lane against its merge base
+(`merge.branch_changed_paths`, three-dot, so a base that moved on is not counted as the lane's
+work) and holds the result against the declaration. Two outcomes, and only one refuses:
+
+- **Every** out-of-scope path is recorded on the bead as a `[harness-policy] scope-violation`
+  marker — evidence about the _plan_, travelling with the tracker export like the rest (§12.4),
+  and written whatever the policy then decides.
+- A path that also falls inside **another live lane's** declared scope is the case that
+  actually produces the conflict, and `[policy] scope_collision` decides it deterministically:
+  `block` (default) refuses and names the lane that declared that ground, `warn` lands on the
+  finding. Blocking the non-collision case too would turn every legitimately incomplete
+  agent-authored plan into a rework cycle, which costs more than the finding is worth.
+
+"Live" is the worktree session records on disk, not the tracker export: the `worktree:` binding
+is written with `br update --external-ref` and is not flushed to `issues.jsonl` until the next
+tracker commit, so a freshly provisioned lane — the one most likely to be mid-edit — would be
+invisible there. Engine-owned paths (`.beads/`) are never out of scope, for the reason
+`merge.coupled_lanes` excludes them: the harness rewrites the tracker on every landing. A bead
+with no readable `## Scope` — anything not created by `decompose` — is not checked at all,
+because it contradicts no plan.
+
 **12.6.1 Zero-touch tracker state.** Every loop-provisioned worktree shares the base
 checkout's tracker via `br`'s git-ignored `.beads/redirect` file (written at provisioning;
 the `beads-commit-msg` hook follows it too), so `br` reads/writes from any checkout hit the

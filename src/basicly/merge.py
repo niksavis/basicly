@@ -730,6 +730,51 @@ def coupled_lanes(
     )
 
 
+def branch_changed_paths(repo_root: Path, base: str, branch: str) -> tuple[str, ...]:
+    """Paths *branch* changed relative to its merge base with *base* (sorted).
+
+    The three-dot form, so a base that moved on after the lane forked is not
+    counted as the lane's work — this is what the lane *did*, which is the only
+    thing its declared scope can be held to (basicly-jr0l.44).
+
+    Empty when git cannot answer, and empty by construction for the two states the
+    landing already recognises: a branch with no commits, and one that already
+    merged (its head is then the merge base). Best-effort like every other read on
+    this path — a scope check that cannot be computed costs a finding, not the pass.
+    """
+    proc = git(["diff", "--name-only", f"{base}...{branch}"], cwd=repo_root, check=False)
+    if proc.returncode != 0:
+        return ()
+    return tuple(sorted({line.strip() for line in proc.stdout.splitlines() if line.strip()}))
+
+
+def out_of_scope_paths(changed: Iterable[str], scope: tuple[str, ...]) -> tuple[str, ...]:
+    """The paths in *changed* that no declared glob in *scope* covers (pure, sorted).
+
+    The declared scope is a planning input at decompose time and nothing checked it
+    again afterwards, so a wrong declaration surfaced only later and indirectly, as
+    a merge-queue conflict between two lanes that had already done fighting work
+    (basicly-jr0l.44). This is the same question asked at the landing, where the
+    lane's actual diff is finally available.
+
+    An empty *scope* yields nothing: a bead that declared no scope — anything not
+    created by ``decompose`` — contradicts no plan, and reporting every path it
+    touched would be noise on every hand-filed leaf. Engine-owned paths are
+    excluded for the reason :func:`coupled_lanes` excludes them: the harness
+    rewrites the tracker on every landing, so no plan declares it and every lane
+    would otherwise "violate".
+    """
+    if not scope:
+        return ()
+    return tuple(
+        sorted(
+            path
+            for path in {raw.strip() for raw in changed if raw.strip()}
+            if not _engine_owned(path) and not _scope_covers(scope, {path})
+        )
+    )
+
+
 def _scope_covers(scope: tuple[str, ...], paths: set[str]) -> bool:
     """True when any declared glob in *scope* can match any path in *paths*.
 
