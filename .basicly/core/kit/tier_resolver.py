@@ -44,7 +44,10 @@ Invoke it from any language:
 .. code-block:: sh
 
     python3 tier_resolver.py --host claude --name my-agent
-    # {"model": "claude-opus-5", "reason": null, "source": "definition", ...}
+    # {"alias": "opus", "model": "claude-opus-5", "source": "definition", ...}
+
+``claude_tier_hook.py`` beside this module is the first consumer: a Claude Code
+PreToolUse hook that pins a subagent spawn to its declared tier.
 
 From python, put its directory on ``sys.path`` and import it by name. Loading it
 by file path instead works too, but ``sys.modules`` must be populated *before*
@@ -76,8 +79,11 @@ MAP_FILENAME = "model-map.json"
 MODELS_DIRNAME = "models"
 CORE_DIR = Path(".basicly") / "core"
 
-# The frontmatter key an agent definition declares its portable tier under.
+# The frontmatter keys an agent definition may declare. A definition that pins
+# `model` itself has already answered the question a tier exists to answer, so a
+# spawn hook reads that key to know when to stay out of the way.
 TIER_KEY = "tier"
+MODEL_KEY = "model"
 
 # Read by `main` only. The library never touches the environment, so a caller's
 # resolution depends on nothing but what it passed in — which is what makes a
@@ -104,6 +110,25 @@ HOST_SURFACES: dict[str, tuple[str, str]] = {
     "claude": ("anthropic", "anthropic"),
     "codex": ("openai", "openai"),
     "copilot": ("github-copilot", "anthropic"),
+}
+
+# What a host's *tool input* model field accepts, where that is narrower than the
+# map surface spelling `HOST_SURFACES` picks. Same class of knowledge one notch
+# in: a host can spell one model two ways on two different surfaces of its own.
+#
+# Claude is the case, measured on basicly-wbsz.2 against the 2.1.220 binary. Its
+# Agent tool's `model` parameter is `enum(["sonnet","opus","haiku","fable"])`, so
+# a full id is rejected there — while the *definition frontmatter* documents a
+# full id as legal. One host, two vocabularies. A host absent from this table has
+# no narrower surface, and a caller writes the model id.
+#
+# The table is committed data rather than a derivation off the map's `family`
+# string, so that an upstream family rename cannot silently change an injected
+# alias. `tests/test_kit_claude_hook.py` holds it to the map through
+# `models.same_model`, the repo's own rule for whether a bare alias names an id —
+# so the table cannot drift into pinning a tier to the wrong class of model.
+HOST_MODEL_ALIASES: dict[str, dict[str, str]] = {
+    "claude": {"low": "haiku", "medium": "sonnet", "high": "opus", "maximum": "fable"},
 }
 
 # Where each host reads a per-agent definition from, relative to a search root
@@ -144,6 +169,11 @@ class Resolution:
     """
 
     model: str | None = None
+    # The same model in the host's narrower tool-input vocabulary, where it has
+    # one (:data:`HOST_MODEL_ALIASES`). Never set without ``model``: an alias is
+    # the alias *of a resolved model*, so a tier the map marks unavailable
+    # resolves to neither rather than pinning by name what the map denies.
+    alias: str | None = None
     tier: str | None = None
     surface: str | None = None
     vendor: str | None = None
@@ -156,6 +186,7 @@ class Resolution:
         """The resolution as plain JSON-ready data, for a non-python caller."""
         return {
             "model": self.model,
+            "alias": self.alias,
             "tier": self.tier,
             "surface": self.surface,
             "vendor": self.vendor,
@@ -242,7 +273,9 @@ class TierResolver:
             A :class:`Resolution`. ``model`` is ``None`` for an unknown host, an
             undeclared tier with no configured default, a tier the map does not
             carry, and a cell the map marks unavailable — each with its
-            ``reason``, and never with a substituted model.
+            ``reason``, and never with a substituted model. ``alias`` carries the
+            same model in *host*'s narrower tool-input vocabulary when it has one
+            and a model resolved.
         """
         surfacing = HOST_SURFACES.get(host)
         if surfacing is None:
@@ -269,6 +302,7 @@ class TierResolver:
         model, reason = self._cell(declared, chosen_vendor, surface)
         return Resolution(
             model=model,
+            alias=HOST_MODEL_ALIASES.get(host, {}).get(declared) if model else None,
             tier=declared,
             surface=surface,
             vendor=chosen_vendor,
@@ -312,7 +346,7 @@ class TierResolver:
         return model, None
 
 
-def find_map(root: Path | None = None) -> Path | None:
+def find_map(root: Path | None = None, *, beside_the_kit: bool = True) -> Path | None:
     """Where to read the model map from, or ``None`` when there is none.
 
     The repository being worked in wins over the copy shipped beside this file,
@@ -321,12 +355,21 @@ def find_map(root: Path | None = None) -> Path | None:
     happened to be installed. Walking up from *root* is what lets a hook
     installed once per machine answer for whichever repo it is invoked in — and
     return ``None``, so the spawn is left alone, in a repo that has no map.
+
+    Pass ``beside_the_kit=False`` to drop that last fallback and answer *only*
+    for *root*'s own tree. A library wants the fallback — a copy of the two files
+    dropped in a directory must still resolve. A machine-wide spawn hook must
+    not have it: the kit is always beside itself, so the fallback would make the
+    hook answer in every unrelated repository on the machine (measured on
+    basicly-wbsz.2, where a directory with no map still resolved a model).
     """
     start = Path(root) if root is not None else Path.cwd()
     for base in [start, *start.parents]:
         candidate = base / CORE_DIR / MODELS_DIRNAME / MAP_FILENAME
         if candidate.is_file():
             return candidate
+    if not beside_the_kit:
+        return None
     here = Path(__file__).resolve().parent
     # The kit's own neighbours: the catalog layout (`core/kit/` beside
     # `core/models/`) and a flat copy of the two files into one directory.
@@ -397,20 +440,32 @@ def declared_tier(path: Path) -> str | None:
     """The tier *path*'s frontmatter declares, or ``None`` when it declares none.
 
     Reads the file itself, so a consumer-authored definition that basicly has
-    never seen resolves exactly like one basicly projected. Undecodable bytes are
-    replaced rather than raised on: a definition whose prose is not valid UTF-8
-    still has a readable ASCII ``tier:`` line, and a crash here would take the
-    spawn down with it.
+    never seen resolves exactly like one basicly projected.
+    """
+    return declared_value(path, TIER_KEY)
+
+
+def declared_value(path: Path, key: str) -> str | None:
+    """One top-level frontmatter scalar of *path*, or ``None`` when it has none.
+
+    The general form of :func:`declared_tier`, because a spawn hook needs a
+    second key: a definition that already declares its own ``model`` must be left
+    alone, and re-parsing frontmatter in the hook would be a second reader of the
+    one rule this function is.
+
+    Undecodable bytes are replaced rather than raised on: a definition whose
+    prose is not valid UTF-8 still has a readable ASCII key line, and a crash
+    here would take the spawn down with it.
     """
     try:
         with path.open(encoding="utf-8", errors="replace") as handle:
-            return _frontmatter_tier(handle)
+            return _frontmatter_value(handle, key)
     except OSError:
         return None
 
 
-def _frontmatter_tier(lines: Iterable[str]) -> str | None:
-    """Scan an open definition file's frontmatter block for the tier key."""
+def _frontmatter_value(lines: Iterable[str], key: str) -> str | None:
+    """Scan an open definition file's frontmatter block for one key."""
     for index, line in enumerate(lines):
         text = line.rstrip("\n")
         if index == 0:
@@ -422,7 +477,7 @@ def _frontmatter_tier(lines: Iterable[str]) -> str | None:
         if index > _MAX_FRONTMATTER_LINES or text.strip() == _FENCE:
             return None
         match = _KEY_RE.match(text)
-        if match is not None and match.group(1) == TIER_KEY:
+        if match is not None and match.group(1) == key:
             return _scalar(match.group(2)) or None
     return None
 
