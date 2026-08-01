@@ -1247,20 +1247,48 @@ def _rework(
 
 
 def _ensure_child_worktrees(ctx: _Ctx, children: list[tuple[str, str]]) -> None:
-    """Provision a worktree for each dependency-unblocked, still-open child, up to the cap."""
+    """Provision worktrees for the highest-ranked dispatchable children, up to the cap.
+
+    Ordered by ``br scheduler`` rank rather than by the order br happens to return
+    the dependents in. The cap makes provisioning a *selection*: whichever children
+    it reaches are the pass, and :func:`supervise.ready_lanes` can only rank-order
+    the set chosen here. Reducing ``ready_ranked`` to a membership set therefore
+    discarded the one ordering that decides which work actually runs — a computed
+    ranking thrown away, so an arbitrary br ordering picked the lanes
+    (basicly-jr0l.62).
+
+    A child the band refuses is skipped rather than provisioned. Dispatch drops it
+    regardless — :func:`supervise.escalate_working_set` leaves a pending decision
+    and ``ready_lanes`` filters on that — so provisioning it spends a concurrency
+    slot on a worktree nothing ever runs in, and crowds out an admissible lane.
+
+    An *unsizeable* child is still provisioned. An unreadable scope is not a
+    refusal (``admit_working_set`` sets ``refused`` on the ceiling alone), and
+    dropping it here would silently lose work rather than defer it.
+    """
+    from . import supervise  # noqa: PLC0415 — supervise imports loop; deferred to break it
+
     wt_config = load_worktree_config(ctx.repo_root)
+    sizing = load_sizing_config(ctx.repo_root)
     existing = {session.name for session in worktree.list_sessions(ctx.repo_root)}
     room = wt_config.concurrency - len(existing)
-    ready = {node.issue_id for node in loop_state.ready_ranked(ctx.repo_root)}
+    open_children = {cid for cid, status in children if status != "closed"}
+    ranked = [
+        node.issue_id
+        for node in loop_state.ready_ranked(ctx.repo_root)
+        if node.issue_id in open_children
+    ]
     # Publish the fan-out claims the same way a leaf publishes its own.
     merge.commit_tracker_state(
         ctx.repo_root, ctx.issue_id, action="record the claim before provisioning"
     )
-    for cid, status in children:
+    for cid in ranked:
         if room <= 0:
             break
         name = _worktree_name(cid)
-        if status == "closed" or name in existing or cid not in ready:
+        if name in existing:
+            continue
+        if supervise.admit_working_set(ctx.repo_root, cid, sizing).refused:
             continue
         session = worktree.create(name, base=wt_config.base_branch, repo_root=ctx.repo_root)
         _bind_worktree(ctx, name, session.branch, issue_id=cid)

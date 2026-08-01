@@ -29,7 +29,7 @@ from basicly import (
     worktree,
 )
 from basicly.config import LOOP_PHASES, PolicyConfig, RunnerConfig, WorktreeConfig
-from basicly.loop_state import NodeState, WorktreeBinding
+from basicly.loop_state import NodeState, RankedNode, WorktreeBinding
 from basicly.policy import DoRResult, GateStatus
 from basicly.worktree import Session
 
@@ -1468,6 +1468,114 @@ def test_ensure_child_worktrees_publishes_claims_first(
 
     loop._ensure_child_worktrees(ctx, [("i.1", "in_progress")])
     assert tracker_commits == [("i", "record the claim before provisioning")]
+
+
+def _pin_provisioning(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    ranked: tuple[str, ...],
+    concurrency: int,
+    refused: frozenset[str] = frozenset(),
+    unsized: frozenset[str] = frozenset(),
+) -> list[str]:
+    """Pin fan-out provisioning; return the list each created worktree name lands in."""
+    created: list[str] = []
+
+    def _create(name: str, **_kwargs: object) -> Session:
+        created.append(name)
+        return _session(name)
+
+    # The function under test reads only `refused`; a real sizing is built so the
+    # unsizeable case is modelled the way admit_working_set reports it — `sizing`
+    # None, `refused` False — rather than by a stand-in that cannot type-check.
+    sized = decompose.DispatchSizing(
+        task_class="task",
+        estimate=decompose.CostEstimate(
+            scope_tokens=9_000, overhead_tokens=3_000, build_factor=2.0
+        ),
+        source=decompose.FROZEN_FORECAST,
+    )
+
+    def _admit(_repo_root, issue_id: str, _sizing) -> supervise.WorkingSetAdmission:
+        return supervise.WorkingSetAdmission(
+            issue_id,
+            None if issue_id in unsized else sized,
+            None,
+            refused=issue_id in refused,
+        )
+
+    monkeypatch.setattr(
+        loop,
+        "load_worktree_config",
+        lambda *_a: WorktreeConfig(base_branch=None, concurrency=concurrency),
+    )
+    monkeypatch.setattr(worktree, "create", _create)
+    monkeypatch.setattr(worktree, "list_sessions", lambda *_a, **_k: [])
+    monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        loop.loop_state,
+        "ready_ranked",
+        lambda *_a, **_k: tuple(
+            RankedNode(rank=index, score=0, issue_id=cid, title=cid)
+            for index, cid in enumerate(ranked, start=1)
+        ),
+    )
+    monkeypatch.setattr(supervise, "admit_working_set", _admit)
+    return created
+
+
+@pytest.mark.usefixtures("tracker_commits")
+def test_ensure_child_worktrees_provisions_in_ranked_order(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The cap spends its slots on the highest-ranked children, not br's listing order."""
+    ctx = loop._Ctx(tmp_path, "i", _state("decompose", has_children=True), CONFIG, loop.Inputs())
+    created = _pin_provisioning(monkeypatch, ranked=("i.9", "i.1"), concurrency=1)
+
+    # br lists i.1 first; the scheduler ranks i.9 above it. One slot, so the two
+    # orderings disagree on the whole pass.
+    loop._ensure_child_worktrees(ctx, [("i.1", "in_progress"), ("i.9", "in_progress")])
+    assert created == ["i-9"]
+
+
+@pytest.mark.usefixtures("tracker_commits")
+def test_ensure_child_worktrees_skips_a_child_the_band_refuses(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An over-ceiling lane yields its slot instead of holding a worktree nothing runs in."""
+    ctx = loop._Ctx(tmp_path, "i", _state("decompose", has_children=True), CONFIG, loop.Inputs())
+    created = _pin_provisioning(
+        monkeypatch, ranked=("i.1", "i.2"), concurrency=1, refused=frozenset({"i.1"})
+    )
+
+    loop._ensure_child_worktrees(ctx, [("i.1", "in_progress"), ("i.2", "in_progress")])
+    assert created == ["i-2"]
+
+
+@pytest.mark.usefixtures("tracker_commits")
+def test_ensure_child_worktrees_provisions_an_unsizeable_child(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An unreadable scope is not a refusal, so the lane is deferred to dispatch, not dropped."""
+    ctx = loop._Ctx(tmp_path, "i", _state("decompose", has_children=True), CONFIG, loop.Inputs())
+    created = _pin_provisioning(
+        monkeypatch, ranked=("i.1",), concurrency=2, unsized=frozenset({"i.1"})
+    )
+
+    loop._ensure_child_worktrees(ctx, [("i.1", "in_progress")])
+    assert created == ["i-1"]
+
+
+@pytest.mark.usefixtures("tracker_commits")
+def test_ensure_child_worktrees_skips_a_closed_child(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A closed child is never provisioned, even when the scheduler still ranks it."""
+    ctx = loop._Ctx(tmp_path, "i", _state("decompose", has_children=True), CONFIG, loop.Inputs())
+    created = _pin_provisioning(monkeypatch, ranked=("i.1", "i.2"), concurrency=2)
+
+    loop._ensure_child_worktrees(ctx, [("i.1", "closed"), ("i.2", "in_progress")])
+    assert created == ["i-2"]
 
 
 def test_classify_leaf_forks_from_the_configured_base(
