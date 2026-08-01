@@ -288,6 +288,45 @@ def _on_build(ctx: _Ctx) -> AdvanceResult:
     return _verify_and_land(ctx, ctx.state.worktree.name)
 
 
+def stale_binding_verdict(repo_root: Path, binding: loop_state.WorktreeBinding) -> tuple[bool, str]:
+    """Whether a dead worktree *binding* may be cleared, and why.
+
+    A binding is the only evidence that reaches the ``build`` rung of
+    :func:`loop_state.derive_phase`, and it is *tracker* state while the worktree is
+    *filesystem* state. When the worktree goes without the ref being cleared, the node
+    derives ``build`` forever: the supervisor adopts it non-live, and both
+    ``ready_lanes`` and the phase gate in ``advance_parked`` skip it — so it is
+    simultaneously past classify and undispatchable (basicly-1koh).
+
+    The verdict splits on whether work can be stranded, because that is what decides
+    if clearing is safe. :func:`_worktree_landed` is the same deterministic proof the
+    post-merge check uses: it holds when the branch is gone (``git branch -d`` refuses
+    an unmerged branch) or when its tip is an ancestor of base. Then nothing can be
+    lost and the ref may go. Otherwise commits may still be sitting on the branch, so
+    clearing would orphan them and re-provisioning would fork a second branch for the
+    same bead — this refuses and names the branch, per fail-closed-on-an-indeterminate-
+    answer.
+
+    A pure read: the caller does the clearing, so the decision and the write stay
+    separable and this stays callable from a status command.
+    """
+    if _worktree_landed(repo_root, binding):
+        return True, (
+            f"worktree {binding.name!r} is gone and branch {binding.branch!r} holds "
+            "nothing unlanded, so the stale binding can be cleared"
+        )
+    return False, (
+        f"worktree {binding.name!r} is gone but branch {binding.branch!r} still holds "
+        "unlanded commits; merge or delete that branch before the binding is cleared, "
+        "or those commits become unreachable from the loop"
+    )
+
+
+def clear_worktree_binding(repo_root: Path, issue_id: str) -> None:
+    """Drop *issue_id*'s ``worktree:`` external_ref, so it stops deriving ``build``."""
+    _run_br(repo_root, ["update", issue_id, "--external-ref", ""])
+
+
 def _on_verify(ctx: _Ctx) -> AdvanceResult:
     """Required gate is green (that is why we are here): gate the ship checkpoint."""
     if not policy.checkpoint_approved(ctx.repo_root, ctx.issue_id, "ship"):

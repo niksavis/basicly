@@ -2953,11 +2953,18 @@ def _cmd_loop_supervise(args: argparse.Namespace) -> int:
             # landings in this same pass, not the next one.
             for bead, coupled_to, dep_type in supervise.propose_coupling_edges(repo_root, state):
                 print(f"coupling: {bead} -> {coupled_to} ({dep_type}) - from a found-info record")
+            # Dispose of bindings that outlived their worktrees before anything reads
+            # the lane set again (basicly-1koh): such a lane derives `build` off the
+            # ref alone, so it is invisible to dispatch and to the parked advance, and
+            # left alone it is re-adopted and re-discarded every pass forever. Folded
+            # into `routed` below so a pass that only repaired still counts as
+            # progress and re-derives instead of reporting itself blocked.
+            repaired = supervise.repair_stale_bindings(repo_root, state)
             outcomes = supervise.dispatch_lanes(
                 repo_root, state, beat=hb.check, skip=carried, admission=admission
             )
             _print_dispatch(outcomes, carried=carried, admission=admission)
-            routed = supervise.route_outcomes(
+            routed = repaired + supervise.route_outcomes(
                 repo_root, state, outcomes, beat=hb.check, carried=carried
             )
             routed += supervise.advance_parked(repo_root, state, beat=hb.check)

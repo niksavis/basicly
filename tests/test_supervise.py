@@ -3625,3 +3625,65 @@ def test_pass_sizes_each_lane_exactly_once(
     )
 
     assert sorted(sized) == ["epic.1", "epic.2"]
+
+
+# --- Stale worktree bindings (basicly-1koh) -----------------------------------
+
+
+def test_a_stale_binding_with_nothing_unlanded_is_cleared(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The bead stops deriving `build`, so the next fan-out can re-provision it."""
+    monkeypatch.setattr(loop, "_worktree_landed", lambda *_a: True)
+    cleared: list[str] = []
+    monkeypatch.setattr(loop, "clear_worktree_binding", lambda _r, iid: cleared.append(iid))
+    monkeypatch.setattr(
+        decisions, "enqueue", lambda *_a, **_k: pytest.fail("nothing to escalate here")
+    )
+
+    routed = supervise.repair_stale_bindings(tmp_path, _session(_lane("epic.1", live=False)))
+
+    assert cleared == ["epic.1"]
+    assert [(r.issue_id, r.route) for r in routed] == [("epic.1", "repaired")]
+
+
+def test_a_stale_binding_over_unlanded_commits_is_escalated_not_cleared(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Clearing it would make those commits unreachable from the loop, so it refuses."""
+    monkeypatch.setattr(loop, "_worktree_landed", lambda *_a: False)
+    monkeypatch.setattr(
+        loop,
+        "clear_worktree_binding",
+        lambda *_a: pytest.fail("an unlanded branch must not be unbound"),
+    )
+    asked: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        decisions,
+        "enqueue",
+        lambda _r, iid, kind, *_a, **_k: asked.append((iid, kind)),
+    )
+
+    routed = supervise.repair_stale_bindings(tmp_path, _session(_lane("epic.1", live=False)))
+
+    assert asked == [("epic.1", "escalation")]
+    assert [(r.issue_id, r.route) for r in routed] == [("epic.1", "decision")]
+    assert "unlanded commits" in routed[0].detail
+
+
+def test_a_live_lane_is_never_repaired(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """The repair keys on liveness alone; a working lane must be left to dispatch."""
+    monkeypatch.setattr(
+        loop, "_worktree_landed", lambda *_a: pytest.fail("a live lane is not inspected")
+    )
+
+    assert supervise.repair_stale_bindings(tmp_path, _session(_lane("epic.1", live=True))) == ()
+
+
+def test_a_repair_counts_as_progress_so_the_pass_re_derives() -> None:
+    """Nothing landed, but what the next derivation sees changed (basicly-1koh).
+
+    Without this the supervisor reported "no ready lanes and nothing to land" and
+    exited on the very pass that had just unblocked a lane.
+    """
+    assert supervise.should_continue((supervise.RoutedOutcome("epic.1", "repaired", "cleared"),))

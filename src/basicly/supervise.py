@@ -1894,7 +1894,19 @@ DISPATCH_GATE = "dispatch"
 # landing this pass broke, cancelled before it collided and bounded by the
 # dispatch cap. "lane-blocked" is deliberately absent, because such a lane waits
 # on an agent or a human exactly like a handoff.
-RETRIABLE_ROUTES = ("retry", "rework", "held", "lane-step", "bounced", "re-dispatch")
+RETRIABLE_ROUTES = (
+    "retry",
+    "rework",
+    "held",
+    "lane-step",
+    "bounced",
+    "re-dispatch",
+    # A cleared stale binding changes what the *next* derivation sees, so the pass
+    # that cleared it has genuinely unblocked work even though nothing landed
+    # (basicly-1koh). Termination is not at risk: the binding is gone, so the same
+    # lane cannot be repaired twice.
+    "repaired",
+)
 
 
 @dataclass(frozen=True)
@@ -1904,7 +1916,7 @@ class RoutedOutcome:
     issue_id: str
     # "shipped" | "merged" | "retry" | "rework" | "held" | "decision"
     # | "handoff" | "lane-step" | "lane-blocked" | "bounced" | "re-dispatch"
-    # | "error"
+    # | "repaired" | "error"
     route: str
     detail: str
 
@@ -2138,6 +2150,46 @@ def _is_green(outcome: LaneOutcome) -> bool:
     )
 
 
+def repair_stale_bindings(repo_root: Path, session: SessionState) -> tuple[RoutedOutcome, ...]:
+    """Dispose of adopted lanes whose worktree is gone; the outcomes recorded.
+
+    ``derive_session`` already flags these ``live=False`` and its own comment says such
+    a lane "needs a re-dispatch, not an adoption" — but nothing acted on it, so the
+    lane was re-adopted and re-discarded on every pass while the bead sat at ``build``
+    permanently, out of reach of both ``ready_lanes`` and ``advance_parked``
+    (basicly-1koh). This is the step that acts.
+
+    Safe cases are cleared silently-but-reported: with the ref gone the bead falls back
+    to the phase its checkpoints evidence and the next fan-out re-provisions it, which
+    is the "re-dispatch" the adoption comment always intended. An unsafe case — a branch
+    still carrying unlanded commits — is enqueued as a decision instead, because
+    clearing it would make those commits unreachable from the loop and re-provisioning
+    would fork a second branch for one bead.
+
+    Idempotent: a cleared binding is not adopted next pass, and an enqueued decision is
+    keyed by (issue, kind, question) so a lane that keeps refusing re-reports one item.
+    """
+    routed: list[RoutedOutcome] = []
+    for lane in session.adopted:
+        if lane.live:
+            continue
+        clearable, detail = loop.stale_binding_verdict(repo_root, lane.binding)
+        if not clearable:
+            decisions.enqueue(
+                repo_root,
+                lane.issue_id,
+                "escalation",
+                "a worktree binding outlived its worktree and its branch is unlanded: "
+                "merge the branch, delete it, or clear the binding?",
+                detail,
+            )
+            routed.append(RoutedOutcome(lane.issue_id, "decision", detail))
+            continue
+        loop.clear_worktree_binding(repo_root, lane.issue_id)
+        routed.append(RoutedOutcome(lane.issue_id, "repaired", detail))
+    return tuple(routed)
+
+
 def advance_parked(
     repo_root: Path, session: SessionState, *, beat: Callable[[], None] | None = None
 ) -> tuple[RoutedOutcome, ...]:
@@ -2150,7 +2202,9 @@ def advance_parked(
     build that carries sub-task beads is a mini-loop lane (basicly-kjc5.9): its
     sub-tasks are dispatched one at a time from inside ``loop.advance``, so the
     supervisor advances it here instead of dispatching the lane bead itself.
-    Lanes with a pending judgment stay parked.
+    Lanes with a pending judgment stay parked. A lane whose worktree is gone is not
+    advanced here either — it is disposed of by :func:`repair_stale_bindings` before
+    the pass reaches this point (basicly-1koh).
     """
     routed: list[RoutedOutcome] = []
     for lane in session.adopted:
