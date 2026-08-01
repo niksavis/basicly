@@ -265,6 +265,23 @@ def test_compose_body_never_duplicates_a_required_heading() -> None:
     assert body.count("## Acceptance Criteria") == 1
 
 
+def test_scaffold_body_emits_scope_although_the_dor_never_requires_it() -> None:
+    """Show the section, never block on it — the split that fixes basicly-tuy6.
+
+    An author told only that a scope exists writes one that parses to nothing;
+    requiring it instead would refuse most of an existing tracker.
+    """
+    body = policy.scaffold_body("bug")
+    headings = [line for line in body.splitlines() if line.startswith("## ")]
+    assert headings == ["## Steps to Reproduce", "## Acceptance Criteria", "## Scope"]
+    assert "## Scope" not in policy.required_sections("bug")
+
+
+def test_scaffold_body_shows_the_scope_line_format_rather_than_naming_it() -> None:
+    """The hint has to carry the literal form; 'declare a scope' is what already failed."""
+    assert policy.SCOPE_LINE_EXAMPLE in policy.scaffold_body("task")
+
+
 def test_compose_body_puts_a_preamble_above_the_first_heading() -> None:
     """An engine-composed body may carry context; it must not displace the structure."""
     body = policy.compose_body("task", preamble="Continues basicly-x: it overran.")

@@ -2090,8 +2090,8 @@ def cmd_review(args: argparse.Namespace) -> int:
     return 0
 
 
-def _issue_work_type(repo_root: Path, issue_id: str) -> str | None:
-    """The br work type of *issue_id*, or None when it cannot be read."""
+def _issue_record(repo_root: Path, issue_id: str) -> dict[str, object] | None:
+    """The br record for *issue_id*, or None when it cannot be read."""
     proc = br.try_run_br(repo_root, ["show", issue_id, "--json"])
     if proc is None or proc.returncode != 0:
         return None
@@ -2100,10 +2100,23 @@ def _issue_work_type(repo_root: Path, issue_id: str) -> str | None:
     except json.JSONDecodeError:
         return None
     record = data[0] if isinstance(data, list) and data else data
-    if not isinstance(record, dict):
+    return record if isinstance(record, dict) else None
+
+
+def _issue_work_type(repo_root: Path, issue_id: str) -> str | None:
+    """The br work type of *issue_id*, or None when it cannot be read."""
+    record = _issue_record(repo_root, issue_id)
+    if record is None:
         return None
     work_type = record.get("issue_type") or record.get("type")
     return work_type if isinstance(work_type, str) and work_type else None
+
+
+def _issue_description(repo_root: Path, issue_id: str) -> str:
+    """The br description body for *issue_id*, empty when it cannot be read."""
+    record = _issue_record(repo_root, issue_id)
+    body = record.get("description") if record else None
+    return body if isinstance(body, str) else ""
 
 
 def _cmd_rubric_eval(args: argparse.Namespace) -> int:
@@ -2242,6 +2255,12 @@ def _cmd_policy_dor(args: argparse.Namespace) -> int:
     """Report Definition-of-Ready; exit 1 (blocking) when sections are missing."""
     repo_root = _repo_root()
     result = policy.definition_of_ready(repo_root, args.issue)
+    # Advisory and verdict-independent: a scope that parsed to nothing is an authoring
+    # error on a bead that is otherwise perfectly ready, so it is reported on both
+    # paths and changes neither the verdict nor the exit code (basicly-tuy6).
+    scope_warning = decompose.unparsed_scope_warning(_issue_description(repo_root, args.issue))
+    if scope_warning:
+        ui.warn(f"scope: {scope_warning}")
     if result.ready:
         print(f"DoR: READY ({args.issue})")
         return 0
@@ -2257,14 +2276,16 @@ def _cmd_policy_dor(args: argparse.Namespace) -> int:
 
 
 def _cmd_policy_scaffold(args: argparse.Namespace) -> int:
-    """Print a bead body carrying every section the DoR requires for a work type.
+    """Print a bead body: every section the DoR requires, plus ``## Scope``.
 
     Structure is derivable from the work type, so it is emitted rather than
-    discovered when the classify gate refuses. Prints to stdout so the caller can
+    discovered when the classify gate refuses. ``## Scope`` rides along though no
+    gate requires it, because an author who is never shown the line format writes
+    one that parses to nothing (basicly-tuy6). Prints to stdout so the caller can
     fill the sections in and hand the result to ``br create -d`` (or ``br update
     -d``) — this command never writes to the tracker itself.
     """
-    print(policy.compose_body(args.type), end="")
+    print(policy.scaffold_body(args.type), end="")
     return 0
 
 
