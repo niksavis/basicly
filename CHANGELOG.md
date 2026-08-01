@@ -165,6 +165,30 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   survive. A `settings.json` that exists but cannot be parsed is **refused, never
   overwritten** — it is the consumer's file.
 
+- **The tier injection kit is documented**, in `.basicly/core/kit/README.md` (how to
+  use it) and `docs/design/tier-injection-kit.md` (why it is shaped this way). They
+  state which host resolves a tier dynamically and which falls back to static
+  frontmatter plus `copilot --model`, name the four Claude hook traps the rewrite
+  depends on — `updatedInput` replaces rather than merges, `model` is absent unless
+  the caller set it, the `Agent` tool's `model` is a four-value alias enum rather
+  than an id, and `CLAUDE_CODE_SUBAGENT_MODEL` outranks the injection — and show a
+  consumer driving the map from another harness with the kit's four files under
+  `env -i`. Every command shown was run against the shipped code.
+
+  They also document the trap a new consumer hits first: **installing the hook does
+  nothing until the host CLI process is quit and relaunched.** Clearing the
+  conversation reloads neither hooks nor agent definitions, so the hook appears
+  inert while every diagnostic reports it correctly installed (`basicly-wbsz.4`).
+
+- **The kit's injection is now proven end to end, live, against a negative control.**
+  Earlier verification drove the installed hook's emitted envelope; this closes the
+  remaining gap — that the host honours it. With the hook installed and the process
+  relaunched, a probe declaring `tier: low` spawned on `claude-haiku-4-5-20251001`
+  from a `claude-opus-5` host, while a byte-identical probe with only the `tier` key
+  removed spawned on the host default. Both models were read off the subagent
+  transcripts rather than off the agents' own claims. The control is the point: a
+  one-sided proof passes by pinning everything (`basicly-wbsz.3`, `basicly-wbsz`).
+
   Exercised against a real `basicly install` whose `.claude/settings.json` already
   carried basicly's own managed hooks and a 25-pattern deny list: all of them
   survived the merge, the second run reported `already installed` and changed
