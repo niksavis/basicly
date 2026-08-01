@@ -2413,8 +2413,23 @@ def _approve_checkpoint(repo_root: Path, args: argparse.Namespace) -> int:
     return 1
 
 
+def _coverage_phrase(repo_root: Path, issue: str) -> str:
+    """How many beads the session rooted at *issue* covers, in words.
+
+    Printed on issuance and on the ledger read, because a grant's marker says
+    nothing about its reach: an L3 with a large ceiling reads as authority over
+    a whole track even when the session is the single bead it sits on
+    (basicly-jr0l.40). The single-leaf case names itself rather than leaving
+    "covers 1 bead" to be read as a rounding of something larger.
+    """
+    count = policy.session_coverage(repo_root, issue)
+    if count == 1:
+        return "covers 1 bead (this issue only)"
+    return f"covers {count} beads"
+
+
 def _report_active_grant(repo_root: Path, issue: str) -> int:
-    """Print the active grant and what it delegates; 1 when there is none.
+    """Print the active grant, its coverage, and what it delegates; 1 when there is none.
 
     Non-zero for "no grant" so a script can branch on it: every checkpoint being
     human is the safe state, but it is not the state a caller asking for a grant
@@ -2426,7 +2441,8 @@ def _report_active_grant(repo_root: Path, issue: str) -> int:
         return 1
     budget = f", token budget {grant.token_budget}" if grant.token_budget is not None else ""
     covers = ", ".join(policy.GRANT_COVERAGE[grant.level]) or "(nothing)"
-    print(f"grant: {grant.level} ({issue}){budget} - delegable: {covers}")
+    coverage = _coverage_phrase(repo_root, issue)
+    print(f"grant: {grant.level} ({issue}){budget}, {coverage} - delegable: {covers}")
     return 0
 
 
@@ -2473,7 +2489,8 @@ def _cmd_policy_grant(args: argparse.Namespace) -> int:
         confirm=args.confirm,
     )
     if result.status == "approved":
-        print(f"grant: ISSUED {args.level} ({args.issue})")
+        coverage = _coverage_phrase(repo_root, args.issue)
+        print(f"grant: ISSUED {args.level} ({args.issue}) - {coverage}")
         return 0
     if result.status == "challenge":
         # --autonomy has to be carried into the reprinted command: the override is

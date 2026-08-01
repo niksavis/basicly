@@ -1331,6 +1331,109 @@ def test_session_ids_walk_the_tree_transitively(
     assert policy.session_spend_tokens(tmp_path, "root") == 70
 
 
+def _gating_track() -> _FakeBr:
+    """The basicly-jr0l.40 shape: a root that gates work it did not parent.
+
+    ``root`` is blocked by a bead living under another epic (``other.1``, which
+    has decomposed) and by a parentless standalone bead — the release-epic
+    topology, where none of the track descends from the grant root.
+    """
+    return _FakeBr(
+        records={
+            "root": {
+                "status": "open",
+                "dependents": [],
+                "dependencies": [
+                    {"id": "other.1", "dependency_type": "blocks"},
+                    {"id": "standalone", "dependency_type": "blocks"},
+                ],
+            },
+            "other.1": {
+                "status": "open",
+                "dependents": [{"id": "other.1.1", "dependency_type": "parent-child"}],
+                "dependencies": [],
+            },
+            "other.1.1": {"status": "open", "dependents": [], "dependencies": []},
+            "standalone": {"status": "open", "dependents": [], "dependencies": []},
+        }
+    )
+
+
+def test_a_grant_covers_a_track_assembled_from_gating_edges(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A grant on a gating root delegates its track's checkpoints (basicly-jr0l.40).
+
+    The release epic gates its work with ``blocks`` edges, so a descent-only
+    session walk covered exactly one bead and every checkpoint still demanded a
+    confirm relay — the grant, and its token ceiling, metered nothing.
+    """
+    for issue in ("other.1", "standalone", "other.1.1"):
+        # A fresh tracker per bead: the fake keeps one comment list for every
+        # issue, so a previous approval's marker would read as "already approved".
+        fake = _gating_track()
+        _install(monkeypatch, fake)
+        fake.comments.append("[harness-policy] grant level=L2 budget=100000")
+
+        result = policy.approve_checkpoint_guarded(
+            tmp_path, issue, "classify", interactive=False, grant_root="root"
+        )
+        assert result.status == "approved", issue
+        assert "delegated under L2 grant" in result.detail
+
+
+def test_a_gating_dependent_stays_outside_the_session(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Only work the root waits *on* is the track; work waiting on the root is not.
+
+    The edge is followed in one direction on purpose — the reverse would widen a
+    grant onto everything downstream of the root, which nobody granted over.
+    """
+    fake = _FakeBr(
+        records={
+            "root": {
+                "status": "open",
+                "dependents": [{"id": "downstream", "dependency_type": "blocks"}],
+                "dependencies": [],
+            },
+            "downstream": {"status": "open", "dependents": [], "dependencies": []},
+        }
+    )
+    _install(monkeypatch, fake)
+    fake.comments.append("[harness-policy] grant level=L2 budget=100000")
+
+    result = policy.approve_checkpoint_guarded(
+        tmp_path, "downstream", "classify", interactive=False, grant_root="root"
+    )
+
+    assert result.status == "challenge"
+    assert "not in that session's issue tree" in result.detail
+
+
+def test_session_coverage_counts_the_whole_track(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Coverage is the count issuance reports: root, gated beads, and their children."""
+    _install(monkeypatch, _gating_track())
+    assert policy.session_coverage(tmp_path, "root") == 4
+
+    _install(monkeypatch, _FakeBr())  # no edges at all: the session is one leaf
+    assert policy.session_coverage(tmp_path, "root") == 1
+
+
+def test_gating_spend_counts_toward_the_budget(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The meter widens with the coverage: a gated bead's spend is the grant's spend."""
+    _install(monkeypatch, _gating_track())
+    entry = run_record.build_record(
+        agent="t", handoff=False, returncode=0, duration_s=1.0, command=("t",), tokens=70
+    )
+    run_record.record(tmp_path, "standalone", entry)
+    assert policy.session_spend_tokens(tmp_path, "root") == 70
+
+
 def test_grant_confirm_code_binds_level_and_budget(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

@@ -258,6 +258,32 @@ def test_grant_issue_interactive_then_show_and_revoke(
     assert "grant: NONE" in capsys.readouterr().out
 
 
+def test_grant_issuance_states_how_many_beads_it_covers(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Issuance and the ledger both report coverage (basicly-jr0l.40).
+
+    An L3 marker with a large ceiling reads as authority over a whole track
+    whether the session is twenty beads or the one it sits on, so the count is
+    the only thing that tells those apart — and the single-leaf case has to name
+    itself rather than leave "1" to be read as a rounding of something larger.
+    """
+    _tty(monkeypatch)
+    _allow_autonomy(monkeypatch)
+    grant = ["policy", "grant", "root", "--level", "L2", "--token-budget", "5000"]
+
+    # The default fake tracker is an open, childless, ungating root.
+    assert cli.main(grant) == 0
+    assert "covers 1 bead (this issue only)" in capsys.readouterr().out
+
+    monkeypatch.setattr(policy, "session_coverage", lambda _r, _i: 24)
+    assert cli.main(grant) == 0
+    assert "covers 24 beads" in capsys.readouterr().out
+
+    assert cli.main(["policy", "grant", "root"]) == 0
+    assert "covers 24 beads" in capsys.readouterr().out
+
+
 def test_grant_issue_non_interactive_challenges(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

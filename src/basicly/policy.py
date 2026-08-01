@@ -928,13 +928,32 @@ def _grant_approval(
 
 
 def _session_issue_ids(repo_root: Path, root_issue: str) -> tuple[str, ...]:
-    """The session's bead ids: the root plus its parent-child tree, transitively.
+    """The session's bead ids: the root plus the track it is organised around.
 
-    The tree nests fractally (a feature child decomposes into its own
-    children), and both the spend meter and the lights-out preconditions claim
-    session-wide coverage — so grandchildren must count too, or their spend and
-    needs-input events would silently bypass the grant (D3).
+    A track is assembled from two kinds of edge, so the walk follows both.
+
+    **Parent-child dependents** give the decomposition. It nests fractally (a
+    feature child decomposes into its own children), and both the spend meter
+    and the lights-out preconditions claim session-wide coverage — so
+    grandchildren must count too, or their spend and needs-input events would
+    silently bypass the grant (D3).
+
+    **Gating dependencies** give the cross-cutting track. A release, or any root
+    that gates work it did not parent, records that work as its own ``blocks``
+    dependencies — a bead's parent is its epic of origin and nothing is
+    re-parented, so a descent-only walk found a session of exactly one bead and
+    the grant covered nothing at all (basicly-jr0l.40). Such a track spans
+    several parents and usually some parentless beads besides, so no set of
+    per-parent grants can substitute for following the edge that defines it.
+
+    The two directions are deliberately not symmetric. A gating *dependency* is
+    work the root waits on, which is precisely the track a grant on that root
+    means to authorize; a gating *dependent* is something waiting on the root,
+    outside the track, and following it would widen a grant past what was
+    granted over.
     """
+    # (record key, dependency type) pairs: the edges that lead into the session.
+    edges = (("dependents", "parent-child"), ("dependencies", "blocks"))
     seen: dict[str, None] = {root_issue: None}  # insertion-ordered BFS
     queue = [root_issue]
     while queue:
@@ -943,12 +962,26 @@ def _session_issue_ids(repo_root: Path, root_issue: str) -> tuple[str, ...]:
         record = data[0] if isinstance(data, list) else data
         if not isinstance(record, dict):
             continue
-        for dep in record.get("dependents") or []:
-            is_child = isinstance(dep, dict) and dep.get("dependency_type") == "parent-child"
-            if is_child and "id" in dep and str(dep["id"]) not in seen:
-                seen[str(dep["id"])] = None
-                queue.append(str(dep["id"]))
+        for key, wanted in edges:
+            for dep in record.get(key) or []:
+                if not isinstance(dep, dict) or dep.get("dependency_type") != wanted:
+                    continue
+                if "id" in dep and str(dep["id"]) not in seen:
+                    seen[str(dep["id"])] = None
+                    queue.append(str(dep["id"]))
     return tuple(seen)
+
+
+def session_coverage(repo_root: Path, root_issue: str) -> int:
+    """How many beads a grant on *root_issue* would cover, the root included.
+
+    Issuance reports this because coverage is not visible from the grant itself:
+    an L3 marker with a 25000000-token ceiling reads as authority over a whole
+    release whether its session is twenty beads or the one it sits on
+    (basicly-jr0l.40). The count is the only thing that tells those apart, and a
+    session of one has to be able to say so before the operator relies on it.
+    """
+    return len(_session_issue_ids(repo_root, root_issue))
 
 
 @dataclass(frozen=True)
