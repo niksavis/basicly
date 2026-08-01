@@ -51,6 +51,26 @@ reviewing any automated test, in any language.
   after the fix it pins, delete the fix and watch it fail for the stated reason
   before trusting it.
 
+## Mutate the fix in both directions, not just off
+
+- Deleting the fix proves the tests notice it is gone. It does not prove they
+  describe what it *does*. So run the second mutation too: make the check fire on
+  everything — always warn, always refuse, always report the same verdict — and
+  watch a control fail. If nothing fails, the suite pins "it reacts" and not "it
+  discriminates", and a check that fires on every input passes every test you wrote
+  while being useless.
+- This is the direction that finds the missing test, and it has done so every time
+  it was run. A per-lane report that labelled each lane refused passed the whole
+  file, because every case in it was a refused lane; the over-trigger mutation is
+  what showed the admitted-lane control was never written.
+- Say which direction found what when recording the result, so the next reader can
+  tell a check that was verified from one that was merely exercised.
+- **Restore from a copy, never `git checkout -- <file>`.** A mutation is applied to
+  a working tree that usually holds the very change being verified, and `git
+  checkout` restores from the index — silently discarding all of it. Copy the file
+  aside first and copy it back. (Recovering from this mid-session cost a full
+  re-apply of an uncommitted module.)
+
 ## A zero result needs a positive control
 
 - A search, scan or query that finds nothing proves nothing by itself. It is

@@ -225,6 +225,30 @@ instructions: |
   entirely. Dispatching on that text would have had the implementer build against a
   phantom field and either fail or silently invent a fallback.
 
+  ## A remainder bead is a claim about unfinished work
+
+  A bead filed because a lane hit the context ceiling — "Follow-up: …", "Continues
+  `<id>`: its run overran" — records what the *overrun* left, not what the code
+  lacks. The parent often finished the work before it stopped, and the remainder was
+  written from the lane's last known position rather than from the merged result. So
+  treat it exactly like any other third-party claim: **verify it against the code
+  before building, and be willing to close it with no diff.**
+
+  Check it clause by clause, and non-vacuously — a function existing is not the same
+  as a behaviour reaching a surface. Revert the mechanism you believe already
+  delivers each clause and watch named tests fail; if nothing fails, the clause is
+  unproven whoever wrote it. Then exercise the real command, because a clause phrased
+  as "the output names X" is satisfied by output, not by a helper that could produce
+  it. Record the evidence on the bead when closing, so the next reader inherits the
+  check instead of re-opening the question.
+
+  Two in consecutive sessions needed no code at all. `basicly-jr0l.53` was already
+  delivered by `jr0l.35`; `basicly-jr0l.55` by `jr0l.45`, whose `shared` declaration
+  and `collapsing_paths` note covered both its clauses — reverting each failed 3 and
+  8 named tests, and a real `decompose --dry-run` showed 3 parallel groups and named
+  the path. The error runs both ways, so this is not licence to assume a remainder is
+  empty: `basicly-vz78` was closed with its band half wide open.
+
   ## Blocked on a missing fact — don't guess
 
   When a dispatched agent cannot resolve a required fact, it must not guess.
