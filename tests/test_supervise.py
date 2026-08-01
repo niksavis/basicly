@@ -3762,3 +3762,197 @@ def test_a_repair_counts_as_progress_so_the_pass_re_derives() -> None:
     exited on the very pass that had just unblocked a lane.
     """
     assert supervise.should_continue((supervise.RoutedOutcome("epic.1", "repaired", "cleared"),))
+
+
+# --- Cold-root seeding (basicly-t73d) ------------------------------------------
+
+
+def _seed_fixture(
+    monkeypatch: pytest.MonkeyPatch, *, steps: tuple[loop.AdvanceResult, ...]
+) -> list[str]:
+    """A pass with no dispatchable lanes whose root advance yields *steps*."""
+    _patch_readiness(monkeypatch)
+    advanced: list[str] = []
+
+    def fake_run_until_blocked(_repo: Path, issue_id: str) -> tuple[loop.AdvanceResult, ...]:
+        advanced.append(issue_id)
+        return steps
+
+    monkeypatch.setattr(supervise.loop, "run_until_blocked", fake_run_until_blocked)
+    return advanced
+
+
+def _step(action: str, *, to_phase: str = "build") -> loop.AdvanceResult:
+    return loop.AdvanceResult("epic", "decompose", to_phase, action, f"{action} detail")
+
+
+def _cold_session() -> supervise.SessionState:
+    """A root with one open child and nothing adopted — the cold-start shape."""
+    return supervise.SessionState(
+        root_issue="epic", root_status="open", children=(("epic.1", "open"),), adopted=()
+    )
+
+
+def test_a_cold_root_provisions_its_lanes_instead_of_reporting_nothing_to_land(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The defect three handovers documented as the command that runs the factory.
+
+    `loop supervise <root>` alone dispatched nothing, because nothing on its path
+    provisions a worktree and only a bound worktree derives `build` (basicly-t73d).
+    """
+    advanced = _seed_fixture(monkeypatch, steps=(_step("decomposed"),))
+
+    routed = supervise.seed_lanes(tmp_path, _cold_session())
+
+    assert advanced == ["epic"], "the root itself must be advanced to fan out its children"
+    assert [(r.issue_id, r.route) for r in routed] == [("epic", "seeded")]
+    assert supervise.should_continue(routed), "the seeded lanes must be dispatched next pass"
+
+
+def test_a_root_that_cannot_seed_stops_the_session_rather_than_spinning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Termination guard: seeding is only retriable when it actually progressed.
+
+    A blocked root advance repeated forever would be a busy loop holding the singleton
+    lock, which is strictly worse than the exit it replaced.
+    """
+    _seed_fixture(monkeypatch, steps=(_step("blocked", to_phase="decompose"),))
+
+    routed = supervise.seed_lanes(tmp_path, _cold_session())
+
+    assert [r.route for r in routed] == ["seed-blocked"]
+    assert not supervise.should_continue(routed)
+    assert "1 open child(ren)" in routed[0].detail
+
+
+def test_seeding_is_skipped_while_a_lane_is_already_dispatchable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Re-advancing the root with lanes in flight would provision past the cap."""
+    _patch_readiness(monkeypatch, ranked=((1, "epic.1"),))
+    monkeypatch.setattr(
+        supervise.loop,
+        "run_until_blocked",
+        lambda *_a: pytest.fail("a pass with work to dispatch must not re-seed"),
+    )
+
+    assert supervise.seed_lanes(tmp_path, _session(_lane("epic.1"))) == ()
+
+
+def test_seeding_is_skipped_when_the_root_has_no_open_children(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Nothing to provision, so the session is simply done."""
+    _patch_readiness(monkeypatch)
+    monkeypatch.setattr(
+        supervise.loop,
+        "run_until_blocked",
+        lambda *_a: pytest.fail("there is no child to fan out"),
+    )
+
+    empty = supervise.SessionState("epic", "open", children=(), adopted=())
+    assert supervise.seed_lanes(tmp_path, empty) == ()
+
+
+# --- A metered dispatch needs a budget (basicly-kkux) ---------------------------
+
+
+_HEADLESS_SPEC = runner.RunnerSpec("claude", runner.HEADLESS, command=("claude", "-p", "{prompt}"))
+
+
+def _ungranted() -> policy.SpendStatus:
+    """What `policy.spend_status` returns for a root with no grant at all."""
+    return policy.SpendStatus(grant=None, spent_tokens=0, halted=False)
+
+
+def test_a_metered_dispatch_is_refused_without_a_covering_budget(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """With no grant there is no ceiling at all, not merely a loose one (basicly-kkux).
+
+    `spend_status` reports halted=False and `check_pass_spend` admits any forecast
+    against a None remainder, so an ungranted session dispatched headless agents with
+    no bound — latent until basicly-t73d let the supervisor seed its own lanes.
+    """
+    _patch_readiness(monkeypatch, ranked=((1, "epic.1"),))
+    monkeypatch.setattr(supervise.runner, "select_runner", lambda *_a, **_k: _HEADLESS_SPEC)
+    monkeypatch.setattr(
+        supervise,
+        "_dispatch_lane",
+        lambda *_a, **_k: pytest.fail("an unbudgeted metered dispatch must not start"),
+    )
+    queued: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        supervise.decisions,
+        "enqueue",
+        lambda _r, _i, _k, q, d="", **_kw: queued.append((q, d)),
+    )
+    lines: list[str] = []
+
+    outcomes = supervise.dispatch_lanes(
+        tmp_path, _session(_lane("epic.1")), admission=_ungranted(), report=lines.append
+    )
+
+    assert outcomes == ()
+    assert queued, "the refusal must reach the decision queue, not just stdout"
+    assert "no grant with a token budget" in queued[0][1]
+    assert any("refused" in line for line in lines)
+
+
+def test_a_handoff_dispatch_needs_no_budget_because_it_spends_nothing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The exemption that keeps interactive driving working with no grant issued."""
+    _patch_readiness(monkeypatch, ranked=((1, "epic.1"),))
+    monkeypatch.setattr(supervise.runner, "select_runner", lambda *_a, **_k: _MANUAL_SPEC)
+    monkeypatch.setattr(supervise.decompose, "unsized_lane_tokens", lambda *_a: (10, "measured"))
+    monkeypatch.setattr(
+        supervise, "_dispatch_lane", lambda _r, _s, lane, *_a, **_kw: _outcome(lane.issue_id)
+    )
+
+    outcomes = supervise.dispatch_lanes(tmp_path, _session(_lane("epic.1")), admission=_ungranted())
+
+    assert [o.issue_id for o in outcomes] == ["epic.1"]
+
+
+def test_a_metered_dispatch_proceeds_once_a_budget_covers_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The refusal must key on the missing budget, not on the runner being headless."""
+    _patch_readiness(monkeypatch, ranked=((1, "epic.1"),))
+    monkeypatch.setattr(supervise.runner, "select_runner", lambda *_a, **_k: _HEADLESS_SPEC)
+    monkeypatch.setattr(supervise.decompose, "unsized_lane_tokens", lambda *_a: (10, "measured"))
+    monkeypatch.setattr(
+        supervise, "_dispatch_lane", lambda _r, _s, lane, *_a, **_kw: _outcome(lane.issue_id)
+    )
+
+    outcomes = supervise.dispatch_lanes(
+        tmp_path, _session(_lane("epic.1")), admission=_granted("L2", 5_000, 0)
+    )
+
+    assert [o.issue_id for o in outcomes] == ["epic.1"]
+
+
+def test_seeding_does_not_provision_for_a_dispatch_that_cannot_start(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Provisioning is expensive, so the budget is checked before it, not after.
+
+    Measured: an ungranted pass provisioned five worktrees — a `uv sync` and an
+    `npm install` each — and only then refused the dispatch (basicly-kkux).
+    """
+    _patch_readiness(monkeypatch)
+    monkeypatch.setattr(supervise, "metered_without_a_budget", lambda *_a: "claude")
+    monkeypatch.setattr(
+        supervise.loop,
+        "run_until_blocked",
+        lambda *_a: pytest.fail("nothing may be provisioned for a dispatch that cannot start"),
+    )
+
+    routed = supervise.seed_lanes(tmp_path, _cold_session(), admission=_ungranted())
+
+    assert [r.route for r in routed] == ["seed-blocked"]
+    assert not supervise.should_continue(routed)
+    assert "no grant with a token budget" in routed[0].detail

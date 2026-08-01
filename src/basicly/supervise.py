@@ -1255,6 +1255,52 @@ def admit_pass_spend(
     )
 
 
+UNGRANTED_QUESTION = (
+    "this session dispatches a metered agent but carries no grant with a token budget: "
+    "issue one, or set [runner] default to the manual handoff?"
+)
+
+
+def metered_without_a_budget(repo_root: Path, admission: policy.SpendStatus) -> str | None:
+    """The configured runner's name when it meters spend under no budget, else None.
+
+    Hoisted out of :func:`dispatch_lanes` so a caller can ask *before* doing expensive
+    setup. Seeding provisions a worktree per lane — a ``uv sync`` and an ``npm install``
+    each — and doing five of those to then refuse the dispatch is minutes of work for a
+    pass that could never have started (basicly-kkux).
+    """
+    if admission.grant is not None and admission.grant.token_budget is not None:
+        return None
+    config = load_runner_config(repo_root)
+    spec = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
+    return spec.name if spec.kind == runner.HEADLESS else None
+
+
+def record_ungranted_refusal(
+    repo_root: Path, root_issue: str, runner_name: str, lanes: tuple[AdoptedLane, ...]
+) -> str:
+    """Refuse a metered pass that no budget covers; the detail reported and queued.
+
+    Both halves of D3's ceiling are keyed on the grant, so with none there is no bound
+    at all rather than a loose one — ``spend_status`` reports ``halted=False`` and
+    ``check_pass_spend`` admits any forecast against a ``None`` remainder
+    (basicly-kkux). The grant is also the authorization: it is the one human confirm
+    that permits delegated spend, so dispatching a metered runner without it spends
+    money nobody approved.
+
+    Queued as well as reported, like every other spend refusal, so a client that only
+    reads the decision queue does not see this as an idle pass.
+    """
+    detail = (
+        f"no grant with a token budget covers {root_issue}, so the {runner_name!r} runner "
+        f"has no ceiling to meter {len(lanes)} ready lane(s) against; issue one with "
+        f"`basicly policy grant {root_issue} --level L1 --token-budget N` or switch "
+        "[runner] default to the manual handoff"
+    )
+    decisions.enqueue(repo_root, root_issue, "escalation", UNGRANTED_QUESTION, detail)
+    return detail
+
+
 def record_pass_refusal(
     repo_root: Path, root_issue: str, admission: PassSpendAdmission
 ) -> decisions.DecisionItem:
@@ -1580,6 +1626,19 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
     config = load_runner_config(repo_root)
     spec = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
     sizing = load_sizing_config(repo_root)
+
+    # A metered runner needs a budget to be metered against. Both halves of D3's
+    # ceiling key on the grant — `spend_status` reports `halted=False` and
+    # `remaining_tokens=None` when there is none, and `check_pass_spend` admits
+    # anything against a None remainder — so an ungranted session had no bound at all
+    # (basicly-kkux). Latent while the supervisor could not seed its own lanes, and one
+    # command deep once basicly-t73d let it. A handoff spends nothing, so it proceeds.
+    ungranted = admission.grant is None or admission.grant.token_budget is None
+    if spec.kind == runner.HEADLESS and ungranted:
+        detail = record_ungranted_refusal(repo_root, session.root_issue, spec.name, lanes)
+        if report is not None:
+            report(f"refused:  {detail}")
+        return ()
 
     # Size every lane before any of them starts. The band needs this per lane and
     # the pass-spend gate needs all of them summed, so it is read once here and
@@ -1962,6 +2021,11 @@ RETRIABLE_ROUTES = (
     # (basicly-1koh). Termination is not at risk: the binding is gone, so the same
     # lane cannot be repaired twice.
     "repaired",
+    # Newly provisioned lanes exist but are not dispatched until the next derivation
+    # reads them (basicly-t73d). Bounded by the worktree cap and by `seed_lanes`
+    # returning `seed-blocked` — which is *not* retriable — the moment a root stops
+    # producing lanes, so a root that cannot seed ends the session instead of looping.
+    "seeded",
 )
 
 
@@ -2203,6 +2267,90 @@ def _is_green(outcome: LaneOutcome) -> bool:
         and not result.timed_out
         and not result.handoff
         and outcome.needs_fact is None
+    )
+
+
+def _seeding_declined(
+    repo_root: Path,
+    session: SessionState,
+    *,
+    skip: frozenset[str],
+    admission: policy.SpendStatus | None,
+) -> tuple[RoutedOutcome, ...] | None:
+    """Why this pass will not seed, or None to go ahead — :func:`seed_lanes`' guards.
+
+    Split out so the caller keeps one return per *outcome* rather than one per
+    precondition; the reasons themselves are unrelated to each other.
+    """
+    if ready_lanes(repo_root, session, skip=skip):
+        return ()
+    if not session.open_children:
+        return ()
+    if admission is None:
+        return None
+    blocked_runner = metered_without_a_budget(repo_root, admission)
+    if blocked_runner is None:
+        return None
+    return (
+        RoutedOutcome(
+            session.root_issue,
+            "seed-blocked",
+            f"not provisioning lanes for the {blocked_runner!r} runner: "
+            "no grant with a token budget covers this session",
+        ),
+    )
+
+
+def seed_lanes(
+    repo_root: Path,
+    session: SessionState,
+    *,
+    skip: frozenset[str] = frozenset(),
+    admission: policy.SpendStatus | None = None,
+) -> tuple[RoutedOutcome, ...]:
+    """Provision the root's child worktrees when the pass has nothing to dispatch.
+
+    Without this, ``loop supervise <root>`` cannot start work at all. ``ready_lanes``
+    returns only lanes at phase ``build``, a bead reaches ``build`` only by acquiring a
+    worktree binding, and the code that provisions one — ``loop._ensure_child_worktrees``,
+    reached from the root's decompose->build advance — sits on no supervise path. So a
+    cold root reported "no ready lanes and nothing to land" and exited while dozens of
+    dependency-unblocked children sat at ``intake``, and three handovers documented a
+    command that dispatched nothing (basicly-t73d).
+
+    Delegated to ``loop.run_until_blocked`` on the root rather than reimplemented, so the
+    decompose checkpoint, the worktree cap and the ready-set filter keep their single
+    definition — and an L1 grant covers that checkpoint precisely so this needs no human.
+
+    Runs only when there is genuinely nothing to dispatch: with lanes already in flight,
+    re-advancing the root would provision past what the cap intends. Termination is why
+    the route depends on progress — a root that cannot seed returns a non-retriable
+    outcome, so the pass says why and stops rather than spinning.
+
+    *admission* short-circuits the whole step when the dispatch it would feed cannot
+    start anyway. Provisioning is not cheap — a ``uv sync`` and an ``npm install`` per
+    lane — so seeding five worktrees and then refusing the dispatch for want of a budget
+    wastes minutes on a pass that was never going to run (basicly-kkux).
+    """
+    declined = _seeding_declined(repo_root, session, skip=skip, admission=admission)
+    if declined is not None:
+        return declined
+    try:
+        steps = loop.run_until_blocked(repo_root, session.root_issue)
+    except (RuntimeError, OSError, ValueError) as exc:
+        return (RoutedOutcome(session.root_issue, "error", f"seeding the root failed: {exc}"),)
+    final = steps[-1] if steps else None
+    if final is None:
+        return ()
+    if any(step.progressed for step in steps):
+        return (RoutedOutcome(session.root_issue, "seeded", final.detail),)
+    return (
+        RoutedOutcome(
+            session.root_issue,
+            "seed-blocked",
+            f"no lane could be provisioned from {len(session.open_children)} open "
+            f"child(ren) - {final.detail}",
+        ),
     )
 
 

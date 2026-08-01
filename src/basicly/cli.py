@@ -2960,6 +2960,12 @@ def _cmd_loop_supervise(args: argparse.Namespace) -> int:
             # into `routed` below so a pass that only repaired still counts as
             # progress and re-derives instead of reporting itself blocked.
             repaired = supervise.repair_stale_bindings(repo_root, state)
+            # Then provision lanes if the pass still has nothing to dispatch
+            # (basicly-t73d). After the repair, so a cleared binding is re-provisioned
+            # in the same pass rather than the next one; before dispatch, because the
+            # whole point is that `loop supervise <root>` on a cold root used to report
+            # "nothing to land" while its children sat at intake.
+            repaired += supervise.seed_lanes(repo_root, state, skip=carried, admission=admission)
             outcomes = supervise.dispatch_lanes(
                 repo_root,
                 state,
