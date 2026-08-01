@@ -143,6 +143,35 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   declined from a directory with no map while reachable by absolute path
   (`basicly-wbsz.2`).
 
+- **The tier injection kit installs itself**, from `.basicly/core/kit/install_hook.py`
+  and the new `tier-injection` skill — the deliberate opt-in the kit needed, still
+  with no basicly import, nothing on `PATH` and no third-party package. Default
+  scope is the repository's own `.claude/settings.json`; `--user` is the explicit
+  opt-in to every repository on the machine, and `--dry-run` prints what it would
+  write. The user-level path reads `CLAUDE_CONFIG_DIR` rather than guessing a
+  location per platform.
+
+  **It is asymmetric by host and says so.** Claude Code gets a `PreToolUse` hook on
+  the `Agent` tool. Copilot gets **nothing**, plus the reason: on CLI 1.0.77 there is
+  no hook surface that fires for a spawn — no `hooks` directory under `~/.copilot`,
+  no hook key in its settings, no hook option in `--help`, and a repo-level
+  `.github/hooks` hook never fired across three earlier probes. Reporting success
+  for a hook that can never fire would be worse than declining, so a run that
+  installed nothing exits non-zero.
+
+  Re-running converges rather than appending, matching an existing entry by the
+  script it runs, so a moved interpreter replaces its own stale entry instead of
+  racing it. Hooks the consumer wrote are untouched and unrelated settings keys
+  survive. A `settings.json` that exists but cannot be parsed is **refused, never
+  overwritten** — it is the consumer's file.
+
+  Exercised against a real `basicly install` whose `.claude/settings.json` already
+  carried basicly's own managed hooks and a 25-pattern deny list: all of them
+  survived the merge, the second run reported `already installed` and changed
+  nothing, and the exact command string the installer wrote — run verbatim under
+  `env -i` — injected `haiku` for a `tier: low` agent and stayed silent for a
+  shipped agent that declares none (`basicly-wbsz.3`).
+
 - **A landed commit carries the model that produced it**, as a `Harness-Model` git
   trailer on the engine-assembled envelope, so model provenance survives a clone
   rather than living only in a local run record. The same trailer name the merge
