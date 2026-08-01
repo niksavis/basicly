@@ -377,6 +377,27 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Fan-out provisioning now picks the highest-ranked dispatchable children, and skips a
+  lane the band refuses.** `_ensure_child_worktrees` computed `loop_state.ready_ranked` —
+  documented as "ranked by `br scheduler` (highest priority first)" — and then reduced it
+  to a membership set, iterating br's dependents order instead. Because provisioning is
+  capped at `[worktree] concurrency`, that arbitrary order decided *which lanes were in
+  the pass at all*: `supervise.ready_lanes` rank-orders dispatch, but it can only order
+  the set provisioning already chose. So the ranking was computed and thrown away.
+
+  Measured on `basicly-jr0l` before the fix: the five slots went to four children with no
+  readable scope — each then counted at the 16,002,352-token unsizeable-lane assumption —
+  plus one under the floor, while five in-band, DoR-ready children of the same root were
+  never provisioned. A grant sized for the measured lanes would have funded the unmeasured
+  ones.
+
+  Provisioning also consulted no sizing at all, so an over-ceiling child took a worktree
+  that dispatch then discarded — `escalate_working_set` leaves a pending decision and
+  `ready_lanes` filters on it — spending a concurrency slot on a lane nothing runs in. An
+  **unsizeable** child is still provisioned: an unreadable scope is not a refusal
+  (`admit_working_set` sets `refused` on the ceiling alone), and dropping it here would
+  lose work rather than defer it (`basicly-jr0l.62`).
+
 - **The bound for a lane with no readable scope is a high quantile of measured lane
   actuals, not their median.** `[policy.sizing] unsized_lane_quantile` (default `0.9`)
   replaces the median, and the target is stated as an overrun rate: at most one lane in
