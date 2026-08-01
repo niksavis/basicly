@@ -3201,6 +3201,34 @@ def test_dispatch_lane_records_its_forecast_beside_its_actual(
     assert captured["forecast_source"] == "dispatch"
 
 
+def test_an_unsizeable_lane_records_the_bound_it_was_gated_on(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A lane with no readable scope still lands with a forecast half (basicly-jr0l.58).
+
+    The pass gates such a lane at the assumed bound, but its record carried no forecast
+    at all - so after a completed four-lane run ``usage forecast`` still reported "no
+    dispatch carries both a forecast and a measured actual", 17 actual with no forecast.
+    The telemetry needed to calibrate the bound was the one thing the bound's own
+    dispatches never produced.
+    """
+    codex = _codex()
+    _worker_fixture(monkeypatch, tmp_path, stdout=_codex_events(50_000))
+    captured: dict = {}
+    monkeypatch.setattr(supervise.loop, "record_run", lambda *_a, **kw: captured.update(kw))
+    # No readable scope: exactly the beads dispatch_sizing declines to size.
+    monkeypatch.setattr(supervise.decompose, "dispatch_sizing", lambda *_a: None)
+    monkeypatch.setattr(
+        supervise.decompose, "unsized_lane_tokens", lambda *_a: (16_002_352, "measured")
+    )
+
+    supervise._dispatch_lane(tmp_path, _session(_lane("epic.1")), _lane("epic.1"), codex, _sizing())
+
+    assert captured["forecast_tokens"] == 16_002_352
+    # Namespaced, so nothing can read an assumption as an estimate off a real scope.
+    assert captured["forecast_source"] == "assumed:measured"
+
+
 # --- The working-set band at dispatch (basicly-jr0l.16) ------------------------
 #
 # The D8 sizing governor refused an out-of-band decompose *plan*, so the band bound

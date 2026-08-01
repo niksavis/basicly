@@ -377,6 +377,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The bound for a lane with no readable scope is a high quantile of measured lane
+  actuals, not their median.** `[policy.sizing] unsized_lane_quantile` (default `0.9`)
+  replaces the median, and the target is stated as an overrun rate: at most one lane in
+  ten should exceed its bound.
+
+  The median was chosen when the recorded population looked bimodal — leaves apparently
+  856,182–4,079,243 tokens and lane packages 7,674,671–20,594,047 — so any high quantile
+  would have priced a leaf like a package. **More data refuted that split**: four leaf
+  lanes measured 9,418,977, 10,834,801, 11,478,450 and 11,867,602 tokens, inside the
+  supposed package band. The population is one wide spread, so the median was not the
+  centre of a tight cluster but the midpoint of an order-of-magnitude range — exceeded
+  by 8 of 17 recorded actuals (47%). A four-lane pass forecast at 16,316,972 tokens
+  spent 43,599,830 against a 21,000,000 grant (`basicly-jr0l.58`).
+
+  **An unsizeable lane now also records the bound it was gated on as its forecast**
+  (`forecast_source: assumed:<source>`, namespaced so an assumption cannot be read as an
+  estimate off a declared scope). Without it the calibration telemetry was unobtainable
+  from exactly the dispatches that needed it: after a completed four-lane run,
+  `basicly usage forecast` still reported no dispatch carrying both halves.
+
 - **A lane queued behind the concurrency cap no longer starts once the grant is
   exhausted.** Spend admission was a pass-entry verdict: `dispatch_lanes` read the
   ceiling once, before any runner started, and nothing re-checked while the pass ran.
