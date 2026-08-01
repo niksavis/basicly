@@ -963,6 +963,50 @@ class SpendStatus:
     halted: bool
     detail: str = ""
 
+    @property
+    def remaining_tokens(self) -> int | None:
+        """Budget left under this grant, or None when no ceiling applies.
+
+        The same subtraction :func:`spend_status` halts on, exposed as the quantity
+        a *forward*-looking gate needs (basicly-jr0l.22). Clamped at both ends for
+        the same reason that one is: spend is metered against what this grant
+        authorized, and pruned or lost run records must never buy extra budget.
+        """
+        if self.grant is None or self.grant.token_budget is None:
+            return None
+        under_grant = max(0, self.spent_tokens - self.grant.spent_at_issue)
+        return max(0, self.grant.token_budget - under_grant)
+
+
+def check_pass_spend(forecast_tokens: int, status: SpendStatus) -> str | None:
+    """D3 looking forward: why a pass will not fit the remainder, or None when it does.
+
+    :func:`spend_status` compares spend *already recorded* against the budget, so a
+    pass is admitted whenever the previous ones happened to fit and the overspend is
+    only noticed on the pass after the money is gone — measured on the
+    basicly-u6jq.1 proof run, where a 5000000-token ceiling admitted a pass that
+    spent 46026602. With concurrent lanes a single pass can spend an unbounded
+    multiple of the budget, because nothing sums what it is about to start.
+
+    This is the missing half, and it is deliberately the *only* new thing: the
+    remedy for an over-budget pass is to start nothing, never to interrupt a lane
+    that is already running. Cost is bounded by sizing the work, never by killing a
+    working agent — so this runs before dispatch, and in-flight lanes still land
+    through the routing layer untouched.
+
+    Returns None when there is no ceiling to enforce, which is the ungranted and L1
+    case that :attr:`SpendStatus.remaining_tokens` already collapses to None.
+    """
+    remaining = status.remaining_tokens
+    if remaining is None or forecast_tokens <= remaining:
+        return None
+    level = status.grant.level if status.grant is not None else "active"
+    return (
+        f"this pass forecasts {forecast_tokens} tokens against {remaining} remaining "
+        f"under the {level} grant: re-scope the lanes into smaller packages, or "
+        "re-grant with a budget that covers them"
+    )
+
 
 def spend_status(
     repo_root: Path,

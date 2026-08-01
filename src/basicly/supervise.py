@@ -1085,6 +1085,158 @@ def escalate_working_set(
     return item
 
 
+# --- The spend ceiling at pass admission (D3 looking forward, basicly-jr0l.22) ---
+#
+# ``policy.spend_status`` compares spend *already recorded* against the grant's
+# budget, so a pass is admitted whenever the previous ones happened to fit. On the
+# basicly-u6jq.1 proof run a 5000000-token ceiling admitted a pass that spent
+# 46026602 and halted on the pass *after* the money was gone. The arithmetic was
+# right; it was simply retrospective, and with concurrent lanes one pass can spend
+# an unbounded multiple of a budget nothing checked it against.
+#
+# So the pass now sums what it is about to start and refuses when that will not fit
+# the remainder. The fix is emphatically not to interrupt a working agent: this runs
+# before anything spawns, in-flight lanes still land through the routing layer, and
+# a refusal costs no prompt assembly — the same place and the same reasoning as the
+# working-set band above and ``runner.run``'s model refusal.
+#
+# Two rules keep the sum honest, and both matter more than the total being large:
+#
+# - **A lane the band already refuses is not counted.** It will not dispatch, so it
+#   will not spend; counting it would refuse a pass over money nobody was going to
+#   spend, and the two gates would compound into a wedge.
+# - **A lane with no forecast is named, never guessed at.** Most open beads carry no
+#   ``## Scope``, so a missing forecast is the common case, not the anomaly. Its
+#   absence is carried in ``unforecast`` and stated in the message, because the
+#   honest reading of this gate is "the lanes that could be forecast do not fit",
+#   and a total presented as complete when it is partial is the failure mode
+#   basicly-jr0l.21 built the seeded/measured labelling to prevent.
+#
+# The gate admits when it cannot forecast anything at all, on the same reasoning the
+# band admits an un-estimatable lane: failing closed on a missing estimate turns a
+# spend governor into a ban on hand-filed work.
+
+
+# The queue question a forecast-refused pass asks, named once for the same reason
+# :data:`SIZING_QUESTION` is: :func:`decisions.enqueue` keys items by
+# (issue, kind, question), so a second copy of this string would leak a pending item
+# that nothing can find (basicly-jr0l.52). The numbers stay in the *detail*, which is
+# not part of the id, so a pass that keeps refusing finds the item it already queued.
+PASS_SPEND_QUESTION = (
+    "re-scope this pass or re-grant: its forecast spend exceeds the remaining budget"
+)
+
+
+@dataclass(frozen=True)
+class PassSpendAdmission:
+    """Whether the lanes a pass is about to start fit the grant's remaining budget."""
+
+    # None when nothing in the pass could be forecast at all.
+    forecast_tokens: int | None
+    # None when no ceiling applies: no grant, or an L1 grant with no budget.
+    remaining_tokens: int | None
+    # The lanes whose forecasts make up *forecast_tokens*, and the ones that had
+    # none — kept apart so the message can never imply a coverage it does not have.
+    counted: tuple[str, ...]
+    unforecast: tuple[str, ...]
+    violation: str | None
+
+    @property
+    def refused(self) -> bool:
+        """True when this pass must dispatch nothing."""
+        return self.violation is not None
+
+    @property
+    def detail(self) -> str:
+        """The violation with its forecast coverage spelled out, for the queue item."""
+        if self.violation is None:
+            return ""
+        counted = f"forecast covers {len(self.counted)} lane(s): {', '.join(self.counted)}"
+        if not self.unforecast:
+            return f"{self.violation} ({counted})"
+        return (
+            f"{self.violation} ({counted}; no forecast for "
+            f"{', '.join(self.unforecast)}, so the real total is higher)"
+        )
+
+
+def admit_pass_spend(
+    repo_root: Path,
+    working_sets: tuple[WorkingSetAdmission, ...],
+    status: policy.SpendStatus,
+    sizing: SizingConfig,
+) -> PassSpendAdmission:
+    """Judge the pass's combined forecast spend against the grant's remainder.
+
+    *working_sets* are the band admissions already computed for this pass, so the
+    forecast is built on the estimate that gates each lane rather than on a second
+    reading of the same beads.
+
+    Never raises. An unreadable history or model yields forecasts of None, which
+    reads as "nothing to compare" and admits.
+    """
+    dispatching = tuple(item for item in working_sets if not item.refused)
+    sized = tuple(item for item in dispatching if item.sizing is not None)
+    forecasts: tuple[decompose.SpendForecast, ...] = ()
+    if sized:
+        with contextlib.suppress(RuntimeError, ValueError, OSError):
+            forecasts = decompose.dispatch_spend_forecasts(
+                repo_root, tuple(item.sizing for item in sized if item.sizing is not None), sizing
+            )
+    counted: list[str] = []
+    total = 0
+    if forecasts:
+        # strict: `dispatch_spend_forecasts` returns one forecast per sizing, so a
+        # length mismatch is a bug, not a lane to skip. The empty tuple a suppressed
+        # read leaves behind is handled by not entering the loop at all.
+        for item, forecast in zip(sized, forecasts, strict=True):
+            if forecast.tokens is None:
+                continue
+            counted.append(item.issue_id)
+            total += forecast.tokens
+    unforecast = tuple(
+        item.issue_id for item in dispatching if item.issue_id not in frozenset(counted)
+    )
+    if not counted:
+        return PassSpendAdmission(None, status.remaining_tokens, (), unforecast, None)
+    return PassSpendAdmission(
+        forecast_tokens=total,
+        remaining_tokens=status.remaining_tokens,
+        counted=tuple(counted),
+        unforecast=unforecast,
+        violation=policy.check_pass_spend(total, status),
+    )
+
+
+def record_pass_refusal(
+    repo_root: Path, root_issue: str, admission: PassSpendAdmission
+) -> decisions.DecisionItem:
+    """Surface a forecast-refused pass to the human as a queue item on the root.
+
+    The same shape :func:`record_dispatch_halt` gives the retrospective halt, and
+    for the same reason: the pass would otherwise just stop dispatching and a client
+    would read it as "no ready lanes". Idempotent per (issue, kind, question), so a
+    pass that keeps refusing re-enqueues the one item rather than piling up
+    notifications — the numbers live in the *detail*, which is not part of the id.
+    """
+    return decisions.enqueue(
+        repo_root,
+        root_issue,
+        "escalation",
+        PASS_SPEND_QUESTION,
+        admission.detail,
+    )
+
+
+# The queue question a forecast-refused pass asks, named once for the same reason
+# :data:`SIZING_QUESTION` is: :func:`decisions.enqueue` keys items by
+# (issue, kind, question), so a second copy of this string would leak a pending item
+# that nothing can find (basicly-jr0l.52).
+PASS_SPEND_QUESTION = (
+    "re-scope this pass or re-grant: its forecast spend exceeds the remaining budget"
+)
+
+
 # --- Concurrent dispatch: fan ready lanes out up to the cap ------------------
 
 
@@ -1346,10 +1498,14 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
     derivation). Outcomes return in dispatch (scheduler-rank) order.
 
     Dispatch is *admitted* only while the session is inside D3's spend ceiling
-    (basicly-kjc5.23). A halted session starts nothing new — in-flight lanes
-    still land through the routing layer — and the halt is enqueued on the root
-    so the human learns that re-granting is required. *admission* lets a caller
-    that already read the status pass it in; omitting it re-reads here, so no
+    (basicly-kjc5.23), measured two ways. Backward: a session whose recorded spend
+    has reached the budget starts nothing new. Forward: a pass whose lanes are
+    together forecast to overrun what is left starts nothing new either
+    (basicly-jr0l.22) — the retrospective half alone admitted a pass that spent 9x
+    its ceiling and only noticed afterwards. Either way in-flight lanes still land
+    through the routing layer, no running agent is ever interrupted, and the refusal
+    is enqueued on the root so the human learns what is required. *admission* lets a
+    caller that already read the status pass it in; omitting it re-reads here, so no
     dispatch path can bypass the ceiling by forgetting to check.
 
     *skip* excludes lanes the caller lands without a runner (basicly-kjc5.18).
@@ -1370,6 +1526,18 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
     config = load_runner_config(repo_root)
     spec = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
     sizing = load_sizing_config(repo_root)
+
+    # Size every lane before any of them starts. The band needs this per lane and
+    # the pass-spend gate needs all of them summed, so it is read once here and
+    # handed down — the same hoist basicly-jr0l.16 made of the estimate the dispatch
+    # record already carried, extended by one level because the question is now
+    # about the pass rather than the lane.
+    working_sets = tuple(admit_working_set(repo_root, lane.issue_id, sizing) for lane in lanes)
+    pass_spend = admit_pass_spend(repo_root, working_sets, admission, sizing)
+    if pass_spend.refused:
+        record_pass_refusal(repo_root, session.root_issue, pass_spend)
+        return ()
+    banded = {item.issue_id: item for item in working_sets}
 
     # Read once for the whole pass, not per lane: every lane must be recorded
     # against the *same* ranking, or the pass ordering it explains is a blend of
@@ -1397,6 +1565,7 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
                     node=ranked.get(lane.issue_id),
                     policy=ranking.schema,
                 ),
+                working_set=banded.get(lane.issue_id),
             )
         except (RuntimeError, OSError, ValueError) as exc:
             return LaneOutcome(
@@ -1545,8 +1714,14 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
     spec: runner.RunnerSpec,
     sizing: SizingConfig,
     ordering: DispatchOrdering | None = None,
+    working_set: WorkingSetAdmission | None = None,
 ) -> LaneOutcome:
-    """Run one lane: assemble its bundle now, dispatch, record, and meter."""
+    """Run one lane: assemble its bundle now, dispatch, record, and meter.
+
+    *working_set* lets the pass hand down the band admission it already computed to
+    sum the pass forecast (basicly-jr0l.22); omitting it re-estimates here, so a
+    caller that forgets cannot dispatch an unsized lane past the band.
+    """
     record = worktree.load_session(lane.binding.name, repo_root)
     if record is None:
         return LaneOutcome(
@@ -1564,7 +1739,9 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
     # bundle rather than beside the run, because the band now *gates* the dispatch
     # (basicly-jr0l.16) — a refusal should cost no prompt assembly, for the same
     # reason ``runner.run`` resolves its model before it spawns anything.
-    admission = admit_working_set(repo_root, lane.issue_id, sizing)
+    admission = working_set
+    if admission is None:
+        admission = admit_working_set(repo_root, lane.issue_id, sizing)
     queued = escalate_working_set(repo_root, admission)
     if admission.refused:
         held = f"; held by {queued.decision_id}" if queued is not None else ""

@@ -1975,3 +1975,61 @@ def test_record_evidence_keeps_one_marker_per_phase(
     policy.record_evidence(tmp_path, "i", "build", "b.log")
     assert len(fake.comments) == 2
     assert any("phase=build" in text for text in fake.comments)
+
+
+# --- D3 looking forward: the remainder and the pass predicate (basicly-jr0l.22) ---
+
+
+def _status(budget: int | None, spent: int, *, baseline: int = 0) -> policy.SpendStatus:
+    grant = policy.Grant(level="L3", token_budget=budget, spent_at_issue=baseline)
+    return policy.SpendStatus(grant=grant, spent_tokens=spent, halted=False)
+
+
+def test_remaining_tokens_is_the_budget_less_what_this_grant_authorized() -> None:
+    """Metered against the grant's own baseline, not the session's lifetime spend."""
+    assert _status(10_000, 30_000, baseline=25_000).remaining_tokens == 5_000
+
+
+def test_remaining_tokens_never_goes_negative() -> None:
+    """An overspent grant has nothing left, not a negative allowance to compare against."""
+    assert _status(10_000, 12_000).remaining_tokens == 0
+
+
+def test_remaining_tokens_ignores_spend_below_the_grant_baseline() -> None:
+    """Pruned or lost run records must never buy extra budget.
+
+    The same clamp :func:`spend_status` applies: a total that has dropped below the
+    baseline reads as zero spent under this grant, not as a credit.
+    """
+    assert _status(10_000, 3_000, baseline=8_000).remaining_tokens == 10_000
+
+
+def test_remaining_tokens_is_none_without_a_ceiling() -> None:
+    """No grant and an L1 grant with no budget both mean there is nothing to enforce."""
+    ungranted = policy.SpendStatus(grant=None, spent_tokens=5_000, halted=False)
+    assert ungranted.remaining_tokens is None
+    assert _status(None, 5_000).remaining_tokens is None
+
+
+def test_check_pass_spend_refuses_a_forecast_over_the_remainder() -> None:
+    """Both numbers an operator has to act on travel in the message."""
+    violation = policy.check_pass_spend(8_000, _status(10_000, 5_000))
+
+    assert violation is not None
+    assert "8000" in violation
+    assert "5000" in violation
+
+
+def test_check_pass_spend_admits_a_forecast_that_exactly_fits() -> None:
+    """The boundary is inclusive: spending the last token of a budget is authorized.
+
+    Without this the gate would refuse a pass it has the money for, and the control
+    that a refuse-everything implementation must fail.
+    """
+    assert policy.check_pass_spend(5_000, _status(10_000, 5_000)) is None
+
+
+def test_check_pass_spend_admits_when_no_ceiling_applies() -> None:
+    """An ungranted session is already human-driven; there is no budget to overrun."""
+    ungranted = policy.SpendStatus(grant=None, spent_tokens=0, halted=False)
+    assert policy.check_pass_spend(10_000_000, ungranted) is None

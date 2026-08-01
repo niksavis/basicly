@@ -694,16 +694,20 @@ def forecast_spend(
     )
 
 
-def spend_forecasts(
+def _class_forecasts(
     repo_root: Path,
-    children: tuple[ChildSpec, ...],
-    estimates: tuple[CostEstimate, ...],
+    pairs: tuple[tuple[str, CostEstimate], ...],
     sizing: SizingConfig,
 ) -> tuple[SpendForecast, ...]:
-    """Forecast each child's spend, reading the paired history and the model once.
+    """Forecast each (task class, estimate) pair, reading history and model once.
 
-    One history read for the whole plan: :func:`run_record.forecast_errors` walks the
-    tracker export, and doing that per child would re-parse it for every track.
+    One history read for the whole batch: :func:`run_record.forecast_errors` walks
+    the tracker export, and doing that per item would re-parse it for every one.
+
+    Shared by the plan-shaped caller and the dispatch-shaped one so one package
+    cannot be forecast two different ways depending on which gate is asking
+    (basicly-jr0l.22) — the same single-estimator rule :func:`dispatch_sizing`
+    already keeps for the working set.
     """
     report = run_record.forecast_errors(repo_root)
     model = forecast_model(repo_root)
@@ -713,12 +717,39 @@ def spend_forecasts(
             run_record.calibrate_spend(
                 report,
                 model=model,
-                task_class=spec.type,
+                task_class=task_class,
                 min_samples=sizing.calibration_min_samples,
                 window=sizing.calibration_window,
             ),
         )
-        for spec, estimate in zip(children, estimates, strict=True)
+        for task_class, estimate in pairs
+    )
+
+
+def spend_forecasts(
+    repo_root: Path,
+    children: tuple[ChildSpec, ...],
+    estimates: tuple[CostEstimate, ...],
+    sizing: SizingConfig,
+) -> tuple[SpendForecast, ...]:
+    """Forecast each planned child's spend (the decompose-time shape)."""
+    pairs = tuple((spec.type, estimate) for spec, estimate in zip(children, estimates, strict=True))
+    return _class_forecasts(repo_root, pairs, sizing)
+
+
+def dispatch_spend_forecasts(
+    repo_root: Path,
+    sizings: tuple[DispatchSizing, ...],
+    sizing: SizingConfig,
+) -> tuple[SpendForecast, ...]:
+    """Forecast each already-sized lane's spend (the dispatch-time shape).
+
+    A :class:`DispatchSizing` already carries the two inputs a forecast needs, so a
+    lane about to be dispatched is forecast from the very estimate that gates it
+    rather than from a second one computed here (basicly-jr0l.22).
+    """
+    return _class_forecasts(
+        repo_root, tuple((item.task_class, item.estimate) for item in sizings), sizing
     )
 
 
