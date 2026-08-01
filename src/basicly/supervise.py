@@ -57,7 +57,7 @@ import subprocess
 import threading
 import time
 from collections.abc import Callable, Iterable
-from concurrent.futures import ThreadPoolExecutor, wait
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -1357,6 +1357,38 @@ class LaneOutcome:
     # deterministic refusal cannot be fixed by re-running it, so it must route to
     # the queue rather than burn the bounded dispatch retries.
     refused: bool = False
+    # Which model actually did the work, and whether that is the one asked for
+    # (basicly-e5a6). "via claude" names the *adapter*, which says nothing about the
+    # tier — and tier resolution is the whole point of the models map, so a run that
+    # silently resolved to a cheaper or dearer model than intended read identically to
+    # a correct one. Requested tier and resolved id are knowable before the run;
+    # `observed` and `honoured` only after it, so they are separate fields rather than
+    # one summary.
+    model: str | None = None
+    model_tier: str | None = None
+    model_source: str | None = None
+    observed_models: tuple[str, ...] = ()
+    tier_honoured: bool | None = None
+
+    @property
+    def model_note(self) -> str:
+        """One compact clause naming the model identity, or "" when nothing is known."""
+        parts: list[str] = []
+        if self.model_tier:
+            asked = f"tier {self.model_tier}"
+            if self.model_source:
+                asked += f" via {self.model_source}"
+            parts.append(asked)
+        if self.model:
+            parts.append(f"model {self.model}")
+        observed = tuple(m for m in self.observed_models if m)
+        # Reported when it disagrees with the pin, and when nothing was pinned at all —
+        # the second case is how a dispatch with no declared tier still says what ran.
+        if observed and (self.model is None or set(observed) != {self.model}):
+            parts.append(f"observed {', '.join(observed)}")
+        if self.tier_honoured is False:
+            parts.append("TIER NOT HONOURED")
+        return "; ".join(parts)
 
 
 def ready_lanes(
@@ -1664,7 +1696,13 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
     ranked = ranking.by_issue()
     dispatch_ranks = {lane.issue_id: position for position, lane in enumerate(lanes, start=1)}
 
+    # Stamped inside the worker rather than at submit time: with more ready lanes than
+    # the cap, the extras sit in the pool queue, and counting that wait as run time
+    # would report an elapsed figure for a lane that has not started (basicly-vu6u).
+    started: dict[str, float] = {}
+
     def guarded(lane: AdoptedLane) -> LaneOutcome:
+        started[lane.issue_id] = time.monotonic()
         # Per-lane containment: a transient br failure (e.g. a locked tracker
         # DB under this very concurrency) or an OS hiccup in one lane must not
         # discard every other lane's outcome at collection time.
@@ -1697,16 +1735,53 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
     pool = ThreadPoolExecutor(max_workers=max(1, cap))
     try:
         futures = [pool.submit(guarded, lane) for lane in lanes]
+        by_future = dict(zip(futures, lanes, strict=True))
         pending = set(futures)
         while pending:
-            _done, pending = wait(pending, timeout=HEARTBEAT_INTERVAL_S if beat else None)
+            timeout = HEARTBEAT_INTERVAL_S if (beat or report) else None
+            _done, pending = wait(pending, timeout=timeout)
             if pending and beat is not None:
                 beat()
+            if pending and report is not None:
+                # A lane emits nothing between adoption and completion, so a whole
+                # multi-minute run looked identical to a wedge (basicly-vu6u). Measured:
+                # the log stood still for 519.6s on a healthy lane, and `pgrep` was the
+                # only way to tell. Reported from the heartbeat that already runs here.
+                report(f"running:  {_inflight_note(started, by_future, pending)}")
     except BaseException:
         pool.shutdown(wait=False, cancel_futures=True)
         raise
     pool.shutdown(wait=True)
     return tuple(future.result() for future in futures)
+
+
+def _inflight_note(
+    started: dict[str, float],
+    by_future: dict[Future[LaneOutcome], AdoptedLane],
+    pending: set[Future[LaneOutcome]],
+) -> str:
+    """One line naming each still-running lane and how long it has been running.
+
+    Elapsed only, deliberately. Tokens-so-far would be the other half an operator wants,
+    but the runner drains its pipes only after the process is down (basicly-kjc5.15, and
+    see :func:`lane_activity`), so there is nothing incremental to read without
+    restructuring the dispatch — tracked separately rather than half-done here.
+
+    A monotonic clock, because this is a duration; a wall clock can step backwards and
+    report a lane as having run for a negative time.
+    """
+    now = time.monotonic()
+    running = sorted(
+        (lane.issue_id, now - started[lane.issue_id])
+        for future, lane in by_future.items()
+        if future in pending and lane.issue_id in started
+    )
+    if not running:
+        # Every pending lane is still queued behind the cap, which is itself worth
+        # saying: the operator would otherwise read the silence as a stall.
+        queued = len(pending)
+        return f"{queued} lane(s) queued behind the concurrency cap, none started yet"
+    return ", ".join(f"{issue_id} {elapsed:.0f}s" for issue_id, elapsed in running)
 
 
 def lane_activity(cwd: Path) -> str:
@@ -1979,6 +2054,10 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
         detail = f"finished but crossed the context ceiling; remainder in {followup_id}"
     else:
         detail = "finished; ready to land"
+    # Read off the result rather than re-resolved, for the same reason the run record
+    # does it that way (basicly-kjc5.59): a second read of the map could answer
+    # differently from the dispatch that actually happened.
+    resolution = result.model_resolution
     return LaneOutcome(
         issue_id=lane.issue_id,
         runner_name=spec.name,
@@ -1988,6 +2067,11 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
         overrun=overrun,
         followup_id=followup_id,
         detail=detail,
+        model=resolution.model if resolution is not None else spec.model,
+        model_tier=resolution.tier if resolution is not None else None,
+        model_source=resolution.source if resolution is not None else None,
+        observed_models=runner.observed_models(spec, result),
+        tier_honoured=resolution.honoured if resolution is not None else None,
     )
 
 

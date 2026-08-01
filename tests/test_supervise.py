@@ -3956,3 +3956,104 @@ def test_seeding_does_not_provision_for_a_dispatch_that_cannot_start(
     assert [r.route for r in routed] == ["seed-blocked"]
     assert not supervise.should_continue(routed)
     assert "no grant with a token budget" in routed[0].detail
+
+
+# --- Dispatch observability (basicly-e5a6, basicly-vu6u) ------------------------
+
+
+def test_the_dispatch_note_names_the_tier_and_the_resolved_model() -> None:
+    """Naming the adapter says nothing about which model actually ran."""
+    outcome = supervise.LaneOutcome(
+        issue_id="epic.1",
+        runner_name="claude",
+        result=None,
+        needs_fact=None,
+        occupancy=None,
+        overrun=False,
+        followup_id=None,
+        detail="finished",
+        model="claude-opus-5",
+        model_tier="high",
+        model_source="agent-tier",
+        observed_models=("claude-opus-5",),
+        tier_honoured=True,
+    )
+
+    note = outcome.model_note
+
+    assert "tier high" in note
+    assert "claude-opus-5" in note
+    assert "agent-tier" in note
+    assert "NOT HONOURED" not in note
+
+
+def test_the_dispatch_note_flags_a_tier_that_was_not_honoured() -> None:
+    """A silently demoted dispatch used to read exactly like a correct one."""
+    outcome = supervise.LaneOutcome(
+        issue_id="epic.1",
+        runner_name="claude",
+        result=None,
+        needs_fact=None,
+        occupancy=None,
+        overrun=False,
+        followup_id=None,
+        detail="finished",
+        model="claude-opus-5",
+        model_tier="maximum",
+        model_source="agent-tier",
+        observed_models=("claude-haiku-4-5",),
+        tier_honoured=False,
+    )
+
+    note = outcome.model_note
+
+    assert "TIER NOT HONOURED" in note
+    assert "observed claude-haiku-4-5" in note, "the disagreement itself must be visible"
+
+
+def test_a_dispatch_with_no_model_information_adds_no_note() -> None:
+    """A handoff has no model to name, and an empty bracket would be noise."""
+    outcome = supervise.LaneOutcome(
+        issue_id="epic.1",
+        runner_name="manual",
+        result=None,
+        needs_fact=None,
+        occupancy=None,
+        overrun=False,
+        followup_id=None,
+        detail="handed off",
+    )
+
+    assert outcome.model_note == ""
+
+
+def test_a_running_lane_reports_its_elapsed_time_while_it_runs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Measured: the log stood still for 519.6s on a healthy lane (basicly-vu6u).
+
+    The heartbeat that keeps the singleton lock fresh already ticks during dispatch, so
+    the progress line costs no extra machinery.
+    """
+    _patch_readiness(monkeypatch, ranked=((1, "epic.1"),))
+    monkeypatch.setattr(supervise.runner, "select_runner", lambda *_a, **_k: _MANUAL_SPEC)
+    monkeypatch.setattr(supervise.decompose, "unsized_lane_tokens", lambda *_a: (10, "measured"))
+    monkeypatch.setattr(supervise, "HEARTBEAT_INTERVAL_S", 0.01)
+
+    def slow_dispatch(_r, _s, lane, *_a, **_kw):
+        time.sleep(0.2)
+        return _outcome(lane.issue_id)
+
+    monkeypatch.setattr(supervise, "_dispatch_lane", slow_dispatch)
+    lines: list[str] = []
+
+    supervise.dispatch_lanes(
+        tmp_path,
+        _session(_lane("epic.1")),
+        admission=_granted("L2", 5_000, 0),
+        report=lines.append,
+    )
+
+    running = [line for line in lines if line.startswith("running:")]
+    assert running, "a lane in flight must report before it finishes, not only after"
+    assert "epic.1" in running[0]

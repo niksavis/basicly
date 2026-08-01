@@ -3033,8 +3033,11 @@ def _print_dispatch(
         print("dispatch: (no ready build-phase lanes)")
     for outcome in outcomes:
         occupancy = f", context {outcome.occupancy} tokens" if outcome.occupancy is not None else ""
+        # The adapter name alone said nothing about which model ran (basicly-e5a6).
+        note = f" [{outcome.model_note}]" if outcome.model_note else ""
         print(
-            f"dispatch: {outcome.issue_id} via {outcome.runner_name} - {outcome.detail}{occupancy}"
+            f"dispatch: {outcome.issue_id} via {outcome.runner_name}{note} - "
+            f"{outcome.detail}{occupancy}"
         )
 
 
