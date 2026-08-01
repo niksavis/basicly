@@ -19,6 +19,7 @@ Two things block an advance, and they answer different questions:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -663,27 +664,80 @@ def approve_checkpoint_guarded(  # noqa: PLR0913 — mirrors the CLI surface
     """
     if name not in CHECKPOINTS:
         raise ValueError(f"unknown checkpoint {name!r}; expected one of {list(CHECKPOINTS)}")
+    result, by = _checkpoint_approval(
+        repo_root,
+        issue_id,
+        name,
+        interactive=interactive,
+        confirm=confirm,
+        grant_root=grant_root or issue_id,
+    )
+    if result.status == "approved":
+        _settle_checkpoint_queue(repo_root, issue_id, name, by=by)
+    return result
+
+
+def _checkpoint_approval(  # noqa: PLR0913 — the guarded surface it was split out of
+    repo_root: Path,
+    issue_id: str,
+    name: str,
+    *,
+    interactive: bool,
+    confirm: str | None,
+    grant_root: str,
+) -> tuple[ApprovalResult, str]:
+    """:func:`approve_checkpoint_guarded`'s decision, plus who to attribute it to.
+
+    Split out so the queue settlement below it has exactly one site: an approval that
+    reached the tracker without clearing the ask behind it is the defect
+    (basicly-jr0l.24), and a per-path settle call is how three of four paths came to
+    miss it. The attribution travels back with the result because only the path that
+    approved knows it — a second read could not tell a human's code from a grant's.
+    """
     if checkpoint_approved(repo_root, issue_id, name):
-        return ApprovalResult("approved", detail="already approved")
+        # Reconciliation, not approval: this path did not decide anything, so it must
+        # not claim a human or a grant did. It is the path a stale item arrives on.
+        return ApprovalResult("approved", detail="already approved"), _RECONCILED_BY
     if interactive:
         approve_checkpoint(repo_root, issue_id, name)
         record_checkpoint_wait(repo_root, issue_id, name, by=HUMAN_BY, delegated=False)
-        return ApprovalResult("approved")
+        return ApprovalResult("approved"), HUMAN_BY
     if confirm is None:
-        delegated, declined = _grant_approval(repo_root, issue_id, name, grant_root or issue_id)
+        delegated, declined, granted_by = _grant_approval(repo_root, issue_id, name, grant_root)
         if delegated is not None:
-            return delegated
+            return delegated, granted_by
         record_wait_request(repo_root, issue_id, name)
-        return ApprovalResult(
-            "challenge",
-            code=_issue_confirm_code(repo_root, issue_id, name),
-            detail=declined,
+        return (
+            ApprovalResult(
+                "challenge",
+                code=_issue_confirm_code(repo_root, issue_id, name),
+                detail=declined,
+            ),
+            "",
         )
     if _consume_confirm_code(repo_root, issue_id, name, confirm):
         approve_checkpoint(repo_root, issue_id, name)
         record_checkpoint_wait(repo_root, issue_id, name, by=HUMAN_BY, delegated=False)
-        return ApprovalResult("approved")
-    return ApprovalResult("rejected", detail="invalid or expired confirm code")
+        return ApprovalResult("approved"), HUMAN_BY
+    return ApprovalResult("rejected", detail="invalid or expired confirm code"), ""
+
+
+def _settle_checkpoint_queue(repo_root: Path, issue_id: str, name: str, *, by: str) -> None:
+    """Answer the decision-queue ask behind an approved checkpoint (basicly-jr0l.24).
+
+    Imported here rather than at module scope because ``decisions`` imports *this*
+    module for its wait recording, so a top-level import would make the pair a cycle.
+    One deliberate exception at one call site reads better than a permanent cycle
+    between two layers that are otherwise ordered.
+
+    Best-effort: the approval is already recorded and durable, so a tracker that will
+    not answer costs a tidy queue, never the approval. Raising here would turn a
+    cosmetic follow-up into a failed checkpoint.
+    """
+    from . import decisions  # noqa: PLC0415 — see the cycle note above
+
+    with contextlib.suppress(RuntimeError, OSError, ValueError):
+        decisions.settle_checkpoint(repo_root, issue_id, name, by=by)
 
 
 # --- Autonomy grants: session-scoped ledger (basicly-kjc5.3, design D3) ------
@@ -915,7 +969,7 @@ def _grant_declined(grant: Grant, name: str, reasons: Sequence[str], *, scope: s
 
 def _grant_approval(
     repo_root: Path, issue_id: str, name: str, root_issue: str
-) -> tuple[ApprovalResult | None, str]:
+) -> tuple[ApprovalResult | None, str, str]:
     """A delegated approval under the root's grant, or None plus why it declined.
 
     None (no grant, or the level does not cover *name*) drops to the normal
@@ -932,22 +986,26 @@ def _grant_approval(
     """
     grant = active_grant(repo_root, root_issue)
     if grant is None:
-        return None, ""
+        return None, "", ""
     if name not in GRANT_COVERAGE.get(grant.level, ()):
-        return None, f"the active {grant.level} grant on {root_issue} does not delegate {name}"
+        return None, f"the active {grant.level} grant on {root_issue} does not delegate {name}", ""
     session_ids = _session_issue_ids(repo_root, root_issue)
     if issue_id not in session_ids:
         # grant_root is caller-supplied: a grant must never authorize approvals
         # outside its own session (and the preconditions below are keyed on the
         # session, so approving a foreign issue would also check the wrong one).
-        return None, (
-            f"the active {grant.level} grant on {root_issue} does not cover {issue_id}: "
-            "it is not in that session's issue tree"
+        return (
+            None,
+            (
+                f"the active {grant.level} grant on {root_issue} does not cover {issue_id}: "
+                "it is not in that session's issue tree"
+            ),
+            "",
         )
     config = load_policy_config(repo_root)
     spend = spend_status(repo_root, root_issue, grant=grant, ids=session_ids)
     if spend.halted:
-        return None, _grant_declined(grant, name, (spend.detail,))
+        return None, _grant_declined(grant, name, (spend.detail,)), ""
     if name == "ship":
         # Gates are checked on the node being shipped, not on the grant root
         # (basicly-kjc5.39): an epic's verify gate cannot exist until the epic
@@ -961,11 +1019,15 @@ def _grant_approval(
             # Named, because those preconditions are session-wide: the issue a
             # violation points at is usually a sibling of the one being shipped,
             # and finding that by hand cost several tool calls (basicly-5ltn).
-            return None, _grant_declined(
-                grant,
-                name,
-                violations,
-                scope=f"lights-out preconditions across session {root_issue}",
+            return (
+                None,
+                _grant_declined(
+                    grant,
+                    name,
+                    violations,
+                    scope=f"lights-out preconditions across session {root_issue}",
+                ),
+                "",
             )
     marker = f"{_checkpoint_marker(name)} under grant {grant.level}"
     _run_br(repo_root, ["comments", "add", issue_id, marker])
@@ -974,7 +1036,11 @@ def _grant_approval(
     # when the grant only became able to approve later (a spend halt lifted by a
     # re-grant), and that wait is the harness's, not the human's.
     record_checkpoint_wait(repo_root, issue_id, name, by=f"grant:{grant.level}", delegated=True)
-    return ApprovalResult("approved", detail=f"delegated under {grant.level} grant"), ""
+    return (
+        ApprovalResult("approved", detail=f"delegated under {grant.level} grant"),
+        "",
+        f"grant:{grant.level}",
+    )
 
 
 # --- Session accounting for grants: spend, needs-input, preconditions --------
@@ -1372,6 +1438,12 @@ WAIT_KINDS = ("checkpoint", "decision")
 # Attribution recorded when a human answered. Matches ``loop answer``'s default
 # so one token means one thing across both surfaces.
 HUMAN_BY = "human"
+
+# Attribution for a queue item the engine tidied rather than decided — an ask left
+# open behind a checkpoint that was already approved (basicly-jr0l.24). Deliberately
+# ``decisions.ENGINE_BY``'s value: the queue's attribution vocabulary is one set, and
+# a settlement nobody made a judgment for must not read as a human's or a grant's.
+_RECONCILED_BY = "engine"
 
 
 @dataclass(frozen=True)

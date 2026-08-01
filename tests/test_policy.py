@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import policy, rubrics, run_record, verify
+from basicly import decisions, policy, rubrics, run_record, verify
 from basicly.config import (
     ENGINE_GATE_PROVIDERS,
     LOOP_PHASES,
@@ -105,7 +105,16 @@ CONFIG = PolicyConfig(required_gates=("verify",), max_rework=2)
 
 
 def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
+    """Route both modules' tracker access at *fake*, sharing one comment list.
+
+    ``decisions`` as well as ``policy``, because approving a checkpoint now settles the
+    queue item behind it (basicly-jr0l.24) through ``decisions``' own ``_run_br``.
+    Leaving that one unpatched spawned a real br per approval test, and the settle's
+    best-effort suppression swallowed the failure — so the new behaviour would have been
+    silently inert in every test that exercised it.
+    """
     monkeypatch.setattr(policy, "_run_br", fake)
+    monkeypatch.setattr(decisions, "_run_br", fake)
 
 
 def test_definition_of_ready(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -634,6 +643,115 @@ def test_guarded_approve_valid_confirm_records(
     assert policy.checkpoint_approved(tmp_path, "i", "ship")
 
 
+def _queued_ship_ask(repo_root: Path, issue_id: str = "i") -> decisions.DecisionItem:
+    """The supervisor's ship-checkpoint ask, as `_route_landed_lane` enqueues it."""
+    return decisions.enqueue(
+        repo_root,
+        issue_id,
+        "checkpoint",
+        f"approve the ship checkpoint for {issue_id}",
+    )
+
+
+def _decision_waits(repo_root: Path, issue_id: str, decision_id: str) -> list[policy.WaitEvent]:
+    return [
+        event for event in policy.wait_events(repo_root, issue_id) if event.wait_id == decision_id
+    ]
+
+
+def test_a_confirm_code_approval_settles_the_queued_checkpoint_ask(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The defect: a bead shipped and closed with its own approval ask still pending.
+
+    `approve_checkpoint_guarded` recorded the marker and nothing answered the queue item
+    behind it, so only `loop answer` ever cleared one — and the supervisor queues the ask
+    on every non-delegated ship. Five such items sat on main after the proof run
+    (basicly-jr0l.24).
+    """
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _pin_code(monkeypatch, "abc123")
+    item = _queued_ship_ask(tmp_path)
+    policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
+
+    ok = policy.approve_checkpoint_guarded(
+        tmp_path, "i", "ship", interactive=False, confirm="abc123"
+    )
+
+    assert ok.status == "approved"
+    settled = decisions.get(tmp_path, item.decision_id)
+    assert settled is not None and not settled.pending, "the ask must not outlive its approval"
+    assert settled.answered_by == policy.HUMAN_BY, "a relayed code is a human's decision"
+
+
+def test_a_settled_ask_closes_its_wait_interval_exactly_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The wait meter must not double-count: the ask and the checkpoint are two clocks.
+
+    The item's interval is keyed on its decision id and the checkpoint's on its own wait
+    id, so both close once. A second approval attempt is idempotent and must not record
+    a second close for either.
+    """
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _pin_code(monkeypatch, "abc123")
+    item = _queued_ship_ask(tmp_path)
+    policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
+    policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False, confirm="abc123")
+
+    again = policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=True)
+
+    assert again.detail == "already approved"
+    closes = _decision_waits(tmp_path, "i", item.decision_id)
+    assert len(closes) == 1, f"the ask's interval closed {len(closes)} times, not once"
+
+
+def test_an_already_approved_checkpoint_settles_a_stale_ask_as_the_engine(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The path every historical stale item arrives on, and it decided nothing.
+
+    Attributing this reconciliation to a human or a grant would put a judgment nobody
+    made into the audit trail, so it is charged to the engine.
+    """
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    policy.approve_checkpoint(tmp_path, "i", "ship")
+    item = _queued_ship_ask(tmp_path)
+
+    result = policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
+
+    assert result.detail == "already approved"
+    settled = decisions.get(tmp_path, item.decision_id)
+    assert settled is not None and not settled.pending
+    assert settled.answered_by == decisions.ENGINE_BY
+
+
+def test_a_pending_ask_for_another_checkpoint_survives_this_approval(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Settling is scoped to the checkpoint approved, not to the bead.
+
+    Matching on kind alone would clear a classify ask when ship was approved, turning a
+    tidy-up into a silent loss of a real question.
+    """
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    classify_ask = decisions.enqueue(
+        tmp_path, "i", "checkpoint", "approve the classify checkpoint for i"
+    )
+    ship_ask = _queued_ship_ask(tmp_path)
+
+    policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=True)
+
+    still_open = decisions.get(tmp_path, classify_ask.decision_id)
+    assert still_open is not None and still_open.pending, "the classify ask was not approved"
+    settled = decisions.get(tmp_path, ship_ask.decision_id)
+    assert settled is not None and not settled.pending
+
+
 def test_guarded_approve_wrong_code_rejected(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -958,6 +1076,29 @@ def test_l3_ship_delegates_only_when_preconditions_hold(
     result = policy.approve_checkpoint_guarded(tmp_path, "root", "ship", interactive=False)
     assert result.status == "approved"
     assert "delegated under L3 grant" in result.detail
+
+
+def test_a_grant_delegated_ship_settles_the_ask_attributed_to_the_grant(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A delegated approval must clear the ask too, and say the grant did it.
+
+    The supervisor queues the ship ask whenever a grant declines, and a later re-grant
+    can approve the same checkpoint — so this path settles items as well, and charging
+    them to the human column would overstate the very wait a grant exists to remove
+    (basicly-jr0l.24, D11).
+    """
+    fake = _FakeBr(gates=_VERIFY_GREEN)
+    _install(monkeypatch, fake)
+    fake.comments.append("[harness-policy] grant level=L3 budget=1000000")
+    item = _queued_ship_ask(tmp_path, "root")
+
+    result = policy.approve_checkpoint_guarded(tmp_path, "root", "ship", interactive=False)
+
+    assert result.status == "approved"
+    settled = decisions.get(tmp_path, item.decision_id)
+    assert settled is not None and not settled.pending
+    assert settled.answered_by == "grant:L3"
 
 
 def test_l3_ship_refuses_on_any_wrinkle(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

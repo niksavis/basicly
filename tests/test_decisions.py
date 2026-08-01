@@ -152,6 +152,84 @@ def test_pending_scans_the_session_tree(monkeypatch: pytest.MonkeyPatch, tmp_pat
     assert [i.decision_id for i in items] == [kept.decision_id]
 
 
+def _write_export(repo_root: Path, statuses: dict[str, str]) -> None:
+    """The committed JSONL export `closed_ids` reads, with one record per id."""
+    beads = repo_root / ".beads"
+    beads.mkdir(parents=True, exist_ok=True)
+    (beads / "issues.jsonl").write_text(
+        "\n".join(json.dumps({"id": i, "status": s}) for i, s in statuses.items()) + "\n",
+        encoding="utf-8",
+    )
+
+
+def test_pending_drops_items_on_closed_beads(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A question about finished work is not outstanding human work.
+
+    Four shipped-and-closed beads still reported a pending ship ask after the
+    2026-08-01 proof run. It was not cosmetic: `supervise.delegate_decisions` hands
+    every pending item to the decider, so the queue spent tokens deciding closed beads
+    (basicly-jr0l.24).
+    """
+    child = {"id": "epic.1", "dependency_type": "parent-child"}
+    fake = _FakeBr(records={"epic": {"status": "open", "dependents": [child]}})
+    _install(monkeypatch, fake)
+    _no_notify(monkeypatch)
+    stale = decisions.enqueue(tmp_path, "epic.1", "checkpoint", "approve the ship checkpoint")
+    live = decisions.enqueue(tmp_path, "epic", "escalation", "widen the band?")
+
+    _write_export(tmp_path, {"epic": "open", "epic.1": "open"})
+    assert {i.decision_id for i in decisions.pending(tmp_path, "epic")} == {
+        stale.decision_id,
+        live.decision_id,
+    }, "control: while the bead is open its item is outstanding"
+
+    _write_export(tmp_path, {"epic": "open", "epic.1": "closed"})
+    assert [i.decision_id for i in decisions.pending(tmp_path, "epic")] == [live.decision_id]
+
+
+def test_pending_reports_everything_when_the_export_is_unreadable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No export means no status to filter on, so the queue must not hide itself.
+
+    Degrading to the pre-fix behaviour is the safe direction: showing a settled question
+    wastes a glance, hiding a live one loses a decision.
+    """
+    fake = _FakeBr(records={"epic": {"status": "open", "dependents": []}})
+    _install(monkeypatch, fake)
+    _no_notify(monkeypatch)
+    item = decisions.enqueue(tmp_path, "epic", "escalation", "widen the band?")
+
+    assert decisions.closed_ids(tmp_path) == frozenset()
+    assert [i.decision_id for i in decisions.pending(tmp_path, "epic")] == [item.decision_id]
+
+
+def test_settle_checkpoint_answers_only_the_named_checkpoints_asks(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Keyed on the checkpoint name in the question, not on kind alone.
+
+    Matching kind alone would clear a classify ask when ship was approved; matching a
+    reconstructed question string would stop clearing the moment the ask is reworded,
+    which is the defect reintroduced one refactor later.
+    """
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _no_notify(monkeypatch)
+    ship = decisions.enqueue(tmp_path, "epic", "checkpoint", "approve the ship checkpoint for epic")
+    classify = decisions.enqueue(tmp_path, "epic", "checkpoint", "approve the classify checkpoint")
+    other = decisions.enqueue(tmp_path, "epic", "escalation", "ship it or not?")
+
+    settled = decisions.settle_checkpoint(tmp_path, "epic", "ship", by="human")
+
+    assert [i.decision_id for i in settled] == [ship.decision_id]
+    for untouched in (classify, other):
+        item = decisions.get(tmp_path, untouched.decision_id)
+        assert item is not None and item.pending
+
+
 def test_garbled_markers_never_wedge_the_queue(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
