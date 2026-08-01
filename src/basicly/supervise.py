@@ -1714,6 +1714,23 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
     started: dict[str, float] = {}
 
     def guarded(lane: AdoptedLane) -> LaneOutcome:
+        # Re-read the ceiling at the moment this lane actually starts, not when the
+        # pass was admitted. Lanes past the concurrency cap wait in the pool queue,
+        # and the spend that exhausted the grant can accrue while they wait — the one
+        # pass-entry verdict could not see it (basicly-jr0l.59). A lane already running
+        # is never interrupted; this only declines to *start* one.
+        live = policy.spend_status(repo_root, session.root_issue)
+        if live.halted:
+            return LaneOutcome(
+                issue_id=lane.issue_id,
+                runner_name=spec.name,
+                result=None,
+                needs_fact=None,
+                occupancy=None,
+                overrun=False,
+                followup_id=None,
+                detail="not started: the grant was exhausted while this lane waited for a slot",
+            )
         started[lane.issue_id] = time.monotonic()
         # Per-lane containment: a transient br failure (e.g. a locked tracker
         # DB under this very concurrency) or an OS hiccup in one lane must not

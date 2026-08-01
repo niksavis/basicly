@@ -377,6 +377,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A lane queued behind the concurrency cap no longer starts once the grant is
+  exhausted.** Spend admission was a pass-entry verdict: `dispatch_lanes` read the
+  ceiling once, before any runner started, and nothing re-checked while the pass ran.
+  Lanes waiting for a slot were therefore cleared to run on a reading taken before any of
+  them had spent anything. The ceiling is now re-read at the moment each lane actually
+  starts, and a lane whose turn comes after the budget is gone does not start.
+
+  Measured on the first multi-lane run: a pass admitted at a 16,316,972-token forecast
+  ran to 43,599,830 against a 21,000,000 grant, and the halt printed only after the last
+  lane had exited (`basicly-jr0l.59`).
+
+  **This bounds the queued case only.** A lane already running is never interrupted —
+  cost is bounded by sizing the work, not by killing a working agent — so lanes started
+  concurrently inside one cap-sized batch are still bounded by their forecast alone.
+  Closing that gap needs in-flight token accounting, which `runner.run` cannot yet
+  provide because it drains its pipes only after the process exits (`basicly-wctc`), and
+  a forecast that is not biased low (`basicly-jr0l.58`).
+
 - **One shared path no longer collapses every child into a single serial group.**
   Grouping is the transitive closure of scope overlap, so several children that each
   declared a common `pyproject.toml`, lockfile or config manifest beside their own
