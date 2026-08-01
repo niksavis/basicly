@@ -1049,7 +1049,8 @@ off a TTY — as any tool-invoked Bash runs — the command refuses and issues a
 confirm code that a human must echo back with `--confirm`, so a subagent driving the loop
 cannot self-approve ship autonomously. When an autonomy grant _was_ consulted and declined
 — an uncovered checkpoint, an issue outside the grant's session tree, a spent token budget,
-or a ship whose lights-out preconditions do not hold — the reason rides on the challenge's
+a ceiling that cannot be metered (below), or a ship whose lights-out preconditions do not
+hold — the reason rides on the challenge's
 `detail` and is threaded through `loop advance` and the supervisor's decision queue, so an
 operator can tell _no grant_ from _a covering grant that refused_; a bare confirmation
 request made the two indistinguishable. No decision logic changed with it. This mitigates
@@ -1250,6 +1251,22 @@ cumulative cost view (`basicly-kjc5.14`). A consumer pinning `claude-json` keeps
 telemetry and an inert ceiling. Only metadata is persisted — the command is stored with the prompt argument
 elided, never the prompt body or captured output. This is the correlation foundation for
 agent attribution, model provenance, and the cross-repo fleet rollup.
+
+An estimated sample is good enough to calibrate against and **not** good enough to meter a
+grant with, so `policy.session_spend` keeps the two apart (`basicly-jr0l.35`). The chars/4
+fallback counts the captured output only — never the prompt, the system prompt, the tool
+definitions or cache writes, which is where nearly all of an agentic dispatch's tokens are —
+so it is a floor far below reality rather than the conservative over-count a ceiling needs:
+measured on a live copilot probe, 5514 bytes of stdout estimated 1378 tokens against 24210
+real input tokens, 17.6x under, and with plain-text output the captured answer was two
+characters. Counted at face value it therefore _bought_ budget. There is no honest multiplier
+to inflate it by either, so the ceiling errs the only way a ceiling may: a session that took a
+dispatch its adapter could not meter is **halted** with the reason surfaced (`spend_status`
+detail, its own decision-queue question, and the `loop preflight` verdict), and
+`remaining_tokens` reads 0 because what is left is unknown rather than free. The count of
+unmeterable dispatches is baselined on the grant marker exactly as spend is, so re-granting —
+the human seeing the reason and accepting it — clears the halt, and any adapter with no usage
+format inherits the refusal rather than a silent under-count.
 
 **12.8.1 The forecast lands on the record its actual lands on** (`basicly-jr0l.34`). A dispatch
 records its **working-set forecast, task class and forecast source** alongside the scope

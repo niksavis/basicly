@@ -704,6 +704,13 @@ class Grant:
     # this existed, which reads as the old lifetime behaviour — the strict
     # direction, so an old marker never becomes quietly unbounded.
     spent_at_issue: int = 0
+    # How many unmeasurable dispatches the session had already taken at issuance
+    # (basicly-jr0l.35). The same baseline trick as ``spent_at_issue`` and for the
+    # same reason: the halt an unmeasurable dispatch triggers must be answerable by
+    # the human re-granting, and without a baseline one estimated sample would keep
+    # every future grant on this root halted forever. Zero on an older marker, which
+    # is again the strict direction.
+    unmetered_at_issue: int = 0
 
 
 def _grant_marker(grant: Grant) -> str:
@@ -712,7 +719,31 @@ def _grant_marker(grant: Grant) -> str:
         text += f" budget={grant.token_budget}"
     if grant.spent_at_issue:
         text += f" baseline={grant.spent_at_issue}"
+    if grant.unmetered_at_issue:
+        text += f" unmetered={grant.unmetered_at_issue}"
     return text
+
+
+# The ``key=<int>`` fields a grant marker carries after its level.
+_GRANT_INT_FIELDS = ("budget", "baseline", "unmetered")
+
+
+def _grant_fields(tokens: Sequence[str]) -> dict[str, int] | None:
+    """The marker's recognized integer fields, or None when one will not parse.
+
+    A malformed value fails the whole marker rather than defaulting: a grant is
+    authority, and a number nobody can read is not one the ceiling may assume.
+    """
+    values: dict[str, int] = {}
+    for token in tokens:
+        key, _, raw = token.partition("=")
+        if key not in _GRANT_INT_FIELDS:
+            continue
+        try:
+            values[key] = int(raw)
+        except ValueError:
+            return None
+    return values
 
 
 def _parse_grant(text: str) -> Grant | None:
@@ -724,25 +755,21 @@ def _parse_grant(text: str) -> Grant | None:
     tokens = first_line[len(_GRANT_PREFIX) :].split()
     if not tokens or tokens[0] not in AUTONOMY_LEVELS:
         return None
-    budget: int | None = None
-    baseline = 0
-    for token in tokens[1:]:
-        if token.startswith("budget="):
-            try:
-                budget = int(token[len("budget=") :])
-            except ValueError:
-                return None
-        elif token.startswith("baseline="):
-            try:
-                baseline = int(token[len("baseline=") :])
-            except ValueError:
-                return None
+    fields = _grant_fields(tokens[1:])
+    if fields is None:
+        return None
+    budget = fields.get("budget")
     # Mirror _grant_refusal: an L2+ marker without a positive budget is not a
     # grant — a hand-written sloppy marker must never be *more* powerful than
     # a well-formed issued one (unmetered lights-out).
     if tokens[0] in ("L2", "L3") and not (isinstance(budget, int) and budget > 0):
         return None
-    return Grant(level=tokens[0], token_budget=budget, spent_at_issue=max(0, baseline))
+    return Grant(
+        level=tokens[0],
+        token_budget=budget,
+        spent_at_issue=max(0, fields.get("baseline", 0)),
+        unmetered_at_issue=max(0, fields.get("unmetered", 0)),
+    )
 
 
 def active_grant(repo_root: Path, root_issue: str) -> Grant | None:
@@ -831,11 +858,17 @@ def _write_grant(repo_root: Path, root_issue: str, level: str, token_budget: int
     later would otherwise bake in a stale figure and silently credit whatever the
     session spent in between (basicly-jr0l.17). It also keeps the challenge path
     free of a tracker read it has no reason to make.
+
+    Both baselines come from the one meter read, so the count of unmeasurable
+    dispatches is stamped at exactly the moment its token total is (basicly-jr0l.35)
+    — two reads could disagree if a lane landed between them.
     """
+    meter = session_spend(repo_root, root_issue)
     grant = Grant(
         level=level,
         token_budget=token_budget,
-        spent_at_issue=session_spend_tokens(repo_root, root_issue),
+        spent_at_issue=meter.measured_tokens,
+        unmetered_at_issue=meter.unmetered_dispatches,
     )
     _run_br(repo_root, ["comments", "add", root_issue, _grant_marker(grant)])
 
@@ -985,16 +1018,50 @@ def session_coverage(repo_root: Path, root_issue: str) -> int:
 
 
 @dataclass(frozen=True)
+class SpendMeter:
+    """What the session's run records say it spent, split by how each sample was known.
+
+    The split is the safety property (basicly-jr0l.35). ``runner.extract_usage``
+    falls back to a chars/4 count over the *captured output* when an adapter reports
+    no usage it can parse, and that number cannot see the prompt, the system prompt,
+    the tool definitions or cache writes — which is where nearly all of an agentic
+    dispatch's tokens are. Measured on a live copilot probe (2026-07-29): 5514 bytes
+    of stdout estimated 1378 tokens against 24210 real input tokens read from the
+    session store, 17.6x under, and with plain-text output the captured answer was
+    two characters — about 1 token against the same 24210.
+    :func:`session_spend` therefore keeps the two apart rather than adding a floor
+    into a total that is then read as a measurement, and :func:`spend_status` halts
+    on the presence of one instead of metering it.
+    """
+
+    measured_tokens: int
+    estimated_tokens: int
+    # How many dispatches contributed an estimate rather than a measurement. A count,
+    # not a flag, so a baseline can subtract the ones an earlier grant already
+    # answered for (:attr:`Grant.unmetered_at_issue`).
+    unmetered_dispatches: int
+
+
+@dataclass(frozen=True)
 class SpendStatus:
     """The session's standing against its grant's D3 token ceiling."""
 
     grant: Grant | None
+    # Measured spend only. An unmeasurable dispatch's chars/4 floor is deliberately
+    # absent from this number — it is not spend that was counted, and adding it would
+    # be the face-value counting basicly-jr0l.35 removed. `unmetered_dispatches`
+    # below is how such a dispatch reaches the ceiling.
     spent_tokens: int
-    # True only when a grant with a budget has had that budget reached. No grant
-    # (or an L1 grant with no budget) means there is no ceiling to enforce, not
-    # that everything is halted — the session is simply human-driven already.
+    # True when a grant with a budget can no longer authorize new spend: either that
+    # budget has been reached, or a dispatch under this grant could not be metered so
+    # the remaining budget is unknowable. No grant (or an L1 grant with no budget)
+    # means there is no ceiling to enforce, not that everything is halted — the
+    # session is simply human-driven already.
     halted: bool
     detail: str = ""
+    # Dispatches under *this grant* whose usage could not be measured, so nothing
+    # says what they cost.
+    unmetered_dispatches: int = 0
 
     @property
     def remaining_tokens(self) -> int | None:
@@ -1004,9 +1071,17 @@ class SpendStatus:
         a *forward*-looking gate needs (basicly-jr0l.22). Clamped at both ends for
         the same reason that one is: spend is metered against what this grant
         authorized, and pruned or lost run records must never buy extra budget.
+
+        Zero once a dispatch under this grant went unmetered: with an unknown amount
+        already spent there is no remainder that can honestly be offered to a forward
+        gate. That agrees with ``halted``, which every dispatch path checks first —
+        but a forward gate reading only this must not be told a budget is free when
+        what is left is simply unknown.
         """
         if self.grant is None or self.grant.token_budget is None:
             return None
+        if self.unmetered_dispatches:
+            return 0
         under_grant = max(0, self.spent_tokens - self.grant.spent_at_issue)
         return max(0, self.grant.token_budget - under_grant)
 
@@ -1034,6 +1109,14 @@ def check_pass_spend(forecast_tokens: int, status: SpendStatus) -> str | None:
     if remaining is None or forecast_tokens <= remaining:
         return None
     level = status.grant.level if status.grant is not None else "active"
+    if status.unmetered_dispatches:
+        # The remainder is zero because it is unknown, not because it was spent, and a
+        # message telling an operator to re-scope would send them at the wrong problem.
+        return (
+            f"this pass forecasts {forecast_tokens} tokens against an unknown remainder "
+            f"under the {level} grant: {status.unmetered_dispatches} dispatch(es) reported "
+            "no measurable usage, so nothing says what is left"
+        )
     return (
         f"this pass forecasts {forecast_tokens} tokens against {remaining} remaining "
         f"under the {level} grant: re-scope the lanes into smaller packages, or "
@@ -1057,11 +1140,21 @@ def spend_status(
     dispatch admission, and decider delegation — so the comparison itself lives
     here rather than being re-derived at each of them.
 
+    A dispatch the adapter could not meter halts the session too (basicly-jr0l.35).
+    Its chars/4 sample is a floor over captured output, structurally far below what
+    the dispatch really cost (:class:`SpendMeter`), so counting it as spend would let
+    the ceiling pass on a number that is not the session's spend — a declared safety
+    property the code does not enforce. There is no honest multiplier to inflate it
+    by either, so the ceiling errs the only way a ceiling may: it stops. Re-granting
+    clears it, because the new grant's baseline answers for the dispatches already
+    taken and the human has then seen the reason.
+
     *grant* and *ids* let a caller that already read them skip the re-walk.
     """
     if grant is None:
         grant = active_grant(repo_root, root_issue)
-    spent = session_spend_tokens(repo_root, root_issue, ids=ids)
+    meter = session_spend(repo_root, root_issue, ids=ids)
+    spent = meter.measured_tokens
     if grant is None or grant.token_budget is None:
         return SpendStatus(grant=grant, spent_tokens=spent, halted=False)
     budget = grant.token_budget
@@ -1072,6 +1165,25 @@ def spend_status(
     # Clamped, because pruned or lost run records can drop the total below the
     # baseline and negative spend must never buy extra budget.
     under_grant = max(0, spent - grant.spent_at_issue)
+    # Both counters are metered against the grant the same way, for the same reason:
+    # a session that took an unmeasurable dispatch before this grant was issued has
+    # already been answered for by the human who issued it.
+    unmetered = max(0, meter.unmetered_dispatches - grant.unmetered_at_issue)
+    if unmetered:
+        return SpendStatus(
+            grant=grant,
+            spent_tokens=spent,
+            halted=True,
+            unmetered_dispatches=unmetered,
+            detail=(
+                f"{grant.level} grant cannot be metered: {unmetered} dispatch(es) under it "
+                f"reported no measurable usage, so only a chars/4 floor over their captured "
+                f"output exists ({meter.estimated_tokens} estimated, far below real spend) "
+                f"and {under_grant}/{budget} tokens is not what this grant has cost; the "
+                "session is human-only until re-granted or the runner is configured with a "
+                "usage format"
+            ),
+        )
     if under_grant < budget:
         return SpendStatus(grant=grant, spent_tokens=spent, halted=False)
     return SpendStatus(
@@ -1086,26 +1198,44 @@ def spend_status(
     )
 
 
-def session_spend_tokens(
+def session_spend(
     repo_root: Path, root_issue: str, *, ids: tuple[str, ...] | None = None
-) -> int:
-    """Total run-record tokens across the session's beads (the grant's meter).
+) -> SpendMeter:
+    """Run-record spend across the session's beads, split by how it was known.
 
-    Estimated (chars/4) samples count too — a spend ceiling must err toward
-    halting, never toward uncounted spend. *ids* skips re-walking the session
-    tree when the caller already has it.
+    The grant's meter. An entry the adapter measured adds to
+    :attr:`SpendMeter.measured_tokens`; a chars/4 fallback
+    (``estimated=True``) adds to :attr:`SpendMeter.estimated_tokens` and is
+    counted as one unmeasurable dispatch instead. *ids* skips re-walking the
+    session tree when the caller already has it.
+
+    An entry carrying tokens but no ``estimated`` flag at all can only come from a
+    version that predates the field, and every writer since sets it explicitly
+    whenever tokens are present (``runner.extract_usage`` returns a bool or no usage
+    at all), so it is read as measured — the behaviour it had when it was written.
     """
     records = run_record.load_run_records(repo_root) or {}
-    total = 0
+    measured = 0
+    estimated = 0
+    unmetered = 0
     for issue_id in ids if ids is not None else _session_issue_ids(repo_root, root_issue):
         history = records.get(issue_id)
         if not isinstance(history, list):
             continue
         for entry in history:
             tokens = entry.get("tokens") if isinstance(entry, dict) else None
-            if isinstance(tokens, int) and not isinstance(tokens, bool):
-                total += tokens
-    return total
+            if not isinstance(tokens, int) or isinstance(tokens, bool):
+                continue
+            if entry.get("estimated") is True:
+                estimated += tokens
+                unmetered += 1
+            else:
+                measured += tokens
+    return SpendMeter(
+        measured_tokens=measured,
+        estimated_tokens=estimated,
+        unmetered_dispatches=unmetered,
+    )
 
 
 def record_needs_input(repo_root: Path, issue_id: str, fact: str) -> None:

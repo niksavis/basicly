@@ -486,7 +486,7 @@ def observe(repo_root: Path, root_issue: str) -> Observation:
         holder_on_this_root=holder is not None and holder.root_issue == root_issue,
         grant_level=grant.level if grant is not None else None,
         token_budget=grant.token_budget if grant is not None else None,
-        spent_tokens=policy.session_spend_tokens(repo_root, root_issue),
+        spent_tokens=policy.session_spend(repo_root, root_issue).measured_tokens,
         human_wait_s=wait.human_wait_s,
         delegated_wait_s=wait.delegated_wait_s,
         dispatch_s=wait.dispatch_s,
@@ -1475,14 +1475,26 @@ def record_dispatch_halt(
     client would read it as "no ready lanes". The item is idempotent per
     (issue, kind, question), so every subsequent halted pass re-enqueues the
     same one rather than piling up notifications.
+
+    The two halts ask different questions, so they are different queue items
+    (basicly-jr0l.35): a spent budget is answered by deciding whether the work is
+    worth more money, an unmeterable one by fixing what the harness can see. Putting
+    both behind "the budget is spent" would send the operator to re-grant a budget
+    that was never the problem.
     """
-    return decisions.enqueue(
-        repo_root,
-        root_issue,
-        "escalation",
-        "re-grant autonomy or continue by hand: the session's token budget is spent",
-        admission.detail,
+    question = (
+        UNMETERED_QUESTION
+        if admission.unmetered_dispatches
+        else "re-grant autonomy or continue by hand: the session's token budget is spent"
     )
+    return decisions.enqueue(repo_root, root_issue, "escalation", question, admission.detail)
+
+
+UNMETERED_QUESTION = (
+    "the runner reported no measurable usage for a dispatch under this grant, so the spend "
+    "ceiling cannot bind: configure a runner whose usage basicly can read, or re-grant to "
+    "accept the unmetered spend"
+)
 
 
 # --- Autonomous delegation: the decider in the pass (D3 L2+, design 7.1) -----
