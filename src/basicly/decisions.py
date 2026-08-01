@@ -38,7 +38,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import loop_state, policy, runner
+from . import br, loop_state, policy, runner
 from .br import run_br as _run_br
 from .config import (
     PolicyConfig,
@@ -254,11 +254,78 @@ def _record_wait(repo_root: Path, item: DecisionItem, by: str) -> None:
 
 
 def pending(repo_root: Path, root_issue: str) -> tuple[DecisionItem, ...]:
-    """The session's unanswered items, root first then the parent-child tree."""
+    """The session's unanswered items on still-open beads, root first then the tree.
+
+    Closed beads are excluded because their questions are moot by construction, and
+    reporting them was not only cosmetic (basicly-jr0l.24): every item here is handed
+    to the decider by ``supervise.delegate_decisions``, so a stale one spent tokens
+    deciding finished work, and :func:`has_pending` holds a lane, so one on a reopened
+    bead could wedge a lane with nothing to wait for. Five such items sat on ``main``
+    after the 2026-08-01 proof run, on beads that had shipped and closed hours earlier.
+
+    Statuses come from the committed export — one file read for the whole tracker
+    rather than a ``br show`` per bead. Its staleness can only run one way: an export
+    written before a close still says ``open``, so the filter errs toward *showing* a
+    question, never toward hiding one.
+    """
+    closed = closed_ids(repo_root)
     items: list[DecisionItem] = []
     for issue_id in loop_state.session_issue_ids(repo_root, root_issue):
+        if issue_id in closed:
+            continue
         items += [i for i in _items_on(repo_root, issue_id).values() if i.pending]
     return tuple(items)
+
+
+def closed_ids(repo_root: Path) -> frozenset[str]:
+    """Every bead id the committed export records as closed; empty when unreadable.
+
+    Unreadable yields the empty set rather than raising, so a missing export degrades
+    to the pre-basicly-jr0l.24 behaviour (report everything) instead of hiding the
+    queue.
+    """
+    return frozenset(
+        str(record["id"])
+        for record in br.export_records(repo_root)
+        if record.get("status") == "closed" and record.get("id")
+    )
+
+
+def settle_checkpoint(
+    repo_root: Path, issue_id: str, name: str, *, by: str
+) -> tuple[DecisionItem, ...]:
+    """Answer the queue items asking for the *name* checkpoint on *issue_id*.
+
+    A checkpoint approved by any path leaves the item behind it open otherwise: the
+    supervisor queues the ask, and only ``loop answer`` ever cleared one, so a bead
+    could ship and close with its own approval request still reading as pending
+    (basicly-jr0l.24).
+
+    Matched by kind and by the checkpoint name appearing in the question, rather than
+    against a reconstructed question string. The wording lives at the enqueue site, and
+    keying on an exact copy of it here would mean a reworded ask silently stopped
+    clearing — the failure being fixed, reintroduced one refactor later. It also lets a
+    legacy item, worded before this existed, still settle.
+
+    Answering is what closes the item's ``[harness-wait]`` interval, and it closes it
+    exactly once: :func:`answer` refuses an already-answered item, so only the pending
+    ones below are touched. The checkpoint's *own* wait
+    (:func:`policy.record_checkpoint_wait`) is a separate interval on a separate id —
+    both are closed once, neither twice.
+    """
+    settled: list[DecisionItem] = []
+    for item in _items_on(repo_root, issue_id).values():
+        if item.kind != "checkpoint" or not item.pending or name not in item.question:
+            continue
+        settled.append(
+            answer(
+                repo_root,
+                item.decision_id,
+                f"the {name} checkpoint was approved, so the queued ask is settled",
+                by=by,
+            )
+        )
+    return tuple(settled)
 
 
 def has_pending(repo_root: Path, issue_id: str) -> bool:
