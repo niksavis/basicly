@@ -520,6 +520,7 @@ New parameters (all in the overridable sections per the dual-use constraint):
 | `[policy.sizing]` | `build_factor` seeds      | task 3.0 / bug 2.0 / chore 1.5 | Multiplier on scope read-cost until telemetry calibrates    |
 | `[policy.sizing]` | `calibration_min_samples` | `10` per class     | Measured factors override seeds only past this                          |
 | `[policy.sizing]` | `calibration_window`      | `50` runs          | Rolling window per task class                                           |
+| `[policy.sizing]` | `unsized_lane_quantile`   | `0.9` of actuals   | Bound for a lane with no readable scope; targets at most 1 in 10 exceeding it (`basicly-jr0l.58`) |
 | `[policy]`        | `max_subtasks_per_lane`   | `10`               | Sanity bound; sizing governor is the real limit                         |
 | `[policy]`        | `scope_collision`         | `"block"`          | Landing-time declared-scope check: refuse when an out-of-scope path is in another live lane's scope; `"warn"` lands on the finding |
 | `[verify]`        | level→mode mapping        | sub-task `fast`; lane `full`+validate; ship `full`+validate; merge re-verify `full` | D4: deterministic by change class |

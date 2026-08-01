@@ -1278,26 +1278,35 @@ def test_the_unsized_bound_falls_back_to_the_declared_seed(tmp_path: Path) -> No
 
 
 def test_the_unsized_bound_is_a_sample_some_lane_really_incurred(tmp_path: Path) -> None:
-    """`median_high`, so the figure is always a real observation rather than a mean."""
+    """A quantile *of the samples*, so the figure is a real observation, never a mean.
+
+    The statistic moved from the median to ``unsized_lane_quantile`` (basicly-jr0l.58);
+    what must not change is that the bound is a spend some lane actually incurred, so
+    it needs no rounding rule and can always be pointed back at a run record.
+    """
     _record_lane_tokens(tmp_path, "b-1", 1_000)
     _record_lane_tokens(tmp_path, "b-2", 9_000)
     _record_lane_tokens(tmp_path, "b-3", 2_000)
 
     tokens, source = decompose.unsized_lane_tokens(tmp_path, _sizing())
 
-    assert (tokens, source) == (2_000, "measured")
+    assert (tokens, source) == (9_000, "measured")
+    assert tokens in {1_000, 9_000, 2_000}
     assert tokens != statistics.mean((1_000, 9_000, 2_000))
 
 
 def test_one_pathological_lane_does_not_own_the_unsized_bound(tmp_path: Path) -> None:
-    """A central estimate, not a max — because the lane population is bimodal.
+    """A quantile, not a max: the most expensive run ever seen must not price them all.
 
-    Leaf lanes ran 856182-4079243 tokens on this repo while lane packages driving
-    sub-tasks ran 7674671-20594047, and no field in a run record tells them apart. Only
-    leaves reach this gate (``ready_lanes`` excludes a lane with sub-tasks), so a max or
-    high quantile would set every leaf's bound from a package and refuse passes that
-    genuinely fit — the ban on hand-filed work the old fail-open behaviour was
-    protecting against (basicly-vz78).
+    This once read "a central estimate, not a max, because the population is bimodal" -
+    leaves supposedly 856182-4079243 tokens and packages 7674671-20594047. **More data
+    refuted that split** (basicly-jr0l.58): four leaf lanes measured 9418977, 10834801,
+    11478450 and 11867602, inside the supposed package band, so the population is one
+    wide spread rather than two clusters. The median that split justified was exceeded
+    by 47% of the 17 recorded actuals.
+
+    What survives is the narrower property this test actually pins: a single outlier
+    sits above the quantile and so does not become every lane's bound.
     """
     for i in range(9):
         _record_lane_tokens(tmp_path, f"b-{i}", 1_000)
@@ -1322,6 +1331,43 @@ def test_the_unsized_bound_still_refuses_the_overrun_that_motivated_it(
     tokens, _source = decompose.unsized_lane_tokens(tmp_path, _sizing())
 
     assert tokens > 3_000_000
+
+
+def test_the_unsized_bound_is_exceeded_by_at_most_the_quantiles_tail(tmp_path: Path) -> None:
+    """The acceptance criterion, stated as the overrun rate it targets.
+
+    Replayed against this repo's own 17 measured lane actuals - the population that
+    produced the failure. At the default 0.9 no more than one lane in ten may exceed
+    its bound; the median it replaced was exceeded by 8 of 17 (47%), which is how a
+    pass forecast at 16316972 tokens came to spend 43599830 (basicly-jr0l.58).
+    """
+    actuals = (
+        856_182, 1_022_380, 1_482_961, 1_652_344, 1_736_146, 2_066_758, 4_079_243,
+        7_674_671, 7_695_800, 9_418_977, 9_430_203, 9_880_120, 10_834_801,
+        11_478_450, 11_867_602, 16_002_352, 20_594_047,
+    )  # fmt: skip
+    for index, tokens in enumerate(actuals):
+        _record_lane_tokens(tmp_path, f"b-{index}", tokens)
+
+    bound, _source = decompose.unsized_lane_tokens(tmp_path, _sizing())
+
+    exceeded = [tokens for tokens in actuals if tokens > bound]
+    assert len(exceeded) / len(actuals) <= 0.1, f"{len(exceeded)} of {len(actuals)} exceed {bound}"
+    # And the statistic is not merely the max, which would price every lane off the
+    # single worst run and refuse passes that genuinely fit.
+    assert bound < max(actuals)
+
+
+def test_the_unsized_bound_follows_the_configured_quantile(tmp_path: Path) -> None:
+    """The quantile is config, so a consumer can trade throughput against overrun."""
+    for index, tokens in enumerate((1_000, 2_000, 3_000, 4_000, 100_000)):
+        _record_lane_tokens(tmp_path, f"b-{index}", tokens)
+
+    low, _ = decompose.unsized_lane_tokens(tmp_path, _sizing(unsized_lane_quantile=0.2))
+    high, _ = decompose.unsized_lane_tokens(tmp_path, _sizing(unsized_lane_quantile=1.0))
+
+    assert low == 1_000
+    assert high == 100_000
 
 
 def test_the_unsized_bound_ignores_an_estimated_sample(tmp_path: Path) -> None:

@@ -34,6 +34,7 @@ import contextlib
 import fnmatch
 import hashlib
 import json
+import math
 import re
 import statistics
 import tomllib
@@ -993,32 +994,37 @@ def unsized_lane_tokens(repo_root: Path, sizing: SizingConfig) -> tuple[int, str
     The bound does not need the scope. Calibration does — it divides tokens by scope
     read-cost to get a ratio — but a raw *actual* is already an observation of what a
     lane costs, whatever the tracker says about its scope. So this reads the measured
-    lane actuals directly and takes the **maximum** over the recent window: a ceiling
-    check wants a high-water mark, not a central estimate, and a median would admit
-    the pass that the worst lane blows.
+    lane actuals directly, over the most recent window.
 
-    The statistic is the **median of the most recent window**, and it is deliberately a
-    central estimate rather than a worst case. Measured on this repo's own 13 lane
-    actuals the population is bimodal — leaf lanes ran 856182 to 4079243 tokens while
-    lane *packages* driving sub-tasks ran 7674671 to 20594047 — and nothing in a run
-    record distinguishes the two, so a quantile high enough to bound a package sets
-    every leaf's bound at a figure no realistic grant funds. Only leaves ever reach this
-    gate (``ready_lanes`` excludes a lane with sub-tasks), so a max or p90 would refuse
-    passes that genuinely fit, which is the ban on hand-filed work the old fail-open
-    behaviour was protecting against.
+    The statistic is the **quantile at** ``[policy.sizing] unsized_lane_quantile``
+    (default 0.9), because this is a *ceiling* and a ceiling wants a high-water mark.
+    It replaced a median, which was chosen when the recorded population looked bimodal
+    — leaves apparently running 856182 to 4079243 tokens and lane *packages* driving
+    sub-tasks running 7674671 to 20594047, with nothing in a run record telling them
+    apart, so any high quantile would have bounded a leaf at a package's cost.
 
-    So this is one layer of three, and the only one that is an estimate:
+    **That split did not survive contact with more data** (basicly-jr0l.58). Four leaf
+    lanes measured 9418977, 10834801, 11478450 and 11867602 tokens — squarely inside
+    the supposed package band — so the population is not two clusters but one wide
+    spread from 856182 to 20594047. The median was therefore not a central estimate of
+    a tight cluster but the midpoint of an order-of-magnitude range: 47% of the 17
+    recorded actuals exceeded it, and a pass of four lanes forecast at 16316972 tokens
+    spent 43599830 against a 21000000 grant.
 
-    * **forward, here** — keeps a pass's *expected* total inside the grant. Best effort:
-      a lane above the median can still overspend, and that is accepted.
-    * **hard, per lane** — ``[runner] runner_timeout``. At the measured ~7850 tokens per
-      second a 1800s cap bounds one lane near 14M tokens whatever this returns.
+    A high quantile costs throughput when it is wrong, and money when it is not there
+    at all. The asymmetry favours the quantile: a refused pass costs one re-grant,
+    while an admitted overrun doubled a real bill.
+
+    This remains one layer of three, and the only one that is an estimate:
+
+    * **forward, here** — keeps a pass's forecast total inside the grant, now aiming to
+      be exceeded by at most one lane in ten rather than by half of them.
+    * **hard, per lane** — ``[runner] runner_timeout``. Note the rate is not the ~7850
+      tokens per second previously recorded here: measured rates rise with duration
+      (4377/s at 196s up to 13872/s at 1485s) as context accumulates, so a 1800s cap
+      bounds one lane nearer 25M than 14M.
     * **hard, per session** — the retrospective halt in :func:`policy.spend_status`,
       which stops the *next* pass once recorded spend reaches the budget.
-
-    Being an estimate is still decisive for the case that actually failed: one lane at
-    4079243 measured tokens against a 3000000 remainder is refused, where the old gate
-    admitted it and lost the money.
 
     Ordered by the record's own timestamp before the window is taken. Slicing the flat
     list would have windowed by whatever order the records file enumerates, which is
@@ -1049,10 +1055,25 @@ def unsized_lane_tokens(repo_root: Path, sizing: SizingConfig) -> tuple[int, str
         return UNSIZED_LANE_TOKENS_SEED, "seed"
     observed.sort()
     window = [tokens for _stamp, tokens in observed[-sizing.calibration_window :]]
-    # `median_high` rather than `median`: it returns an actual sample rather than the
-    # mean of the middle two, so the bound is always a spend some lane really incurred
-    # and stays an int without a rounding rule to argue about.
-    return statistics.median_high(window), "measured"
+    return _quantile_high(window, sizing.unsized_lane_quantile), "measured"
+
+
+def _quantile_high(values: list[int], quantile: float) -> int:
+    """The sample at *quantile* of *values*; always a figure some lane really incurred.
+
+    An observed sample rather than an interpolation, for the reason ``median_high``
+    was used before it: the bound is then always a spend that really happened, and
+    stays an int with no rounding rule to argue about.
+
+    Rounds *up* to the sample index, so the result sits at or above the requested
+    quantile. Rounding down would quietly return a weaker bound than asked for, and
+    that is the direction that costs money.
+    """
+    if not values:
+        raise ValueError("a quantile needs at least one sample")
+    ordered = sorted(values)
+    index = math.ceil(quantile * len(ordered)) - 1
+    return ordered[max(0, min(index, len(ordered) - 1))]
 
 
 def freeze_estimate(

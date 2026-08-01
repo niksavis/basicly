@@ -115,6 +115,9 @@ max_rework = 2
 # working_set_max = 64000
 # calibration_min_samples = 10   # measured factors override seeds only past this
 # calibration_window = 50        # rolling run-record window per task class
+# unsized_lane_quantile = 0.9    # bound for a lane with no readable scope: the
+#                                # quantile of recent lane actuals, so at most one
+#                                # lane in ten is expected to exceed it
 # [policy.sizing.build_factor]
 # task = 3.0
 # bug = 2.0
@@ -402,6 +405,12 @@ DEFAULT_CALIBRATION_WINDOW = 50
 # (basicly-kjc5.6): a behavioral anxiety guard below the real window, never a
 # fill target (design D8 — models cut corners near the perceived limit).
 DEFAULT_CONTEXT_CEILING = 0.6
+# Quantile of recent measured lane actuals used to bound a lane whose scope cannot be
+# read (basicly-jr0l.58). A *ceiling* wants a high quantile, not a central estimate:
+# the median it replaced was exceeded by 47% of this repo's own 17 recorded lane
+# actuals, which is what let a pass forecast at 16316972 tokens spend 43599830. At 0.9
+# the target is that no more than one lane in ten exceeds its bound.
+DEFAULT_UNSIZED_LANE_QUANTILE = 0.9
 
 # The three human checkpoints the loop enforces (architecture §12.2).
 CHECKPOINTS = ("classify", "decompose", "ship")
@@ -722,6 +731,8 @@ class SizingConfig:
     # Fraction of the runner's context window that triggers the finalize
     # protocol at run time (basicly-kjc5.6, design D8).
     context_ceiling: float = DEFAULT_CONTEXT_CEILING
+    # Quantile of recent lane actuals that bounds an unsizeable lane (basicly-jr0l.58).
+    unsized_lane_quantile: float = DEFAULT_UNSIZED_LANE_QUANTILE
 
 
 def load_sizing_config(repo_root: Path) -> SizingConfig:
@@ -761,7 +772,20 @@ def load_sizing_config(repo_root: Path) -> SizingConfig:
             section.get("calibration_window"), DEFAULT_CALIBRATION_WINDOW
         ),
         context_ceiling=_window_fraction(section.get("context_ceiling")),
+        unsized_lane_quantile=_quantile_fraction(section.get("unsized_lane_quantile")),
     )
+
+
+def _quantile_fraction(value: object) -> float:
+    """*value* when it is a usable quantile (0 < x <= 1), else the default.
+
+    Same fallback stance as :func:`_window_fraction`. A quantile at or below 0 would
+    bound every lane at the cheapest run ever recorded, which is a ceiling in name
+    only — the failure this replaced (basicly-jr0l.58).
+    """
+    if isinstance(value, int | float) and not isinstance(value, bool) and 0 < value <= 1:
+        return float(value)
+    return DEFAULT_UNSIZED_LANE_QUANTILE
 
 
 def _window_fraction(value: object) -> float:

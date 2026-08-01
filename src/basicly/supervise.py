@@ -1976,6 +1976,21 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
             refused=True,
         )
     lane_sizing = admission.record_inputs
+    if not lane_sizing:
+        # A lane with no readable scope is still dispatched, bounded at the assumed
+        # figure — so record that figure as its forecast. Without it the pass is gated
+        # on a number the record never carries, and the lane lands as one more actual
+        # with no forecast half: after a completed four-lane run `usage forecast` still
+        # reported "no dispatch carries both", 17 actual with no forecast. The
+        # telemetry that would calibrate the bound was the one thing the bound's own
+        # dispatches never produced (basicly-jr0l.58).
+        assumed_tokens, assumed_source = decompose.unsized_lane_tokens(repo_root, sizing)
+        lane_sizing = {
+            "forecast_tokens": assumed_tokens,
+            # Namespaced, so a reader can never mistake an assumed bound for an
+            # estimate derived from this lane's own declared scope.
+            "forecast_source": f"assumed:{assumed_source}",
+        }
     known = frozenset({session.root_issue, *(cid for cid, _ in session.children)})
     bundle = build_bundle(repo_root, lane.issue_id, known_ids=known)
     cwd = Path(record.worktree_path)
