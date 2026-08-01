@@ -3532,6 +3532,43 @@ def test_pass_is_admitted_when_its_forecast_fits_the_remainder(
     assert queued == []
 
 
+def test_a_lane_queued_behind_the_cap_does_not_start_once_the_budget_is_gone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The acceptance criterion: a fan-out that exhausts its grant starts no further lanes.
+
+    Admission was a pass-entry verdict, so lanes waiting behind the concurrency cap
+    were cleared to run on a reading taken before any of them had spent anything, and
+    nothing re-checked once the runners were live. Measured: a pass admitted at a
+    16316972 forecast ran to 43599830 against a 21000000 grant, and the halt printed
+    only after the last lane exited (basicly-jr0l.59).
+
+    ``cap=1`` is what makes the second lane *queued* rather than concurrent, which is
+    the only shape this guard can bound - a lane already running is never interrupted.
+    """
+    _patch_readiness(monkeypatch, ranked=((1, "epic.1"), (2, "epic.2")))
+    _pass_fixture(
+        monkeypatch,
+        sizings={"epic.1": _dispatch_sizing(20_000), "epic.2": _dispatch_sizing(20_000)},
+        forecasts={"epic.1": 1_000, "epic.2": 1_000},
+    )
+    # The grant is intact when the first lane starts and gone by the second's turn.
+    readings = iter([_granted("L3", 10_000, 0), _granted("L3", 10_000, 10_000)])
+    monkeypatch.setattr(supervise.policy, "spend_status", lambda *_a, **_k: next(readings))
+
+    outcomes = supervise.dispatch_lanes(
+        Path(),
+        _session(_lane("epic.1"), _lane("epic.2")),
+        cap=1,
+        admission=_granted("L3", 10_000, 0),
+    )
+
+    assert [outcome.issue_id for outcome in outcomes] == ["epic.1", "epic.2"]
+    assert outcomes[0].detail == "test"  # dispatched, because the budget still covered it
+    assert "not started" in outcomes[1].detail
+    assert outcomes[1].result is None  # and it really did not run
+
+
 def test_pass_forecast_ignores_a_lane_the_band_already_refuses(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
