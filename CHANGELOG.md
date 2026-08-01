@@ -110,6 +110,39 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   prints it as JSON. Its mirrored surface table is cross-checked against
   `models.model_for` over all 4x4x3 cells (`basicly-wbsz.1`).
 
+- **A Claude Code subagent now spawns on the tier its definition declares**, via
+  `.basicly/core/kit/claude_tier_hook.py` — the injection half of the portable kit,
+  wired in as a `PreToolUse` hook matching the `Agent` tool and carrying the same
+  no-basicly constraint as the resolver beside it.
+
+  **It writes an alias, not a model id**, because the two are different surfaces of
+  the same host: the Agent tool's `model` parameter is a four-value enum
+  (`sonnet | opus | haiku | fable`) that rejects `claude-opus-5`, while the
+  definition *frontmatter* documents a full id as legal. `HOST_MODEL_ALIASES` on the
+  kit holds the one tier→alias table, so the installer and any later host hook reuse
+  it rather than each owning a copy, and a test holds that table to the map through
+  `models.same_model` — the repo's own rule for whether a bare alias names an id —
+  so it cannot drift into pinning a tier to the wrong class of model. An alias is
+  never set without a model, so a cell the map marks `unavailable` pins nothing
+  rather than naming what the map denies.
+
+  **A repository with no map of its own is left completely alone.** The resolver's
+  kit-adjacent fallback is deliberately switched off here (`beside_the_kit=False`):
+  the kit is by definition always beside itself, so with the fallback on, a hook
+  installed at user level — which is how it applies to every repo on a machine —
+  would inject a model into unrelated projects. The hook also stands down when
+  `CLAUDE_CODE_SUBAGENT_MODEL` is set (it outranks the parameter the hook writes, so
+  a rewrite would be inert), when the spawn or the definition already names a model,
+  and when nothing resolves. `updatedInput` *replaces* the tool input rather than
+  merging into it, so the whole original input is carried through.
+
+  Exercised the way a consumer would: a `basicly install` into a fresh scratch repo
+  materialized both kit files, and that installed hook — run under `env -i`,
+  `python -S -I` and no `PATH` — injected `opus` for a consumer-authored agent
+  declaring `tier: high`, declined for a shipped agent that declares no tier, and
+  declined from a directory with no map while reachable by absolute path
+  (`basicly-wbsz.2`).
+
 - **A landed commit carries the model that produced it**, as a `Harness-Model` git
   trailer on the engine-assembled envelope, so model provenance survives a clone
   rather than living only in a local run record. The same trailer name the merge
