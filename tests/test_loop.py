@@ -467,6 +467,35 @@ def test_classify_feature_decomposes(at, monkeypatch: pytest.MonkeyPatch, tmp_pa
     assert result.to_phase == "decompose" and result.action == "decomposed"
 
 
+def test_classify_feature_names_a_collapsing_path_in_the_advance_detail(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A group count with no reason for it is where the collapse hid (basicly-jr0l.45).
+
+    The loop is how decompose actually runs in the factory, so a report only
+    ``basicly decompose`` prints is a report nobody on that path reads.
+    """
+    at(_state("classify", issue_type="feature"))
+    monkeypatch.setattr(policy, "definition_of_ready", lambda *_a: DoRResult(True, ()))
+    collapsing = (
+        decompose.CollapsingPath(
+            "pyproject.toml", (0, 1), groups=1, groups_without=2, neutralized=False
+        ),
+        decompose.CollapsingPath("uv.lock", (0, 1), groups=1, groups_without=2, neutralized=True),
+    )
+    monkeypatch.setattr(
+        decompose,
+        "decompose",
+        lambda *_a: decompose.DecomposeResult("i", (), (("i.1", "i.2"),), collapsing),
+    )
+    result = _advance(tmp_path, children=(decompose.ChildSpec("t", ("ac",), ("s",)),))
+    assert "1 group(s)" in result.detail
+    assert "`pyproject.toml`" in result.detail
+    # The neutralized one is named by the full report, not by this one-line detail:
+    # nothing on it needs acting on.
+    assert "uv.lock" not in result.detail
+
+
 # --- decompose --------------------------------------------------------------
 
 

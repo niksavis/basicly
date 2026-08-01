@@ -134,6 +134,127 @@ def test_chain_predecessors_are_within_group_only() -> None:
     assert decompose.chain_predecessors(groups) == (None, 0, None, 1)
 
 
+# --- One shared path must not collapse the plan (basicly-jr0l.45) -------------
+#
+# Four children that each declare their own module plus the manifest they will add
+# a line to. Every pair overlaps through that one file, so the transitive closure
+# used to merge all four into one serial chain — the more honestly the scopes were
+# declared, the worse the grouping got.
+
+
+def _manifest_plan(*, shared: bool) -> tuple[ChildSpec, ...]:
+    """Four children, each owning one module and touching one shared manifest."""
+    return tuple(
+        ChildSpec(
+            title=name,
+            acceptance=("does the thing",),
+            scope=(f"src/{name}.py", "pyproject.toml"),
+            shared=("pyproject.toml",) if shared else (),
+        )
+        for name in ("a", "b", "c", "d")
+    )
+
+
+def test_one_owned_path_collapses_every_child_into_one_group() -> None:
+    """Undeclared, a shared manifest still serializes everyone — the safe default."""
+    assert decompose.group_children(_manifest_plan(shared=False)) == (0, 0, 0, 0)
+
+
+def test_a_shared_manifest_keeps_the_distinct_modules_parallel() -> None:
+    """Declaring the manifest shared leaves the owned modules to decide the grouping."""
+    assert decompose.group_children(_manifest_plan(shared=True)) == (0, 1, 2, 3)
+
+
+def test_a_single_owner_still_serializes_everyone_who_touches_the_path() -> None:
+    """A shared declaration is only as strong as the weakest claim on the path.
+
+    Three children append to the manifest and the fourth owns it. Owning it means
+    doing something the appenders cannot be reordered against, so the group stays
+    serial — the declaration cannot be used to route around a real owner.
+    """
+    plan = list(_manifest_plan(shared=True))
+    plan[2] = ChildSpec(plan[2].title, plan[2].acceptance, plan[2].scope, plan[2].type)
+    assert decompose.group_children(tuple(plan)) == (0, 0, 0, 0)
+
+
+def test_shared_does_not_excuse_an_overlap_on_an_owned_path() -> None:
+    """Two children sharing a manifest still serialize on the module they both own."""
+    children = (
+        ChildSpec("a", ("ac",), ("src/x.py", "pyproject.toml"), shared=("pyproject.toml",)),
+        ChildSpec("b", ("ac",), ("src/x.py", "pyproject.toml"), shared=("pyproject.toml",)),
+    )
+    assert decompose.group_children(children) == (0, 0)
+
+
+def test_collapsing_paths_names_the_path_that_collapses_the_plan() -> None:
+    """The report names the single path the serial chain is owed to, and the cost."""
+    (item,) = decompose.collapsing_paths(_manifest_plan(shared=False))
+    assert item.glob == "pyproject.toml"
+    assert item.declarers == (0, 1, 2, 3)
+    assert (item.groups, item.groups_without) == (1, 4)
+    assert item.neutralized is False
+    assert "`pyproject.toml`" in decompose.describe_collapsing_path(item)
+
+
+def test_collapsing_paths_still_names_a_path_a_declaration_defused() -> None:
+    """A declared-shared manifest is reported as neutralized, never silently dropped.
+
+    Naming it is how a reviewer checks the declaration was honest: the path that
+    *would* have collapsed the plan is exactly the one worth a second look.
+    """
+    (item,) = decompose.collapsing_paths(_manifest_plan(shared=True))
+    assert item.glob == "pyproject.toml"
+    assert (item.groups, item.groups_without) == (1, 4)
+    assert item.neutralized is True
+    assert "no longer collapses" in decompose.describe_collapsing_path(item)
+
+
+def test_collapsing_paths_is_silent_when_no_single_path_decides() -> None:
+    """A plan whose groups survive dropping any one glob has nothing to report."""
+    children = (_child("a", "src/a.py"), _child("b", "src/b.py"), _child("c", "src/c.py"))
+    assert decompose.collapsing_paths(children) == ()
+
+
+def test_collapsing_paths_names_a_wildcard_that_swallows_its_siblings() -> None:
+    """The diagnostic is as specific as the plan: a subtree glob is named too.
+
+    The pathology is not only manifests — one child declaring ``src/**`` serializes
+    every sibling under it, and that is the same silent collapse with a different
+    shape. A wildcard cannot be declared shared, so it is reported live.
+    """
+    children = (
+        _child("wide", "src/**"),
+        _child("a", "src/a.py"),
+        _child("b", "src/b.py"),
+    )
+    globs = {item.glob for item in decompose.collapsing_paths(children)}
+    assert "src/**" in globs
+    assert all(item.neutralized is False for item in decompose.collapsing_paths(children))
+
+
+def test_collapsing_paths_handles_a_child_whose_whole_scope_is_the_shared_path() -> None:
+    """Dropping a glob must not leave an empty scope reading as "matches everything".
+
+    An emptied scope compares as overlapping another emptied scope, so measuring the
+    counterfactual by editing the scopes would have suppressed the very split it was
+    measuring — hence :func:`decompose.serializes` takes *ignoring* instead.
+    """
+    children = (
+        ChildSpec("manifest-only", ("ac",), ("pyproject.toml",)),
+        _child("b", "src/b.py", "pyproject.toml"),
+    )
+    (item,) = decompose.collapsing_paths(children)
+    assert (item.glob, item.groups, item.groups_without) == ("pyproject.toml", 1, 2)
+
+
+def test_collapse_note_speaks_only_for_a_live_collapse() -> None:
+    """The one-line suffix names live collapses and stays empty once one is defused."""
+    live = decompose.collapse_note(decompose.collapsing_paths(_manifest_plan(shared=False)))
+    assert "`pyproject.toml`" in live
+    assert decompose.collapse_note(decompose.collapsing_paths(_manifest_plan(shared=True))) == ""
+    assert decompose.collapse_note(()) == ""
+
+
 # --- Plan parsing -----------------------------------------------------------
 
 
@@ -172,6 +293,55 @@ def test_parse_children_requires_acceptance() -> None:
     """A child without acceptance criteria would fail DoR — reject it up front."""
     with pytest.raises(ValueError, match="'acceptance'"):
         decompose.parse_children({"children": [{"title": "t", "scope": ["s"]}]})
+
+
+def _one_child(**extra: object) -> dict[str, object]:
+    return {"children": [{"title": "t", "acceptance": ["ac"], "scope": ["src/x.py"], **extra}]}
+
+
+@pytest.mark.parametrize("shared", [None, []], ids=["absent", "empty"])
+def test_parse_children_defaults_shared_to_owning_everything(shared: object) -> None:
+    """No shared declaration means the child owns its whole scope, as plans always did."""
+    entry = {} if shared is None else {"shared": shared}
+    assert decompose.parse_children(_one_child(**entry))[0].shared == ()
+
+
+def test_parse_children_rejects_a_shared_path_outside_the_scope() -> None:
+    """A shared declaration may only reclassify a path the plan already declared.
+
+    Otherwise it would weaken serialization on a path the recorded ``## Scope`` never
+    mentions, and nothing downstream — sizing, merge-time attribution — could see it.
+    """
+    with pytest.raises(ValueError, match="not in that child's 'scope'"):
+        decompose.parse_children(_one_child(shared=["pyproject.toml"]))
+
+
+def test_parse_children_rejects_a_glob_as_a_shared_path() -> None:
+    """One literal path at a time: no plan may exempt a whole subtree from serializing."""
+    with pytest.raises(ValueError, match="is a glob"):
+        decompose.parse_children(_one_child(scope=["src/**"], shared=["src/**"]))
+
+
+def test_parse_children_rejects_a_malformed_shared_list() -> None:
+    """A shared declaration that is not a list of non-empty strings is a loud error."""
+    with pytest.raises(ValueError, match="'shared' must be a list"):
+        decompose.parse_children(_one_child(shared="src/x.py"))
+    with pytest.raises(ValueError, match="'shared' entries must be non-empty"):
+        decompose.parse_children(_one_child(shared=[" "]))
+
+
+def test_load_plan_text_reads_shared_in_json_and_toml() -> None:
+    """Both plan formats carry the shared declaration onto the spec identically."""
+    child = {"title": "t", "acceptance": ["ac"], "scope": ["src/x.py", "pyproject.toml"]}
+    child["shared"] = ["pyproject.toml"]
+    from_json = decompose.load_plan_text(json.dumps({"children": [child]}), "json")
+    from_toml = decompose.load_plan_text(
+        '[[children]]\ntitle = "t"\nacceptance = ["ac"]\n'
+        'scope = ["src/x.py", "pyproject.toml"]\nshared = ["pyproject.toml"]\n',
+        "toml",
+    )
+    assert from_json == from_toml
+    assert from_json[0].shared == ("pyproject.toml",)
 
 
 # --- Recording in br --------------------------------------------------------
@@ -271,6 +441,42 @@ def test_decompose_raises_on_introduced_cycle(
     _install(monkeypatch, fake)
     with pytest.raises(RuntimeError, match="cycle"):
         decompose.decompose(tmp_path, "feat", (_child("a", "src/s.py"), _child("b", "src/s.py")))
+
+
+def test_decompose_wires_no_chain_through_a_shared_manifest(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The recorded graph, not just the grouping: no blocks edge for a shared path.
+
+    The grouping is only a computation until it reaches ``br`` — what the merge queue
+    and ``ready_lanes`` read is the absence of a sibling ``blocks`` edge.
+    """
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+
+    result = decompose.decompose(tmp_path, "feat", _manifest_plan(shared=True))
+
+    assert fake.edges == []
+    assert result.parallel_groups == 4
+    # And the collapsing path travels with the result, so the loop can name it.
+    assert [item.glob for item in result.collapsing] == ["pyproject.toml"]
+    assert result.collapsing[0].neutralized is True
+
+
+def test_decompose_result_names_a_live_collapsing_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An undeclared shared path serializes the plan *and* is named on the result."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+
+    result = decompose.decompose(tmp_path, "feat", _manifest_plan(shared=False))
+
+    assert result.parallel_groups == 1
+    assert len(fake.edges) == 3  # one chain through all four children
+    assert [(item.glob, item.neutralized) for item in result.collapsing] == [
+        ("pyproject.toml", False)
+    ]
 
 
 def test_preview_matches_recorded_grouping(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

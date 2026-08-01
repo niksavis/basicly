@@ -2625,6 +2625,23 @@ def _print_planned(planned: tuple[Any, ...]) -> None:
         pred = "" if child.predecessor is None else f" (after child #{child.predecessor})"
         print(f"  [group {child.group}] #{index} {child.spec.title}{pred}")
         print(f"      scope: {', '.join(child.spec.scope)}")
+        if child.spec.shared:
+            print(f"      shared (not owned): {', '.join(child.spec.shared)}")
+
+
+def _print_collapsing_paths(collapsing: tuple[Any, ...]) -> None:
+    """Name the declared paths that are load-bearing for the grouping.
+
+    Printed by the dry run and the real run from the same
+    :func:`decompose.collapsing_paths` computation, so the preview cannot report a
+    different collapse than the run it is meant to predict (basicly-u6tw's rule
+    applied to basicly-jr0l.45). Silent when no single path decides anything.
+    """
+    if not collapsing:
+        return
+    print("collapsing paths:")
+    for item in collapsing:
+        print(f"  {decompose.describe_collapsing_path(item)}")
 
 
 def _spend_metrics(spend: Any) -> str:
@@ -2680,6 +2697,7 @@ def cmd_decompose(args: argparse.Namespace) -> int:
         groups = 1 + max((c.group for c in planned), default=-1)
         print(f"decompose (dry-run): {len(planned)} children in {groups} parallel group(s)")
         _print_planned(planned)
+        _print_collapsing_paths(decompose.collapsing_paths(children))
         # The band verdict is the whole point of a dry run: a plan that previews
         # clean and is then refused on the real run is not a preview of anything
         # (basicly-u6tw). Same estimates and same guidance as `decompose` itself,
@@ -2708,6 +2726,7 @@ def cmd_decompose(args: argparse.Namespace) -> int:
     for group_index, group in enumerate(result.groups):
         print(f"  group {group_index}: {' -> '.join(group)}")
     print(f"serial order: {' '.join(result.serial_order)}")
+    _print_collapsing_paths(result.collapsing)
     return 0
 
 
@@ -3805,7 +3824,12 @@ def _add_decompose_parser(subparsers: argparse._SubParsersAction) -> None:
     decompose_parser.add_argument("feature", help="Parent feature issue id")
     decompose_parser.add_argument(
         "--plan",
-        help="Plan file with a 'children' list (.toml or .json); reads JSON on stdin if omitted",
+        help=(
+            "Plan file with a 'children' list of {title, acceptance, scope, shared?, type?} "
+            "(.toml or .json); reads JSON on stdin if omitted. 'shared' names literal paths "
+            "from that child's 'scope' it only appends to (a manifest, a lockfile), which stops "
+            "one path serializing every child that declares it"
+        ),
     )
     decompose_parser.add_argument(
         "--dry-run",

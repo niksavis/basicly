@@ -261,7 +261,11 @@ def _on_classify(ctx: _Ctx) -> AdvanceResult:
         ctx,
         "decompose",
         "decomposed",
-        f"created {len(result.children)} children in {result.parallel_groups} group(s)",
+        f"created {len(result.children)} children in {result.parallel_groups} group(s)"
+        # A group count with no reason for it is where the collapse hid: the loop is
+        # how decompose actually runs in the factory, and `basicly decompose`'s
+        # report is a surface nobody reads on that path (basicly-jr0l.45).
+        + decompose.collapse_note(result.collapsing),
     )
 
 

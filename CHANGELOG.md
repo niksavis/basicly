@@ -377,6 +377,30 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **One shared path no longer collapses every child into a single serial group.**
+  Grouping is the transitive closure of scope overlap, so several children that each
+  declared a common `pyproject.toml`, lockfile or config manifest beside their own
+  distinct module all overlapped each other through that one file — the closure merged
+  them into one group and serialized work that was almost entirely parallel. The more
+  honest the plan, the worse the grouping, because a careful author is *more* likely to
+  declare the manifest they will touch.
+
+  A child may now list part of its `scope` as `shared` — the paths it touches but does not
+  own — and overlap through a path **both** sides declared shared no longer serializes
+  them. One child *owning* the path still blocks everyone who touches it, so the
+  declaration is only ever as strong as the weakest claim on the file. The hatch is
+  deliberately narrow, because a plan is agent-authored and must not be able to hide a
+  real collision: an entry must appear verbatim in `scope` (so the recorded `## Scope`
+  stays the whole truth for sizing and merge-time attribution) and must be one literal
+  path, never a glob, so no subtree can be exempted behind a wildcard.
+
+  Declared or not, the collapse is no longer silent. `basicly decompose` (dry run and real
+  run) and the loop's advance detail now **name the load-bearing path**: every declared
+  glob whose removal would leave the plan in more parallel groups, with the count both
+  ways, marked as still collapsing or as already defused by a `shared` declaration. A
+  serial chain with no stated reason was most of the damage — the one-line fix was
+  available all along and nothing said where to make it (`basicly-jr0l.45`).
+
 - **A projected Claude hook resolves from any working directory.** The command was
   rendered with a **relative** script path, justified by mirroring the pre-commit entries.
   That precedent does not transfer: a pre-commit hook always runs from the repo root, while

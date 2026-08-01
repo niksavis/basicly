@@ -19,6 +19,13 @@ truth.
 Scope overlap is a pure glob-intersection over the declared patterns (no
 filesystem lookup), so a child that will *create* a not-yet-existing file is
 still compared correctly and the result is fully reproducible.
+
+One exception, and it is narrow: a child may declare part of its scope ``shared``
+— a manifest or lockfile it only appends its own entry to — and overlap through a
+path *both* sides declared shared does not serialize them. Without it, one shared
+manifest made every child overlap every other and the transitive closure collapsed
+a wholly parallel plan into a single chain (basicly-jr0l.45). Whichever way the
+grouping lands, :func:`collapsing_paths` names the path it turned on.
 """
 
 from __future__ import annotations
@@ -31,7 +38,7 @@ import re
 import statistics
 import tomllib
 from collections.abc import Iterable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 from . import br, policy, run_record, runner
@@ -57,15 +64,19 @@ class ChildSpec:
     acceptance: tuple[str, ...]
     scope: tuple[str, ...]
     type: str = DEFAULT_CHILD_TYPE
+    # The subset of ``scope`` this child touches but does not own (see
+    # :func:`_parse_shared`). Trailing and defaulted so every plan written before
+    # the field existed keeps meaning exactly what it meant: own everything.
+    shared: tuple[str, ...] = ()
 
 
 def parse_children(data: object) -> tuple[ChildSpec, ...]:
     """Validate a parsed plan document into child specs.
 
-    Expects ``{"children": [ {title, acceptance, scope, type?}, ... ]}``. Raises
-    ``ValueError`` on any malformed entry rather than silently dropping a track —
-    a lost child would be built by nobody. A child must declare a non-empty scope
-    so parallel-safety is computable; refusing to guess is the whole point.
+    Expects ``{"children": [ {title, acceptance, scope, shared?, type?}, ... ]}``.
+    Raises ``ValueError`` on any malformed entry rather than silently dropping a
+    track — a lost child would be built by nobody. A child must declare a non-empty
+    scope so parallel-safety is computable; refusing to guess is the whole point.
     """
     if not isinstance(data, dict):
         raise ValueError(f"plan must be a table with a 'children' list, got {type(data).__name__}")
@@ -96,6 +107,7 @@ def _parse_child(entry: object, index: int) -> ChildSpec:
         acceptance=acceptance,
         scope=scope,
         type=child_type.strip(),
+        shared=_parse_shared(entry.get("shared"), scope, where),
     )
 
 
@@ -105,6 +117,56 @@ def _string_list(value: object, where: str) -> tuple[str, ...]:
     if not all(isinstance(v, str) and v.strip() for v in value):
         raise ValueError(f"{where} must be a non-empty list of non-empty strings")
     return tuple(v.strip() for v in value)
+
+
+# Glob metacharacters :func:`globs_overlap` acts on. A shared declaration may
+# contain none of them.
+_WILDCARD_CHARS = "*?["
+
+
+def _parse_shared(value: object, scope: tuple[str, ...], where: str) -> tuple[str, ...]:
+    """Validate a child's ``shared`` list against its own declared *scope*.
+
+    ``shared`` names the paths a child **touches but does not own** — a manifest, a
+    lockfile, a package ``__init__`` that several children each append their own
+    distinct entry to. Overlap through such a path does not serialize the children
+    (see :func:`group_children`), which makes this the only thing a plan can declare
+    that *removes* a ``blocks`` edge. So two rules keep it from hiding a real
+    collision:
+
+    * every entry must appear verbatim in ``scope``, so a shared declaration can only
+      ever reclassify a path the plan already declared out loud — the recorded
+      ``## Scope`` stays the whole truth for read-cost sizing and for merge-time
+      attribution (:func:`merge.coupled_lanes`), and there is no way to smuggle in a
+      path nothing else can see;
+    * every entry must be a literal path, never a glob, so no plan can exempt a whole
+      subtree from serialization behind one wildcard. The manifest case is always one
+      named file; a wildcard is the case where nobody can say what is being shared.
+
+    Absent (or an explicit empty list) means the child owns everything it declared,
+    which is what every plan written before the field existed already meant.
+    """
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError(f"{where} 'shared' must be a list of paths already in 'scope'")
+    entries: list[str] = []
+    for item in value:
+        if not (isinstance(item, str) and item.strip()):
+            raise ValueError(f"{where} 'shared' entries must be non-empty strings")
+        entry = item.strip()
+        if any(char in entry for char in _WILDCARD_CHARS):
+            raise ValueError(
+                f"{where} 'shared' entry {entry!r} is a glob; a shared path must be one literal "
+                "path, so a plan cannot exempt a whole subtree from serialization"
+            )
+        if entry not in scope:
+            raise ValueError(
+                f"{where} 'shared' entry {entry!r} is not in that child's 'scope'; declare the "
+                "path in 'scope' too, so the recorded scope stays the whole truth"
+            )
+        entries.append(entry)
+    return tuple(entries)
 
 
 def load_plan_text(text: str, fmt: str) -> tuple[ChildSpec, ...]:
@@ -164,15 +226,48 @@ def scopes_overlap(a: tuple[str, ...], b: tuple[str, ...]) -> bool:
     return any(globs_overlap(ga, gb) for ga in a for gb in b)
 
 
-def group_children(children: tuple[ChildSpec, ...]) -> tuple[int, ...]:
-    """Assign each child a group index; overlapping scopes share a group.
+def serializes(a: ChildSpec, b: ChildSpec, *, ignoring: str | None = None) -> bool:
+    """True when two children must be serialized against each other.
 
-    Union-find over pairwise scope overlap: the transitive closure of overlap is
-    one group (serialized), while children with no overlap to any group member
-    stay separate (parallel-safe). Group indices are assigned by first-seen child
-    so the numbering is deterministic and stable.
+    Overlap through a path that **both** children declared ``shared`` does not
+    serialize them: each is appending its own distinct entry to a manifest neither
+    owns, and a manifest is precisely the path a careful author is *most* likely to
+    declare (basicly-jr0l.45). Overlap where either side owns its glob still
+    serializes, so a shared declaration is only ever as strong as the weakest claim
+    on the path — one child owning ``pyproject.toml`` still blocks every child that
+    touches it, which is ccpm's designated-owner rule read from the other side.
+
+    *ignoring* drops one declared glob from both sides. That is the counterfactual
+    :func:`collapsing_paths` needs, and it is expressed here rather than by editing
+    the scopes because a scope emptied by the edit would compare as
+    "matches everything" and silently suppress the very split being measured.
     """
-    parent = list(range(len(children)))
+    for glob_a in a.scope:
+        if glob_a == ignoring:
+            continue
+        for glob_b in b.scope:
+            if glob_b == ignoring or not globs_overlap(glob_a, glob_b):
+                continue
+            if glob_a in a.shared and glob_b in b.shared:
+                continue
+            return True
+    return False
+
+
+def _group(
+    children: tuple[ChildSpec, ...], *, owned_only: bool, ignoring: str | None = None
+) -> tuple[int, ...]:
+    """Union-find grouping over pairwise serialization (see :func:`group_children`).
+
+    With *owned_only* every declared glob is treated as owned, which is the grouping
+    as it stood before ``shared`` existed. :func:`collapsing_paths` measures against
+    that view, because the collapse an author has to see is the one the paths
+    themselves cause, whether or not a declaration already defused it.
+    """
+    # Reclassified once, not once per pair: `collapsing_paths` re-groups per candidate
+    # glob, so a per-pair rewrite would be O(globs x children^2) allocations.
+    specs = tuple(_as_owned(spec) for spec in children) if owned_only else children
+    parent = list(range(len(specs)))
 
     def find(i: int) -> int:
         while parent[i] != i:
@@ -180,9 +275,9 @@ def group_children(children: tuple[ChildSpec, ...]) -> tuple[int, ...]:
             i = parent[i]
         return i
 
-    for i in range(len(children)):
-        for j in range(i + 1, len(children)):
-            if scopes_overlap(children[i].scope, children[j].scope):
+    for i in range(len(specs)):
+        for j in range(i + 1, len(specs)):
+            if serializes(specs[i], specs[j], ignoring=ignoring):
                 parent[find(i)] = find(j)
 
     labels: dict[int, int] = {}
@@ -193,6 +288,29 @@ def group_children(children: tuple[ChildSpec, ...]) -> tuple[int, ...]:
             labels[root] = len(labels)
         groups.append(labels[root])
     return tuple(groups)
+
+
+def _as_owned(spec: ChildSpec) -> ChildSpec:
+    """*spec* with its shared declarations dropped, i.e. owning its whole scope."""
+    return spec if not spec.shared else replace(spec, shared=())
+
+
+def group_children(children: tuple[ChildSpec, ...]) -> tuple[int, ...]:
+    """Assign each child a group index; children that serialize share a group.
+
+    Union-find over :func:`serializes`: the transitive closure is one group
+    (serialized), while children that serialize against no group member stay
+    separate (parallel-safe). Group indices are assigned by first-seen child so the
+    numbering is deterministic and stable.
+
+    The transitive closure is what makes one shared path expensive: before
+    ``shared`` existed, four children that each declared ``pyproject.toml`` beside
+    their own module all overlapped each other through that single file, so the
+    closure merged them into one chain and serialized work that was otherwise
+    entirely parallel (basicly-jr0l.45). Declaring the manifest ``shared`` in each of
+    them removes that one edge and leaves the modules to decide.
+    """
+    return _group(children, owned_only=False)
 
 
 def chain_predecessors(groups: tuple[int, ...]) -> tuple[int | None, ...]:
@@ -208,6 +326,106 @@ def chain_predecessors(groups: tuple[int, ...]) -> tuple[int | None, ...]:
         predecessors.append(last_in_group.get(group))
         last_in_group[group] = index
     return tuple(predecessors)
+
+
+# --- Naming the path that collapses a plan (basicly-jr0l.45) ------------------
+#
+# The collapse above is silent, and silence is most of the damage: a plan whose
+# scopes support four parallel groups reports one, with nothing saying which of the
+# declared paths cost the other three. The author sees a serial chain and no reason
+# for it, so the cheapest fix — a `shared` declaration on the one manifest — is the
+# one nobody knows to make. So every decompose surface names the load-bearing path.
+
+
+@dataclass(frozen=True)
+class CollapsingPath:
+    """One declared path whose overlaps are load-bearing for the grouping."""
+
+    glob: str
+    # Indices of the children that declared this exact glob, in declared order.
+    declarers: tuple[int, ...]
+    # Group counts with the path and with it dropped from every scope, both measured
+    # with every glob treated as owned. The owned-only view on purpose: it is the
+    # collapse the paths themselves cause, which is what an author has to see even
+    # once a declaration has defused it.
+    groups: int
+    groups_without: int
+    # True when the real (shared-respecting) grouping is unchanged by this path, i.e.
+    # the declarations already stopped it collapsing anything.
+    neutralized: bool
+
+
+def collapsing_paths(children: tuple[ChildSpec, ...]) -> tuple[CollapsingPath, ...]:
+    """The declared paths that merge parallel groups, most-collapsing first (pure).
+
+    A path is load-bearing when dropping it from every scope would leave the plan in
+    *more* parallel groups than it has — measured by re-grouping without it, so the
+    answer accounts for the transitive closure rather than guessing from a pair.
+    Candidates are the declared globs themselves, which keeps the diagnostic exactly
+    as specific as the plan: it can name ``pyproject.toml`` or ``src/**``, and it
+    reports every glob whose removal splits a group rather than picking one, because
+    two globs can each be sufficient for the same collapse and an author needs to see
+    both.
+
+    ``neutralized`` distinguishes the path that *would* have collapsed the plan from
+    the one that still does, so a plan that already declared the manifest ``shared``
+    reads as informed rather than broken. Both are reported: the AC for jr0l.45 wants
+    the collapsing path named whether or not it was defused, because a name is how a
+    reviewer checks that the declaration was honest.
+    """
+    owned = len(set(_group(children, owned_only=True)))
+    effective = len(set(_group(children, owned_only=False)))
+    found: list[CollapsingPath] = []
+    for glob in sorted({glob for child in children for glob in child.scope}):
+        without = len(set(_group(children, owned_only=True, ignoring=glob)))
+        if without <= owned:
+            continue
+        without_effective = len(set(_group(children, owned_only=False, ignoring=glob)))
+        found.append(
+            CollapsingPath(
+                glob=glob,
+                declarers=tuple(i for i, c in enumerate(children) if glob in c.scope),
+                groups=owned,
+                groups_without=without,
+                neutralized=without_effective == effective,
+            )
+        )
+    return tuple(sorted(found, key=lambda item: (-item.groups_without, item.glob)))
+
+
+def describe_collapsing_path(item: CollapsingPath) -> str:
+    """One report line naming *item* and what it does to the grouping.
+
+    Formatted here rather than at each surface so the dry run, the real run and the
+    loop's advance detail cannot describe the same collapse three different ways.
+    """
+    counts = (
+        f"treating every declared path as owned, the plan is {item.groups} group(s) with it "
+        f"and {item.groups_without} without"
+    )
+    if item.neutralized:
+        return (
+            f"`{item.glob}`: declared shared by the children it would have serialized, so it no "
+            f"longer collapses the grouping — {counts}"
+        )
+    return (
+        f"`{item.glob}`: collapses the grouping — {counts}; give it a single owner, or declare it "
+        "under 'shared' in every child that only appends its own entry to it"
+    )
+
+
+def collapse_note(collapsing: tuple[CollapsingPath, ...]) -> str:
+    """A one-line suffix naming the paths still collapsing the grouping, else ``""``.
+
+    Empty when nothing collapses *and* when every collapsing path was already
+    neutralized by a ``shared`` declaration: the grouping the caller is reporting is
+    then the grouping the scopes support, and there is nothing to act on. The full
+    report (:func:`describe_collapsing_path`) still names the neutralized ones.
+    """
+    live = [item.glob for item in collapsing if not item.neutralized]
+    if not live:
+        return ""
+    return " — collapsing path(s): " + ", ".join(f"`{glob}`" for glob in live)
 
 
 # --- Context-cost sizing estimator (basicly-kjc5.2, factory design D8) -------
@@ -1015,6 +1233,9 @@ class DecomposeResult:
     # Issue ids per parallel group, in declared order — distinct groups are safe
     # to build concurrently; within a group the order is the serial build order.
     groups: tuple[tuple[str, ...], ...]
+    # The declared paths that are load-bearing for that grouping, so every consumer
+    # can name them without recomputing (basicly-jr0l.45).
+    collapsing: tuple[CollapsingPath, ...] = ()
 
     @property
     def serial_order(self) -> tuple[str, ...]:
@@ -1080,10 +1301,10 @@ def decompose(repo_root: Path, feature_id: str, children: tuple[ChildSpec, ...])
     inside the configured working-set band or the whole plan is refused before
     anything is recorded. Each child is then created with acceptance criteria
     (so DoR passes) and the parent's labels (so it stays in the parent's phase),
-    and any two children whose declared scopes overlap are serialized by a
-    ``blocks`` chain in declared order. The resulting graph is checked for cycles
-    before the result — carrying the parallel groups and serial order — is
-    returned.
+    and any two children that :func:`serializes` are chained by a ``blocks`` edge in
+    declared order. The resulting graph is checked for cycles before the result —
+    carrying the parallel groups, the serial order, and the paths that were
+    load-bearing for the grouping — is returned.
     """
     if not children:
         raise ValueError("decompose needs at least one child spec")
@@ -1112,7 +1333,7 @@ def decompose(repo_root: Path, feature_id: str, children: tuple[ChildSpec, ...])
         grouped.setdefault(child.group, []).append(child.issue_id)
     group_tuples = tuple(tuple(grouped[g]) for g in sorted(grouped))
 
-    return DecomposeResult(feature_id, tuple(created), group_tuples)
+    return DecomposeResult(feature_id, tuple(created), group_tuples, collapsing_paths(children))
 
 
 @dataclass(frozen=True)
