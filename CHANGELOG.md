@@ -314,6 +314,28 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An autonomy grant now covers a track assembled from gating edges, and says how
+  many beads it covers.** A grant's session was its root plus that root's
+  parent-child descendants, so a grant issued on a root that *gates* its work rather
+  than parenting it covered exactly one bead — its own. A release epic is exactly
+  that shape: a bead's parent is its epic of origin and nothing is re-parented, so
+  the release holds its track as `blocks` dependencies spanning several parents plus
+  beads with no parent at all. The first checkpoint under an L3 grant on such a root
+  still demanded a confirm code, and the grant's token ceiling metered nothing.
+
+  The session walk now follows both edges — parent-child dependents for the
+  decomposition, `blocks` dependencies for the cross-cutting track. The direction is
+  asymmetric on purpose: work the root waits *on* is the track the grant was issued
+  over, while work waiting *on* the root is downstream of it and stays outside. The
+  widening applies to the whole session contract, so a gated bead's spend now counts
+  against the budget and its needs-input and rework events now carry the "any
+  wrinkle" weight L3 already claimed for them.
+
+  Coverage is invisible from the grant marker itself — an L3 with a 25000000-token
+  ceiling reads the same over twenty beads as over one — so issuance and the ledger
+  read now both report the count, and a session of one names itself as such
+  (`basicly-jr0l.40`).
+
 - **The tier injection kit no longer writes a machine-specific command into a
   committed file.** At its default project scope the installer rendered both the
   interpreter and the hook script as absolute paths, so installing it wrote a home

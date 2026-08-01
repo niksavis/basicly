@@ -117,6 +117,18 @@ delegated decisions occur — the session drops to human-only until re-granted.
 > that **no** level auto-disposes, an exception to the L0–L3 progression rather than a rung in
 > it, so an autonomy grant can never hand the catalog to the decider.
 >
+> **A session is the track, not the descent, since `basicly-jr0l.40`.** `_session_issue_ids`
+> walked parent-child dependents only, so a grant on a root that *gates* its work covered one
+> bead: a release epic holds its track as `blocks` dependencies, because a bead's parent is its
+> epic of origin and nothing is re-parented. The walk now follows both edges — parent-child
+> dependents for the decomposition, `blocks` dependencies for the cross-cutting track — and the
+> direction is asymmetric on purpose: work the root waits *on* is the track it was granted over,
+> work waiting *on* the root is not. The alternative considered (naming an explicit set of roots
+> per grant) was rejected: a release spans several parents plus parentless beads, so it degrades
+> to a grant per bead, which costs exactly the confirm relay the grant removes. Since coverage is
+> invisible from the marker itself — an L3 with a 25000000-token ceiling reads the same over
+> twenty beads or one — issuance and the ledger read now both report the bead count.
+>
 > **A decline says why since `basicly-5ltn`.** The refusal itself is unchanged; only its
 > diagnostics are new. A grant that existed, covered the checkpoint, and declined now names the
 > violated precondition **and the bead it belongs to** on the challenge — two of the three
