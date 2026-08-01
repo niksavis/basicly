@@ -38,15 +38,27 @@ pytestmark = needs_br
 _WAITED_S = 600
 
 # Tolerance for the tracker's own clock resolution: ``created_at`` has whole-second
-# resolution and truncates, so the meter may read a second or two over. It covers
-# *only* that. The real br round-trips between the ask and the answer also land in
-# the interval, but their cost is measured per run rather than budgeted here — see
+# resolution, so the meter may read a second or two over. It covers *only* that. The
+# real br round-trips between the ask and the answer also land in the interval, but
+# their cost is measured per run rather than budgeted here — see
 # :func:`_assert_interval`.
 _SLACK_S = 5
+
+# One whole second, because that is the resolution of the *start* of the interval.
+# ``record_wait`` subtracts the tracker's second-resolution ``created_at`` from the
+# local clock and then truncates with ``int()``, so the reported figure carries one
+# second of quantisation error in whichever direction br's sub-second handling takes
+# it. Applied to both ends deliberately: which direction that is belongs to br, not
+# to us, and a test that only tolerates one of them is asserting an undocumented
+# property of a third-party tool (basicly-5h0g).
+_STAMP_RESOLUTION_S = 1
 
 
 def _assert_interval(waited_s: int, elapsed_s: float) -> None:
     """The injected offset must show up, allowing for the time the calls really took.
+
+    Both bounds carry slack, and for the same reason: the interval is measured
+    between two clocks of different resolutions and then truncated.
 
     The upper bound used to be a flat ``_WAITED_S + _SLACK_S``, which quietly
     asserted that two real br invocations complete within five seconds. On a
@@ -55,8 +67,16 @@ def _assert_interval(waited_s: int, elapsed_s: float) -> None:
     overhead from a monotonic clock keeps the property under test — the pinned
     offset is what the meter reports — without also testing how fast the host is,
     per ``.claude/rules/platform-hermetic-tests.md``.
+
+    The lower bound was left bare by that fix, which made it assert that br's stamp
+    can never land ahead of the local clock reading. Under four-worker load it did:
+    a full-suite run measured ``600 <= 599`` and failed the verify gate on a correct
+    meter (basicly-5h0g). One second of quantisation is not a defect — a broken
+    meter reports nothing like the pinned offset — so the floor is
+    ``_WAITED_S - _STAMP_RESOLUTION_S`` rather than a wider tolerance that would
+    stop discriminating.
     """
-    assert _WAITED_S <= waited_s <= _WAITED_S + elapsed_s + _SLACK_S
+    assert _WAITED_S - _STAMP_RESOLUTION_S <= waited_s <= _WAITED_S + elapsed_s + _SLACK_S
 
 
 @pytest.fixture
