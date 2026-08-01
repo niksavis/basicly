@@ -2773,7 +2773,15 @@ def _cmd_loop_status(args: argparse.Namespace) -> int:
 
 def _cmd_loop_advance(args: argparse.Namespace) -> int:
     """Advance one loop step; exit non-zero when the track blocks so CI can tell."""
-    result = loop.advance(_repo_root(), args.issue, inputs=_loop_inputs(args))
+    repo_root = _repo_root()
+    try:
+        overrides = _apply_session_overrides(repo_root, args)
+    except ValueError as exc:
+        print(f"advance: refused - {exc}", file=sys.stderr)
+        return 1
+    if overrides:
+        print(f"override: {', '.join(overrides)}")
+    result = loop.advance(repo_root, args.issue, inputs=_loop_inputs(args))
     print(_format_advance(result))
     return 1 if result.blocked else 0
 
@@ -2822,8 +2830,16 @@ def _cmd_loop_run(args: argparse.Namespace) -> int:
     resolves one — a TTY, a covering grant, or a relayed one-time code — so this
     collapses the ceremony without widening what may be self-approved.
     """
+    repo_root = _repo_root()
+    try:
+        overrides = _apply_session_overrides(repo_root, args)
+    except ValueError as exc:
+        print(f"run: refused - {exc}", file=sys.stderr)
+        return 1
+    if overrides:
+        print(f"override: {', '.join(overrides)}")
     result = loop.run_ceremony(
-        _repo_root(),
+        repo_root,
         args.issue,
         inputs=_loop_inputs(args),
         interactive=sys.stdin.isatty(),
@@ -3816,6 +3832,26 @@ def _add_rubric_parser(subparsers: argparse._SubParsersAction) -> None:
     )
 
 
+def _add_session_override_args(parser: argparse.ArgumentParser) -> None:
+    """Add the per-invocation ``--runner``/``--autonomy`` overrides (basicly-nvm1).
+
+    Shared by every loop subcommand that can dispatch an agent, so the choice is
+    answerable per invocation instead of only by the committed config — which is what
+    forced one key to serve both the supervised and the interactive mode.
+    """
+    parser.add_argument(
+        "--runner",
+        help="Agent to dispatch for this invocation only, overriding [runner] default "
+        "without editing any committed config ('manual' restores the handoff)",
+    )
+    parser.add_argument(
+        "--autonomy",
+        choices=AUTONOMY_LEVELS,
+        help="Grantable autonomy ceiling for this invocation only, overriding "
+        "[policy] autonomy without editing any committed config",
+    )
+
+
 def _add_loop_input_args(parser: argparse.ArgumentParser) -> None:
     """Add the shared agent-input flags that map onto a ``loop.Inputs``."""
     parser.add_argument(
@@ -3898,17 +3934,14 @@ def _add_loop_parser(subparsers: argparse._SubParsersAction) -> None:
         "outcomes, land green work - until done or blocked on a human",
     )
     l_supervise.add_argument("issue", help="Root issue (feature or epic) the session is bound to")
-    l_supervise.add_argument(
-        "--runner",
-        help="Agent to dispatch for this session only, overriding [runner] default "
-        "without editing any committed config",
-    )
-    l_supervise.add_argument(
-        "--autonomy",
-        choices=AUTONOMY_LEVELS,
-        help="Grantable autonomy ceiling for this session only, overriding "
-        "[policy] autonomy without editing any committed config",
-    )
+    # Every path that can dispatch takes the session overrides, not only `supervise`
+    # (basicly-nvm1). Without them on `advance`/`run`, one committed `[runner] default`
+    # had to serve two incompatible modes: a real agent so a supervised pass dispatches
+    # at all, and the handoff so an interactive build does not re-implement the node in a
+    # second process. The only escape was an uncommitted `basicly.local.toml`, which no
+    # consumer inherits — so the committed default could not express the intent.
+    for dispatching in (l_advance, l_run, l_supervise):
+        _add_session_override_args(dispatching)
     l_sess = loop_sub.add_parser(
         "session",
         help="Attach to a supervisor session and observe its live status "

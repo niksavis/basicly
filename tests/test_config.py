@@ -13,6 +13,7 @@ from basicly.config import (
     DEFAULT_CONFIG_TOML,
     DEFAULT_MAX_AGENT_PROCESSES,
     DEFAULT_STALL_AFTER,
+    DEFAULT_WORKTREE_CONCURRENCY,
     LOCAL_CONFIG_FILE,
     PolicyConfig,
     WorktreeConfig,
@@ -124,13 +125,17 @@ def test_core_root_derives_from_fragments_dir(tmp_path: Path) -> None:
 
 def test_worktree_config_defaults_without_file(tmp_path: Path) -> None:
     """With no basicly.toml the worktree config is (current branch, cap 4)."""
-    assert load_worktree_config(tmp_path) == WorktreeConfig(base_branch=None, concurrency=4)
+    assert load_worktree_config(tmp_path) == WorktreeConfig(
+        base_branch=None, concurrency=DEFAULT_WORKTREE_CONCURRENCY
+    )
 
 
 def test_default_config_toml_worktree_matches_defaults(tmp_path: Path) -> None:
     """The scaffolded [worktree] section resolves to the built-in defaults."""
     (tmp_path / CONFIG_FILE).write_text(DEFAULT_CONFIG_TOML, encoding="utf-8")
-    assert load_worktree_config(tmp_path) == WorktreeConfig(base_branch=None, concurrency=4)
+    assert load_worktree_config(tmp_path) == WorktreeConfig(
+        base_branch=None, concurrency=DEFAULT_WORKTREE_CONCURRENCY
+    )
 
 
 def test_worktree_config_custom_values(tmp_path: Path) -> None:
@@ -145,7 +150,7 @@ def test_worktree_config_custom_values(tmp_path: Path) -> None:
         "[worktree]\nconcurrency = 0\n",
         encoding="utf-8",
     )
-    assert load_worktree_config(tmp_path).concurrency == 4
+    assert load_worktree_config(tmp_path).concurrency == DEFAULT_WORKTREE_CONCURRENCY
 
 
 def test_verify_config_empty_without_section(tmp_path: Path) -> None:

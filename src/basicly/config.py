@@ -64,7 +64,7 @@ manifest = ".basicly/generated-manifest.json"
 # Branch new harness/<name> worktrees fork from. Empty = the current branch.
 base_branch = ""
 # Cap on how many worktrees may exist at once.
-concurrency = 4
+concurrency = 5
 
 # Deterministic verify gate. Each check runs in the listed modes; a "staged"
 # check with staged_suffix runs only against staged files of that suffix.
@@ -351,7 +351,10 @@ body: |
 }
 
 # Default concurrency cap when no basicly.toml (or no [worktree]) is present.
-DEFAULT_WORKTREE_CONCURRENCY = 4
+# Five: it matches the scaffold above, and `DEFAULT_MAX_AGENT_PROCESSES` of 8 splits
+# into exactly 5 lane slots plus the reserved decider and helper slots, so the worktree
+# cap and the process budget agree instead of one silently throttling the other.
+DEFAULT_WORKTREE_CONCURRENCY = 5
 
 # Modes the verify runner understands.
 VERIFY_MODES = ("fast", "full", "staged")

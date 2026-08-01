@@ -269,3 +269,48 @@ def test_the_grant_challenge_reprints_the_autonomy_override(
     assert "--autonomy L1" in rerun
     assert "--confirm cafe1234" in rerun
     assert "--token-budget 1000000" in rerun
+
+
+# --- Every dispatching path takes the overrides (basicly-nvm1) -----------------
+
+
+@pytest.mark.parametrize("command", ["advance", "run", "supervise"])
+def test_every_dispatching_subcommand_accepts_the_session_overrides(command: str) -> None:
+    """`supervise` used to be the only one, which is what forced the config workaround.
+
+    With no `--runner` on `advance`/`run`, one committed `[runner] default` had to serve
+    both a supervised pass (which needs a real agent to dispatch at all) and interactive
+    driving (which needs the handoff, or the build phase re-implements the node in a
+    second process). The only escape was an uncommitted `basicly.local.toml`, which no
+    consumer inherits.
+    """
+    parser = cli._build_parser()
+
+    args = parser.parse_args(["loop", command, "i-1", "--runner", "manual", "--autonomy", "L1"])
+
+    assert (args.runner, args.autonomy) == ("manual", "L1")
+
+
+def test_the_runner_override_restores_the_handoff_over_a_committed_agent(
+    tmp_path: Path,
+) -> None:
+    """The case the fix exists for: hand-code a leaf without editing any config."""
+    (tmp_path / "basicly.toml").write_text('[runner]\ndefault = "claude"\n', encoding="utf-8")
+    assert load_runner_config(tmp_path).default == "claude"
+
+    applied = cli._apply_session_overrides(
+        tmp_path, argparse.Namespace(runner="manual", autonomy=None)
+    )
+
+    assert applied == ("runner.default=manual",)
+    resolved = load_runner_config(tmp_path)
+    spec = next(s for s in resolved.specs if s.name == resolved.default)
+    assert spec.kind == "handoff", "an interactive build must be able to stay a handoff"
+
+
+def test_an_unknown_runner_is_refused_rather_than_silently_ignored(tmp_path: Path) -> None:
+    """A typo must not read as "use the committed default" on a dispatching path."""
+    with pytest.raises(ValueError, match="unknown runner"):
+        cli._apply_session_overrides(
+            tmp_path, argparse.Namespace(runner="nosuchagent", autonomy=None)
+        )
