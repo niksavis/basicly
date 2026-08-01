@@ -290,6 +290,29 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The tier injection kit no longer writes a machine-specific command into a
+  committed file.** At its default project scope the installer rendered both the
+  interpreter and the hook script as absolute paths, so installing it wrote a home
+  directory and a username into `.claude/settings.json` — a tracked, shared file —
+  and produced an entry that was broken for every teammate and every other machine.
+  The repository's file now gets a command with nothing machine-specific in it: the
+  hook is named through `${CLAUDE_PROJECT_DIR}`, which the host substitutes itself
+  and which therefore does not depend on the directory a spawn happened in, and it
+  runs under `uv run --no-project --no-python-downloads` — no absolute path, network
+  free, and identical on Windows, Linux and macOS. `--interpreter` overrides that for
+  a consumer without uv. **`--user` scope is deliberately unchanged**: that file is
+  machine-local, so absolute paths are correct there and nothing needs to be on
+  `PATH`. A project-scope install that cannot name the hook relative to the
+  repository now refuses rather than falling back to the absolute rendering.
+
+  The reason the suite could not see this is fixed too. Every test installed into a
+  bare `tmp_path` while running the installer out of basicly's own checkout, so the
+  hook was never inside the repository being written to and no test could observe how
+  a real consumer's committed file gets addressed; the tests now install into a
+  repository that contains the kit. The assertion that had pinned the defect was
+  justified by an unverified claim in its own docstring — that claim turned out to be
+  true and simply never to have been an argument for an absolute path (`basicly-dukb`).
+
 - **A closed bead's rework escalation no longer blocks lights-out forever.** Rework
   is recorded as append-only comment markers and nothing marks an escalation
   resolved, so once any bead in a session tree reached `max_rework` its count never
