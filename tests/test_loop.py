@@ -24,6 +24,7 @@ from basicly import (
     rubrics,
     run_record,
     runner,
+    supervise,
     verify,
     worktree,
 )
@@ -220,6 +221,149 @@ def test_classify_leaf_dispatches_headless_runner(
     assert "i" in calls["prompt"] and "AGENTS.md" in calls["prompt"]
     assert "Do not merge" in calls["prompt"]
     assert result.blocked and "runner 'claude' finished" in result.detail
+
+
+def _never_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make any dispatch a test failure, so a refusal is proven by nothing spawning."""
+    monkeypatch.setattr(
+        runner, "run", lambda *_a, **_k: pytest.fail("a refused dispatch must not spawn a runner")
+    )
+
+
+def test_a_halted_grant_refuses_the_interactive_dispatch(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The money defect: an exhausted grant still dispatched a metered agent.
+
+    `policy.spend_status` is D3's one halt predicate, enforced at delegated approval, the
+    supervised lane admission and decider delegation — and this path reached `runner.run`
+    past all three. Observed live: basicly-jr0l's grant was spent 43599830/21000000 and a
+    `loop run` dispatched anyway (basicly-1th1).
+    """
+    _ready_leaf(at, monkeypatch)
+    _pin_runner(monkeypatch, "claude")
+    _never_runs(monkeypatch)
+    monkeypatch.setattr(
+        loop.policy,
+        "spend_status",
+        lambda *_a, **_k: policy.SpendStatus(
+            grant=policy.Grant(level="L1", token_budget=100),
+            spent_tokens=500,
+            halted=True,
+            detail="L1 grant token_budget spent (500/100 tokens under this grant)",
+        ),
+    )
+
+    result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="epic")
+
+    assert result.blocked
+    assert result.needs_input == "grant"
+    assert "refused before it started" in result.detail
+    assert "500/100 tokens" in result.detail, "the halt's own numbers must reach the operator"
+
+
+def test_a_dispatch_with_no_session_root_is_ungated_as_before(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The control: no `--root` means no grant ledger to read, so nothing changes.
+
+    Gating on an absent root would have to invent which bead carries the grant, and
+    every caller that never passed one would start refusing.
+    """
+    _ready_leaf(at, monkeypatch)
+    _pin_runner(monkeypatch, "claude")
+    monkeypatch.setattr(
+        loop.policy,
+        "spend_status",
+        lambda *_a, **_k: pytest.fail("no session root means no ledger to consult"),
+    )
+    monkeypatch.setattr(
+        runner,
+        "run",
+        lambda spec, *_a, **_k: runner.RunResult(
+            spec.name, tuple(spec.command), executed=True, returncode=0
+        ),
+    )
+
+    result = _advance(tmp_path)
+
+    assert result.blocked and "finished in worktree" in result.detail
+
+
+def test_an_oversized_bead_is_refused_by_the_band_at_the_interactive_dispatch(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The band gate applies here too, using supervise's single admission definition.
+
+    Re-deriving the rule locally is how the number that gates a dispatch and the number
+    recorded beside its actual come to disagree (basicly-jr0l.34).
+    """
+    _ready_leaf(at, monkeypatch)
+    _pin_runner(monkeypatch, "claude")
+    _never_runs(monkeypatch)
+    monkeypatch.setattr(loop.policy, "spend_status", lambda *_a, **_k: _unhalted())
+    monkeypatch.setattr(
+        supervise,
+        "admit_working_set",
+        lambda *_a, **_k: supervise.WorkingSetAdmission(
+            "i", None, "child 'i' estimates 900000 working-set tokens, above 64000", refused=True
+        ),
+    )
+    monkeypatch.setattr(supervise, "escalate_working_set", lambda *_a, **_k: None)
+
+    result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="epic")
+
+    assert result.blocked and result.needs_input == "scope"
+    assert "900000 working-set tokens" in result.detail
+
+
+def test_a_scopeless_bead_still_dispatches_but_is_escalated(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A bead declaring no scope is admitted — and recorded as never checked.
+
+    Refusing it would ban hand-filed work, which is most of a real tracker; admitting it
+    silently is the hole basicly-jr0l.60 closed. This path must do the same thing the
+    supervised one does, including queuing the notice.
+    """
+    _ready_leaf(at, monkeypatch)
+    _pin_runner(monkeypatch, "claude")
+    monkeypatch.setattr(loop.policy, "spend_status", lambda *_a, **_k: _unhalted())
+    escalated: list[str] = []
+    monkeypatch.setattr(
+        supervise,
+        "admit_working_set",
+        lambda *_a, **_k: supervise.WorkingSetAdmission(
+            "i",
+            None,
+            "declares no scope the estimator can read",
+            refused=False,
+            absence="undeclared",
+        ),
+    )
+    monkeypatch.setattr(
+        supervise,
+        "escalate_working_set",
+        lambda _r, admission: escalated.append(admission.issue_id),
+    )
+    monkeypatch.setattr(
+        runner,
+        "run",
+        lambda spec, *_a, **_k: runner.RunResult(
+            spec.name, tuple(spec.command), executed=True, returncode=0
+        ),
+    )
+
+    result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="epic")
+
+    assert escalated == ["i"], "the never-checked notice must be recorded here too"
+    assert result.blocked and "finished in worktree" in result.detail
+
+
+def _unhalted() -> policy.SpendStatus:
+    return policy.SpendStatus(
+        grant=policy.Grant(level="L1", token_budget=1_000_000), spent_tokens=0, halted=False
+    )
 
 
 def test_dispatch_prompt_documents_the_needs_input_protocol(

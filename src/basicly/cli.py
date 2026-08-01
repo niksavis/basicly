@@ -2933,6 +2933,14 @@ def _ceremony_rerun(args: argparse.Namespace, code: str) -> str:
     The point of the ceremony is that a human relays one code and the *whole*
     boundary continues, so the printed line has to be the command they ran plus
     ``--confirm`` — not a bare checkpoint approval that leaves the loop parked.
+
+    ``--runner`` and ``--autonomy`` are carried for the same reason ``policy grant``
+    carries ``--autonomy`` (basicly-jr0l.15): both are *process-local* session
+    overrides, so a reprint that drops one is not the command the operator ran. For
+    ``--runner`` that is not merely untidy — ``[runner] default`` is ``auto``, which
+    resolves to a headless agent, so relaying the reprinted line verbatim turned a
+    manual handoff into a live metered dispatch. That happened (basicly-1th1), and
+    relaying this line exactly is the documented protocol, so the line has to be right.
     """
     parts = ["basicly", "loop", "run", args.issue]
     if args.work_type:
@@ -2943,6 +2951,10 @@ def _ceremony_rerun(args: argparse.Namespace, code: str) -> str:
         parts += ["--mode", args.mode]
     if args.root:
         parts += ["--root", args.root]
+    if runner_name := getattr(args, "runner", None):
+        parts += ["--runner", runner_name]
+    if autonomy := getattr(args, "autonomy", None):
+        parts += ["--autonomy", autonomy]
     return " ".join([*parts, "--confirm", code])
 
 

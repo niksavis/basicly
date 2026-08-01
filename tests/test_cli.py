@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
@@ -1550,3 +1551,38 @@ def test_main_line_buffers_stdout_before_dispatching(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(cli, "cmd_status", lambda _a: calls.append("dispatched") or 0)
     cli.main(["status"])
     assert calls == ["buffered", "dispatched"]
+
+
+def test_the_ceremony_reprint_carries_the_session_overrides() -> None:
+    """The reprint is the command the operator relays, so it must be the one they ran.
+
+    `--runner` and `--autonomy` are process-local overrides. Dropping `--runner` was not
+    cosmetic: `[runner] default` is `auto`, which resolves to a headless agent, so
+    relaying the reprinted line verbatim turned a manual handoff into a live metered
+    dispatch — which is how basicly-1th1 was found, by it happening.
+    """
+    args = argparse.Namespace(
+        issue="basicly-1th1",
+        work_type="bug",
+        children=None,
+        mode="full",
+        root="basicly-jr0l",
+        runner="manual",
+        autonomy="L3",
+    )
+
+    rerun = cli._ceremony_rerun(args, "2ff3e7a2")
+
+    assert rerun == (
+        "basicly loop run basicly-1th1 --work-type bug --root basicly-jr0l "
+        "--runner manual --autonomy L3 --confirm 2ff3e7a2"
+    )
+
+
+def test_the_ceremony_reprint_omits_overrides_that_were_not_given() -> None:
+    """The control: an operator who passed no override must not be handed one."""
+    args = argparse.Namespace(
+        issue="i", work_type=None, children=None, mode="full", root=None, runner=None, autonomy=None
+    )
+
+    assert cli._ceremony_rerun(args, "abc123") == "basicly loop run i --confirm abc123"

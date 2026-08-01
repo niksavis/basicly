@@ -62,7 +62,13 @@ from . import (
     worktree,
 )
 from .br import run_br as _run_br
-from .config import PolicyConfig, load_policy_config, load_runner_config, load_worktree_config
+from .config import (
+    PolicyConfig,
+    load_policy_config,
+    load_runner_config,
+    load_sizing_config,
+    load_worktree_config,
+)
 from .decompose import ChildSpec
 
 # Work classes that are leaf tracks — they build directly rather than decompose
@@ -148,6 +154,10 @@ class _Ctx:
     state: loop_state.NodeState
     config: PolicyConfig
     inputs: Inputs
+    # The issue carrying the grant ledger for this session, when the caller named
+    # one (``loop run --root``). None leaves the dispatch cost gates inert, which is
+    # what every caller that never had a session root already got (basicly-1th1).
+    grant_root: str | None = None
 
 
 def _blocked(  # noqa: PLR0913 — one keyword per block shape, all mutually exclusive
@@ -508,7 +518,18 @@ def _start_build_leaf(ctx: _Ctx) -> AdvanceResult:
 
 
 def _dispatch_runner(ctx: _Ctx, name: str, cwd: Path) -> AdvanceResult:
-    """Run the selected agent headless in the worktree; a handoff just blocks."""
+    """Run the selected agent headless in the worktree; a handoff just blocks.
+
+    Cost-gated before anything spawns, because this was the one dispatch site with no
+    gate on it at all (basicly-1th1). ``policy.spend_status`` is D3's single halt
+    predicate, and its three enforcing call sites were delegated approval, the
+    supervised lane admission, and decider delegation — an interactive ``loop run``
+    reached ``runner.run`` past all three, so an exhausted grant still spent real money
+    on the path a human is most likely to drive by hand.
+    """
+    refused = _dispatch_refused(ctx, name)
+    if refused is not None:
+        return refused
     dispatch = _run_agent(ctx, ctx.issue_id, cwd)
     if dispatch.result.handoff:
         return _blocked(ctx, f"worktree {name!r} provisioned; awaiting the agent's work")
@@ -516,6 +537,46 @@ def _dispatch_runner(ctx: _Ctx, name: str, cwd: Path) -> AdvanceResult:
     return held or _blocked(
         ctx,
         f"runner {dispatch.spec.name!r} finished in worktree {name!r}; advance again to land it",
+    )
+
+
+def _dispatch_refused(ctx: _Ctx, name: str) -> AdvanceResult | None:
+    """Why this dispatch must not start, or None to go ahead (basicly-1th1).
+
+    Both of the supervised path's forward-looking gates, applied to the interactive one:
+    the D3 spend halt, and the working-set band. Inert without a ``grant_root`` — a
+    caller that named no session has no grant ledger to read and no session to size
+    against, which is exactly the behaviour every such caller already had.
+
+    Reuses ``supervise``'s admission rather than re-deriving it. A second copy of a
+    sizing rule is how the number that gates a dispatch and the number recorded beside
+    its actual come to disagree, which is the defect basicly-jr0l.34 exists to prevent.
+    That module imports this one, so the import is deferred to this call.
+
+    A running dispatch is never interrupted — decision 14 — so this only ever declines
+    to *start* one.
+    """
+    if ctx.grant_root is None:
+        return None
+    from . import supervise  # noqa: PLC0415 — supervise imports loop; deferred to break it
+
+    spend = policy.spend_status(ctx.repo_root, ctx.grant_root)
+    if spend.halted:
+        return _blocked(
+            ctx,
+            f"dispatch refused before it started: {spend.detail}",
+            needs_input="grant",
+        )
+    sizing = load_sizing_config(ctx.repo_root)
+    admission = supervise.admit_working_set(ctx.repo_root, ctx.issue_id, sizing)
+    queued = supervise.escalate_working_set(ctx.repo_root, admission)
+    if not admission.refused:
+        return None
+    held = f"; held by {queued.decision_id}" if queued is not None else ""
+    return _blocked(
+        ctx,
+        f"dispatch into worktree {name!r} refused before it started: {admission.violation}{held}",
+        needs_input="scope",
     )
 
 
@@ -1249,6 +1310,7 @@ def advance(
     *,
     config: PolicyConfig | None = None,
     inputs: Inputs | None = None,
+    grant_root: str | None = None,
 ) -> AdvanceResult:
     """Advance *issue_id* one loop phase, resuming from its ``br`` state.
 
@@ -1262,7 +1324,7 @@ def advance(
     if state.phase == "done":
         return AdvanceResult(issue_id, "done", "done", "done", "already shipped")
 
-    ctx = _Ctx(repo_root, issue_id, state, config, inputs)
+    ctx = _Ctx(repo_root, issue_id, state, config, inputs, grant_root)
     if state.phase in _BASE_CHECKOUT_PHASES and worktree.is_linked_checkout(repo_root):
         return _blocked(
             ctx,
@@ -1409,7 +1471,10 @@ def run_ceremony(  # noqa: PLR0913 — mirrors the CLI surface
     events: list[CeremonyEvent] = []
     resolved: set[str] = set()
     for _ in range(max_steps):
-        result = advance(repo_root, issue_id, config=config, inputs=inputs)
+        # The *grant_root* the checkpoints below are approved against also gates the
+        # dispatch this may approve its way into (basicly-1th1): a ceremony that can
+        # reach a build must read the ledger that build spends under.
+        result = advance(repo_root, issue_id, config=config, inputs=inputs, grant_root=grant_root)
         events.append(result)
         if result.to_phase == "done":
             break
