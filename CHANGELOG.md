@@ -32,7 +32,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   **unobserved** instead of assumed to match. Comparison tolerates a surface
   spelling and a dated build, so a healthy run is never flagged while a genuinely
   different model still is. A tier aimed at a family that cannot pin one at all
-  (the handoff runner) is recorded as *not honoured* rather than as satisfied.
+  (the handoff runner) is recorded as *not honoured* rather than as satisfied
+  (`basicly-kjc5.59`).
 
 - **A committed model map resolves a tier per vendor and per surface.**
   `.basicly/core/models/anchors.yaml` names one anchor model per (tier, vendor)
@@ -65,7 +66,73 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `model-map.json` is a standalone, self-describing artifact: plain JSON with a
   `schema_version`, a published schema beside it, a provenance stamp, and no
   basicly-internal structure. Copy that one file into an unrelated project and
-  drive your own spawner from it — see `.basicly/core/models/README.md`.
+  drive your own spawner from it — see `.basicly/core/models/README.md`
+  (`basicly-kjc5.61`).
+
+- **Subagents now project to the GitHub Copilot agents root as well as Claude's.**
+  `basicly agents-build` — and therefore `basicly install` — writes each catalog
+  subagent to `.claude/agents/<slug>.md` **and** to `.github/agents/<slug>.agent.md`.
+  A consumer repo gains a projected directory it did not have before; commit it,
+  like every other projection. `basicly agents-check` covers both roots with no
+  opt-in flag, deliberately unlike `skills-build`, which still needs
+  `--all-default-roots`.
+
+  This reopens a decision `basicly-ajq` closed, on new facts rather than a fresh
+  reading of the old ones. VS Code does read the Claude format out of
+  `.claude/agents`, which is why one root sufficed — but it is not the only Copilot
+  surface, and the others read only the documented root. The double-load objection
+  is retired by measurement: Copilot deduplicates by the config file name minus
+  `.md`/`.agent.md`, so `<slug>.md` and `<slug>.agent.md` collapse to one agent. A
+  probe with `.claude/agents` moved aside confirmed the documented root alone
+  carries the whole roster, so nothing rests on undocumented discovery. The tool
+  alias table is pinned as reviewed data and the write-tool set is **derived** from
+  it, so adding a write alias widens the read-only posture check automatically. The
+  codex decline stands (`basicly-8sxf`).
+
+- **A portable tier resolver ships into consumer repos**, at
+  `.basicly/core/kit/tier_resolver.py`. It answers the same question
+  `basicly.models` answers inside the harness — which concrete model does this tier
+  mean on this host — under one hard constraint: **no basicly**. No `import
+  basicly`, nothing on `PATH`, no third-party package, no network, no subprocess, no
+  LLM. Two files are the entire dependency set, the module and `model-map.json`, so
+  they can be copied into an unrelated project to drive its own spawner. Proved with
+  `env -i`, `python -S -I` and an empty `PATH`.
+
+  It is importable as a library and runnable as a CLI, and it resolves a tier
+  declared by a **consumer's own** agent definition, not only by a basicly catalog
+  source — that is what makes the tier vocabulary portable rather than an internal
+  id. The one deliberate difference from the in-harness resolver: this one **fails
+  closed and quiet** where that one raises. It runs in the spawn path, and on the
+  Copilot host the hook can only be installed per machine, so it is invoked in
+  repositories that have no map at all; returning an empty result leaves the spawn
+  untouched and the host's own default applies. Empty is never silent — every empty
+  result carries the reason it came back empty, and the CLI exits non-zero and
+  prints it as JSON. Its mirrored surface table is cross-checked against
+  `models.model_for` over all 4x4x3 cells (`basicly-wbsz.1`).
+
+- **A landed commit carries the model that produced it**, as a `Harness-Model` git
+  trailer on the engine-assembled envelope, so model provenance survives a clone
+  rather than living only in a local run record. The same trailer name the merge
+  path already stamps, so `git log --format='%(trailers)'` reads the same fact off a
+  work commit and a landing commit. It stamps the **pinned** value, since one
+  trailer cannot carry the several models a session may switch between, and it is
+  filtered to work phases so a decider dispatch cannot stamp the agent's commit.
+  Nothing demanded, no trailer; a tier demanded but unanswerable **refuses** the
+  envelope rather than emitting an empty or placeholder one (`basicly-kjc5.60`).
+
+- **`basicly decompose` now forecasts spend and wall clock per model**, not only the
+  working set. The governor only ever forecast working set — the context a lane
+  needs — and measured spend on the three metered lanes ran **160–420x** that,
+  because an agentic loop re-sends its context every turn. The forecast is three
+  separately-replaceable ratios (tokens per working-set token, USD per million
+  tokens, seconds per million tokens), seeded from a declared prior derived from
+  those three packages and replaced by measured per-model history once
+  `calibration_min_samples` is reached.
+
+  **A seeded number is labelled seeded** on the surface a human reads, next to the
+  number itself and not only in the recorded marker: a seeded figure that reads as
+  measured is worse than no figure. An unpredictable metric prints as `unknown`
+  rather than as a confident zero (`basicly-jr0l.21`).
 
 ### Changed
 
@@ -86,8 +153,109 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the same model `claude-haiku-4.5` for Copilot and `claude-haiku-4-5` for
   Anthropic, and only Claude reads a `model` frontmatter key at all — so a
   pinned id landed verbatim in one family's file and was invisible to every
-  other. Nothing resolves a tier to a concrete model yet; declaring it is what
-  makes that resolution possible later without re-authoring every source.
+  other. Declaring the tier is what makes the resolution above possible without
+  re-authoring every source (`basicly-kjc5.58`).
+
+- **The model tier vocabulary is validated in the agents overlay, not only in
+  core.** The `tier` enum reached `.basicly/core/agents/*/agent.yaml` through JSON
+  Schema validation, but `.basicly-local/agents` was never schema-validated, so an
+  overlay source declaring `tier: turbo` was accepted in silence while the same
+  source in core was rejected. Both are now checked, and by the same enum.
+
+  **Migration.** If an overlay agent source carries a tier outside
+  `low | medium | high | maximum`, `basicly catalog lint` now fails where it
+  previously passed. The failure names the source and spells the four tiers
+  (`basicly-axqe`).
+
+- **The read-only posture check matches write tools case-insensitively**, and
+  `Create` is now in the set. Copilot's tool aliases are explicitly case
+  insensitive and its `edit` primary grants `Edit`, `MultiEdit`, `Write` and
+  `NotebookEdit` — so a source declaring `edit`, `write` or `notebookedit` in
+  lowercase passed our read-only check and was then granted real filesystem writes.
+  `Create` had no Claude spelling at all, so the set structurally could not catch
+  Copilot's file-creating primary.
+
+  **Migration.** An agent source that declares a read-only posture while naming a
+  write tool in any casing now fails `basicly catalog lint` where it previously
+  passed. Either drop the write tool or drop the read-only posture
+  (`basicly-e9jc`).
+
+- **The working-set band is enforced at dispatch, not only at decompose.** The
+  sizing governor refused an out-of-band plan at decompose and nothing re-checked
+  the band when a lane started, so the band bound only work that arrived through
+  decompose — a supervised pass over pre-existing leaf beads dispatched whatever
+  the scheduler ranked first, at any size. Measured on this repo's own ready set,
+  the top-ranked lane estimated 70% over the ceiling a plan would have been refused
+  for.
+
+  The two ends of the band earn different severities, deliberately. **Above the
+  ceiling the dispatch is refused** and a pending queue item holds the lane, because
+  the run would overflow the window it was sized against and the remedy — split the
+  package — is a decompose action no engine can take. **Below the floor it escalates
+  and then proceeds**, because an under-size lane still delivers and blocking it
+  would strand deliverable work over an economic inefficiency. A lane whose scope
+  cannot be read at all is **admitted**: most open beads carry no `## Scope` section,
+  so failing closed on a missing estimate would turn a sizing governor into a ban on
+  hand-filed work (`basicly-jr0l.16`).
+
+- **Three verification rules were added to the shipped skills**, each traceable to a
+  wrong statement that reached a human. `harness-loop` now says to re-measure a
+  bead's third-party claims before building on them and to record the check on the
+  bead — a bead passes the Definition-of-Ready gate on structure, not on facts.
+  `test-discipline` now says a zero result needs a positive control, in a search and
+  in an absence assertion alike. `tool-br` now says to read tracker semantics
+  (grants, gate results, derived phase) through the engine and not by grepping the
+  export, which stays correct only for whole-tracker counting (`basicly-hsrs`).
+
+### Fixed
+
+- **A closed bead's rework escalation no longer blocks lights-out forever.** Rework
+  is recorded as append-only comment markers and nothing marks an escalation
+  resolved, so once any bead in a session tree reached `max_rework` its count never
+  decreased — a bead that shipped days earlier, with its checkpoint answered by a
+  human, was still read as a live session-wide violation and every ship under that
+  root demanded a confirm code despite an active grant. Closed beads are now
+  excluded, for the escalation rule and the `needs-input` rule both, through one
+  shared reader so the grant rule and the escalation rule stay one principle. An
+  **open** bead's escalation still blocks, unchanged (`basicly-i1s8`).
+
+- **A hook script change can pass the landing verify from a worktree.**
+  `hooks-check` compared the installed package's hook directory against the repo's,
+  and skipped the comparison when the two resolved to the same path — but a landing
+  verify runs with the repo root set to the lane's worktree, so an editable install
+  compared the pre-merge base copy against the post-change worktree copy and
+  reported the change itself as stale projection. It is now compared as a
+  projection. The remedy line was wrong too: it named `basicly hooks-build`, which
+  deliberately does not copy hook scripts and cannot fix a script mismatch. The
+  message now names the command that applies, and says that `basicly install`
+  overwrites the local copy — so a deliberate hook-script edit is redirected to its
+  catalog source instead of being destroyed by the fix (`basicly-9o6s`).
+
+- **A confirm-code challenge names the precondition that declined it.** A grant that
+  covered the checkpoint, was not spend-halted, and still declined for a specific
+  reason produced a bare `CONFIRMATION REQUIRED` — indistinguishable from having no
+  grant at all, which made a ship refused by a wrinkle in a **sibling** issue
+  unreadable. The reason now prints first, because it is the only part an operator
+  can act on. A session with no grant reads exactly as it always did
+  (`basicly-5ltn`).
+
+- **`basicly usage report` credits the real tool behind a wrapper.** Command
+  resolution stopped at the wrapper, so `uv run --directory <worktree> pytest`
+  credited the worktree's basename and never credited `pytest`, and `env -C <dir>
+  <cmd>` credited `env`. Wrappers, their subcommands and their value-taking flags
+  are now walked past to the actual command; inline code is not counted as a tool,
+  and a shell function defined in the command text is not counted as one either.
+  This matters because the report is what names never-used catalog skills as
+  culling candidates, so noise in it can drive a real culling decision
+  (`basicly-m0p1`).
+
+- **A vanishing bytecode cache no longer races the hook-sync test** under
+  `pytest -n 4`. CPython writes a `.pyc` as a uniquely named temp file and renames
+  it, so a concurrent tree walk could stat a name that no longer existed. The test
+  fixture was copying the catalog hooks directory raw while production already
+  filtered the same walk, so the fix was to make the fixture filter too rather than
+  to suppress bytecode writing. A flake in a gate costs more than its runtime: it
+  burns the loop's bounded rework budget (`basicly-y1wk`).
 
 ## v0.6.0 - 2026-07-31
 
