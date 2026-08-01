@@ -459,6 +459,45 @@ def instruction_overhead(repo_root: Path) -> int:
         return 0
 
 
+# Directory names that are never a lane's working set: the VCS store, a
+# virtualenv, a dependency tree, and byte/tool caches. Matched by *name* at any
+# depth rather than by a leading dot, because the dot-directories this project
+# authors — ``.basicly``, ``.claude``, ``.github``, ``.beads`` — are legitimate
+# scope and excluding them would silently zero their read-cost, which is the
+# failure the ``./`` handling below already guards against.
+#
+# Deliberately conservative. ``dist``, ``build`` and ``site`` are *not* here:
+# basicly is installed into consumer repositories where any of those can be a
+# real source package, and a wrong exclusion is worse than a wrong inclusion —
+# it under-reads a lane and admits work the band should have refused
+# (basicly-jr0l.63).
+SCOPE_EXCLUDED_DIRS: frozenset[str] = frozenset({
+    ".git",
+    ".venv",
+    "venv",
+    "node_modules",
+    "__pycache__",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".mypy_cache",
+    ".import_linter_cache",
+    ".doctor",
+})
+
+
+def _is_excluded(repo_root: Path, path: Path) -> bool:
+    """True when *path* sits under a directory no declared scope should read."""
+    try:
+        parts = path.relative_to(repo_root).parts
+    except ValueError:
+        # Outside the repo entirely — glob cannot produce this, but a caller
+        # passing an absolute pattern could; treat it as unreadable material.
+        return True
+    # parts[:-1] — the *directories*, never the filename, so a file that happens
+    # to be named `venv` is still read.
+    return any(part in SCOPE_EXCLUDED_DIRS for part in parts[:-1])
+
+
 def _scope_files(repo_root: Path, scope: tuple[str, ...]) -> set[Path]:
     """The existing files matching any of the declared scope globs.
 
@@ -468,6 +507,12 @@ def _scope_files(repo_root: Path, scope: tuple[str, ...]) -> set[Path]:
     rejects (e.g. drive-anchored on Windows) is skipped, never fatal — the
     governor treats it as unreadable material, matching the scope_read_cost
     stance.
+
+    Paths under :data:`SCOPE_EXCLUDED_DIRS` are dropped. Without that, a scope of
+    ``**/*.py`` measured 2229 files here of which 2077 were the virtualenv — an
+    estimate describing the machine rather than the work, and one that pushes a
+    lane past ``working_set_max`` where the refusal holds it pending a human
+    (basicly-jr0l.63).
     """
     files: set[Path] = set()
     for pattern in scope:
@@ -482,7 +527,7 @@ def _scope_files(repo_root: Path, scope: tuple[str, ...]) -> set[Path]:
         except ValueError, NotImplementedError, OSError:
             continue
         for path in matches:
-            if path.is_file():
+            if path.is_file() and not _is_excluded(repo_root, path):
                 files.add(path)
     return files
 
