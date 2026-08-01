@@ -85,7 +85,14 @@ GUARD = claude_settings.HookSpec(
     id="protect-generated", script="protect-generated.py", stage="pretooluse", manager="claude"
 )
 HOOKS_RELPATH = ".basicly/core/hooks"
-EXPECTED_COMMAND = "uv run python .basicly/core/hooks/protect-generated.py"
+# `${CLAUDE_PROJECT_DIR}`-qualified, so the hook resolves from any working directory
+# rather than only the repo root (basicly-f3mi). Spelled out rather than built from the
+# module's constants: a test that reuses the implementation's own strings cannot catch a
+# change to them.
+EXPECTED_COMMAND = (
+    "uv run --no-project --no-python-downloads python "
+    '"${CLAUDE_PROJECT_DIR}/.basicly/core/hooks/protect-generated.py"'
+)
 
 
 def test_sync_agent_hooks_writes_and_preserves_other_keys(tmp_path: Path) -> None:
@@ -159,7 +166,10 @@ def test_posttooluse_spec_lands_in_its_own_event_with_its_matcher(tmp_path: Path
             "hooks": [
                 {
                     "type": "command",
-                    "command": "uv run python .basicly/core/hooks/tool-usage.py",
+                    "command": (
+                        "uv run --no-project --no-python-downloads python "
+                        '"${CLAUDE_PROJECT_DIR}/.basicly/core/hooks/tool-usage.py"'
+                    ),
                 }
             ],
         }

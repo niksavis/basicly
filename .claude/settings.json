@@ -49,7 +49,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run python .basicly/core/hooks/protect-generated.py"
+            "command": "uv run --no-project --no-python-downloads python \"${CLAUDE_PROJECT_DIR}/.basicly/core/hooks/protect-generated.py\""
           }
         ]
       }
@@ -60,7 +60,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run python .basicly/core/hooks/tool-usage.py"
+            "command": "uv run --no-project --no-python-downloads python \"${CLAUDE_PROJECT_DIR}/.basicly/core/hooks/tool-usage.py\""
           }
         ]
       }
