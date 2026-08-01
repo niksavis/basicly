@@ -88,14 +88,19 @@ modes = ["fast", "full"]
 [[verify.checks]]
 name = "pytest"
 # pytest-xdist parallelizes the subprocess-heavy CLI tests; this is the bulk of
-# the gate's wall time. Capped rather than `-n auto` (basicly-9s59): every
-# `br init` takes a *machine-global* write lock at ~/.beads/.write.lock with a
-# 30s timeout, so worker count is contention on one lock, not free parallelism.
-# On a 13-core workstation `auto` stampedes it and the integration fixtures die
-# with "Timed out after 30000ms waiting for write lock" — different victims each
-# run, which reads as flakiness rather than as the resource limit it is. Four
-# matches what the 2-4 core CI runners effectively use, so `auto` was never
-# exercising this path in CI anyway. Raise only if br stops serialising globally.
+# the gate's wall time. Capped rather than `-n auto`, and the reason is lane
+# concurrency, not a lock: this gate runs *inside every lane*, so a supervised
+# pass multiplies it by `[loop] concurrency`. Keep `concurrency x workers` at or
+# under the core count — at concurrency 5 that is 4 workers on a 16-32 core box,
+# where `auto` would ask for 5x32.
+#
+# The previous justification here — a machine-global br write lock at
+# ~/.beads/.write.lock whose 30s timeout `auto` stampeded (basicly-9s59) — is
+# STALE and was removed rather than left to mislead. Measured 2026-08-01 on br
+# 0.2.16, 32 cores: `-n auto` ran 2119 passed in 17.5s with zero lock failures,
+# and again in 19.3s while 1297 concurrent external `br init` operations were
+# driven against the same machine. ~/.beads/ does not exist. See basicly-m4zv.14
+# for the full probe. Re-measure before trusting either number on another host.
 command = ["pytest", "-q", "-n", "4"]
 modes = ["full"]
 
