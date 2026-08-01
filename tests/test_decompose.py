@@ -1051,6 +1051,52 @@ def test_dispatch_sizing_declines_a_bead_with_no_readable_scope(
     assert decompose.dispatch_sizing(tmp_path, "b-1") is None
 
 
+def test_resolve_dispatch_sizing_separates_an_undeclared_scope_from_an_unreadable_bead(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The two absences one None used to answer for (basicly-jr0l.60).
+
+    Both leave a lane unsized, but only one is a fact about the package: a bead that
+    declares no scope will still declare none on the next read, while a failed read
+    says nothing about its size. The band gate acts on the first and waives the
+    second, so a caller has to be able to tell them apart.
+    """
+    _install(monkeypatch, _scoped_bead("src/a.py"))
+    _write(tmp_path, "src/a.py", 16_000)
+    sized = decompose.resolve_dispatch_sizing(tmp_path, "b-1")
+    assert sized.sizing is not None
+    assert sized.absence == ""
+
+    _install(monkeypatch, _FakeBrShow({"b-1": ("task", "## Context\n\nno scope here")}))
+    undeclared = decompose.resolve_dispatch_sizing(tmp_path, "b-1")
+    assert undeclared.sizing is None
+    assert undeclared.absence == decompose.SCOPE_UNDECLARED
+
+    def broken(*_a: object, **_k: object) -> _Proc:
+        raise RuntimeError("br show failed")
+
+    _install(monkeypatch, broken)
+    unreadable = decompose.resolve_dispatch_sizing(tmp_path, "b-1")
+    assert unreadable.sizing is None
+    assert unreadable.absence == decompose.SCOPE_UNREADABLE
+
+
+def test_resolve_dispatch_sizing_calls_a_record_without_the_fields_unreadable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A record that answered but carries no class or description is a failed read.
+
+    The boundary between the two absences: "undeclared" is a bead whose description
+    was read and holds no ``## Scope``. A payload with no description at all was not
+    read, whatever the exit code said, and calling that undeclared would file a
+    tracker defect against the package.
+    """
+    _install(monkeypatch, lambda _r, args, **_k: _Proc(json.dumps([{"id": args[1]}])))
+    lookup = decompose.resolve_dispatch_sizing(tmp_path, "b-1")
+    assert lookup.sizing is None
+    assert lookup.absence == decompose.SCOPE_UNREADABLE
+
+
 # --- predicted spend beside the working set (basicly-jr0l.21) ----------------
 
 

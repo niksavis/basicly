@@ -223,6 +223,26 @@ def check_working_set(
     return None
 
 
+def unchecked_working_set(title: str, sizing: SizingConfig) -> str:
+    """What the band has to say about a package that declares no scope to size.
+
+    Not a violation of the band — with no estimate there is nothing to be outside it —
+    but it is worded here beside :func:`check_working_set` so the band's numbers are
+    described one way wherever they reach an operator (basicly-jr0l.60).
+
+    "No scope the estimator can read" rather than "no ``## Scope`` section", because
+    the two are not the same and only the message can tell them apart: measured on this
+    repo's own tracker, a bead can carry the heading and still size to nothing when its
+    entries are prose rather than the backticked glob lines ``decompose`` writes and
+    :func:`decompose.parse_scope_section` reads.
+    """
+    return (
+        f"package {title!r} declares no scope the estimator can read, so its working set "
+        f"was never checked against the {sizing.working_set_min}..{sizing.working_set_max} "
+        "band: list the files it touches as backticked globs under a `## Scope` heading"
+    )
+
+
 # --- Gate status ------------------------------------------------------------
 
 
