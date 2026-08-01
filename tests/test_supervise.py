@@ -4016,17 +4016,29 @@ def test_a_repair_counts_as_progress_so_the_pass_re_derives() -> None:
 
 
 def _seed_fixture(
-    monkeypatch: pytest.MonkeyPatch, *, steps: tuple[loop.AdvanceResult, ...]
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    steps: tuple[loop.AdvanceResult, ...],
+    derived: supervise.SessionState | None = None,
 ) -> list[str]:
-    """A pass with no dispatchable lanes whose root advance yields *steps*."""
+    """A pass with no dispatchable lanes whose root advance yields *steps*.
+
+    *derived* is the session the pass re-reads *after* seeding — the state in which the
+    new worktrees exist. Stubbed rather than left to reach ``br``, because seeding
+    re-derives on purpose (basicly-jr0l.57) and a real read would spawn a subprocess in
+    a unit test. Defaults to the unchanged cold session, so a fixture that says nothing
+    about the post-seed state describes a pass that provisioned nothing.
+    """
     _patch_readiness(monkeypatch)
     advanced: list[str] = []
+    after = derived if derived is not None else _cold_session()
 
     def fake_run_until_blocked(_repo: Path, issue_id: str) -> tuple[loop.AdvanceResult, ...]:
         advanced.append(issue_id)
         return steps
 
     monkeypatch.setattr(supervise.loop, "run_until_blocked", fake_run_until_blocked)
+    monkeypatch.setattr(supervise, "derive_session", lambda _r, _i: after)
     return advanced
 
 
@@ -4073,6 +4085,54 @@ def test_a_root_that_cannot_seed_stops_the_session_rather_than_spinning(
     assert [r.route for r in routed] == ["seed-blocked"]
     assert not supervise.should_continue(routed)
     assert "1 open child(ren)" in routed[0].detail
+
+
+def test_a_blocked_root_that_provisioned_lanes_routes_seeded(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The documented one-command run, which reported failure after succeeding.
+
+    A package root parked awaiting its children can never advance, so routing on the
+    root's own progress declared `seed-blocked` on a pass that had just built five
+    worktrees — and `seed-blocked` is deliberately non-retriable, so the session ended
+    and threw the lanes away. Running the identical command again dispatched them
+    (basicly-jr0l.57).
+    """
+    advanced = _seed_fixture(
+        monkeypatch,
+        steps=(_step("blocked", to_phase="decompose"),),
+        derived=_session(_lane("epic.1"), _lane("epic.2")),
+    )
+
+    routed = supervise.seed_lanes(tmp_path, _cold_session())
+
+    assert advanced == ["epic"]
+    assert [(r.issue_id, r.route) for r in routed] == [("epic", "seeded")]
+    assert supervise.should_continue(routed), "the pass must go on to dispatch what it built"
+    assert "provisioned 2 dispatchable lane(s)" in routed[0].detail
+
+
+def test_provisioned_lanes_that_cannot_dispatch_say_so_instead_of_claiming_none_exist(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Termination still wins, but the message may not contradict the worktrees on disk.
+
+    Nothing another pass could change, so the route stays non-retriable — the complaint
+    behind basicly-jr0l.57 was that the detail was false in its own terms.
+    """
+    _seed_fixture(
+        monkeypatch,
+        steps=(_step("blocked", to_phase="decompose"),),
+        derived=_session(_lane("epic.1")),
+    )
+    monkeypatch.setattr(supervise.decisions, "has_pending", lambda _r, _i: True)
+
+    routed = supervise.seed_lanes(tmp_path, _cold_session())
+
+    assert [r.route for r in routed] == ["seed-blocked"]
+    assert not supervise.should_continue(routed)
+    assert "provisioned 1 lane(s) but none is dispatchable" in routed[0].detail
+    assert "epic.1" in routed[0].detail
 
 
 def test_seeding_is_skipped_while_a_lane_is_already_dispatchable(
