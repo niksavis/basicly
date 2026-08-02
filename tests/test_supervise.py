@@ -11,6 +11,7 @@ spins an idempotent follow-up bead when a run crosses the context ceiling.
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import subprocess
@@ -3657,6 +3658,65 @@ def test_pass_is_refused_when_its_forecast_exceeds_the_remaining_budget(
     assert "8000" in detail  # the combined forecast...
     assert "5000" in detail  # ...and the remainder it will not fit
     assert "epic.1" in detail and "epic.2" in detail
+
+
+def test_no_module_level_name_in_supervise_is_bound_twice() -> None:
+    """A second binding of a queue-key constant is invisible and silently wins.
+
+    `PASS_SPEND_QUESTION` was bound at two module levels with byte-identical text.
+    The later one won at import, so the copy a reader finds first — beside
+    `PassSpendAdmission`, where the question belongs — was dead: editing it changed
+    nothing, while `decisions.enqueue` keys items by (issue, kind, question), so the
+    queue would have gone on filing under the old string (basicly-tcmy.3). That is
+    the exact failure basicly-jr0l.52 named, and the assertion meant to catch it
+    compared the enqueued question against the module global, which agrees with
+    itself however many copies exist.
+
+    Scanned from the source, not the imported module: by import time the duplication
+    is already resolved and only the survivor is left to look at, which is what made
+    this invisible.
+    """
+    source = Path(supervise.__file__).resolve().read_text(encoding="utf-8")
+    bound: dict[str, int] = {}
+    for node in ast.parse(source).body:
+        targets = (
+            node.targets
+            if isinstance(node, ast.Assign)
+            else [node.target]
+            if isinstance(node, ast.AnnAssign)
+            else []
+        )
+        for target in targets:
+            if isinstance(target, ast.Name):
+                bound[target.id] = bound.get(target.id, 0) + 1
+
+    assert [name for name, count in bound.items() if count > 1] == []
+
+
+def test_the_queued_pass_refusal_carries_whatever_the_binding_says(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The consumer reads the live binding, so editing it changes what is enqueued.
+
+    The other half of the guard: one binding is only worth having if the enqueue path
+    actually reads it. A sentinel proves the question is not a third hardcoded copy of
+    the same sentence sitting at the call site.
+    """
+    asked: list[str] = []
+    monkeypatch.setattr(
+        supervise.decisions,
+        "enqueue",
+        lambda _r, _i, _k, question, _d=None: asked.append(question),
+    )
+    monkeypatch.setattr(supervise, "PASS_SPEND_QUESTION", "sentinel question")
+
+    supervise.record_pass_refusal(
+        Path(),
+        "epic",
+        supervise.PassSpendAdmission(8_000, 5_000, ("epic.1",), (), "8000 over 5000"),
+    )
+
+    assert asked == ["sentinel question"]
 
 
 def test_pass_is_admitted_when_its_forecast_fits_the_remainder(
