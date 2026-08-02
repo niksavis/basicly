@@ -420,11 +420,13 @@ def test_r7_concurrent_readers_never_observe_a_torn_write_of_the_shared_export(
     raising — so a reader caught in that window got a *partial issue set with no error
     at all*. A silent wrong answer is worse than the DATABASE_ERROR it mirrors.
 
-    No retry loop in the **reader** path, which is the point of the third criterion:
-    ``export_records`` does not retry, so a passing run means the write was atomic and
-    not that a reader got a second chance. The fixture's own publish does wait a reader
-    out, for a Windows-only reason ``_r7_publish`` records; that is setup, not the
-    assertion.
+    The reader never retries a *parse*, which is the point of the third criterion: a
+    passing run means the write was atomic, not that a reader got a second look at a
+    half-written file. It does retry an *open* that Windows denied, which is a different
+    fact — see ``export_records``, where conflating denial with absence was its own
+    defect and showed up here as a reader observing 0 of 3000 records. The fixture's own
+    publish waits a reader out for the mirror-image reason ``_r7_publish`` records; that
+    is setup, not the assertion.
     """
     repo_root = tmp_path / "repo"
     export = repo_root / ".beads" / "issues.jsonl"
@@ -471,6 +473,69 @@ def test_r7_concurrent_readers_never_observe_a_torn_write_of_the_shared_export(
     records = br.export_records(repo_root)
     assert len(records) == _R7_RECORDS
     assert "/home/someone" not in json.dumps(records)
+
+
+def test_r7_an_export_that_cannot_be_opened_is_not_reported_as_empty(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """R7: denial and absence are different facts, and only one of them means zero beads.
+
+    `export_records` answered `[]` for any `OSError`, so a reader that collided with a
+    publish for one millisecond was told the tracker has no issues at all — the silent
+    wrong answer this requirement exists to forbid, in its most extreme form. It is
+    Windows-only in practice (CPython opens for reading without `FILE_SHARE_DELETE`, so
+    a rename over a file being read raises there and succeeds on POSIX), which is why it
+    survived local runs and was caught by CI as a reader seeing 0 of 3000 records.
+
+    Asserted by injection rather than by racing a real writer, so the discrimination is
+    checked on every platform instead of only on the one that can produce the error.
+    """
+    repo_root = tmp_path / "repo"
+    export = repo_root / ".beads" / "issues.jsonl"
+    export.parent.mkdir(parents=True)
+    _r7_publish(export, _r7_export_body(dirty=False))
+
+    real_read_text = Path.read_text
+    denials = {"left": 3}
+
+    def denied_then_readable(self: Path, *args: object, **kwargs: object) -> str:
+        if self == export and denials["left"] > 0:
+            denials["left"] -= 1
+            raise PermissionError(5, "Access is denied")
+        return real_read_text(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(Path, "read_text", denied_then_readable)
+
+    assert len(br.export_records(repo_root)) == _R7_RECORDS
+    assert denials["left"] == 0, "the read was not retried"
+
+
+def test_r7_a_missing_export_is_empty_without_waiting(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The other half: a repo with no export must answer immediately, not after a wait.
+
+    The known-bad control for the retry above. Without this, widening the retry to every
+    `OSError` would look identical — and would make each of the many telemetry reads on
+    a repo that simply has no tracker export pay the whole deadline.
+
+    Counted rather than timed, and without patching `time.sleep` — `br.time` *is* the
+    real module, so patching through it would reach every other sleeper in the process.
+    """
+    repo_root = tmp_path / "repo"
+    (repo_root / ".beads").mkdir(parents=True)
+
+    real_read_text = Path.read_text
+    attempts = {"n": 0}
+
+    def counted(self: Path, *args: object, **kwargs: object) -> str:
+        attempts["n"] += 1
+        return real_read_text(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(Path, "read_text", counted)
+
+    assert br.export_records(repo_root) == []
+    assert attempts["n"] == 1, "a missing export must be answered on the first attempt"
 
 
 def test_r7_a_dispatch_lost_to_the_store_is_retryable_not_terminal(

@@ -359,6 +359,10 @@ MACHINE_PATH_FIELD = "source_repo_path"
 _PUBLISH_DEADLINE_S = 5.0
 _PUBLISH_FIRST_WAIT_S = 0.005
 _PUBLISH_MAX_WAIT_S = 0.1
+# The reader's half of the same Windows sharing window, and shorter than the writer's
+# on purpose: a denied read has a correct answer waiting microseconds away, so a long
+# budget here would only delay a genuinely unreadable file on the telemetry read path.
+_READ_DEADLINE_S = 1.0
 
 
 def _publish(tmp: Path, export: Path) -> bool:
@@ -533,15 +537,38 @@ def export_records(repo_root: Path) -> list[dict]:
     families readable without a single br invocation — the bulk read `br list`
     cannot serve (it caps results and drops closed records).
 
-    Empty when there is no export or it cannot be read; an unparsable line is
-    skipped rather than fatal, matching :func:`scrub_export` — every consumer here
-    is evidence or telemetry, never a gate.
+    Empty when there is no export; an unparsable line is skipped rather than fatal,
+    matching :func:`scrub_export` — every consumer here is evidence or telemetry,
+    never a gate.
+
+    **A file that exists but cannot be opened right now is retried, not reported as
+    empty** (basicly-vkh0.10). Absence and denial are different facts and returning
+    `[]` for both is the defect this whole requirement is about: a caller cannot tell
+    "this repo has no export" from "some other process held it for a millisecond", so
+    a transient denial read as a real answer means zero beads exist. Only Windows
+    reaches this — `_publish`'s rename is atomic, so the destination never vanishes,
+    but CPython opens for reading without `FILE_SHARE_DELETE`, so a reader that
+    collides with a publish gets ERROR_SHARING_VIOLATION where POSIX succeeds. CI
+    caught it as a reader observing 0 of 3000 records while the atomic write was
+    working exactly as designed. Bounded on a monotonic clock, and still returning
+    `[]` at the deadline rather than raising, because this function is on the read
+    path of telemetry that must never be the reason a landing fails.
     """
     export = beads_dir(repo_root) / "issues.jsonl"
-    try:
-        raw = export.read_text(encoding="utf-8")
-    except OSError:
-        return []
+    deadline = time.monotonic() + _READ_DEADLINE_S
+    delay = _PUBLISH_FIRST_WAIT_S
+    while True:
+        try:
+            raw = export.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return []
+        except OSError:
+            if time.monotonic() >= deadline:
+                return []
+            time.sleep(delay)
+            delay = min(delay * 2, _PUBLISH_MAX_WAIT_S)
+        else:
+            break
     records: list[dict] = []
     for line in raw.splitlines():
         if not line.strip():
