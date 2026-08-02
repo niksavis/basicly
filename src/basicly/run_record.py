@@ -44,6 +44,12 @@ REDACTED_PROMPT = "<prompt-redacted>"
 EXECUTED = "executed"  # ran to completion with exit 0
 FAILED = "failed"  # ran to completion with a non-zero exit
 HANDOFF = "handoff"  # no CLI invocation — handed to the driving agent/human
+# The dispatch was attempted and died before any agent process started — a
+# tracker read that failed, a missing CLI, an unresolvable model. Distinct from
+# FAILED, which is an agent that ran and exited non-zero, and from HANDOFF,
+# which was never going to run one: this is the label that says a recorded
+# estimate cannot be hiding an agent's real spend (basicly-jr0l.64).
+UNSTARTED = "unstarted"
 
 
 @dataclass(frozen=True)
@@ -167,10 +173,17 @@ class RunRecord:
     scheduler_policy: str | None = None
 
 
-def outcome_of(*, handoff: bool, returncode: int | None) -> str:
-    """Label a dispatch: handoff, or executed/failed by its exit code."""
+def outcome_of(*, handoff: bool, returncode: int | None, started: bool = True) -> str:
+    """Label a dispatch: handoff, unstarted, or executed/failed by its exit code.
+
+    *started* is False only for a dispatch that died before its agent process
+    existed. Its exit code is not "the agent failed" — there was no agent — so
+    it takes :data:`UNSTARTED` rather than :data:`FAILED`.
+    """
     if handoff:
         return HANDOFF
+    if not started:
+        return UNSTARTED
     return EXECUTED if returncode == 0 else FAILED
 
 
@@ -184,6 +197,7 @@ def build_record(  # noqa: PLR0913
     returncode: int | None,
     duration_s: float | None,
     command: tuple[str, ...],
+    started: bool = True,
     model: str | None = None,
     model_tier: str | None = None,
     model_source: str | None = None,
@@ -220,7 +234,9 @@ def build_record(  # noqa: PLR0913
     module never sees the raw prompt. *model* is the runner's pinned model
     (basicly-45ld), null when it pins none. *tokens*/*cost*/*estimated* carry
     the run's token telemetry (basicly-kjc5.1, ``runner.extract_usage``); all
-    three null when nothing executed. The split counts and *credits* are the
+    three null when nothing executed. *started* is False for a dispatch that
+    died before its agent process existed, which labels the outcome
+    :data:`UNSTARTED`. The split counts and *credits* are the
     same telemetry at finer grain (basicly-2rn9), null for an adapter that
     reports no split and for a spend billed in USD rather than AI credits.
     *context_tokens* is the measured working set the sizing forecast was trying
@@ -228,7 +244,7 @@ def build_record(  # noqa: PLR0913
     """
     return RunRecord(
         agent=agent,
-        outcome=outcome_of(handoff=handoff, returncode=returncode),
+        outcome=outcome_of(handoff=handoff, returncode=returncode, started=started),
         returncode=returncode,
         duration_s=duration_s,
         command=tuple(command),

@@ -1105,9 +1105,18 @@ def extract_usage(spec: RunnerSpec, result: RunResult) -> Usage | None:
     session id the dispatch supplied (basicly-2rn9). An absent or unreadable
     store takes the very same estimate fallback, flagged the same way — a
     measurement that could not be made is never reported as one that was.
+
+    A dispatch that died before its agent process started has no adapter to ask,
+    but the engine's own captured error *is* the whole transcript — so the floor
+    over it is a real bound rather than the structural under-count it is for an
+    agent run (basicly-jr0l.64). It is still flagged ``estimated``; what makes it
+    safe to meter is the record's ``unstarted`` outcome, not the number.
     """
-    if not result.executed:
+    if result.handoff:
         return None
+    if not result.executed:
+        captured = result.stdout or result.stderr
+        return _floor_usage(result) if captured else None
     reported: Usage | None = None
     if spec.usage_format == CLAUDE_JSON:
         reported = _claude_json_usage(result.stdout)
@@ -1119,6 +1128,11 @@ def extract_usage(spec: RunnerSpec, result: RunResult) -> Usage | None:
         reported = _copilot_store_usage(spec, result.session_id)
     if reported is not None:
         return reported
+    return _floor_usage(result)
+
+
+def _floor_usage(result: RunResult) -> Usage:
+    """The chars/4 floor over whatever transcript was captured (design 7.5)."""
     return Usage(tokens=(len(result.stdout) + len(result.stderr)) // 4, cost=None, estimated=True)
 
 
@@ -1591,6 +1605,10 @@ def record_dispatch(  # noqa: PLR0913 — one parameter per recorded dispatch in
     entry = run_record.build_record(
         agent=spec.name,
         handoff=result.handoff,
+        # A dispatch that never spawned a process is labelled as such rather than
+        # as a failed agent run, which is what keeps its estimate from halting the
+        # grant like an unmeterable *run* does (basicly-jr0l.64, policy.session_spend).
+        started=result.executed,
         returncode=result.returncode,
         duration_s=result.duration_s,
         command=command,

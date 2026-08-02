@@ -83,6 +83,7 @@ from .config import (
     load_sizing_config,
     load_worktree_config,
 )
+from .redact import redact_secrets
 
 LOCK_FILE = Path(".basicly/usage/supervisor.lock")
 
@@ -2096,6 +2097,30 @@ class DispatchOrdering:
         }
 
 
+def record_unstarted_dispatch(
+    repo_root: Path, issue_id: str, spec: runner.RunnerSpec, error: BaseException
+) -> None:
+    """Record a dispatch that died before its agent process started (basicly-jr0l.64).
+
+    The engine's own captured error is the entire transcript of such a dispatch, so
+    it goes on the record as the run's output: the chars/4 floor over it is a real
+    bound on the cost rather than the structural under-count the same floor is for
+    an agent run, and ``run_record.UNSTARTED`` is what says so. That label is the
+    whole point — without it ``policy.session_spend`` reads the floor as an
+    unmeterable *run* and halts the grant over a dispatch that spawned nothing.
+
+    Telemetry, so it never raises: ``runner.record_dispatch`` already suppresses its
+    own write errors, and the caller is on its way to re-raising the real failure.
+    """
+    runner.record_dispatch(
+        repo_root,
+        issue_id,
+        spec,
+        runner.RunResult(spec.name, (), executed=False, stderr=redact_secrets(str(error))),
+        phase="lane",
+    )
+
+
 def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane input
     repo_root: Path,
     session: SessionState,
@@ -2162,23 +2187,36 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
             "forecast_source": f"assumed:{assumed_source}",
         }
     known = frozenset({session.root_issue, *(cid for cid, _ in session.children)})
-    bundle = build_bundle(repo_root, lane.issue_id, known_ids=known)
-    cwd = Path(record.worktree_path)
-    runner_config = load_runner_config(repo_root)
-    # A lane draws on the reserved lane slots, so it never waits behind a helper
-    # (component 8, basicly-kjc5.11). The watchdog only *flags* a wedge
-    # (basicly-kjc5.25) — the timeout below is still the sole terminal action.
-    watchdog = runner.StallWatchdog(
-        runner_config.stall_after,
-        probe=lambda: lane_activity(cwd),
-        on_stall=lambda: flag_stalled_lane(
-            repo_root, lane.issue_id, runner_config.stall_after, runner_config.runner_timeout
-        ),
-    )
-    with watchdog, runner.process_budget().slot(runner.LANE):
-        result = runner.run(
-            spec, bundle.prompt, cwd, capture_usage=True, timeout=runner_config.runner_timeout
+    # Everything from here to the dispatch itself is pre-flight — a tracker read, a
+    # config read, a prompt assembly, a spawn — so a failure in it means no agent
+    # process ever existed. Recorded as such rather than left as a silent hole in the
+    # telemetry: the pass otherwise keeps no evidence that the lane was attempted at
+    # all, and the meter has nothing to tell this apart from an unmeterable agent run
+    # (basicly-jr0l.64). The dispatch itself is inside the guard because its own
+    # pre-spawn refusals — an unresolvable model tier, a missing CLI — are the same
+    # fact; a failure after the process is up would be mislabelled, which is why the
+    # region stops at `runner.run` and the recorded run below sits outside it.
+    try:
+        bundle = build_bundle(repo_root, lane.issue_id, known_ids=known)
+        cwd = Path(record.worktree_path)
+        runner_config = load_runner_config(repo_root)
+        # A lane draws on the reserved lane slots, so it never waits behind a helper
+        # (component 8, basicly-kjc5.11). The watchdog only *flags* a wedge
+        # (basicly-kjc5.25) — the timeout below is still the sole terminal action.
+        watchdog = runner.StallWatchdog(
+            runner_config.stall_after,
+            probe=lambda: lane_activity(cwd),
+            on_stall=lambda: flag_stalled_lane(
+                repo_root, lane.issue_id, runner_config.stall_after, runner_config.runner_timeout
+            ),
         )
+        with watchdog, runner.process_budget().slot(runner.LANE):
+            result = runner.run(
+                spec, bundle.prompt, cwd, capture_usage=True, timeout=runner_config.runner_timeout
+            )
+    except (RuntimeError, OSError, ValueError) as exc:
+        record_unstarted_dispatch(repo_root, lane.issue_id, spec, exc)
+        raise
     loop.record_run(
         repo_root,
         lane.issue_id,

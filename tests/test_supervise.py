@@ -1294,6 +1294,77 @@ def test_dispatch_lane_failed_run_never_spins_a_followup(
     assert outcome.detail == "runner exited 3"
 
 
+# --- A dispatch that never started an agent (basicly-jr0l.64) ----------------
+
+# The pre-flight failure that halted the 2026-08-02 basicly-tcmy pass: a tracker
+# read died in `build_bundle`, before any agent process existed.
+_WAL_CORRUPT = (
+    'br comments list basicly-tcmy.20 --json failed: {"error": {"code": "DATABASE_ERROR", '
+    '"message": "Database error: WAL file is corrupt: short read at frame 8: got 0, '
+    'need 4120", "retryable": false}}'
+)
+
+
+def test_a_lane_that_dies_before_its_agent_starts_records_an_unstarted_dispatch(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The pass keeps evidence of the attempt, labelled as having spawned nothing."""
+    _worker_fixture(monkeypatch, tmp_path, stdout="")
+    monkeypatch.setattr(supervise.loop, "record_run", _never_recorded)
+    monkeypatch.setattr(supervise, "build_bundle", _wal_corrupt)
+
+    with pytest.raises(RuntimeError, match="WAL file is corrupt"):
+        supervise._dispatch_lane(
+            tmp_path, _session(_lane("epic.1")), _lane("epic.1"), _codex(), _sizing()
+        )
+
+    history = (run_record.load_run_records(tmp_path) or {})["epic.1"]
+    assert [entry["outcome"] for entry in history] == [run_record.UNSTARTED]
+    # The floor over the captured error, flagged as the estimate it is — a bound on
+    # a dispatch that spawned nothing, not a measurement of an agent's spend.
+    assert history[0]["estimated"] is True
+    assert history[0]["tokens"] == len(_WAL_CORRUPT) // 4
+
+
+def test_a_lane_that_dies_before_its_agent_starts_never_halts_the_grant(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The reported defect: 43438526 tokens went unspent over a dispatch that never ran.
+
+    Through the real recorder rather than a hand-built record, because the halt
+    needed both halves to agree — the meter reads what this dispatch writes, and a
+    recorder that labelled the pre-flight failure as a run would halt the grant
+    again with the policy fix in place.
+    """
+    _worker_fixture(monkeypatch, tmp_path, stdout="")
+    monkeypatch.setattr(supervise.loop, "record_run", _never_recorded)
+    monkeypatch.setattr(supervise, "build_bundle", _wal_corrupt)
+
+    with pytest.raises(RuntimeError, match="WAL file is corrupt"):
+        supervise._dispatch_lane(
+            tmp_path, _session(_lane("epic.1")), _lane("epic.1"), _codex(), _sizing()
+        )
+
+    status = policy.spend_status(
+        tmp_path,
+        "epic",
+        grant=policy.Grant(level="L3", token_budget=60_000_000),
+        ids=("epic.1",),
+    )
+    assert (status.halted, status.unmetered_dispatches) == (False, 0)
+    assert status.remaining_tokens == 60_000_000
+
+
+def _wal_corrupt(*_a: object, **_k: object) -> None:
+    """Stand in for the tracker read that killed the lane's pre-flight."""
+    raise RuntimeError(_WAL_CORRUPT)
+
+
+def _never_recorded(*_a: object, **_k: object) -> None:
+    """The dispatch's own run-record write, which a pre-flight failure never reaches."""
+    raise AssertionError("a dispatch that never started recorded a run")
+
+
 def test_dispatch_lanes_contains_a_lane_failure_to_its_outcome(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
