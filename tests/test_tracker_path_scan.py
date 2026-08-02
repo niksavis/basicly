@@ -263,3 +263,61 @@ def test_scrub_export_preserves_a_trailing_newline(tmp_path: Path) -> None:
     export = _export(tmp_path, _record(id="basicly-a", source_repo_path=POSIX_HOME))
     br.scrub_export(tmp_path)
     assert export.read_text(encoding="utf-8").endswith("\n")
+
+
+# --- publishing the scrub is a rename, and a rename can be refused (vkh0.10) ---
+#
+# The refusal is Windows-only in the wild: `os.replace` needs delete access to the
+# destination and CPython opens a file for reading without FILE_SHARE_DELETE, so
+# renaming over a file a lane is mid-read raises there and succeeds on POSIX. Both
+# tests below make that refusal *test data* rather than a platform, so the rule is
+# asserted on every runner instead of only on the one that can produce it.
+
+
+def test_a_publish_refused_once_retries_rather_than_losing_the_scrub(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A reader holding the export must delay the repair, never cancel it."""
+    export = _export(tmp_path, _record(id="basicly-a", source_repo_path=POSIX_HOME))
+    real_replace = Path.replace
+    refusals = [PermissionError(32, "The process cannot access the file")]
+
+    def flaky_replace(self: Path, target):
+        if refusals:
+            raise refusals.pop()
+        return real_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", flaky_replace)
+    monkeypatch.setattr(br.time, "sleep", lambda _s: None)
+
+    assert br.scrub_export(tmp_path) == 1
+    assert export.read_text(encoding="utf-8") == _record(id="basicly-a") + "\n"
+
+
+def test_a_publish_refused_past_the_deadline_leaves_the_export_whole(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Failing to repair is safe; a half-written export is not.
+
+    The scrub runs on the commit path and must never be the reason tracker state
+    fails to land, so a publish that never wins reports "nothing changed" and leaves
+    the file byte-identical. The unrepaired leak is then the ``tracker-path-scan``
+    hook's to refuse — a gate failing closed, not a silent half-write.
+    """
+    dirty = _record(id="basicly-a", source_repo_path=POSIX_HOME)
+    export = _export(tmp_path, dirty)
+    original = export.read_bytes()
+
+    def always_refused(_self: Path, _target):
+        raise PermissionError(32, "The process cannot access the file")
+
+    monkeypatch.setattr(Path, "replace", always_refused)
+    monkeypatch.setattr(br.time, "sleep", lambda _s: None)
+    # Shorten the deadline rather than waiting it out: with sleep stubbed the loop
+    # would otherwise spin for the full production budget of real CPU time.
+    monkeypatch.setattr(br, "_PUBLISH_DEADLINE_S", 0.05)
+
+    assert br.scrub_export(tmp_path) == 0
+    assert export.read_bytes() == original
+    # ...and the abandoned temp file does not become untracked dirt in .beads/.
+    assert list((tmp_path / ".beads").glob("*.tmp")) == []

@@ -11,6 +11,7 @@ built against.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess  # nosec B404
@@ -146,9 +147,86 @@ _CLOCK_SKEW_MESSAGE = "cannot be before created_at"
 # br reports the same message against `closed_at` as well, in the same response: a
 # `br close` on a backwards-stepped clock fails on both fields at once.
 _CLOCK_SKEW_FIELDS = ("updated_at", "closed_at")
-_CLOCK_SKEW_DEADLINE_S = 5.0
-_CLOCK_SKEW_FIRST_WAIT_S = 0.05
-_CLOCK_SKEW_MAX_WAIT_S = 1.0
+_TRANSIENT_DEADLINE_S = 5.0
+_TRANSIENT_FIRST_WAIT_S = 0.05
+_TRANSIENT_MAX_WAIT_S = 1.0
+
+# The second transient br failure the harness has been billed for (basicly-vkh0.10).
+# Under the engine's own five-lane fan-out — five worktrees sharing one tracker
+# through `.beads/redirect` — four of five lane dispatches died in the pre-flight
+# tracker read, each on a bead it had not been assigned. The response is quoted in
+# :func:`is_transient_storage_error`'s docstring, where it is evidence rather than
+# something a linter has to read as dead code.
+#
+# It is transient, and demonstrably so: the database survived intact, the WAL was
+# truncated to a bare header, and five concurrent reads immediately afterwards passed
+# 5/5. br's own `retryable: false` is therefore wrong about its own error, and that
+# single wrong field is what cost the run — the supervisor treated a storage hiccup as
+# a terminal lane failure, so one lane exhausted the dispatch rework cap without ever
+# starting an agent and was parked.
+#
+# Keyed on br's own error *code*, observed in that response, rather than on a
+# phrase composed from the sqlite message: the code is the field br fills in for every
+# storage-layer failure, while the message text varies with which page tore. Composing
+# a fixture instead of observing one is what made the clock-skew recogniser dead code
+# through two "fixes" (basicly-aswc), so the register does not repeat it.
+#
+# Deliberately a *category*, not a whitelist of sqlite strings. A DATABASE_ERROR that
+# is genuinely permanent still fails — the deadline below bounds the wait and the
+# unrescued failure is returned to the caller untouched, exactly as a persistent clock
+# skew is. Requirements input for the replacement (R7 in docs/design/work-tracker.md),
+# which must not corrupt shared state under concurrency at all, and must mark a
+# contention failure retryable when it does report one.
+_STORAGE_ERROR_CODE = "DATABASE_ERROR"
+_STORAGE_ERROR_PREFIX = "Database error:"
+
+
+def is_transient_storage_error(text: str) -> bool:
+    """True when *text* carries br's storage-layer failure, which is retryable.
+
+    The response this is keyed on, observed on the 2026-08-02 five-lane pass::
+
+        {"error": {"code": "DATABASE_ERROR", "message":
+         "Database error: WAL file is corrupt: short read at frame 12: got 0,
+          need 4120",
+         "retryable": false}}
+
+    Note the last field: br classifies its own storage contention as terminal, and
+    it is wrong — the same store answered five concurrent reads correctly moments
+    later. This function is the harness overriding that verdict.
+
+    Takes text rather than a process because the harness's own wrapper has usually
+    already turned the failure into a ``RuntimeError`` by the time a caller needs to
+    decide whether to back off — :func:`run_br` formats br's output into the message,
+    so ``str(exc)`` is the same evidence the process carried. **The text must be a
+    failure's output**; :func:`_is_storage_contention` is the guard that guarantees
+    it, and the reason that guard is not optional is below.
+    """
+    return _STORAGE_ERROR_CODE in text or _STORAGE_ERROR_PREFIX in text
+
+
+def _is_storage_contention(proc: subprocess.CompletedProcess[str]) -> bool:
+    """True when br refused this call because its storage layer was contended.
+
+    Two guards, and neither is defensive padding — both were found by running the
+    recogniser against the live tracker.
+
+    **A zero exit is never contention.** The bead that filed this requirement quotes
+    the whole error envelope in its own description, so ``br show basicly-vkh0.10
+    --json`` *succeeds* and returns the phrase as record content. Without the exit
+    check the recogniser answers True on that success, and the retry loop is then the
+    only thing standing between us and retrying every read of that bead — a single
+    ordering the next caller is free to get wrong. The register's own rule (R1) is
+    that a recogniser must not become a way to launder a non-failure, so it
+    discriminates here rather than relying on where it is called from.
+
+    **stderr wins over stdout**, rather than the two being concatenated. On a failure
+    that printed records before it died, the payload is on stdout and the diagnosis is
+    on stderr; reading them joined lets record text outvote the actual error. This is
+    also exactly what :func:`run_br` puts in the ``RuntimeError`` it raises, so the
+    process and the exception are classified off the same bytes.
+    """
+    return proc.returncode != 0 and is_transient_storage_error(proc.stderr or proc.stdout or "")
 
 
 def _is_clock_skew(proc: subprocess.CompletedProcess[str]) -> bool:
@@ -166,7 +244,18 @@ def _is_clock_skew(proc: subprocess.CompletedProcess[str]) -> bool:
     return any(field in output for field in _CLOCK_SKEW_FIELDS)
 
 
-def _spawn_tolerating_clock_skew(
+def _is_transient(proc: subprocess.CompletedProcess[str]) -> bool:
+    """True when this failure is about the host or the store, not about the request.
+
+    Two recognised causes, both defects we have already been billed for: a backwards
+    clock step (R1) and storage contention under the engine's own fan-out (R7).
+    Anything else is a real error and must fail fast — this is an escape hatch for
+    named defects, never a retry policy for every br error.
+    """
+    return _is_clock_skew(proc) or _is_storage_contention(proc)
+
+
+def _spawn_tolerating_transient(
     br_path: str,
     repo_root: Path,
     args: list[str],
@@ -174,28 +263,33 @@ def _spawn_tolerating_clock_skew(
     sleep: Callable[[float], None] | None = None,
     monotonic: Callable[[], float] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """:func:`_spawn`, retrying only br's updated_at-before-created_at rejection.
+    """:func:`_spawn`, retrying only the transient br failures :func:`_is_transient` names.
 
     Waits between attempts rather than spinning: retrying instantly re-reads the
-    same skewed clock. *sleep* and *monotonic* are injectable so a test can prove
-    both the retry and the deadline without spending wall-clock time, and both
-    resolve at call time rather than as bound defaults — a default of
-    ``time.sleep`` freezes the reference at import and silently ignores both the
-    parameter and a patched ``time.sleep``.
+    same skewed clock, and hits the same contended store. *sleep* and *monotonic*
+    are injectable so a test can prove both the retry and the deadline without
+    spending wall-clock time, and both resolve at call time rather than as bound
+    defaults — a default of ``time.sleep`` freezes the reference at import and
+    silently ignores both the parameter and a patched ``time.sleep``.
+
+    One deadline covers both causes for the same reason it was chosen for the first:
+    neither error names how long its condition will last, so the wait cannot be
+    derived from the message. Whatever is still failing when the deadline passes is
+    returned untouched, so a caller always sees the real failure rather than a hang.
     """
     wait = sleep if sleep is not None else time.sleep
     clock = monotonic if monotonic is not None else time.monotonic
-    deadline = clock() + _CLOCK_SKEW_DEADLINE_S
-    delay = _CLOCK_SKEW_FIRST_WAIT_S
+    deadline = clock() + _TRANSIENT_DEADLINE_S
+    delay = _TRANSIENT_FIRST_WAIT_S
     attempt = 1
     while True:
         proc = _spawn(br_path, repo_root, args, attempt=attempt)
-        if proc.returncode == 0 or not _is_clock_skew(proc):
+        if proc.returncode == 0 or not _is_transient(proc):
             return proc
         if clock() >= deadline:
             return proc
         wait(delay)
-        delay = min(delay * 2, _CLOCK_SKEW_MAX_WAIT_S)
+        delay = min(delay * 2, _TRANSIENT_MAX_WAIT_S)
         attempt += 1
 
 
@@ -207,7 +301,7 @@ def run_br(
     if not br_path:
         raise RuntimeError("br is not on PATH; the harness requires the beads tracker")
     _probe_version(br_path)
-    proc = _spawn_tolerating_clock_skew(br_path, repo_root, args)
+    proc = _spawn_tolerating_transient(br_path, repo_root, args)
     if check and proc.returncode != 0:
         raise RuntimeError(f"br {' '.join(args)} failed: {(proc.stderr or proc.stdout).strip()}")
     return proc
@@ -219,7 +313,7 @@ def try_run_br(repo_root: Path, args: list[str]) -> subprocess.CompletedProcess[
     if not br_path:
         return None
     _probe_version(br_path)
-    return _spawn_tolerating_clock_skew(br_path, repo_root, args)
+    return _spawn_tolerating_transient(br_path, repo_root, args)
 
 
 # --- Export scrubbing (basicly-vkh0.5) --------------------------------------
@@ -252,6 +346,44 @@ MACHINE_PATH_FIELD = "source_repo_path"
 # The export is therefore the layer where this is fixed. The local database is
 # git-ignored and keeps full fidelity; only the published artifact is redacted,
 # so nobody working in the repo loses the original.
+
+
+# How long a publish waits for a reader to let go of the export before giving up.
+# Only Windows ever spends this: `os.replace` needs delete access to the
+# destination, and CPython opens a file for reading with `FILE_SHARE_READ |
+# FILE_SHARE_WRITE` and *not* `FILE_SHARE_DELETE` — so renaming over a file another
+# process is mid-read raises ERROR_SHARING_VIOLATION there while succeeding silently
+# on POSIX. Under the fan-out this requirement is about, some reader is nearly always
+# mid-read, which would have made the atomic write a Windows-only failure. Bounded on
+# a monotonic clock for the reason R1 gives: the wall clock is not trustworthy here.
+_PUBLISH_DEADLINE_S = 5.0
+_PUBLISH_FIRST_WAIT_S = 0.005
+_PUBLISH_MAX_WAIT_S = 0.1
+
+
+def _publish(tmp: Path, export: Path) -> bool:
+    """Rename *tmp* over *export*; False when a reader never let go in time.
+
+    False rather than an exception because :func:`scrub_export` runs on the commit
+    path and must never be the reason tracker state fails to land. An unpublished
+    scrub leaves the export exactly as it was — still carrying whatever the scrub
+    would have removed — and the companion ``tracker-path-scan`` hook is the gate
+    that then refuses the commit. Failing to repair is safe; a half-written export
+    is not.
+    """
+    deadline = time.monotonic() + _PUBLISH_DEADLINE_S
+    delay = _PUBLISH_FIRST_WAIT_S
+    while True:
+        try:
+            tmp.replace(export)
+        except OSError:
+            if time.monotonic() >= deadline:
+                tmp.unlink(missing_ok=True)
+                return False
+            time.sleep(delay)
+            delay = min(delay * 2, _PUBLISH_MAX_WAIT_S)
+        else:
+            return True
 
 
 def _dump_record(record: dict[str, object]) -> str:
@@ -312,6 +444,31 @@ def scrub_export(repo_root: Path) -> int:
     this runs on the commit path, so it must never be the reason tracker state
     fails to land. The companion ``tracker-path-scan`` hook is the gate that makes
     a leak visible; this is only the repair.
+
+    The write is atomic (R7, basicly-vkh0.10). This is a writer to the *shared*
+    tracker artifact: it runs on the commit path while up to five lane worktrees
+    read the same file through ``.beads/redirect``. A plain ``write_text``
+    truncates before it writes, so a reader landing in that window gets a short
+    file — and :func:`export_records` skips a line it cannot parse rather than
+    raising, so the torn read comes back as a *partial issue set with no error at
+    all*. That is our own store reproducing the defect this requirement was filed
+    for; write-then-rename is the portable answer the design already names
+    (work-tracker §9.3), and it publishes the new content in one step so a
+    concurrent reader sees either the whole old export or the whole new one.
+
+    Not :func:`projection.atomic_write_text`, for two reasons that are both about
+    this file specifically. Its temp name is a fixed suffix on the destination, so
+    two writers racing on one export would share one temp path and each could
+    publish the other's half-written bytes — the very concurrency this is fixing.
+    And the name it picks is not covered by ``.beads/.gitignore``, so a crash
+    mid-write would strand untracked dirt in the one directory the harness's
+    landing check treats as special. The pid-scoped ``.tmp`` name below is the
+    pattern :mod:`basicly.run_record` and :mod:`basicly.policy` already use, and
+    ``.beads/.gitignore`` already ignores ``*.tmp``.
+
+    Returns 0 — an unrepaired export, left exactly as it was — when the rename could
+    not be published; see :func:`_publish` for the Windows sharing rule that makes
+    that reachable.
     """
     export = repo_root / ".beads" / "issues.jsonl"
     try:
@@ -340,8 +497,9 @@ def scrub_export(repo_root: Path) -> int:
     if not changed:
         return 0
     trailer = "\n" if raw.endswith("\n") else ""
-    export.write_text("\n".join(scrubbed) + trailer, encoding="utf-8")
-    return changed
+    tmp = export.with_suffix(f".{os.getpid()}.jsonl.tmp")
+    tmp.write_text("\n".join(scrubbed) + trailer, encoding="utf-8")
+    return changed if _publish(tmp, export) else 0
 
 
 # --- Reading the committed export (basicly-kjc5.50) --------------------------

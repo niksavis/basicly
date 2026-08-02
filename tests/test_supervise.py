@@ -1319,6 +1319,33 @@ def test_dispatch_lanes_contains_a_lane_failure_to_its_outcome(
     assert outcomes[1].detail == "test"
 
 
+def test_a_dispatch_lost_to_tracker_storage_is_marked_transient(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The containment frame is the only one that knows nothing ran (basicly-vkh0.10).
+
+    A nonzero *runner* exit quoting the same words is about the agent's work, so the
+    classification has to happen where the dispatch died, not at the routing layer.
+    """
+    _patch_readiness(monkeypatch)
+    monkeypatch.setattr(supervise.runner, "select_runner", lambda *_a, **_k: _MANUAL_SPEC)
+    contended = (
+        '{"error": {"code": "DATABASE_ERROR", "message": "Database error: WAL file is '
+        'corrupt: short read at frame 12: got 0, need 4120", "retryable": false}}'
+    )
+
+    def dispatch(_repo, _session, lane, _spec, _sizing, **_kw) -> supervise.LaneOutcome:
+        if lane.issue_id == "epic.1":
+            raise RuntimeError(f"br comments list basicly-x --json failed: {contended}")
+        raise RuntimeError("br show basicly-y failed: no such issue")
+
+    monkeypatch.setattr(supervise, "_dispatch_lane", dispatch)
+
+    outcomes = supervise.dispatch_lanes(Path(), _session(_lane("epic.1"), _lane("epic.2")), cap=2)
+
+    assert [o.transient for o in outcomes] == [True, False]
+
+
 def test_parse_found_info_bounds_summary_and_detail() -> None:
     """Agent-authored record fields are truncated at parse time.
 

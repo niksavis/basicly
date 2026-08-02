@@ -53,7 +53,7 @@ Stated by the owner, plus what the harness's own use has demonstrated:
 
 ### 2.1 Requirements carried forward from defects we have already paid for
 
-The requirements above are what we want. These six are what we have already been
+The requirements above are what we want. These seven are what we have already been
 *billed* for — each is a `br` defect that cost real sessions, and the repo rule is that a
 dependency's defect is **requirements input for our own replacement** and the proof must become a
 committed gate, never a fix applied outside this repo (`basicly-vkh0.6`).
@@ -71,10 +71,24 @@ replacement lands, the module runs against it unchanged.
 | **R4.** Single-line field | `--acceptance-criteria` accepts one line only, and exists only on `update` — so filing a bead is always two calls | Structured criteria are flattened; the harness carries them in the description body instead | **A text field accepts newlines**, and every field settable on update is settable on create |
 | **R5.** Id shape | `--slug` mints ids like `basicly-fix-the-thing`, whose internal hyphens read as a prefix boundary | Broke our own `beads-commit-msg` gate (`basicly-jms0`); the standing rule is now "never `--slug`" | **An id is opaque and never re-parsed** — a short root plus a dotted child counter, with no separator that any consumer needs to interpret (§9.4) |
 | **R6.** Path leak | The export wrote `source_repo_path` on 328 of 332 records | Published two users' home-directory layouts into a committed, distributed file (`basicly-vkh0.5`) | **No committed artifact carries a host path**, username or hostname; portability is a property of the format, not of a scrubbing pass |
+| **R7.** Concurrency | Under the engine's own five-lane fan-out the storage layer tore its WAL: four of five lane dispatches died in the pre-flight read, each on a bead it had not been assigned, and `br` marked the failure `retryable: false` | Three lanes recovered on the dispatch rework; `basicly-tcmy.11` reached the rework cap without an agent ever starting and was parked, and the session's L3 grant halted with 43.4M of 60M tokens unspent (`basicly-vkh0.10`) | **N concurrent readers and one writer never corrupt shared state**, and a contention failure that *is* reported is marked retryable so the caller backs off (§9.3) |
 
-R1, R5 and R6 are already settled in the design (§9.5, §9.4, §12). R2, R3 and R4 are constraints on
-the command layer that has not been written yet, and this table is where they are recorded so it
-cannot be written without them.
+R1, R5, R6 and R7 are already settled in the design (§9.5, §9.4, §12, §9.3). R2, R3 and R4 are
+constraints on the command layer that has not been written yet, and this table is where they are
+recorded so it cannot be written without them.
+
+R7 is the one whose gate could not be pointed at `br`. The other six are properties of a *response*,
+so the harness's defence against the bad input is directly assertable; this one is a property of a
+*store under concurrent load*, and `br` fails it by construction. So the gate
+(`test_r7_concurrent_readers_never_observe_a_torn_write_of_the_shared_export`) is aimed at the store
+this repo already owns — the committed JSONL export, rewritten by `br.scrub_export` on the commit
+path while every lane reads it through `.beads/redirect`. Writing it found our own instance of the
+same defect: the scrub truncated the file before rewriting it, and `br.export_records` skips a line
+it cannot parse rather than raising, so a reader caught in that window got a **partial issue set
+with no error at all** — a silent wrong answer where `br` at least raised. Both halves are now
+fixed, the write is atomic, and the gate runs four real reader processes against a live writer with
+no retry anywhere in the path, so it cannot pass by giving a reader a second chance. When the
+replacement lands it inherits the gate unchanged: that is the property, not an implementation note.
 
 ## 3. What our own usage already tells us
 
@@ -483,6 +497,26 @@ cheap: an append is one line, so two writers do not contend for a record. Only t
 needs a lock, and because it is disposable a lost update to it is repaired by a rebuild rather
 than reconciled. The lock must be portable (§12) — the atomic write-then-rename the harness
 already uses, not `fcntl`.
+
+**Readers are the part this section used to leave implicit, and it is what R7 was billed for.**
+"Single writer" bounds the *writers*; it says nothing about the N lane processes reading the ledger
+while that writer works, which is the load the engine actually generates. Three rules, each one a
+line item from `basicly-vkh0.10`:
+
+- **A reader never observes a partial write.** Publishing is a rename, so every read sees one whole
+  version of the file — the old one or the new one, never the seam between them. This is not
+  advice: the temp-file-then-rename above *is* the mechanism, and the requirement is that nothing
+  writes to a shared path any other way.
+- **The temp name is per-writer.** A fixed temp suffix on the destination is not concurrency-safe —
+  two writers share one temp path, and each can publish the other's half-written bytes. `br.scrub_export`
+  uses a pid-scoped name for exactly this reason, which is also why it does not route through
+  `projection.atomic_write_text` (whose callers are single-writer projection targets).
+- **A contention failure is retryable, and says so.** `br` reported its torn WAL as
+  `retryable: false`, and that one field is what cost the run: the supervisor believed it, charged
+  the lane's bounded dispatch budget for the store's hiccup, and parked a lane that had never
+  started an agent. The replacement's error type carries retryability as a *property of the cause*,
+  and the harness's containment (`supervise.TRACKER_GATE`) keeps such a loss off the lane's rework
+  counter regardless.
 
 ### 9.4 Identity — opaque record ids, content-derived evidence ids
 

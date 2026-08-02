@@ -220,7 +220,7 @@ def test_a_persistent_clock_skew_gives_up_at_the_deadline(
     calls: list[float] = []
     ticks = iter([n * 0.5 for n in range(40)])
 
-    proc = br._spawn_tolerating_clock_skew(
+    proc = br._spawn_tolerating_transient(
         "/usr/bin/br",
         tmp_path,
         ["update", "x"],
@@ -329,3 +329,117 @@ def test_the_recogniser_reads_stdout_as_well_as_stderr() -> None:
 def test_an_unrelated_failure_is_not_read_as_clock_skew(stderr: str) -> None:
     """This is one defect's escape hatch, not a retry policy for every br error."""
     assert br._is_clock_skew(subprocess.CompletedProcess(["br"], 1, "", stderr)) is False
+
+
+# --- br's storage contention under our own fan-out (basicly-vkh0.10) ----------
+
+# br's real output, copied from the 2026-08-02 five-lane pass. The `retryable: false`
+# is br's own verdict on it, and it is the wrong one — the same database answered five
+# concurrent reads correctly immediately afterwards.
+_STORAGE_ERROR_CODE = "DATABASE_ERROR"
+_STORAGE_STDERR = (
+    f'{{"error": {{"code": "{_STORAGE_ERROR_CODE}", "message": "Database error: WAL '
+    'file is corrupt: short read at frame 12: got 0, need 4120", "retryable": false}}'
+)
+
+
+def test_a_storage_contention_failure_is_retried_until_it_succeeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Four of five lane dispatches died here, each on a bead it had not been assigned.
+
+    The store was fine seconds later, so the only thing that made this terminal was
+    that nothing backed off.
+    """
+    calls = _skewed_run(monkeypatch, failures=2, stderr=_STORAGE_STDERR)
+    slept: list[float] = []
+    monkeypatch.setattr(br.time, "sleep", slept.append)
+
+    proc = br.run_br(tmp_path, ["comments", "list", "basicly-x", "--json"])
+
+    assert proc.returncode == 0
+    assert len(calls) == 3  # two contended reads, then the retry that stuck
+    assert slept, "the retry must wait for the writer to finish, not re-read the same lock"
+
+
+def test_a_persistent_storage_failure_still_reaches_the_caller(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A store that stays broken must fail, not hang: the deadline bounds the wait.
+
+    Classifying the error as retryable is a licence to back off, never a promise
+    that it will clear — a permanent DATABASE_ERROR has to surface as an error.
+    """
+    _skewed_run(monkeypatch, failures=99, stderr=_STORAGE_STDERR)
+    waits: list[float] = []
+    ticks = iter([n * 0.5 for n in range(40)])
+
+    proc = br._spawn_tolerating_transient(
+        "/usr/bin/br",
+        tmp_path,
+        ["comments", "list", "basicly-x", "--json"],
+        sleep=waits.append,
+        monotonic=lambda: next(ticks),
+    )
+
+    assert proc.returncode != 0, "the caller must still see the unrescued failure"
+    assert waits, "and it must have backed off before giving up"
+
+
+def test_the_storage_recogniser_reads_brs_own_error_code() -> None:
+    """Pinned against the observed response directly, not through the retry loop.
+
+    The clock-skew recogniser passed its retry tests for two releases while matching
+    nothing in the field, because the fixture was composed rather than observed
+    (basicly-aswc). Keying on ``DATABASE_ERROR`` — the field br fills in for every
+    storage failure — is what survives the message text changing with which page tore.
+    """
+    assert br.is_transient_storage_error(_STORAGE_STDERR) is True
+    # The same failure rendered as plain text rather than the JSON envelope.
+    assert br.is_transient_storage_error("Error: Database error: database is locked") is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Error: issue not found",
+        "br show basicly-x failed: no such issue",
+        # A lane's own agent output quoting the words is not the tracker failing.
+        "runner exited 3: the database error path needs a test",
+    ],
+)
+def test_an_unrelated_failure_is_not_read_as_storage_contention(text: str) -> None:
+    """Widening this to any error would retry a genuine failure until the deadline."""
+    assert br.is_transient_storage_error(text) is False
+
+
+def test_a_successful_read_of_a_bead_quoting_the_error_is_not_contention() -> None:
+    """The recogniser must not read a *record* as a failure (the R1 laundering rule).
+
+    Not hypothetical, and not composed: the bead that filed this requirement quotes
+    br's whole error envelope in its own description, so ``br show basicly-vkh0.10
+    --json`` returns the phrase on stdout with exit 0. Probing the recogniser against
+    the live tracker is what found it — it answered True on that success, and only
+    the retry loop's ``returncode == 0`` check kept it from retrying every read of
+    that bead. A recogniser that needs its caller to order the checks correctly is a
+    trap for the next caller, so the exit code is part of the recognition.
+    """
+    reading_the_bead = subprocess.CompletedProcess(["br"], 0, _STORAGE_STDERR, "")
+    assert br._is_storage_contention(reading_the_bead) is False
+    assert br._is_transient(reading_the_bead) is False
+
+
+def test_record_text_on_stdout_cannot_outvote_the_real_error_on_stderr() -> None:
+    """A failure that printed records first is diagnosed from stderr, not from both.
+
+    Joining the streams lets a payload quoting the envelope classify a failure that
+    stderr says is something else entirely — and the same joined text would then be
+    retried to the deadline instead of failing fast.
+    """
+    printed_then_failed = subprocess.CompletedProcess(
+        ["br"],
+        1,
+        f'[{{"id": "basicly-x", "description": "{_STORAGE_ERROR_CODE}"}}]',
+        "Error: issue not found",
+    )
+    assert br._is_storage_contention(printed_then_failed) is False
