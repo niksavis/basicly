@@ -467,13 +467,29 @@
       }
 
       /* ---------- status: per-pillar shipped chips ---------- */
-      /* One state only — everything listed is running code — so the marker is a
-         tick rather than a word repeated down the column. */
+      /* The shipped list is one state — running code — so its marker is a tick
+         rather than a word repeated down the column. The roadmap below it carries
+         three unbuilt states, and those must never render in the shipped colour:
+         a green marker on this page means working code and nothing else. */
       .st {
         flex: 0 0 auto;
         font-family: var(--mono);
         font-size: 0.82rem;
         color: var(--green);
+      }
+      /* The roadmap's second heading follows a card grid rather than a section
+         rule, so it needs the breathing room a section border would have given. */
+      #roadmap .grid + h2 {
+        margin-top: 2.75rem;
+      }
+      .st.todo {
+        color: var(--amber);
+      }
+      .st.later {
+        color: var(--text-dim);
+      }
+      .st.ask {
+        color: var(--orange);
       }
       ul.chips {
         margin-top: 0.75rem;
@@ -821,10 +837,11 @@
         <h2>What has shipped</h2>
         <p class="lead">
           Running code only, along the same four pillars: every line below is in
-          the tree today and exercised on this project's own development.
-          Nothing planned, partial or under construction is listed here — where
-          the system is going lives in the architecture reference, not on this
-          page. The list moves as features land.
+          the tree today and exercised on this project's own development. What
+          is <em>not</em> built is listed separately further down and never
+          mixed in here, so a check mark on this page always means working code.
+          There are no dates anywhere — this is a status map, not a schedule.
+          Both lists move as features land.
         </p>
 
         <div class="grid one">
@@ -958,6 +975,26 @@
                 <span class="st" aria-hidden="true">&#10003;</span>
                 <span>Release automation up to the annotated tag</span>
               </li>
+              <li>
+                <span class="st" aria-hidden="true">&#10003;</span>
+                <span
+                  >Work is sized by the material a lane actually reads, not by
+                  the size of the files it names — measured over 185 (lane,
+                  file) pairs, a file under ~4,000 tokens is read whole and
+                  above that a lane takes out roughly 1,500 however large it
+                  is. A three-line fix in a 90,000-token module is dispatchable
+                  instead of refused</span
+                >
+              </li>
+              <li>
+                <span class="st" aria-hidden="true">&#10003;</span>
+                <span
+                  >Every dispatch records the context it actually consumed
+                  beside the forecast that predicted it, so the estimator is
+                  checked against a measurement rather than against its own
+                  output</span
+                >
+              </li>
             </ul>
           </div>
 
@@ -984,6 +1021,120 @@
                   >Why a lane went when it did, recorded on its run marker: the
                   dispatch rank always, plus the scheduler's score and rank
                   whenever the scheduler ranked that lane</span
+                >
+              </li>
+              <li>
+                <span class="st" aria-hidden="true">&#10003;</span>
+                <span
+                  >The shared tracker export is published atomically, so
+                  concurrent lanes cannot read it half-written, and a storage
+                  error is charged to the store rather than to the lane's rework
+                  budget</span
+                >
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <h2>What is coming</h2>
+        <p class="lead">
+          Sequenced, not promised, and deliberately without dates. These are
+          <strong>not built</strong> — nothing below is running code, and a
+          settled design is not evidence that anything enforces it. The order
+          lives in the implementation plan; the evidence each status requires is
+          in the architecture reference.
+        </p>
+
+        <div class="grid one">
+          <div class="card">
+            <h3>Building now</h3>
+            <ul class="chips">
+              <li>
+                <span class="st todo" aria-hidden="true">&#9654;</span>
+                <span
+                  >A supervised multi-lane run with zero human interventions
+                  caused by a harness defect</span
+                >
+              </li>
+              <li>
+                <span class="st todo" aria-hidden="true">&#9654;</span>
+                <span
+                  >A spend and wall-clock forecast per model, enforced when a
+                  pass is admitted. Today's forecast models the working set, and
+                  measurement says that is the weaker predictor: declared scope
+                  explains 9.5% of a lane's real context use, turn count
+                  86.3%</span
+                >
+              </li>
+              <li>
+                <span class="st todo" aria-hidden="true">&#9654;</span>
+                <span
+                  >Deterministic routing evals with a rank-1 rate in CI, and an
+                  eval case for every catalog entry</span
+                >
+              </li>
+              <li>
+                <span class="st todo" aria-hidden="true">&#9654;</span>
+                <span
+                  >Every gate classified by type, severity required on judged
+                  output, and rework convergence detected from the open-finding
+                  set rather than the count</span
+                >
+              </li>
+              <li>
+                <span class="st todo" aria-hidden="true">&#9654;</span>
+                <span
+                  >A tutorial and how-to layer, so a new consumer has a path
+                  from install to first shipped unit, and
+                  <code>basicly install</code> reports the capability tier it
+                  actually delivered</span
+                >
+              </li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <h3>Designed, nothing built</h3>
+            <ul class="chips">
+              <li>
+                <span class="st later" aria-hidden="true">&#9671;</span>
+                <span
+                  >A named role per judgment step, each with its own
+                  instructions, tool policy, tier and output contract</span
+                >
+              </li>
+              <li>
+                <span class="st later" aria-hidden="true">&#9671;</span>
+                <span
+                  >An owned in-process append-only event log, removing the
+                  external tracker binary from the critical path — with
+                  provenance on every edge and an <code>fsck</code> that makes
+                  "the log is the truth" checkable</span
+                >
+              </li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <h3>Being measured — the result may cancel the work</h3>
+            <ul class="chips">
+              <li>
+                <span class="st ask" aria-hidden="true">?</span>
+                <span
+                  >Whether an individual guidance entry changes behaviour. Recall
+                  is measured; adherence is not, and recall is an upper bound on
+                  it</span
+                >
+              </li>
+              <li>
+                <span class="st ask" aria-hidden="true">?</span>
+                <span>Cost per landed package</span>
+              </li>
+              <li>
+                <span class="st ask" aria-hidden="true">?</span>
+                <span
+                  >Whether deterministic AST localisation cuts what an
+                  implementer spends before its first edit</span
                 >
               </li>
             </ul>

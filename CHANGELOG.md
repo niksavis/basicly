@@ -395,6 +395,51 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A registered subcommand with no handler now fails loudly at every command group,
+  not just at the top level.** Six sibling dispatchers spelled `return handler(args) if
+  handler else 0` and a seventh (`usage`) did the same in a different shape, so a
+  registered name nobody wired up printed nothing and exited **0** — indistinguishable
+  from a command that ran, which is how such a mistake survives its own smoke test and
+  reaches a consumer. `basicly-tcmy.4` had fixed exactly one of the eight sites. All
+  eight now route through one `_dispatch` helper that exits 2 naming the offending
+  subcommand, so a group added later cannot inherit the defect by copying its neighbour.
+  The regression test derives its site list **from the parser** and is parametrised over
+  every site, with a positive control that fails if the derivation ever stops recursing —
+  the previous test asserted `len(actions) == 1` against the root parser and so never
+  reached a nested group, which is precisely why the seventh site went unnoticed
+  (`basicly-8ry8`).
+
+- **Concurrent lanes can no longer read the shared tracker export half-written.**
+  `scrub_export` rewrote the export in place while every lane read it through
+  `.beads/redirect`, and `export_records` skips a line it cannot parse rather than
+  raising — so a torn read returned a *partial issue set with no error at all*. It now
+  publishes through a pid-scoped temp file and a rename, waiting out a reader that still
+  holds the destination (Windows refuses `os.replace` while it is open, which would
+  otherwise have made this a Windows-only failure) and leaving the export whole rather
+  than half-written when it cannot win. A `DATABASE_ERROR` from the tracker is now
+  classified transient and backed off, and the supervisor charges such a loss to the
+  tracker gate instead of the lane's bounded rework budget, so a lane that never ran is
+  not parked for the store's contention. The gate runs four real reader processes against
+  a live writer with no retry in the read path; reverting the atomic write turns it red,
+  with a reader observing 1,669 of 3,000 records (`basicly-vkh0.10`).
+
+- **A dispatch that never started an agent no longer halts the whole grant.** The
+  fail-closed rule from `basicly-jr0l.35` is about an agent run nobody could meter: its
+  chars/4 floor cannot see the prompt, the tools or the cache writes, so counting it as
+  spend would let the ceiling pass on a number that is not the session's spend. A
+  dispatch that dies in pre-flight is the other case — no process ran, so nothing is
+  hiding under the floor and the engine's own captured error is the whole transcript.
+  Records now carry an `unstarted` outcome, and `session_spend` counts one as an estimate
+  but not as an unmeterable dispatch; a completed run whose usage the adapter could not
+  parse still halts, unchanged. A pre-flight failure also leaves telemetry now, where
+  before the pass kept no evidence the lane had been attempted at all (`basicly-jr0l.64`).
+
+  **This does not close the 2026-08-02 incident it was filed for.** The `tokens: 182`
+  record that halted that grant is `phase: decide` — the *decider* agent invoked on the
+  escalation the failed lane enqueued, not the lane. The decider is structurally
+  unmeterable and every delegated decision still halts an L2+ grant; that is tracked
+  separately as `basicly-gczc`.
+
 - **Scope read-cost sizes the material a lane reads, not the whole of every file it
   names.** A scope of `src/basicly/cli.py` cost all 45,556 of its tokens, so a
   three-line change to it estimated 139,448 working-set tokens and the band *refused*
@@ -417,8 +462,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   one test per consumer now pins grouping, scope-overlap collision detection and merge
   coupling attribution as invariant to the file size the cap acts on.
 
-  `working_set_max` follows the estimator down, 112,000 → 56,000, by the same rule
-  `basicly-3w44` derived it with. Both outcome populations are now sized by *one*
+  `working_set_max` follows the estimator down, 112,000 → 56,000 → **72,000**, by the
+  same rule `basicly-3w44` derived it with. The third move is the instructive one: 56,000
+  was derived from `basicly-tcmy.31` while the lane deriving it was still running, and the
+  record that lane wrote on finishing — 72,000 — contradicted the constant it had just
+  committed, so its own gate refused its own landing. Anything derived from the dispatch
+  record is true only as of the last dispatch, and the derivation is a ratchet whose input
+  is a lane's own declared scope (`basicly-qorx`). Both outcome populations are now sized
+  by *one*
   function from *one* source: a recorded `scope_tokens` is denominated in whatever
   measure was current when that dispatch ran, so preferring it mixes two quantities
   into the one comparison the gate exists to make. That symmetry also retires a claim

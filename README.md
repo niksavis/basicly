@@ -197,8 +197,8 @@ capability sits under the pillar it belongs to, grouped by what it currently is:
 | --- | --- | --- | --- |
 | **01 · guidance** | one catalog → 3 agent families<br>drift gate in CI<br>path-scoped rules tier<br>invocation axis per entry<br>model tiers · committed model map | lexical routing evals<br>an eval case per entry<br>always-on baseline relief<br>tutorial and how-to layer | `?` do entries change behaviour |
 | **02 · gates** | git hooks · commit · push<br>agent hooks · Claude · Copilot<br>verify pipeline · 3 modes | gate taxonomy by type<br>severity on judged output<br>rework convergence check<br>install reports its tier | — |
-| **03 · the loop** | single-track loop<br>worktree isolation<br>parallel lanes · merge queue<br>autonomy grants · spend cap<br>release automation | per-model spend forecast<br>unattended multi-lane run | `◇` a named role per judgment step<br>`?` cost per landed package<br>`?` deterministic AST localisation |
-| **04 · the work graph** | issues · deps · gates<br>phase derived from state | dispatch score recorded | `◇` owned in-process event log<br>`◇` provenance on every edge<br>`◇` fsck and rebuild |
+| **03 · the loop** | single-track loop<br>worktree isolation<br>parallel lanes · merge queue<br>autonomy grants · spend cap<br>release automation<br>scope sized by what a lane reads<br>measured context per dispatch | per-model spend forecast<br>unattended multi-lane run | `◇` a named role per judgment step<br>`?` cost per landed package<br>`?` deterministic AST localisation |
+| **04 · the work graph** | issues · deps · gates<br>phase derived from state<br>atomic shared-export publish | dispatch score recorded | `◇` owned in-process event log<br>`◇` provenance on every edge<br>`◇` fsck and rebuild |
 
 Some things are **not planned**, so absence here is not an oversight: an LLM
 orchestrator in control of the tracker, an agent-writable catalog, a maintained TUI,

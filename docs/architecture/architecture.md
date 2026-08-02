@@ -1703,7 +1703,9 @@ Pillar 03 — **the loop**:
 | Parallel lanes: supervisor, lane mini-loop, serial merge queue | `shipped` | §12, §14.2 |
 | Autonomy grants L0–L3 with a spend ceiling, decision queue, confined decider | `shipped` | §12 |
 | Release automation up to the annotated tag | `shipped` | §12 |
-| Per-model spend and wall-clock forecast, enforced when a supervisor pass is admitted | `building` | Plan Phase 1 — the current forecast models working set, not turn count |
+| Scope sized by the material a lane actually reads, so a small change to a large module is dispatchable | `shipped` | §12 — per-file read cap measured over 185 (lane, file) pairs; a file under ~4,000 tokens is read whole and above that a lane takes out ~1,500 however large it is |
+| Measured context occupancy recorded beside the forecast on every dispatch | `shipped` | §12 — `RunRecord.context_tokens`, the first measurement of the quantity the band gates on |
+| Per-model spend and wall-clock forecast, enforced when a supervisor pass is admitted | `building` | Plan Phase 1 — the current forecast models working set, not turn count, and that is now **measured** rather than suspected: declared scope predicts occupancy at R² = 0.095 against 0.863 for turn count |
 | A supervised multi-lane run with zero human interventions caused by a harness defect | `building` | Plan Phase 0 exit criterion |
 | A named role per judgment step, each with its own instructions, tool policy, tier and output contract | `designed` | §14.3, [`agent-roster`](../design/agent-roster-design.md) |
 | Cost per landed package — the instrument the tier claims rest on | `researching` | §14.6 |
@@ -1715,6 +1717,7 @@ Pillar 04 — **the work graph**:
 | --- | --- | --- |
 | Issues, dependencies, gate results, checkpoints and evidence in a tracked graph | `shipped` | §12.1 |
 | Phase derived from tracker state, so resume is a read rather than a replay | `shipped` | §12.1 |
+| Atomic publish of the shared tracker export, and a store error charged to the store rather than to the lane's rework budget | `shipped` | §12.1, [`work-tracker`](../design/work-tracker.md) R7 — gated by four reader processes against a live writer |
 | The scheduler score and rank recorded behind each dispatch | `building` | [`work-tracker`](../design/work-tracker.md) |
 | Owned in-process append-only event log, removing the external binary from the critical path | `designed` | §14.5, `work-tracker` |
 | Provenance on every edge — extracted, inferred, ambiguous | `designed` | §14.5 |
