@@ -238,6 +238,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **A run record carries the context the lane actually consumed.** `RunRecord` has
+  carried `scope_tokens` and `forecast_tokens` since `basicly-jr0l.34` and has never
+  carried the actual beside them, so every working-set number this engine gates on has
+  been a proxy checkable only against its own output — which is how `working_set_max`
+  came to be derived twice from a formula validated against itself. `record_dispatch`
+  now writes `context_tokens` from `runner.context_occupancy`, the same final-turn
+  occupancy the supervisor's context ceiling already meters, null wherever the adapter
+  cannot report one (a chars/4 guess from stdout length would be worse than nothing —
+  a calibration cannot tell an invented actual from a measured one).
+
+  It matters more than the estimator change shipped beside it. Measured across those
+  same 24 lanes, a lane's real context occupancy correlates with its declared scope at
+  **R² = 0.095** — against 0.863 for turn count — and six lanes declaring no scope at
+  all still occupied 106k–209k tokens. The term the formula is missing is a large
+  ambient one, not a better read model, and no ambient constant is invented here on
+  purpose: fitting a factor before the measurement existed is exactly how
+  `basicly-z2wi`'s 216× happened (`basicly-fcls`).
+
 - **A dispatch says which model ran, and a running lane reports itself.** The dispatch
   line named the adapter (`via claude`) and nothing about the model, so a run that
   resolved to a cheaper or dearer model than its declared tier read exactly like a correct
@@ -376,6 +394,40 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   export, which stays correct only for whole-tracker counting (`basicly-hsrs`).
 
 ### Fixed
+
+- **Scope read-cost sizes the material a lane reads, not the whole of every file it
+  names.** A scope of `src/basicly/cli.py` cost all 45,556 of its tokens, so a
+  three-line change to it estimated 139,448 working-set tokens and the band *refused*
+  it — while the harness's own always-on `tool-usage` guidance told the same agent to
+  "read only the ranges you need". The estimator and the instructions described
+  different agents, and the estimator held the gate: nothing touching `cli.py`,
+  `supervise.py` or `architecture.md` could be decomposed at all.
+
+  Re-measured over 185 (lane, file) pairs from 24 recorded headless lanes, taking the
+  union of the line ranges each lane actually read: 78% of `Read` calls are ranged, a
+  file under roughly 4,000 tokens is read whole, and above that the material taken out
+  is *flat* at ~1,500 tokens however large the file gets. So the model is a per-file
+  cap rather than a curve, and `decompose.SCOPE_FILE_READ_CAP` is 4,000 — the
+  transition itself, which covers the material actually read in 86% of those pairs and
+  over-states the large end by about 1.5×, on the standing rule that over-reading costs
+  a false refusal a human can see while under-reading admits work the band should have
+  refused. Capped per *file*, so a lane naming three large modules still outsizes one
+  naming a single module. The glob **grammar** is untouched — eleven consumers read a
+  scope glob as a set of paths and only the sizing chain reads it as a quantity — and
+  one test per consumer now pins grouping, scope-overlap collision detection and merge
+  coupling attribution as invariant to the file size the cap acts on.
+
+  `working_set_max` follows the estimator down, 112,000 → 56,000, by the same rule
+  `basicly-3w44` derived it with. Both outcome populations are now sized by *one*
+  function from *one* source: a recorded `scope_tokens` is denominated in whatever
+  measure was current when that dispatch ran, so preferring it mixes two quantities
+  into the one comparison the gate exists to make. That symmetry also retires a claim
+  the ceiling rested on — `basicly-kjc5.42` and `basicly-kjc5.44` declare the identical
+  class and the identical scope, and one completed while the other was SIGTERMed, so no
+  function of (class, scope) can separate that pair and no ceiling can be credited with
+  refusing the second. The previous derivation appeared to only because the
+  completed-side query dropped kjc5.42's success on the same optional-field filter
+  `basicly-ipx2` had just removed from the failure side (`basicly-fcls`).
 
 - **The `docs-claims` gate runs on Windows.** It was wired as a bare
   `python .scripts/docs_claims.py`, on the reasoning that this matched the bare-binary

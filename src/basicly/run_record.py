@@ -110,6 +110,20 @@ class RunRecord:
     # re-derive them against a changed tree (D8 drift, basicly-kjc5.30).
     scope_tokens: int | None = None
     forecast_tokens: int | None = None
+    # The *actual* the two fields above forecast: how full the model's window was
+    # when the lane finished (``runner.context_occupancy``), null wherever the
+    # adapter cannot answer — claude's non-streaming envelope and copilot report
+    # no per-turn occupancy, and a handoff ran nothing (basicly-fcls).
+    #
+    # Every working-set number this engine has ever gated on was a *proxy*: the
+    # tokenized size of the declared scope, multiplied by a seed. Nothing recorded
+    # the quantity the band is denominated in, so `working_set_max` has been
+    # derived twice (basicly-3w44, basicly-ipx2) by re-reading the tree and
+    # re-applying the formula to itself — an estimator validated against its own
+    # output. This is the field that ends that: it is measured, it travels on the
+    # marker, and once enough lanes carry one the ambient term and the per-class
+    # factors can be fitted to it instead of declared.
+    context_tokens: int | None = None
     # The class the forecast was computed for, and where the forecast came from
     # (``decompose.FROZEN_FORECAST`` / ``DISPATCH_FORECAST``). Recorded rather than
     # re-derived because calibration reads a sample long after the fact and a closed
@@ -190,6 +204,7 @@ def build_record(  # noqa: PLR0913
     phase: str | None = None,
     scope_tokens: int | None = None,
     forecast_tokens: int | None = None,
+    context_tokens: int | None = None,
     task_class: str | None = None,
     forecast_source: str | None = None,
     folded_info: tuple[str, ...] = (),
@@ -208,6 +223,8 @@ def build_record(  # noqa: PLR0913
     three null when nothing executed. The split counts and *credits* are the
     same telemetry at finer grain (basicly-2rn9), null for an adapter that
     reports no split and for a spend billed in USD rather than AI credits.
+    *context_tokens* is the measured working set the sizing forecast was trying
+    to predict (basicly-fcls), null wherever the adapter reports no occupancy.
     """
     return RunRecord(
         agent=agent,
@@ -236,6 +253,7 @@ def build_record(  # noqa: PLR0913
         phase=phase,
         scope_tokens=scope_tokens,
         forecast_tokens=forecast_tokens,
+        context_tokens=context_tokens,
         task_class=task_class,
         forecast_source=forecast_source,
         folded_info=tuple(folded_info),

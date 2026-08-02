@@ -531,8 +531,60 @@ def _scope_files(repo_root: Path, scope: tuple[str, ...]) -> set[Path]:
     return files
 
 
+# How much of one file a lane actually reads (basicly-fcls).
+#
+# This used to be "all of it", and that made a scope naming `cli.py` cost 45_556
+# tokens for a three-line change — while the harness's own always-on `tool-usage`
+# guidance tells the same agent to "find files by name, localize with focused
+# search, read only the ranges you need". The estimator and the instructions
+# described different agents, and the estimator was the one holding the gate.
+#
+# Measured over 185 (lane, file) pairs from 24 headless lane transcripts, taking
+# the *union* of line ranges each lane read out of each file, against the file's
+# size in this module's own chars/4 unit:
+#
+#   file tokens        n    median tokens read    median fraction
+#        73-  987     20                   357              1.000
+#       993- 2454     20                  1101              1.000
+#      2676- 3823     20                  2779              1.000
+#      4494- 6967     20                  1350              0.219
+#      7353-12843     20                  1524              0.147
+#     12843-17460     20                  1356              0.094
+#     17460-22829     20                  2224              0.122
+#     22829-32519     20                  1372              0.053
+#     32519-45556     25                  ~1000             0.022-0.068
+#
+# 78% of `Read` calls carried an offset or a limit. The shape is not a gentle
+# taper: below roughly 4_000 tokens a lane reads the file whole, and above it the
+# material it takes out is *flat* at ~1_500 tokens however large the file gets.
+# So the model is a cap, not a curve, and 4_000 is where the whole-file band ends
+# (last whole-read bucket tops out at 3_823, first partial bucket starts at 4_494).
+#
+# Set at the transition rather than at the ~1_500 plateau, deliberately: the cap
+# then covers the material actually read in 86% of the measured pairs and
+# over-states the large end by about 1.5x. That is the same stance
+# SCOPE_EXCLUDED_DIRS takes above — over-reading costs a false refusal a human can
+# see, under-reading admits work the band should have refused (basicly-jr0l.63).
+#
+# The cap alone is *not* the whole answer and must not be read as one. A lane's
+# real context occupancy correlates with its declared scope at R^2 = 0.095 over
+# those same 24 lanes (against 0.863 for turn count), and six lanes declaring no
+# scope at all still occupied 106k-209k tokens — so the term this formula is
+# really missing is a large ambient one, not a better read model. Fitting that
+# needs a measurement, which is why `RunRecord.context_tokens` lands with this
+# change and why no ambient constant is invented here: a factor fitted before the
+# measurement existed is exactly how basicly-z2wi's 216x happened.
+SCOPE_FILE_READ_CAP = 4_000
+
+
 def scope_read_cost(repo_root: Path, scope: tuple[str, ...]) -> int:
-    """Tokenized size of the existing files matching the declared scope globs.
+    """Tokenized material a lane reads out of the files matching its scope globs.
+
+    Each file contributes its own size or :data:`SCOPE_FILE_READ_CAP`, whichever
+    is smaller — a small file is read whole, a large one is localized into
+    (basicly-fcls). Capping per *file* rather than per scope is what keeps a lane
+    naming three large modules costing more than one naming a single large module,
+    which a cap on the total would flatten away.
 
     A glob matching nothing — a file the child will create — contributes zero:
     there is nothing to read yet. Unreadable files are skipped (telemetry-grade
@@ -541,9 +593,10 @@ def scope_read_cost(repo_root: Path, scope: tuple[str, ...]) -> int:
     total = 0
     for path in _scope_files(repo_root, scope):
         try:
-            total += _text_tokens(path.read_text(encoding="utf-8", errors="replace"))
+            text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
+        total += min(_text_tokens(text), SCOPE_FILE_READ_CAP)
     return total
 
 

@@ -1820,6 +1820,66 @@ def test_record_dispatch_never_raises_on_a_spec_result_mismatch(
     assert entry["agent"] == "manual"
 
 
+def test_record_dispatch_carries_the_context_the_lane_consumed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC: a completed lane's record carries the working set it actually reached.
+
+    The measured half of the sizing pair (basicly-fcls). `forecast_tokens` and
+    `scope_tokens` have been recorded since basicly-jr0l.34 and nothing has ever
+    recorded the actual beside them, so the estimator has only ever been checkable
+    against its own output — which is how `working_set_max` came to be re-derived
+    twice from a formula validated against itself.
+
+    Pinned through `record_dispatch` rather than `context_occupancy`, because the
+    unit function was already right and already tested: what was missing was any
+    dispatch site writing it down.
+    """
+    spec = _claude_spec()
+    result = _executed(spec, _CLAUDE_STREAM)
+    monkeypatch.setattr(runner.run_record, "record_marker", lambda *_a, **_k: None)
+
+    runner.record_dispatch(
+        tmp_path,
+        "basicly-fcls",
+        spec,
+        result,
+        prompt="p",
+        phase="build",
+        scope_tokens=4_000,
+        forecast_tokens=12_000,
+    )
+
+    (entry,) = (runner.run_record.load_run_records(tmp_path) or {})["basicly-fcls"]
+    assert entry["context_tokens"] == runner.context_occupancy(spec, result)
+    assert entry["context_tokens"] == 2 + 40 + 15496 + 17
+    # The forecast is on the same record, so the pair is computable from one row.
+    assert (entry["scope_tokens"], entry["forecast_tokens"]) == (4_000, 12_000)
+    # And it is the occupancy, never the cumulative cost view.
+    assert entry["context_tokens"] < entry["tokens"]
+
+
+def test_record_dispatch_records_no_context_when_the_adapter_cannot_report_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unknowable occupancy stays null — never a chars/4 guess from stdout.
+
+    The same stance `context_occupancy` takes: a fabricated actual would be worse
+    than none, because a calibration cannot tell an invented number from a measured
+    one and would fit the estimator to stdout length (basicly-fcls).
+    """
+    spec = _claude_json_spec()
+    monkeypatch.setattr(runner.run_record, "record_marker", lambda *_a, **_k: None)
+
+    runner.record_dispatch(
+        tmp_path, "basicly-fcls", spec, _executed(spec, _CLAUDE_RESULT), prompt="p", phase="build"
+    )
+
+    (entry,) = (runner.run_record.load_run_records(tmp_path) or {})["basicly-fcls"]
+    assert entry["context_tokens"] is None
+    assert entry["tokens"] is not None  # the cost meter still reports
+
+
 def test_record_dispatch_carries_copilot_measured_usage(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

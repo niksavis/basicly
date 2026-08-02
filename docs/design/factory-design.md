@@ -515,7 +515,7 @@ New parameters (all in the overridable sections per the dual-use constraint):
 | `[policy]`        | `notify_command`          | none (disabled)    | Consumer-supplied command fired per new human-required decision (§7.3)  |
 | `[policy]`        | grant `token_budget`      | none — required    | L2+ grants must state a spend ceiling; unbounded lights-out unreachable |
 | `[policy.sizing]` | `working_set_min`         | `8_000` tokens     | Below → merge with a scope-group sibling (overhead amortization)        |
-| `[policy.sizing]` | `working_set_max`         | `64_000` tokens    | Above → engine refuses, agent must split (see §5 evidence)              |
+| `[policy.sizing]` | `working_set_max`         | `72_000` tokens    | Above → engine refuses, agent must split. Derived from recorded lane outcomes, so it moves with the estimator and with the last dispatch: `64_000` chosen → `112_000` (`basicly-3w44`) → `56_000` once scope read-cost stopped sizing whole files → `72_000` when the deriving lane's own finishing record outgrew it (`basicly-fcls`). A ratchet on self-declared scope; see `basicly-qorx` |
 | `[policy.sizing]` | `context_ceiling`         | `0.6` of window    | Behavioral anxiety guard; finalize-protocol trigger, not a fill target  |
 | `[policy.sizing]` | `build_factor` seeds      | task 3.0 / bug 2.0 / chore 1.5 | Multiplier on scope read-cost until telemetry calibrates    |
 | `[policy.sizing]` | `calibration_min_samples` | `10` per class     | Measured factors override seeds only past this                          |

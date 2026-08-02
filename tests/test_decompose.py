@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import br, decompose, policy, run_record
+from basicly import br, decompose, merge, policy, run_record
 from basicly.config import (
     DEFAULT_BUILD_FACTOR,
     DEFAULT_BUILD_FACTOR_SEEDS,
@@ -509,6 +509,20 @@ def _write(repo: Path, rel: str, chars: int) -> None:
     path.write_text("x" * chars, encoding="utf-8")
 
 
+# Scope glob and matching tree for a plan the band must refuse. Spread over files
+# rather than concentrated in one, because `SCOPE_FILE_READ_CAP` means no single
+# module can reach a refusable size any more (basicly-fcls) — a one-huge-file
+# fixture would leave every refusal test asserting nothing.
+_OVERSIZED_SCOPE = "src/big/*.py"
+
+
+def _write_oversized(repo: Path) -> None:
+    """A tree whose `_OVERSIZED_SCOPE` sizes well above `DEFAULT_WORKING_SET_MAX`."""
+    files = -(-DEFAULT_WORKING_SET_MAX // (decompose.SCOPE_FILE_READ_CAP * 3)) + 2
+    for index in range(files):
+        _write(repo, f"src/big/m{index}.py", decompose.SCOPE_FILE_READ_CAP * 4 * 2)
+
+
 def _sizing(**overrides) -> SizingConfig:
     defaults = {
         "working_set_min": 8_000,
@@ -544,6 +558,71 @@ def test_scope_read_cost_recursive_glob_and_greenfield(tmp_path: Path) -> None:
     assert decompose.scope_read_cost(tmp_path, ("brand/new/file.py",)) == 0
 
 
+def test_a_large_file_is_sized_at_what_a_lane_reads_out_of_it(tmp_path: Path) -> None:
+    """AC: a small change to a large module is not sized at the whole module.
+
+    The defect basicly-fcls names. A scope of `src/basicly/cli.py` used to cost every
+    one of its 45,556 tokens, while the harness's own always-on `tool-usage` guidance
+    told the same agent to read only the ranges it needs — and 78% of the `Read` calls
+    across 24 measured lanes did exactly that.
+    """
+    _write(tmp_path, "src/big.py", decompose.SCOPE_FILE_READ_CAP * 4 * 10)
+
+    cost = decompose.scope_read_cost(tmp_path, ("src/big.py",))
+    assert cost == decompose.SCOPE_FILE_READ_CAP
+    assert cost < decompose._text_tokens("x" * (decompose.SCOPE_FILE_READ_CAP * 4 * 10))
+
+
+def test_a_file_under_the_read_cap_still_costs_all_of_itself(tmp_path: Path) -> None:
+    """The cap is a ceiling on one file, never a flat per-file price.
+
+    Below the transition a lane really does read the whole file — the measured median
+    fraction is 1.000 for every size band under ~4,000 tokens — so charging the cap
+    for a 200-token fragment would over-size the small end as badly as the whole-file
+    measure over-sized the large end.
+    """
+    _write(tmp_path, "src/small.py", 800)
+    assert decompose.scope_read_cost(tmp_path, ("src/small.py",)) == 200
+
+
+def test_the_read_cap_applies_per_file_so_a_wider_scope_still_costs_more(
+    tmp_path: Path,
+) -> None:
+    """Three large modules must outsize one, or the estimate stops ranking lanes.
+
+    A cap on the *total* would price a lane touching the whole package identically to
+    one touching a single module, which is the failure mode that makes a sizing band
+    useless rather than merely wrong.
+    """
+    for name in ("a", "b", "c"):
+        _write(tmp_path, f"src/{name}.py", decompose.SCOPE_FILE_READ_CAP * 4 * 3)
+
+    assert decompose.scope_read_cost(tmp_path, ("src/a.py",)) == decompose.SCOPE_FILE_READ_CAP
+    assert decompose.scope_read_cost(tmp_path, ("src/*.py",)) == 3 * decompose.SCOPE_FILE_READ_CAP
+
+
+def test_the_read_cap_lets_the_band_admit_a_change_to_a_large_module(
+    tmp_path: Path,
+) -> None:
+    """AC: decompose no longer refuses a lane on the size of the file it names.
+
+    Asserted through `check_working_set`, the governor that actually refuses, and at
+    the real ceiling — the arithmetic being right is not the claim, the lane being
+    dispatchable is. `src/basicly/cli.py`'s size is used verbatim because it is the
+    module every chunking candidate in this repo names.
+    """
+    _write(tmp_path, "src/cli.py", 182_396)  # cli.py's real size: 45,599 tokens
+    sizing = _sizing(
+        working_set_min=DEFAULT_WORKING_SET_MIN, working_set_max=DEFAULT_WORKING_SET_MAX
+    )
+    estimate = decompose.estimate_cost(
+        tmp_path, _child("t", "src/cli.py"), DEFAULT_BUILD_FACTOR_SEEDS, overhead=2_000
+    )
+
+    assert estimate.total == 2_000 + 12_000
+    assert policy.check_working_set("t", estimate.total, estimate.scope_tokens, sizing) is None
+
+
 def test_estimate_cost_total_is_overhead_plus_factored_scope(tmp_path: Path) -> None:
     """Total = overhead + scope x class factor; unlisted classes use the task factor."""
     _write(tmp_path, "src/a.py", 4_000)  # 1000 scope tokens
@@ -555,6 +634,78 @@ def test_estimate_cost_total_is_overhead_plus_factored_scope(tmp_path: Path) -> 
     assert decompose.estimate_cost(tmp_path, bug, factors, overhead=0).total == 2_000
     spike = ChildSpec(title="s", acceptance=("a",), scope=("src/a.py",), type="spike")
     assert decompose.estimate_cost(tmp_path, spike, factors, overhead=0).total == 3_000
+
+
+# --- The measure moved; the glob consumers did not (basicly-fcls) ------------
+#
+# Eleven call sites read a scope glob as a *set of paths* — grouping, the loop's
+# scope-collision gate, merge coupling attribution — and exactly one reads it as a
+# quantity. Changing the grammar (a `cli.py:100-200` range) would have broken all
+# eleven silently: `globs_overlap('cli.py', 'cli.py:100-200')` is False, so two lanes
+# on one file would have been parallelized and the wrong permanent coupling edge
+# written. So only the *function applied to* the globs changed, and these three pin
+# that — one per consumer, each asserting the answer is invariant to the file size
+# that `scope_read_cost` now caps.
+
+
+def test_grouping_is_unchanged_by_the_size_of_the_file_two_children_share(
+    tmp_path: Path,
+) -> None:
+    """Consumer 1: two children naming one large module still serialize.
+
+    Grouping never touches the filesystem, and this is what proves the read cap did
+    not leak into it: the same pair groups identically whether the shared module is
+    a stub or ten times the cap.
+    """
+    pair = (_child("a", "src/big.py", "src/a.py"), _child("b", "src/big.py", "src/b.py"))
+    apart = (_child("a", "src/a.py"), _child("b", "src/b.py"))
+
+    for chars in (40, decompose.SCOPE_FILE_READ_CAP * 4 * 10):
+        _write(tmp_path, "src/big.py", chars)
+        _write(tmp_path, "src/a.py", chars)
+        _write(tmp_path, "src/b.py", chars)
+        assert decompose.group_children(pair) == (0, 0)
+        assert decompose.group_children(apart) == (0, 1)
+        assert decompose.serializes(*pair) is True
+
+
+def test_scope_overlap_is_unchanged_by_the_size_of_the_file(tmp_path: Path) -> None:
+    """Consumer 2: the loop's scope-collision gate sees the same overlaps.
+
+    `loop._scope_collision_block` decides on `merge.out_of_scope_paths`, which is
+    `globs_overlap` underneath — a pure predicate over path segments. A capped
+    read-cost must not make a large file look less collided than a small one, or the
+    gate would quietly stop refusing exactly the modules chunking is aimed at.
+    """
+    _write(tmp_path, "src/big.py", decompose.SCOPE_FILE_READ_CAP * 4 * 10)
+    _write(tmp_path, "src/small.py", 40)
+
+    for name in ("big", "small"):
+        assert decompose.globs_overlap(f"src/{name}.py", "src/**/*.py") is True
+        assert decompose.globs_overlap(f"src/{name}.py", "tests/*.py") is False
+        assert decompose.scopes_overlap((f"src/{name}.py",), ("src/*.py", "docs/*")) is True
+
+    # And the gate's own question: a path inside the declared scope is never "outside".
+    assert merge.out_of_scope_paths(["src/big.py"], ("src/big.py",)) == ()
+    assert merge.out_of_scope_paths(["src/big.py"], ("src/small.py",)) == ("src/big.py",)
+
+
+def test_merge_coupling_attribution_is_unchanged_by_the_size_of_the_file(
+    tmp_path: Path,
+) -> None:
+    """Consumer 3: a conflict on a large module still names the lane that declared it.
+
+    The coupling edge outlives the pass, so a wrong one teaches the graph a
+    relationship that does not exist. It is attributed from the declared globs and
+    from nothing else — never from read-cost — and that must hold for the largest
+    file in the repo as much as for a fragment.
+    """
+    _write(tmp_path, "src/big.py", decompose.SCOPE_FILE_READ_CAP * 4 * 10)
+    scopes = {"lane-a": ("src/big.py",), "lane-b": ("src/small.py",)}
+
+    assert merge.coupled_lanes(("src/big.py",), scopes, bounced="lane-b") == ("lane-a",)
+    assert merge.coupled_lanes(("src/big.py",), scopes, bounced="lane-a") == ()
+    assert merge.coupled_lanes(("src/other.py",), scopes, bounced="lane-b") == ()
 
 
 def test_parse_scope_section_round_trips_child_body() -> None:
@@ -700,8 +851,20 @@ def _exported_class_and_scope(repo_root: Path) -> dict[str, tuple[str, tuple[str
     return beads
 
 
-def completed_lane_estimates(repo_root: Path) -> dict[str, int]:
-    """Estimate per bead for every lane a headless dispatch actually completed.
+def _lane_estimates(repo_root: Path, outcome: str) -> dict[str, int]:
+    """Estimate per bead for every headless dispatch that ended in *outcome*.
+
+    One function for both populations, sizing every lane the same way: its declared
+    ``## Scope`` read from the tree now, at the seed factor for its class. Two
+    functions is how the ceiling has been wrong twice.
+
+    **Never the record's own ``scope_tokens``**, even where one is present. Those
+    were written by whatever measure was current when the dispatch ran — the ones on
+    this tree are whole-file sums predating basicly-fcls — so preferring them mixes
+    two quantities into one comparison, which is the defect this whole gate exists to
+    catch (basicly-z2wi, basicly-ipx2). Re-deriving is honest about being a
+    re-derivation: it drifts as the scoped files grow, and it is what
+    ``RunRecord.context_tokens`` is here to replace.
 
     Handoff outcomes are excluded on purpose. A handoff means a driving agent or a
     human carried the work in their own session, so it bounds what a *session* can
@@ -712,55 +875,39 @@ def completed_lane_estimates(repo_root: Path) -> dict[str, int]:
     beads = _exported_class_and_scope(repo_root)
     estimates: dict[str, int] = {}
     for bead_id, history in run_record.dispatch_history(repo_root).items():
-        task_class, _ = beads.get(bead_id, ("task", ()))
+        task_class, scope = beads.get(bead_id, ("task", ()))
+        scope_tokens = decompose.scope_read_cost(repo_root, scope)
+        if scope_tokens <= 0:
+            continue
+        estimate = _lane_estimate(scope_tokens, task_class)
         for entry in history:
-            scope_tokens = entry.get("scope_tokens")
-            if entry.get("outcome") != run_record.EXECUTED or not isinstance(scope_tokens, int):
-                continue
-            if scope_tokens <= 0:
-                continue
-            estimates[bead_id] = max(
-                estimates.get(bead_id, 0), _lane_estimate(scope_tokens, task_class)
-            )
+            if entry.get("outcome") == outcome:
+                estimates[bead_id] = estimate
     return estimates
+
+
+def completed_lane_estimates(repo_root: Path) -> dict[str, int]:
+    """Estimate per bead for every lane a headless dispatch actually completed.
+
+    Sized identically to :func:`failed_lane_estimates` — see :func:`_lane_estimates`
+    for why that symmetry is load-bearing. This side used to filter on the record's
+    own ``scope_tokens`` and so could not see basicly-kjc5.42's success, which is the
+    only reason the ceiling appeared to be refusing basicly-kjc5.44 (basicly-fcls).
+    """
+    return _lane_estimates(repo_root, run_record.EXECUTED)
 
 
 def failed_lane_estimates(repo_root: Path) -> dict[str, int]:
     """Estimate per bead for every lane a headless dispatch failed (basicly-ipx2).
 
-    The half that was missing, and the reason it was missing:
-    :func:`completed_lane_estimates` can filter on the record's own ``scope_tokens``
-    because a lane that finishes has one, while **every** failed record on this tree
-    carries ``scope_tokens: None`` — the sizing fields landed after those dispatches
-    died. A failure-side query written the same way therefore returns ``{}``, which
+    The half that was missing, and the reason it was missing: the completed side
+    filtered on the record's own ``scope_tokens``, and **every** failed record on
+    this tree carries ``scope_tokens: None`` — the sizing fields landed after those
+    dispatches died. A failure-side query written the same way returns ``{}``, which
     is exactly how "zero lanes have failed at any size" came to be committed beside
     the ceiling: the filter had deleted the whole population it was counting.
-
-    So a failure is sized from the tracker and the tree instead — its declared
-    ``## Scope`` read now, at the seed factor for its class — and only falls back to
-    that when the record carries no size of its own. That is a re-derivation rather
-    than an observation and it drifts as the scoped files grow, which is precisely
-    why a dying dispatch must record the scope cost it was sized on.
     """
-    beads = _exported_class_and_scope(repo_root)
-    estimates: dict[str, int] = {}
-    for bead_id, history in run_record.dispatch_history(repo_root).items():
-        task_class, scope = beads.get(bead_id, ("task", ()))
-        for entry in history:
-            if entry.get("outcome") != run_record.FAILED:
-                continue
-            recorded = entry.get("scope_tokens")
-            scope_tokens = (
-                recorded
-                if isinstance(recorded, int)
-                else decompose.scope_read_cost(repo_root, scope)
-            )
-            if scope_tokens <= 0:
-                continue
-            estimates[bead_id] = max(
-                estimates.get(bead_id, 0), _lane_estimate(scope_tokens, task_class)
-            )
-    return estimates
+    return _lane_estimates(repo_root, run_record.FAILED)
 
 
 def _ceiling_violations(repo_root: Path, ceiling: int) -> list[str]:
@@ -809,10 +956,9 @@ def test_the_ceiling_separates_the_sizes_that_completed_from_the_sizes_that_fail
     against the only evidence available, quietly refusing the engine's own proven work.
 
     The upper half is basicly-ipx2, and it exists because the one-directional version
-    of this test could not contradict the false claim shipped beside it. Four dispatches
-    have failed; two of them at 136,668, a size no lane has been observed to complete.
-    A ceiling that admitted those would be licensing a size on nothing at all, which is
-    what "no lane has failed yet" quietly did.
+    of this test could not contradict the false claim shipped beside it. A ceiling
+    that admits a size only failures have reached is licensing it on nothing at all,
+    which is what "no lane has failed yet" quietly did.
 
     Neither half asserts equality with the observed maximum: a larger lane succeeding
     is good news and must not turn main red. It fails only when the constant and the
@@ -826,11 +972,38 @@ def test_the_recorded_failures_are_visible_to_the_ceiling_gate() -> None:
 
     Without this, the upper half of the gate above is indistinguishable from one
     measuring an empty set — and an empty set is what a failure-side query inherits
-    the moment it reuses `completed_lane_estimates`' `isinstance(scope_tokens, int)`
-    filter, because no failed record on this tree has ever carried one. That silence
-    read as "zero lanes have failed" once already.
+    the moment it filters on `isinstance(scope_tokens, int)`, because no failed record
+    on this tree has ever carried one. That silence read as "zero lanes have failed"
+    once already.
     """
     assert failed_lane_estimates(REPO_ROOT)
+
+
+def test_no_lane_this_engine_completed_is_refused_by_the_band() -> None:
+    """AC: the band admits every size a headless dispatch has actually completed.
+
+    The live half of basicly-fcls' fourth criterion, asserted through the governor
+    the engine really runs rather than through `_ceiling_violations`' arithmetic — a
+    ceiling that reconciles with the record but whose `check_working_set` still
+    refuses would pass that test and fail every lane.
+
+    basicly-kjc5.42 is the case that motivates it: it completed, and until this bead
+    it was sized at 136,668 against a ceiling of 112,000. That contradiction was
+    invisible only because the completed-side query dropped it on the `scope_tokens`
+    filter — hence the membership assertion, which is this test's positive control.
+    """
+    sizing = _sizing(
+        working_set_min=DEFAULT_WORKING_SET_MIN, working_set_max=DEFAULT_WORKING_SET_MAX
+    )
+    completed = completed_lane_estimates(REPO_ROOT)
+    assert "basicly-kjc5.42" in completed
+
+    refused = {
+        bead: policy.check_working_set(bead, estimate, estimate, sizing)
+        for bead, estimate in completed.items()
+        if estimate > sizing.working_set_max
+    }
+    assert refused == {}, "the band refuses work this engine has already completed"
 
 
 def test_the_ceiling_gate_names_the_lane_and_the_value_it_requires(
@@ -842,9 +1015,10 @@ def test_the_ceiling_gate_names_the_lane_and_the_value_it_requires(
     empty set — which is exactly how the 64,000 constant survived eighteen
     contradictions.
     """
-    _write(tmp_path, "src/a.py", 16_000)  # 4_000 scope tokens
+    _write(tmp_path, "src/a.py", 16_000)  # 4_000 scope tokens, exactly at the read cap
     body = decompose._child_body(_child("t", "src/a.py"))
     _install(monkeypatch, _FakeBrShow({"b-1": ("task", body)}))
+    _export(tmp_path, {"id": "b-1", "issue_type": "task", "description": body})
     _record_run_tokens(tmp_path, "b-1", 1_000, scope_tokens=4_000)  # 4_000 x 3.0 = 12_000
 
     assert _ceiling_violations(tmp_path, 112_000) == []
@@ -862,9 +1036,15 @@ def test_the_ceiling_gate_refuses_to_admit_a_size_a_lane_died_at(tmp_path: Path)
     from one measuring an empty set; this one exists because the *new* direction is
     the one that was empty. The failed lane declares a scope and records no size —
     the shape of every real failure on this tree — so it is sized from the tree.
+
+    The big lane is ten capped files rather than one huge one (basicly-fcls): under
+    the read cap a single module can no longer reach a fatal size on its own, and a
+    fixture that ignored that would be exercising a shape the estimator can never
+    produce.
     """
     _write(tmp_path, "src/small.py", 16_000)  # 4_000 scope tokens
-    _write(tmp_path, "src/big.py", 160_000)  # 40_000 scope tokens
+    for index in range(10):
+        _write(tmp_path, f"src/big/m{index}.py", 160_000)  # 4_000 each once capped
     _export(
         tmp_path,
         {
@@ -875,7 +1055,7 @@ def test_the_ceiling_gate_refuses_to_admit_a_size_a_lane_died_at(tmp_path: Path)
         {
             "id": "died",
             "issue_type": "task",
-            "description": decompose._child_body(_child("b", "src/big.py")),
+            "description": decompose._child_body(_child("b", "src/big/*.py")),
         },
     )
     _record_run_tokens(tmp_path, "ran", 1_000, scope_tokens=4_000)  # 4_000 x 3.0 = 12_000
@@ -900,13 +1080,14 @@ def test_a_failure_below_a_proven_size_is_not_evidence_about_the_ceiling(tmp_pat
     returncode 143, and a record keeps a returncode, not a cause.
     """
     _write(tmp_path, "src/small.py", 16_000)  # 4_000 scope tokens
-    _write(tmp_path, "src/big.py", 160_000)  # 40_000 scope tokens
+    for index in range(10):
+        _write(tmp_path, f"src/big/m{index}.py", 160_000)  # 4_000 each once capped
     _export(
         tmp_path,
         {
             "id": "ran",
             "issue_type": "task",
-            "description": decompose._child_body(_child("b", "src/big.py")),
+            "description": decompose._child_body(_child("b", "src/big/*.py")),
         },
         {
             "id": "died",
@@ -914,22 +1095,25 @@ def test_a_failure_below_a_proven_size_is_not_evidence_about_the_ceiling(tmp_pat
             "description": decompose._child_body(_child("s", "src/small.py")),
         },
     )
-    _record_run_tokens(tmp_path, "ran", 1_000, scope_tokens=40_000)  # 120_000 completed
+    _record_run_tokens(tmp_path, "ran", 1_000)  # 40_000 x 3.0 = 120_000 completed
     _record_run_tokens(tmp_path, "died", 1_000, returncode=143)  # 12_000, far below it
 
     assert failed_lane_estimates(tmp_path) == {"died": 12_000}
     assert _ceiling_violations(tmp_path, 120_000) == []
 
 
-def test_a_failed_lane_is_sized_from_the_size_it_recorded_when_it_has_one(tmp_path: Path) -> None:
-    """A dying dispatch that recorded its scope needs no re-derivation from the tree.
+def test_a_recorded_scope_size_never_overrides_the_current_measure(tmp_path: Path) -> None:
+    """Both outcome populations are sized by today's estimator, never by a stored one.
 
-    The tree drifts — `src/basicly/cli.py` is bigger today than when the lanes that
-    died reading it were dispatched — so the recorded figure is the better evidence
-    wherever it exists, and the tree is only the fallback for records that predate
-    the field. This is the half basicly-ipx2 makes true going forward.
+    A recorded `scope_tokens` is denominated in whatever measure was current when
+    that dispatch ran, and every one on this tree is a whole-file sum from before
+    basicly-fcls. Preferring it — which the failure side used to, as the better
+    evidence against a drifting tree — silently mixes two quantities into the one
+    comparison this gate exists to make, which is the shape of both basicly-z2wi and
+    basicly-ipx2. The re-derivation drifts, and that is the honest cost until
+    `RunRecord.context_tokens` has a sample to replace it with.
     """
-    _write(tmp_path, "src/big.py", 160_000)  # 40_000 scope tokens today
+    _write(tmp_path, "src/big.py", 160_000)  # 40_000 raw, 4_000 once capped
     _export(
         tmp_path,
         {
@@ -940,7 +1124,8 @@ def test_a_failed_lane_is_sized_from_the_size_it_recorded_when_it_has_one(tmp_pa
     )
     _record_run_tokens(tmp_path, "died", 1_000, returncode=143, scope_tokens=9_000)
 
-    assert failed_lane_estimates(tmp_path) == {"died": 27_000}  # 9_000 x 3.0, not the tree's
+    # 4_000 x 3.0 from the tree, not 9_000 x 3.0 from the record.
+    assert failed_lane_estimates(tmp_path) == {"died": 12_000}
 
 
 def test_a_handoff_lane_is_not_evidence_for_the_dispatch_ceiling(
@@ -955,6 +1140,7 @@ def test_a_handoff_lane_is_not_evidence_for_the_dispatch_ceiling(
     _write(tmp_path, "src/a.py", 16_000)
     body = decompose._child_body(_child("t", "src/a.py"))
     _install(monkeypatch, _FakeBrShow({"b-1": ("task", body)}))
+    _export(tmp_path, {"id": "b-1", "issue_type": "task", "description": body})
     run_record.record(
         tmp_path,
         "b-1",
@@ -970,6 +1156,7 @@ def test_a_handoff_lane_is_not_evidence_for_the_dispatch_ceiling(
         ),
     )
 
+    # The same bead sized 12,000 in the control above; only the outcome differs.
     assert completed_lane_estimates(tmp_path) == {}
 
 
@@ -1066,16 +1253,19 @@ def test_govern_reuses_a_frozen_estimate_when_the_tree_has_grown(
     """
     _install(monkeypatch, _FakeBr())
     _write(tmp_path, "src/a.py", 16_000)  # 4_000 scope tokens x 3.0 = 12_000
-    spec = _child("a", "src/a.py")
+    spec = _child("a", "src/*.py")
 
     first = decompose.govern_working_set(tmp_path, (spec,), feature_id="feat")
     assert first[0].build_factor == 3.0
     assert first[0].total == 12_000
 
-    # The file triples. Recomputing would take the estimate to 36_000 and, on a
-    # larger plan, across the band ceiling.
-    _write(tmp_path, "src/a.py", 48_000)  # 12_000 scope tokens
-    assert decompose.scope_read_cost(tmp_path, ("src/a.py",)) == 12_000
+    # The scope triples. Recomputing would take the estimate to 36_000 and, on a
+    # larger plan, across the band ceiling. It has to grow in *files*: growing one
+    # file no longer moves the estimate past SCOPE_FILE_READ_CAP (basicly-fcls),
+    # so a single-file drift would leave this test asserting nothing.
+    _write(tmp_path, "src/b.py", 16_000)
+    _write(tmp_path, "src/c.py", 16_000)
+    assert decompose.scope_read_cost(tmp_path, ("src/*.py",)) == 12_000
 
     second = decompose.govern_working_set(tmp_path, (spec,), feature_id="feat")
     assert second == first
@@ -1101,10 +1291,12 @@ def test_govern_does_not_freeze_a_refused_plan(
     """A refusal is the agent's cue to re-propose, so its numbers are not pinned."""
     fake = _FakeBr()
     _install(monkeypatch, fake)
-    _write(tmp_path, "src/big.py", 400_000)
+    _write_oversized(tmp_path)
 
     with pytest.raises(ValueError, match="split"):
-        decompose.govern_working_set(tmp_path, (_child("huge", "src/big.py"),), feature_id="feat")
+        decompose.govern_working_set(
+            tmp_path, (_child("huge", _OVERSIZED_SCOPE),), feature_id="feat"
+        )
 
     assert fake.comments == {}
 
@@ -1145,9 +1337,9 @@ def test_govern_refuses_oversized_child_before_recording(
     """A child above working_set_max refuses the whole plan; nothing is created."""
     fake = _FakeBr()
     _install(monkeypatch, fake)
-    _write(tmp_path, "src/big.py", 400_000)  # 100k tokens x 3.0 >> 64k
+    _write_oversized(tmp_path)
     with pytest.raises(ValueError, match="split"):
-        decompose.decompose(tmp_path, "feat", (_child("huge", "src/big.py"),))
+        decompose.decompose(tmp_path, "feat", (_child("huge", _OVERSIZED_SCOPE),))
     assert fake.created == []
 
 
@@ -1180,8 +1372,8 @@ def test_dry_run_estimate_refuses_exactly_what_the_real_run_refuses(
     """
     fake = _FakeBr()
     _install(monkeypatch, fake)
-    _write(tmp_path, "src/big.py", 400_000)  # 100k tokens x 3.0 >> 64k
-    children = (_child("huge", "src/big.py"),)
+    _write_oversized(tmp_path)
+    children = (_child("huge", _OVERSIZED_SCOPE),)
 
     verdict = decompose.estimate_plan(tmp_path, children)
 
