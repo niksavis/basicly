@@ -1586,3 +1586,50 @@ def test_the_ceremony_reprint_omits_overrides_that_were_not_given() -> None:
     )
 
     assert cli._ceremony_rerun(args, "abc123") == "basicly loop run i --confirm abc123"
+
+
+# --- Parser and handler registries agree (basicly-tcmy.4) -------------------
+
+
+def _subcommand_choices(parser: argparse.ArgumentParser) -> argparse._SubParsersAction:
+    """The parser's top-level subcommand action, for reading or extending its choices."""
+    actions = [a for a in parser._actions if isinstance(a, argparse._SubParsersAction)]
+    assert len(actions) == 1, "expected exactly one top-level subparser action"
+    return actions[0]
+
+
+def test_every_registered_subcommand_has_a_handler() -> None:
+    """The two registries are hand-maintained lists of the same names; pin them equal.
+
+    `_build_parser` registers the subcommands and `_HANDLERS` maps them to functions.
+    Nothing derives one from the other, so adding a parser and forgetting the map is
+    a one-line mistake with no compile-time or review-time signal.
+    """
+    choices = set(_subcommand_choices(cli._build_parser()).choices)
+
+    assert choices == set(cli._handlers())
+
+
+def test_a_registered_subcommand_with_no_handler_fails_loudly(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The defect: an unhandled command printed nothing and exited 0.
+
+    A command that succeeds silently is indistinguishable from one that worked, so
+    the mistake survives its own smoke test and reaches a consumer. The parser's
+    top-level subcommand is `required=True`, so a miss here is never user error —
+    it is always a registered name nobody wired up.
+    """
+    build_parser = cli._build_parser
+
+    def parser_with_an_orphan() -> argparse.ArgumentParser:
+        parser = build_parser()
+        _subcommand_choices(parser).add_parser("orphan", help="registered but unhandled")
+        return parser
+
+    monkeypatch.setattr(cli, "_build_parser", parser_with_an_orphan)
+
+    code = cli.main(["orphan"])
+
+    assert code != 0
+    assert "orphan" in capsys.readouterr().err
