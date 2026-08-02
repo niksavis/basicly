@@ -640,18 +640,19 @@ class _FakeBrShow:
         raise AssertionError(f"unexpected br call: {args}")
 
 
-def _record_run_tokens(
+def _record_run_tokens(  # noqa: PLR0913 — one parameter per seeded record field
     repo: Path,
     bead_id: str,
     tokens: int,
     *,
     estimated: bool = False,
     scope_tokens: int | None = None,
+    returncode: int = 0,
 ) -> None:
     entry = run_record.build_record(
         agent="claude",
         handoff=False,
-        returncode=0,
+        returncode=returncode,
         duration_s=1.0,
         command=("claude",),
         tokens=tokens,
@@ -672,6 +673,33 @@ def _export(repo: Path, *records: dict) -> None:
 # --- The ceiling is answerable to the lanes that ran (basicly-3w44) ----------
 
 
+def _lane_estimate(scope_tokens: int, task_class: str) -> int:
+    """One lane's working-set estimate: scope read-cost x its class's seed factor.
+
+    The single formula both directions of the gate size a lane with. Two would be the
+    very defect the gate exists to catch — a number compared against a number
+    denominated in a different quantity (basicly-z2wi, basicly-ipx2).
+    """
+    return round(scope_tokens * DEFAULT_BUILD_FACTOR_SEEDS.get(task_class, DEFAULT_BUILD_FACTOR))
+
+
+def _exported_class_and_scope(repo_root: Path) -> dict[str, tuple[str, tuple[str, ...]]]:
+    """Task class and declared scope per bead, from the committed tracker export.
+
+    The export rather than ``br show``, for the same reason the rest of this gate uses
+    it: it is what a fresh clone has, it carries closed records, and it costs no
+    subprocess. A bead nobody decomposed has no ``## Scope`` and reads as an empty one.
+    """
+    beads: dict[str, tuple[str, tuple[str, ...]]] = {}
+    for record in br.export_records(repo_root):
+        description = record.get("description")
+        beads[str(record["id"])] = (
+            str(record.get("issue_type") or "task"),
+            decompose.parse_scope_section(description) if isinstance(description, str) else (),
+        )
+    return beads
+
+
 def completed_lane_estimates(repo_root: Path) -> dict[str, int]:
     """Estimate per bead for every lane a headless dispatch actually completed.
 
@@ -681,54 +709,128 @@ def completed_lane_estimates(repo_root: Path) -> dict[str, int]:
     the forty-seven recorded lanes are handoffs, so counting them would inflate the
     evidence roughly fivefold on a question they cannot answer.
     """
-    exported = {str(record["id"]): record for record in br.export_records(repo_root)}
-    seeds = DEFAULT_BUILD_FACTOR_SEEDS
+    beads = _exported_class_and_scope(repo_root)
     estimates: dict[str, int] = {}
     for bead_id, history in run_record.dispatch_history(repo_root).items():
-        task_class = str(exported.get(bead_id, {}).get("issue_type") or "task")
-        factor = seeds.get(task_class, DEFAULT_BUILD_FACTOR)
+        task_class, _ = beads.get(bead_id, ("task", ()))
         for entry in history:
             scope_tokens = entry.get("scope_tokens")
-            if entry.get("returncode") != 0 or not isinstance(scope_tokens, int):
+            if entry.get("outcome") != run_record.EXECUTED or not isinstance(scope_tokens, int):
                 continue
             if scope_tokens <= 0:
                 continue
-            estimates[bead_id] = max(estimates.get(bead_id, 0), round(scope_tokens * factor))
+            estimates[bead_id] = max(
+                estimates.get(bead_id, 0), _lane_estimate(scope_tokens, task_class)
+            )
+    return estimates
+
+
+def failed_lane_estimates(repo_root: Path) -> dict[str, int]:
+    """Estimate per bead for every lane a headless dispatch failed (basicly-ipx2).
+
+    The half that was missing, and the reason it was missing:
+    :func:`completed_lane_estimates` can filter on the record's own ``scope_tokens``
+    because a lane that finishes has one, while **every** failed record on this tree
+    carries ``scope_tokens: None`` — the sizing fields landed after those dispatches
+    died. A failure-side query written the same way therefore returns ``{}``, which
+    is exactly how "zero lanes have failed at any size" came to be committed beside
+    the ceiling: the filter had deleted the whole population it was counting.
+
+    So a failure is sized from the tracker and the tree instead — its declared
+    ``## Scope`` read now, at the seed factor for its class — and only falls back to
+    that when the record carries no size of its own. That is a re-derivation rather
+    than an observation and it drifts as the scoped files grow, which is precisely
+    why a dying dispatch must record the scope cost it was sized on.
+    """
+    beads = _exported_class_and_scope(repo_root)
+    estimates: dict[str, int] = {}
+    for bead_id, history in run_record.dispatch_history(repo_root).items():
+        task_class, scope = beads.get(bead_id, ("task", ()))
+        for entry in history:
+            if entry.get("outcome") != run_record.FAILED:
+                continue
+            recorded = entry.get("scope_tokens")
+            scope_tokens = (
+                recorded
+                if isinstance(recorded, int)
+                else decompose.scope_read_cost(repo_root, scope)
+            )
+            if scope_tokens <= 0:
+                continue
+            estimates[bead_id] = max(
+                estimates.get(bead_id, 0), _lane_estimate(scope_tokens, task_class)
+            )
     return estimates
 
 
 def _ceiling_violations(repo_root: Path, ceiling: int) -> list[str]:
-    """Completed lanes that *ceiling* would have refused, worst first."""
-    over = {
+    """Every way *ceiling* contradicts the lanes this engine has actually dispatched.
+
+    Two directions, because a bound has two. Too low is a lane that completed above
+    it — work the engine refuses despite having proven it can do it (basicly-3w44).
+    Too high is a lane that died at a size nothing has ever completed, which the
+    ceiling then admits on no evidence at all (basicly-ipx2). Worst first within each.
+    """
+    completed = completed_lane_estimates(repo_root)
+    proven = max(completed.values(), default=0)
+    violations: list[str] = []
+    over = {bead: estimate for bead, estimate in completed.items() if estimate > ceiling}
+    if over:
+        required = -(-max(over.values()) // DEFAULT_WORKING_SET_MIN) * DEFAULT_WORKING_SET_MIN
+        violations += [
+            f"{bead} completed at an estimate of {estimate:,}, above working_set_max "
+            f"{ceiling:,}; raise it to at least {required:,}"
+            for bead, estimate in sorted(over.items(), key=lambda item: -item[1])
+        ]
+    # A failure is evidence about size only when nothing larger has completed: a lane
+    # that died below a size already proven runnable died of something else, and its
+    # exit code cannot settle that — the record keeps a returncode, never a cause.
+    admitted = {
         bead: estimate
-        for bead, estimate in completed_lane_estimates(repo_root).items()
-        if estimate > ceiling
+        for bead, estimate in failed_lane_estimates(repo_root).items()
+        if proven < estimate <= ceiling
     }
-    if not over:
-        return []
-    required = -(-max(over.values()) // DEFAULT_WORKING_SET_MIN) * DEFAULT_WORKING_SET_MIN
-    return [
-        f"{bead} completed at an estimate of {estimate:,}, above working_set_max "
-        f"{ceiling:,}; raise it to at least {required:,}"
-        for bead, estimate in sorted(over.items(), key=lambda item: -item[1])
-    ]
+    if admitted:
+        allowed = (min(admitted.values()) - 1) // DEFAULT_WORKING_SET_MIN * DEFAULT_WORKING_SET_MIN
+        violations += [
+            f"{bead} failed at an estimate of {estimate:,} and nothing above "
+            f"{proven:,} has completed, yet working_set_max {ceiling:,} admits it; "
+            f"lower it to at most {allowed:,}"
+            for bead, estimate in sorted(admitted.items())
+        ]
+    return violations
 
 
-def test_the_ceiling_does_not_refuse_a_size_that_has_already_succeeded() -> None:
-    """The live gate: no lane this engine completed may be one the band would refuse.
+def test_the_ceiling_separates_the_sizes_that_completed_from_the_sizes_that_failed() -> None:
+    """The live gate: the band must admit every proven size and no unproven fatal one.
 
-    This is the whole of basicly-3w44. `working_set_max` was 64,000 and eighteen
-    recorded lanes exceeded it, every one of which completed — a constant with a
-    0-for-18 record against the only evidence available, quietly refusing the
-    engine's own proven work.
+    The lower half is basicly-3w44. `working_set_max` was 64,000 and eighteen recorded
+    lanes exceeded it, every one of which completed — a constant with a 0-for-18 record
+    against the only evidence available, quietly refusing the engine's own proven work.
 
-    It binds in one direction only. Zero lanes have ever *failed* for being too
-    large, so the record is a lower bound on a safe ceiling and says nothing about
-    where the real limit is; asserting equality with the observed maximum would turn
-    a larger lane succeeding — good news — into a red main. So this fails only when
-    the evidence outruns the constant, and it names the value to raise it to.
+    The upper half is basicly-ipx2, and it exists because the one-directional version
+    of this test could not contradict the false claim shipped beside it. Four dispatches
+    have failed; two of them at 136,668, a size no lane has been observed to complete.
+    A ceiling that admitted those would be licensing a size on nothing at all, which is
+    what "no lane has failed yet" quietly did.
+
+    Neither half asserts equality with the observed maximum: a larger lane succeeding
+    is good news and must not turn main red. It fails only when the constant and the
+    record disagree, and it names the value that reconciles them.
     """
     assert _ceiling_violations(REPO_ROOT, DEFAULT_WORKING_SET_MAX) == []
+
+
+def test_the_recorded_failures_are_visible_to_the_ceiling_gate() -> None:
+    """The positive control on the population the old query deleted (basicly-ipx2).
+
+    Without this, the upper half of the gate above is indistinguishable from one
+    measuring an empty set — and an empty set is what a failure-side query inherits
+    the moment it reuses `completed_lane_estimates`' `isinstance(scope_tokens, int)`
+    filter, because no failed record on this tree has ever carried one. That silence
+    read as "zero lanes have failed" once already.
+    """
+    assert failed_lane_estimates(REPO_ROOT)
 
 
 def test_the_ceiling_gate_names_the_lane_and_the_value_it_requires(
@@ -751,6 +853,94 @@ def test_the_ceiling_gate_names_the_lane_and_the_value_it_requires(
     assert len(violations) == 1
     assert "b-1 completed at an estimate of 12,000" in violations[0]
     assert "raise it to at least 16,000" in violations[0]  # rounded up to a floor-unit
+
+
+def test_the_ceiling_gate_refuses_to_admit_a_size_a_lane_died_at(tmp_path: Path) -> None:
+    """The known-bad control for the upper direction (basicly-ipx2).
+
+    Its counterpart above exists because a one-directional gate is indistinguishable
+    from one measuring an empty set; this one exists because the *new* direction is
+    the one that was empty. The failed lane declares a scope and records no size —
+    the shape of every real failure on this tree — so it is sized from the tree.
+    """
+    _write(tmp_path, "src/small.py", 16_000)  # 4_000 scope tokens
+    _write(tmp_path, "src/big.py", 160_000)  # 40_000 scope tokens
+    _export(
+        tmp_path,
+        {
+            "id": "ran",
+            "issue_type": "task",
+            "description": decompose._child_body(_child("s", "src/small.py")),
+        },
+        {
+            "id": "died",
+            "issue_type": "task",
+            "description": decompose._child_body(_child("b", "src/big.py")),
+        },
+    )
+    _record_run_tokens(tmp_path, "ran", 1_000, scope_tokens=4_000)  # 4_000 x 3.0 = 12_000
+    _record_run_tokens(tmp_path, "died", 1_000, returncode=143)  # 40_000 x 3.0 = 120_000
+
+    # A ceiling below the failure refuses it, which is the whole point of one.
+    assert _ceiling_violations(tmp_path, 16_000) == []
+
+    violations = _ceiling_violations(tmp_path, 120_000)
+    assert len(violations) == 1
+    assert "died failed at an estimate of 120,000" in violations[0]
+    assert "nothing above 12,000 has completed" in violations[0]
+    assert "lower it to at most 112,000" in violations[0]  # rounded down to a floor-unit
+
+
+def test_a_failure_below_a_proven_size_is_not_evidence_about_the_ceiling(tmp_path: Path) -> None:
+    """basicly-kjc5.43's case: a 5,734-token lane died while a 105,318 one completed.
+
+    Size cannot be the explanation, so the ceiling owes it nothing and must not be
+    dragged below a size the engine has demonstrably run. The discrimination is on
+    the lane's estimate and never on its exit code — all four real failures share
+    returncode 143, and a record keeps a returncode, not a cause.
+    """
+    _write(tmp_path, "src/small.py", 16_000)  # 4_000 scope tokens
+    _write(tmp_path, "src/big.py", 160_000)  # 40_000 scope tokens
+    _export(
+        tmp_path,
+        {
+            "id": "ran",
+            "issue_type": "task",
+            "description": decompose._child_body(_child("b", "src/big.py")),
+        },
+        {
+            "id": "died",
+            "issue_type": "task",
+            "description": decompose._child_body(_child("s", "src/small.py")),
+        },
+    )
+    _record_run_tokens(tmp_path, "ran", 1_000, scope_tokens=40_000)  # 120_000 completed
+    _record_run_tokens(tmp_path, "died", 1_000, returncode=143)  # 12_000, far below it
+
+    assert failed_lane_estimates(tmp_path) == {"died": 12_000}
+    assert _ceiling_violations(tmp_path, 120_000) == []
+
+
+def test_a_failed_lane_is_sized_from_the_size_it_recorded_when_it_has_one(tmp_path: Path) -> None:
+    """A dying dispatch that recorded its scope needs no re-derivation from the tree.
+
+    The tree drifts — `src/basicly/cli.py` is bigger today than when the lanes that
+    died reading it were dispatched — so the recorded figure is the better evidence
+    wherever it exists, and the tree is only the fallback for records that predate
+    the field. This is the half basicly-ipx2 makes true going forward.
+    """
+    _write(tmp_path, "src/big.py", 160_000)  # 40_000 scope tokens today
+    _export(
+        tmp_path,
+        {
+            "id": "died",
+            "issue_type": "task",
+            "description": decompose._child_body(_child("b", "src/big.py")),
+        },
+    )
+    _record_run_tokens(tmp_path, "died", 1_000, returncode=143, scope_tokens=9_000)
+
+    assert failed_lane_estimates(tmp_path) == {"died": 27_000}  # 9_000 x 3.0, not the tree's
 
 
 def test_a_handoff_lane_is_not_evidence_for_the_dispatch_ceiling(

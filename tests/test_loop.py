@@ -2556,6 +2556,49 @@ def test_the_dispatch_records_its_forecast_beside_the_scope_it_measured(
     assert recorded["forecast_source"] == decompose.FROZEN_FORECAST
 
 
+def test_a_dispatch_that_failed_still_records_the_scope_it_was_sized_on(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A dying lane must leave its size behind (basicly-ipx2).
+
+    Every failed dispatch in this repo's history carries `scope_tokens: None`, so any
+    analysis that filters on the field being present excludes the whole failure
+    population by construction — which is how "zero lanes have failed at any size"
+    got committed beside `working_set_max`. The most informative sample about where
+    a working-set limit lies is the lane that died, and it is precisely the one the
+    telemetry must not drop.
+    """
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    monkeypatch.setattr(
+        decompose,
+        "dispatch_sizing",
+        lambda *_a: decompose.DispatchSizing(
+            task_class="task",
+            estimate=decompose.CostEstimate(
+                scope_tokens=9_000, overhead_tokens=3_000, build_factor=2.0
+            ),
+            source=decompose.FROZEN_FORECAST,
+        ),
+    )
+    recorded: dict = {}
+    monkeypatch.setattr(loop, "record_run", lambda *_a, **kw: recorded.update(kw))
+    _pin_runner(monkeypatch, "claude")
+    monkeypatch.setattr(
+        runner,
+        "run",
+        # The signature of all four real failures: SIGTERM, no usable output.
+        lambda spec, *_a, **_k: runner.RunResult(
+            spec.name, tuple(spec.command), executed=True, returncode=143
+        ),
+    )
+    monkeypatch.setattr(merge, "merge_worktree", lambda *_a, **_k: pytest.fail("no landing here"))
+
+    loop._run_agent(loop._Ctx(tmp_path, "i", _state("build"), CONFIG, loop.Inputs()), "i", tmp_path)
+
+    assert recorded["scope_tokens"] == 9_000
+    assert recorded["forecast_tokens"] == 21_000  # 3_000 overhead + 9_000 x 2.0
+
+
 def test_sizing_at_dispatch_is_empty_when_the_bead_declares_no_scope(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
