@@ -377,6 +377,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The `docs-claims` gate runs on Windows.** It was wired as a bare
+  `python .scripts/docs_claims.py`, on the reasoning that this matched the bare-binary
+  convention of every other check. That convention holds for *console scripts* — `ruff`,
+  `pyright`, `bandit`, `pytest`, `basicly` — which the venv installs into its
+  `bin`/`Scripts` directory; it does not hold for the *interpreter*. On windows-latest a
+  bare `python` resolves to a system interpreter with neither `yaml` nor `basicly`
+  importable, so the script died at import time and this one check failed the Windows
+  quality-gates job while passing on ubuntu and macos. Its `fix_command` carried the same
+  defect, so a Windows contributor's stale block was never regenerated either. Both now
+  run through `uv run python`, as every other repository script invocation already did,
+  and so does the repair hint the failure prints.
+
+  `tests/test_verify.py::test_no_verify_check_invokes_a_bare_python_interpreter` reads the
+  invocation form out of the config rather than running it, so a future check added with a
+  bare interpreter fails on every platform instead of only on the runner that would break
+  — the fourth platform-only defect to reach main is what put the rule in a test
+  (`basicly-tcmy.32`).
+
 - **The permissions projection is gated like the other four.** `basicly` shipped
   `permissions-build` and `permissions-check`, and `install` ran the build — but
   `permissions-check` appeared in no `[[verify.checks]]` entry, no pre-commit hook and no

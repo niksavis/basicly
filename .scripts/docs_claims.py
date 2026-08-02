@@ -66,7 +66,10 @@ TARGETS_DIR = ".basicly/core/targets"
 SKILLS_DIR = ".basicly/core/skills"
 HOOKS_DIR = ".basicly/core/hooks"
 
-FIX_HINT = "python .scripts/docs_claims.py --fix"
+# `uv run python`, not a bare `python`: on Windows the bare form resolves to a system
+# interpreter that cannot import this script's dependencies (basicly-tcmy.32), so the
+# printed repair has to be the one a contributor on any platform can paste.
+FIX_HINT = "uv run python .scripts/docs_claims.py --fix"
 
 
 class ClaimError(Exception):
