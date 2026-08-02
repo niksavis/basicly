@@ -36,7 +36,6 @@ import hashlib
 import json
 import math
 import re
-import statistics
 import tomllib
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, replace
@@ -663,11 +662,6 @@ def _read_class_and_scope(issue: object) -> tuple[tuple[str, tuple[str, ...]] | 
     return (task_class, scope), ""
 
 
-def _class_and_scope_of(issue: object) -> tuple[str, tuple[str, ...]] | None:
-    """The task class and declared scope carried by one issue record, if both are there."""
-    return _read_class_and_scope(issue)[0]
-
-
 def _read_bead(repo_root: Path, bead_id: str) -> tuple[tuple[str, tuple[str, ...]] | None, str]:
     """*bead_id*'s class-and-scope pair from the tracker, with the absence that explains it."""
     try:
@@ -688,87 +682,38 @@ def bead_class_and_scope(repo_root: Path, bead_id: str) -> tuple[str, tuple[str,
     return _read_bead(repo_root, bead_id)[0]
 
 
-def calibrated_build_factors(repo_root: Path, sizing: SizingConfig) -> dict[str, float]:
-    """Build factors per task class: measured from run-record telemetry, else seeds.
-
-    A calibration sample is one executed run with adapter-reported tokens
-    (chars/4-estimated samples are excluded — design 7.5's down-weighting at its
-    simplest) on a bead whose task class and declared scope are readable from the
-    tracker (decompose-created children record scope under ``## Scope``). Per
-    class, the most recent ``calibration_window`` samples yield
-    ``factor = reported tokens / scope read-cost``, and the median overrides the
-    seed only past ``calibration_min_samples``. Best-effort by construction:
-    an unreadable bead or malformed record is skipped, never fatal — with few
-    samples the seeds stand.
-
-    Scope read-cost comes from the record's own ``scope_tokens``, persisted by the
-    dispatch that produced the sample (basicly-kjc5.30), so a sample means the same
-    thing whenever it is read. Only a record written before that — which has no
-    ``scope_tokens`` — falls back to measuring the current tree.
-
-    Samples come from the tracker as well as from local telemetry
-    (basicly-kjc5.50): ``.basicly/usage/`` is self-ignored, so reading it alone
-    meant a fresh clone calibrated from the seeds and two machines sized the same
-    plan differently. Every dispatch already writes a ``[harness-run]`` marker and
-    the export carries comments, so the shared ledger answers — and answers with
-    no br invocation, since the exported record also carries the task class and the
-    ``## Scope`` section each sample needs.
-    """
-    factors = dict(sizing.build_factors)
-    exported = {str(record["id"]): record for record in br.export_records(repo_root)}
-    records = run_record.dispatch_history(repo_root)
-    if not records:
-        return factors
-
-    samples: dict[str, list[tuple[str, float]]] = {}
-    for bead_id, history in records.items():
-        reported = [
-            entry
-            for entry in history
-            if entry.get("estimated") is False
-            and isinstance(entry.get("tokens"), int)
-            and entry["tokens"] > 0
-        ]
-        if not reported:
-            continue
-        # The exported record answers for free; only a bead the export does not
-        # carry (recorded locally but not yet flushed) costs a br read.
-        info = _class_and_scope_of(exported.get(bead_id)) or bead_class_and_scope(
-            repo_root, bead_id
-        )
-        if info is None:
-            continue
-        task_class, scope = info
-        # Fallback only: a record written before the dispatch persisted its own
-        # scope cost has to be measured against the tree as it stands now, which
-        # is the drift basicly-kjc5.30 removes going forward.
-        measured_now = scope_read_cost(repo_root, scope)
-        for entry in reported:
-            # The scope cost as it was at dispatch, when that dispatch recorded it
-            # — so a sample keeps meaning what it meant, however the files have
-            # grown since.
-            recorded = entry.get("scope_tokens")
-            cost = recorded if isinstance(recorded, int) and recorded > 0 else measured_now
-            if cost <= 0:
-                continue
-            timestamp = str(entry.get("timestamp", ""))
-            samples.setdefault(task_class, []).append((timestamp, entry["tokens"] / cost))
-
-    for task_class, class_samples in samples.items():
-        recent = sorted(class_samples)[-sizing.calibration_window :]
-        if len(recent) >= sizing.calibration_min_samples:
-            factors[task_class] = statistics.median(factor for _, factor in recent)
-    return factors
+# --- Why there is no measured build factor (basicly-z2wi) --------------------
+#
+# `build_factor` answers "how big is a lane's working set, per token of scope it
+# must read". The seeds above are that shape. A calibration used to overwrite them
+# with `whole-lane spend / scope read-cost`, and that is a different quantity: a
+# lane's total spend already contains the turn multiplier, which `forecast_spend`
+# owns as `tokens_per_working_set_token` and which its docstring requires to live
+# in exactly one ratio. Calibrating from spend put it in two, so the forecast
+# multiplied it in twice and the band compared a spend number against
+# `working_set_max`, a context-window ceiling.
+#
+# It was not a rounding error. On this repo's own history the task factor
+# calibrated to 216.65 against a seed of 3.0, which caps the largest dispatchable
+# scope at ~295 tokens and refused every task-typed child in the band. Ten
+# successful dispatches are what crossed `calibration_min_samples` and disabled
+# the gate, so the engine broke itself by being used.
+#
+# No run record carries a working-set measure — the fields are `tokens`, `cost`
+# and `duration_s` — so there is nothing to calibrate this against without new
+# telemetry. Until such a measure is recorded, the seeds stand. Do not reintroduce
+# a factor derived from spend; `test_no_working_set_factor_is_derived_from_spend`
+# fails if one is.
 
 
 # --- Frozen estimates (basicly-kjc5.30, design D9) ---------------------------
 #
 # D8 calls the sizing estimate deterministic, and it is — per invocation. Across
-# invocations it drifts twice over: `calibrated_build_factors` takes a rolling
-# median of the most recent samples, and scope read-cost is measured against the
-# tree as it stands. So `govern_working_set` can refuse today the very plan it
-# accepted last week, with neither the plan nor the code touched. D9 forbids a
-# gate whose verdict depends on when it ran.
+# invocations it still drifts, because scope read-cost is measured against the tree
+# as it stands. So `govern_working_set` can refuse today the very plan it accepted
+# last week, with neither the plan nor the code touched. D9 forbids a gate whose
+# verdict depends on when it ran. (The build factor was a second drift source until
+# basicly-z2wi removed its calibration; the seeds are constants and do not move.)
 #
 # So the verdict is frozen with the plan that earned it: when the governor accepts
 # a decomposition it records each child's estimate, keyed by the content the
@@ -949,7 +894,7 @@ def resolve_dispatch_sizing(repo_root: Path, issue_id: str) -> SizingLookup:
     estimate = CostEstimate(
         scope_tokens=scope_read_cost(repo_root, scope),
         overhead_tokens=instruction_overhead(repo_root),
-        build_factor=build_factor_for(task_class, calibrated_build_factors(repo_root, sizing)),
+        build_factor=build_factor_for(task_class, sizing.build_factors),
     )
     return SizingLookup(DispatchSizing(task_class, estimate, DISPATCH_FORECAST))
 
@@ -1291,7 +1236,7 @@ def estimate_plan(
     """
     sizing = load_sizing_config(repo_root)
     frozen = frozen_estimates(repo_root, feature_id) if feature_id is not None else {}
-    factors = calibrated_build_factors(repo_root, sizing)
+    factors = sizing.build_factors
     overhead = instruction_overhead(repo_root)
     keys = tuple(sizing_key(spec) for spec in children)
     estimates = tuple(

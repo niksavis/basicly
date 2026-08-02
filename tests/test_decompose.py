@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from basicly import decompose, policy, run_record
-from basicly.config import SizingConfig, load_sizing_config
+from basicly.config import SizingConfig
 from basicly.decompose import ChildSpec
 
 
@@ -653,80 +653,6 @@ def _record_run_tokens(
     run_record.record(repo, bead_id, entry)
 
 
-def test_calibration_returns_seeds_without_records(tmp_path: Path) -> None:
-    """No run-records (or too few samples) leave the configured seeds untouched."""
-    sizing = _sizing()
-    assert decompose.calibrated_build_factors(tmp_path, sizing) == sizing.build_factors
-
-
-def test_calibration_overrides_seed_past_min_samples(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Past calibration_min_samples the measured median replaces the class seed."""
-    _write(tmp_path, "src/a.py", 4_000)  # 1000 scope tokens
-    body = decompose._child_body(_child("t", "src/a.py"))
-    _install(monkeypatch, _FakeBrShow({"b-1": ("task", body)}))
-    for tokens in (4_000, 5_000, 6_000):  # factors 4.0, 5.0, 6.0 -> median 5.0
-        _record_run_tokens(tmp_path, "b-1", tokens)
-
-    sizing = _sizing(calibration_min_samples=3)
-    factors = decompose.calibrated_build_factors(tmp_path, sizing)
-    assert factors["task"] == 5.0
-    assert factors["bug"] == 2.0  # other classes keep their seeds
-
-    below_min = decompose.calibrated_build_factors(tmp_path, _sizing(calibration_min_samples=4))
-    assert below_min["task"] == 3.0  # not enough samples: seed stands
-
-
-def test_calibration_excludes_estimated_samples(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """chars/4-estimated samples never calibrate (design 7.5 down-weighting)."""
-    _write(tmp_path, "src/a.py", 4_000)
-    body = decompose._child_body(_child("t", "src/a.py"))
-    _install(monkeypatch, _FakeBrShow({"b-1": ("task", body)}))
-    for _ in range(5):
-        _record_run_tokens(tmp_path, "b-1", 9_000, estimated=True)
-
-    factors = decompose.calibrated_build_factors(tmp_path, _sizing(calibration_min_samples=1))
-    assert factors["task"] == 3.0
-
-
-def test_calibration_uses_the_scope_cost_recorded_at_dispatch(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """A sample's denominator is the scope cost persisted with it, not today's tree.
-
-    Regression for basicly-kjc5.30: measuring scope cost at read time makes a
-    sample mean something different once the files it named have grown, so the
-    build factor drifts with the tree and the governor's verdict drifts with it.
-    """
-    _write(tmp_path, "src/a.py", 40_000)  # 10_000 tokens *now* — grown since dispatch
-    body = decompose._child_body(_child("t", "src/a.py"))
-    _install(monkeypatch, _FakeBrShow({"b-1": ("task", body)}))
-    # Each dispatch cost 4_000 tokens against a 1_000-token scope: factor 4.0.
-    for _ in range(3):
-        _record_run_tokens(tmp_path, "b-1", 4_000, scope_tokens=1_000)
-
-    factors = decompose.calibrated_build_factors(tmp_path, _sizing(calibration_min_samples=3))
-    # Recomputing against the grown tree would give 4_000 / 10_000 = 0.4.
-    assert factors["task"] == 4.0
-
-
-def test_calibration_falls_back_to_the_tree_for_a_record_without_scope_tokens(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """A record written before scope cost was persisted still calibrates."""
-    _write(tmp_path, "src/a.py", 4_000)  # 1_000 tokens
-    body = decompose._child_body(_child("t", "src/a.py"))
-    _install(monkeypatch, _FakeBrShow({"b-1": ("task", body)}))
-    for _ in range(3):
-        _record_run_tokens(tmp_path, "b-1", 4_000)  # no scope_tokens
-
-    factors = decompose.calibrated_build_factors(tmp_path, _sizing(calibration_min_samples=3))
-    assert factors["task"] == 4.0
-
-
 def _export(repo: Path, *records: dict) -> None:
     """Write the committed tracker export — what a fresh clone has and nothing more."""
     beads = repo / ".beads"
@@ -735,84 +661,62 @@ def _export(repo: Path, *records: dict) -> None:
     (beads / "issues.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _exported_dispatch(tokens: int, scope_tokens: int, stamp: str) -> dict:
-    payload = {
-        "tokens": tokens,
-        "estimated": False,
-        "scope_tokens": scope_tokens,
-        "timestamp": stamp,
-    }
-    return {"text": f"{run_record.MARKER} id=b-1#run-{stamp} phase=build\n{json.dumps(payload)}"}
+# --- The build factor is a working set, never a spend (basicly-z2wi) ---------
 
 
-def test_calibration_reads_samples_from_the_tracker_in_a_fresh_clone(
+def test_no_working_set_factor_is_derived_from_spend(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A clone with no local usage files still calibrates (basicly-kjc5.50).
+    """Whole-lane spend must never move the build factor, however many lanes land.
 
-    ``.basicly/usage/`` is self-ignored, so reading it alone meant a fresh clone —
-    or a new teammate — forecast every class from the seed factors while the machine
-    that did the work knew better. Every dispatch also writes a ``[harness-run]``
-    marker and the export carries comments, so the shared ledger answers. It has to
-    answer without br as well: the export already carries the class and the scope.
+    The factor answers "how much working set does a lane need, per token of scope it
+    must read", and it is compared against ``working_set_max`` — a context-window
+    ceiling. A calibration used to overwrite it with ``whole-lane spend / scope``,
+    which is a different quantity and three orders of magnitude larger, because a
+    lane's total spend already contains the turn multiplier that
+    :func:`run_record.spend_calibration` owns.
+
+    On this repo's own history that reached **216.65** against a seed of 3.0, which
+    caps the largest dispatchable scope at ~295 tokens and refused every task-typed
+    child. Ten real dispatches are what crossed the sample threshold, so the engine
+    broke itself by being used — which is why the guard is behavioural and generous
+    with samples rather than a check on one function's existence.
     """
-    _install(monkeypatch, lambda *_a, **_k: pytest.fail("calibration must not need br"))
-    body = decompose._child_body(_child("t", "src/a.py"))
-    _export(
-        tmp_path,
-        {
-            "id": "b-1",
-            "issue_type": "task",
-            "description": body,
-            "comments": [
-                _exported_dispatch(4_000, 1_000, "2026-07-26T10:00:00+00:00"),
-                _exported_dispatch(5_000, 1_000, "2026-07-26T11:00:00+00:00"),
-                _exported_dispatch(6_000, 1_000, "2026-07-26T12:00:00+00:00"),
-            ],
-        },
-    )
-    assert run_record.load_run_records(tmp_path) is None  # no local telemetry at all
-
-    factors = decompose.calibrated_build_factors(tmp_path, _sizing(calibration_min_samples=3))
-    assert factors["task"] == 5.0  # factors 4.0, 5.0, 6.0 -> median 5.0
-    assert factors["bug"] == 2.0  # other classes keep their seeds
-
-
-def test_calibration_counts_a_dispatch_in_both_places_once(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """A locally-recorded dispatch and its marker are one sample, not two.
-
-    The union has to deduplicate or every local dispatch weighs double in the
-    median once it reaches the tracker — a silently different answer on the machine
-    that ran the work.
-    """
-    _write(tmp_path, "src/a.py", 4_000)  # 1_000 scope tokens
+    _write(tmp_path, "src/a.py", 16_000)  # 4_000 scope tokens x 3.0 = 12_000, in band
     body = decompose._child_body(_child("t", "src/a.py"))
     _install(monkeypatch, _FakeBrShow({"b-1": ("task", body)}))
-    _record_run_tokens(tmp_path, "b-1", 4_000, scope_tokens=1_000)
-    local = run_record.load_run_records(tmp_path)
-    assert local is not None
-    stamp = local["b-1"][0]["timestamp"]
-    _export(
-        tmp_path,
-        {
-            "id": "b-1",
-            "issue_type": "task",
-            "description": body,
-            # The same dispatch as above, plus two the tracker alone carries.
-            "comments": [
-                _exported_dispatch(4_000, 1_000, stamp),
-                _exported_dispatch(9_000, 1_000, "2026-07-26T11:00:00+00:00"),
-                _exported_dispatch(9_000, 1_000, "2026-07-26T12:00:00+00:00"),
-            ],
-        },
-    )
+    for _ in range(20):
+        # Each lane spends far more than any working set could hold. Under the old
+        # calibration this alone drove the factor to 500.0 and the estimate to
+        # 2,000,000 — thirty times the band ceiling, for an unchanged plan.
+        _record_run_tokens(tmp_path, "b-1", 2_000_000, scope_tokens=4_000)
 
-    # Three distinct samples (4.0, 9.0, 9.0) -> median 9.0. Double-counting the
-    # shared one would make four (4.0, 4.0, 9.0, 9.0) and a median of 6.5.
-    factors = decompose.calibrated_build_factors(tmp_path, _sizing(calibration_min_samples=3))
-    assert factors["task"] == 9.0
+    estimates = decompose.govern_working_set(tmp_path, (_child("t", "src/a.py"),))
+
+    assert estimates[0].build_factor == 3.0
+    assert estimates[0].total == 12_000
+
+
+def test_using_the_engine_cannot_make_a_dispatchable_child_undispatchable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A plan the band accepted must not be refused merely because lanes have run.
+
+    The failure this pins is not a wrong number, it is a gate that degrades with use:
+    twenty successful dispatches were enough to refuse work that passed before them.
+    """
+    _write(tmp_path, "src/a.py", 40_000)  # 10_000 scope tokens x 3.0 = 30_000, in band
+    spec = _child("t", "src/a.py")
+    body = decompose._child_body(spec)
+    _install(monkeypatch, _FakeBrShow({"b-1": ("task", body)}))
+
+    before = decompose.govern_working_set(tmp_path, (spec,))
+
+    for _ in range(20):
+        _record_run_tokens(tmp_path, "b-1", 2_000_000, scope_tokens=10_000)
+
+    after = decompose.govern_working_set(tmp_path, (spec,))
+    assert after == before
 
 
 # --- Frozen estimates (basicly-kjc5.30) -------------------------------------
@@ -833,47 +737,33 @@ def test_govern_freezes_the_accepted_estimate_on_the_feature(
     assert frozen == {decompose.sizing_key(spec): estimates[0]}
 
 
-def test_govern_reuses_a_frozen_estimate_when_calibration_has_moved(
+def test_govern_reuses_a_frozen_estimate_when_the_tree_has_grown(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The same plan governs to the same numbers after the window moved (D9).
+    """The same plan governs to the same numbers after the tree moved (D9).
 
-    The drift has to be real for this to prove anything, and the config it reads
-    has to be the repo's: ``govern_working_set`` calls ``load_sizing_config``
-    itself, so a ``SizingConfig`` handed to a helper here would never reach it —
-    the first version of this test passed with the reuse path deleted for exactly
-    that reason.
+    Scope read-cost is measured against the tree as it stands, so without the freeze
+    a plan accepted last week is refused today with neither the plan nor the code
+    touched. That is now the *only* drift source: basicly-z2wi removed the build
+    factor's calibration, and the seeds are constants.
+
+    The drift has to be real for this to prove anything, and the config it reads has
+    to be the repo's: ``govern_working_set`` calls ``load_sizing_config`` itself, so
+    a ``SizingConfig`` handed to a helper here would never reach it — the first
+    version of this test passed with the reuse path deleted for exactly that reason.
     """
-    # calibration_min_samples = 3 so three landings really do move the factor;
-    # the default is 10, under which nothing would drift and nothing be proven.
-    (tmp_path / "basicly.toml").write_text(
-        "[policy.sizing]\ncalibration_min_samples = 3\n", encoding="utf-8"
-    )
-    fake = _FakeBr()
-    _install(monkeypatch, fake)
-    _write(tmp_path, "src/a.py", 16_000)  # 4_000 scope tokens
+    _install(monkeypatch, _FakeBr())
+    _write(tmp_path, "src/a.py", 16_000)  # 4_000 scope tokens x 3.0 = 12_000
     spec = _child("a", "src/a.py")
 
     first = decompose.govern_working_set(tmp_path, (spec,), feature_id="feat")
-    assert first[0].build_factor == 3.0  # the seed: no samples yet
+    assert first[0].build_factor == 3.0
+    assert first[0].total == 12_000
 
-    # Unrelated landings fill the calibration window for the task class.
-    _write(tmp_path, "src/other.py", 4_000)
-    body = decompose._child_body(_child("other", "src/other.py"))
-    show = _FakeBrShow({"b-1": ("task", body)})
-    original = fake.__call__
-
-    def routed(repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
-        return show(repo_root, args) if args[:1] == ["show"] else original(repo_root, args)
-
-    _install(monkeypatch, routed)
-    for _ in range(3):
-        _record_run_tokens(tmp_path, "b-1", 9_000, scope_tokens=1_000)  # factor 9.0
-
-    # The drift is now live in the very function under test, not merely available
-    # to a helper: recomputing would triple the estimate from 12_000 to 36_000.
-    drifted = decompose.calibrated_build_factors(tmp_path, load_sizing_config(tmp_path))
-    assert drifted["task"] == 9.0
+    # The file triples. Recomputing would take the estimate to 36_000 and, on a
+    # larger plan, across the band ceiling.
+    _write(tmp_path, "src/a.py", 48_000)  # 12_000 scope tokens
+    assert decompose.scope_read_cost(tmp_path, ("src/a.py",)) == 12_000
 
     second = decompose.govern_working_set(tmp_path, (spec,), feature_id="feat")
     assert second == first
