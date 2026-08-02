@@ -188,22 +188,24 @@ def read_node_state(
 
 
 def session_issue_ids(repo_root: Path, root_issue: str) -> tuple[str, ...]:
-    """The session's bead ids: the root plus its parent-child tree, transitively.
+    """The session's bead ids — :func:`basicly.policy.session_issue_ids`, re-exported.
 
-    The shared walk for session-scoped consumers (the decision queue, grant
-    accounting): the tree nests fractally, so depth-1 reads would silently
-    miss grandchildren. Insertion-ordered BFS, root first.
+    This name used to be a second implementation that walked parent-child
+    dependents only, while claiming in its own docstring to be "the shared walk
+    for session-scoped consumers (the decision queue, grant accounting)". Grant
+    accounting used the other one. On the live tracker the two disagreed by 14
+    beads on ``basicly-kjc5`` and 6 on ``basicly-jr0l``: every bead a root reaches
+    through a ``blocks`` edge rather than by parenting.
+
+    That is not a cosmetic split. The narrow walk fed ``decisions.pending`` and
+    ``decisions.decider_answers_count``, so a delegated answer recorded on a
+    blocks-reachable bead went uncounted against ``decider_max_decisions`` — the
+    runaway-loop guard undercounting itself — and a human-required escalation
+    filed on one was invisible to the ``blocked: N decision(s)`` report while the
+    bead sat squarely inside the grant. basicly-jr0l.40 fixed exactly this in
+    ``policy`` and left the copy here live (basicly-tcmy.30).
     """
-    seen: dict[str, None] = {root_issue: None}
-    queue = [root_issue]
-    while queue:
-        record = _show(repo_root, queue.pop(0))
-        for dep in record.get("dependents") or []:
-            is_child = isinstance(dep, dict) and dep.get("dependency_type") == "parent-child"
-            if is_child and "id" in dep and str(dep["id"]) not in seen:
-                seen[str(dep["id"])] = None
-                queue.append(str(dep["id"]))
-    return tuple(seen)
+    return policy.session_issue_ids(repo_root, root_issue)
 
 
 @dataclass(frozen=True)

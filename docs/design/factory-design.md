@@ -117,7 +117,7 @@ delegated decisions occur — the session drops to human-only until re-granted.
 > that **no** level auto-disposes, an exception to the L0–L3 progression rather than a rung in
 > it, so an autonomy grant can never hand the catalog to the decider.
 >
-> **A session is the track, not the descent, since `basicly-jr0l.40`.** `_session_issue_ids`
+> **A session is the track, not the descent, since `basicly-jr0l.40`.** `session_issue_ids`
 > walked parent-child dependents only, so a grant on a root that *gates* its work covered one
 > bead: a release epic holds its track as `blocks` dependencies, because a bead's parent is its
 > epic of origin and nothing is re-parented. The walk now follows both edges — parent-child

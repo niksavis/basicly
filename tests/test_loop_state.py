@@ -211,6 +211,77 @@ def test_read_node_state_decompose_phase_from_children(
     assert state.phase == "decompose"
 
 
+# --- The one session walk (basicly-tcmy.30) ---------------------------------
+
+
+class _FakeTree:
+    """br stand-in serving ``show`` for a whole tree of records."""
+
+    def __init__(self, records: dict[str, dict]) -> None:
+        self.records = records
+
+    def __call__(self, _repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
+        if args[:1] == ["show"]:
+            return _Proc(json.dumps([{"id": args[1], **self.records[args[1]]}]))
+        raise AssertionError(f"unexpected br call: {args}")
+
+
+def _gating_track() -> _FakeTree:
+    """A root that both parents work and gates work it did not parent.
+
+    The basicly-jr0l.40 topology: ``gated`` (and its child) reach the session only
+    through the root's ``blocks`` dependency, which is exactly what the narrow walk
+    could not see.
+    """
+    return _FakeTree({
+        "root": {
+            "dependents": [{"id": "root.1", "dependency_type": "parent-child"}],
+            "dependencies": [{"id": "gated", "dependency_type": "blocks"}],
+        },
+        "root.1": {"dependents": [], "dependencies": []},
+        "gated": {
+            "dependents": [{"id": "gated.1", "dependency_type": "parent-child"}],
+            "dependencies": [],
+        },
+        "gated.1": {"dependents": [], "dependencies": []},
+    })
+
+
+def test_the_session_walk_reaches_beads_gated_onto_the_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A blocks-reachable bead is in the session every consumer of this name reads.
+
+    The name used to be a parent-child-only walk, so on the live tracker it missed
+    14 beads on ``basicly-kjc5`` and 6 on ``basicly-jr0l`` that grant accounting
+    counted. Those are the beads whose delegated answers never reached
+    ``decider_max_decisions`` and whose escalations never reached loop status.
+    """
+    fake = _gating_track()
+    monkeypatch.setattr(loop_state, "_run_br", fake)
+    monkeypatch.setattr(policy, "_run_br", fake)
+
+    ids = loop_state.session_issue_ids(tmp_path, "root")
+
+    assert set(ids) == {"root", "root.1", "gated", "gated.1"}
+    assert ids[0] == "root"
+
+
+def test_loop_state_keeps_no_session_walk_of_its_own(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The name returns policy's walk, rather than agreeing with it.
+
+    Pinning delegation and not equality is deliberate: two copies that happen to
+    agree on one fixture satisfy an equality assertion and then diverge again the
+    next time someone teaches one of them a new edge type — which is how the
+    original split survived basicly-jr0l.40 fixing only one side.
+    """
+    monkeypatch.setattr(policy, "session_issue_ids", lambda _r, root: ("sentinel", root))
+
+    assert loop_state.session_issue_ids(tmp_path, "root") == ("sentinel", "root")
+
+
 # --- Ready / blocked sets ---------------------------------------------------
 
 
