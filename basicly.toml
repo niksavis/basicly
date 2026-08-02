@@ -157,6 +157,24 @@ name = "projection-permissions"
 command = ["basicly", "permissions-check"]
 modes = ["fast", "full"]
 
+# Derivable documentation claims (basicly-tcmy.31). A document that restates a fact
+# the tree already answers — the measured always-on character counts, the set of
+# shipped subcommands, the catalog inventories — drifts the moment the tree moves and
+# nothing notices; that is the shape tcmy.9 and tcmy.26 both found. So the derivable
+# content is generated into marked blocks and gated here instead of hand maintained.
+#
+# A repo-local script rather than a CLI subcommand pair: the claims are basicly's own
+# documentation, not a consumer artifact, so there is nothing to project. `--fix` is
+# the mechanical repair, so the pre-commit fast set regenerates and re-stages a stale
+# block exactly as it does for ruff format. `python` (not `uv run python`) matches the
+# bare-binary convention of every other check: the venv is already on PATH wherever
+# these run.
+[[verify.checks]]
+name = "docs-claims"
+command = ["python", ".scripts/docs_claims.py", "--check"]
+fix_command = ["python", ".scripts/docs_claims.py", "--fix"]
+modes = ["fast", "full"]
+
 # Loop gate/checkpoint policy: which gates block advancement and the rework cap.
 [policy]
 # Gate names (from [verify] / br gate report) that MUST pass to advance. Any
