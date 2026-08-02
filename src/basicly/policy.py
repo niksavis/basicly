@@ -1024,7 +1024,7 @@ def _grant_approval(
         return None, "", ""
     if name not in GRANT_COVERAGE.get(grant.level, ()):
         return None, f"the active {grant.level} grant on {root_issue} does not delegate {name}", ""
-    session_ids = _session_issue_ids(repo_root, root_issue)
+    session_ids = session_issue_ids(repo_root, root_issue)
     if issue_id not in session_ids:
         # grant_root is caller-supplied: a grant must never authorize approvals
         # outside its own session (and the preconditions below are keyed on the
@@ -1081,7 +1081,7 @@ def _grant_approval(
 # --- Session accounting for grants: spend, needs-input, preconditions --------
 
 
-def _session_issue_ids(repo_root: Path, root_issue: str) -> tuple[str, ...]:
+def session_issue_ids(repo_root: Path, root_issue: str) -> tuple[str, ...]:
     """The session's bead ids: the root plus the track it is organised around.
 
     A track is assembled from two kinds of edge, so the walk follows both.
@@ -1105,6 +1105,12 @@ def _session_issue_ids(repo_root: Path, root_issue: str) -> tuple[str, ...]:
     means to authorize; a gating *dependent* is something waiting on the root,
     outside the track, and following it would widen a grant past what was
     granted over.
+
+    Public, and the only session walk in the package: a second copy in
+    ``loop_state`` followed parent-child alone and disagreed with this one by 14
+    beads on a real root, which left the decision queue reading a narrower session
+    than the grant it is accounted against (basicly-tcmy.30). ``policy`` owns it
+    because the dependency runs that way — ``loop_state`` imports ``policy``.
     """
     # (record key, dependency type) pairs: the edges that lead into the session.
     edges = (("dependents", "parent-child"), ("dependencies", "blocks"))
@@ -1135,7 +1141,7 @@ def session_coverage(repo_root: Path, root_issue: str) -> int:
     (basicly-jr0l.40). The count is the only thing that tells those apart, and a
     session of one has to be able to say so before the operator relies on it.
     """
-    return len(_session_issue_ids(repo_root, root_issue))
+    return len(session_issue_ids(repo_root, root_issue))
 
 
 @dataclass(frozen=True)
@@ -1339,7 +1345,7 @@ def session_spend(
     measured = 0
     estimated = 0
     unmetered = 0
-    for issue_id in ids if ids is not None else _session_issue_ids(repo_root, root_issue):
+    for issue_id in ids if ids is not None else session_issue_ids(repo_root, root_issue):
         history = records.get(issue_id)
         if not isinstance(history, list):
             continue
@@ -1446,7 +1452,7 @@ def lights_out_violations(
             foreign = ", ".join(sorted({v.provider or "(none)" for v in status.disregarded}))
             detail += f" (disregarded a result from provider {foreign}: not the engine's own)"
         violations.append(detail)
-    for issue_id in ids if ids is not None else _session_issue_ids(repo_root, root_issue):
+    for issue_id in ids if ids is not None else session_issue_ids(repo_root, root_issue):
         violations.extend(_live_session_violations(repo_root, issue_id, config))
     return tuple(violations)
 
@@ -1755,7 +1761,7 @@ def session_dispatch_seconds(
     """
     records = run_record.load_run_records(repo_root) or {}
     total = 0.0
-    for issue_id in ids if ids is not None else _session_issue_ids(repo_root, root_issue):
+    for issue_id in ids if ids is not None else session_issue_ids(repo_root, root_issue):
         history = records.get(issue_id)
         if not isinstance(history, list):
             continue
@@ -1776,7 +1782,7 @@ def session_wait_summary(
     from delegated is what puts a number on an autonomy grant: the grant's value
     is the wait it moves out of the human column.
     """
-    ids = ids if ids is not None else _session_issue_ids(repo_root, root_issue)
+    ids = ids if ids is not None else session_issue_ids(repo_root, root_issue)
     events = tuple(event for issue_id in ids for event in wait_events(repo_root, issue_id))
     return WaitSummary(
         events=events,
