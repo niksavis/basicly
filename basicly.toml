@@ -122,9 +122,10 @@ modes = ["full"]
 # hook and reached the remote stale.
 #
 # In "fast" (every commit) rather than "full" alone, because that is what makes the
-# commit-time claim in README/site/About true. Measured at 0.71s for the first four
-# together against seconds for pyright and pytest, and most of that is `uv run`
-# spawn overhead (~0.18s each) rather than work — so the cost is noise.
+# commit-time claim in README/site/About true. Measured at ~1.05s for all five
+# together (1.09/1.04/1.08 over three runs) against seconds for pyright and pytest,
+# and most of that is `uv run` spawn overhead (~0.18s each) rather than work — so
+# the cost is noise. Re-measure when a sixth pair is added; do not scale the number.
 #
 # `projection-permissions` was missing from this list until basicly-tcmy.23, so a
 # `.basicly/core/permissions/permissions.yaml` edit shipped an unbuilt deny-list
