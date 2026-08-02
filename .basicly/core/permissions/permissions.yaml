@@ -18,6 +18,14 @@
 # form of one `.env` rule would deny every read a working agent needs.
 # Codex sandbox/approval defaults remain invocation-only too (basicly-t0kt,
 # --sandbox/-a), not yet wired.
+#
+# So this list is a PARTIAL backstop, never the source of a prohibition
+# (basicly-tcmy.10). The `require-explicit-confirmation` fragment carries the
+# rule; entries here only block what a given target can express. Notably
+# `git checkout -- <path>`, `git restore` and `git stash` are equally
+# destructive and are not denied on any target — they need confirmation all the
+# same. Do not infer permission from the absence of an entry, and do not delete
+# a fragment bullet because no rule here mirrors it.
 deny:
   - id: destructive-rm
     description: block recursive force-remove of files

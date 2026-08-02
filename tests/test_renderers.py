@@ -9,6 +9,7 @@ from basicly.loader import load_fragments_from_roots, load_targets
 from basicly.planner import plan_outputs
 from basicly.renderers.claude import render as render_claude
 from basicly.renderers.common import sha256_of_text
+from basicly.renderers.copilot import render as render_copilot
 from basicly.schema import Fragment
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -58,6 +59,27 @@ def test_copilot_plans_no_scoped_instruction_twins() -> None:
     assert REPO_ROOT / ".github" / "copilot-instructions.md" in paths
     assert not [p for p in paths if p.name.endswith(".instructions.md")]
     assert [p for p in paths if p.parent == REPO_ROOT / ".claude" / "rules"]
+
+
+def test_copilot_baseline_names_no_claude_only_config() -> None:
+    """The copilot baseline must not cite a Claude-only config as its mechanism.
+
+    `applies_to: [all]` fragments render verbatim into every baseline, so a
+    bullet that grounds a prohibition in `.claude/settings.json` tells a copilot
+    session its rule is enforced by a file that does not bind it — and Copilot
+    has no config-file deny at all (permissions.yaml header). Rules must stand
+    on their own wording on every surface (basicly-tcmy.10).
+    """
+    targets = load_targets(REPO_ROOT / ".basicly" / "core" / "targets")
+    target_names = {t.name for t in targets}
+    fragments = load_fragments_from_roots(FRAGMENT_ROOTS, target_names)
+    planned = plan_outputs(fragments, targets, REPO_ROOT)
+    copilot = next(
+        p for p in planned if p.output_path == REPO_ROOT / ".github" / "copilot-instructions.md"
+    )
+    content = render_copilot(copilot, REPO_ROOT / ".basicly" / "core" / "templates", __version__)
+
+    assert ".claude/settings.json" not in content
 
 
 def test_sha256_of_text() -> None:
