@@ -67,6 +67,7 @@ uv run basicly check            # generated agent files in sync
 uv run basicly skills-check --all-default-roots   # projected skills in sync
 uv run basicly agents-check     # projected agent definitions in sync
 uv run basicly hooks-check      # hook wiring in sync
+uv run basicly permissions-check   # projected agent deny-list in sync
 ```
 
 Never bypass a failing gate (`--no-verify` is off the table); fix the reported

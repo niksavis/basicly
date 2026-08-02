@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 from basicly import cli, verify
 from basicly.config import VerifyCheck, VerifyConfig, load_verify_config
@@ -614,12 +616,23 @@ _CLOCK_PLURAL = (
 
 # --- The projection gates must run locally, not only in CI (basicly-m4zv.11) ---
 
-_PROJECTION_COMMANDS = {
-    ("basicly", "check"),
-    ("basicly", "skills-check", "--all-default-roots"),
-    ("basicly", "agents-check"),
-    ("basicly", "hooks-check"),
-}
+_REPO_ROOT = Path(__file__).parent.parent
+_COMMANDS_FRAGMENT = (
+    _REPO_ROOT / ".basicly-local" / "fragments" / "user" / "commands" / "commands.fragment.yaml"
+)
+
+
+def _projection_check_subcommands() -> set[str]:
+    """Every projection check subcommand the CLI ships, read off its handler registry.
+
+    Derived, not listed. A hand-written set is the defect this pair of tests exists
+    to catch: the CLI shipped ``permissions-build``/``permissions-check`` while the
+    list here named only the other four pairs, so a permissions edit was gated
+    nowhere (basicly-tcmy.23). Every projection pair is ``<thing>-build`` /
+    ``<thing>-check``, plus the unprefixed ``build`` / ``check`` for the fragment
+    projection itself.
+    """
+    return {name for name in cli._handlers() if name == "check" or name.endswith("-check")}
 
 
 def test_this_repos_fast_mode_runs_every_projection_gate() -> None:
@@ -628,8 +641,8 @@ def test_this_repos_fast_mode_runs_every_projection_gate() -> None:
     ``protect-generated-commit`` compares the *staged* generated blob against the
     manifest, so it catches a hand-edited output but is blind to a *stale* one:
     editing a fragment does not stage the generated file at all, so its bytes still
-    match. Before this, the four projection gates ran only in CI — so a fragment
-    edit with no rebuild passed every local hook and pushed stale output, which is
+    match. Before this, the projection gates ran only in CI — so a fragment edit
+    with no rebuild passed every local hook and pushed stale output, which is
     precisely the posture the README, the site and the repo About claim we do not
     have.
 
@@ -637,9 +650,31 @@ def test_this_repos_fast_mode_runs_every_projection_gate() -> None:
     drift is covered elsewhere, and what went missing here was nobody *calling* it.
     ``fast`` specifically, not merely ``full`` — the published claim says commit
     time, and ``fast`` is the pre-commit mode.
-    """
-    config = load_verify_config(Path(__file__).parent.parent)
-    fast = {tuple(check.command) for check in config.checks if "fast" in check.modes}
 
-    missing = _PROJECTION_COMMANDS - fast
+    Matches on the subcommand alone, since a check may carry flags
+    (``skills-check --all-default-roots``).
+    """
+    config = load_verify_config(_REPO_ROOT)
+    fast = {
+        check.command[1]
+        for check in config.checks
+        if "fast" in check.modes and len(check.command) > 1 and check.command[0] == "basicly"
+    }
+
+    missing = _projection_check_subcommands() - fast
     assert not missing, f"projection gates absent from this repo's fast mode: {sorted(missing)}"
+
+
+def test_the_always_on_commands_fragment_lists_every_projection_gate() -> None:
+    """The always-on instruction text must name every projection pair the CLI ships.
+
+    The gate above makes the drift fail; this one makes an agent able to *fix* it
+    without reading the CLI's ``--help``. Reads the authored fragment rather than a
+    projected ``AGENTS.md``/``CLAUDE.md``, which is where the list is written; that
+    the projections match their source is ``basicly check``'s job.
+    """
+    body = yaml.safe_load(_COMMANDS_FRAGMENT.read_text(encoding="utf-8"))["body"]
+    listed = set(re.findall(r"^uv run basicly ([a-z-]+)", body, flags=re.MULTILINE))
+
+    missing = _projection_check_subcommands() - listed
+    assert not missing, f"projection gates absent from the commands fragment: {sorted(missing)}"
