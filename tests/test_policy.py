@@ -1815,16 +1815,24 @@ def test_nothing_in_the_spend_gate_reads_a_clock() -> None:
 # Counted at face value that sample tells a 100000-token ceiling it has 98622 left.
 
 
-def _dispatch(tmp_path: Path, tokens: int, *, estimated: bool, issue_id: str = "root") -> None:
-    """Record one executed dispatch's usage on *issue_id*."""
+def _dispatch(
+    tmp_path: Path,
+    tokens: int,
+    *,
+    estimated: bool,
+    issue_id: str = "root",
+    started: bool = True,
+) -> None:
+    """Record one dispatch's usage on *issue_id*, executed unless *started* is False."""
     run_record.record(
         tmp_path,
         issue_id,
         run_record.build_record(
             agent="t",
             handoff=False,
-            returncode=0,
-            duration_s=1.0,
+            started=started,
+            returncode=0 if started else None,
+            duration_s=1.0 if started else None,
             command=("t",),
             tokens=tokens,
             estimated=estimated,
@@ -1946,6 +1954,59 @@ def test_a_session_with_nothing_unmetered_records_no_unmetered_baseline(
     policy.issue_grant_guarded(tmp_path, "root", "L1", 5_000_000, L3_CONFIG, interactive=True)
 
     assert "unmetered=" not in fake.comments[-1]
+
+
+# --- A dispatch that never started an agent (basicly-jr0l.64) ----------------
+#
+# The numbers are the 2026-08-02 basicly-tcmy pass: a lane died in its pre-flight
+# tracker read, its captured error estimated at 182 tokens, and the grant halted
+# with 16561474 of 60000000 spent — refusing a finished lane that was waiting for
+# a slot and leaving 43438526 tokens unspent.
+
+
+def test_a_dispatch_that_never_started_an_agent_does_not_halt_the_grant(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No process ran, so no spend hides under the floor and the remainder is known."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    fake.comments.append("[harness-policy] grant level=L3 budget=60000000")
+    _dispatch(tmp_path, 16_561_474, estimated=False)
+    _dispatch(tmp_path, 182, estimated=True, started=False)
+
+    status = policy.spend_status(tmp_path, "root")
+
+    assert status.halted is False
+    assert status.unmetered_dispatches == 0
+    # The floor is still not spend: only the measured half moves the remainder.
+    assert status.spent_tokens == 16_561_474
+    assert status.remaining_tokens == 43_438_526
+
+
+def test_the_two_unmeasured_shapes_are_not_one_shape(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The discriminator: identical floors, opposite verdicts, decided by the outcome.
+
+    Collapsing either way fails here — treating an unstarted dispatch as an
+    unmeterable run halts the first session, and treating an unmeterable run as
+    unstarted stops the second halting, which is basicly-jr0l.35's whole point.
+    """
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    fake.comments.append("[harness-policy] grant level=L3 budget=60000000")
+    unstarted = tmp_path / "unstarted"
+    ran = tmp_path / "ran"
+    for root in (unstarted, ran):
+        root.mkdir()
+    _dispatch(unstarted, 182, estimated=True, started=False)
+    _dispatch(ran, 182, estimated=True, started=True)
+
+    never_ran = policy.spend_status(unstarted, "root")
+    unmeterable = policy.spend_status(ran, "root")
+
+    assert (never_ran.halted, never_ran.unmetered_dispatches) == (False, 0)
+    assert (unmeterable.halted, unmeterable.unmetered_dispatches) == (True, 1)
 
 
 def test_the_forward_gate_calls_the_remainder_unknown_not_spent() -> None:

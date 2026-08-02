@@ -1163,9 +1163,10 @@ class SpendMeter:
 
     measured_tokens: int
     estimated_tokens: int
-    # How many dispatches contributed an estimate rather than a measurement. A count,
-    # not a flag, so a baseline can subtract the ones an earlier grant already
-    # answered for (:attr:`Grant.unmetered_at_issue`).
+    # How many dispatches ran an agent and contributed an estimate rather than a
+    # measurement. A count, not a flag, so a baseline can subtract the ones an
+    # earlier grant already answered for (:attr:`Grant.unmetered_at_issue`). A
+    # dispatch that never started an agent is excluded — see :func:`session_spend`.
     unmetered_dispatches: int
 
 
@@ -1276,6 +1277,11 @@ def spend_status(
     clears it, because the new grant's baseline answers for the dispatches already
     taken and the human has then seen the reason.
 
+    That is a rule about an *agent run* nobody could meter. A dispatch that died
+    before its agent process started is the other case and does not halt: no
+    process ran, so no spend is hiding under its floor (basicly-jr0l.64,
+    :func:`session_spend`).
+
     *grant* and *ids* let a caller that already read them skip the re-walk.
     """
     if grant is None:
@@ -1340,6 +1346,15 @@ def session_spend(
     version that predates the field, and every writer since sets it explicitly
     whenever tokens are present (``runner.extract_usage`` returns a bool or no usage
     at all), so it is read as measured — the behaviour it had when it was written.
+
+    An ``unstarted`` entry is the one estimate that is *not* an unmeasurable
+    dispatch (basicly-jr0l.64). Its floor still lands in
+    :attr:`SpendMeter.estimated_tokens` — nothing measured it — but it counts no
+    unmeasurable dispatch, because what makes a floor dangerous is the agent run
+    hiding behind it, and there was no agent: the captured error text *is* the
+    whole transcript. Counting it halted a 60000000-token grant with 43438526
+    unspent over a tracker read that spawned no process (the 2026-08-02
+    basicly-tcmy pass).
     """
     records = run_record.load_run_records(repo_root) or {}
     measured = 0
@@ -1355,7 +1370,8 @@ def session_spend(
                 continue
             if entry.get("estimated") is True:
                 estimated += tokens
-                unmetered += 1
+                if entry.get("outcome") != run_record.UNSTARTED:
+                    unmetered += 1
             else:
                 measured += tokens
     return SpendMeter(
