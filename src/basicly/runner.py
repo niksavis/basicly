@@ -1563,7 +1563,9 @@ def record_dispatch(  # noqa: PLR0913 — one parameter per recorded dispatch in
     The command is redacted (the prompt elided) before it reaches the record, so
     no prompt or secret is persisted. Usage is adapter-reported wherever the CLI
     reports it — on stdout, or in its own session store — and a flagged chars/4
-    estimate otherwise.
+    estimate otherwise. The run's final context occupancy lands beside its
+    forecast as ``context_tokens``, which is the only measurement of the quantity
+    the sizing band gates on (basicly-fcls).
 
     **Nothing here may raise.** This is telemetry on the critical path of every
     dispatch, so a defect in recording must never fail a landing. Deriving the
@@ -1612,6 +1614,11 @@ def record_dispatch(  # noqa: PLR0913 — one parameter per recorded dispatch in
         phase=phase,
         scope_tokens=scope_tokens,
         forecast_tokens=forecast_tokens,
+        # The actual beside the forecast (basicly-fcls). Computed here rather than
+        # passed in for the same reason the usage split is: every dispatch site
+        # already hands over its forecast, and a second site deciding whether to
+        # measure the outcome is how the pair stops being a pair.
+        context_tokens=context_occupancy(spec, result),
         task_class=task_class,
         forecast_source=forecast_source,
         folded_info=folded_info,

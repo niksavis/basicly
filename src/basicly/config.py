@@ -393,45 +393,43 @@ ENGINE_GATE_PROVIDERS = frozenset({VERIFY_GATE_PROVIDER, RUBRIC_GATE_PROVIDER})
 # the govern band is absolute tokens of material to reason over, NOT a fraction
 # of the context window (the 50-70 percent folk rule was researched and refuted).
 #
-# The ceiling is DERIVED, not chosen (basicly-3w44). It was 64_000, and against the
-# only evidence there is — the lanes this engine has actually dispatched — that value
-# was wrong 18 times out of 18: eighteen recorded lanes exceeded it and every one of
-# them completed. Restricting that to the clean sample (headless executions with a
-# returncode, not handoffs a human carried), the largest estimate a dispatched lane
-# has ever completed is 105_318 — basicly-tcmy.31, scope 35_106 at the task seed of
-# 3.0. So the engine refused, at 61% of it, a size it had already proven it could run.
+# The ceiling is DERIVED, not chosen (basicly-3w44), and it is derived FROM THE
+# ESTIMATOR — so it moves whenever the estimator does. The rule, so the next reader
+# can recompute rather than trust the number: size every headless dispatch this
+# engine has recorded by the current formula, take the largest estimate on one that
+# completed, and round up to the next multiple of WORKING_SET_MIN — one floor-unit of
+# headroom. Today that is basicly-tcmy.31 at 53_004, so 56_000.
 #
-# The rule, so the next reader can recompute rather than trust this number: take the
-# largest estimate on a completed headless lane and round up to the next multiple of
-# WORKING_SET_MIN, one floor-unit of headroom. 105_318 -> 112_000.
+# It has now been derived three times, and each move was a defect in the *measure*
+# surfacing rather than new evidence about how big a lane can be:
 #
-# What 112_000 is, precisely: a SEPARATING boundary. Four dispatches across three
-# beads have failed, and sizing them by the same formula puts basicly-kjc5.42 and
-# basicly-kjc5.44 at 136_668 (scope 45_556 at the task seed) and basicly-kjc5.43 at
-# 5_734. So [105_318, 136_668) is the gap between the largest size observed to
-# complete and the smallest size observed to die that no larger success explains
-# away, and 112_000 sits inside it: it admits every observed success and refuses
-# both observed large failures.
+# * 64_000 was chosen, never checked, and wrong 18 times out of 18 — eighteen
+#   recorded lanes exceeded it and every one completed (basicly-3w44).
+# * 112_000 came from the same rule applied to whole-file scope sizing, and only to
+#   the completed lanes whose records happened to carry a `scope_tokens` int.
+# * 56_000 is that rule applied to the read-capped measure (basicly-fcls), over both
+#   outcome populations sized the same way. It is LOWER than its predecessor because
+#   the estimator shrank, not because the engine got more timid: the same
+#   basicly-kjc5.42 dispatch that sized 136_668 as three whole files sizes 12_000 as
+#   the material a lane reads out of them.
 #
-# basicly-kjc5.43 is the failure that gets explained away — a lane eighteen times its
-# estimate completed, so size cannot be why it died. That discrimination is on the
-# size of the lane and never on its exit code: the record keeps a returncode, not a
-# cause, so the 143 all four share says only that something killed them.
+# What the number is, precisely: a SEPARATING boundary — it must admit every size
+# observed to complete and refuse every size observed to die that no larger success
+# explains away. Both halves are live in
+# `test_the_ceiling_separates_the_sizes_that_completed_from_the_sizes_that_failed`,
+# which fails and names the required value when the constant and the record disagree.
 #
-# This paragraph replaces one that read "zero lanes have failed at any size", which
-# was false in an instructive way. The query behind it filtered on
-# `isinstance(entry["scope_tokens"], int)`, and every failed record carries
-# `scope_tokens: None` — so the filter deleted the whole failure population and the
-# conclusion was an artifact of the measurement, not a fact about the engine
-# (basicly-ipx2). Recording a failing dispatch's scope cost is what stops the next
-# analysis needing this re-derivation from the tree at all.
-#
-# `test_the_ceiling_separates_the_sizes_that_completed_from_the_sizes_that_failed`
-# binds both directions: it fails when a completed lane sits above the ceiling, and
-# when a lane that died at a size nothing has completed sits below it. The
-# one-directional version could only ever check the first, and did.
+# The upper half currently has nothing to refuse, and that is a finding rather than
+# an omission: basicly-kjc5.42 and basicly-kjc5.44 declare the identical class and
+# the identical scope, and one completed while the other was SIGTERMed. No function
+# of (class, scope) can separate that pair, so no ceiling can be credited with
+# refusing kjc5.44 — the previous derivation appeared to only because the
+# completed-side query dropped kjc5.42's success on the `scope_tokens` filter that
+# basicly-ipx2 had just removed from the failure side. Two prior paragraphs here have
+# now been artifacts of an optional field being filtered on; the third fix is
+# `RunRecord.context_tokens`, which measures the quantity instead of re-deriving it.
 DEFAULT_WORKING_SET_MIN = 8_000
-DEFAULT_WORKING_SET_MAX = 112_000
+DEFAULT_WORKING_SET_MAX = 56_000
 # Per-task-class multiplier on scope read-cost. Seeds, and they stay seeds: the
 # telemetry calibration that once overwrote them measured whole-lane spend, which is
 # a different quantity from a working set, and basicly-z2wi removed it. An unlisted
