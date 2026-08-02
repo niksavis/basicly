@@ -1265,6 +1265,11 @@ def _band_verdict(admission: WorkingSetAdmission) -> str:
 # (issue, kind, question), so a second copy of this string would leak a pending item
 # that nothing can find (basicly-jr0l.52). The numbers stay in the *detail*, which is
 # not part of the id, so a pass that keeps refusing finds the item it already queued.
+#
+# It was bound twice — here, and again beside its only consumer 220 lines down. The
+# second one won at import, so editing this copy, the one a reader finds beside
+# `PassSpendAdmission`, changed nothing at all: verbatim the failure jr0l.52 exists to
+# prevent, in the constant that carries jr0l.52's own warning (basicly-tcmy.3).
 PASS_SPEND_QUESTION = (
     "re-scope this pass or re-grant: its forecast spend exceeds the remaining budget"
 )
@@ -1479,15 +1484,6 @@ def record_pass_refusal(
         PASS_SPEND_QUESTION,
         admission.detail,
     )
-
-
-# The queue question a forecast-refused pass asks, named once for the same reason
-# :data:`SIZING_QUESTION` is: :func:`decisions.enqueue` keys items by
-# (issue, kind, question), so a second copy of this string would leak a pending item
-# that nothing can find (basicly-jr0l.52).
-PASS_SPEND_QUESTION = (
-    "re-scope this pass or re-grant: its forecast spend exceeds the remaining budget"
-)
 
 
 # --- Concurrent dispatch: fan ready lanes out up to the cap ------------------
