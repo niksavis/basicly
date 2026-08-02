@@ -77,18 +77,77 @@ production setting. Three conditions, all required:
    last two minor versions, so the promise needs a real stabilization phase (Phase 8), not a
    version-number ceremony.
 
+### 1.1 Every document, and whether its design is built
+
+Owner rule, 2026-08-02: **the code is the source of truth. A document that has served its
+purpose is deleted, not archived, and no document is authoritative except
+[`architecture.md`](../architecture/architecture.md).** This plan is the index that makes that
+rule enforceable — if a document is not listed here it should not exist, and if its design is
+built and described in the architecture then its purpose is served.
+
+`Live` means the document specifies work not yet built, so deleting it would lose a
+requirement. `Fulfilled` means its design is implemented and the architecture describes the
+implementation, so it is a deletion candidate under the rule above.
+
+| Document | Status | What it still carries |
+| --- | --- | --- |
+| [`architecture/architecture.md`](../architecture/architecture.md) | **Authoritative** | The exception to the rule. Never deleted; corrected against the code whenever the two disagree. |
+| [`plan/implementation-plan.md`](implementation-plan.md) | **Authoritative** | This file: the ladder to 1.0.0 and the index above. |
+| [`design/work-tracker.md`](../design/work-tracker.md) | **Live** | Requirements for the `br` replacement (Phase 6, `vkh0`). Nothing is built yet, so this is the only record of what must be. |
+| [`design/agent-roster-design.md`](../design/agent-roster-design.md) | **Live** | The seven-persona roster (Phase 5, `s2xf`). Design agreed, not implemented. |
+| [`design/factory-design.md`](../design/factory-design.md) | Mostly fulfilled | Decisions D1–D10 are cited by name from the code and from this plan; the loop, queue and grants are built. Fold the still-live decisions into the architecture, then delete. |
+| [`design/gates-and-rework-design.md`](../design/gates-and-rework-design.md) | Mostly fulfilled | Gates are built. The bounded-rework subsystem is built but has **never fired** — 0 gate failures in 277 recorded results — so its design is unvalidated rather than unbuilt. |
+| [`design/steering-surfaces-design.md`](../design/steering-surfaces-design.md) | Fulfilled | Owns the recall result (claude 98% of 53 rules, copilot 93% of 54, against 17%/6% no-guidance controls). Fold that result into the architecture, then delete. |
+| [`design/catalog-efficacy-design.md`](../design/catalog-efficacy-design.md) | Fulfilled | §4.1's rule survives and must move before deletion: recall is an upper bound and may **not** be cited as evidence of quality. |
+| [`design/tier-injection-kit.md`](../design/tier-injection-kit.md) | Fulfilled | The kit ships at `.basicly/core/kit/`. Referenced from `CHANGELOG.md`. |
+| [`design/harness-eval.md`](../design/harness-eval.md) | Fulfilled | Superseded by the shipped `rubric` command and the recall harness. |
+| [`research/2026-07-26-sota-review.md`](../research/2026-07-26-sota-review.md) | Dated snapshot | A review of the field on one date. Its conclusions are already absorbed into the designs that cite it. |
+| [`research/references.md`](../research/references.md) | Dated snapshot | Citation list for the above. |
+
+Two documents are **already deletable** and carry zero inbound references from anywhere in the
+repo: `docs/archive/foundry-spike.md` and `docs/architecture/hook-runner-decision.md`. The
+`docs/archive/` directory goes with the first of them — an archive is the thing this rule
+forbids.
+
+Deleting a fulfilled design means **removing its references from the code first**. Eight
+prose references point from `src/basicly/` at design documents; under the owner rule the code
+must read well enough not to need them, so they are deleted rather than repointed.
+
 ## 2. Current state, measured
 
-Everything in this section was checked against the tree at `13a4647` rather than read from a
-design document, because figures the design documents carry turn out to be stale. Re-measured
-there on 2026-07-26; it was first measured at `b02b527`, and where a figure moved between the
-two the delta is shown, because the direction of travel is itself evidence.
+This section used to be checked against the tree by hand at a named commit, and re-checked, and
+re-checked again. It was stale every time within days, and by 2026-08-02 two of its own
+paragraphs contradicted each other — one said 88 open / 371 closed, the other 60 open / 332
+closed, and neither matched the tree. That is `basicly-tcmy.26`, whose own recorded "actual"
+figures were themselves stale one day after it was filed.
 
-**Re-measured 2026-07-30 at `31d441d`.** Figures that moved since `13a4647`: 47 engine modules
-(was 40), 60 test files (was 57), 1557 collected tests (was 1416), 21,481 lines in
-`src/basicly/`; tracker 88 open / 3 deferred / 371 closed (was 60 / 6 / 332), 0 tombstones;
-625 commits unreleased since v0.5.1. The always-on baselines did not move — 8,484 / 7,209 /
-7,343 chars for `AGENTS.md` / `CLAUDE.md` / `copilot-instructions.md`, one scoped fragment.
+**So the structural figures are generated, not written** (`basicly-uhiq.1`). The block below is
+rendered from the tree by `.scripts/docs_claims.py` and gated on every commit:
+
+<!-- docs-claims:begin plan-current-state -->
+
+| Measure | Value |
+| --- | --- |
+| Engine modules (`src/basicly/*.py`) | 43 |
+| Test files | 69 |
+| `[[verify.checks]]` declared | 15 |
+| …of which run in `--mode fast` | 11 |
+| …of which run in `--mode full` | 14 |
+| …of which run in `--mode staged` | 3 |
+
+<!-- docs-claims:end plan-current-state -->
+
+Two kinds of figure are deliberately **absent** rather than generated. **Tracker counts** move
+several times per session, so generating them would rewrite this document during unrelated
+lanes and dirty the base checkout that a landing refuses on — ask `br`, which is always right.
+**Always-on character sizes** are already a generated block in `architecture.md`; a second copy
+here would be the duplication this exercise exists to remove.
+
+The verify row is the one that shows why a table beats a sentence: the count is **per-mode**.
+This section previously stated one fixed number of checks for `verify --mode full` and a
+different one for what `basicly.toml` declares. Both were wrong, and no single sentence could
+have been right, because the count differs per mode.
+
 Two hygiene regressions: **14 non-closed beads carry no phase label** (was 4) — including the
 release epic `basicly-m3od`, both of its original blockers, and the model-tier cluster
 `kjc5.58`–`.61` — confirming §10's prediction that the continuation path keeps minting them;
@@ -106,9 +165,9 @@ green run parks the lane on a moot question).
 **Shipped and dogfooded.** Catalog and projection with drift gates; the git and agent hook floor;
 the single-track loop; worktree isolation; the concurrent supervisor with lanes and a serial merge
 queue; autonomy grants L0–L3 with a spend ceiling; the decision queue and corpus-bounded decider;
-release automation to the annotated tag. 40 engine modules, 57 test files, 1416 collected tests,
-an 8-check `verify --mode full` (`basicly.toml` declares nine; the host `pyright` runs in
-`fast`/`staged` only). The 2026-07-26 dogfood landed three concurrent lanes with no human editing
+release automation to the annotated tag; the sizing band and its governor. Sizes are in the
+generated block above, not restated here. The 2026-07-26 dogfood landed three concurrent lanes
+with no human editing
 code, at 3.36M tokens against an earlier run's 25.25M — a 7.5× reduction from right-sizing alone.
 
 **Not started.** Grep confirms zero modules mention a role registry or persona routing (the one
@@ -158,7 +217,10 @@ conservative target, and any future claim that the baseline shrank must name the
 that this fragment landed **before** the empty-glob check of Phase 4 step 3 exists, so nothing
 verifies its `paths:` still match anything.
 
-**Tracker state.** 60 open, 6 deferred, 0 tombstones, 332 closed. Nine epics open: the six phase
+**Tracker state.** Counts are not written here — this paragraph and §2 used to carry two
+different sets and both were wrong (`basicly-uhiq.1`). Run `br list --status open | wc -l`, or
+read `.beads/issues.jsonl` directly for a whole-tracker question, since `br list --json` caps
+its result and drops closed rows. What is structural, and therefore worth stating: the phase
 epics `basicly-u6jq` / `agzx` / `m4zv` / `imnu` / `a3ab` / `s2xf` (labelled `phase-0`…`phase-5`),
 plus `basicly-vkh0` (`phase-6`, now `open` — it was `deferred`), `basicly-jr0l` (`phase-7`) and
 `basicly-kjc5` (`phase-multi`). **The sequencing gap this section used to report is closed**: 21
@@ -214,6 +276,7 @@ the same release.
 | --- | --- | --- |
 | before `v0.6.0` | housekeeping | `jr0l.32` + `jr0l.33` (owner asked for these first), the `a3ab.6`/`a3ab.7` retro pair where they do not disturb the release, and labelling the 14 unlabelled beads. Small catalog and tracker work; the review is done, so projection regeneration no longer corrupts anything. |
 | `v0.6.0` | release epic `m3od` | The narrow critical cut as scoped on `basicly-m3od`: `jr0l.38`, `jr0l.39`, **`jr0l.49`** (added 2026-07-30 — the destructive mechanism behind the trap `jr0l.39` renames), the breaking-change audit, the changelog curation. Unblocks 625 commits of accumulated value. |
+| before `v0.7.0` | Phase S (new) | **Make what exists true.** No new capability: wire, validate, delete. Inserted 2026-08-02 after the sizing step — the core of basicly — was found broken in three ways (`z2wi`, `3w44`), all the same mistake, and after an evidence pass found the pattern behind it. See **Phase S** below. It precedes `v0.7.0` because `u6jq.1`'s proof run cannot measure a factory whose sizing is wrong: the measurement would measure the defect. |
 | `v0.7.0` | Phases 0, 6, parts of 1 and 7 | **Trustworthy factory, owned tracker.** Hardening batch (`jr0l.46`/`.47`/`.50`/`.51`/`.52`, `m4zv.12`/`.13`) → forecast chain (`jr0l.21`/`.22`/`.34`/`.35` and `.35`'s blocker `2rn9`, model provenance `kjc5.58` → `kjc5.61` → `kjc5.59`, with `kjc5.60` in parallel once `.58` lands) → the proof run (`u6jq.1`, under the delegated 10M-token L1 ceiling, also gated on `jr0l.16`) → `vkh0.2` freeze → event log → import → shadow (vs the live tracker) → dual-write → flip. The flip removes `br` from the consumer floor — the single biggest 1.0.0 blocker. |
 | `v0.8.0` | Phases 1, 2, 3 | **Evidence, gates, docs.** `7bur` cost per landed package, `agzx.2` localisation, the Phase 2 deterministic gates (`m4zv.2`–`.6`) built against the owned tracker (the `m4zv.14` write-lock flake dissolves with the flip), the D4 amendment, `kjc5.13` absorption, the tutorial layer (`imnu.2`), the delivered-install capability tier (`imnu.3`, which has no dependents and stays here — the model-tier bead `kjc5.58` it used to be paired with moved to `v0.7.0`), the ceremony threshold (`imnu.5`), the fake-agent-CLI e2e test (`jr0l.43`, decided 2026-07-30), and **`3ifz` parameter tuning from recorded outcomes** (owner, 2026-08-01: the per-lane budget is changeable, so it should be learned rather than set — and so should `concurrency`, the sizing band, `max_rework` and the rest; it sits here because it is Phase 1's "buy the numbers" work applied to our own configuration, and it needs `vz78`'s forecast/actual pairs to exist first). Measurements land before the phase they gate. |
 | `v0.9.0` | Phases 5, 4 | **The judgment layer and always-on relief.** The roster (`s2xf`), gated on `7bur`'s numbers by construction (§6); Phase 4 authoring and the empty-glob check; `jr0l.44`/`.45`. |
@@ -228,6 +291,51 @@ against the tracker's edges rather than by eye — `kjc5.58`'s placement broke i
 (`basicly-sy8c`), and the same check found `2rn9` and `jr0l.16` unlisted. A parent epic is exempt:
 it closes when its children do, so `7bur`'s edge to the `u6jq` epic is satisfied by `u6jq.1`
 sitting in `v0.7.0`.
+
+### Phase S — Make what exists true
+
+**Priority: P0. Depends on: nothing. Size: 3–5 sessions. Added 2026-08-02.**
+
+Every defect found on 2026-08-02 is one pattern: **an instrument is built and never connected.**
+`permissions-check` shipped as a command wired to no gate (`tcmy.23`). The only architectural
+contract in the repo forbade modules that cannot exist, so it reported `1 kept, 0 broken`
+forever (`tcmy.2`). `vulture>=2.16` is declared at `pyproject.toml:37` and called from nowhere.
+`.scripts/recall_eval.py` was built, run once, and wired to nothing. 12 of 35 telemetry fields
+have never once been non-null. There are **0 gate failures in 277 recorded gate results**, so
+the triggering branch of the bounded-rework subsystem has never executed.
+
+The cause is that nothing is ever removed: a **9.3% deletion rate and 5 `refactor:` commits in
+1742**. Churn is 1.2×, so designs did not thrash — each instrument that did not work simply
+stayed, and the next was built beside it. 1243 of 1742 commits are tracker bookkeeping; ~298
+touch `src/` or `tests/`. The surface is not under-delivered, it is over-delivered against
+roughly 300 product commits, and almost none of it is proven.
+
+**This phase adds nothing.** It is the precondition for believing any later measurement.
+
+| Work | Bead | Note |
+| --- | --- | --- |
+| Build factor sized a working set from whole-lane spend | `basicly-z2wi` | **Closed.** The task factor calibrated to 216.65 against a seed of 3.0, capping dispatchable scope at ~295 tokens and refusing every task-typed child. Ten successful dispatches crossed the sample threshold, so _using_ the engine is what disabled it. Removed the calibration; −161 lines. |
+| The ceiling refused sizes that had already succeeded | `basicly-3w44` (a) | **Closed.** 64000 against a largest-completed estimate of 105318. Now 112000, derived from outcomes and gated by a test that fails when evidence outruns the constant. |
+| Correct the ceiling's recorded rationale and bind the gate both ways | — | The comment says "zero lanes have failed at any size". **False**: 4 dispatches failed with `returncode 143`, and they were excluded from the analysis because failed lanes record no `scope_tokens`. Survivorship bias. The value survives on better evidence — 112000 separates the largest success (105318) from the two large failures (136668) — but the reasoning must be replaced and the gate must also refuse to _admit_ a size that failed. |
+| `scope_read_cost` measures whole files | `basicly-3w44` (b) | **The chunking unlock.** Over 23 real headless lane transcripts: 75% of `Read` calls are ranged, the median fraction of a read file actually read is **0.207** and **0.027** for `cli.py`, and only 37% of read material falls inside the declared scope. Estimate over measured spans 0.17×–4.65×. Until this lands, nothing touching `cli.py`, `supervise.py` or `architecture.md` can be chunked at all. |
+| Record `context_tokens` on `RunRecord` | — | One additive field, gates nothing. Both beads above are fitting a proxy without it. Build the field before the formula — a formula fitted to the wrong quantity is exactly how `z2wi` happened. |
+| Wired-or-deleted gate, and the deletions it forces | — | Nothing merges without a reference outside its own module and outside `tests/`. Fails today on 11 commands, 19 config keys, 12 record fields, 16 never-varied parameters. Wire `vulture` here. |
+| Exercised-or-unproven gate | — | No release tag while a shipped capability has zero ledger executions. Would have caught `permissions-check`, the import contract, `vulture` and `recall_eval` years earlier. |
+| The subcommand dispatch guard, derived from the parser | — | `tcmy.4` fixed **1 of 7** sites. The other six are verbatim `return handler(args) if handler else 0` at `cli.py:2191, 2240, 2273, 2791, 3461, 3564`, and a seventh (`cmd_usage`, `cli.py:1758`) carries it in a different shape. Proven behaviourally: an injected orphan sub-parser returns exit 0 with no output at all seven, and exit 2 at the top level. Latent, not live — every sub-parser is `required=True` — but the existing test asserts `len(actions) == 1` against the root parser and so can never recurse. |
+| The multi-lane blockers | `jr0l.64`, `jr0l.65`, `vkh0.10` | A 182-token failed dispatch fail-closed a 60M grant with 43.4M unspent; an _answered_ needs-input still blocks every ship until its bead closes; the tracker corrupts its WAL under the engine's own five-lane fan-out. |
+
+**Exit criteria.** Every gate in the repo has been shown to fail on a real defect, not merely to
+pass. No shipped capability has zero recorded executions. A five-child markdown-only epic
+decomposes with no child refused for a reason the files do not justify.
+
+**Why not later.** `v0.7.0` ends in `u6jq.1`, a proof run whose whole value is that it measures.
+A measurement taken through a mis-calibrated sizer measures the sizer.
+
+**What is explicitly _not_ here.** The instruction catalog. It was measured — claude recalls 98%
+of 53 always-on rules and copilot 93% of 54, against 17%/6% no-guidance controls — so the
+instructions are not the problem and rewriting them would trade a measured result for an
+unmeasured one. Every item above is a script or a gate, which is the correct disposal for a
+deterministic fact.
 
 ### Phase 0 — Make an unattended run possible, and stop a live leak
 

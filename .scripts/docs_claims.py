@@ -47,6 +47,7 @@ import argparse
 import ast
 import re
 import sys
+import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -62,12 +63,14 @@ from basicly import cli, config, loop
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 ARCHITECTURE_MD = "docs/architecture/architecture.md"
+IMPLEMENTATION_PLAN = "docs/plan/implementation-plan.md"
 SKILLS_README = ".basicly/core/skills/README.md"
 HOOKS_README = ".basicly/core/hooks/README.md"
 
 TARGETS_DIR = ".basicly/core/targets"
 SKILLS_DIR = ".basicly/core/skills"
 HOOKS_DIR = ".basicly/core/hooks"
+SRC_DIR = "src/basicly"
 
 TOOL_BR_SKILL = f"{SKILLS_DIR}/tool-br/skill.yaml"
 
@@ -103,6 +106,14 @@ def _write(path: Path, text: str) -> None:
     """
     newline = "\r\n" if b"\r\n" in path.read_bytes() else "\n"
     path.write_text(text, encoding="utf-8", newline=newline)
+
+
+def _load_toml(path: Path) -> dict[str, Any]:
+    """Parse a TOML file, failing loudly on anything but a mapping."""
+    try:
+        return tomllib.loads(_read(path))
+    except tomllib.TOMLDecodeError as exc:
+        raise ClaimError(f"{path}: {exc}") from exc
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -234,6 +245,47 @@ def _catalog_hooks(root: Path) -> list[str]:
             _script_purpose(hooks_dir / script),
         ])
     return _table(["Hook", "Stage", "Manager", "Script", "Purpose"], rows)
+
+
+def _plan_current_state(root: Path) -> list[str]:
+    """The plan's "current state" figures, measured instead of typed.
+
+    Only facts that are **structural and slow-moving** belong here. A count of test
+    *functions* was tried and removed: it moves on every test commit, so it rewrote
+    this document from unrelated lanes for a figure the plan never reasons about.
+    Only **structural** facts belong here — things that move when the code moves, so
+    the block is stale exactly when the plan is. Tracker counts are deliberately
+    absent even though they are equally derivable: ``.beads/issues.jsonl`` changes
+    several times per session, so generating them would rewrite this document during
+    unrelated lanes and dirty the base checkout a landing refuses on. ``br`` answers
+    those on demand, which is why the plan now asks rather than asserts.
+
+    The verify row is the one that proves the block is worth its weight: the count is
+    per-mode, so any single hand-written "an N-check verify" is wrong for at least one
+    mode. The plan claimed an 8-check ``full`` declaring nine; it is 15 declared.
+    """
+    verify = _load_toml(root / "basicly.toml").get("verify") or {}
+    checks = verify.get("checks")
+    if not isinstance(checks, list) or not checks:
+        raise ClaimError("basicly.toml: [[verify.checks]] must be a non-empty list")
+
+    modes: dict[str, int] = {}
+    for check in checks:
+        for mode in check.get("modes") or []:
+            modes[str(mode)] = modes.get(str(mode), 0) + 1
+
+    test_files = sorted((root / "tests").glob("test_*.py"))
+
+    rows = [
+        ["Engine modules (`src/basicly/*.py`)", str(len(sorted((root / SRC_DIR).glob("*.py"))))],
+        ["Test files", str(len(test_files))],
+        ["`[[verify.checks]]` declared", str(len(checks))],
+        *(
+            [f"…of which run in `--mode {mode}`", str(count)]
+            for mode, count in sorted(modes.items())
+        ),
+    ]
+    return _table(["Measure", "Value"], rows)
 
 
 # ------------------------------------------------------------------- assertions
@@ -422,6 +474,7 @@ BLOCKS: tuple[Block, ...] = (
     Block("always-on-sizes", ARCHITECTURE_MD, _always_on_sizes),
     Block("catalog-skills", SKILLS_README, _catalog_skills),
     Block("catalog-hooks", HOOKS_README, _catalog_hooks),
+    Block("plan-current-state", IMPLEMENTATION_PLAN, _plan_current_state),
 )
 
 ASSERTIONS: tuple[Assertion, ...] = (
