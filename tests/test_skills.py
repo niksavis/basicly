@@ -11,6 +11,7 @@ from basicly.schema import ValidationError
 from basicly.skills import (
     GENERATED_MARKER,
     SKILLS_SOURCE_DIR,
+    UNMANAGED_REASON_PREFIX,
     SkillDefinition,
     check_synced_skills,
     discover_skills,
@@ -256,6 +257,76 @@ def test_check_detects_resource_drift_and_orphans(tmp_path: Path) -> None:
     assert orphan in pruned
     assert ref.read_bytes() == b"# Reference\n"
     assert check_synced_skills(tmp_path, roots) == []
+
+
+def test_check_reports_a_hand_authored_skill_with_no_source(tmp_path: Path) -> None:
+    """A skill dir the catalog never produced is reported, not silently accepted.
+
+    The per-skill mirror only visits directories a source names, so before
+    basicly-tcmy.8 a hand-written SKILL.md dropped into a projected root passed
+    every gate — it reached one agent, never the other, and nothing said so.
+    """
+    _write_skill(tmp_path, "pdf", "pdf", "Work with PDFs.")
+    roots = resolve_skill_roots(tmp_path, roots=[".claude/skills"], use_default_roots=False)
+    sync_skills(tmp_path, roots)
+    assert check_synced_skills(tmp_path, roots) == []
+
+    hand_authored = roots[0] / "release-process" / "SKILL.md"
+    hand_authored.parent.mkdir(parents=True)
+    hand_authored.write_text("---\nname: release-process\n---\n\nbody\n", encoding="utf-8")
+    bundled = hand_authored.parent / "references" / "NOTES.md"
+    bundled.parent.mkdir()
+    bundled.write_text("notes\n", encoding="utf-8")
+
+    expected = (
+        f"{UNMANAGED_REASON_PREFIX}no skill source at "
+        f"{(SKILLS_SOURCE_DIR / 'release-process' / 'skill.yaml').as_posix()})"
+    )
+    assert dict(check_synced_skills(tmp_path, roots)) == {
+        hand_authored: expected,
+        bundled: expected,
+    }
+
+
+def test_build_reports_but_never_deletes_an_unmanaged_skill(tmp_path: Path) -> None:
+    """The gate reports what no source describes; only a human deletes it."""
+    _write_skill(tmp_path, "pdf", "pdf", "Work with PDFs.")
+    roots = resolve_skill_roots(tmp_path, roots=[".claude/skills"], use_default_roots=False)
+    hand_authored = roots[0] / "release-process" / "SKILL.md"
+    hand_authored.parent.mkdir(parents=True)
+    hand_authored.write_text("---\nname: release-process\n---\n\nbody\n", encoding="utf-8")
+
+    _result, pruned = sync_skills(tmp_path, roots)
+
+    assert pruned == []
+    assert hand_authored.is_file()
+    assert len(check_synced_skills(tmp_path, roots)) == 1
+
+
+def test_check_reports_a_loose_file_at_a_projected_root(tmp_path: Path) -> None:
+    """A README sitting beside the skill dirs is reported (it teaches the wrong model)."""
+    _write_skill(tmp_path, "pdf", "pdf", "Work with PDFs.")
+    roots = resolve_skill_roots(tmp_path, roots=[".claude/skills"], use_default_roots=False)
+    sync_skills(tmp_path, roots)
+
+    readme = roots[0] / "README.md"
+    readme.write_text("# Skills Folder\n", encoding="utf-8")
+
+    assert check_synced_skills(tmp_path, roots) == [
+        (readme, f"{UNMANAGED_REASON_PREFIX}a projected skills root holds skill dirs only)")
+    ]
+
+
+def test_a_deselected_skill_is_not_reported_as_unmanaged(tmp_path: Path) -> None:
+    """A skill excluded by technology keeps its own targeted reason, not the unmanaged one."""
+    _write_skill(tmp_path, "tool-uv", "tool-uv", "Python tooling.", technologies="[python]")
+    roots = resolve_skill_roots(tmp_path, roots=[".claude/skills"], use_default_roots=False)
+    sync_skills(tmp_path, roots)
+    excluded = roots[0] / "tool-uv" / "SKILL.md"
+
+    assert check_synced_skills(tmp_path, roots, selection=frozenset({"zsh"})) == [
+        (excluded, "excluded by technology selection")
+    ]
 
 
 # --- Invocation axis (basicly-m4zv.1) -----------------------------------------

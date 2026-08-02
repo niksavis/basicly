@@ -1,0 +1,69 @@
+# yaml-language-server: $schema=../../schemas/skill.schema.json
+schema_version: 1
+name: release-process
+invocation: model
+description: Cut a release of this repository with `basicly release`, then do the two steps that command deliberately leaves to a human - deciding the version and pushing. Use when asked to cut a release, tag a version, prepare release notes, or check whether a release published.
+instructions: |
+  # Release Process
+
+  ## Run `basicly release` — never hand-run the steps it performs
+
+  Everything up to and including the annotated tag is one command:
+
+  ```sh
+  basicly release 0.6.0 --issue <beads-id> --dry-run   # pre-flight; writes nothing
+  basicly release 0.6.0 --issue <beads-id>             # bump, pins, regen, changelog, commit, tag
+  ```
+
+  It bumps the single-sourced `__version__`, regenerates the version-stamped
+  projections, rewrites the `vX.Y.Z` install pins in `README.md`,
+  `site/index.html` and both `.scripts/bootstrap.*` shims, upserts the dated
+  `CHANGELOG.md` section, commits, and creates the annotated tag.
+
+  It refuses **before writing anything** on a dirty tree, a non-forward version,
+  an existing tag, a bad date, an unknown `--issue`, a commit subject the
+  `commit-msg` gate would reject, or a linked worktree (tags are shared with the
+  primary checkout, so a worktree release would tag unmerged code). A failure
+  after the first write restores the tree, so a half-released repo never needs a
+  `git reset --hard`.
+
+  `--autonomous --root <epic>` is the delegated form. It needs an **L3** grant
+  inside its spend ceiling with green lights-out preconditions; pass
+  `--shipping <node>` to name the node whose gates are checked, because an open
+  epic's own verify gate is never green.
+
+  ### Write the notes under `## [Unreleased]` first
+
+  The run promotes the `## [Unreleased]` body into the dated `## vX.Y.Z - <date>`
+  section and leaves `[Unreleased]` empty; the commit-subject dump is only the
+  fallback for a release nobody wrote notes for. So curate the prose beforehand,
+  under `[Unreleased]`, in the `### Added` / `### Changed` / `### Fixed` shape the
+  dated sections use.
+
+  Curating afterwards does not work and is the trap this replaced
+  (`basicly-m3od.1`): the commit and the annotated tag are one step, and
+  `.github/workflows/release.yml` reads `CHANGELOG.md` from the **tagged** commit,
+  so anything added in a later commit never reaches the published release body. A
+  re-run keeps an already-curated section rather than overwriting it.
+
+  ## The two steps it does not do
+
+  ### 1. Decide the version
+
+  Pass it explicitly. The command refuses one that does not move forward, but it
+  will not choose major, minor, or patch for you.
+
+  ### 2. Push
+
+  Publishing is irreversible, so the command never pushes. Run the two commands it
+  prints:
+
+  ```sh
+  git push origin main
+  git push origin vX.Y.Z
+  ```
+
+  The tag push triggers `.github/workflows/release.yml`, which extracts the tag's
+  `CHANGELOG.md` section, appends the pinned `uvx` install line, and creates the
+  GitHub release. Confirm the run went green and the release body matches that
+  section.

@@ -402,6 +402,27 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   violation injected, asserting both module names appear in the failure
   (`basicly-tcmy.2`).
 
+- **`skills-check` now reports a hand-authored file under a projected skills root instead
+  of exiting zero.** `check_synced_skills` iterated the *catalog sources* and compared each
+  against its projection, so a directory no source named was never visited. The
+  `release-process` skill lived that way: a tracked, hand-written
+  `.claude/skills/release-process/SKILL.md` with no `skill.yaml`, therefore never projected
+  to `.agents/skills/` — Codex could not see it — while `skills-check
+  --all-default-roots`, `catalog lint` (it scans only `.basicly/core/`) and the generated
+  manifest all passed. For a tool whose claim is one catalog projected under drift gates, a
+  skill the projector did not know about was a hole in the product. The check now also
+  scans each root for entries no source accounts for and names them; a deselected skill
+  keeps its own `excluded by technology selection` reason. It **reports, never prunes** —
+  `skills-build` mirrors only inside a directory it owns, and deleting a file no source
+  describes would destroy the only copy — so the remedy line says so rather than advising a
+  rebuild that cannot help. `release-process` now projects from
+  `.basicly/core/skills/release-process/skill.yaml`, trimmed to `basicly release` plus the
+  two steps it deliberately leaves to a human (decide the version, push); the hand-run
+  workflow it contradicted — whose commit subject the repo's own `commit-msg` gate would
+  have rejected, and which documented changelog sections `CHANGELOG.md` does not have — is
+  gone, as is the stray `.claude/skills/README.md` that taught the same wrong model
+  (`basicly-tcmy.8`).
+
 - **A declared scope no longer counts the virtualenv, dependency trees or caches as the
   lane's working set.** `decompose._scope_files` globbed with no ignore list, so
   `SCOPE_EXCLUDED_DIRS` (`.git`, `.venv`, `venv`, `node_modules`, `__pycache__`, the tool

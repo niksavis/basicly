@@ -105,6 +105,7 @@ from .skills import (
     RETIRED_SKILL_ROOTS,
     SKILL_FILE_NAME,
     SKILLS_SOURCE_DIR,
+    UNMANAGED_REASON_PREFIX,
     check_synced_skills,
     discover_skills,
     resolve_skill_roots,
@@ -1820,6 +1821,26 @@ def cmd_skills_build(args: argparse.Namespace) -> int:
     return 0
 
 
+SKILLS_STALE_REMEDY = (
+    "Stale skill projection detected. Run `basicly skills-build` to sync skill files."
+)
+SKILLS_UNMANAGED_REMEDY = (
+    "Unmanaged files under a projected skills root. Move each one into a "
+    "`.basicly/core/skills/<slug>/skill.yaml` source and rebuild, or delete it — "
+    "`basicly skills-build` will not, since nothing describes it."
+)
+
+
+def _skills_stale_message(mismatches: list[tuple[Path, str]]) -> str:
+    """Pick the skills-check remedy from what drifted: a rebuild fixes only projections."""
+    unmanaged = sum(1 for _, reason in mismatches if reason.startswith(UNMANAGED_REASON_PREFIX))
+    if not unmanaged:
+        return SKILLS_STALE_REMEDY
+    if unmanaged == len(mismatches):
+        return SKILLS_UNMANAGED_REMEDY
+    return f"{SKILLS_UNMANAGED_REMEDY} The remaining drift is fixed by `basicly skills-build`."
+
+
 def cmd_skills_check(args: argparse.Namespace) -> int:
     """Check that projected skill roots are synchronized with source skills."""
     repo_root = _repo_root()
@@ -1827,8 +1848,7 @@ def cmd_skills_check(args: argparse.Namespace) -> int:
     mismatches = check_synced_skills(
         repo_root, roots, selection=load_technology_selection(repo_root)
     )
-    stale = "Stale skill projection detected. Run `basicly skills-build` to sync skill files."
-    if _report_mismatches(mismatches, repo_root, stale_message=stale):
+    if _report_mismatches(mismatches, repo_root, stale_message=_skills_stale_message(mismatches)):
         return 1
 
     ui.say("Projected skills are up to date.", style="ok")

@@ -392,7 +392,12 @@ the routing evals of §14.4. Implemented in
 [`skills.py`](../../src/basicly/skills.py). The projected skill directory is a pure
 projection target owned wholly by basicly and is **mirrored**: `skills-check` flags a stale or
 orphaned resource, a rebuild prunes a resource dropped from the source, and deselecting a
-skill's technology prunes the whole directory. `catalog lint` enforces the spec's naming rules
+skill's technology prunes the whole directory. The **root** is owned too: `skills-check` also
+reports any entry there that no source accounts for — a hand-authored `SKILL.md`, a loose
+`README.md`, a projection whose source was deleted — since otherwise a skill the projector
+never knew about passes every gate while reaching only one agent (`basicly-tcmy.8`). It
+reports and never prunes those, because nothing describes them and the projected copy is the
+only one. `catalog lint` enforces the spec's naming rules
 (name matches the directory; 1–64 lowercase `a-z0-9`/hyphen characters with no leading,
 trailing, or consecutive hyphen) and warns (advisory) when a `SKILL.md` body exceeds ~500 lines
 or a file reference reaches more than one level deep, per the spec's progressive-disclosure
