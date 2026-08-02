@@ -377,6 +377,31 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The repo's only architectural gate now describes modules that exist, and fails when
+  one imports upward.** `.importlinter` declared a single `forbidden` contract naming
+  `basicly.fragments` and `basicly.targets`. Neither module existed and neither
+  structurally could — fragments and targets are YAML under `.basicly/core/`, never
+  Python under `src/basicly/` — so `lint-imports` reported `1 kept, 0 broken` over 48
+  files and 149 dependencies forever, in this repo and in every consumer repo, on both
+  the `fast` and `full` verify paths. Nothing else enforced layering; the real ordering
+  existed as convention plus two `# noqa: PLC0415` comments.
+
+  It is replaced by two `layers` contracts: `engine-layering`, the engine's fourteen
+  tiers from `cli` down to the dependency-free leaves, and `renderer-layering`, the
+  per-target renderers above their shared helpers. Both set `exhaustive = True`, so a
+  new module cannot join the package without being placed in a tier. Siblings are
+  declared independent, so a tier is a tier and not a bucket.
+
+  The two surviving cycles (`loop`/`supervise`, `policy`/`decisions`) are carried as
+  `ignore_imports` entries for the deferred direction only. That is not a weakening:
+  `unmatched_ignore_imports_alerting` defaults to `error`, so removing a cycle breaks
+  the contract until its exemption is removed with it.
+
+  `tests/test_import_contracts.py` is the control pair the old contract could never have
+  passed — the same staged copy of the package checked unchanged and again with one
+  violation injected, asserting both module names appear in the failure
+  (`basicly-tcmy.2`).
+
 - **A declared scope no longer counts the virtualenv, dependency trees or caches as the
   lane's working set.** `decompose._scope_files` globbed with no ignore list, so
   `SCOPE_EXCLUDED_DIRS` (`.git`, `.venv`, `venv`, `node_modules`, `__pycache__`, the tool

@@ -1,11 +1,56 @@
 [importlinter]
 root_package = basicly
 
-[importlinter:contract:engine-independence]
-name = Engine does not depend on project-specific fragments or targets
-type = forbidden
-source_modules =
+# The engine's real tier stack, highest first. Higher tiers may import lower ones;
+# an import in the other direction breaks the contract and names both modules.
+#
+# `exhaustive` is the part that keeps this gate honest: every top-level module of
+# `basicly` must appear in exactly one tier, so a new module cannot join the package
+# without a maintainer deciding where it sits. The contract this replaced forbade
+# `basicly.fragments` and `basicly.targets` — neither module existed, and neither
+# structurally could (fragments and targets are YAML under `.basicly/core/`), so it
+# reported `1 kept, 0 broken` over the whole tree forever.
+#
+# Siblings on one line are separated by `|`, which means independent: they may not
+# import each other either. That is what makes a tier a tier rather than a bucket.
+[importlinter:contract:engine-layering]
+name = Engine modules only import downward through the declared tiers
+type = layers
+containers =
     basicly
-forbidden_modules =
-    basicly.fragments
-    basicly.targets
+exhaustive = True
+layers =
+    cli
+    supervise
+    loop | release
+    catalog_lint | health
+    commit | merge
+    classify | decompose | loop_state | rubrics
+    decisions
+    policy | verify
+    config | worktree
+    claude_settings | runner
+    agents | catalog_verify | fleet | hooks | loader | models | permissions | planner | renderers | skills | state
+    run_record
+    br
+    catalog | needs_input | projection | redact | review | schema | session | tracker_surface | tracker_usage | ui | usage
+# Two cycles survive as function-level imports carrying `# noqa: PLC0415`; the
+# top-level direction is the one the tiers encode. Listing them here is not a
+# weakening: `unmatched_ignore_imports_alerting` defaults to `error`, so when a cycle
+# is finally removed this contract fails until the exemption goes with it.
+ignore_imports =
+    basicly.loop -> basicly.supervise
+    basicly.policy -> basicly.decisions
+
+# The projector's per-target renderers: each target module renders on top of the
+# shared helpers and knows nothing of its siblings. Exhaustive here too, so adding a
+# fourth target forces a placement rather than silently escaping the contract.
+[importlinter:contract:renderer-layering]
+name = Target renderers sit above the shared renderer helpers and are independent
+type = layers
+containers =
+    basicly.renderers
+exhaustive = True
+layers =
+    claude | codex | copilot
+    common
