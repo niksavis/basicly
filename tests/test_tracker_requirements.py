@@ -27,12 +27,16 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import subprocess
+import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from basicly import br, merge, policy, verify
+from basicly import br, merge, policy, supervise, verify
 
 REPO_ROOT = Path(__file__).parent.parent
 COMMIT_MSG_HOOK = REPO_ROOT / ".basicly" / "core" / "hooks" / "beads-commit-msg.py"
@@ -293,6 +297,227 @@ def test_r6_scrubbing_an_already_clean_export_changes_nothing(tmp_path: Path) ->
 
     assert br.scrub_export(tmp_path) == 0
     assert export.read_text(encoding="utf-8") == original
+
+
+# --- R7: concurrent readers and one writer must not corrupt shared state ------
+
+# One reader process. It reads the shared tracker artifact through the harness's own
+# reader in a tight loop until the writer says stop, and reports the smallest record
+# count it ever saw.
+#
+# A separate *process*, not a thread, because that is the shape the defect has: five
+# lane worktrees sharing one tracker through `.beads/redirect` are five OS processes,
+# and a same-process test would be free to share a lock that the real readers cannot.
+_READER = """
+import sys
+from pathlib import Path
+
+from basicly import br
+
+repo_root, ready, stop = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
+ready.write_text("", encoding="utf-8")
+worst = None
+reads = 0
+while not stop.exists():
+    seen = len(br.export_records(repo_root))
+    reads += 1
+    if worst is None or seen < worst:
+        worst = seen
+print(f"{worst if worst is not None else -1} {reads}")
+"""
+
+# Large enough that the writer's rewrite is not instantaneous — a torn read has to be
+# reachable or the gate cannot fail — and small enough to stay a unit test.
+_R7_RECORDS = 3000
+_R7_READERS = 4
+_R7_ROUNDS = 40
+# A crude backstop against an orphaned child, never the thing the test waits on: every
+# wait below polls its condition (basicly's wait-for-the-condition rule).
+_R7_TIMEOUT_S = 120.0
+
+# br's observed response, quoted so the classification is pinned to the text br really
+# emits rather than to one composed here (the basicly-aswc lesson).
+_R7_STORAGE_ERROR = (
+    '{"error": {"code": "DATABASE_ERROR", "message": "Database error: WAL file is '
+    'corrupt: short read at frame 12: got 0, need 4120", "retryable": false}}'
+)
+
+
+def _r7_export_body(dirty: bool) -> str:
+    """An export of :data:`_R7_RECORDS` records, in the state before or after a scrub.
+
+    Both states have the same record *count*, which is what makes the count a clean
+    tear detector: a reader that sees fewer records did not catch a different version
+    of the file, it caught half of one.
+    """
+    leak = "/home/someone/development/basicly" if dirty else "somewhere"
+    return (
+        "\n".join(
+            json.dumps(
+                {"id": f"basicly-r7.{n}", "description": f"record {n} at {leak}", "pad": "x" * 160},
+                separators=(",", ":"),
+            )
+            for n in range(_R7_RECORDS)
+        )
+        + "\n"
+    )
+
+
+def _r7_publish(export: Path, body: str) -> None:
+    """Put *body* in place atomically, so only the code under test can tear a read."""
+    tmp = export.with_suffix(".fixture.tmp")
+    tmp.write_text(body, encoding="utf-8")
+    tmp.replace(export)
+
+
+def _await(condition, what: str) -> None:
+    """Poll *condition* until true, bounded by a monotonic deadline."""
+    deadline = time.monotonic() + _R7_TIMEOUT_S
+    while not condition():
+        assert time.monotonic() < deadline, f"timed out waiting for {what}"
+        time.sleep(0.005)
+
+
+def test_r7_concurrent_readers_never_observe_a_torn_write_of_the_shared_export(
+    tmp_path: Path,
+) -> None:
+    """R7: N readers and one writer against one tracker must not corrupt shared state.
+
+    br fails this. Under the engine's own five-lane fan-out its storage layer tore its
+    WAL and four of five lane dispatches died in the pre-flight read, each on a bead it
+    had not been assigned (basicly-vkh0.10). We cannot fix br, so the register asserts
+    the same property of the store *we* own — the committed JSONL export, which
+    ``br.scrub_export`` rewrites on the commit path while every lane reads it through
+    ``.beads/redirect``.
+
+    Our own store had the same defect, in a quieter form: the scrub truncated the file
+    before writing it, and ``export_records`` skips a line it cannot parse rather than
+    raising — so a reader caught in that window got a *partial issue set with no error
+    at all*. A silent wrong answer is worse than the DATABASE_ERROR it mirrors.
+
+    No retry loop anywhere in this test, which is the point of the third criterion:
+    ``export_records`` does not retry, so a passing run means the write was atomic and
+    not that a reader got a second chance.
+    """
+    repo_root = tmp_path / "repo"
+    export = repo_root / ".beads" / "issues.jsonl"
+    export.parent.mkdir(parents=True)
+    _r7_publish(export, _r7_export_body(dirty=True))
+
+    env = {**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")}
+    readers = []
+    for n in range(_R7_READERS):
+        ready, stop = tmp_path / f"ready.{n}", tmp_path / "stop"
+        readers.append((
+            # An argv list, never a shell string: a shell would mangle a Windows
+            # path in `sys.executable` and fail only on that runner (basicly-5tjk).
+            subprocess.Popen(  # nosec B603
+                [sys.executable, "-c", _READER, str(repo_root), str(ready), str(stop)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=env,
+            ),
+            ready,
+        ))
+    try:
+        # Start writing only once every reader is actually reading: a writer that
+        # finished first would make this pass by never racing anything.
+        _await(lambda: all(ready.exists() for _, ready in readers), "the readers to start")
+        for _ in range(_R7_ROUNDS):
+            _r7_publish(export, _r7_export_body(dirty=True))
+            assert br.scrub_export(repo_root) == _R7_RECORDS
+    finally:
+        (tmp_path / "stop").write_text("", encoding="utf-8")
+
+    for proc, _ready in readers:
+        stdout, stderr = proc.communicate(timeout=_R7_TIMEOUT_S)
+        assert proc.returncode == 0, stderr
+        worst, reads = (int(part) for part in stdout.split())
+        assert reads > 0, "a reader that never read cannot have observed anything"
+        assert worst == _R7_RECORDS, (
+            f"a reader saw {worst} of {_R7_RECORDS} records: the shared export was "
+            f"observable half-written"
+        )
+
+    # ...and the store is readable afterwards, in the state the last write left it.
+    records = br.export_records(repo_root)
+    assert len(records) == _R7_RECORDS
+    assert "/home/someone" not in json.dumps(records)
+
+
+def test_r7_a_dispatch_lost_to_the_store_is_retryable_not_terminal(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """R7: a storage-contention failure must reach the caller marked retryable.
+
+    br marks its own ``DATABASE_ERROR`` ``retryable: false``, and the supervisor
+    believed it: the failure was charged to the lane's dispatch rework budget, so
+    ``basicly-tcmy.11`` reached the cap and was parked without an agent ever starting.
+    Nothing about the lane had failed — nothing had run.
+
+    Asserted at the routing boundary rather than on the flag, because the flag is only
+    worth having if it changes which counter is charged.
+    """
+    charged: list[str] = []
+    monkeypatch.setattr(
+        supervise.policy,
+        "record_rework",
+        lambda _repo, _issue, gate: (charged.append(gate), 1)[1],
+    )
+    monkeypatch.setattr(
+        supervise.policy, "load_policy", lambda _repo: SimpleNamespace(max_rework=3)
+    )
+    outcome = supervise.LaneOutcome(
+        issue_id="basicly-tcmy.11",
+        runner_name="claude",
+        result=None,
+        needs_fact=None,
+        occupancy=None,
+        overrun=False,
+        followup_id=None,
+        detail="lane dispatch failed: br comments list failed: " + _R7_STORAGE_ERROR,
+        transient=True,
+    )
+
+    routed = supervise._route_failed(tmp_path, outcome.issue_id, outcome)
+
+    assert routed.route == "retry"
+    assert charged == [supervise.TRACKER_GATE], (
+        "the lane's dispatch budget must not pay for the store's contention"
+    )
+
+
+def test_r7_a_lane_failure_that_is_not_the_store_still_costs_a_dispatch_attempt(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The mirror case, so the new counter cannot become an escape from the old one.
+
+    A lane whose agent genuinely failed must still spend its bounded dispatch
+    attempts — otherwise the retryable classification is a way to loop forever.
+    """
+    charged: list[str] = []
+    monkeypatch.setattr(
+        supervise.policy,
+        "record_rework",
+        lambda _repo, _issue, gate: (charged.append(gate), 1)[1],
+    )
+    monkeypatch.setattr(
+        supervise.policy, "load_policy", lambda _repo: SimpleNamespace(max_rework=3)
+    )
+    outcome = supervise.LaneOutcome(
+        issue_id="basicly-x",
+        runner_name="claude",
+        result=None,
+        needs_fact=None,
+        occupancy=None,
+        overrun=False,
+        followup_id=None,
+        detail="runner exited 3",
+    )
+
+    assert supervise._route_failed(tmp_path, "basicly-x", outcome).route == "retry"
+    assert charged == [supervise.DISPATCH_GATE]
 
 
 # --- The register must stay complete -----------------------------------------

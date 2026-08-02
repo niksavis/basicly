@@ -62,6 +62,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import (
+    br,
     decisions,
     decompose,
     loop,
@@ -1513,6 +1514,15 @@ class LaneOutcome:
     # deterministic refusal cannot be fixed by re-running it, so it must route to
     # the queue rather than burn the bounded dispatch retries.
     refused: bool = False
+    # True when the dispatch died on a *transient* failure of the tracker's storage
+    # layer rather than on anything about this lane (basicly-vkh0.10). Nothing
+    # spawned and the lane's tree is untouched, so charging it a dispatch rework
+    # attempt is charging the lane for the store's contention: on the 2026-08-02
+    # five-lane pass that is exactly what parked `basicly-tcmy.11`, which reached the
+    # rework cap without an agent ever starting. Distinct from `refused`, which is
+    # deterministic and cannot be fixed by re-running, and from a plain failure,
+    # which is about the work.
+    transient: bool = False
     # Which model actually did the work, and whether that is the one asked for
     # (basicly-e5a6). "via claude" names the *adapter*, which says nothing about the
     # tier — and tier resolution is the whole point of the models map, so a run that
@@ -1915,6 +1925,10 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
                 overrun=False,
                 followup_id=None,
                 detail=f"lane dispatch failed: {exc}",
+                # Classified here rather than at the routing layer because this is
+                # the only frame that knows nothing ran: a nonzero *runner* exit
+                # quoting the same text is about the agent's work, not the store.
+                transient=br.is_transient_storage_error(str(exc)),
             )
 
     pool = ThreadPoolExecutor(max_workers=max(1, cap))
@@ -2281,6 +2295,13 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
 # Rework gate name for failed dispatches: bounded like merge/verify rework, so
 # a crash-looping runner escalates to the queue instead of retrying forever.
 DISPATCH_GATE = "dispatch"
+# A separate counter for the dispatches lost to the *store* rather than to the work
+# (basicly-vkh0.10). It has to be separate, not merely smaller: a lane that spends its
+# dispatch budget on tracker contention arrives at the escalation with nothing to
+# triage, which is how a five-lane pass parked a lane that had never run an agent. The
+# cap still exists, so termination is unchanged — a store that stays broken escalates
+# to a human on its own counter instead of silently retrying forever.
+TRACKER_GATE = "tracker-storage"
 
 
 # Routes that keep the standing loop iterating even without a landing: the
@@ -2876,7 +2897,24 @@ def _bounce_lane(
 
 
 def _route_failed(repo_root: Path, issue_id: str, outcome: LaneOutcome) -> RoutedOutcome:
-    """A failed dispatch retries under the bounded rework cap, then escalates."""
+    """A failed dispatch retries under the bounded rework cap, then escalates.
+
+    A dispatch the *tracker's storage* lost is charged to its own counter instead
+    (R7, basicly-vkh0.10). Nothing spawned and the lane's tree is untouched, so the
+    dispatch budget — which exists to bound how many times an agent may be re-run at
+    a problem — has no claim on it. Spending it here is what parked a lane that
+    never started an agent on the 2026-08-02 five-lane pass, while br reported the
+    contention as ``retryable: false`` and the supervisor believed it.
+    """
+    if outcome.transient:
+        return _capped_dispatch(
+            repo_root,
+            issue_id,
+            route="retry",
+            detail=outcome.detail,
+            question="the tracker's storage kept failing this dispatch: retry or park?",
+            gate=TRACKER_GATE,
+        )
     return _capped_dispatch(
         repo_root,
         issue_id,
@@ -2886,21 +2924,32 @@ def _route_failed(repo_root: Path, issue_id: str, outcome: LaneOutcome) -> Route
     )
 
 
-def _capped_dispatch(
-    repo_root: Path, issue_id: str, *, route: str, detail: str, question: str
+def _capped_dispatch(  # noqa: PLR0913 — route, detail and question vary independently
+    repo_root: Path,
+    issue_id: str,
+    *,
+    route: str,
+    detail: str,
+    question: str,
+    gate: str = DISPATCH_GATE,
 ) -> RoutedOutcome:
-    """Owe *issue_id* another dispatch, bounded by the dispatch rework cap.
+    """Owe *issue_id* another dispatch, bounded by *gate*'s rework cap.
 
     One counter for every reason a lane needs re-running (a failed run, a
     pre-empted landing): the cap has to bound the *dispatches* a lane can spend,
     so splitting it per reason would let a lane alternate between them and never
     reach an escalation. At the cap the queue item holds the lane for a human.
+
+    *gate* is the single exception, and it is not a reason the lane needs re-running
+    at all: :data:`TRACKER_GATE` counts dispatches the store lost before the lane
+    ran. Alternating between the two cannot postpone an escalation, because a lane
+    only reaches the tracker counter by not having been dispatched.
     """
     config = policy.load_policy(repo_root)
-    attempts = policy.record_rework(repo_root, issue_id, DISPATCH_GATE)
+    attempts = policy.record_rework(repo_root, issue_id, gate)
     if attempts < config.max_rework:
         return RoutedOutcome(
-            issue_id, route, f"{detail} (dispatch rework {attempts}/{config.max_rework})"
+            issue_id, route, f"{detail} ({gate} rework {attempts}/{config.max_rework})"
         )
     item = decisions.enqueue(repo_root, issue_id, "escalation", question, detail)
     return RoutedOutcome(issue_id, "decision", f"{detail}; escalated as {item.decision_id}")
