@@ -6,8 +6,8 @@ not rely on other agent config files being present.
 
 ## Require Explicit Confirmation
 
-- Force-push, history rewrite, destructive resets, `rm -rf`, and `.env*` reads/writes — hard-denied in `.claude/settings.json` for Claude Code; this rule covers other agents, so treat a blocked command as the answer.
-- A destructive reset includes `git checkout -- <path>`, `git restore`, `git stash` and `git clean`: each discards uncommitted work irreversibly, and no hook catches it. To undo your own edit to a file, restore it from a copy you made first.
+- Force-push, history rewrite, destructive resets, `rm -rf`, and `.env*` reads/writes. The projected deny-list covers only some of these and varies by agent: it is a backstop, not the source of the rule, so a command that runs unblocked still needs confirmation.
+- A destructive reset includes `git checkout -- <path>`, `git restore`, `git stash` and `git clean`: each discards uncommitted work irreversibly, and nothing blocks most of them. To undo your own edit to a file, restore it from a copy you made first.
 - Deleting files/branches/data beyond explicit task scope.
 - Editing CI/CD, deployment, infra-as-code, or ignore/secrets files.
 - Adding/removing/upgrading dependencies.
