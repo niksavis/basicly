@@ -117,6 +117,35 @@ def _repo_root() -> Path:
     return Path.cwd()
 
 
+def _dispatch(
+    args: argparse.Namespace,
+    dest: str,
+    handlers: dict[str, Callable[[argparse.Namespace], int]],
+    *,
+    group: str = "",
+) -> int:
+    """Route ``args`` to the handler for the subcommand it selected, loudly on a miss.
+
+    Every subparser in this CLI is ``required=True``, so a name that reaches here is
+    one the parser already accepted — meaning a miss is always a registered command
+    with no handler, never user error. Returning 0 on a miss made that command print
+    nothing and succeed, which is indistinguishable from a command that ran
+    (basicly-tcmy.4). Each command group used to spell its own dispatch, so the fix
+    landed on one of seven sites; the guard lives here so a group cannot inherit the
+    defect by copying its neighbour (basicly-8ry8).
+    """
+    handler = handlers.get(getattr(args, dest))
+    if handler is None:
+        name = f"{group} {getattr(args, dest)}".strip()
+        print(
+            f"internal error: subcommand {name!r} is registered on the parser "
+            "but has no handler — this is a bug in basicly, not in your invocation",
+            file=sys.stderr,
+        )
+        return 2
+    return handler(args)
+
+
 def _format_path(path: Path, repo_root: Path) -> str:
     try:
         return path.relative_to(repo_root).as_posix()
@@ -1749,14 +1778,8 @@ def _cmd_usage_forecast(_args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_usage(args: argparse.Namespace) -> int:
-    """Dispatch the usage telemetry subcommands."""
-    if args.usage_command == "tracker":
-        return _cmd_usage_tracker(args)
-    if args.usage_command == "forecast":
-        return _cmd_usage_forecast(args)
-    if args.usage_command != "report":
-        return 0
+def _cmd_usage_report(_args: argparse.Namespace) -> int:
+    """Report which tools and skills the recorded usage shows were actually used."""
     repo_root = _repo_root()
     slugs = [skill.slug for skill in discover_skills(repo_root)]
     report = usage.build_report(repo_root, slugs)
@@ -1789,6 +1812,16 @@ def cmd_usage(args: argparse.Namespace) -> int:
     else:
         ui.say("Every catalog skill has recorded usage.", style="ok")
     return 0
+
+
+def cmd_usage(args: argparse.Namespace) -> int:
+    """Dispatch the usage telemetry subcommands (report / tracker / forecast)."""
+    handlers = {
+        "report": _cmd_usage_report,
+        "tracker": _cmd_usage_tracker,
+        "forecast": _cmd_usage_forecast,
+    }
+    return _dispatch(args, "usage_command", handlers, group="usage")
 
 
 def cmd_skills_list(_args: argparse.Namespace) -> int:
@@ -2186,9 +2219,7 @@ def _cmd_rubric_eval(args: argparse.Namespace) -> int:
 
 def cmd_rubric(args: argparse.Namespace) -> int:
     """Dispatch the ``rubric`` subcommands (eval)."""
-    handlers = {"eval": _cmd_rubric_eval}
-    handler = handlers.get(args.rubric_command)
-    return handler(args) if handler else 0
+    return _dispatch(args, "rubric_command", {"eval": _cmd_rubric_eval}, group="rubric")
 
 
 def cmd_release(args: argparse.Namespace) -> int:
@@ -2236,8 +2267,7 @@ def cmd_catalog(args: argparse.Namespace) -> int:
         "new": _cmd_catalog_new,
         "list": _cmd_catalog_list,
     }
-    handler = handlers.get(args.catalog_command)
-    return handler(args) if handler else 0
+    return _dispatch(args, "catalog_command", handlers, group="catalog")
 
 
 def _cmd_catalog_new(args: argparse.Namespace) -> int:
@@ -2269,8 +2299,7 @@ def cmd_policy(args: argparse.Namespace) -> int:
         "grant": _cmd_policy_grant,
         "rework": _cmd_policy_rework,
     }
-    handler = handlers.get(args.policy_command)
-    return handler(args) if handler else 0
+    return _dispatch(args, "policy_command", handlers, group="policy")
 
 
 def _cmd_policy_dor(args: argparse.Namespace) -> int:
@@ -2787,8 +2816,7 @@ def cmd_loop(args: argparse.Namespace) -> int:
         "decide": _cmd_loop_decide,
         "watch": _cmd_loop_watch,
     }
-    handler = handlers.get(args.loop_command)
-    return handler(args) if handler else 0
+    return _dispatch(args, "loop_command", handlers, group="loop")
 
 
 def _loop_inputs(args: argparse.Namespace) -> loop.Inputs:
@@ -3457,8 +3485,7 @@ def cmd_runner(args: argparse.Namespace) -> int:
         "dry-run": _cmd_runner_dry_run,
         "run": _cmd_runner_run,
     }
-    handler = handlers.get(args.runner_command)
-    return handler(args) if handler else 0
+    return _dispatch(args, "runner_command", handlers, group="runner")
 
 
 def _resolve_runner(args: argparse.Namespace) -> runner.RunnerSpec:
@@ -3560,8 +3587,7 @@ def cmd_worktree(args: argparse.Namespace) -> int:
         "merge": _cmd_worktree_merge,
         "merge-queue": _cmd_worktree_merge_queue,
     }
-    handler = handlers.get(args.worktree_command)
-    return handler(args) if handler else 0
+    return _dispatch(args, "worktree_command", handlers, group="worktree")
 
 
 def _cmd_worktree_merge(args: argparse.Namespace) -> int:
@@ -4462,23 +4488,11 @@ def main(argv: list[str] | None = None) -> int:
     _line_buffer_stdout()
     args = _build_parser().parse_args(argv)
 
-    # Unreachable while the two registries agree, and the point is that it must
-    # stay that way loudly. The top-level subparser is `required=True`, so every
-    # name that gets here is one the parser accepted — meaning a miss is always a
-    # registered command with no handler, never user error. Returning 0 here made
-    # that command print nothing and succeed, which is indistinguishable from a
-    # command that ran (basicly-tcmy.4).
-    handler = _handlers().get(args.command)
-    if handler is None:
-        print(
-            f"internal error: subcommand {args.command!r} is registered on the parser "
-            "but has no handler — this is a bug in basicly, not in your invocation",
-            file=sys.stderr,
-        )
-        return 2
-
     try:
-        return handler(args)
+        # `_dispatch` carries the guard for every group as well as this one, so a
+        # registered-but-unhandled subcommand is loud wherever it sits in the tree
+        # (basicly-tcmy.4, basicly-8ry8).
+        return _dispatch(args, "command", _handlers())
     except ValidationError as exc:
         print(f"Validation error: {exc}", file=sys.stderr)
         return 1

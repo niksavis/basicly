@@ -1603,14 +1603,67 @@ def test_the_ceremony_reprint_omits_overrides_that_were_not_given() -> None:
     assert cli._ceremony_rerun(args, "abc123") == "basicly loop run i --confirm abc123"
 
 
-# --- Parser and handler registries agree (basicly-tcmy.4) -------------------
+# --- Parser and handler registries agree (basicly-tcmy.4, basicly-8ry8) -----
 
 
 def _subcommand_choices(parser: argparse.ArgumentParser) -> argparse._SubParsersAction:
-    """The parser's top-level subcommand action, for reading or extending its choices."""
+    """The subcommand action of *any* parser in the tree, for reading or extending it.
+
+    argparse allows `add_subparsers` once per parser, so "exactly one" holds at every
+    level — the assertion is a shape check, not a top-level-only restriction.
+    """
     actions = [a for a in parser._actions if isinstance(a, argparse._SubParsersAction)]
-    assert len(actions) == 1, "expected exactly one top-level subparser action"
+    assert len(actions) == 1, "expected exactly one subparser action on this parser"
     return actions[0]
+
+
+def _dispatch_sites(
+    parser: argparse.ArgumentParser, prefix: tuple[str, ...] = ()
+) -> list[tuple[str, ...]]:
+    """Every argv prefix in the parser tree that selects a subcommand, root first.
+
+    Derived, never hand-listed: the original audit of this defect counted six sites
+    when there were seven, and the miss (`usage`) was the group added last. A group
+    added tomorrow shows up here without anyone editing this file (basicly-8ry8).
+    """
+    sites = []
+    for action in parser._actions:
+        if not isinstance(action, argparse._SubParsersAction):
+            continue
+        sites.append(prefix)
+        for name, sub in action.choices.items():
+            sites.extend(_dispatch_sites(sub, (*prefix, name)))
+    return sites
+
+
+def _parser_at(parser: argparse.ArgumentParser, prefix: tuple[str, ...]) -> argparse.ArgumentParser:
+    """Walk `prefix` down the parser tree and return the parser it names."""
+    for name in prefix:
+        parser = _subcommand_choices(parser).choices[name]
+    return parser
+
+
+DISPATCH_SITES = _dispatch_sites(cli._build_parser())
+
+
+def test_the_dispatch_site_list_reaches_nested_groups() -> None:
+    """The positive control for the derivation, without which the sweep proves nothing.
+
+    A `_dispatch_sites` that failed to recurse would return `[()]`, the sweep below
+    would run one green case, and the nested groups would be as unguarded as they were
+    before — which is exactly how the previous version of this test missed them. So
+    check the recursion against an independent one-level expression of the same fact.
+    """
+    parser = cli._build_parser()
+    nested = {
+        (name,)
+        for name, sub in _subcommand_choices(parser).choices.items()
+        if any(isinstance(a, argparse._SubParsersAction) for a in sub._actions)
+    }
+
+    assert nested, "expected the CLI to have at least one command group with subcommands"
+    assert () in DISPATCH_SITES
+    assert nested <= set(DISPATCH_SITES)
 
 
 def test_every_registered_subcommand_has_a_handler() -> None:
@@ -1625,26 +1678,38 @@ def test_every_registered_subcommand_has_a_handler() -> None:
     assert choices == set(cli._handlers())
 
 
+@pytest.mark.parametrize(
+    "site", DISPATCH_SITES, ids=[" ".join(s) or "<top level>" for s in DISPATCH_SITES]
+)
 def test_a_registered_subcommand_with_no_handler_fails_loudly(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    site: tuple[str, ...],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The defect: an unhandled command printed nothing and exited 0.
+    """The defect: an unhandled subcommand printed nothing and exited 0, at every site.
 
-    A command that succeeds silently is indistinguishable from one that worked, so
-    the mistake survives its own smoke test and reaches a consumer. The parser's
-    top-level subcommand is `required=True`, so a miss here is never user error —
-    it is always a registered name nobody wired up.
+    A command that succeeds silently is indistinguishable from one that worked, so the
+    mistake survives its own smoke test and reaches a consumer. Every subparser is
+    `required=True`, so a miss is never user error — it is always a registered name
+    nobody wired up. Asserting the whole message pins the group sites to the wording
+    the top-level site uses, since `<top level>` is one of the parametrised cases.
     """
     build_parser = cli._build_parser
 
     def parser_with_an_orphan() -> argparse.ArgumentParser:
         parser = build_parser()
-        _subcommand_choices(parser).add_parser("orphan", help="registered but unhandled")
+        group = _parser_at(parser, site)
+        _subcommand_choices(group).add_parser("orphan", help="registered but unhandled")
         return parser
 
     monkeypatch.setattr(cli, "_build_parser", parser_with_an_orphan)
 
-    code = cli.main(["orphan"])
+    code = cli.main([*site, "orphan"])
 
+    out, err = capsys.readouterr()
     assert code != 0
-    assert "orphan" in capsys.readouterr().err
+    assert err.strip() == (
+        f"internal error: subcommand {' '.join((*site, 'orphan'))!r} is registered on "
+        "the parser but has no handler — this is a bug in basicly, not in your invocation"
+    )
+    assert out == ""
