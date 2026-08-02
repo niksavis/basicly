@@ -364,10 +364,35 @@ def _r7_export_body(dirty: bool) -> str:
 
 
 def _r7_publish(export: Path, body: str) -> None:
-    """Put *body* in place atomically, so only the code under test can tear a read."""
+    """Put *body* in place atomically, so only the code under test can tear a read.
+
+    The rename waits a reader out for the same reason ``br._publish`` does, and this
+    is the platform difference that makes it necessary rather than tidy: CPython
+    opens a file for reading without ``FILE_SHARE_DELETE``, so renaming over a file
+    another process is mid-read raises ``ERROR_SHARING_VIOLATION`` on Windows while
+    succeeding silently on POSIX. This test keeps four readers deliberately mid-read,
+    so on Windows the *fixture* is nearly always the one refused — it failed there
+    with ``WinError 5`` while passing on both other runners.
+
+    Retrying **here** does not soften anything the test asserts. The claim is about
+    what a reader can observe, and the reader path still has no retry: this is setup
+    putting a known-good file in place before the race, and it raises rather than
+    returning False because a fixture that could not publish must fail loudly instead
+    of quietly testing a stale body.
+    """
     tmp = export.with_suffix(".fixture.tmp")
     tmp.write_text(body, encoding="utf-8")
-    tmp.replace(export)
+    deadline = time.monotonic() + _R7_TIMEOUT_S
+    delay = 0.005
+    while True:
+        try:
+            tmp.replace(export)
+        except OSError:
+            assert time.monotonic() < deadline, "the fixture could not publish the export"
+            time.sleep(delay)
+            delay = min(delay * 2, 0.1)
+        else:
+            return
 
 
 def _await(condition, what: str) -> None:
@@ -395,9 +420,11 @@ def test_r7_concurrent_readers_never_observe_a_torn_write_of_the_shared_export(
     raising — so a reader caught in that window got a *partial issue set with no error
     at all*. A silent wrong answer is worse than the DATABASE_ERROR it mirrors.
 
-    No retry loop anywhere in this test, which is the point of the third criterion:
+    No retry loop in the **reader** path, which is the point of the third criterion:
     ``export_records`` does not retry, so a passing run means the write was atomic and
-    not that a reader got a second chance.
+    not that a reader got a second chance. The fixture's own publish does wait a reader
+    out, for a Windows-only reason ``_r7_publish`` records; that is setup, not the
+    assertion.
     """
     repo_root = tmp_path / "repo"
     export = repo_root / ".beads" / "issues.jsonl"
