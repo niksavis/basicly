@@ -129,7 +129,7 @@ uv run basicly permissions-check
 
 ## Copilot-specific notes
 
-- Author skills and rules under `.basicly/core/` (or the `.basicly-local/` overlay); `.claude/skills/` and `.claude/rules/*.md` are projected output — no `.github/instructions/` twins (double-load).
+- Author skills and rules at `.basicly/core/` (or `.basicly-local/`); `.claude/skills/` and `.claude/rules/*.md` are projected output; no `.github/instructions/` twins (double-load).
 - Prefer skills over prompt files — VS Code is migrating `*.prompt.md` to skills.
 - Put custom agents in `.github/agents/*.agent.md`.
 
