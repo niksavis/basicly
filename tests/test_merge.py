@@ -19,7 +19,16 @@ class _Proc:
 
 
 class _FakeGit:
-    """Routes git(...) calls by subcommand to canned results, recording them."""
+    """Routes git(...) calls to canned results, recording them.
+
+    Keys are matched most-specific first: the whole argument list joined by spaces,
+    then the subcommand alone. Two calls to one subcommand asking different
+    questions are therefore separable, which the landing needs — ``rev-list --count
+    main..harness/feat`` ("is the branch ahead of base?") and ``rev-list --count
+    abc123..harness/feat`` ("did the branch ever receive a commit?") have different
+    answers, and a stub that gives both the same one cannot tell a lane that landed
+    from a lane that did nothing (basicly-tcmy.29).
+    """
 
     def __init__(self, responses: dict[str, _Proc]) -> None:
         self.responses = responses
@@ -27,7 +36,10 @@ class _FakeGit:
 
     def __call__(self, args, **_kwargs):
         self.calls.append(args)
-        return self.responses.get(args[0], _Proc(0))
+        for key in (" ".join(args), args[0]):
+            if key in self.responses:
+                return self.responses[key]
+        return _Proc(0)
 
     def ran(self, subcommand: str) -> bool:
         return any(call[0] == subcommand for call in self.calls)
@@ -42,6 +54,11 @@ def _session() -> Session:
         worktree_path="/tmp/repo.worktrees/feat",
         created_at="2026-07-14T00:00:00Z",
     )
+
+
+# The landing's "did this branch ever receive a commit?" probe, keyed on the session
+# above: commits on harness/feat since the commit it was cut from.
+_OWN_COMMITS = "rev-list --count abc123..harness/feat"
 
 
 @pytest.fixture
@@ -379,6 +396,7 @@ def test_a_branch_already_merged_with_no_gate_is_recognised_not_called_empty(
         "status": _Proc(0, ""),
         "rev-list": _Proc(0, "0"),
         "merge-base": _Proc(0),  # the branch *is* an ancestor of base: it merged
+        _OWN_COMMITS: _Proc(0, "3"),  # and it did work: three commits since it was cut
     })
     monkeypatch.setattr(merge, "git", fake)
 
@@ -411,6 +429,7 @@ def test_a_half_landed_branch_is_not_refused_as_stale(
             "rev-list": _Proc(0, "0"),
             "merge-base": _Proc(0),
             "rev-parse": _Proc(0, "movedsincequeued"),
+            _OWN_COMMITS: _Proc(0, "3"),
         }),
     )
 
@@ -419,6 +438,62 @@ def test_a_half_landed_branch_is_not_refused_as_stale(
     )
 
     assert result.status == merge.ALREADY_LANDED
+
+
+@pytest.mark.usefixtures("base_ready")
+def test_a_branch_that_never_received_a_commit_does_not_land_as_already_landed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The defect: a lane that did no work shipped, because empty branches are ancestors.
+
+    A worktree nobody committed to still points at the commit it was cut from, so it
+    is an ancestor of base exactly like a lane that merged and then crashed before
+    its gate was recorded. Reading ancestry alone let the landing report ``[merged]``,
+    record a passing verify gate against a tree identical to base, approve ship and
+    close the bead with an empty diff (basicly-tcmy.29). The commit count since the
+    branch was cut is what separates the two.
+    """
+    fake = _FakeGit({
+        "status": _Proc(0, ""),
+        "rev-list": _Proc(0, "0"),
+        "merge-base": _Proc(0),  # an ancestor of base — but only because it never moved
+        _OWN_COMMITS: _Proc(0, "0"),
+    })
+    monkeypatch.setattr(merge, "git", fake)
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-onb.5")
+
+    assert result.status == "not-ready"
+    assert "no committed work" in result.detail
+    # Nothing is claimed and nothing is touched: no gate to record, no base to mutate.
+    assert result.merged is False
+    assert not fake.ran("rebase")
+    assert not fake.ran("merge")
+
+
+@pytest.mark.usefixtures("base_ready")
+def test_an_unreadable_creation_commit_blocks_rather_than_claiming_a_landing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Unprovable is not the same as landed, and the asymmetry is deliberate.
+
+    A spurious block costs one command; an empty landing is unrecoverable once the
+    bead has closed, because gate records and checkpoints are append-only and there
+    is no un-ship. So a creation commit git cannot resolve fails closed.
+    """
+    fake = _FakeGit({
+        "status": _Proc(0, ""),
+        "rev-list": _Proc(0, "0"),
+        "merge-base": _Proc(0),
+        _OWN_COMMITS: _Proc(128, ""),  # unknown revision: the branch point is gone
+    })
+    monkeypatch.setattr(merge, "git", fake)
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-onb.5")
+
+    assert result.status == "not-ready"
+    assert "abc123" in result.detail
+    assert not fake.ran("rebase")
 
 
 def test_the_queue_finishes_a_half_landed_lane_without_charging_it(

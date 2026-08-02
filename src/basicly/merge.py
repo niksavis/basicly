@@ -99,6 +99,9 @@ MERGE_UNPROVEN = "merge-unproven"
 # writing down, not a failure: `rev-list base..branch == 0` used to read it as "no
 # committed work to land", which both misled the operator and charged a supervised
 # lane a rework attempt for a landing that worked. The landing resumes at the gate.
+# Ancestry alone does not earn this status: a branch nobody committed to is an
+# ancestor of base too, and reading that as a landing shipped a bead with an empty
+# diff (basicly-tcmy.29). The branch must also have grown a commit since it was cut.
 ALREADY_LANDED = "already-landed"
 
 
@@ -257,10 +260,34 @@ def _assert_base_ready(repo_root: Path, base: str) -> None:
         raise SystemExit(f"base checkout has uncommitted changes; commit or stash first:\n{dirty}")
 
 
-def _worktree_land_readiness(
-    name: str, worktree_path: Path, repo_root: Path, base: str, branch: str
-) -> MergeResult | None:
-    """The landing outcome *branch*'s current state forces, or None when it may land.
+def _branch_has_own_commits(repo_root: Path, session: Session) -> bool | None:
+    """Whether *session*'s branch grew a commit since it was cut, or None when unprovable.
+
+    The session record keeps the commit the branch was branched from
+    (``base_head``), which is the only thing that separates a lane that did work
+    from one that did none — ancestry cannot, because both are ancestors of base
+    (basicly-tcmy.29). A branch that has never been committed to still points at
+    its creation commit; one that landed and lost only its gate record does not.
+
+    ``None`` means the question could not be answered — no recorded creation
+    commit, or git could not resolve it (a worktree provisioned before the field
+    existed, a rewritten base). The caller fails closed on it.
+    """
+    if not session.base_head:
+        return None
+    proc = git(
+        ["rev-list", "--count", f"{session.base_head}..{session.branch}"],
+        cwd=repo_root,
+        check=False,
+    )
+    count = proc.stdout.strip()
+    if proc.returncode != 0 or not count.isdigit():
+        return None
+    return count != "0"
+
+
+def _worktree_land_readiness(repo_root: Path, session: Session) -> MergeResult | None:
+    """The landing outcome the lane's current state forces, or None when it may land.
 
     Landing rebases the branch, so the agent's work must be committed on it. A
     tree with uncommitted tracked changes makes ``git rebase`` abort with
@@ -269,15 +296,23 @@ def _worktree_land_readiness(
     rework attempt (basicly-4psl). Untracked files are ignored: ``git rebase`` does
     not abort on them.
 
-    A branch with no commits ahead of base is two different situations, and reading
-    them as one is what made a successful landing look like a failed one
-    (basicly-jr0l.50). If the branch is already an ancestor of base, the merge
-    happened and only the gate record is missing — a crash between the two leaves
-    exactly this state, so the landing forward-recovers (``ALREADY_LANDED``) instead
-    of reporting "no committed work to land" and charging the lane for it. If it is
-    not an ancestor, there genuinely is nothing to merge.
+    A branch with no commits ahead of base is *three* different situations, and
+    ancestry alone only separates one of them. If the branch is not an ancestor,
+    there is genuinely nothing to merge. If it is, the merge may have happened with
+    only the gate record missing — a crash between the two leaves exactly that
+    state, so the landing forward-recovers (``ALREADY_LANDED``) instead of reporting
+    "no committed work to land" and charging the lane for it (basicly-jr0l.50).
+
+    But a branch nobody ever committed to is an ancestor of base too, trivially, so
+    that recovery swallowed it: a lane that did no work reported ``[merged]``,
+    recorded a passing verify gate against a tree identical to base, and shipped and
+    closed its bead with an empty diff (basicly-tcmy.29). :func:`_branch_has_own_commits`
+    is what tells the two apart, and an unanswerable "did this branch ever receive a
+    commit" blocks rather than recovering — a spurious block costs one command,
+    while an empty landing is unrecoverable once the bead has closed.
     """
-    dirty = git(["status", "--porcelain", "--untracked-files=no"], cwd=worktree_path).stdout.strip()
+    name, base, branch = session.name, session.base, session.branch
+    dirty = git(["status", "--porcelain", "--untracked-files=no"], cwd=session.path).stdout.strip()
     if dirty:
         return MergeResult(
             name,
@@ -289,12 +324,23 @@ def _worktree_land_readiness(
     if ahead != "0":
         return None
     if is_ancestor(repo_root, branch, base):
-        return MergeResult(
-            name,
-            ALREADY_LANDED,
-            f"{branch} is already an ancestor of {base}: the merge landed and only the "
-            "gate record is missing, so the landing resumes at the gate",
-        )
+        has_own = _branch_has_own_commits(repo_root, session)
+        if has_own is None:
+            return MergeResult(
+                name,
+                "not-ready",
+                f"cannot prove {branch} ever received a commit: its recorded creation "
+                f"commit {session.base_head or '(unrecorded)'} is unreadable, so the "
+                "landing blocks instead of recording a gate for work that may not "
+                "exist (commit the build's changes on the branch, or re-provision)",
+            )
+        if has_own:
+            return MergeResult(
+                name,
+                ALREADY_LANDED,
+                f"{branch} is already an ancestor of {base}: the merge landed and only the "
+                "gate record is missing, so the landing resumes at the gate",
+            )
     return MergeResult(
         name,
         "not-ready",
@@ -428,7 +474,7 @@ def _pre_merge_state(
     one (``ALREADY_LANDED``) is a landing that already succeeded and only needs its
     gate written down.
     """
-    name, base, branch, worktree_path = session.name, session.base, session.branch, session.path
+    name, branch = session.name, session.branch
     # The agent's work must be committed on the branch before landing rebases it. A
     # dirty tree or an empty branch is not a conflict or a verification failure, and
     # bailing before base is mutated avoids leaving a redundant tracker commit
@@ -436,7 +482,7 @@ def _pre_merge_state(
     # stay ahead of the staleness check below: a branch that already merged has
     # necessarily "moved" relative to whatever head the queue recorded, and refusing
     # it as stale would re-strand the very state this recovers (basicly-jr0l.50).
-    forced = _worktree_land_readiness(name, worktree_path, repo_root, base, branch)
+    forced = _worktree_land_readiness(repo_root, session)
     if forced is not None:
         return forced
 
