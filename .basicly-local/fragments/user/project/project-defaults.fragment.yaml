@@ -12,4 +12,3 @@ status: active
 body: |
   - Platforms: Windows, Linux, macOS.
   - Script harness and CI helpers: `.scripts/`.
-  - Shared skills: `.claude/skills/`.
