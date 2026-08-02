@@ -38,7 +38,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import br, loop_state, policy, runner
+from . import br, policy, runner
 from .br import run_br as _run_br
 from .config import (
     PolicyConfig,
@@ -270,7 +270,7 @@ def pending(repo_root: Path, root_issue: str) -> tuple[DecisionItem, ...]:
     """
     closed = closed_ids(repo_root)
     items: list[DecisionItem] = []
-    for issue_id in loop_state.session_issue_ids(repo_root, root_issue):
+    for issue_id in policy.session_issue_ids(repo_root, root_issue):
         if issue_id in closed:
             continue
         items += [i for i in _items_on(repo_root, issue_id).values() if i.pending]
@@ -583,7 +583,7 @@ def parse_verdict(stdout: str) -> DeciderVerdict:
 def decider_answers_count(repo_root: Path, root_issue: str) -> int:
     """Delegated answers recorded so far this session (the runaway-loop meter)."""
     count = 0
-    for issue_id in loop_state.session_issue_ids(repo_root, root_issue):
+    for issue_id in policy.session_issue_ids(repo_root, root_issue):
         for item in _items_on(repo_root, issue_id).values():
             if item.answered_by and item.answered_by.startswith(DECIDER_BY_PREFIX):
                 count += 1

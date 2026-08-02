@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import decisions, loop_state, policy, run_record, runner
+from basicly import decisions, policy, run_record, runner
 from basicly.config import PolicyConfig, RunnerConfig
 
 
@@ -67,7 +67,6 @@ class _FakeBr:
 
 def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
     monkeypatch.setattr(decisions, "_run_br", fake)
-    monkeypatch.setattr(loop_state, "_run_br", fake)
     # invoke_decider consults D3's spend ceiling (basicly-kjc5.23), and policy
     # reads br through its own alias — each module's alias is the seam.
     monkeypatch.setattr(policy, "_run_br", fake)
@@ -150,6 +149,67 @@ def test_pending_scans_the_session_tree(monkeypatch: pytest.MonkeyPatch, tmp_pat
     items = decisions.pending(tmp_path, "epic")
 
     assert [i.decision_id for i in items] == [kept.decision_id]
+
+
+# --- The session is the track, not the descent (basicly-tcmy.28) ------------
+
+
+def _gating_track() -> _FakeBr:
+    """A root that gates work it did not parent — the basicly-jr0l.40 topology.
+
+    ``gated`` reaches the session only through the root's ``blocks`` dependency. A
+    bead's parent is its epic of origin and nothing is re-parented, so a release
+    root holds most of its track this way; on the live tracker it was 14 of the 69
+    beads under ``basicly-kjc5``.
+    """
+    return _FakeBr(
+        records={
+            "epic": {
+                "status": "open",
+                "dependents": [{"id": "epic.1", "dependency_type": "parent-child"}],
+                "dependencies": [{"id": "gated", "dependency_type": "blocks"}],
+            },
+            "epic.1": {"status": "open", "dependents": [], "dependencies": []},
+            "gated": {"status": "open", "dependents": [], "dependencies": []},
+        }
+    )
+
+
+def test_a_delegated_answer_on_a_gated_bead_counts_against_the_runaway_cap(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The meter guarding ``decider_max_decisions`` has to see the whole session.
+
+    This module read a parent-child-only walk while the grant it is metered against
+    read a wider one, so answers recorded on gated beads were free: the decider
+    could run past its cap by however many beads the two walks disagreed on
+    (basicly-tcmy.30). Undercounting is the dangerous direction — the cap exists to
+    stop a runaway loop, and a cap that cannot be reached is not a cap.
+    """
+    _install(monkeypatch, _gating_track())
+    _no_notify(monkeypatch)
+    item = decisions.enqueue(tmp_path, "gated", "needs-input", "which db?")
+    decisions.answer(
+        tmp_path, item.decision_id, "postgres", by=f"{decisions.DECIDER_BY_PREFIX}claude"
+    )
+
+    assert decisions.decider_answers_count(tmp_path, "epic") == 1
+
+
+def test_an_escalation_on_a_gated_bead_is_reported_as_pending(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A question a human must answer cannot be invisible because of the edge type.
+
+    ``pending`` feeds the ``blocked: N decision(s)`` line and ``has_pending`` holds
+    a lane, so an item the walk cannot reach is one nobody is told to answer and
+    nothing waits for — on a bead squarely inside the grant.
+    """
+    _install(monkeypatch, _gating_track())
+    _no_notify(monkeypatch)
+    item = decisions.enqueue(tmp_path, "gated", "escalation", "rework cap on verify")
+
+    assert [i.decision_id for i in decisions.pending(tmp_path, "epic")] == [item.decision_id]
 
 
 def _write_export(repo_root: Path, statuses: dict[str, str]) -> None:
