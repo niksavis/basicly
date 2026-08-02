@@ -8,11 +8,12 @@ instructions: |
 
   ## Scope
 
-  Owns driving one tracked unit of work through the whole development loop with the
-  `basicly loop` command group over the `br` (beads) tracker. The loop is
-  agent-agnostic: the same commands drive it under Claude, Codex, or Copilot — the
-  agent supplies the phase inputs (the work type, the child plan) and does the
-  coding in the worktree; the engine records state, gates, and advances.
+  Owns driving tracked work through the whole development loop with the `basicly
+  loop` command group over the `br` (beads) tracker — one unit at a time with
+  `loop run`, or many lanes at once with `loop preflight` + `loop supervise`. The
+  loop is agent-agnostic: the same commands drive it under Claude, Codex, or
+  Copilot — the agent supplies the phase inputs (the work type, the child plan) and
+  does the coding in the worktree; the engine records state, gates, and advances.
 
   It is **not** for the mechanics each phase delegates to — those have their own
   skills: `tool-br` (create/claim/close issues), `worktree-isolation` (isolate a
@@ -286,6 +287,66 @@ instructions: |
   Default is task-by-task (every checkpoint is a stop). One-shot mode collapses the
   middle (decompose) checkpoint for small, well-scoped work; the classify and ship
   checkpoints still hold.
+
+  ## Many lanes at once — `preflight` first, then `supervise`
+
+  `loop run` drives one bead. The factory's multi-lane path is a different pair of
+  commands over an epic, and it is what a parallel run actually uses:
+
+  ```sh
+  basicly loop preflight <epic>    # read-only: would a pass start, and what would it cost
+  basicly loop supervise <epic>    # provision worktrees, dispatch lanes, land via a serial merge queue
+  ```
+
+  **Always run `preflight` first.** It writes nothing and it answers, in one screen,
+  every question that otherwise costs a failed pass: whether the base checkout is
+  clean, how many worktrees are live, which runner and timeout apply, the active
+  grant and its remaining budget, the per-lane assumption for an unsizeable lane, the
+  forecast if every lane starts, the band table below, unpushed commits, and a final
+  `VERDICT`. Run it **from the base checkout**: `.basicly/usage/` is git-ignored, so a
+  worktree sees no run records and the forecast loses its measured prior.
+
+  Two `VERDICT` lines mean "fix this first, the pass will not start": `not ready -
+  base checkout is dirty`, and `not ready - a metered runner needs a grant with a
+  token budget` (a metered runner needs `basicly policy grant <epic> --level L2/L3
+  --token-budget N`).
+
+  ### The band table — four verdicts, one of which refuses
+
+  Every open child is sized and gets exactly one verdict (`supervise.py:_band_verdict`):
+
+  - `in band` — dispatches.
+  - `in band, but its scope matched no file` — dispatches, but the scope globs matched
+    nothing on disk. Either a broken path or a genuinely greenfield package; the
+    estimate is bare overhead either way, so check which before trusting it.
+  - `under the floor - dispatches, but merge it with a sibling` — dispatches, carrying
+    the band's advice that it is too small to be worth its own lane.
+  - `REFUSED - too large, split it` — **the only verdict that refuses.** Only the
+    ceiling blocks dispatch; the floor never does.
+
+  **A refusal is a property of the files, not of the change.** The estimate is
+  `decompose.scope_read_cost(repo_root, [globs])` over everything the scope matches, so
+  a one-line fix in a large module and a rewrite of it are indistinguishable. Never
+  argue from the band that a change is large. A `--runner manual` lane still
+  provisions the worktree and raises a `needs input: scope` escalation you release
+  with `basicly loop answer <decision-id> "<why>"` — answer it with the size of the
+  *change* you measured, and say that a manual handoff has no agent context window for
+  the ceiling to protect.
+
+  ### Reading a pass
+
+  - `lanes: 0 dispatchable now` counts *adopted* lanes. Before any worktree exists it
+    reads zero and that is not a blocker — the supervisor provisions from the ranked
+    open children at pass start.
+  - The epic's own `decompose` checkpoint must be approved or the pass ends
+    `seed-blocked` with no lanes, even when children already exist. A covering grant
+    does not serve this by itself: approve it once with `basicly policy checkpoint
+    <epic> decompose --approve --root <epic>`.
+  - Confirm a landing from the `[merged]` line, never the exit code — `loop run` and
+    `supervise` both exit non-zero at any checkpoint, which is not a failure.
+  - Every grant, checkpoint and answer writes a tracker marker, which dirties
+    `.beads/issues.jsonl` and makes the next landing refuse on a dirty base. Commit it
+    between steps.
 
   ## Resuming after a switch
 
