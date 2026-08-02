@@ -397,21 +397,36 @@ ENGINE_GATE_PROVIDERS = frozenset({VERIFY_GATE_PROVIDER, RUBRIC_GATE_PROVIDER})
 # ESTIMATOR — so it moves whenever the estimator does. The rule, so the next reader
 # can recompute rather than trust the number: size every headless dispatch this
 # engine has recorded by the current formula, take the largest estimate on one that
-# completed, and round up to the next multiple of WORKING_SET_MIN — one floor-unit of
-# headroom. Today that is basicly-tcmy.31 at 53_004, so 56_000.
+# completed, and round up to the nearest multiple of WORKING_SET_MIN. Today that is
+# basicly-fcls' own dispatch at 72_000, so 72_000.
 #
-# It has now been derived three times, and each move was a defect in the *measure*
-# surfacing rather than new evidence about how big a lane can be:
+# It has now been derived four times, and every move but the last was a defect in the
+# *measure* surfacing rather than new evidence about how big a lane can be:
 #
 # * 64_000 was chosen, never checked, and wrong 18 times out of 18 — eighteen
 #   recorded lanes exceeded it and every one completed (basicly-3w44).
 # * 112_000 came from the same rule applied to whole-file scope sizing, and only to
 #   the completed lanes whose records happened to carry a `scope_tokens` int.
-# * 56_000 is that rule applied to the read-capped measure (basicly-fcls), over both
-#   outcome populations sized the same way. It is LOWER than its predecessor because
+# * 56_000 was that rule applied to the read-capped measure (basicly-fcls), over both
+#   outcome populations sized the same way. It is LOWER than its predecessors because
 #   the estimator shrank, not because the engine got more timid: the same
 #   basicly-kjc5.42 dispatch that sized 136_668 as three whole files sizes 12_000 as
 #   the material a lane reads out of them.
+# * 72_000 is the same rule one dispatch later, and the dispatch is this bead's own:
+#   56_000 was derived from basicly-tcmy.31 at 53_004 while the lane deriving it was
+#   still running, and the record it wrote on finishing — 72_000, nine globs at the
+#   bug seed — immediately contradicted the constant it had just committed. The gate
+#   caught it, which is the gate working; basicly-z2wi is the same shape, where ten
+#   successful dispatches are what disabled the calibration. Anything derived from
+#   the dispatch record is only ever true as of the last dispatch.
+#
+# Two consequences, so neither is rediscovered. This rule is a RATCHET: it can only
+# ever be dragged up, by whichever lane declared the widest scope and finished. And
+# because the estimate is a function of the lane's own `## Scope`, a lane that widens
+# its scope mid-flight — as this one did, from three globs to nine — raises the
+# global ceiling for every future lane without anyone deciding to. That is tracked
+# separately (basicly-qorx); it is a property of deriving a shared constant from
+# per-bead self-declared data, not of this number.
 #
 # What the number is, precisely: a SEPARATING boundary — it must admit every size
 # observed to complete and refuse every size observed to die that no larger success
@@ -429,7 +444,7 @@ ENGINE_GATE_PROVIDERS = frozenset({VERIFY_GATE_PROVIDER, RUBRIC_GATE_PROVIDER})
 # now been artifacts of an optional field being filtered on; the third fix is
 # `RunRecord.context_tokens`, which measures the quantity instead of re-deriving it.
 DEFAULT_WORKING_SET_MIN = 8_000
-DEFAULT_WORKING_SET_MAX = 56_000
+DEFAULT_WORKING_SET_MAX = 72_000
 # Per-task-class multiplier on scope read-cost. Seeds, and they stay seeds: the
 # telemetry calibration that once overwrote them measured whole-lane spend, which is
 # a different quantity from a working set, and basicly-z2wi removed it. An unlisted
