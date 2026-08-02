@@ -405,11 +405,31 @@ ENGINE_GATE_PROVIDERS = frozenset({VERIFY_GATE_PROVIDER, RUBRIC_GATE_PROVIDER})
 # largest estimate on a completed headless lane and round up to the next multiple of
 # WORKING_SET_MIN, one floor-unit of headroom. 105_318 -> 112_000.
 #
-# Zero lanes have failed at any size, so this is a LOWER bound on a safe ceiling and
-# not a measurement of where the limit is. `test_the_ceiling_does_not_refuse_a_size_
-# that_has_already_succeeded` binds only that direction: it fails when evidence
-# outruns the constant, never the reverse. A larger lane succeeding is good news, and
-# the gate's job is to make that news raise the ceiling instead of being ignored.
+# What 112_000 is, precisely: a SEPARATING boundary. Four dispatches across three
+# beads have failed, and sizing them by the same formula puts basicly-kjc5.42 and
+# basicly-kjc5.44 at 136_668 (scope 45_556 at the task seed) and basicly-kjc5.43 at
+# 5_734. So [105_318, 136_668) is the gap between the largest size observed to
+# complete and the smallest size observed to die that no larger success explains
+# away, and 112_000 sits inside it: it admits every observed success and refuses
+# both observed large failures.
+#
+# basicly-kjc5.43 is the failure that gets explained away — a lane eighteen times its
+# estimate completed, so size cannot be why it died. That discrimination is on the
+# size of the lane and never on its exit code: the record keeps a returncode, not a
+# cause, so the 143 all four share says only that something killed them.
+#
+# This paragraph replaces one that read "zero lanes have failed at any size", which
+# was false in an instructive way. The query behind it filtered on
+# `isinstance(entry["scope_tokens"], int)`, and every failed record carries
+# `scope_tokens: None` — so the filter deleted the whole failure population and the
+# conclusion was an artifact of the measurement, not a fact about the engine
+# (basicly-ipx2). Recording a failing dispatch's scope cost is what stops the next
+# analysis needing this re-derivation from the tree at all.
+#
+# `test_the_ceiling_separates_the_sizes_that_completed_from_the_sizes_that_failed`
+# binds both directions: it fails when a completed lane sits above the ceiling, and
+# when a lane that died at a size nothing has completed sits below it. The
+# one-directional version could only ever check the first, and did.
 DEFAULT_WORKING_SET_MIN = 8_000
 DEFAULT_WORKING_SET_MAX = 112_000
 # Per-task-class multiplier on scope read-cost. Seeds, and they stay seeds: the

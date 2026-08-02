@@ -3218,6 +3218,36 @@ def test_dispatch_lane_records_its_forecast_beside_its_actual(
     assert captured["forecast_source"] == "dispatch"
 
 
+def test_a_lane_that_died_records_the_scope_it_was_sized_on(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The failure keeps its size too (basicly-ipx2).
+
+    This is the dispatch path all four recorded failures came through, and every one
+    of them carries ``scope_tokens: None`` — so the query that concluded "zero lanes
+    have failed at any size" excluded them by construction, filtering on a field only
+    the survivors had. A lane that dies is the most informative sample there is about
+    where the working-set limit lies; dropping its size is how the limit went unmeasured.
+    """
+    codex = _codex()
+    _worker_fixture(monkeypatch, tmp_path, stdout=_codex_events(50_000), returncode=143)
+    captured: dict = {}
+    monkeypatch.setattr(supervise.loop, "record_run", lambda *_a, **kw: captured.update(kw))
+    monkeypatch.setattr(
+        supervise.decompose,
+        "resolve_dispatch_sizing",
+        lambda *_a: _lookup(_dispatch_sizing(21_000, 9_000)),
+    )
+
+    outcome = supervise._dispatch_lane(
+        tmp_path, _session(_lane("epic.1")), _lane("epic.1"), codex, _sizing()
+    )
+
+    assert outcome.result is not None and outcome.result.returncode == 143
+    assert captured["scope_tokens"] == 9_000
+    assert captured["forecast_tokens"] == 21_000
+
+
 def test_an_unsizeable_lane_records_the_bound_it_was_gated_on(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
