@@ -54,7 +54,10 @@ from typing import Any
 
 import yaml
 
-from basicly import cli
+# `loop._LEAF_TYPES` is private and has no public alias; this script is repo-local
+# tooling reading its own tree, and the whole point is to bind to the definition the
+# engine actually uses rather than to a second copy of it.
+from basicly import cli, config, loop
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -65,6 +68,8 @@ HOOKS_README = ".basicly/core/hooks/README.md"
 TARGETS_DIR = ".basicly/core/targets"
 SKILLS_DIR = ".basicly/core/skills"
 HOOKS_DIR = ".basicly/core/hooks"
+
+TOOL_BR_SKILL = f"{SKILLS_DIR}/tool-br/skill.yaml"
 
 # `uv run python`, not a bare `python`: on Windows the bare form resolves to a system
 # interpreter that cannot import this script's dependencies (basicly-tcmy.32), so the
@@ -234,6 +239,32 @@ def _catalog_hooks(root: Path) -> list[str]:
 # ------------------------------------------------------------------- assertions
 
 
+def _cells(row: str) -> list[str]:
+    r"""Cells of a markdown table row.
+
+    Split on unescaped pipes only: a command cell spells its alternatives
+    ``[--root ...\|--all-default-roots]``, and splitting on that ``\|`` cut the cell
+    in half and lost every name after it.
+    """
+    return re.split(r"(?<!\\)\|", row)
+
+
+def _subparsers(parser: argparse.ArgumentParser) -> argparse._SubParsersAction | None:
+    """The parser's subcommand action, or ``None`` for a leaf command."""
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            return action
+    return None
+
+
+def _section_8(root: Path) -> str:
+    """The architecture document's section 8, where every command is tabulated."""
+    text = _read(root / ARCHITECTURE_MD)
+    start = text.index("## 8) CLI surface")
+    end = text.find("\n## ", start)
+    return text[start:end] if end != -1 else text[start:]
+
+
 def _documented_commands(section: str) -> set[str]:
     """Subcommand names declared in the *first* cell of each section 8 table row.
 
@@ -249,10 +280,7 @@ def _documented_commands(section: str) -> set[str]:
     for line in section.splitlines():
         if not line.startswith("|"):
             continue
-        # Split on unescaped pipes only: a command cell spells its alternatives
-        # `[--root ...\|--all-default-roots]`, and splitting on that `\|` cut the
-        # cell in half and lost every name after it.
-        cells = re.split(r"(?<!\\)\|", line)
+        cells = _cells(line)
         if len(cells) < 3:
             continue
         command_cell = cells[1]
@@ -265,19 +293,108 @@ def _documented_commands(section: str) -> set[str]:
 
 def _cli_commands_covered(root: Path) -> list[str]:
     """Every subcommand the CLI ships must appear in the section 8 command tables."""
-    parser = cli._build_parser()
-    action = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
-    registered = set(action.choices)
+    top = _subparsers(cli._build_parser())
+    if top is None:  # pragma: no cover - the CLI is a subcommand parser by construction
+        raise ClaimError("the CLI parser declares no subcommands")
 
-    text = _read(root / ARCHITECTURE_MD)
-    start = text.index("## 8) CLI surface")
-    end = text.find("\n## ", start)
-    section = text[start:end] if end != -1 else text[start:]
-
-    missing = sorted(registered - _documented_commands(section))
+    missing = sorted(set(top.choices) - _documented_commands(_section_8(root)))
     if missing:
         return [f"subcommands missing from the section 8 command tables: {', '.join(missing)}"]
     return []
+
+
+def _cli_subcommands_covered(root: Path) -> list[str]:
+    """Every subcommand of a command *group* must appear in that group's own rows.
+
+    :func:`_cli_commands_covered` is satisfied by a single ``basicly worktree ...``
+    row, which is how three of that group's six subcommands stayed undocumented
+    while every gate passed (``basicly-tcmy.9``): the worktree row still described a
+    lifecycle of create/list/cleanup long after ``merge`` and ``merge-queue``
+    shipped, and a skill repeated the omission as "not yet part of `basicly
+    worktree`".
+
+    Coverage is scoped to the rows whose **command cell** names the parent, not to
+    section 8 as a whole. Scanning the whole section would let an incidental ``list``
+    in the ``catalog`` row satisfy ``worktree list`` — the same failure mode
+    :func:`_documented_commands` avoids by reading only the command column, one level
+    up. Within an owning row either column counts, because a group is documented as
+    one row of prose rather than a row per subcommand.
+    """
+    top = _subparsers(cli._build_parser())
+    if top is None:  # pragma: no cover - the CLI is a subcommand parser by construction
+        raise ClaimError("the CLI parser declares no subcommands")
+    rows = [row for row in _section_8(root).splitlines() if row.startswith("|")]
+
+    problems: list[str] = []
+    for parent, parser in sorted(top.choices.items()):
+        nested = _subparsers(parser)
+        if nested is None:
+            continue
+        owned = [
+            row
+            for row in rows
+            if len(_cells(row)) >= 3 and re.search(rf"basicly {parent}\b", _cells(row)[1])
+        ]
+        if not owned:
+            problems.append(f"no section 8 row documents the '{parent}' command group")
+            continue
+        documented = " ".join(owned)
+        missing = [
+            name
+            for name in sorted(nested.choices)
+            # A word boundary that also refuses a hyphen, so `merge` is not credited
+            # to the `merge-queue` that happens to be documented beside it.
+            if not re.search(rf"(?<![\w-]){re.escape(name)}(?![\w-])", documented)
+        ]
+        if missing:
+            problems.append(
+                f"'{parent}' subcommands missing from its section 8 row(s): {', '.join(missing)}"
+            )
+    return problems
+
+
+def _types_after(text: str, anchor: str) -> tuple[str, ...]:
+    """Backticked names between *anchor* and the end of its sentence.
+
+    A missing anchor is a :class:`ClaimError`, not an empty list: prose reworded past
+    the anchor must fail loudly rather than silently assert nothing.
+    """
+    at = text.find(anchor)
+    if at == -1:
+        raise ClaimError(f"anchor {anchor.strip()!r} not found; the prose was reworded past it")
+    span = text[at + len(anchor) :]
+    if ";" in span:
+        span = span[: span.index(";")]
+    return tuple(sorted(re.findall(r"`([a-z]+)`", span)))
+
+
+def _skill_work_types(root: Path) -> list[str]:
+    """The ``tool-br`` skill's two type lists must be the engine's, not a copy.
+
+    The skill advertised ``docs`` and ``question`` as valid types for months
+    (``basicly-tcmy.9``). Both are rejected by :func:`basicly.classify`, so filing a
+    docs bead produced one the loop could never advance — and ``br`` itself validates
+    nothing, storing whatever ``--type`` is handed, so no tool caught it.
+    """
+    skill = _load_yaml(root / TOOL_BR_SKILL)
+    instructions = skill.get("instructions")
+    if not isinstance(instructions, str):
+        raise ClaimError(f"{TOOL_BR_SKILL}: 'instructions' must be a string")
+    # The source is a wrapped YAML block scalar, so a sentence spans lines.
+    text = " ".join(instructions.split())
+
+    problems: list[str] = []
+    for anchor, expected, source in (
+        ("harness work types are ", config.WORK_TYPES, "config.WORK_TYPES"),
+        ("leaf types ", loop._LEAF_TYPES, "loop._LEAF_TYPES"),
+    ):
+        stated = _types_after(text, anchor)
+        if stated != tuple(sorted(expected)):
+            problems.append(
+                f"after {anchor.strip()!r} the skill states {list(stated)}; "
+                f"{source} is {sorted(expected)}"
+            )
+    return problems
 
 
 # ----------------------------------------------------------------------- claims
@@ -309,6 +426,8 @@ BLOCKS: tuple[Block, ...] = (
 
 ASSERTIONS: tuple[Assertion, ...] = (
     Assertion("cli-commands", ARCHITECTURE_MD, _cli_commands_covered),
+    Assertion("cli-subcommands", ARCHITECTURE_MD, _cli_subcommands_covered),
+    Assertion("skill-work-types", TOOL_BR_SKILL, _skill_work_types),
 )
 
 
