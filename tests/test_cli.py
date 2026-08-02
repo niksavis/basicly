@@ -989,6 +989,21 @@ def test_cli_skills_check_fails_after_manual_edit(work_repo: Path) -> None:
     assert "Stale skill projection detected" in result.stderr
 
 
+def test_cli_skills_check_fails_on_a_hand_authored_skill(work_repo: Path) -> None:
+    """A SKILL.md with no catalog source fails the gate with a remedy a rebuild cannot give."""
+    run_basicly(work_repo, "skills-build")
+
+    hand_authored = work_repo / ".claude" / "skills" / "no-such-source" / "SKILL.md"
+    hand_authored.parent.mkdir(parents=True)
+    hand_authored.write_text("---\nname: release-process\n---\n\nbody\n", encoding="utf-8")
+
+    result = run_basicly(work_repo, "skills-check")
+    assert result.returncode == 1
+    assert "Unmanaged files under a projected skills root" in result.stderr
+    # The stale remedy would be wrong here: skills-build cannot fix an unmanaged file.
+    assert "Stale skill projection detected" not in result.stderr
+
+
 def test_cli_agents_new_build_check_roundtrip(work_repo: Path) -> None:
     """Scaffolding via `catalog new agent` yields a source that builds, then goes stale."""
     result = run_basicly(
