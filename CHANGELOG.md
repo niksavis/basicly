@@ -377,6 +377,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The permissions projection is gated like the other four.** `basicly` shipped
+  `permissions-build` and `permissions-check`, and `install` ran the build — but
+  `permissions-check` appeared in no `[[verify.checks]]` entry, no pre-commit hook and no
+  CI workflow. Editing `.basicly/core/permissions/permissions.yaml` and committing
+  therefore shipped an unbuilt agent deny-list while all four documented projection gates
+  reported green: the fifth pair had the exact hole the other four were added to close.
+  A `projection-permissions` check now runs in `fast` and `full`, so the drift fails at
+  commit time and names the missing pattern and the file it is missing from.
+
+  The always-on commands fragment (and `CONTRIBUTING.md`) list the fifth gate with the
+  others, and `tests/test_verify.py` no longer hand-maintains the set it asserts: it
+  derives the required subcommands from the CLI's own handler registry, for both the
+  verify wiring and the documented list. A sixth pair cannot be omitted from either the
+  same way (`basicly-tcmy.23`).
+
 - **The repo's only architectural gate now describes modules that exist, and fails when
   one imports upward.** `.importlinter` declared a single `forbidden` contract naming
   `basicly.fragments` and `basicly.targets`. Neither module existed and neither
