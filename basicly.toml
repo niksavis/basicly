@@ -79,9 +79,18 @@ modes = ["fast", "full"]
 
 [[verify.checks]]
 name = "lint-imports"
-# Enforces the import-linter engine-independence contract (.importlinter): the
-# basicly engine must not import project-specific fragments/targets. Whole-tree
-# analysis, so no staged variant.
+# Enforces the import-linter contracts in `.importlinter`: the engine's tier stack
+# and the renderers' sub-stack. Both are `exhaustive`, so a new module has to be
+# placed in a tier rather than sliding in unconstrained. Whole-tree analysis, so no
+# staged variant.
+#
+# Until basicly-tcmy.2 this was a single `forbidden` contract naming
+# `basicly.fragments` and `basicly.targets` — modules that did not exist and could
+# not exist, since fragments and targets are YAML under `.basicly/core/`. It
+# reported `1 kept, 0 broken` over 48 files forever, in this repo and in every
+# consumer repo, which is this repo's own named defect class: a fail-open gate is
+# indistinguishable from a pass. `tests/test_import_contracts.py` is the control
+# pair that keeps the replacement falsifiable.
 command = ["lint-imports"]
 modes = ["fast", "full"]
 
