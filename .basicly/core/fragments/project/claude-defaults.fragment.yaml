@@ -12,6 +12,5 @@ tags:
 status: active
 title: Claude-specific notes
 body: |
-  - Put reusable skills in `.claude/skills/`.
-  - Put path-scoped rules in `.claude/rules/*.md` (activated by `paths:`).
+  - Author skills and rules under `.basicly/core/` (or the `.basicly-local/` overlay); `.claude/skills/` and `.claude/rules/*.md` are projected output — regenerate, never edit.
   - Put Claude-only prompts/commands/runbooks in `.claude/*.md`.

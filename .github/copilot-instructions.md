@@ -23,7 +23,6 @@ not rely on `AGENTS.md` being present.
 
 - Platforms: Windows, Linux, macOS.
 - Script harness and CI helpers: `.scripts/`.
-- Shared skills: `.claude/skills/`.
 
 ## Project Overview
 
@@ -107,7 +106,7 @@ uv run basicly permissions-check
 
 ## Harness Loop
 
-- Drive non-trivial work through the basicly harness loop; `br` is the single source of truth. The `harness-loop` skill is the runbook — it covers the phases (intake → classify → decompose → build → verify → ship → teardown → retro), the `basicly loop status/run/advance` commands, the multi-lane `loop preflight`/`loop supervise` path, the engine-enforced checkpoints and bounded rework, and the block-don't-guess `needs-input.json` protocol.
+- Drive non-trivial work through the basicly harness loop; `br` is the single source of truth. The `harness-loop` skill is the runbook — it covers the phases (intake → classify → decompose → build → verify → ship → teardown → retro), the `basicly loop status/run` commands, the multi-lane `loop preflight`/`loop supervise` path, the engine-enforced checkpoints and bounded rework, and the block-don't-guess `needs-input.json` protocol.
 
 ## Quality Gate
 
@@ -130,10 +129,9 @@ uv run basicly permissions-check
 
 ## Copilot-specific notes
 
-- Path-scoped rules live in `.claude/rules/*.md` only; `.github/instructions/` twins double-load.
+- Author skills and rules under `.basicly/core/` (or the `.basicly-local/` overlay); `.claude/skills/` and `.claude/rules/*.md` are projected output — no `.github/instructions/` twins (double-load).
 - Prefer skills over prompt files — VS Code is migrating `*.prompt.md` to skills.
 - Put custom agents in `.github/agents/*.agent.md`.
-- Shared skills in `.claude/skills/` are read by Claude and Copilot alike.
 
 ## Self Improvement Retro
 
