@@ -956,9 +956,13 @@ def calibrate_spend(  # noqa: PLR0913
 
     The sample set is the paired records — a record carrying both a forecast and a
     measured actual — for exactly this model and class, the newest *window* of them,
-    with chars/4-estimated actuals excluded (the same down-weighting
-    :func:`calibrated_build_factors` applies, at its simplest). Below *min_samples*
-    the declared prior stands, per ratio.
+    with chars/4-estimated actuals excluded. Below *min_samples* the declared prior
+    stands, per ratio.
+
+    This is the *only* place a turn multiplier may be measured. It is legitimate here
+    because the quantity being predicted is spend, which is what the samples record.
+    The build factor predicts a working set and must never be calibrated the same way
+    (basicly-z2wi).
 
     A null *model* or *task_class* matches nothing rather than everything: an
     unrecorded model is unknown provenance, and pooling those samples would rebuild
