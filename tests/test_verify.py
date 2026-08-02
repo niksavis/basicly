@@ -678,3 +678,86 @@ def test_the_always_on_commands_fragment_lists_every_projection_gate() -> None:
 
     missing = _projection_check_subcommands() - listed
     assert not missing, f"projection gates absent from the commands fragment: {sorted(missing)}"
+
+
+# --- A repo script runs on the project interpreter, not a bare one (basicly-tcmy.32) ---
+
+_UV_RUN_PYTHON = ("uv", "run", "python")
+_BARE_INTERPRETER = re.compile(r"^(python|python3(\.\d+)?|py)(\.exe)?$", flags=re.IGNORECASE)
+
+
+def _interpreter_offences(check: VerifyCheck) -> list[str]:
+    """Every argv of *check* that reaches an interpreter without going through uv."""
+    offences = []
+    for label, argv in (("command", check.command), ("fix_command", check.fix_command)):
+        if not argv:
+            continue
+        names_the_interpreter = _BARE_INTERPRETER.match(argv[0]) is not None
+        runs_a_script = any(arg.endswith(".py") for arg in argv)
+        if not (names_the_interpreter or runs_a_script):
+            continue
+        if tuple(argv[:3]) == _UV_RUN_PYTHON:
+            continue
+        offences.append(f"{check.name}.{label} = {list(argv)}")
+    return offences
+
+
+def test_no_verify_check_invokes_a_bare_python_interpreter() -> None:
+    """A check that runs a repository ``.py`` file must run it under ``uv run python``.
+
+    The bare-binary convention the other checks follow holds for *console scripts* —
+    ``ruff``, ``pyright``, ``bandit``, ``pytest``, ``basicly`` — which the venv installs
+    into its ``bin``/``Scripts`` directory. It does not hold for the *interpreter*: on
+    windows-latest a bare ``python`` resolves to a system interpreter that has neither
+    ``yaml`` nor ``basicly`` importable, so ``docs-claims`` died at import time and
+    failed the Windows quality-gates job alone while passing on ubuntu and macos
+    (basicly-tcmy.32).
+
+    Reads the invocation form out of this repo's own config rather than running the
+    command, so the assertion is made on every platform instead of only on the runner
+    that would break — the fourth platform-only defect to reach main is what put this
+    rule in a test at all. ``_interpreter_offences`` is exercised against a known-bad
+    check below, so a green result here cannot be an empty sweep.
+    """
+    offences = [
+        offence
+        for check in load_verify_config(_REPO_ROOT).checks
+        for offence in _interpreter_offences(check)
+    ]
+
+    assert not offences, (
+        "verify checks invoke a bare interpreter; use uv run python so the project "
+        f"dependencies resolve on Windows too: {offences}"
+    )
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ("python", ".scripts/docs_claims.py", "--check"),
+        ("python3", ".scripts/docs_claims.py"),
+        ("python3.14", ".scripts/docs_claims.py"),
+        ("py", "-3", ".scripts/docs_claims.py"),
+        ("uv", "run", ".scripts/docs_claims.py"),
+        (".scripts/docs_claims.py", "--check"),
+    ],
+)
+def test_the_interpreter_rule_flags_a_bare_python_check(argv: tuple[str, ...]) -> None:
+    """The control for the sweep above: each known-bad form is actually reported."""
+    bad = VerifyCheck(name="future-check", command=argv, modes=frozenset({"fast"}))
+
+    assert _interpreter_offences(bad) == [f"future-check.command = {list(argv)}"]
+
+
+def test_the_interpreter_rule_accepts_uv_run_python_and_console_scripts() -> None:
+    """And it stays silent on the two forms the repo does want."""
+    script = VerifyCheck(
+        name="docs-claims",
+        command=("uv", "run", "python", ".scripts/docs_claims.py", "--check"),
+        modes=frozenset({"fast"}),
+        fix_command=("uv", "run", "python", ".scripts/docs_claims.py", "--fix"),
+    )
+    console = VerifyCheck(name="ruff", command=("ruff", "check"), modes=frozenset({"fast"}))
+
+    assert _interpreter_offences(script) == []
+    assert _interpreter_offences(console) == []

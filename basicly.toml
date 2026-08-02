@@ -166,13 +166,22 @@ modes = ["fast", "full"]
 # A repo-local script rather than a CLI subcommand pair: the claims are basicly's own
 # documentation, not a consumer artifact, so there is nothing to project. `--fix` is
 # the mechanical repair, so the pre-commit fast set regenerates and re-stages a stale
-# block exactly as it does for ruff format. `python` (not `uv run python`) matches the
-# bare-binary convention of every other check: the venv is already on PATH wherever
-# these run.
+# block exactly as it does for ruff format.
+#
+# `uv run python`, not a bare `python` (basicly-tcmy.32). The bare-binary convention of
+# every other check holds for *console scripts* — ruff, pyright, bandit, pytest,
+# basicly — which the venv installs into its bin/Scripts directory. It does not hold
+# for the *interpreter*: on windows-latest a bare `python` resolves to a system
+# interpreter with neither `yaml` nor `basicly` importable, so the script died at
+# import time and this check alone failed the Windows quality-gates job while passing
+# on ubuntu and macos. `uv run python` is the form every other repo script invocation
+# already uses (quality-gates.yml, release.yml).
+# `tests/test_verify.py::test_no_verify_check_invokes_a_bare_python_interpreter` holds
+# the rule for the next check, and fails on POSIX too rather than waiting for CI.
 [[verify.checks]]
 name = "docs-claims"
-command = ["python", ".scripts/docs_claims.py", "--check"]
-fix_command = ["python", ".scripts/docs_claims.py", "--fix"]
+command = ["uv", "run", "python", ".scripts/docs_claims.py", "--check"]
+fix_command = ["uv", "run", "python", ".scripts/docs_claims.py", "--fix"]
 modes = ["fast", "full"]
 
 # Loop gate/checkpoint policy: which gates block advancement and the rework cap.
