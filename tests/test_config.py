@@ -13,6 +13,8 @@ from basicly.config import (
     DEFAULT_CONFIG_TOML,
     DEFAULT_MAX_AGENT_PROCESSES,
     DEFAULT_STALL_AFTER,
+    DEFAULT_WORKING_SET_MAX,
+    DEFAULT_WORKING_SET_MIN,
     DEFAULT_WORKTREE_CONCURRENCY,
     LOCAL_CONFIG_FILE,
     PolicyConfig,
@@ -678,8 +680,12 @@ def test_local_config_never_affects_projection_config(tmp_path: Path) -> None:
 def test_sizing_config_defaults_when_absent(tmp_path: Path) -> None:
     """No config file (or no [policy.sizing]) resolves to the D8 defaults."""
     sizing = load_sizing_config(tmp_path)
-    assert sizing.working_set_min == 8_000
-    assert sizing.working_set_max == 64_000
+    # Against the named defaults, not their literal values: the ceiling is derived
+    # from measured lane outcomes and moves when the evidence does (basicly-3w44).
+    # A literal here asserts only that someone typed the same number twice, and it
+    # turns a legitimate recalibration into a test failure in an unrelated file.
+    assert sizing.working_set_min == DEFAULT_WORKING_SET_MIN
+    assert sizing.working_set_max == DEFAULT_WORKING_SET_MAX
     assert sizing.build_factors == {"task": 3.0, "bug": 2.0, "chore": 1.5}
     assert sizing.calibration_min_samples == 10
     assert sizing.calibration_window == 50
@@ -709,7 +715,10 @@ def test_sizing_config_inverted_band_falls_back(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     sizing = load_sizing_config(tmp_path)
-    assert (sizing.working_set_min, sizing.working_set_max) == (8_000, 64_000)
+    assert (sizing.working_set_min, sizing.working_set_max) == (
+        DEFAULT_WORKING_SET_MIN,
+        DEFAULT_WORKING_SET_MAX,
+    )
 
 
 def test_sizing_config_ignores_wrong_typed_values(tmp_path: Path) -> None:

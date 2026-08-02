@@ -9,9 +9,17 @@ from pathlib import Path
 
 import pytest
 
-from basicly import decompose, policy, run_record
-from basicly.config import SizingConfig
+from basicly import br, decompose, policy, run_record
+from basicly.config import (
+    DEFAULT_BUILD_FACTOR,
+    DEFAULT_BUILD_FACTOR_SEEDS,
+    DEFAULT_WORKING_SET_MAX,
+    DEFAULT_WORKING_SET_MIN,
+    SizingConfig,
+)
 from basicly.decompose import ChildSpec
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class _Proc:
@@ -659,6 +667,120 @@ def _export(repo: Path, *records: dict) -> None:
     beads.mkdir(parents=True, exist_ok=True)
     lines = [json.dumps(record) for record in records]
     (beads / "issues.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+# --- The ceiling is answerable to the lanes that ran (basicly-3w44) ----------
+
+
+def completed_lane_estimates(repo_root: Path) -> dict[str, int]:
+    """Estimate per bead for every lane a headless dispatch actually completed.
+
+    Handoff outcomes are excluded on purpose. A handoff means a driving agent or a
+    human carried the work in their own session, so it bounds what a *session* can
+    hold, not what a dispatched lane can — and the ceiling gates dispatch. Forty of
+    the forty-seven recorded lanes are handoffs, so counting them would inflate the
+    evidence roughly fivefold on a question they cannot answer.
+    """
+    exported = {str(record["id"]): record for record in br.export_records(repo_root)}
+    seeds = DEFAULT_BUILD_FACTOR_SEEDS
+    estimates: dict[str, int] = {}
+    for bead_id, history in run_record.dispatch_history(repo_root).items():
+        task_class = str(exported.get(bead_id, {}).get("issue_type") or "task")
+        factor = seeds.get(task_class, DEFAULT_BUILD_FACTOR)
+        for entry in history:
+            scope_tokens = entry.get("scope_tokens")
+            if entry.get("returncode") != 0 or not isinstance(scope_tokens, int):
+                continue
+            if scope_tokens <= 0:
+                continue
+            estimates[bead_id] = max(estimates.get(bead_id, 0), round(scope_tokens * factor))
+    return estimates
+
+
+def _ceiling_violations(repo_root: Path, ceiling: int) -> list[str]:
+    """Completed lanes that *ceiling* would have refused, worst first."""
+    over = {
+        bead: estimate
+        for bead, estimate in completed_lane_estimates(repo_root).items()
+        if estimate > ceiling
+    }
+    if not over:
+        return []
+    required = -(-max(over.values()) // DEFAULT_WORKING_SET_MIN) * DEFAULT_WORKING_SET_MIN
+    return [
+        f"{bead} completed at an estimate of {estimate:,}, above working_set_max "
+        f"{ceiling:,}; raise it to at least {required:,}"
+        for bead, estimate in sorted(over.items(), key=lambda item: -item[1])
+    ]
+
+
+def test_the_ceiling_does_not_refuse_a_size_that_has_already_succeeded() -> None:
+    """The live gate: no lane this engine completed may be one the band would refuse.
+
+    This is the whole of basicly-3w44. `working_set_max` was 64,000 and eighteen
+    recorded lanes exceeded it, every one of which completed — a constant with a
+    0-for-18 record against the only evidence available, quietly refusing the
+    engine's own proven work.
+
+    It binds in one direction only. Zero lanes have ever *failed* for being too
+    large, so the record is a lower bound on a safe ceiling and says nothing about
+    where the real limit is; asserting equality with the observed maximum would turn
+    a larger lane succeeding — good news — into a red main. So this fails only when
+    the evidence outruns the constant, and it names the value to raise it to.
+    """
+    assert _ceiling_violations(REPO_ROOT, DEFAULT_WORKING_SET_MAX) == []
+
+
+def test_the_ceiling_gate_names_the_lane_and_the_value_it_requires(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The known-bad control: a lane above the ceiling is reported, not shrugged off.
+
+    Without this the live test above is indistinguishable from one that measures an
+    empty set — which is exactly how the 64,000 constant survived eighteen
+    contradictions.
+    """
+    _write(tmp_path, "src/a.py", 16_000)  # 4_000 scope tokens
+    body = decompose._child_body(_child("t", "src/a.py"))
+    _install(monkeypatch, _FakeBrShow({"b-1": ("task", body)}))
+    _record_run_tokens(tmp_path, "b-1", 1_000, scope_tokens=4_000)  # 4_000 x 3.0 = 12_000
+
+    assert _ceiling_violations(tmp_path, 112_000) == []
+
+    violations = _ceiling_violations(tmp_path, 8_000)
+    assert len(violations) == 1
+    assert "b-1 completed at an estimate of 12,000" in violations[0]
+    assert "raise it to at least 16,000" in violations[0]  # rounded up to a floor-unit
+
+
+def test_a_handoff_lane_is_not_evidence_for_the_dispatch_ceiling(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A human-carried lane must not raise the ceiling a dispatched lane is held to.
+
+    The largest recorded lane on this tree is a 152,377-token handoff. Counting it
+    would licence dispatching a headless agent into work no headless agent has ever
+    been shown to finish — the reverse of the defect, and worse.
+    """
+    _write(tmp_path, "src/a.py", 16_000)
+    body = decompose._child_body(_child("t", "src/a.py"))
+    _install(monkeypatch, _FakeBrShow({"b-1": ("task", body)}))
+    run_record.record(
+        tmp_path,
+        "b-1",
+        run_record.build_record(
+            agent="claude",
+            handoff=True,
+            returncode=None,
+            duration_s=1.0,
+            command=(),
+            tokens=None,
+            estimated=True,
+            scope_tokens=4_000,
+        ),
+    )
+
+    assert completed_lane_estimates(tmp_path) == {}
 
 
 # --- The build factor is a working set, never a spend (basicly-z2wi) ---------

@@ -392,11 +392,30 @@ ENGINE_GATE_PROVIDERS = frozenset({VERIFY_GATE_PROVIDER, RUBRIC_GATE_PROVIDER})
 # Working-set sizing defaults (factory design D8/section 6, basicly-kjc5.2):
 # the govern band is absolute tokens of material to reason over, NOT a fraction
 # of the context window (the 50-70 percent folk rule was researched and refuted).
+#
+# The ceiling is DERIVED, not chosen (basicly-3w44). It was 64_000, and against the
+# only evidence there is — the lanes this engine has actually dispatched — that value
+# was wrong 18 times out of 18: eighteen recorded lanes exceeded it and every one of
+# them completed. Restricting that to the clean sample (headless executions with a
+# returncode, not handoffs a human carried), the largest estimate a dispatched lane
+# has ever completed is 105_318 — basicly-tcmy.31, scope 35_106 at the task seed of
+# 3.0. So the engine refused, at 61% of it, a size it had already proven it could run.
+#
+# The rule, so the next reader can recompute rather than trust this number: take the
+# largest estimate on a completed headless lane and round up to the next multiple of
+# WORKING_SET_MIN, one floor-unit of headroom. 105_318 -> 112_000.
+#
+# Zero lanes have failed at any size, so this is a LOWER bound on a safe ceiling and
+# not a measurement of where the limit is. `test_the_ceiling_does_not_refuse_a_size_
+# that_has_already_succeeded` binds only that direction: it fails when evidence
+# outruns the constant, never the reverse. A larger lane succeeding is good news, and
+# the gate's job is to make that news raise the ceiling instead of being ignored.
 DEFAULT_WORKING_SET_MIN = 8_000
-DEFAULT_WORKING_SET_MAX = 64_000
-# Per-task-class multiplier on scope read-cost until run-record telemetry
-# calibrates a measured factor. An unlisted class uses the task seed (the most
-# conservative of the three).
+DEFAULT_WORKING_SET_MAX = 112_000
+# Per-task-class multiplier on scope read-cost. Seeds, and they stay seeds: the
+# telemetry calibration that once overwrote them measured whole-lane spend, which is
+# a different quantity from a working set, and basicly-z2wi removed it. An unlisted
+# class uses the task seed (the most conservative of the three).
 DEFAULT_BUILD_FACTOR_SEEDS = {"task": 3.0, "bug": 2.0, "chore": 1.5}
 DEFAULT_BUILD_FACTOR = 3.0
 DEFAULT_CALIBRATION_MIN_SAMPLES = 10
