@@ -1,0 +1,380 @@
+"""Generate and gate the documentation claims this repo derives from its own tree.
+
+A document that restates a fact the tree already answers — a measured character
+count, the set of shipped subcommands, a catalog inventory — goes stale the moment
+the tree moves, and nothing notices. Correcting the prose fixes today's copy and
+guarantees tomorrow's drift. The owner's rule applies: a deterministic fact is a
+script, not an instruction. So these facts are *generated* into marked blocks and
+gated on every commit rather than written by hand.
+
+Two kinds of claim, because they fail differently:
+
+* **Generated blocks** — the whole block between a marker pair is rendered from the
+  tree, so ``--fix`` repairs any drift with no hand editing. Everything inside a
+  block is derived; authored prose belongs outside it.
+* **Assertions** — a claim spread through authored prose that a script can check but
+  cannot write. The §8 command tables carry a hand-written behavior paragraph per
+  row, so the gate asserts *coverage* (every shipped subcommand appears) and names
+  what is missing; the row itself stays a human's job.
+
+Markers are HTML comments so they render as nothing::
+
+    <!-- docs-claims:begin <name> -->
+    <!-- docs-claims:end <name> -->
+
+The begin marker's indentation is reapplied to every generated line, so a block
+nested in a numbered list keeps its list item.
+
+Wired as a ``[[verify.checks]]`` entry rather than a new CLI subcommand pair: the
+claims gated here are basicly's own documentation, not a consumer artifact, so
+nothing needs projecting. ``--check`` is the check command and ``--fix`` the
+``fix_command``, so the pre-commit fast set applies the regeneration and re-stages
+it exactly as it does for ``ruff format``.
+
+``tests/test_docs_drift.py`` keeps the *reverse* direction of the command claim (a
+removed subcommand must leave the tables) at pre-push; this script promotes the
+forward direction — an omitted subcommand — into the fast set.
+
+Usage::
+
+    python .scripts/docs_claims.py --check   # report drift, write nothing
+    python .scripts/docs_claims.py --fix     # regenerate every stale block
+"""
+
+from __future__ import annotations
+
+import argparse
+import ast
+import re
+import sys
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from basicly import cli
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+ARCHITECTURE_MD = "docs/architecture/architecture.md"
+SKILLS_README = ".basicly/core/skills/README.md"
+HOOKS_README = ".basicly/core/hooks/README.md"
+
+TARGETS_DIR = ".basicly/core/targets"
+SKILLS_DIR = ".basicly/core/skills"
+HOOKS_DIR = ".basicly/core/hooks"
+
+FIX_HINT = "python .scripts/docs_claims.py --fix"
+
+
+class ClaimError(Exception):
+    """A claim cannot be evaluated at all — a missing marker, file, or source field.
+
+    Distinct from drift: drift is repairable by ``--fix``, this is not, so both
+    modes report it and exit non-zero rather than writing a placeholder.
+    """
+
+
+# --------------------------------------------------------------------------- io
+
+
+def _read(path: Path) -> str:
+    """Text of *path*, with newlines normalized by universal-newline decoding."""
+    if not path.exists():
+        raise ClaimError(f"{path} does not exist")
+    return path.read_text(encoding="utf-8")
+
+
+def _write(path: Path, text: str) -> None:
+    """Write *text* back to *path*, preserving the file's existing line ending.
+
+    Reading normalizes CRLF to LF, so writing without this would silently convert
+    every line of a Windows checkout the first time one block drifted.
+    """
+    newline = "\r\n" if b"\r\n" in path.read_bytes() else "\n"
+    path.write_text(text, encoding="utf-8", newline=newline)
+
+
+def _load_yaml(path: Path) -> dict[str, Any]:
+    """Parse a YAML mapping source, failing loudly on anything else."""
+    data = yaml.safe_load(_read(path))
+    if not isinstance(data, dict):
+        raise ClaimError(f"{path}: expected a YAML mapping")
+    return data
+
+
+# ----------------------------------------------------------------- block splice
+
+
+def _splice(text: str, name: str, body: list[str]) -> str:
+    """Return *text* with the ``name`` block's content replaced by *body*."""
+    begin = re.search(rf"^([ \t]*)<!-- docs-claims:begin {re.escape(name)} -->$", text, re.M)
+    end = re.search(rf"^[ \t]*<!-- docs-claims:end {re.escape(name)} -->$", text, re.M)
+    if begin is None or end is None:
+        raise ClaimError(f"marker pair for block {name!r} not found")
+    if end.start() < begin.end():
+        raise ClaimError(f"block {name!r}: end marker precedes its begin marker")
+
+    indent = begin.group(1)
+    rendered = "".join(f"{indent}{line}\n" if line else "\n" for line in body)
+    return f"{text[: begin.end()]}\n{rendered}{text[end.start() :]}"
+
+
+# ---------------------------------------------------------------- claim renderers
+
+
+def _table(header: list[str], rows: list[list[str]]) -> list[str]:
+    """Render a GitHub markdown table, blank-line padded for MD058."""
+    return [
+        "",
+        f"| {' | '.join(header)} |",
+        f"| {' | '.join('---' for _ in header)} |",
+        *(f"| {' | '.join(row)} |" for row in rows),
+        "",
+    ]
+
+
+def _always_on_sizes(root: Path) -> list[str]:
+    """Measured size of every always-on surface against its target's soft cap.
+
+    A surface is a target output with a literal ``path``; the ``path_template``
+    outputs are the path-scoped rules, which are not always-on. Characters, not
+    bytes — ``cli.py`` compares ``len(content)`` on the decoded string.
+    """
+    rows: list[list[str]] = []
+    for target_path in sorted((root / TARGETS_DIR).glob("*.yaml")):
+        target = _load_yaml(target_path)
+        if not target.get("enabled", False):
+            continue
+        name = target.get("name") or target_path.stem
+        cap = target.get("max_size_warning")
+        if not isinstance(cap, int):
+            raise ClaimError(f"{target_path}: 'max_size_warning' must be an integer")
+        outputs = target.get("outputs") or {}
+        for _, output in sorted(outputs.items()):
+            surface = output.get("path")
+            if not surface:
+                continue
+            chars = len(_read(root / surface))
+            rows.append([f"`{surface}` ({name})", str(chars), str(cap), str(cap - chars)])
+    if not rows:
+        raise ClaimError(f"{TARGETS_DIR}: no enabled target declares an always-on output")
+    return _table(["Surface", "chars", "cap", "headroom"], rows)
+
+
+def _catalog_skills(root: Path) -> list[str]:
+    """One row per skill source, carrying the source's own routing fields.
+
+    A user-invoked source legitimately carries no ``description`` — that absence
+    *is* the mechanism that keeps it out of the model's always-loaded index
+    (``skills.render_skill_md``) — so an empty cell is the correct rendering, not
+    a defect to raise on.
+    """
+    rows: list[list[str]] = []
+    for source in sorted((root / SKILLS_DIR).glob("*/skill.yaml")):
+        skill = _load_yaml(source)
+        name = skill.get("name")
+        if not isinstance(name, str):
+            raise ClaimError(f"{source}: 'name' must be a string")
+        description = skill.get("description")
+        technologies = skill.get("technologies") or []
+        rows.append([
+            f"`{name}`",
+            f"`{skill.get('invocation', 'model')}`",
+            ", ".join(f"`{tech}`" for tech in technologies) or "any",
+            " ".join(description.split()) if isinstance(description, str) else "",
+        ])
+    if not rows:
+        raise ClaimError(f"{SKILLS_DIR}: no skill sources found")
+    return _table(["Skill", "Invocation", "Technologies", "Description"], rows)
+
+
+def _script_purpose(script: Path) -> str:
+    """First line of *script*'s module docstring — the hook's one-line purpose."""
+    docstring = ast.get_docstring(ast.parse(_read(script)))
+    if not docstring:
+        raise ClaimError(f"{script}: hook scripts need a module docstring for the README table")
+    return docstring.splitlines()[0].strip()
+
+
+def _catalog_hooks(root: Path) -> list[str]:
+    """One row per hook in ``hooks.yaml``, in the manifest's own order.
+
+    Manifest order is authored and meaningful (pre-commit, then commit-msg, then
+    pre-push), so it is preserved rather than sorted.
+    """
+    hooks_dir = root / HOOKS_DIR
+    manifest = _load_yaml(hooks_dir / "hooks.yaml")
+    entries = manifest.get("hooks")
+    if not isinstance(entries, list) or not entries:
+        raise ClaimError(f"{HOOKS_DIR}/hooks.yaml: 'hooks' must be a non-empty list")
+
+    rows: list[list[str]] = []
+    for entry in entries:
+        hook_id = entry.get("id")
+        script = entry.get("script")
+        stage = entry.get("stage")
+        if not (hook_id and script and stage):
+            raise ClaimError(f"{HOOKS_DIR}/hooks.yaml: entry {entry!r} needs id, script and stage")
+        rows.append([
+            f"`{hook_id}`",
+            f"`{stage}`",
+            f"`{entry.get('manager', 'git')}`",
+            f"[`{script}`]({script})",
+            _script_purpose(hooks_dir / script),
+        ])
+    return _table(["Hook", "Stage", "Manager", "Script", "Purpose"], rows)
+
+
+# ------------------------------------------------------------------- assertions
+
+
+def _documented_commands(section: str) -> set[str]:
+    """Subcommand names declared in the *first* cell of each section 8 table row.
+
+    Only the command cell, never the behavior prose beside it: that column is full
+    of incidental backticked words (``basicly.toml``, ``check``, ``build``) which
+    would silently satisfy the coverage claim for a command nobody documented.
+
+    Two spellings appear there, and both count: the leading ``basicly <name>``, and
+    the bare backticked alternative a build/check pair is written with
+    (``` `basicly agents-build` / `agents-check` ```).
+    """
+    documented: set[str] = set()
+    for line in section.splitlines():
+        if not line.startswith("|"):
+            continue
+        # Split on unescaped pipes only: a command cell spells its alternatives
+        # `[--root ...\|--all-default-roots]`, and splitting on that `\|` cut the
+        # cell in half and lost every name after it.
+        cells = re.split(r"(?<!\\)\|", line)
+        if len(cells) < 3:
+            continue
+        command_cell = cells[1]
+        lead = re.search(r"basicly ([a-z][a-z-]*)", command_cell)
+        if lead:
+            documented.add(lead.group(1))
+        documented.update(re.findall(r"`([a-z][a-z-]+)`", command_cell))
+    return documented
+
+
+def _cli_commands_covered(root: Path) -> list[str]:
+    """Every subcommand the CLI ships must appear in the section 8 command tables."""
+    parser = cli._build_parser()
+    action = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
+    registered = set(action.choices)
+
+    text = _read(root / ARCHITECTURE_MD)
+    start = text.index("## 8) CLI surface")
+    end = text.find("\n## ", start)
+    section = text[start:end] if end != -1 else text[start:]
+
+    missing = sorted(registered - _documented_commands(section))
+    if missing:
+        return [f"subcommands missing from the section 8 command tables: {', '.join(missing)}"]
+    return []
+
+
+# ----------------------------------------------------------------------- claims
+
+
+@dataclass(frozen=True)
+class Block:
+    """A doc region rendered wholly from the tree, and therefore auto-repairable."""
+
+    name: str
+    path: str
+    render: Callable[[Path], list[str]]
+
+
+@dataclass(frozen=True)
+class Assertion:
+    """A claim in authored prose that is checkable but not writable by a script."""
+
+    name: str
+    path: str
+    check: Callable[[Path], list[str]]
+
+
+BLOCKS: tuple[Block, ...] = (
+    Block("always-on-sizes", ARCHITECTURE_MD, _always_on_sizes),
+    Block("catalog-skills", SKILLS_README, _catalog_skills),
+    Block("catalog-hooks", HOOKS_README, _catalog_hooks),
+)
+
+ASSERTIONS: tuple[Assertion, ...] = (
+    Assertion("cli-commands", ARCHITECTURE_MD, _cli_commands_covered),
+)
+
+
+# ------------------------------------------------------------------------- main
+
+
+def _run_blocks(root: Path, *, fix: bool) -> list[str]:
+    """Compare (and optionally rewrite) every generated block; return failure lines."""
+    failures: list[str] = []
+    for block in BLOCKS:
+        path = root / block.path
+        try:
+            current = _read(path)
+            updated = _splice(current, block.name, block.render(root))
+        except ClaimError as exc:
+            failures.append(f"{block.path} [{block.name}]: {exc}")
+            continue
+        if updated == current:
+            continue
+        if fix:
+            _write(path, updated)
+            print(f"regenerated: {block.path} [{block.name}]")
+        else:
+            failures.append(
+                f"{block.path} [{block.name}]: generated block is stale — run `{FIX_HINT}`"
+            )
+    return failures
+
+
+def _count(items: tuple[object, ...], noun: str) -> str:
+    """``2 blocks current`` / ``1 block current`` — the clean-run summary phrase."""
+    return f"{len(items)} {noun}{'' if len(items) == 1 else 's'} current"
+
+
+def _run_assertions(root: Path) -> list[str]:
+    """Evaluate every assertion; return failure lines."""
+    failures: list[str] = []
+    for assertion in ASSERTIONS:
+        try:
+            problems = assertion.check(root)
+        except ClaimError as exc:
+            problems = [str(exc)]
+        failures.extend(f"{assertion.path} [{assertion.name}]: {problem}" for problem in problems)
+    return failures
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Entry point: ``--check`` reports drift, ``--fix`` regenerates the stale blocks."""
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--check", action="store_true", help="Report drift; write nothing")
+    mode.add_argument("--fix", action="store_true", help="Regenerate every stale block")
+    parser.add_argument(
+        "--root",
+        type=Path,
+        default=REPO_ROOT,
+        help="Repository root to evaluate (default: this script's repo)",
+    )
+    args = parser.parse_args(argv)
+
+    root = args.root.resolve()
+    failures = _run_blocks(root, fix=args.fix) + _run_assertions(root)
+    if failures:
+        for failure in failures:
+            print(f"docs-claims: {failure}", file=sys.stderr)
+        return 1
+    print(f"docs-claims: {_count(BLOCKS, 'generated block')}, {_count(ASSERTIONS, 'assertion')}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -17,6 +17,11 @@ Cross-platform scripts for this repository.
   the `identity-guard` hook. Run `uv run python .scripts/setup_git_identity.py --help`.
 - [`generate_release_changelog.py`](generate_release_changelog.py) — release changelog
   helper (see the release-process skill).
+- [`docs_claims.py`](docs_claims.py) — generate the documentation blocks this repo can
+  derive from its own tree (always-on character counts, catalog inventories) and assert
+  the claims it can only check (every shipped subcommand appears in the architecture
+  command tables). Wired as the `docs-claims` [`[[verify.checks]]`](../basicly.toml)
+  entry, so `--check` gates every commit and `--fix` is the mechanical repair.
 - [`generate_model_map.py`](generate_model_map.py) — resolve each model tier's anchor
   against models.dev into the committed [`model-map.json`](../.basicly/core/models/README.md),
   and `--check` it for upstream drift. Needs the network, so it runs at authoring and
