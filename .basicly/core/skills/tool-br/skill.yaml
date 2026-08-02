@@ -200,10 +200,16 @@ instructions: |
     by the commit-msg hook and breaks the id-parenthetical convention.
   - Priority scale (0=Critical, 4=Backlog): use `0`/`1` sparingly for release-blocking
     or next-up work; `2` for normal work; `3`/`4` for low-urgency/backlog items.
-  - Type taxonomy is br's canonical enum (`epic`, `feature`, `task`, `bug`, `chore`,
-    `docs`, `question`) — there is no separate "story"/"sub-task" type. Express
-    hierarchy with `br create --parent <id>` (e.g. epic → feature/task/bug children)
-    instead of inventing a new type.
+  - `br` has no type enum: `--type` stores whatever string it is given, so a wrong type
+    is accepted silently at `create` and only bites later. The binding taxonomy is the
+    harness's — the harness work types are `bug`, `chore`, `epic`, `feature`, `task`;
+    anything outside that makes `basicly classify` raise, so the bead can never advance
+    through the loop. File documentation work, a question, or a spike as `task`.
+  - A bead a lane will build in its own worktree must be one of the leaf types `bug`,
+    `chore`, `task`; `epic` and `feature` decompose into children instead of building.
+  - There is no separate "story"/"sub-task" type. Express hierarchy with
+    `br create --parent <id>` (e.g. epic → feature/task/bug children) instead of
+    inventing a new type.
 
   ## Trigger Examples
 

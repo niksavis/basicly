@@ -14,8 +14,10 @@ instructions: |
 
   It is not for:
 
-  - Merging a finished worktree branch back or resolving conflicts (that is the merge
-    orchestrator's job — not yet part of `basicly worktree`).
+  - Resolving a merge conflict. Landing itself *is* part of `basicly worktree` (step 3
+    below), but a conflict is never settled here: it means the declared scopes missed a
+    coupling, so the merge bounces the lane back to re-apply its intent on the new base.
+    There is no hand-edited conflict marker and no merge-time AI resolution.
   - Creating or claiming the beads issue the work tracks (see `tool-br`).
   - Git staging, diffing, or commit-message formatting (see `tool-git`, `conventional-commits`).
 
@@ -43,9 +45,16 @@ instructions: |
      sibling worktree, provisions its own standalone `.venv` (`uv sync`) and `node_modules`
      (`npm install`), and installs the repo's git hooks for every stage. The dependency trees
      are freshly installed (never symlinked to main), so the worktree is self-contained and
-     teardown is safe. Creation is refused once `[worktree].concurrency` (default 4) is reached.
+     teardown is safe. Creation is refused once `[worktree].concurrency` is reached — read the
+     configured value, never a number quoted in prose.
   2. **Work** — do the change in the worktree; its hooks gate commits exactly as on main.
-  3. **Cleanup** — `basicly worktree cleanup <name>` removes the worktree, prunes the registry,
+  3. **Merge** — `basicly worktree merge <name> --bead <id>` lands one finished branch on its
+     base: rebase, re-run verify (`--mode`), then a `--no-ff` merge. `basicly worktree
+     merge-queue <name>:<bead> ...` lands several serially in the given topological order.
+     Both run **from the base checkout** — git refuses to update a branch checked out in
+     another worktree. Under `basicly loop`, the build→verify advance does this for you; call
+     these directly only for a worktree the loop is not driving.
+  4. **Cleanup** — `basicly worktree cleanup <name>` removes the worktree, prunes the registry,
      and deletes the `harness/<name>` branch once it is merged. The base branch is never
      touched. An unmerged branch is kept (with a note) unless you pass `--force`; a worktree
      whose directory vanished is still reclaimable.

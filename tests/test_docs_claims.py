@@ -209,3 +209,121 @@ def test_check_fails_when_a_shipped_subcommand_leaves_the_command_tables(
 def test_the_command_tables_cover_every_registered_subcommand() -> None:
     """The positive half of the same claim, on the committed tree."""
     assert claims._cli_commands_covered(REPO) == []
+
+
+# ------------------------------------------------- nested subcommands (tcmy.9)
+
+
+def test_the_command_tables_cover_every_subcommand_of_every_group() -> None:
+    """The positive control for the nested claim, on the committed tree."""
+    assert claims._cli_subcommands_covered(REPO) == []
+
+
+@pytest.mark.parametrize(
+    ("fragment", "parent", "dropped"),
+    [
+        # The defect tcmy.9 was filed for: `worktree ...` satisfied the top-level
+        # claim while three of its six subcommands were undocumented.
+        (
+            " and `merge-queue` lands several serially in the given topological order;",
+            "worktree",
+            "merge-queue",
+        ),
+        # `merge` is a prefix of `merge-queue`. A plain substring test would credit
+        # the missing one to the surviving one and report a clean tree.
+        (
+            "`merge` lands one finished worktree on its base (rebase, re-verify, `--no-ff`) and ",
+            "worktree",
+            "merge",
+        ),
+        (
+            "`preflight` (read-only: clean base, live worktrees, runner, grant, budget, "
+            "per-lane band table and forecast spend) and then ",
+            "loop",
+            "preflight",
+        ),
+    ],
+)
+def test_check_fails_when_a_group_stops_documenting_one_of_its_subcommands(
+    work_repo: Path,
+    capsys: pytest.CaptureFixture[str],
+    fragment: str,
+    parent: str,
+    dropped: str,
+) -> None:
+    """A known-bad control per case, so a green sweep cannot be an empty one."""
+    path = work_repo / ARCHITECTURE_MD
+    text = path.read_text(encoding="utf-8")
+    assert fragment in text, "the fixture no longer matches the document it mutates"
+    path.write_text(text.replace(fragment, "", 1), encoding="utf-8")
+
+    assert _run(work_repo, "--check") == 1
+    err = capsys.readouterr().err
+    assert "[cli-subcommands]" in err
+    assert f"'{parent}' subcommands missing" in err
+    assert dropped in err
+
+
+def test_fix_cannot_repair_a_missing_subcommand_and_says_so(work_repo: Path) -> None:
+    """``--fix`` must exit non-zero on a claim it cannot write.
+
+    A ``fix_command`` that exited 0 here would leave the pre-commit fast set green
+    on a real omission — a fail-open gate built by the gate that closes one.
+    """
+    path = work_repo / ARCHITECTURE_MD
+    text = path.read_text(encoding="utf-8")
+    path.write_text(text.replace("`bg-isolation` sets Claude's", "sets Claude's", 1), "utf-8")
+
+    assert _run(work_repo, "--fix") == 1
+
+
+# ------------------------------------------------------- skill work types (tcmy.9)
+
+
+def test_the_tool_br_skill_states_the_engines_own_work_types() -> None:
+    """The positive control: both lists in the shipped skill match the engine."""
+    assert claims._skill_work_types(REPO) == []
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "expected"),
+    [
+        # The exact wording that shipped for months: `docs` and `question` are
+        # rejected by `classify`, so a bead filed as either could never advance.
+        ("`feature`, `task`;", "`feature`, `task`, `docs`, `question`;", "config.WORK_TYPES"),
+        # A leaf list that quietly grows past what `loop` will build. The sentence
+        # wraps in the YAML block scalar, so the fixture matches its second line.
+        ("`chore`, `task`; `epic`", "`chore`, `task`, `feature`; `epic`", "loop._LEAF_TYPES"),
+    ],
+)
+def test_check_fails_when_the_skill_states_a_type_the_engine_rejects(
+    work_repo: Path, capsys: pytest.CaptureFixture[str], old: str, new: str, expected: str
+) -> None:
+    """Each list is checked against its own source of truth, and named on failure."""
+    path = work_repo / ".basicly/core/skills/tool-br/skill.yaml"
+    text = path.read_text(encoding="utf-8")
+    assert old in text, "the fixture no longer matches the skill it mutates"
+    path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+    assert _run(work_repo, "--check") == 1
+    err = capsys.readouterr().err
+    assert "[skill-work-types]" in err
+    assert expected in err
+
+
+def test_prose_reworded_past_the_anchor_fails_loudly_rather_than_asserting_nothing(
+    work_repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A vanished anchor must raise, not silently check an empty list.
+
+    This is the failure mode that makes a checker worse than none: reword the
+    sentence, the anchor stops matching, and the gate reports a clean tree forever.
+    """
+    path = work_repo / ".basicly/core/skills/tool-br/skill.yaml"
+    text = path.read_text(encoding="utf-8")
+    path.write_text(text.replace("the leaf types", "the buildable kinds", 1), encoding="utf-8")
+
+    assert _run(work_repo, "--check") == 1
+    err = capsys.readouterr().err
+    assert "[skill-work-types]" in err
+    assert "anchor 'leaf types' not found" in err
