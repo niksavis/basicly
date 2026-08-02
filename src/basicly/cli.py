@@ -11,6 +11,7 @@ import shutil
 import sys
 import time
 import tomllib
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -4393,12 +4394,20 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Parse arguments and dispatch to the requested command."""
-    _tolerate_narrow_consoles()
-    _line_buffer_stdout()
-    args = _build_parser().parse_args(argv)
-    handlers = {
+def _handlers() -> dict[str, Callable[[argparse.Namespace], int]]:
+    """Every top-level subcommand `_build_parser` registers, mapped to its handler.
+
+    A function and not a module-level dict on purpose: the names are resolved when
+    it is called, so a test (or a caller) that substitutes one `cmd_*` still has its
+    substitution dispatched. A dict built at import time captures the originals and
+    silently ignores the swap.
+
+    The two registries are hand-maintained lists of the same 25 names and nothing
+    derives one from the other, so `test_every_registered_subcommand_has_a_handler`
+    pins them equal and `main` fails loudly on a name that arrives with no handler
+    (basicly-tcmy.4).
+    """
+    return {
         "install": cmd_install,
         "uninstall": cmd_uninstall,
         "build": cmd_build,
@@ -4426,10 +4435,29 @@ def main(argv: list[str] | None = None) -> int:
         "usage": cmd_usage,
     }
 
+
+def main(argv: list[str] | None = None) -> int:
+    """Parse arguments and dispatch to the requested command."""
+    _tolerate_narrow_consoles()
+    _line_buffer_stdout()
+    args = _build_parser().parse_args(argv)
+
+    # Unreachable while the two registries agree, and the point is that it must
+    # stay that way loudly. The top-level subparser is `required=True`, so every
+    # name that gets here is one the parser accepted — meaning a miss is always a
+    # registered command with no handler, never user error. Returning 0 here made
+    # that command print nothing and succeed, which is indistinguishable from a
+    # command that ran (basicly-tcmy.4).
+    handler = _handlers().get(args.command)
+    if handler is None:
+        print(
+            f"internal error: subcommand {args.command!r} is registered on the parser "
+            "but has no handler — this is a bug in basicly, not in your invocation",
+            file=sys.stderr,
+        )
+        return 2
+
     try:
-        handler = handlers.get(args.command)
-        if handler is None:
-            return 0
         return handler(args)
     except ValidationError as exc:
         print(f"Validation error: {exc}", file=sys.stderr)
