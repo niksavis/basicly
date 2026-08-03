@@ -1281,15 +1281,19 @@ metadata-only **run-record** keyed by bead id into the self-ignored `.basicly/us
 outcome (executed/handoff/failed), agent, the pinned model when the runner sets one, and
 token/cost telemetry (`basicly-kjc5.1`, factory design §7.5). For telemetry, a loop dispatch
 appends the adapter's usage-report flags (claude `--output-format stream-json --verbose`, codex `--json`;
-opt-in per call site — rubric judging and catalog review parse plain-text answers and stay
-unflagged) and `runner.extract_usage` parses reported tokens/cost from the captured output;
+opt-in per call site, because they wrap stdout in an envelope — a consumer that parses the
+agent's answer reads it back through `runner.result_text`, which inverts the envelope, and the
+two CLI passthroughs — `basicly review` and `basicly runner run` — stay unflagged because they
+print the reply for a human rather than metering it) and `runner.extract_usage` parses reported
+tokens/cost from the captured output;
 when the output does not parse, it falls back to a chars/4 transcript estimate flagged
 `estimated` so calibration can down-weight it. Copilot is metered **out of band**
 (`basicly-2rn9`): it reports nothing usable on stdout, but each dispatch's per-model token
 split and AI-credit spend land on the terminating `session.shutdown` event of its own session
 store (probed 1.0.75), so a metered dispatch supplies the new session's UUID with
 `--session-id` and the reader joins on it — which measures real tokens _and_ leaves stdout
-plain text, the property the rubric judge's parser depends on. An absent or unreadable store
+plain text, so this is the one arm an answer-parsing consumer needs no inversion on. An
+absent or unreadable store
 takes the same flagged estimate, so a measurement that could not be made is never reported as
 one that was. `[runner] copilot_session_store` moves the base directory (default
 `~/.copilot/session-state`); it lives in `[runner]` rather than `[paths]` because only the

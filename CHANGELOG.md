@@ -436,9 +436,41 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
   **This does not close the 2026-08-02 incident it was filed for.** The `tokens: 182`
   record that halted that grant is `phase: decide` — the *decider* agent invoked on the
-  escalation the failed lane enqueued, not the lane. The decider is structurally
-  unmeterable and every delegated decision still halts an L2+ grant; that is tracked
-  separately as `basicly-gczc`.
+  escalation the failed lane enqueued, not the lane. That halt is fixed separately, below
+  (`basicly-gczc`).
+
+- **A delegated decision no longer halts the grant, because the decider is now metered
+  for real.** `decisions.invoke_decider` wrote a run record and carried a comment saying
+  it was "metered like every other dispatch" — but it never passed `capture_usage`, so the
+  record held a chars/4 floor flagged `estimated`, and under `session_spend` an estimated
+  agent run *is* an unmeterable one, which zeroes the grant's remaining budget. One
+  delegated decision was enough to end a pass, whether or not a lane ever failed; on the
+  live record set the single unmetered dispatch among 213 is exactly that
+  `basicly-tcmy.11` `phase: decide` entry. `rubrics.evaluate`'s judged dispatch had the
+  same defect and the same halt.
+
+  Two paths still halt, and deliberately: a dispatch that timed out, and one whose
+  envelope does not parse at all. Neither reported usage, so neither is measurable, and a
+  grant that cannot be metered is the one thing autonomy may not assume — the halt is the
+  correct answer there rather than a residue of this defect.
+
+  Both now pass the flag, which was never a one-line change: the same flag that makes
+  usage reportable also wraps the reply — claude in a result object, codex in a JSONL event
+  stream — and `parse_verdict` takes first-`{` to last-`}`, so it would have parsed the
+  *envelope*, found no `decision` key, and failed closed to an abstention on every
+  delegated decision while the token numbers finally looked right. So `runner.result_text`
+  undoes the envelope (claude's `result` field on either envelope, codex's last
+  `agent_message`, copilot's stdout untouched — it measures out of band), and both call
+  sites read the answer back through it. Every field was taken off a live probe of the argv
+  the engine really dispatches, not from documentation.
+
+  Measured on a real confined decider dispatch: 17,648 adapter-reported tokens and
+  \$0.179 where the floor would have reported 1,297 — **13.6x under** — and against the
+  real 213-dispatch record set the fixed dispatch leaves `unmetered_dispatches` unchanged
+  and an L3 grant funded, where the pre-fix shape of the same dispatch halts it. Each call
+  site also carries a test that fails if the flag and the prose beside it stop agreeing,
+  which is the defect class that put a false metering claim in the comment to begin with
+  (`basicly-gczc`).
 
 - **Scope read-cost sizes the material a lane reads, not the whole of every file it
   names.** A scope of `src/basicly/cli.py` cost all 45,556 of its tokens, so a

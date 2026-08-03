@@ -821,6 +821,13 @@ _CLAUDE_RESULT = json.dumps({
 # skip what it does not recognise. The second assistant turn is the occupancy
 # view; the result event's cache_read re-count is the cumulative cost view
 # (basicly-kjc5.14).
+#
+# The `result` field on that terminating event was added from a second live probe
+# (2026-08-03, basicly-gczc): it holds the agent's whole reply, and it is what
+# `result_text` reads a metered dispatch's answer out of. Both claude envelopes
+# carry it under the same key — the probe of `--output-format json` printed one
+# object whose `result` was the reply verbatim, and the stream's last event was
+# `{"type":"result","subtype":"success","result":"<reply>", ...}`.
 _CLAUDE_STREAM = "\n".join([
     "Warning: no stdin data received in 3s, proceeding without it.",
     '{"type":"system","subtype":"init","tools":[]}',
@@ -833,6 +840,7 @@ _CLAUDE_STREAM = "\n".join([
     json.dumps({
         "type": "result",
         "subtype": "success",
+        "result": "ok",
         "total_cost_usd": 0.136147,
         "usage": {
             "input_tokens": 6,
@@ -1418,6 +1426,113 @@ def test_builtin_usage_formats_pin_the_probed_capabilities() -> None:
     assert by_name["codex"] == CODEX_JSONL
     assert by_name["copilot"] == COPILOT_SESSION_STORE
     assert by_name[MANUAL_RUNNER] is None
+
+
+# --- The answer survives the envelope that carries the numbers (basicly-gczc) --
+#
+# Metering a stdout-reporting adapter used to cost the caller its answer, so the
+# two dispatches that parse a reply — the decider and the rubric judge — were left
+# unmetered, and `policy.session_spend` then counted each of them as an
+# unmeterable dispatch, which halts the whole grant. `result_text` is the inverse
+# of `_apply_usage`: every field it reads was taken off a live probe of the argv
+# the engine really dispatches (2026-08-03), not from documentation.
+
+
+def test_result_text_unwraps_each_stdout_usage_envelope() -> None:
+    """Every format that wraps stdout hands the agent's own reply back out of it."""
+    assert runner.result_text(_claude_json_spec(), _CLAUDE_RESULT) == "ok"
+    assert runner.result_text(_claude_spec(), _CLAUDE_STREAM) == "ok"
+    assert runner.result_text(_codex_spec(), _CODEX_EVENTS) == "ok"
+
+
+def test_result_text_leaves_an_unwrapped_transcript_alone() -> None:
+    """A dispatch whose stdout was never wrapped is returned verbatim.
+
+    Copilot is the reason both callers have a store-measured arm that needed no
+    fix at all: `--session-id` sets the store key and never touches stdout
+    (basicly-2rn9). A spec with no usage format never had flags appended either.
+    """
+    answer = "q1: yes - ok\nq2: no - missing\n"
+    assert runner.result_text(_copilot_spec(Path("store")), answer) == answer
+    assert runner.result_text(RunnerSpec("x", HEADLESS, ("x",)), answer) == answer
+
+
+def test_the_json_envelope_survives_a_line_the_cli_printed_around_it() -> None:
+    """A leading non-JSON line must not cost the reply *and* the metering.
+
+    The warning below is this module's own pinned fixture (`_CLAUDE_STREAM`), and
+    it comes from the CLI's stdin handling rather than from an output format — so
+    the single-object envelope is exposed to it exactly as the stream is. Before
+    this, the non-streaming arm required stdout to be pure JSON and one such line
+    reproduced *both* halves of basicly-gczc at once: `result_text` fell back to
+    the raw transcript, so `parse_verdict` abstained, and `_claude_json_usage`
+    returned None, so the record carried a chars/4 estimate — and one estimated
+    dispatch halts the grant. Measured on the pre-fix build: `decision=''`,
+    `abstain=True`, `estimated=True`.
+
+    Asserted on both readers together, because fixing either alone still halts a
+    session or still drops an answer.
+    """
+    noisy = "Warning: no stdin data received in 3s, proceeding without it.\n" + _CLAUDE_RESULT
+    spec = _claude_json_spec()
+
+    assert runner.result_text(spec, noisy) == "ok"
+    usage = runner.extract_usage(spec, _executed(spec, noisy))
+    assert usage is not None
+    assert usage.estimated is False
+
+
+def test_result_text_takes_codex_last_agent_message() -> None:
+    """A multi-turn codex run answers in its final message, not its narration.
+
+    The earlier `agent_message` events are progress notes from before the tool
+    calls; concatenating them would prepend commentary to a reply a caller is
+    about to parse as one JSON object.
+    """
+    stream = "\n".join([
+        '{"type":"thread.started","thread_id":"t1"}',
+        '{"type":"item.completed","item":{"type":"agent_message","text":"looking into it"}}',
+        '{"type":"item.completed","item":{"type":"reasoning","text":"not a message"}}',
+        '{"type":"item.completed","item":{"type":"agent_message","text":"the answer"}}',
+        '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":2}}',
+    ])
+    assert runner.result_text(_codex_spec(), stream) == "the answer"
+
+
+def test_result_text_falls_back_to_the_transcript_with_no_parseable_envelope() -> None:
+    """An adapter that did not emit its declared shape has no reply hidden elsewhere.
+
+    Blanking the transcript instead would throw away the only text there is —
+    including the CLI's own error message, which is what a caller shows a human.
+    Both callers fail closed on it anyway: an envelope is not a parseable answer
+    to either of them.
+    """
+    for spec in (_claude_json_spec(), _claude_spec(), _codex_spec()):
+        assert runner.result_text(spec, "error: not logged in") == "error: not logged in"
+    # Parseable JSON, but not the envelope: no `result` field, and no agent_message.
+    no_result, no_message = '{"type":"result"}', '{"type":"turn.completed"}'
+    assert runner.result_text(_claude_json_spec(), no_result) == no_result
+    assert runner.result_text(_codex_spec(), no_message) == no_message
+
+
+def test_a_metered_dispatch_keeps_both_its_numbers_and_its_answer() -> None:
+    """The property the fix exists for: measured usage *and* a recoverable reply.
+
+    Asserted together per format, because the defect was a trade between them —
+    an unflagged dispatch kept its answer and reported a chars/4 estimate that
+    halts the grant, and the naive one-line fix reported real numbers while
+    silently handing every caller an envelope to parse.
+    """
+    for spec, stdout in (
+        (_claude_json_spec(), _CLAUDE_RESULT),
+        (_claude_spec(), _CLAUDE_STREAM),
+        (_codex_spec(), _CODEX_EVENTS),
+    ):
+        usage = runner.extract_usage(spec, _executed(spec, stdout))
+        assert usage is not None, spec.usage_format
+        assert usage.estimated is False, spec.usage_format
+        assert usage.tokens > 0, spec.usage_format
+        assert runner.result_text(spec, stdout) == "ok", spec.usage_format
 
 
 # --- Context windows and occupancy (basicly-kjc5.6, factory design D8) -------
