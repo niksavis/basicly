@@ -30,11 +30,24 @@ class _Proc:
 
 
 class _FakeGit:
-    """Answers the reads assembly makes (staged churn, current branch), recording calls."""
+    """Answers the reads assembly makes (staged churn, current branch), recording calls.
 
-    def __init__(self, numstat: str = "", branch: str = "harness/basicly-kjc5-42") -> None:
+    Anything else raises (basicly-tcmy.22). A blanket ``_Proc(0)`` fallback made
+    this stub answer "success, no output" to any read the production code later
+    started making — and "no staged churn" or "no branch" is a *meaningful* answer
+    to a commit envelope, so a new read would have been silently mis-answered by
+    every test in this file at once instead of failing in one.
+    """
+
+    def __init__(
+        self,
+        numstat: str = "",
+        branch: str = "harness/basicly-kjc5-42",
+        commit_result: _Proc | None = None,
+    ) -> None:
         self.numstat = numstat
         self.branch = branch
+        self.commit_result = commit_result
         self.calls: list[list[str]] = []
 
     def __call__(self, args: list[str], **_kwargs: object) -> _Proc:
@@ -43,7 +56,15 @@ class _FakeGit:
             return _Proc(0, self.numstat)
         if args[:2] == ["rev-parse", "--abbrev-ref"]:
             return _Proc(0, f"{self.branch}\n")
-        return _Proc(0)
+        if args[0] == "commit" and self.commit_result is not None:
+            return self.commit_result
+        raise AssertionError(f"unstubbed git subcommand {args[0]!r}: git {' '.join(args)}")
+
+
+def test_an_unstubbed_git_subcommand_fails_the_test_naming_itself() -> None:
+    """The stub's own contract (basicly-tcmy.22), so the fallback cannot come back."""
+    with pytest.raises(AssertionError, match=r"unstubbed git subcommand 'bisect': git bisect"):
+        _FakeGit()(["bisect", "start"])
 
 
 def _tracker(tmp_path: Path, *records: dict) -> Path:
@@ -335,7 +356,7 @@ def test_run_commit_passes_the_message_to_git_with_hooks_in_the_path(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """The commit runs through plain `git commit -m` — no --no-verify, no bypass."""
-    git = _FakeGit("")
+    git = _FakeGit(commit_result=_Proc(0))
     monkeypatch.setattr(commit, "git", git)
     envelope = commit.Envelope(
         type="feat", scope="commit", description="assemble the envelope", bead="basicly-kjc5.42"

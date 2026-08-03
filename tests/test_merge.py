@@ -28,6 +28,13 @@ class _FakeGit:
     abc123..harness/feat`` ("did the branch ever receive a commit?") have different
     answers, and a stub that gives both the same one cannot tell a lane that landed
     from a lane that did nothing (basicly-tcmy.29).
+
+    An unstubbed subcommand raises, naming itself (basicly-tcmy.22). The fallback
+    used to be ``_Proc(0)``, which is the worst possible default here: this is the
+    code that decides whether a lane's work is safe to land, and a blanket success
+    with empty stdout is a *positive* answer to "is the tree clean?", "did the
+    rebase work?", "is the branch ahead?". Any probe the orchestrator started
+    making would have been answered yes by every one of these tests at once.
     """
 
     def __init__(self, responses: dict[str, _Proc]) -> None:
@@ -39,10 +46,20 @@ class _FakeGit:
         for key in (" ".join(args), args[0]):
             if key in self.responses:
                 return self.responses[key]
-        return _Proc(0)
+        raise AssertionError(f"unstubbed git subcommand {args[0]!r}: git {' '.join(args)}")
 
     def ran(self, subcommand: str) -> bool:
         return any(call[0] == subcommand for call in self.calls)
+
+
+def test_an_unstubbed_git_subcommand_fails_the_test_naming_itself() -> None:
+    """The stub's own contract (basicly-tcmy.22), so the fallback cannot come back.
+
+    Without this, restoring ``return _Proc(0)`` would make every test in this file
+    pass — that is precisely how the hole survived.
+    """
+    with pytest.raises(AssertionError, match=r"unstubbed git subcommand 'bisect': git bisect"):
+        _FakeGit({})(["bisect", "start"])
 
 
 def _session() -> Session:
@@ -59,6 +76,14 @@ def _session() -> Session:
 # The landing's "did this branch ever receive a commit?" probe, keyed on the session
 # above: commits on harness/feat since the commit it was cut from.
 _OWN_COMMITS = "rev-list --count abc123..harness/feat"
+
+# The landing's readiness probe: commits on harness/feat that main does not have.
+# Every test that reaches a landing has to answer it, because "0" is the answer that
+# means "this lane committed nothing" (basicly-tcmy.22). Under the old blanket
+# _Proc(0) fallback these tests were answering it with an empty string, which passed
+# only because "" != "0" — the readiness check was never actually being exercised.
+_AHEAD_OF_BASE = "rev-list --count main..harness/feat"
+_HAS_WORK = {_AHEAD_OF_BASE: _Proc(0, "1")}
 
 
 @pytest.fixture
@@ -86,11 +111,13 @@ def test_probe_merge_safe_and_conflicts(monkeypatch: pytest.MonkeyPatch, tmp_pat
 def test_merge_worktree_happy_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """A clean rebase + green verify + safe probe performs the --no-ff merge."""
     fake = _FakeGit({
+        **_HAS_WORK,
         "status": _Proc(0, ""),
         "rebase": _Proc(0),
         "merge-tree": _Proc(0),
         "merge": _Proc(0),
         "rev-parse": _Proc(0, "def456"),
+        "merge-base": _Proc(0),  # the merge proves itself: def456 is reachable from main
     })
     monkeypatch.setattr(merge, "git", fake)
     monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
@@ -157,11 +184,13 @@ def test_merge_worktree_stamps_attribution_from_the_run_record(
         ),
     )
     fake = _FakeGit({
+        **_HAS_WORK,
         "status": _Proc(0, ""),
         "rebase": _Proc(0),
         "merge-tree": _Proc(0),
         "merge": _Proc(0),
         "rev-parse": _Proc(0, "def456"),
+        "merge-base": _Proc(0),  # the merge proves itself: def456 is reachable from main
     })
     monkeypatch.setattr(merge, "git", fake)
     monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
@@ -178,7 +207,11 @@ def test_commit_tracker_state_commits_beads_only_dirt(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Tracker-only dirt is rolled into one chore commit referencing the bead."""
-    fake = _FakeGit({"status": _Proc(0, " M .beads/issues.jsonl\n?? .beads/metadata.json\n")})
+    fake = _FakeGit({
+        "status": _Proc(0, " M .beads/issues.jsonl\n?? .beads/metadata.json\n"),
+        "add": _Proc(0),
+        "commit": _Proc(0),
+    })
     monkeypatch.setattr(merge, "git", fake)
     flushed = {}
     monkeypatch.setattr(merge.br, "try_run_br", lambda _r, args: flushed.setdefault("args", args))
@@ -221,6 +254,9 @@ def test_merge_worktree_rolls_up_tracker_dirt_before_landing(
         "merge-tree": _Proc(0),
         "merge": _Proc(0),
         "rev-parse": _Proc(0, "def456"),
+        "add": _Proc(0),  # the rollup stages .beads...
+        "commit": _Proc(0),  # ...and commits it
+        "merge-base": _Proc(0),  # the merge proves itself
     }
     calls: list[list[str]] = []
 
@@ -228,7 +264,9 @@ def test_merge_worktree_rolls_up_tracker_dirt_before_landing(
         calls.append(args)
         if args[0] == "status":
             return next(status_results)
-        return responses.get(args[0], _Proc(0))
+        if args[0] not in responses:
+            raise AssertionError(f"unstubbed git subcommand {args[0]!r}: git {' '.join(args)}")
+        return responses[args[0]]
 
     monkeypatch.setattr(merge, "git", fake_git)
     monkeypatch.setattr(merge.br, "try_run_br", lambda *_a, **_k: None)
@@ -245,7 +283,12 @@ def test_merge_worktree_aborts_on_rebase_conflict(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A rebase conflict aborts cleanly and never reaches the merge."""
-    fake = _FakeGit({"status": _Proc(0, ""), "rebase": _Proc(1, "CONFLICT")})
+    fake = _FakeGit({
+        **_HAS_WORK,
+        "status": _Proc(0, ""),
+        "rebase": _Proc(1, "CONFLICT"),
+        "diff": _Proc(0, ""),  # the unmerged-paths read taken while the rebase is stopped
+    })
     monkeypatch.setattr(merge, "git", fake)
 
     result = merge.merge_worktree(tmp_path, "feat", bead="basicly-onb.5")
@@ -260,6 +303,7 @@ def test_merge_worktree_reads_conflict_paths_before_aborting_the_rebase(
 ) -> None:
     """The collided paths are read while the rebase is stopped — the queue needs them (D5)."""
     fake = _FakeGit({
+        **_HAS_WORK,
         "status": _Proc(0, ""),
         "rebase": _Proc(1, "CONFLICT"),
         "diff": _Proc(0, "src/shared.py\n"),
@@ -284,6 +328,7 @@ def test_merge_worktree_carries_probe_conflict_paths(
         merge,
         "git",
         _FakeGit({
+            **_HAS_WORK,
             "status": _Proc(0, ""),
             "rebase": _Proc(0),
             "merge-tree": _Proc(1, "oid\nsrc/a.py\nsrc/b.py"),
@@ -301,7 +346,9 @@ def test_merge_worktree_blocks_on_failed_verify(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A failing re-verify blocks the merge."""
-    monkeypatch.setattr(merge, "git", _FakeGit({"status": _Proc(0, ""), "rebase": _Proc(0)}))
+    monkeypatch.setattr(
+        merge, "git", _FakeGit({**_HAS_WORK, "status": _Proc(0, ""), "rebase": _Proc(0)})
+    )
     monkeypatch.setattr(
         verify,
         "run_verify",
@@ -330,6 +377,12 @@ def test_override_gate_lands_without_running_the_gate_at_all(
             "merge-tree": _Proc(0),
             "merge": _Proc(0),
             "rev-parse": _Proc(0, "def456"),
+            # Declared because this test landed while the stub still answered 0 for
+            # anything nobody named: `merge` proves a landing with
+            # `rev-list --count base..branch` (basicly-jr0l.46), so a silent 0 here
+            # meant the assertion ran against a landing that had not been proven.
+            "rev-list": _Proc(0, "1"),  # branch has committed work ahead of base
+            "merge-base": _Proc(0),  # the merge proves itself: def456 is reachable from main
         }),
     )
     runs: list[str] = []
@@ -376,7 +429,12 @@ def test_merge_worktree_blocks_on_probe_conflict(
     monkeypatch.setattr(
         merge,
         "git",
-        _FakeGit({"status": _Proc(0, ""), "rebase": _Proc(0), "merge-tree": _Proc(1, "oid\nx.py")}),
+        _FakeGit({
+            **_HAS_WORK,
+            "status": _Proc(0, ""),
+            "rebase": _Proc(0),
+            "merge-tree": _Proc(1, "oid\nx.py"),
+        }),
     )
     monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
     result = merge.merge_worktree(tmp_path, "feat", bead="basicly-onb.5")
@@ -579,6 +637,7 @@ def test_the_queue_finishes_a_half_landed_lane_without_charging_it(
 def _landing_git(**overrides: _Proc) -> _FakeGit:
     """A fake git where a landing runs cleanly to the merge, before the proof."""
     responses = {
+        **_HAS_WORK,
         "status": _Proc(0, ""),
         "rebase": _Proc(0),
         "merge-tree": _Proc(0),
@@ -1188,6 +1247,7 @@ def test_merge_worktree_aborts_when_the_merge_commit_fails(
 ) -> None:
     """A hook-rejected merge commit is aborted instead of stranding MERGE_HEAD."""
     fake = _FakeGit({
+        **_HAS_WORK,
         "status": _Proc(0, ""),
         "rebase": _Proc(0),
         "merge-tree": _Proc(0),
@@ -1218,7 +1278,9 @@ def test_merge_worktree_reports_unreliable_when_verify_does_not_reproduce(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A failure that passes unchanged on re-run is a distinct status, not verify-failed."""
-    monkeypatch.setattr(merge, "git", _FakeGit({"status": _Proc(0, ""), "rebase": _Proc(0)}))
+    monkeypatch.setattr(
+        merge, "git", _FakeGit({**_HAS_WORK, "status": _Proc(0, ""), "rebase": _Proc(0)})
+    )
     monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: _FAILED)
     monkeypatch.setattr(verify, "rerun_failures", lambda *_a, **_k: _GREEN)
 
@@ -1234,7 +1296,9 @@ def test_merge_worktree_still_reports_verify_failed_when_it_reproduces(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A real red suite must not be excused: the re-run fails too."""
-    monkeypatch.setattr(merge, "git", _FakeGit({"status": _Proc(0, ""), "rebase": _Proc(0)}))
+    monkeypatch.setattr(
+        merge, "git", _FakeGit({**_HAS_WORK, "status": _Proc(0, ""), "rebase": _Proc(0)})
+    )
     monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: _FAILED)
     monkeypatch.setattr(verify, "rerun_failures", lambda *_a, **_k: _FAILED)
 
@@ -1267,7 +1331,9 @@ def test_merge_worktree_forgives_a_reproduced_failure_that_is_a_dependency_defec
             ),
         ),
     )
-    monkeypatch.setattr(merge, "git", _FakeGit({"status": _Proc(0, ""), "rebase": _Proc(0)}))
+    monkeypatch.setattr(
+        merge, "git", _FakeGit({**_HAS_WORK, "status": _Proc(0, ""), "rebase": _Proc(0)})
+    )
     monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: _FAILED)
     monkeypatch.setattr(verify, "rerun_failures", lambda *_a, **_k: reproduced)
 
@@ -1294,7 +1360,9 @@ def test_merge_worktree_does_not_forgive_reproduced_output_it_does_not_recognise
         "full",
         (verify.CheckResult("pytest", "fail", 1, output="E   AssertionError: assert 3 == 4\n"),),
     )
-    monkeypatch.setattr(merge, "git", _FakeGit({"status": _Proc(0, ""), "rebase": _Proc(0)}))
+    monkeypatch.setattr(
+        merge, "git", _FakeGit({**_HAS_WORK, "status": _Proc(0, ""), "rebase": _Proc(0)})
+    )
     monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: _FAILED)
     monkeypatch.setattr(verify, "rerun_failures", lambda *_a, **_k: reproduced)
 
@@ -1309,7 +1377,7 @@ def test_merge_worktree_reruns_only_after_a_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A green landing pays nothing for the mechanism: no re-run is attempted."""
-    monkeypatch.setattr(merge, "git", _FakeGit({"status": _Proc(0, ""), "rebase": _Proc(0)}))
+    monkeypatch.setattr(merge, "git", _landing_git())
     monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
     reruns: list = []
     monkeypatch.setattr(
