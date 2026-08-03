@@ -312,6 +312,63 @@ def test_merge_worktree_blocks_on_failed_verify(
 
 
 @pytest.mark.usefixtures("base_ready")
+def test_override_gate_lands_without_running_the_gate_at_all(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An answered `land anyway` skips the re-verify, not just its verdict (basicly-tcmy.6).
+
+    Re-running the gate is precisely what that answer rules out, so honouring it by
+    running the gate again and then forgiving the result would carry the remedy out in
+    name only — and would still block on the flake's every reproducing failure.
+    """
+    monkeypatch.setattr(
+        merge,
+        "git",
+        _FakeGit({
+            "status": _Proc(0, ""),
+            "rebase": _Proc(0),
+            "merge-tree": _Proc(0),
+            "merge": _Proc(0),
+            "rev-parse": _Proc(0, "def456"),
+        }),
+    )
+    runs: list[str] = []
+
+    def _run_verify(_root, mode, *_a, **_k):
+        runs.append(mode)
+        return verify.VerifyReport(mode, (verify.CheckResult("ruff", "fail", 1),))
+
+    monkeypatch.setattr(verify, "run_verify", _run_verify)
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-onb.5", override_gate=True)
+
+    assert result.merged
+    assert runs == []
+
+
+def test_only_the_statuses_reached_before_the_gate_report_it_unreached() -> None:
+    """What a caller holding a one-shot override asks before spending it (basicly-tcmy.6).
+
+    A landing that stopped before the gate overrode nothing, so the operator's single
+    authorisation has to survive it — the same stance ``deferred`` takes on rework.
+    """
+    unreached = {
+        merge.MergeResult("f", status, "").reached_gate for status in merge.PRE_GATE_STATUSES
+    }
+    reached = {
+        merge.MergeResult("f", status, "").reached_gate
+        for status in ("merged", "merge-conflicts", "merge-failed", merge.MERGE_UNPROVEN)
+    }
+
+    assert unreached == {False}
+    assert reached == {True}
+    # The gate's own two verdicts are past it by construction, so neither may read as
+    # pre-gate — an unreliable landing is exactly the one an override is answered for.
+    assert merge.MergeResult("f", merge.VERIFY_UNRELIABLE, "").reached_gate is True
+    assert merge.MergeResult("f", "verify-failed", "").reached_gate is True
+
+
+@pytest.mark.usefixtures("base_ready")
 def test_merge_worktree_blocks_on_probe_conflict(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

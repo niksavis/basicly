@@ -443,6 +443,76 @@ def test_policy_rework_allow_retry_is_the_operators_direct_lever(
     assert "forgiven" in out
 
 
+# --- ...and so is an answered `land anyway` (basicly-tcmy.6) ------------------
+
+
+def _escalate_unreliable(gate: str = "merge") -> decisions.DecisionItem:
+    """Enqueue the unreliable-gate escalation the loop raises at the flake bound."""
+    return decisions.enqueue(
+        Path(),
+        "basicly-x",
+        policy.REWORK_ESCALATION_KIND,
+        policy.unreliable_gate_escalation_question(gate),
+    )
+
+
+def test_answering_land_anyway_says_what_the_next_landing_will_do(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The reported defect: answering printed the same line as an answer that did nothing.
+
+    The override itself is spent by the landing (``loop._landing_gate_override``), so
+    this is the confirmation that the engine will act on the answer at all.
+    """
+    _install_decisions_fake(monkeypatch)
+    item = _escalate_unreliable()
+
+    assert cli.main(["loop", "answer", item.decision_id, "land anyway", "--by", "niksa"]) == 0
+    assert "will skip gate 'merge', once" in capsys.readouterr().out
+
+
+def test_answering_fix_the_flake_promises_no_override(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Two remedies are offered and only one of them waives the gate."""
+    _install_decisions_fake(monkeypatch)
+    item = _escalate_unreliable()
+
+    assert cli.main(["loop", "answer", item.decision_id, "fix the flake", "--by", "niksa"]) == 0
+    assert "skip gate" not in capsys.readouterr().out
+
+
+def test_a_delegated_land_anyway_is_told_it_authorises_nothing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Skipping a landing gate is not a call a model makes for itself."""
+    _install_decisions_fake(monkeypatch)
+    item = _escalate_unreliable()
+    by = f"{decisions.DECIDER_BY_PREFIX}claude"
+
+    assert cli.main(["loop", "answer", item.decision_id, "land anyway", "--by", by]) == 0
+    out = capsys.readouterr().out
+    assert "does not override gate 'merge'" in out
+    assert "will skip gate" not in out
+
+
+def test_land_anyway_on_the_rework_escalation_promises_nothing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Both escalations share one decision kind, so the question must decide.
+
+    `land anyway` is not one of the rework question's three choices; reading it as an
+    override there would waive a gate nobody was asked about.
+    """
+    _install_decisions_fake(monkeypatch)
+    item = _escalate()
+
+    assert cli.main(["loop", "answer", item.decision_id, "land anyway", "--by", "niksa"]) == 0
+    out = capsys.readouterr().out
+    assert "skip gate" not in out
+    assert "granted" not in out
+
+
 def test_policy_rework_refuses_record_and_allow_retry_together(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -3468,6 +3468,34 @@ def _carry_out_rework_retry(repo_root: Path, item: decisions.DecisionItem) -> st
     return f"granted one further attempt on gate '{gate}' (rework now {charged}/{cap})"
 
 
+def _announce_land_anyway(item: decisions.DecisionItem) -> str | None:
+    """Say what an answered `land anyway` will do, or that it will do nothing.
+
+    Unlike ``retry``, this override is carried out by the landing itself
+    (``loop._landing_gate_override``) rather than here, because that is where it is
+    spent. So this reports instead of granting — but an answer whose whole point is
+    that the engine now acts on it must not print the same single line as one that
+    changed nothing, which is how this defect stayed invisible (basicly-tcmy.6).
+
+    A delegated answer is told plainly that it authorises nothing: skipping a landing
+    gate is not a call a model makes for itself, and the queue would otherwise read as
+    disposed while the lane still held.
+    """
+    if item.kind != policy.REWORK_ESCALATION_KIND:
+        return None
+    if not policy.answer_lands_anyway(item.answer or ""):
+        return None
+    gate = policy.gate_from_unreliable_escalation(item.question)
+    if gate is None:
+        return None
+    if (item.answered_by or "").startswith(decisions.DECIDER_BY_PREFIX):
+        return (
+            f"note: a delegated answer does not override gate '{gate}' — "
+            "a human must authorise that, or the flake must be fixed"
+        )
+    return f"the next landing of {item.issue_id} will skip gate '{gate}', once"
+
+
 def _cmd_loop_answer(args: argparse.Namespace) -> int:
     """Record a human answer on a queued decision, with attribution."""
     repo_root = _repo_root()
@@ -3480,6 +3508,8 @@ def _cmd_loop_answer(args: argparse.Namespace) -> int:
     print(f"answered {item.decision_id} by {by}")
     if granted := _carry_out_rework_retry(repo_root, item):
         print(granted)
+    if note := _announce_land_anyway(item):
+        print(note)
     return 0
 
 

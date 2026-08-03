@@ -1692,6 +1692,49 @@ def test_the_two_escalations_stay_distinguishable_in_one_queue() -> None:
     assert policy.gate_from_unreliable_escalation(rework) is None
 
 
+# --- ...and the `land anyway` it offers is carried out (basicly-tcmy.6) ---------
+
+
+def test_land_anyway_is_told_apart_from_the_other_offered_choice() -> None:
+    """The question offers two remedies, so recognising one must reject the other.
+
+    A rationale may follow the choice, as on the rework escalation — what must not
+    happen is `fix the flake` reading as permission to skip the gate.
+    """
+    assert policy.answer_lands_anyway("land anyway") is True
+    assert policy.answer_lands_anyway("  Land Anyway - the flake is upstream") is True
+    assert policy.answer_lands_anyway("land  anyway") is True  # answers are typed by hand
+    assert policy.answer_lands_anyway("fix the flake") is False
+    assert policy.answer_lands_anyway("do not land anyway") is False
+    assert policy.answer_lands_anyway("") is False
+
+
+def test_the_gate_override_is_spendable_exactly_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """One answer authorises one landing — a standing answer must not bypass forever."""
+    _install(monkeypatch, _FakeBr())
+    assert policy.gate_override_spent(tmp_path, "i", "merge") is False
+
+    assert policy.spend_gate_override(tmp_path, "i", "merge") is True
+    assert policy.gate_override_spent(tmp_path, "i", "merge") is True
+    assert policy.spend_gate_override(tmp_path, "i", "merge") is False
+
+
+def test_the_gate_override_is_scoped_to_its_gate_and_is_not_a_rework_credit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A third marker on the same bead, so no existing counter may read it as its own."""
+    _install(monkeypatch, _FakeBr())
+    policy.spend_gate_override(tmp_path, "i", "merge")
+
+    assert policy.gate_override_spent(tmp_path, "i", "verify") is False
+    assert policy.unreliable_gate_events(tmp_path, "i", "merge") == 0
+    assert policy.rework_attempts(tmp_path, "i", "merge") == 0
+    assert policy.rework_allowances(tmp_path, "i", "merge") == 0
+    assert policy.rework_charged(tmp_path, "i", "merge") == 0
+
+
 # --- A budget meters the grant, not the session's lifetime (basicly-jr0l.17) ---
 
 

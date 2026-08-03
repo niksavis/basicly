@@ -104,6 +104,12 @@ MERGE_UNPROVEN = "merge-unproven"
 # diff (basicly-tcmy.29). The branch must also have grown a commit since it was cut.
 ALREADY_LANDED = "already-landed"
 
+# Statuses a landing returns *before* its post-rebase verify gate runs: the three
+# pre-merge states, and a rebase that stopped. Enumerated here, beside the order it
+# describes, so a caller carrying a one-shot gate override does not have to re-derive
+# from the outside whether the gate was ever reached (basicly-tcmy.6).
+PRE_GATE_STATUSES = ("not-ready", STALE_BRANCH, ALREADY_LANDED, "rebase-conflicts")
+
 
 @dataclass(frozen=True)
 class ProbeResult:
@@ -146,6 +152,17 @@ class MergeResult:
         attempt (basicly-55yh).
         """
         return self.status == VERIFY_UNRELIABLE
+
+    @property
+    def reached_gate(self) -> bool:
+        """True when the landing got as far as running (or skipping) its verify gate.
+
+        What a caller holding a one-shot gate override asks before spending it: a lane
+        that was not committed, whose branch moved, that had already landed, or whose
+        rebase stopped never reached the gate, so nothing was overridden and the
+        operator's single authorisation must survive (basicly-tcmy.6).
+        """
+        return self.status not in PRE_GATE_STATUSES
 
 
 def _verify_for_landing(name: str, worktree_path: Path, verify_mode: str) -> MergeResult | None:
@@ -544,13 +561,14 @@ def _merge_and_prove(
     return MergeResult(name, "merged", f"merged {branch} into {base} @ {head}")
 
 
-def merge_worktree(
+def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing input
     repo_root: Path,
     name: str,
     *,
     bead: str,
     verify_mode: str = "full",
     expected_head: str | None = None,
+    override_gate: bool = False,
 ) -> MergeResult:
     """Land worktree *name* onto its base: rebase, re-verify, probe, ``--no-ff`` merge.
 
@@ -561,6 +579,15 @@ def merge_worktree(
     *expected_head* is the branch head recorded when the lane entered the queue.
     When it is supplied and the branch has moved since, the landing is refused
     (``STALE_BRANCH``) instead of merging commits this pass never examined.
+
+    *override_gate* skips the post-rebase re-verify entirely. Only the loop sets it,
+    and only after spending the one-shot override an operator's answered ``land
+    anyway`` authorises (:func:`policy.spend_gate_override`, basicly-tcmy.6):
+    re-running the gate is precisely the thing that answer rules out, so honouring
+    the answer by running it again would carry the remedy out in name only. The
+    caller keeps the whole burden of proving the authorisation — nothing here reads
+    the tracker to second-guess it — and the landing's own verify gate, which the
+    escalation does not ask about, still runs afterwards in the base checkout.
 
     A ``merged`` status is unreachable without proving it: after the merge, the
     lane's head must be reachable from the base ref, or the result is
@@ -613,9 +640,10 @@ def merge_worktree(
         )
 
     # 2. Re-verify in the worktree after the rebase.
-    gate = _verify_for_landing(name, worktree_path, verify_mode)
-    if gate is not None:
-        return gate
+    if not override_gate:
+        gate = _verify_for_landing(name, worktree_path, verify_mode)
+        if gate is not None:
+            return gate
 
     # 3. Non-destructive conflict probe before touching the base tree.
     probe = probe_merge(repo_root, base, branch)
