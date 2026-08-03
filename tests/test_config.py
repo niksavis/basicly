@@ -706,6 +706,10 @@ def test_sizing_config_parses_overrides(tmp_path: Path) -> None:
     assert sizing.build_factors["task"] == 2.5
     assert sizing.build_factors["spike"] == 1.0
     assert sizing.build_factors["bug"] == 2.0  # unset classes keep their seeds
+    # Which entries a repo declared, so a dispatch record can say that its factor was
+    # declared rather than seeded (basicly-tcmy.5). Provenance is kept here, where it is
+    # known, rather than inferred later by comparing the value against the seed.
+    assert sizing.configured_build_factors == frozenset({"task", "spike"})
 
 
 def test_sizing_config_inverted_band_falls_back(tmp_path: Path) -> None:
@@ -733,6 +737,9 @@ def test_sizing_config_ignores_wrong_typed_values(tmp_path: Path) -> None:
     assert sizing.calibration_window == 50
     assert sizing.build_factors["task"] == 3.0  # bad value keeps the seed
     assert sizing.build_factors["bug"] == 4.0
+    # A rejected entry left the seed in force, so calling it configured would attribute
+    # the number in use to a declaration that was never honoured.
+    assert sizing.configured_build_factors == frozenset({"bug"})
 
 
 # --- context_window / context_ceiling (basicly-kjc5.6, D8) --------------------

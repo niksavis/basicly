@@ -3316,6 +3316,34 @@ def test_dispatch_lane_records_its_forecast_beside_its_actual(
     assert captured["forecast_source"] == "dispatch"
 
 
+def test_the_lane_dispatch_records_a_write_phase_and_a_seeded_factor(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """AC: the supervised path lands in the same named write set as the interactive one.
+
+    The two paths recorded the same kind of work under two names, and the consumer that
+    bounds an unsizeable lane read only one of them (basicly-tcmy.5). Asserted through
+    ``is_write_phase`` — the predicate the consumer actually calls — rather than against
+    the literal, so a rename cannot leave the assertion passing while the bound stops
+    counting the dispatch.
+    """
+    codex = _codex()
+    _worker_fixture(monkeypatch, tmp_path, stdout=_codex_events(50_000))
+    captured: dict = {}
+    monkeypatch.setattr(supervise.loop, "record_run", lambda *_a, **kw: captured.update(kw))
+    monkeypatch.setattr(
+        supervise.decompose,
+        "resolve_dispatch_sizing",
+        lambda *_a: _lookup(_dispatch_sizing(21_000, 9_000)),
+    )
+
+    supervise._dispatch_lane(tmp_path, _session(_lane("epic.1")), _lane("epic.1"), codex, _sizing())
+
+    assert captured["phase"] == run_record.LANE_PHASE
+    assert run_record.is_write_phase(captured["phase"])
+    assert captured["build_factor_source"] == decompose.BUILD_FACTOR_SEED
+
+
 def test_a_lane_that_died_records_the_scope_it_was_sized_on(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

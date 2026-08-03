@@ -113,7 +113,8 @@ max_rework = 2
 # [policy.sizing]
 # working_set_min = 8000
 # working_set_max = 64000
-# calibration_min_samples = 10   # measured factors override seeds only past this
+# calibration_min_samples = 10   # measured spend ratios replace the declared prior
+#                                # only past this many paired records per class
 # calibration_window = 50        # rolling run-record window per task class
 # unsized_lane_quantile = 0.9    # bound for a lane with no readable scope: the
 #                                # quantile of recent lane actuals, so at most one
@@ -795,10 +796,17 @@ class SizingConfig:
 
     working_set_min: int
     working_set_max: int
-    # Per-task-class multiplier on scope read-cost; seeds until calibrated.
+    # Per-task-class multiplier on scope read-cost. Seeds, and they stay seeds —
+    # nothing measures a working-set factor (basicly-z2wi).
     build_factors: dict[str, float]
     calibration_min_samples: int
     calibration_window: int
+    # Which of ``build_factors`` a repo declared in ``[policy.sizing.build_factor]``
+    # rather than inheriting from the seeds. Provenance recorded where it is known
+    # instead of inferred later by comparing the value against the seed: a repo that
+    # declares the seed's own number would read back as never having declared one, and
+    # this feeds the source stamped on a dispatch record (basicly-tcmy.5).
+    configured_build_factors: frozenset[str] = frozenset()
     # Fraction of the runner's context window that triggers the finalize
     # protocol at run time (basicly-kjc5.6, design D8).
     context_ceiling: float = DEFAULT_CONTEXT_CEILING
@@ -825,17 +833,23 @@ def load_sizing_config(repo_root: Path) -> SizingConfig:
         working_set_max = DEFAULT_WORKING_SET_MAX
 
     factors = dict(DEFAULT_BUILD_FACTOR_SEEDS)
+    configured: set[str] = set()
     raw_factors = section.get("build_factor")
     if isinstance(raw_factors, dict):
         for task_class, value in raw_factors.items():
             number = isinstance(value, int | float) and not isinstance(value, bool)
             if isinstance(task_class, str) and task_class.strip() and number and value > 0:
                 factors[task_class.strip()] = float(value)
+                # Only an accepted entry counts as configured: a rejected one leaves
+                # the seed in force, so calling it configured would misattribute the
+                # number actually used.
+                configured.add(task_class.strip())
 
     return SizingConfig(
         working_set_min=working_set_min,
         working_set_max=working_set_max,
         build_factors=factors,
+        configured_build_factors=frozenset(configured),
         calibration_min_samples=_positive_int(
             section.get("calibration_min_samples"), DEFAULT_CALIBRATION_MIN_SAMPLES
         ),

@@ -467,6 +467,25 @@ class _Preflight:
     lanes: tuple[object, ...] = ()
     # issue_id -> the band verdict to pin for it; anything absent sizes to nothing.
     admissions: dict[str, object] = field(default_factory=dict)
+    # The calibration report to pin. Pinned like the band verdicts and for the same
+    # reason: computing it walks the tracker export and the local record file, so left
+    # live every preflight test would parse this repo's real 4MB of markers.
+    calibration: object | None = None
+
+
+def _calibration(**overrides) -> decompose.CalibrationStatus:
+    """A calibration report: nothing measured, which is this repo's real state."""
+    fields = {
+        "model": "claude-opus-5",
+        "min_samples": 10,
+        "samples": {"bug": 7, "task": 2},
+        "build_factor_sources": {
+            "bug": decompose.BUILD_FACTOR_SEED,
+            "task": decompose.BUILD_FACTOR_SEED,
+        },
+    }
+    fields.update(overrides)
+    return decompose.CalibrationStatus(**fields)
 
 
 def _preflight_fixture(monkeypatch: pytest.MonkeyPatch, pinned: _Preflight) -> None:
@@ -506,6 +525,8 @@ def _preflight_fixture(monkeypatch: pytest.MonkeyPatch, pinned: _Preflight) -> N
     monkeypatch.setattr(cli.supervise, "metered_without_a_budget", lambda *_a: metered)
     monkeypatch.setattr(cli.supervise, "ready_lanes", lambda *_a, **_k: lanes)
     monkeypatch.setattr(cli.decompose, "unsized_lane_tokens", lambda *_a: (1_000, "measured"))
+    calibration = pinned.calibration or _calibration()
+    monkeypatch.setattr(cli.decompose, "calibration_status", lambda *_a: calibration)
     # Preflight now sizes each candidate for the band table, which is a real `br show`
     # per child unless it is pinned here. Left live, the suite would spawn br for every
     # preflight test — the trap basicly-jr0l's notes call out for any new tracker read
@@ -715,3 +736,95 @@ def test_preflight_forecasts_a_full_fan_out_when_no_lane_is_dispatchable_yet(
     out = capsys.readouterr().out
     assert "forecast:" in out
     assert "if all" in out and "lanes start" in out
+
+
+def test_preflight_says_the_forecast_is_still_on_seeds(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """AC: the per-class sample counts, and the verdict they add up to (basicly-tcmy.5).
+
+    The forecast above is minted into a budget, and every number behind it is declared:
+    the spend ratios stand on a prior until a class has ``calibration_min_samples``
+    paired write dispatches, and nothing measures a build factor at all. Both facts were
+    recorded and neither was reported, so "is this measured yet?" was answered by reading
+    source — a recollection, which is what preflight exists to replace (basicly-p8ck).
+    """
+    _preflight_fixture(monkeypatch, _Preflight(grant=Grant(level="L1", token_budget=10_000)))
+
+    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+
+    out = capsys.readouterr().out
+    assert "spend cal: SEEDS" in out
+    assert "claude-opus-5" in out
+    assert "bug 7/10" in out and "task 2/10" in out
+    assert "factors:   all seeds (never measured)" in out
+
+
+def test_preflight_names_the_class_whose_spend_stopped_being_a_seed(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The control: a measured class must not read the same as one still on the prior.
+
+    Without it the line could say SEEDS forever and the assertion above would still
+    pass — the failure mode of every provenance report.
+    """
+    _preflight_fixture(
+        monkeypatch,
+        _Preflight(
+            grant=Grant(level="L1", token_budget=10_000),
+            calibration=_calibration(samples={"bug": 12, "task": 2}),
+        ),
+    )
+
+    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+
+    out = capsys.readouterr().out
+    assert "spend cal: measured for bug" in out
+    assert "SEEDS" not in out
+
+
+def test_preflight_says_when_a_build_factor_was_configured_rather_than_seeded(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A repo that declared its own factor is not reported as running on the seeds."""
+    _preflight_fixture(
+        monkeypatch,
+        _Preflight(
+            grant=Grant(level="L1", token_budget=10_000),
+            calibration=_calibration(
+                build_factor_sources={
+                    "bug": decompose.BUILD_FACTOR_CONFIGURED,
+                    "task": decompose.BUILD_FACTOR_SEED,
+                }
+            ),
+        ),
+    )
+
+    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+
+    out = capsys.readouterr().out
+    assert "factors:   some configured (never measured)" in out
+
+
+def test_preflight_says_an_unresolved_model_can_key_no_sample_at_all(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A null model is not zero samples for the model in use — the key does not exist.
+
+    The ratios are keyed per (model, class), so with no model resolved nothing can key
+    in whatever history exists. This repo's own preflight is in that state, and rendering
+    it as "on None" would read as a model nobody named.
+    """
+    _preflight_fixture(
+        monkeypatch,
+        _Preflight(
+            grant=Grant(level="L1", token_budget=10_000),
+            calibration=_calibration(model=None, samples={"task": 0}),
+        ),
+    )
+
+    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+
+    out = capsys.readouterr().out
+    assert "spend cal: SEEDS - no model pinned, so no sample can key in" in out
+    assert "task 0/10" in out

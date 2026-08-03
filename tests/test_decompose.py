@@ -16,6 +16,7 @@ from basicly.config import (
     DEFAULT_WORKING_SET_MAX,
     DEFAULT_WORKING_SET_MIN,
     SizingConfig,
+    load_sizing_config,
 )
 from basicly.decompose import ChildSpec
 
@@ -616,7 +617,10 @@ def test_the_read_cap_lets_the_band_admit_a_change_to_a_large_module(
         working_set_min=DEFAULT_WORKING_SET_MIN, working_set_max=DEFAULT_WORKING_SET_MAX
     )
     estimate = decompose.estimate_cost(
-        tmp_path, _child("t", "src/cli.py"), DEFAULT_BUILD_FACTOR_SEEDS, overhead=2_000
+        tmp_path,
+        _child("t", "src/cli.py"),
+        _sizing(build_factors=DEFAULT_BUILD_FACTOR_SEEDS),
+        overhead=2_000,
     )
 
     assert estimate.total == 2_000 + 12_000
@@ -626,14 +630,14 @@ def test_the_read_cap_lets_the_band_admit_a_change_to_a_large_module(
 def test_estimate_cost_total_is_overhead_plus_factored_scope(tmp_path: Path) -> None:
     """Total = overhead + scope x class factor; unlisted classes use the task factor."""
     _write(tmp_path, "src/a.py", 4_000)  # 1000 scope tokens
-    factors = {"task": 3.0, "bug": 2.0}
-    task = decompose.estimate_cost(tmp_path, _child("t", "src/a.py"), factors, overhead=500)
+    sizing = _sizing(build_factors={"task": 3.0, "bug": 2.0})
+    task = decompose.estimate_cost(tmp_path, _child("t", "src/a.py"), sizing, overhead=500)
     assert (task.scope_tokens, task.overhead_tokens, task.build_factor) == (1_000, 500, 3.0)
     assert task.total == 500 + 3_000
     bug = ChildSpec(title="b", acceptance=("a",), scope=("src/a.py",), type="bug")
-    assert decompose.estimate_cost(tmp_path, bug, factors, overhead=0).total == 2_000
+    assert decompose.estimate_cost(tmp_path, bug, sizing, overhead=0).total == 2_000
     spike = ChildSpec(title="s", acceptance=("a",), scope=("src/a.py",), type="spike")
-    assert decompose.estimate_cost(tmp_path, spike, factors, overhead=0).total == 3_000
+    assert decompose.estimate_cost(tmp_path, spike, sizing, overhead=0).total == 3_000
 
 
 # --- The measure moved; the glob consumers did not (basicly-fcls) ------------
@@ -1753,6 +1757,8 @@ def _record_paired_run(repo: Path, bead_id: str, model: str, *, cost: float | No
             task_class="task",
             forecast_tokens=_PAIR_FORECAST,
             cost=cost,
+            # Only a write dispatch calibrates (basicly-tcmy.5).
+            phase=run_record.LANE_PHASE,
         ),
     )
 
@@ -1812,7 +1818,14 @@ def test_a_foreign_models_history_leaves_the_forecast_seeded(
 # --- The unsizeable-lane bound (basicly-vz78) ----------------------------------
 
 
-def _record_lane_tokens(repo: Path, bead_id: str, tokens: int, *, estimated: bool = False) -> None:
+def _record_lane_tokens(
+    repo: Path,
+    bead_id: str,
+    tokens: int,
+    *,
+    estimated: bool = False,
+    phase: str | None = run_record.LANE_PHASE,
+) -> None:
     """One adapter-reported *lane* dispatch — the shape the bound harvests."""
     run_record.record(
         repo,
@@ -1825,7 +1838,7 @@ def _record_lane_tokens(repo: Path, bead_id: str, tokens: int, *, estimated: boo
             command=("claude",),
             tokens=tokens,
             estimated=estimated,
-            phase="lane",
+            phase=phase,
         ),
     )
 
@@ -1949,3 +1962,182 @@ def test_the_unsized_bound_needs_no_declared_scope(tmp_path: Path) -> None:
 
     # No tracker at all under tmp_path, so no bead here has a readable scope.
     assert decompose.unsized_lane_tokens(tmp_path, _sizing()) == (7_000, "measured")
+
+
+# --- One phase set for write dispatches (basicly-tcmy.5) -----------------------
+
+
+def test_the_unsized_bound_counts_a_write_dispatch_from_either_path(tmp_path: Path) -> None:
+    """AC: the interactive build and the supervised lane are both a lane's cost.
+
+    The bound required ``phase == "lane"``, so every dispatch of the interactive path -
+    the documented default on a single-operator machine, and 128 of this repo's 214
+    records - was invisible to the ceiling that bounds an unsizeable lane. Asserted at
+    the quantile so the build sample has to be *in the population*, not merely not
+    crash it: at 1.0 the bound is the largest sample of whichever set was harvested.
+    """
+    _record_lane_tokens(tmp_path, "b-lane", 5_000, phase=run_record.LANE_PHASE)
+    _record_lane_tokens(tmp_path, "b-build", 40_000, phase=run_record.BUILD_PHASE)
+
+    bound, source = decompose.unsized_lane_tokens(tmp_path, _sizing(unsized_lane_quantile=1.0))
+
+    assert (bound, source) == (40_000, "measured")
+
+
+def test_the_unsized_bound_ignores_a_helper_or_unphased_dispatch(tmp_path: Path) -> None:
+    """A judge, the decider, and a record with no phase are not evidence of a lane.
+
+    The other half of one named phase set: widening it to both write phases must not
+    widen it to *every* dispatch. A rubric judge is cheap and read-only, so admitting
+    one would drag the ceiling down; a record whose phase was never written cannot be
+    shown to be a lane at all and fails closed.
+    """
+    _record_lane_tokens(tmp_path, "b-lane", 5_000)
+    _record_lane_tokens(tmp_path, "b-judge", 90_000, phase=run_record.VALIDATE_PHASE)
+    _record_lane_tokens(tmp_path, "b-decide", 90_000, phase=run_record.DECIDE_PHASE)
+    _record_lane_tokens(tmp_path, "b-legacy", 90_000, phase=None)
+
+    assert decompose.unsized_lane_tokens(tmp_path, _sizing(unsized_lane_quantile=1.0)) == (
+        5_000,
+        "measured",
+    )
+
+
+# --- A declared build factor is recorded as declared (basicly-tcmy.5) ---------
+
+
+def test_a_seeded_build_factor_is_recorded_as_seeded(tmp_path: Path) -> None:
+    """AC: the estimate states that its factor came from the seeds, not a measurement.
+
+    Nothing measures a working-set factor (basicly-z2wi removed the calibration that
+    appeared to), so every dispatch this repo records is sized by a declared constant.
+    The record has to say so: a forecast carrying a bare multiplier is how the previous
+    two derivations of ``working_set_max`` came to validate an estimator against its
+    own output.
+    """
+    _write(tmp_path, "src/a.py", 4_000)
+
+    estimate = decompose.estimate_cost(tmp_path, _child("t", "src/a.py"), _sizing(), overhead=0)
+
+    assert estimate.build_factor_source == decompose.BUILD_FACTOR_SEED
+
+
+def test_a_configured_build_factor_is_recorded_as_configured(tmp_path: Path) -> None:
+    """A repo that declares its own factor is not reported as running on the seeds.
+
+    Provenance is read from the config that produced the number rather than inferred by
+    comparing it against the seed — a repo declaring 3.0 for ``task`` would otherwise
+    read back as never having declared anything.
+    """
+    (tmp_path / "basicly.toml").write_text(
+        "[policy.sizing.build_factor]\ntask = 9.0\n", encoding="utf-8"
+    )
+    _write(tmp_path, "src/a.py", 4_000)
+    sizing = load_sizing_config(tmp_path)
+
+    estimate = decompose.estimate_cost(tmp_path, _child("t", "src/a.py"), sizing, overhead=0)
+
+    assert (estimate.build_factor, estimate.build_factor_source) == (
+        9.0,
+        decompose.BUILD_FACTOR_CONFIGURED,
+    )
+    # An unlisted class falls back to the ``task`` entry, so it inherits that entry's
+    # provenance rather than reporting the seed that did not size it.
+    spike = ChildSpec(title="s", acceptance=("a",), scope=("src/a.py",), type="spike")
+    assert (
+        decompose.estimate_cost(tmp_path, spike, sizing, overhead=0).build_factor_source
+        == decompose.BUILD_FACTOR_CONFIGURED
+    )
+
+
+def test_the_recorded_dispatch_inputs_carry_the_factors_provenance() -> None:
+    """The source reaches the run record, where a later calibration reads the pair."""
+    sizing = decompose.DispatchSizing(
+        task_class="task",
+        estimate=decompose.CostEstimate(
+            scope_tokens=1_000,
+            overhead_tokens=0,
+            build_factor=3.0,
+            build_factor_source=decompose.BUILD_FACTOR_SEED,
+        ),
+        source=decompose.DISPATCH_FORECAST,
+    )
+
+    assert sizing.record_inputs()["build_factor_source"] == decompose.BUILD_FACTOR_SEED
+
+
+def test_a_frozen_estimate_round_trips_its_factor_provenance(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The freeze is the forecast of record (D9), so the provenance must survive it."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    estimate = decompose.CostEstimate(
+        scope_tokens=1_000,
+        overhead_tokens=0,
+        build_factor=9.0,
+        build_factor_source=decompose.BUILD_FACTOR_CONFIGURED,
+    )
+
+    decompose.freeze_estimate(tmp_path, "b-1", "key-1", estimate)
+
+    frozen = decompose.frozen_estimates(tmp_path, "b-1")
+    assert frozen["key-1"] == estimate
+
+
+def test_a_marker_frozen_before_the_field_existed_reads_as_seeded(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An older marker keeps the provenance it really had rather than being discarded.
+
+    The seeds were the only source that existed when it was written, and requiring the
+    key would drop the frozen verdict and recompute — the drift the freeze prevents.
+    """
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    payload = '{"scope_tokens": 1000, "overhead_tokens": 0, "build_factor": 3.0, "total": 3000}'
+    fake.comments["b-1"] = [f"[harness-sizing] key=key-1\n{payload}"]
+
+    frozen = decompose.frozen_estimates(tmp_path, "b-1")
+
+    assert frozen["key-1"].build_factor_source == decompose.BUILD_FACTOR_SEED
+
+
+# --- Reporting whether the sizing is measured yet (basicly-tcmy.5) ------------
+
+
+def test_the_calibration_status_reports_a_class_still_on_seeds(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """AC: the per-class sample counts, and the verdict that nothing is measured yet."""
+    _install(monkeypatch, _FakeBr())
+    monkeypatch.setattr(decompose, "forecast_model", lambda _repo: "claude-opus-5")
+    for index in range(2):
+        _record_paired_run(tmp_path, f"b-{index}", "claude-opus-5", cost=10.0)
+
+    status = decompose.calibration_status(tmp_path, _sizing(calibration_min_samples=3))
+
+    assert status.samples["task"] == 2
+    assert status.samples["bug"] == 0
+    assert status.on_seeds
+    assert status.measured_classes == ()
+    assert status.build_factor_sources["task"] == decompose.BUILD_FACTOR_SEED
+
+
+def test_the_calibration_status_names_the_class_that_measured(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Past the minimum the report says which class stopped being a seed, not just that.
+
+    Per class because that is how the ratios are keyed: one class crossing the minimum
+    says nothing about the others, and a single "calibrated" flag would.
+    """
+    _install(monkeypatch, _FakeBr())
+    monkeypatch.setattr(decompose, "forecast_model", lambda _repo: "claude-opus-5")
+    for index in range(3):
+        _record_paired_run(tmp_path, f"b-{index}", "claude-opus-5", cost=10.0)
+
+    status = decompose.calibration_status(tmp_path, _sizing(calibration_min_samples=3))
+
+    assert status.measured_classes == ("task",)
+    assert not status.on_seeds

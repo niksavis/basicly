@@ -808,6 +808,10 @@ def _pair(**overrides) -> run_record.ForecastError:
         "model": "claude-opus-5",
         "actual_cost": 8.0,
         "actual_wall_clock_s": 1_000.0,
+        # A calibration sample must be a write dispatch (basicly-tcmy.5); the helper
+        # builds the eligible shape so a test about a *ratio* is not silently a test
+        # about the phase filter.
+        "phase": run_record.LANE_PHASE,
     }
     fields.update(overrides)
     return run_record.ForecastError(**fields)
@@ -845,6 +849,33 @@ def test_a_pair_carries_the_money_and_time_the_dispatch_spent(tmp_path: Path) ->
     assert error.actual_cost == pytest.approx(8.0)
     # _entry's dispatch ran 1.5s; the pair carries what was metered, not a re-derivation.
     assert error.actual_wall_clock_s == pytest.approx(1.5)
+
+
+def test_a_pair_carries_the_phase_and_the_factors_provenance(tmp_path: Path) -> None:
+    """The two fields basicly-tcmy.5 adds travel from the record onto the pair.
+
+    The phase is what lets a calibration refuse a helper's sample, and the build-factor
+    source is what stops the forecast half of the pair from reading as a measurement.
+    Both are read off the persisted record rather than re-derived, because by the time a
+    calibration runs the config that produced the factor may have moved on.
+    """
+    run_record.record(
+        tmp_path,
+        "b-1",
+        _entry(
+            tokens=10_000_000,
+            forecast_tokens=50_000,
+            task_class="task",
+            model="claude-opus-5",
+            phase=run_record.LANE_PHASE,
+            build_factor_source="seed",
+        ),
+    )
+
+    stored = run_record.latest_record(tmp_path, "b-1")
+    assert stored is not None
+    assert stored.build_factor_source == "seed"
+    assert run_record.forecast_errors(tmp_path).errors[0].phase == run_record.LANE_PHASE
 
 
 def test_calibrate_spend_seeds_every_ratio_from_the_declared_prior() -> None:
@@ -919,6 +950,42 @@ def test_calibrate_spend_excludes_a_chars_over_four_estimate() -> None:
     """A chars/4 actual is too weak to calibrate money with (design 7.5)."""
     pairs = tuple(_pair(estimated=True) for _ in range(5))
     assert _calibrate(_report(*pairs)).pairs == 0
+
+
+@pytest.mark.parametrize(
+    "phase",
+    [run_record.VALIDATE_PHASE, run_record.DECIDE_PHASE, None, "", "probe"],
+)
+def test_calibrate_spend_refuses_a_dispatch_that_is_not_a_lane(phase: str | None) -> None:
+    """AC: a rubric judge and the decider are not samples of what the work costs.
+
+    They are dispatched on the same bead and land in the same record stream, so a
+    filter on model and class alone admits them (basicly-tcmy.5) — and the ratio would
+    then be a helper's spend over a lane's working set, dragging the multiplier the
+    band and the budget are both computed from. A record whose phase was never written
+    is refused on the same rule: unknown provenance fails closed.
+    """
+    pairs = tuple(_pair(phase=phase) for _ in range(5))
+    calibration = _calibrate(_report(*pairs))
+    assert calibration.pairs == 0
+    assert calibration.tokens_per_working_set_token.source == run_record.PRIOR_RATIO
+
+
+def test_the_calibration_and_the_lane_bound_read_one_phase_set() -> None:
+    """The two consumers that disagreed now share one definition of a write dispatch.
+
+    Both filters are ``is_write_phase``, and this pins the set they resolve against:
+    the interactive build and the supervised lane are in it, the helpers are not. The
+    defect was not a wrong value in either filter but that there were two of them.
+    """
+    assert set(run_record.WRITE_PHASES) == {run_record.BUILD_PHASE, run_record.LANE_PHASE}
+    assert run_record.is_write_phase(run_record.BUILD_PHASE)
+    assert run_record.is_write_phase(run_record.LANE_PHASE)
+    assert not run_record.is_write_phase(run_record.VALIDATE_PHASE)
+    assert not run_record.is_write_phase(run_record.DECIDE_PHASE)
+    # A record read off disk can carry anything, including nothing.
+    assert not run_record.is_write_phase(None)
+    assert not run_record.is_write_phase(1)
 
 
 def test_calibrate_spend_keeps_only_the_newest_window() -> None:

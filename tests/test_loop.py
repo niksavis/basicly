@@ -2556,6 +2556,49 @@ def test_the_dispatch_records_its_forecast_beside_the_scope_it_measured(
     assert recorded["forecast_source"] == decompose.FROZEN_FORECAST
 
 
+def test_the_interactive_dispatch_records_a_write_phase_and_a_seeded_factor(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """AC: the interactive path's phase is in the one named write set, and says seeded.
+
+    Two facts on one record, because they are recorded by one call. The phase is what
+    ``decompose.unsized_lane_tokens`` reads to decide this dispatch is evidence of what
+    a lane costs, and the build-factor source is what stops the forecast beside it from
+    reading as a measurement (basicly-tcmy.5).
+    """
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    monkeypatch.setattr(
+        decompose,
+        "dispatch_sizing",
+        lambda *_a: decompose.DispatchSizing(
+            task_class="task",
+            estimate=decompose.CostEstimate(
+                scope_tokens=9_000,
+                overhead_tokens=3_000,
+                build_factor=2.0,
+                build_factor_source=decompose.BUILD_FACTOR_SEED,
+            ),
+            source=decompose.FROZEN_FORECAST,
+        ),
+    )
+    recorded: dict = {}
+    monkeypatch.setattr(loop, "record_run", lambda *_a, **kw: recorded.update(kw))
+    _pin_runner(monkeypatch, "claude")
+    monkeypatch.setattr(
+        runner,
+        "run",
+        lambda spec, *_a, **_k: runner.RunResult(
+            spec.name, tuple(spec.command), executed=True, returncode=0
+        ),
+    )
+
+    loop._run_agent(loop._Ctx(tmp_path, "i", _state("build"), CONFIG, loop.Inputs()), "i", tmp_path)
+
+    assert recorded["phase"] == run_record.BUILD_PHASE
+    assert run_record.is_write_phase(recorded["phase"])
+    assert recorded["build_factor_source"] == decompose.BUILD_FACTOR_SEED
+
+
 def test_a_dispatch_that_failed_still_records_the_scope_it_was_sized_on(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

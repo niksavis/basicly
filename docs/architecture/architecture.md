@@ -1351,6 +1351,30 @@ re-sends its context every turn it carries the turn multiplier (which nothing mo
 well as any estimator error; and the summary is a **median**, because the measured misses span
 160x-420x and one such sample would drag a mean somewhere no dispatch has ever been.
 
+**12.8.2 One named phase set, and a factor that says it was declared** (`basicly-tcmy.5`).
+Every dispatch records a **phase**, and the write phases — the interactive `build`
+(`loop._run_agent`) and the supervised `lane` (`supervise._dispatch_lane`) — are one named set
+(`run_record.WRITE_PHASES`, tested through `run_record.is_write_phase`). They are the same kind
+of work, so both consumers of the phase read the same definition: the unsizeable-lane bound
+(§12.8) counts a write dispatch from either path, and the spend calibration samples only write
+dispatches, so a rubric judge (`validate`) or the decider (`decide`) can never contribute a
+helper's spend to a lane's ratio. The two filtered oppositely before this — the bound required
+`lane` alone, so on this repo's own history it measured 24 of 32 metered write dispatches and
+bounded a lane at 15245717 tokens where the whole population gives 15830484, while the
+calibration filtered on no phase at all. A record whose phase was never written is excluded from
+both: unknown provenance fails closed.
+
+The same record now also carries **where its build factor came from** (`seed` from
+`DEFAULT_BUILD_FACTOR_SEEDS`, or `configured` from `[policy.sizing.build_factor]`). Nothing
+measures a working-set factor — the calibration that appeared to was measuring whole-lane spend,
+a different quantity, and was removed (`basicly-z2wi`) — so every forecast is a declared constant
+times a scope read-cost, and the record says so on the same rule its siblings already follow
+(`forecast_source`, `SpendCalibration`, the bound's `measured`/`seed`). `basicly loop preflight`
+reports both: the per-class paired-sample counts against `calibration_min_samples` with the
+verdict they add up to, and whether any build factor is anything but a seed — so an operator
+minting a budget from the forecast learns it rests on a prior before the money is granted, rather
+than by reading source.
+
 **Fleet rollup (`basicly-h0f0`).** `basicly status --fleet [--root PATH]` (`fleet.py`) is the
 cross-repo view dimension 3 calls for: it discovers the basicly-installed repos under a workspace
 root (immediate subdirs carrying a `.basicly/` dir; default root = the parent of the current repo)

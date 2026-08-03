@@ -29,7 +29,7 @@ from pathlib import Path
 
 import yaml
 
-from . import br, runner, verify
+from . import br, run_record, runner, verify
 from .catalog import bundled_catalog_root
 from .config import RUBRIC_GATE_PROVIDER, VerifyCheck, load_runner_config
 
@@ -315,7 +315,14 @@ def evaluate(
             result = runner.run(
                 spec, prompt, repo_root, capture_usage=True, timeout=config.runner_timeout
             )
-        runner.record_dispatch(repo_root, issue_id, spec, result, prompt=prompt, phase="validate")
+        runner.record_dispatch(
+            repo_root,
+            issue_id,
+            spec,
+            result,
+            prompt=prompt,
+            phase=run_record.VALIDATE_PHASE,
+        )
         if result.handoff or result.timed_out:
             why = (
                 f"timed out after {config.runner_timeout:.0f}s — judge manually"
