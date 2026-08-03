@@ -1186,6 +1186,35 @@ def result_text(spec: RunnerSpec, stdout: str) -> str:
     return unwrapped if unwrapped is not None else stdout
 
 
+def _claude_result_object(stdout: str) -> dict | None:
+    """Claude's result object, located rather than assumed to be all of *stdout*.
+
+    Both readers below used to require ``stdout`` to be pure JSON, which made the
+    non-streaming envelope intolerant of anything the CLI prints around it. The
+    streaming reader never was — :func:`_claude_stream_events` skips lines it does
+    not recognise — and the noise is not a property of the output format: the
+    warning this module's own fixture pins ("no stdin data received in 3s") comes
+    from the CLI's stdin handling, so a format that emits one object is exposed to
+    it just the same. That was not observed on the ``json`` arm; it is inferred
+    from the arm where it *was* observed, and hardened for because of what it
+    costs. A leading line there reproduced both halves of basicly-gczc at once —
+    the reply unreadable *and* the record estimated, which halts the grant — so
+    the tolerant read is the one that cannot fail open.
+
+    Takes the **last** parseable top-level object, matching the streaming
+    reader's "last result event" rule, and falls back to parsing the whole
+    transcript so a pretty-printed object spanning several lines still reads.
+    """
+    events = _claude_stream_events(stdout)
+    if events:
+        return events[-1]
+    try:
+        obj = json.loads(stdout.strip() or "null")
+    except json.JSONDecodeError:
+        return None
+    return obj if isinstance(obj, dict) else None
+
+
 def _claude_json_usage(stdout: str) -> Usage | None:
     """Parse claude's ``--output-format json`` result object (one JSON object).
 
@@ -1193,11 +1222,8 @@ def _claude_json_usage(stdout: str) -> Usage | None:
     ``total_cost_usd``. None on any parse miss so the caller falls back to the
     estimate.
     """
-    try:
-        obj = json.loads(stdout.strip() or "null")
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(obj, dict) or not isinstance(obj.get("usage"), dict):
+    obj = _claude_result_object(stdout)
+    if obj is None or not isinstance(obj.get("usage"), dict):
         return None
     usage = obj["usage"]
     values = [usage[key] for key in _CLAUDE_TOKEN_KEYS if isinstance(usage.get(key), int)]
@@ -1221,11 +1247,8 @@ def _claude_result_field(stdout: str) -> str | None:
     transcript. An empty string is a real answer — the agent printed nothing —
     and is returned as one.
     """
-    try:
-        obj = json.loads(stdout.strip() or "null")
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(obj, dict):
+    obj = _claude_result_object(stdout)
+    if obj is None:
         return None
     value = obj.get("result")
     return value if isinstance(value, str) else None

@@ -585,7 +585,9 @@ def test_the_decider_call_site_comment_matches_the_flag_it_describes() -> None:
 _VERDICT = json.dumps({"decision": "postgres", "rationale": "corpus", "abstain": False})
 
 
-def _claude_like_decider(monkeypatch: pytest.MonkeyPatch, *, honour_flag: bool = True) -> None:
+def _claude_like_decider(
+    monkeypatch: pytest.MonkeyPatch, *, honour_flag: bool = True, noise: str = ""
+) -> None:
     """Replace the decider's runner with one that behaves the way claude does.
 
     The whole defect lives in the *coupling* the other stubs in this module elide:
@@ -596,12 +598,18 @@ def _claude_like_decider(monkeypatch: pytest.MonkeyPatch, *, honour_flag: bool =
 
     *honour_flag* False ignores the flag and always replies in plain text: the
     pre-fix call site, kept as the control that these assertions discriminate.
+
+    *noise* prefixes the envelope with a line the CLI printed around it, which the
+    probed stream arm does emit ("no stdin data received in 3s"). The reader has to
+    locate the object rather than assume it is all of stdout, or one such line puts
+    the answer *and* the metering back where they were.
     """
 
     def _run(_spec, _prompt, _cwd, **kwargs):
         wrapped = bool(kwargs.get("capture_usage")) and honour_flag
         stdout = (
-            json.dumps({
+            noise
+            + json.dumps({
                 "type": "result",
                 "result": _VERDICT,
                 "total_cost_usd": 0.01,
@@ -640,6 +648,30 @@ def test_a_delegated_decision_does_not_halt_the_grant(
     assert meter.measured_tokens == 18  # the adapter's own numbers, not a chars/4 floor
     status = policy.spend_status(tmp_path, "epic")
     assert status.halted is False, status.detail
+
+
+def test_a_decision_survives_a_line_the_cli_printed_before_its_envelope(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The same delegated decision, with the CLI's stdin warning ahead of the object.
+
+    End-to-end companion to the reader-level test in ``tests/test_runner.py``: the
+    concern is not that a parser handles noise, it is that noise costs an answer
+    *and* zeroes the grant, and only ``spend_status`` over real records can say
+    that it does not.
+    """
+    fake, item = _decider_setup(monkeypatch, tmp_path, "", usage_format=runner.CLAUDE_JSON)
+    _claude_like_decider(
+        monkeypatch, noise="Warning: no stdin data received in 3s, proceeding without it.\n"
+    )
+    fake.comments.setdefault("epic", []).append("[harness-policy] grant level=L3 budget=8000000")
+
+    outcome = decisions.invoke_decider(tmp_path, item.decision_id, "epic")
+
+    assert isinstance(outcome, decisions.DecisionItem)
+    assert outcome.answer == "postgres"
+    assert policy.session_spend(tmp_path, "epic").unmetered_dispatches == 0
+    assert policy.spend_status(tmp_path, "epic").halted is False
 
 
 def test_an_unmetered_decider_dispatch_is_what_halted_the_grant(

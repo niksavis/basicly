@@ -449,6 +449,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `basicly-tcmy.11` `phase: decide` entry. `rubrics.evaluate`'s judged dispatch had the
   same defect and the same halt.
 
+  Two paths still halt, and deliberately: a dispatch that timed out, and one whose
+  envelope does not parse at all. Neither reported usage, so neither is measurable, and a
+  grant that cannot be metered is the one thing autonomy may not assume — the halt is the
+  correct answer there rather than a residue of this defect.
+
   Both now pass the flag, which was never a one-line change: the same flag that makes
   usage reportable also wraps the reply — claude in a result object, codex in a JSONL event
   stream — and `parse_verdict` takes first-`{` to last-`}`, so it would have parsed the

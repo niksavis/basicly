@@ -1282,9 +1282,10 @@ outcome (executed/handoff/failed), agent, the pinned model when the runner sets 
 token/cost telemetry (`basicly-kjc5.1`, factory design §7.5). For telemetry, a loop dispatch
 appends the adapter's usage-report flags (claude `--output-format stream-json --verbose`, codex `--json`;
 opt-in per call site, because they wrap stdout in an envelope — a consumer that parses the
-agent's answer reads it back through `runner.result_text`, which inverts the envelope, and
-only `basicly review` stays unflagged because it prints the reply for a human rather than
-metering it) and `runner.extract_usage` parses reported tokens/cost from the captured output;
+agent's answer reads it back through `runner.result_text`, which inverts the envelope, and the
+two CLI passthroughs — `basicly review` and `basicly runner run` — stay unflagged because they
+print the reply for a human rather than metering it) and `runner.extract_usage` parses reported
+tokens/cost from the captured output;
 when the output does not parse, it falls back to a chars/4 transcript estimate flagged
 `estimated` so calibration can down-weight it. Copilot is metered **out of band**
 (`basicly-2rn9`): it reports nothing usable on stdout, but each dispatch's per-model token

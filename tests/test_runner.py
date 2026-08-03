@@ -1457,6 +1457,31 @@ def test_result_text_leaves_an_unwrapped_transcript_alone() -> None:
     assert runner.result_text(RunnerSpec("x", HEADLESS, ("x",)), answer) == answer
 
 
+def test_the_json_envelope_survives_a_line_the_cli_printed_around_it() -> None:
+    """A leading non-JSON line must not cost the reply *and* the metering.
+
+    The warning below is this module's own pinned fixture (`_CLAUDE_STREAM`), and
+    it comes from the CLI's stdin handling rather than from an output format — so
+    the single-object envelope is exposed to it exactly as the stream is. Before
+    this, the non-streaming arm required stdout to be pure JSON and one such line
+    reproduced *both* halves of basicly-gczc at once: `result_text` fell back to
+    the raw transcript, so `parse_verdict` abstained, and `_claude_json_usage`
+    returned None, so the record carried a chars/4 estimate — and one estimated
+    dispatch halts the grant. Measured on the pre-fix build: `decision=''`,
+    `abstain=True`, `estimated=True`.
+
+    Asserted on both readers together, because fixing either alone still halts a
+    session or still drops an answer.
+    """
+    noisy = "Warning: no stdin data received in 3s, proceeding without it.\n" + _CLAUDE_RESULT
+    spec = _claude_json_spec()
+
+    assert runner.result_text(spec, noisy) == "ok"
+    usage = runner.extract_usage(spec, _executed(spec, noisy))
+    assert usage is not None
+    assert usage.estimated is False
+
+
 def test_result_text_takes_codex_last_agent_message() -> None:
     """A multi-turn codex run answers in its final message, not its narration.
 
