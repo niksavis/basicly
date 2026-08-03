@@ -377,6 +377,12 @@ def test_override_gate_lands_without_running_the_gate_at_all(
             "merge-tree": _Proc(0),
             "merge": _Proc(0),
             "rev-parse": _Proc(0, "def456"),
+            # Declared because this test landed while the stub still answered 0 for
+            # anything nobody named: `merge` proves a landing with
+            # `rev-list --count base..branch` (basicly-jr0l.46), so a silent 0 here
+            # meant the assertion ran against a landing that had not been proven.
+            "rev-list": _Proc(0, "1"),  # branch has committed work ahead of base
+            "merge-base": _Proc(0),  # the merge proves itself: def456 is reachable from main
         }),
     )
     runs: list[str] = []
