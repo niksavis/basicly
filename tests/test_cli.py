@@ -30,14 +30,6 @@ from basicly.skills import GENERATED_MARKER
 REPO_ROOT = Path(__file__).parent.parent
 
 
-@pytest.fixture
-def work_repo(tmp_path: Path) -> Path:
-    """Return an isolated copy of the repo so tests never mutate real repo state."""
-    work = tmp_path / "repo"
-    shutil.copytree(REPO_ROOT, work, ignore=shutil.ignore_patterns(".git", ".venv"))
-    return work
-
-
 def run_basicly(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     """Run the basicly CLI with the given arguments in the given working directory."""
     # Inherit the real environment (PATH included) so the CLI's own subprocess
@@ -65,6 +57,51 @@ def run_basicly_consumer(cwd: Path, *args: str) -> subprocess.CompletedProcess[s
         text=True,
         check=False,
     )
+
+
+# --- the fixture the rest of this file rests on (basicly-tcmy.22) -------------
+
+
+def test_the_work_repo_fixture_copies_all_and_only_the_tracked_files(work_repo: Path) -> None:
+    """The copy has to be the repo as git records it — no more, and no less.
+
+    "No more" is the half that was broken: the old fixture excluded ``.git`` and
+    ``.venv`` and took everything else. "No less" is asserted here too, because a
+    fixture that quietly skipped a subtree would leave every other consumer of it
+    asserting against an incomplete repo and still looking green.
+    """
+    listing = subprocess.run(  # nosec B603 B607
+        ["git", "-C", str(REPO_ROOT), "ls-files", "-z"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    tracked = {name for name in listing.stdout.split("\0") if name}
+    copied = {
+        path.relative_to(work_repo).as_posix() for path in work_repo.rglob("*") if path.is_file()
+    }
+
+    assert copied == tracked
+    assert (work_repo / "src" / "basicly" / "cli.py").is_file()  # the copy is not empty
+
+
+def test_the_work_repo_fixture_leaves_out_the_state_that_differed_per_machine(
+    work_repo: Path,
+) -> None:
+    """A developer's local state must never reach a test CI runs without it.
+
+    Each name here was measured inside the old copy: ``node_modules``, a live
+    SQLite tracker database with its WAL, and — the ones that actually change
+    answers — the gitignored ``basicly.local.toml`` and any untracked
+    ``.basicly-local/`` content, which is this repo's documented per-machine
+    runner/model/policy overlay. Asserted unconditionally, so this still holds on a
+    machine that happens not to have them.
+    """
+    for offender in ("node_modules", ".venv", "basicly.local.toml", ".doctor", ".bv"):
+        assert not (work_repo / offender).exists(), offender
+    assert list(work_repo.rglob("__pycache__")) == []
+    assert list(work_repo.glob(".beads/*.db*")) == []
+    assert (work_repo / ".beads" / "issues.jsonl").is_file()  # the tracked export survives
 
 
 def test_cli_install_converges_fresh_consumer(tmp_path: Path) -> None:

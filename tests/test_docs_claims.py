@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import importlib.util
 import re
-import shutil
 import sys
 import tomllib
 from pathlib import Path
@@ -46,14 +45,6 @@ def _load_module():
 
 
 claims = _load_module()
-
-
-@pytest.fixture
-def work_repo(tmp_path: Path) -> Path:
-    """An isolated copy of the repo, so a mutation never touches real repo state."""
-    work = tmp_path / "repo"
-    shutil.copytree(REPO, work, ignore=shutil.ignore_patterns(".git", ".venv", "node_modules"))
-    return work
 
 
 def _run(root: Path, mode: str) -> int:

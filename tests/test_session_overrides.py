@@ -1,8 +1,10 @@
 """Tests for per-session harness config overrides (basicly-jr0l.8).
 
 The registry is process-global by design (D1: one supervisor process per
-session), so every test here clears it — a leaked override would silently
-reconfigure whatever ran next.
+session), so a leaked override would silently reconfigure whatever ran next. That
+reset is an autouse fixture in ``conftest.py`` and so covers the whole suite; the
+file-local one that used to live here covered only this file, which is the hole
+basicly-tcmy.22 closed. The pair at the end of this file is what holds it shut.
 """
 
 from __future__ import annotations
@@ -12,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import cli, run_record, session
+from basicly import cli, run_record, runner, session
 from basicly.config import load_policy_config, load_runner_config
 
 CONFIG = """\
@@ -23,14 +25,6 @@ default = "manual"
 autonomy = "L0"
 max_rework = 2
 """
-
-
-@pytest.fixture(autouse=True)
-def _no_leaked_overrides():
-    """Process-global state has to be reset around every test, both ways."""
-    session.clear_overrides()
-    yield
-    session.clear_overrides()
 
 
 @pytest.fixture
@@ -162,6 +156,23 @@ def test_an_unknown_autonomy_level_is_refused(repo: Path) -> None:
     """Silently reading as the default is the quiet direction on a permission control."""
     with pytest.raises(ValueError, match="unknown autonomy level"):
         cli._apply_session_overrides(repo, _args(autonomy="L9"))
+
+
+def test_a_valid_runner_is_not_left_applied_by_an_invalid_autonomy(repo: Path) -> None:
+    """The refusal has to be atomic across both flags, not just the first one.
+
+    The existing "nothing partially applied" test only covered a refusal that
+    happened before anything had been written. ``--runner claude --autonomy L9``
+    is the case that was actually broken (basicly-tcmy.22): the runner override
+    was written, the autonomy check then raised, and the caller printed the
+    refusal and returned — leaving the process reconfigured by a pair it had just
+    rejected.
+    """
+    with pytest.raises(ValueError, match="unknown autonomy level"):
+        cli._apply_session_overrides(repo, _args(runner="claude", autonomy="L9"))
+
+    assert session.override_pairs() == ()
+    assert load_runner_config(repo).default == "manual"
 
 
 def test_auto_is_an_accepted_runner_name(repo: Path) -> None:
@@ -314,3 +325,36 @@ def test_an_unknown_runner_is_refused_rather_than_silently_ignored(tmp_path: Pat
         cli._apply_session_overrides(
             tmp_path, argparse.Namespace(runner="nosuchagent", autonomy=None)
         )
+
+
+# --- the suite-wide reset these tests rest on (basicly-tcmy.22) ---------------
+#
+# This registry and ``runner``'s process budget are both process-global, and the
+# resets that were supposed to stop one test's state reaching the next lived in
+# whichever files remembered to write them. The two tests below are the check, and
+# they are a deliberate pair: each asserts on entry that both registries are clean
+# and then dirties both with values the other would notice. Whichever pytest runs
+# second therefore fails if the autouse reset in ``conftest.py`` is ever removed —
+# in either order, and without either test naming the other.
+
+
+def test_no_test_inherits_the_process_globals_left_by_another_first_half() -> None:
+    """Half of a pair; see the comment above.
+
+    ``configure_process_budget`` is first-caller-wins, so the numbers it hands back
+    are only these numbers when the registry it was asked to fill was empty.
+    """
+    assert session.override_pairs() == ()
+    budget = runner.configure_process_budget(97, 7)
+    assert (budget.total, budget.lane_slots) == (97, 7)
+
+    session.set_override("runner", "default", "claude")
+
+
+def test_no_test_inherits_the_process_globals_left_by_another_second_half() -> None:
+    """The other half, with different numbers so a leak cannot look like a pass."""
+    assert session.override_pairs() == ()
+    budget = runner.configure_process_budget(11, 3)
+    assert (budget.total, budget.lane_slots) == (11, 3)
+
+    session.set_override("policy", "autonomy", "L3")

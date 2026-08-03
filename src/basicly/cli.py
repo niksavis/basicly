@@ -3150,16 +3150,26 @@ def _apply_session_overrides(repo_root: Path, args: argparse.Namespace) -> tuple
     the lock was taken, and an unknown autonomy level would silently read as the
     default, which is the quiet direction on a permission control. Raises
     ``ValueError`` with the accepted values.
+
+    Both flags are validated before either is applied (basicly-tcmy.22). Validating
+    and applying one pair at a time made the refusal only *look* atomic: a valid
+    ``--runner`` beside an invalid ``--autonomy`` left the runner override set in a
+    process that then raised, and every caller here prints the refusal and returns
+    without clearing it — so a second command in the same process would have run
+    under half of a rejected pair.
     """
+    pending: list[tuple[str, str, str]] = []
     if runner_name := getattr(args, "runner", None):
         known = {spec.name for spec in load_runner_config(repo_root).specs} | {"auto"}
         if runner_name not in known:
             raise ValueError(f"unknown runner {runner_name!r}; configured: {sorted(known)}")
-        session_config.set_override("runner", "default", runner_name)
+        pending.append(("runner", "default", runner_name))
     if autonomy := getattr(args, "autonomy", None):
         if autonomy not in AUTONOMY_LEVELS:
             raise ValueError(f"unknown autonomy level {autonomy!r}; one of {list(AUTONOMY_LEVELS)}")
-        session_config.set_override("policy", "autonomy", autonomy)
+        pending.append(("policy", "autonomy", autonomy))
+    for section, key, value in pending:
+        session_config.set_override(section, key, value)
     return session_config.override_pairs()
 
 
