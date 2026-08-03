@@ -799,6 +799,11 @@ def _record_run_tokens(  # noqa: PLR0913 — one parameter per seeded record fie
     estimated: bool = False,
     scope_tokens: int | None = None,
     returncode: int = 0,
+    # A seeded record stands for a *lane* unless a test says otherwise: that is what
+    # every caller here means, and leaving it unset made them all indistinguishable
+    # from a decider or judge dispatch once the population learned to tell the
+    # difference. Override it to seed a non-lane dispatch deliberately.
+    phase: str | None = "lane",
 ) -> None:
     entry = run_record.build_record(
         agent="claude",
@@ -809,6 +814,7 @@ def _record_run_tokens(  # noqa: PLR0913 — one parameter per seeded record fie
         tokens=tokens,
         estimated=estimated,
         scope_tokens=scope_tokens,
+        phase=phase,
     )
     run_record.record(repo, bead_id, entry)
 
@@ -881,7 +887,18 @@ def _lane_estimates(repo_root: Path, outcome: str) -> dict[str, int]:
             continue
         estimate = _lane_estimate(scope_tokens, task_class)
         for entry in history:
-            if entry.get("outcome") == outcome:
+            # Write dispatches only. A decider or rubric-judge dispatch is recorded
+            # against whatever bead raised the question — including an *epic* — and
+            # sizing that bead's scope produces a number about the epic's whole
+            # surface rather than about any lane: basicly-tcmy's escalation on
+            # 2026-08-03 sized 1_344_546 and demanded a ceiling of 1_352_000. It
+            # became visible only once basicly-gczc made those dispatches
+            # adapter-measured, so this filter is the third consumer of the same
+            # defect basicly-tcmy.5 fixes in `unsized_lane_tokens` and
+            # `calibrated_build_factors`; unify on its `run_record.is_write_phase`
+            # when that lands. A record whose phase was never written is not
+            # evidence that a lane ran, so it is excluded too.
+            if entry.get("phase") in ("build", "lane") and entry.get("outcome") == outcome:
                 estimates[bead_id] = estimate
     return estimates
 
@@ -1027,6 +1044,37 @@ def test_the_ceiling_gate_names_the_lane_and_the_value_it_requires(
     assert len(violations) == 1
     assert "b-1 completed at an estimate of 12,000" in violations[0]
     assert "raise it to at least 16,000" in violations[0]  # rounded up to a floor-unit
+
+
+def test_a_decider_dispatch_is_not_evidence_about_how_big_a_lane_can_be(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A decision recorded against a bead must not size that bead as a completed lane.
+
+    The control for the phase filter, and it needs one because the filter's failure
+    mode is silent in the direction that matters: a decider dispatch lands on
+    whichever bead raised the question, an **epic** included, and sizing an epic's
+    scope answers a question about the epic's whole surface. On 2026-08-03 the
+    escalation on basicly-tcmy sized 1,344,546 and demanded a ceiling of 1,352,000
+    — from a dispatch that wrote no code at all.
+
+    It surfaced only when basicly-gczc made those dispatches adapter-measured, so
+    before that the wrong population was there and merely cheap to ignore.
+
+    Same record twice, one field apart: as a lane it is evidence and must be
+    reported, as a decision it is not and must vanish.
+    """
+    _write(tmp_path, "src/a.py", 16_000)
+    body = decompose._child_body(_child("t", "src/a.py"))
+    _install(monkeypatch, _FakeBrShow({"b-1": ("task", body)}))
+    _export(tmp_path, {"id": "b-1", "issue_type": "task", "description": body})
+
+    _record_run_tokens(tmp_path, "b-1", 1_000, scope_tokens=4_000, phase="decide")
+    assert _ceiling_violations(tmp_path, 8_000) == []
+    assert completed_lane_estimates(tmp_path) == {}
+
+    _record_run_tokens(tmp_path, "b-1", 1_000, scope_tokens=4_000, phase="lane")
+    assert "b-1 completed at an estimate of 12,000" in _ceiling_violations(tmp_path, 8_000)[0]
 
 
 def test_the_ceiling_gate_refuses_to_admit_a_size_a_lane_died_at(tmp_path: Path) -> None:

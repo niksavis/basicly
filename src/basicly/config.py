@@ -398,10 +398,10 @@ ENGINE_GATE_PROVIDERS = frozenset({VERIFY_GATE_PROVIDER, RUBRIC_GATE_PROVIDER})
 # can recompute rather than trust the number: size every headless dispatch this
 # engine has recorded by the current formula, take the largest estimate on one that
 # completed, and round up to the nearest multiple of WORKING_SET_MIN. Today that is
-# basicly-fcls' own dispatch at 72_000, so 72_000.
+# basicly-tcmy.5's own dispatch at 130_780, so 132_000.
 #
-# It has now been derived four times, and every move but the last was a defect in the
-# *measure* surfacing rather than new evidence about how big a lane can be:
+# It has now been derived five times, and every move but the last two was a defect in
+# the *measure* surfacing rather than new evidence about how big a lane can be:
 #
 # * 64_000 was chosen, never checked, and wrong 18 times out of 18 — eighteen
 #   recorded lanes exceeded it and every one completed (basicly-3w44).
@@ -443,8 +443,27 @@ ENGINE_GATE_PROVIDERS = frozenset({VERIFY_GATE_PROVIDER, RUBRIC_GATE_PROVIDER})
 # basicly-ipx2 had just removed from the failure side. Two prior paragraphs here have
 # now been artifacts of an optional field being filtered on; the third fix is
 # `RunRecord.context_tokens`, which measures the quantity instead of re-deriving it.
+#
+# 132_000, derived 2026-08-03 from basicly-tcmy.5 at 130_780. This is the second
+# derivation that is real evidence rather than a measure defect, and it is the
+# ratchet above firing again with a consequence the previous instance did not have:
+# tcmy.5 widened its own scope mid-flight from the eight globs it was ADMITTED on
+# (66_780) to sixteen (130_780), completed the work, and its finishing record then
+# failed the separating gate. Because every lane in a supervised pass shares one
+# `.beads` through the redirect, that failure was not local — the gate asserts over
+# the whole tracker, so basicly-tcmy.6 and basicly-tcmy.22 failed verify on tcmy.5's
+# declaration and each was charged a rework attempt for a defect in neither diff.
+# That cross-lane blast radius is filed on basicly-qorx alongside the ratchet.
+#
+# Two things this number is NOT, stated because both are tempting. It is not a
+# judgment that a 132_000 lane is a good idea: the same lane cost 15_752_919 tokens,
+# and the band is a context bound, not a spend bound (the spend gate is the grant).
+# And it is not evidence that the ceiling's premise held — the premise is that a
+# lane this size cannot run, and this one ran. What licenses 132_000 is exactly that
+# completion, which is the rule at the top of this block applied honestly; what the
+# rule cannot do is stop a lane from moving it.
 DEFAULT_WORKING_SET_MIN = 8_000
-DEFAULT_WORKING_SET_MAX = 72_000
+DEFAULT_WORKING_SET_MAX = 132_000
 # Per-task-class multiplier on scope read-cost. Seeds, and they stay seeds: the
 # telemetry calibration that once overwrote them measured whole-lane spend, which is
 # a different quantity from a working set, and basicly-z2wi removed it. An unlisted
