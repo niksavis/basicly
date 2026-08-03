@@ -143,6 +143,34 @@ tracker's edges rather than by eye — `br dep tree <id>`, not judgement.
 Tracked by `basicly-yc0x`. Track A's evidence was re-verified at `cbbd47a`, line by line; Track B's
 and Track D's rows carry their beads' own evidence and should be re-checked before they are worked.
 
+**Status after the 2026-08-03 session.** Four beads shipped — `gczc`, `tcmy.5`, `tcmy.6`,
+`tcmy.22` — at a measured cost of **68.9M tokens / $48.36**, which is the first honest per-lane
+price this project has: **~17M tokens and $12 per code lane**, not the ~1M an old dogfood total
+implied. Every budget figure written before that date was sized on the wrong prior.
+
+Three findings from that session outrank the beads they came from, and two are new P0s:
+
+- **`tcmy.34` (P0, blocks `u6jq.1`)** — the dispatch forecast is **269× low at the median** over
+  14 paired records (range 1×–591×). The narrowing that makes it tractable: the engine already
+  computes a realistic whole-lane figure for pass admission (18.6M/lane, against measured 17M,
+  15.8M, 10.7M) while recording a *working-set* figure in the field named `forecast_tokens`. Two
+  estimators ~280× apart, and `jr0l.34`'s pairing compares one against the other. **Fix the unit
+  before fitting anything** — a calibration on the current field is a correction factor on a units
+  error, which is how `z2wi` reached 216.65 against a seed of 3.0.
+- **`tcmy.35` (P1, blocks `7bur`)** — nothing in this repo declares a model tier, so every dispatch
+  runs unpinned. `models.py:69` refuses only when a tier *was* declared, so the refusal is
+  unreachable; `tier_honoured` is null while `observed_models` shows two models served one lane.
+- **`qorx` gained a blast radius.** `tcmy.5` widened its own scope mid-flight from the 8 globs it
+  was admitted on to 16, completed at 130,780, and its finishing record failed the tracker-wide
+  ceiling gate — **for its two siblings as well**, because a pass shares one `.beads` through the
+  redirect. Each was charged rework for a defect in neither diff. Resolved for now by deriving the
+  ceiling to 132,000 (`b6c5685`); the ratchet is untouched.
+
+**Two gates proved they bind rather than merely existing**, which is the distinction §1 calls the
+sharpest recurring lesson: pass admission refused a 1.7% forecast overrun instead of dispatching,
+and the grant halted `gczc`'s ship when its budget was spent. `4tjt` also fired correctly — an
+answered `retry` granted one further attempt instead of instantly re-escalating.
+
 ### Track A — lights-out blockers, and they gate the proof run
 
 All six now carry a `blocks` edge into `basicly-u6jq.1`, so the tracker refuses to hand out the
@@ -150,9 +178,9 @@ proof run first.
 
 | Bead | Evidence at `cbbd47a` | Fix shape |
 | --- | --- | --- |
-| **`gczc`** P0 | `decisions.py:655` calls `runner.run` with no `capture_usage`. `policy.py:1305-1319`: one `estimated=True` record that is not `unstarted` sets `halted=True`. So one delegated decision ends the grant. | **Not a one-liner.** With `capture_usage=True`, claude's stdout becomes a JSON envelope and `decisions.parse_verdict` (`:562`) takes first-`{`→last-`}`, so it would parse the envelope and fail closed to abstain. `rubrics.py:281` omits the flag for exactly that reason. Root fix: a `result_text(spec, stdout)` unwrapper in `runner` (claude-json → `.result`, stream-json → last result event, codex-jsonl → last message; copilot's `--session-id` never touches stdout) with both call sites routed through it. Fallback: treat a corpus-bounded decider floor like `unstarted` — cheaper, but it under-meters a real agent run, so record that. |
-| **`tcmy.5`** P1 | `loop.py:627` records `phase="build"`; `supervise.py:2120,2226` record `phase="lane"`. `decompose.unsized_lane_tokens` reads only `lane`; `calibrated_build_factors` filters on no phase at all, so decider and rubric dispatches are build-factor samples. | One named write-phase set read by both consumers, and a seeded factor recorded as seeded rather than measured. Same family as `z2wi`: a number compared against a number denominated in a different quantity. |
-| **`tcmy.6`** P1 | `policy.gate_from_unreliable_escalation` (`policy.py:560`) has zero production callers — only `tests/test_loop.py:2171` and `tests/test_policy.py:1689`. `cli.py:3421` calls `gate_from_rework_escalation`, whose regex does not match the unreliable question. | Answering "land anyway" implements nothing, so the flake re-trips and the identical question re-enqueues under the next generation. Carry out the override once, or stop offering it. |
+| ~~**`gczc`** P0~~ **SHIPPED 2026-08-03** | `decisions.py:655` calls `runner.run` with no `capture_usage`. `policy.py:1305-1319`: one `estimated=True` record that is not `unstarted` sets `halted=True`. So one delegated decision ends the grant. | **Not a one-liner.** With `capture_usage=True`, claude's stdout becomes a JSON envelope and `decisions.parse_verdict` (`:562`) takes first-`{`→last-`}`, so it would parse the envelope and fail closed to abstain. `rubrics.py:281` omits the flag for exactly that reason. Root fix: a `result_text(spec, stdout)` unwrapper in `runner` (claude-json → `.result`, stream-json → last result event, codex-jsonl → last message; copilot's `--session-id` never touches stdout) with both call sites routed through it. Fallback: treat a corpus-bounded decider floor like `unstarted` — cheaper, but it under-meters a real agent run, so record that. |
+| ~~**`tcmy.5`** P1~~ **SHIPPED 2026-08-03** | `loop.py:627` records `phase="build"`; `supervise.py:2120,2226` record `phase="lane"`. `decompose.unsized_lane_tokens` reads only `lane`; `calibrated_build_factors` filters on no phase at all, so decider and rubric dispatches are build-factor samples. | One named write-phase set read by both consumers, and a seeded factor recorded as seeded rather than measured. Same family as `z2wi`: a number compared against a number denominated in a different quantity. |
+| ~~**`tcmy.6`** P1~~ **SHIPPED 2026-08-03** | `policy.gate_from_unreliable_escalation` (`policy.py:560`) has zero production callers — only `tests/test_loop.py:2171` and `tests/test_policy.py:1689`. `cli.py:3421` calls `gate_from_rework_escalation`, whose regex does not match the unreliable question. | Answering "land anyway" implements nothing, so the flake re-trips and the identical question re-enqueues under the next generation. Carry out the override once, or stop offering it. |
 | **`jr0l.65`** P1 | `_live_session_violations` (`policy.py:1394`) counts needs-input markers by text; only `_issue_is_closed` (`:1430`) discounts them. | Discount an *answered* marker exactly as a closed bead's is. `decisions.answer` already writes a second marker with the same id, so resolution is readable. Smallest item in the track. |
 | **`toj6`** P1 | `supervise.py:321` defines open children as `status != "closed"`, so a `deferred` bead is sized into the band, counted in `children_open`, and included in the funding forecast. | Exclude `deferred`. Leave the unsized-child question to `jr0l.61`. |
 | **`qorx`** P1 | `DEFAULT_WORKING_SET_MAX` derives from the largest completed estimate, which is a function of the lane's own `## Scope` — which a lane may rewrite while running, and `fcls` did. | Bound the ratchet; the design currently punishes accurate scope reporting. Pair with `jr0l.54` (verify the declared scope at landing instead of trusting it at decompose). |
@@ -170,13 +198,15 @@ until 2026-08-03.
 | --- | --- |
 | **`uexy`** P1 | **Wired-or-deleted.** Nothing merges without a reference from outside its own module and outside `tests/`. Wire `vulture` here — it is declared at `pyproject.toml:37` and called from nowhere, so the gate's first finding is the dependency that proves the gate was missing. Expect deletions — the 2026-08-02 evidence pass counted 11 commands, 19 config keys, 12 record fields and 16 never-varied parameters with no caller outside their own module. `tcmy.21` is the deletion half. |
 | **`irrm`** P1 | **Exercised-or-unproven.** No release tag while a shipped capability has zero executions in the ledger. This is the deterministic form of the rule that a capability claim on a consumer-facing surface must be exercised before it is published. |
-| **`tcmy.22`** P1 | **Fix the suite the release rests on.** The git stub returns `_Proc(0)` for any unstubbed subcommand across 35 instantiations in `test_merge.py` alone; `work_repo` copytrees 331 MB including the live tracker DB and the gitignored local overlay; `conftest.py` resets neither `runner._BUDGET` nor `session._OVERRIDES`. |
+| ~~**`tcmy.22`** P1~~ **SHIPPED 2026-08-03** | **Fix the suite the release rests on.** The git stub returns `_Proc(0)` for any unstubbed subcommand across 35 instantiations in `test_merge.py` alone; `work_repo` copytrees 331 MB including the live tracker DB and the gitignored local overlay; `conftest.py` resets neither `runner._BUDGET` nor `session._OVERRIDES`. |
 | **`m4zv.14`** P1 | **Signature-forgiveness half only.** The machine-global `~/.beads/.write.lock` makes the pytest gate flaky and each flake spends a rework attempt against a cap of 2. The root fix is the `v0.8.0` flip, so one more release pays the flake — but a recognised signature must stop it charging rework. |
 
 ### Track C — the release event
 
-**`u6jq.1`** — re-run the dogfood shape as a supervised multi-lane run under the already-delegated
-10M-token L1 ceiling. It doubles as the telemetry run for the tracker surface. Run it **after**
+**`u6jq.1`** — re-run the dogfood shape as a supervised multi-lane run. **Now blocked on
+`tcmy.34`** (the 269× forecast miss), added 2026-08-03: a proof run measured through that forecast
+measures the forecast. Note the ceiling this row still cites is stale against the measured price —
+one code lane is ~17M tokens, so a three-lane proof needs ~55M, not 10M. It doubles as the telemetry run for the tracker surface. Run it **after**
 Track A, behind `basicly loop preflight` and the forecast gate: the first attempt cost $34.16 for
 46.0M tokens, 13.7× the 3.36M baseline, and failed its criterion. **Cost is bounded by sizing the
 work, never by interrupting a working agent.**
