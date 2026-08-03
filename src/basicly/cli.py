@@ -2874,6 +2874,47 @@ def _print_preflight_spend(
     _print_band_report(candidates, sizing)
 
 
+def _print_preflight_calibration(repo_root: Path, sizing: SizingConfig) -> None:
+    """Report whether the numbers a pass is about to be sized with are measured.
+
+    Two lines because they are two quantities (:class:`decompose.CalibrationStatus`):
+    the spend ratios, which history can replace, and the working-set build factors,
+    which nothing measures. An operator minting a budget from the forecast above needs
+    to know it rests on a declared prior — and until basicly-tcmy.5 the only way to
+    find that out was to read the source (basicly-p8ck: if it must be recalled, it is
+    a missing command).
+    """
+    status = decompose.calibration_status(repo_root, sizing)
+    counts = ", ".join(
+        f"{name} {count}/{status.min_samples}" for name, count in sorted(status.samples.items())
+    )
+    verdict = "SEEDS" if status.on_seeds else f"measured for {', '.join(status.measured_classes)}"
+    # A null model is not "zero samples for the model in use": the ratios are keyed per
+    # (model, class), so an unresolved model means nothing can key in at all and the
+    # counts are all the report has to offer. Said outright rather than rendered as
+    # "on None", which reads as a model nobody named.
+    against = (
+        f"paired write dispatches on {status.model}"
+        if status.model
+        else "no model pinned, so no sample can key in; paired write dispatches"
+    )
+    print(f"spend cal: {verdict} - {against}: {counts or 'none'}")
+    seeded = sorted(
+        name
+        for name, source in status.build_factor_sources.items()
+        if source == decompose.BUILD_FACTOR_SEED
+    )
+    factors = ", ".join(
+        f"{name} {sizing.build_factors[name]:g}"
+        for name in sorted(status.build_factor_sources)
+        if name in sizing.build_factors
+    )
+    # Named a seed rather than a calibration: no code path measures a build factor, so
+    # a line implying one could be measured would be the misreading this bead removes.
+    detail = "all seeds" if len(seeded) == len(status.build_factor_sources) else "some configured"
+    print(f"factors:   {detail} (never measured) - {factors}")
+
+
 def _print_band_report(
     working_sets: tuple[supervise.WorkingSetAdmission, ...], sizing: SizingConfig
 ) -> None:
@@ -2946,6 +2987,7 @@ def _cmd_loop_preflight(args: argparse.Namespace) -> int:
         blockers.append("a metered runner needs a grant with a token budget")
 
     _print_preflight_spend(repo_root, state, status)
+    _print_preflight_calibration(repo_root, load_sizing_config(repo_root))
 
     ahead = worktree.git(
         ["rev-list", "--count", "@{upstream}..HEAD"], cwd=repo_root, check=False

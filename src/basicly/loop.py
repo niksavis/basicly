@@ -624,7 +624,7 @@ def _run_agent(ctx: _Ctx, issue_id: str, cwd: Path) -> _Dispatch:
         spec,
         result,
         prompt=prompt,
-        phase="build",
+        phase=run_record.BUILD_PHASE,
         **sizing,
     )
     return _Dispatch(spec=spec, result=result, cwd=cwd, timeout=config.runner_timeout)

@@ -38,7 +38,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import br, policy, runner
+from . import br, policy, run_record, runner
 from .br import run_br as _run_br
 from .config import (
     PolicyConfig,
@@ -669,7 +669,14 @@ def invoke_decider(  # noqa: PLR0911 — one return per distinct drop-to-human c
         result = runner.run(
             spec, prompt, repo_root, capture_usage=True, timeout=runner_config.runner_timeout
         )
-    runner.record_dispatch(repo_root, item.issue_id, spec, result, prompt=prompt, phase="decide")
+    runner.record_dispatch(
+        repo_root,
+        item.issue_id,
+        spec,
+        result,
+        prompt=prompt,
+        phase=run_record.DECIDE_PHASE,
+    )
     if result.timed_out or result.handoff or result.returncode != 0:
         # One outcome, three causes: nothing usable came back, so the item stays
         # with the human. Naming the timeout distinctly matters for triage — a

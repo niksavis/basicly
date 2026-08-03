@@ -2117,7 +2117,7 @@ def record_unstarted_dispatch(
         issue_id,
         spec,
         runner.RunResult(spec.name, (), executed=False, stderr=redact_secrets(str(error))),
-        phase="lane",
+        phase=run_record.LANE_PHASE,
     )
 
 
@@ -2223,7 +2223,7 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
         spec,
         result,
         prompt=bundle.prompt,
-        phase="lane",
+        phase=run_record.LANE_PHASE,
         folded_info=tuple(_folded_ref(info) for info in bundle.folded),
         # The lane dispatch is where the measured 160-420x forecast misses were
         # spent, so it is the dispatch that most needs its forecast recorded beside

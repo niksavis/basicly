@@ -600,6 +600,19 @@ def scope_read_cost(repo_root: Path, scope: tuple[str, ...]) -> int:
     return total
 
 
+# Where a build factor came from. Recorded with every estimate, on the same rule
+# `forecast_source`, `SpendCalibration` and `unsized_lane_tokens`' source already
+# follow: a declared number must never be readable back as a measured one
+# (basicly-tcmy.5).
+#
+# There is deliberately no ``measured`` member. Nothing in this engine measures a
+# working-set factor: the calibration that appeared to was measuring whole-lane
+# spend, a different quantity, and basicly-z2wi removed it (see the section below).
+# A vocabulary offering the word would invite the next reader to assume a writer.
+BUILD_FACTOR_SEED = "seed"  # config.DEFAULT_BUILD_FACTOR_SEEDS
+BUILD_FACTOR_CONFIGURED = "configured"  # declared in [policy.sizing.build_factor]
+
+
 @dataclass(frozen=True)
 class CostEstimate:
     """One child's deterministic context-cost estimate (D8: estimate at decompose)."""
@@ -607,11 +620,26 @@ class CostEstimate:
     scope_tokens: int
     overhead_tokens: int
     build_factor: float
+    # :data:`BUILD_FACTOR_SEED` or :data:`BUILD_FACTOR_CONFIGURED`. Defaulted to the
+    # seed so an estimate parsed back from a marker written before the field existed
+    # keeps the provenance it actually had: at that time no calibration existed to
+    # produce anything else.
+    build_factor_source: str = BUILD_FACTOR_SEED
 
     @property
     def total(self) -> int:
         """Estimated working-set tokens: overhead + scope read-cost x build factor."""
         return self.overhead_tokens + round(self.scope_tokens * self.build_factor)
+
+
+def _factor_key(task_class: str, factors: dict[str, float]) -> str:
+    """Which entry of *factors* answers for *task_class*.
+
+    Split out so the factor and its provenance are looked up by one rule: reading the
+    value from one key and the source from another is how a configured number would
+    end up recorded as a seed.
+    """
+    return task_class if task_class in factors else DEFAULT_CHILD_TYPE
 
 
 def build_factor_for(task_class: str, factors: dict[str, float]) -> float:
@@ -622,17 +650,34 @@ def build_factor_for(task_class: str, factors: dict[str, float]) -> float:
     :func:`estimate_cost` and :func:`dispatch_sizing` so a plan's estimate and the
     same package's dispatch-time forecast cannot be computed two different ways.
     """
-    return factors.get(task_class, factors.get(DEFAULT_CHILD_TYPE, DEFAULT_BUILD_FACTOR))
+    return factors.get(_factor_key(task_class, factors), DEFAULT_BUILD_FACTOR)
+
+
+def build_factor_source(task_class: str, sizing: SizingConfig) -> str:
+    """Where *task_class*'s build factor came from (:data:`BUILD_FACTOR_SEED` etc).
+
+    Keyed on the entry that actually answered, so a class with no factor of its own
+    inherits ``task``'s provenance rather than being reported as seeded while a
+    configured ``task`` factor is what sized it.
+    """
+    key = _factor_key(task_class, sizing.build_factors)
+    return BUILD_FACTOR_CONFIGURED if key in sizing.configured_build_factors else BUILD_FACTOR_SEED
 
 
 def estimate_cost(
-    repo_root: Path, spec: ChildSpec, factors: dict[str, float], overhead: int
+    repo_root: Path, spec: ChildSpec, sizing: SizingConfig, overhead: int
 ) -> CostEstimate:
-    """Estimate *spec*'s working-set cost from its declared scope and task class."""
+    """Estimate *spec*'s working-set cost from its declared scope and task class.
+
+    Takes the whole :class:`SizingConfig` rather than its factor map: the estimate
+    now carries where its factor came from, and that provenance lives beside the
+    factors in the config rather than in the map itself.
+    """
     return CostEstimate(
         scope_tokens=scope_read_cost(repo_root, spec.scope),
         overhead_tokens=overhead,
-        build_factor=build_factor_for(spec.type, factors),
+        build_factor=build_factor_for(spec.type, sizing.build_factors),
+        build_factor_source=build_factor_source(spec.type, sizing),
     )
 
 
@@ -817,6 +862,11 @@ def _parse_sizing_marker(text: str) -> tuple[str, CostEstimate] | None:
             scope_tokens=int(data["scope_tokens"]),
             overhead_tokens=int(data["overhead_tokens"]),
             build_factor=float(data["build_factor"]),
+            # Absent on every marker frozen before the field existed, and the default
+            # is the truth for those: the seeds were the only source there had ever
+            # been. Required would instead discard the frozen verdict and recompute,
+            # which is the drift the freeze exists to prevent (D9).
+            build_factor_source=str(data.get("build_factor_source", BUILD_FACTOR_SEED)),
         )
     except ValueError, TypeError, KeyError:
         return None
@@ -896,14 +946,20 @@ class DispatchSizing:
         """These inputs as ``record_dispatch`` keywords.
 
         On the sizing itself rather than at each dispatch site: both sites record
-        the same four fields, and a second copy of this mapping is precisely how
+        the same fields, and a second copy of this mapping is precisely how
         the two would drift apart (basicly-jr0l.16).
+
+        The build factor's provenance travels with the forecast it produced
+        (basicly-tcmy.5). Without it the record carries a number multiplied by a
+        declared constant and no statement that it was declared, which is the state
+        every sibling field on the record was designed not to be in.
         """
         return {
             "scope_tokens": self.estimate.scope_tokens,
             "forecast_tokens": self.estimate.total,
             "task_class": self.task_class,
             "forecast_source": self.source,
+            "build_factor_source": self.estimate.build_factor_source,
         }
 
 
@@ -948,6 +1004,7 @@ def resolve_dispatch_sizing(repo_root: Path, issue_id: str) -> SizingLookup:
         scope_tokens=scope_read_cost(repo_root, scope),
         overhead_tokens=instruction_overhead(repo_root),
         build_factor=build_factor_for(task_class, sizing.build_factors),
+        build_factor_source=build_factor_source(task_class, sizing),
     )
     return SizingLookup(DispatchSizing(task_class, estimate, DISPATCH_FORECAST))
 
@@ -1081,6 +1138,88 @@ def _class_forecasts(
     )
 
 
+# --- Is the sizing measured yet? (basicly-tcmy.5) -----------------------------
+#
+# Every sizing number this engine forecasts with is currently declared: the build
+# factors are seeds by design (basicly-z2wi), and the spend ratios stand on
+# `DECLARED_SPEND_PRIOR` until a class has `calibration_min_samples` paired write
+# dispatches on the model in use. Each of those facts is recorded where it is
+# produced, and none of them was ever *reported* — so "is the forecast measured
+# yet?" was a question an operator answered by reading source, and the honest
+# answer ("no, and here is how far off it is") looked identical to a silence.
+#
+# Preflight is where it belongs: before a budget is minted is the only moment the
+# answer can still change a decision (the basicly-prnm stance for the band table).
+
+
+@dataclass(frozen=True)
+class CalibrationStatus:
+    """How much of the sizing forecast is measured, per task class.
+
+    Two independent numbers, deliberately kept apart: *samples* is the paired history
+    behind the **spend** ratios, and *build_factor_sources* is where each **working
+    set** factor came from. They are different quantities with different calibrations
+    — conflating them is what basicly-z2wi's 216x was — so a report may not collapse
+    them into one "calibrated" flag.
+    """
+
+    # The model a dispatch would run on now; None when the runner pins none, and then
+    # nothing can be measured at all because a sample cannot join a key.
+    model: str | None
+    min_samples: int
+    # Eligible paired samples per task class, for *model*.
+    samples: dict[str, int]
+    # :data:`BUILD_FACTOR_SEED` or :data:`BUILD_FACTOR_CONFIGURED`, per task class.
+    build_factor_sources: dict[str, str]
+
+    @property
+    def measured_classes(self) -> tuple[str, ...]:
+        """Classes with enough paired history to replace the prior's turn multiplier.
+
+        The multiplier specifically: it is measured from every pair, while the price and
+        the rate are measured only from the pairs whose adapter also metered money or
+        time, so a class counted here can still be seeded in USD.
+        """
+        return tuple(
+            name for name, count in sorted(self.samples.items()) if count >= self.min_samples
+        )
+
+    @property
+    def on_seeds(self) -> bool:
+        """True while no class has enough history to measure a spend ratio."""
+        return not self.measured_classes
+
+
+def calibration_status(repo_root: Path, sizing: SizingConfig) -> CalibrationStatus:
+    """Report whether the sizing forecast is still standing on declared numbers.
+
+    Read-only and best-effort, like every other reader of the record stream: an
+    unreadable history counts as no samples, which is what it is.
+
+    The classes reported are the ones a factor is declared for, unioned with any class
+    the history has samples for — so a repo that sizes a class nobody configured still
+    sees its history, and a configured class with no history still shows as zero rather
+    than being absent.
+    """
+    report = run_record.forecast_errors(repo_root)
+    model = forecast_model(repo_root)
+    sampled = {error.task_class for error in report.errors if error.task_class}
+    classes = sorted(set(sizing.build_factors) | sampled)
+    return CalibrationStatus(
+        model=model,
+        min_samples=sizing.calibration_min_samples,
+        samples={
+            name: len(
+                run_record.spend_samples(
+                    report, model=model, task_class=name, window=sizing.calibration_window
+                )
+            )
+            for name in classes
+        },
+        build_factor_sources={name: build_factor_source(name, sizing) for name in classes},
+    )
+
+
 def spend_forecasts(
     repo_root: Path,
     children: tuple[ChildSpec, ...],
@@ -1132,6 +1271,16 @@ def unsized_lane_tokens(repo_root: Path, sizing: SizingConfig) -> tuple[int, str
     lane costs, whatever the tracker says about its scope. So this reads the measured
     lane actuals directly, over the most recent window.
 
+    The sample set is every dispatch recorded under :data:`run_record.WRITE_PHASES` —
+    both the supervised lane and the interactive build, because they are the same kind
+    of work and the bound is a statement about what that work costs. It required
+    ``phase == "lane"`` alone until basicly-tcmy.5, and the interactive path is the
+    documented default on a single-operator machine: on this repo's own history that
+    filter saw 24 of the 32 adapter-metered write dispatches and bounded a lane at
+    15245717 tokens where the whole population gives 15830484. A helper dispatch (a
+    rubric judge, the decider) is still excluded, and so is one whose phase was never
+    recorded — neither is evidence of what a lane costs.
+
     The statistic is the **quantile at** ``[policy.sizing] unsized_lane_quantile``
     (default 0.9), because this is a *ceiling* and a ceiling wants a high-water mark.
     It replaced a median, which was chosen when the recorded population looked bimodal
@@ -1182,7 +1331,7 @@ def unsized_lane_tokens(repo_root: Path, sizing: SizingConfig) -> tuple[int, str
             # helper or handoff dispatch is not a lane.
             if (
                 entry.get("estimated") is False
-                and entry.get("phase") == "lane"
+                and run_record.is_write_phase(entry.get("phase"))
                 and isinstance(tokens, int)
                 and tokens > 0
             ):
@@ -1232,6 +1381,7 @@ def freeze_estimate(
             "scope_tokens": estimate.scope_tokens,
             "overhead_tokens": estimate.overhead_tokens,
             "build_factor": estimate.build_factor,
+            "build_factor_source": estimate.build_factor_source,
             "total": estimate.total,
             "spend": None if spend is None else asdict(spend),
         },
@@ -1289,11 +1439,10 @@ def estimate_plan(
     """
     sizing = load_sizing_config(repo_root)
     frozen = frozen_estimates(repo_root, feature_id) if feature_id is not None else {}
-    factors = sizing.build_factors
     overhead = instruction_overhead(repo_root)
     keys = tuple(sizing_key(spec) for spec in children)
     estimates = tuple(
-        frozen.get(key) or estimate_cost(repo_root, spec, factors, overhead)
+        frozen.get(key) or estimate_cost(repo_root, spec, sizing, overhead)
         for spec, key in zip(children, keys, strict=True)
     )
     violations = tuple(

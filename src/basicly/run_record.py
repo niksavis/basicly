@@ -52,6 +52,46 @@ HANDOFF = "handoff"  # no CLI invocation — handed to the driving agent/human
 UNSTARTED = "unstarted"
 
 
+# --- Dispatch phases (basicly-tcmy.5) ----------------------------------------
+#
+# The phase a dispatch is recorded under. Named here, in the module every writer
+# and every reader already imports, because the phase had no definition at all:
+# each site wrote its own string literal and each consumer filtered on its own,
+# and the two filtered oppositely.
+#
+# ``loop._run_agent`` records the interactive build dispatch as ``build`` and
+# ``supervise._dispatch_lane`` records the supervised one as ``lane``. They are
+# the same kind of work — an agent turned loose on a worktree to do a node's
+# build — so a consumer wanting "what a lane costs" wants both.
+# ``decompose.unsized_lane_tokens`` required ``lane`` alone, which on this repo's
+# own history bounded a lane from 24 samples while 128 records of the interactive
+# path (the documented default) were invisible to it.
+#
+# The helper phases are the other half of the same defect: a rubric judge and a
+# decider read and answer, neither writes code, and a calibration that samples
+# them measures the cost of a helper and reports it as the cost of the work.
+BUILD_PHASE = "build"  # loop._run_agent — the interactive path
+LANE_PHASE = "lane"  # supervise._dispatch_lane — the supervised path
+VALIDATE_PHASE = "validate"  # rubrics — a read-only judge
+DECIDE_PHASE = "decide"  # decisions — the decider answering a queued item
+
+# The dispatches that are an agent doing a node's work. One definition, read by
+# both the unsizeable-lane bound and the spend calibration, so the two can no
+# longer disagree about what a lane is.
+WRITE_PHASES = frozenset({BUILD_PHASE, LANE_PHASE})
+
+
+def is_write_phase(phase: object) -> bool:
+    """True when *phase* names a write dispatch (:data:`WRITE_PHASES`).
+
+    Takes the raw recorded value rather than a ``str``: the caller is reading a
+    persisted record, where the key may be absent, null (every dispatch recorded
+    before the field existed) or externally tampered. All of those answer False —
+    a phase that cannot be read is not evidence that a lane ran.
+    """
+    return isinstance(phase, str) and phase in WRITE_PHASES
+
+
 @dataclass(frozen=True)
 class RunRecord:
     """One dispatched run's metadata, stored on disk under the bead it ran."""
@@ -139,6 +179,17 @@ class RunRecord:
     # does not have.
     task_class: str | None = None
     forecast_source: str | None = None
+    # Where the build factor behind ``forecast_tokens`` came from
+    # (``decompose.BUILD_FACTOR_SEED`` / ``BUILD_FACTOR_CONFIGURED``). The factor is
+    # a bare multiplier on the forecast and nothing measures it — the calibration
+    # that appeared to measured spend instead, and basicly-z2wi removed it — so a
+    # record carrying the forecast
+    # and not its provenance lets a declared number be read back as a measured one.
+    # The sibling fields all name their source for the same reason
+    # (``forecast_source``, ``SpendCalibration``, ``unsized_lane_tokens``); this was
+    # the one input that did not. Null on a dispatch whose scope was unreadable, so
+    # no factor was applied at all (basicly-tcmy.5).
+    build_factor_source: str | None = None
     # Ids of the found-info records folded into the bundle. Bundle assembly
     # truncates to the newest N, so without this the prompt is unexplainable.
     folded_info: tuple[str, ...] = ()
@@ -221,6 +272,7 @@ def build_record(  # noqa: PLR0913
     context_tokens: int | None = None,
     task_class: str | None = None,
     forecast_source: str | None = None,
+    build_factor_source: str | None = None,
     folded_info: tuple[str, ...] = (),
     dispatch_rank: int | None = None,
     scheduler_rank: int | None = None,
@@ -272,6 +324,7 @@ def build_record(  # noqa: PLR0913
         context_tokens=context_tokens,
         task_class=task_class,
         forecast_source=forecast_source,
+        build_factor_source=build_factor_source,
         folded_info=tuple(folded_info),
         dispatch_rank=dispatch_rank,
         scheduler_rank=scheduler_rank,
@@ -706,6 +759,10 @@ class ForecastError:
     task_class: str | None = None
     model: str | None = None
     forecast_source: str | None = None
+    # The phase the dispatch was recorded under, carried so a calibration can refuse
+    # to sample a helper (basicly-tcmy.5). Null for a record written before the field
+    # existed, which :func:`is_write_phase` reads as "not shown to be a lane".
+    phase: str | None = None
     # True when the actual was a chars/4 transcript estimate rather than
     # adapter-reported usage, so a consumer can down-weight the sample (design 7.5).
     estimated: bool = False
@@ -812,6 +869,7 @@ def forecast_errors(repo_root: Path) -> ForecastErrorReport:
                     task_class=_text(entry, "task_class"),
                     model=_text(entry, "model"),
                     forecast_source=_text(entry, "forecast_source"),
+                    phase=_text(entry, "phase"),
                     estimated=entry.get("estimated") is True,
                     actual_cost=_positive_float(entry, "cost"),
                     actual_wall_clock_s=_positive_float(entry, "duration_s"),
@@ -958,6 +1016,36 @@ class SpendCalibration:
         )
 
 
+def spend_samples(
+    report: ForecastErrorReport, *, model: str | None, task_class: str | None, window: int
+) -> list[ForecastError]:
+    """The paired records eligible to calibrate spend for (*model*, *task_class*).
+
+    One definition of "eligible", because two readers now need it: :func:`calibrate_spend`
+    resolves the ratios from it and the preflight report counts it to say whether a class
+    is still on the declared prior. A second copy of the filter is how the two would come
+    to disagree about how much history exists — exactly the defect basicly-tcmy.5 fixes
+    one layer down, where the bound and the calibration each had their own idea of what a
+    lane dispatch was.
+
+    A null *model* or *task_class* matches nothing rather than everything: an unrecorded
+    model is unknown provenance, and pooling those samples would rebuild the cross-model
+    average this calibration exists to avoid. The newest *window* is taken from the tail,
+    which is chronological because :attr:`ForecastErrorReport.errors` is timestamp-sorted.
+    """
+    if not (model and task_class):
+        return []
+    pairs = [
+        error
+        for error in report.errors
+        if error.model == model
+        and error.task_class == task_class
+        and not error.estimated
+        and is_write_phase(error.phase)
+    ]
+    return pairs[-window:]
+
+
 def _calibrated(values: list[float], prior: float | None, minimum: int) -> CalibratedRatio:
     """One ratio: the measured median past *minimum* samples, else the prior, else None.
 
@@ -993,24 +1081,25 @@ def calibrate_spend(  # noqa: PLR0913
     with chars/4-estimated actuals excluded. Below *min_samples* the declared prior
     stands, per ratio.
 
+    **A sample must be a write dispatch** (:data:`WRITE_PHASES`). A rubric judge and
+    the decider are dispatches on the same bead and land in the same record stream, so
+    a filter on model and class alone admits them: the ratio would then be a helper's
+    spend over a lane's working set, and a cheap judge would drag the multiplier the
+    band and the budget are both computed from. They are excluded here rather than left
+    to be excluded incidentally by carrying no forecast — that held only because no
+    helper site records sizing today, which is a property of the callers and not of
+    this function (basicly-tcmy.5). A record whose phase was never written is excluded
+    on the same rule: unknown provenance fails closed.
+
     This is the *only* place a turn multiplier may be measured. It is legitimate here
     because the quantity being predicted is spend, which is what the samples record.
     The build factor predicts a working set and must never be calibrated the same way
     (basicly-z2wi).
 
-    A null *model* or *task_class* matches nothing rather than everything: an
-    unrecorded model is unknown provenance, and pooling those samples would rebuild
-    the cross-model average this calibration exists to avoid.
+    :func:`spend_samples` owns which records qualify, including why a null *model* or
+    *task_class* matches nothing rather than everything.
     """
-    pairs: list[ForecastError] = []
-    if model and task_class:
-        pairs = [
-            error
-            for error in report.errors
-            if error.model == model and error.task_class == task_class and not error.estimated
-        ]
-        # report.errors is timestamp-sorted, so the tail is the newest window.
-        pairs = pairs[-window:]
+    pairs = spend_samples(report, model=model, task_class=task_class, window=window)
     costs = [
         error.actual_cost / error.actual_tokens * 1_000_000
         for error in pairs
