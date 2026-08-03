@@ -10,6 +10,7 @@ the per-session decision cap all leave the item with the human.
 from __future__ import annotations
 
 import contextlib
+import inspect
 import json
 import threading
 from datetime import UTC, datetime
@@ -460,7 +461,11 @@ def test_intake_corpus_is_description_plus_agent_context(
 
 
 def _decider_setup(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, stdout: str
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    stdout: str,
+    *,
+    usage_format: str | None = None,
 ) -> tuple[_FakeBr, decisions.DecisionItem]:
     fake = _FakeBr(records={"epic": {"status": "open", "description": "db is postgres"}})
     _install(monkeypatch, fake)
@@ -469,11 +474,16 @@ def _decider_setup(
     # deny_style is what makes the fake confinable; without one, invoke_decider
     # refuses to dispatch it at all (basicly-kjc5.16) - which every decider path
     # here assumes it got past. The unconfinable case has its own test.
+    #
+    # No usage_format by default, so *stdout* is the reply verbatim: the plain-text
+    # arm of the fix (basicly-gczc), which is also every store-measured adapter.
+    # A test that needs the wrapped arm names the format.
     spec = runner.RunnerSpec(
         "fake",
         runner.HEADLESS,
         ("fake", runner.PROMPT_PLACEHOLDER),
         deny_style=runner.DENY_TOOL_FLAG,
+        usage_format=usage_format,
     )
     monkeypatch.setattr(
         decisions,
@@ -513,7 +523,12 @@ def test_decider_records_a_derivable_answer_with_attribution(
 def test_decider_dispatch_is_bounded_and_metered(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The decider obeys runner_timeout and writes a run-record (basicly-kjc5.31)."""
+    """The decider obeys runner_timeout and writes a run-record (basicly-kjc5.31).
+
+    ``capture_usage`` is the other half of "metered" (basicly-gczc): the record
+    alone carried a chars/4 estimate, which ``policy.session_spend`` counts as an
+    unmeterable dispatch, and one of those zeroes the grant's remaining budget.
+    """
     verdict = json.dumps({
         "decision": "postgres",
         "rationale": "corpus",
@@ -526,6 +541,7 @@ def test_decider_dispatch_is_bounded_and_metered(
 
     def _run(_spec, _prompt, _cwd, **kwargs):
         seen["timeout"] = kwargs.get("timeout")
+        seen["capture_usage"] = kwargs.get("capture_usage", False)
         return runner.RunResult("fake", ("fake",), executed=True, returncode=0, stdout=verdict)
 
     monkeypatch.setattr(decisions.runner, "run", _run)
@@ -539,8 +555,168 @@ def test_decider_dispatch_is_bounded_and_metered(
     decisions.invoke_decider(tmp_path, item.decision_id, "epic")
 
     assert seen["timeout"] == 3600.0  # the [runner] runner_timeout default
+    assert seen["capture_usage"] is True
     assert recorded == [item.issue_id]
     assert phases == ["decide"]
+
+
+# --- A delegated decision must not halt the grant (basicly-gczc) --------------
+
+
+def test_the_decider_call_site_comment_matches_the_flag_it_describes() -> None:
+    """The prose at the dispatch claims metering; the flag has to be there too.
+
+    This is the basicly-ipx2 defect class — a claim committed beside the thing it
+    is wrong about. The comment said the decider was "metered like every other
+    dispatch" through a call that never passed ``capture_usage``, so a reader
+    checking whether the decider was metered found a comment saying yes. Dropping
+    either side fails here.
+    """
+    mentions = [line.strip() for line in inspect.getsource(decisions.invoke_decider).splitlines()]
+    mentions = [line for line in mentions if "capture_usage" in line]
+    assert any("capture_usage=True" in line for line in mentions), (
+        "the prose claims the decider is metered through a call that does not capture usage"
+    )
+    assert any("capture_usage=True" not in line for line in mentions), (
+        "the flag is passed with no prose saying what metering means here"
+    )
+
+
+_VERDICT = json.dumps({"decision": "postgres", "rationale": "corpus", "abstain": False})
+
+
+def _claude_like_decider(monkeypatch: pytest.MonkeyPatch, *, honour_flag: bool = True) -> None:
+    """Replace the decider's runner with one that behaves the way claude does.
+
+    The whole defect lives in the *coupling* the other stubs in this module elide:
+    the flag that makes usage reportable is the same flag that wraps the reply. So
+    this stand-in answers the way the probed CLI answers — a result object with a
+    usage block under ``capture_usage``, the bare reply without it — and a test can
+    then assert on the meter rather than on what the call site was seen to pass.
+
+    *honour_flag* False ignores the flag and always replies in plain text: the
+    pre-fix call site, kept as the control that these assertions discriminate.
+    """
+
+    def _run(_spec, _prompt, _cwd, **kwargs):
+        wrapped = bool(kwargs.get("capture_usage")) and honour_flag
+        stdout = (
+            json.dumps({
+                "type": "result",
+                "result": _VERDICT,
+                "total_cost_usd": 0.01,
+                "usage": {"input_tokens": 11, "output_tokens": 7},
+            })
+            if wrapped
+            else _VERDICT
+        )
+        return runner.RunResult("fake", ("fake",), executed=True, returncode=0, stdout=stdout)
+
+    monkeypatch.setattr(decisions.runner, "run", _run)
+
+
+def test_a_delegated_decision_does_not_halt_the_grant(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """One delegated decision leaves the grant funded, through the real recorder.
+
+    The bug this closes: the decider's record carried ``estimated: true``, so
+    ``spend_status`` refused every following dispatch and delegated decision for
+    the rest of the session — the 2026-08-02 halt. Nothing is stubbed between the
+    dispatch and the meter, because a passing parser is not evidence about a
+    fail-open gate: the assertion is on ``spend_status`` itself, over records the
+    real ``record_dispatch`` wrote.
+    """
+    fake, item = _decider_setup(monkeypatch, tmp_path, "", usage_format=runner.CLAUDE_JSON)
+    _claude_like_decider(monkeypatch)
+    fake.comments.setdefault("epic", []).append("[harness-policy] grant level=L3 budget=8000000")
+
+    outcome = decisions.invoke_decider(tmp_path, item.decision_id, "epic")
+
+    assert isinstance(outcome, decisions.DecisionItem)
+    assert outcome.answer == "postgres"
+    meter = policy.session_spend(tmp_path, "epic")
+    assert meter.unmetered_dispatches == 0
+    assert meter.measured_tokens == 18  # the adapter's own numbers, not a chars/4 floor
+    status = policy.spend_status(tmp_path, "epic")
+    assert status.halted is False, status.detail
+
+
+def test_an_unmetered_decider_dispatch_is_what_halted_the_grant(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The control: the pre-fix dispatch halts the grant on one decision.
+
+    Same adapter, same grant, same single delegated decision — only the flag
+    differs. Without this the test above would pass just as well against a meter
+    that counts nothing, which is how the defect survived being "metered like every
+    other dispatch" in a comment.
+    """
+    fake, item = _decider_setup(monkeypatch, tmp_path, "", usage_format=runner.CLAUDE_JSON)
+    _claude_like_decider(monkeypatch, honour_flag=False)
+    fake.comments.setdefault("epic", []).append("[harness-policy] grant level=L3 budget=8000000")
+
+    delegated = decisions.invoke_decider(tmp_path, item.decision_id, "epic")
+    assert isinstance(delegated, decisions.DecisionItem)
+
+    status = policy.spend_status(tmp_path, "epic")
+    assert status.halted is True
+    assert status.unmetered_dispatches == 1
+    assert "cannot be metered" in status.detail
+
+
+# The verdict as each adapter's stdout carries it under `capture_usage`. The last
+# case is the plain-text arm: a store-measured adapter's stdout was never wrapped,
+# and neither was an adapter with no usage format at all.
+@pytest.mark.parametrize(
+    ("usage_format", "stdout"),
+    [
+        (runner.CLAUDE_JSON, json.dumps({"type": "result", "result": _VERDICT, "usage": {}})),
+        (
+            runner.CLAUDE_STREAM_JSON,
+            "\n".join([
+                '{"type":"system","subtype":"init"}',
+                json.dumps({"type": "result", "result": _VERDICT}),
+            ]),
+        ),
+        (
+            runner.CODEX_JSONL,
+            json.dumps({
+                "type": "item.completed",
+                "item": {"type": "agent_message", "text": _VERDICT},
+            }),
+        ),
+        (None, _VERDICT),
+    ],
+)
+def test_the_decider_verdict_survives_its_usage_envelope(
+    usage_format: str | None,
+    stdout: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A metered adapter's reply is unwrapped before parsing, per envelope shape."""
+    _fake, item = _decider_setup(monkeypatch, tmp_path, stdout, usage_format=usage_format)
+    monkeypatch.setattr(decisions.runner, "record_dispatch", lambda *_a, **_k: None)
+
+    outcome = decisions.invoke_decider(tmp_path, item.decision_id, "epic")
+
+    assert isinstance(outcome, decisions.DecisionItem)
+    assert outcome.answer == "postgres"
+
+
+def test_a_raw_envelope_abstains() -> None:
+    """The control for the test above: unwrapped, the envelope itself abstains.
+
+    ``parse_verdict`` takes first-``{`` to last-``}``, so handed a raw claude
+    envelope it parses the *envelope*, finds no ``decision`` key, and fails closed —
+    which is what the naive one-line fix ships: every delegated decision silently
+    stops being delegated while the meter looks fixed.
+    """
+    envelope = json.dumps({"type": "result", "result": _VERDICT, "usage": {}})
+    raw = decisions.parse_verdict(envelope)
+    assert raw.abstain is True
+    assert not raw.decision
 
 
 def test_decider_timeout_abstains(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

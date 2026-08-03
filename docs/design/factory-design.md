@@ -674,12 +674,17 @@ Probed live and pinned during components 1 and `basicly-kjc5.14`:
   the documented shape carried neither the cache-write nor the reasoning key, which is how the
   dropped-split defect survived. A mismatch degrades to the estimate rather than failing.
 
-Usage capture is opt-in per call site (`capture_usage`), and deliberately so: it switches some
-adapters' stdout to JSON, which the rubric judge's plain-text line parser cannot read. The judge
-and the catalog review therefore meter by estimate rather than setting the flag
-(`basicly-kjc5.31`). An out-of-band format is the way out of that trade-off rather than an
-exception to it: because a store-measured adapter leaves stdout alone, a text-parsing consumer
-could set the flag and still be metered exactly — copilot already can.
+Usage capture is opt-in per call site (`capture_usage`) because it switches some adapters'
+stdout to a usage envelope, which a plain-text answer parser cannot read. That was first
+resolved by declining to meter — the rubric judge and the decider set no flag and metered by
+estimate (`basicly-kjc5.31`) — and that trade was wrong in a way the design did not see: an
+estimated agent run counts as an *unmeterable* dispatch under §7.4's ceiling, so declining to
+meter did not under-count the session, it **halted** it on the first judged check or delegated
+decision (`basicly-gczc`). The trade-off is dissolved rather than taken: `runner.result_text`
+inverts each envelope back to the agent's own text (claude's `result` field, codex's last
+`agent_message`), so a text-parsing consumer sets the flag and keeps its answer. An
+out-of-band format needs no inversion at all — a store-measured adapter leaves stdout alone,
+which is why copilot was already exactly meterable here.
 
 ### 7.6 Finalize-protocol follow-up placement
 

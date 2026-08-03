@@ -253,6 +253,11 @@ def parse_judged(stdout: str, checks: list[RubricCheck]) -> list[CheckVerdict]:
 
     A check with no parseable answer is ``UNKNOWN`` (advisory — a judged verdict
     is never treated as a hard failure; see :func:`gate_status`).
+
+    Takes the agent's *own* text: a metered dispatch wraps that in a usage
+    envelope whose lines all start with ``{``, and none of them match the answer
+    pattern, so the caller unwraps it first with
+    :func:`basicly.runner.result_text` (basicly-gczc).
     """
     answered: dict[str, tuple[str, str]] = {}
     for line in stdout.splitlines():
@@ -277,14 +282,19 @@ def evaluate(
 
     The judged dispatch obeys ``[runner] runner_timeout`` and writes a run-record
     like every other dispatch (basicly-kjc5.31): a hung judge used to hang the
-    whole pass, and its tokens never reached the session's spend. It deliberately
-    does *not* set ``capture_usage`` — that switches some adapters' stdout to JSON,
-    which :func:`parse_judged` cannot read — so the record carries the flagged
-    chars/4 estimate instead. That is a limitation of the *stdout* usage formats,
-    not of metering as such: copilot measures out of band from its own session
-    store (basicly-2rn9) precisely so a metered dispatch keeps plain-text output,
-    so a judge on a store-measured adapter could be metered exactly. Still left
-    unflagged, because the claude/codex arms would lose their answer.
+    whole pass, and its tokens never reached the session's spend. It sets
+    ``capture_usage`` so the record carries the adapter's own numbers rather than
+    the flagged chars/4 estimate — which
+    :func:`basicly.policy.session_spend` counts as an *unmeterable* dispatch, and
+    one of those zeroes the grant's remaining budget (basicly-gczc).
+
+    That flag switches some adapters' stdout to a usage envelope
+    :func:`parse_judged` cannot read, which is why it stayed unset until the
+    envelope could be undone: the answer is now read back through
+    :func:`basicly.runner.result_text` instead of off raw stdout, so the claude and
+    codex arms keep their reply *and* their measurement. copilot needed neither —
+    it measures out of band from its own session store (basicly-2rn9) and its
+    stdout was plain text all along.
 
     A timed-out judge resolves every judged check to UNKNOWN rather than NO: no
     agent answered, and inventing a failure would enqueue a dispute nobody made.
@@ -302,7 +312,9 @@ def evaluate(
         # The judge is a read-only helper: it queues on the best-effort remainder
         # rather than taking a slot a lane or the decider is reserved.
         with runner.process_budget().slot(runner.HELPER):
-            result = runner.run(spec, prompt, repo_root, timeout=config.runner_timeout)
+            result = runner.run(
+                spec, prompt, repo_root, capture_usage=True, timeout=config.runner_timeout
+            )
         runner.record_dispatch(repo_root, issue_id, spec, result, prompt=prompt, phase="validate")
         if result.handoff or result.timed_out:
             why = (
@@ -312,7 +324,7 @@ def evaluate(
             )
             verdicts += [CheckVerdict(check.id, JUDGED, UNKNOWN, why) for check in judged]
         else:
-            verdicts += parse_judged(result.stdout, judged)
+            verdicts += parse_judged(runner.result_text(spec, result.stdout), judged)
     return verdicts
 
 

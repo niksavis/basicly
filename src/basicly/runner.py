@@ -104,6 +104,13 @@ DEFAULT_COPILOT_SESSION_STORE = Path("~/.copilot/session-state")
 COPILOT_EVENTS_FILE = "events.jsonl"
 COPILOT_SHUTDOWN_EVENT = "session.shutdown"
 
+# The codex `--json` events that carry the agent's own reply, as opposed to its
+# usage: an `item.completed` whose item is an `agent_message` (probed 0.146.0).
+# :func:`result_text` reads the reply out of these so a metered codex dispatch
+# still has a parseable answer.
+CODEX_ITEM_COMPLETED = "item.completed"
+CODEX_AGENT_MESSAGE = "agent_message"
+
 # Context-window defaults per adapter (factory design §6, basicly-kjc5.6): the
 # denominator for the context-ceiling meter. Conservative published windows;
 # config-overridable per agent via `context_window`. Unknown agents get the
@@ -302,9 +309,12 @@ def format_command(
     *capture_usage* (basicly-kjc5.1) appends the spec's usage-report flags so
     the CLI emits token usage for :func:`extract_usage`. Opt-in per call site
     because it changes the output shape (claude's stdout becomes one JSON
-    object): the loop's run-record dispatch captures usage; consumers that
-    parse the agent's answer as plain text (rubric judging, catalog review)
-    must not set it.
+    object). A consumer that parses the agent's answer must read it back through
+    :func:`result_text`, which undoes the envelope — that is what lets the
+    metered dispatches keep their answers (basicly-gczc). What still leaves it
+    unset is the two CLI passthroughs, ``basicly review`` and ``basicly runner
+    run``: both print the agent's output straight to a human and write no
+    run-record, so there is nothing to meter and nothing to re-parse.
 
     *session_id* is the store key for a usage format that measures out of band
     rather than on stdout (``copilot-session-store``, basicly-2rn9). Data, never
@@ -1136,6 +1146,46 @@ def _floor_usage(result: RunResult) -> Usage:
     return Usage(tokens=(len(result.stdout) + len(result.stderr)) // 4, cost=None, estimated=True)
 
 
+def result_text(spec: RunnerSpec, stdout: str) -> str:
+    """The agent's **own answer**, unwrapped from whatever usage envelope carries it.
+
+    The inverse of :func:`_apply_usage` for the output side (basicly-gczc). A
+    usage-capturing dispatch on a stdout-reporting adapter no longer prints the
+    agent's reply as plain text: claude wraps it in a result object, codex in a
+    JSONL event stream. So a caller that both meters a dispatch *and* parses its
+    reply has to read the reply from the envelope rather than from stdout — which
+    is what lets the decider (:func:`basicly.decisions.invoke_decider`) and the
+    rubric judge (:func:`basicly.rubrics.evaluate`) be metered at all, instead of
+    trading their answer for their token count.
+
+    Each field was read off a live probe of the shape the engine actually
+    dispatches, not from documentation: ``claude -p --output-format json``'s
+    single object and ``--output-format stream-json --verbose``'s terminating
+    ``result`` event both carry the reply on ``result``, and
+    ``codex … exec --json``'s reply is the ``text`` of the **last**
+    ``item.completed`` event whose item is an ``agent_message`` (codex-cli
+    0.146.0). ``copilot-session-store`` measures out of band, so its stdout was
+    never wrapped and comes back untouched (basicly-2rn9) — the same property
+    that made it the cheap arm.
+
+    Falls back to *stdout* verbatim when no envelope parses: an adapter that did
+    not produce the shape its format claims has no reply hidden anywhere else, and
+    the transcript is the only text there is. That degrades to the pre-metering
+    behaviour rather than blanking a reply — and both callers fail closed on it
+    anyway (an abstention, an ``UNKNOWN`` verdict), because an envelope is not a
+    parseable answer to either of them.
+    """
+    if spec.usage_format == CLAUDE_JSON:
+        unwrapped = _claude_result_field(stdout)
+    elif spec.usage_format == CLAUDE_STREAM_JSON:
+        unwrapped = _claude_result_field(_claude_result_event(stdout))
+    elif spec.usage_format == CODEX_JSONL:
+        unwrapped = _codex_agent_message(stdout)
+    else:
+        return stdout
+    return unwrapped if unwrapped is not None else stdout
+
+
 def _claude_json_usage(stdout: str) -> Usage | None:
     """Parse claude's ``--output-format json`` result object (one JSON object).
 
@@ -1159,6 +1209,26 @@ def _claude_json_usage(stdout: str) -> Usage | None:
         cost=float(cost) if isinstance(cost, int | float) else None,
         estimated=False,
     )
+
+
+def _claude_result_field(stdout: str) -> str | None:
+    """The ``result`` string of claude's result object (one JSON object), or None.
+
+    Shared by both claude envelopes because the streaming one ends in the very
+    same object — see :func:`_claude_result_event`. None on any parse miss, or on
+    a result field that is not a string (an ``is_error`` envelope can carry a
+    structured payload there), so :func:`result_text` falls back to the
+    transcript. An empty string is a real answer — the agent printed nothing —
+    and is returned as one.
+    """
+    try:
+        obj = json.loads(stdout.strip() or "null")
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(obj, dict):
+        return None
+    value = obj.get("result")
+    return value if isinstance(value, str) else None
 
 
 def _claude_stream_events(stdout: str) -> list[dict]:
@@ -1261,6 +1331,37 @@ def _codex_usage_split(usages: list[dict]) -> dict[str, int | None]:
             if isinstance(value, int) and not isinstance(value, bool):
                 split[field] = (split[field] or 0) + value
     return split
+
+
+def _codex_agent_message(stdout: str) -> str | None:
+    """The text of the **last** ``agent_message`` item in codex's ``--json`` stream.
+
+    The last one, not the concatenation: a multi-turn run emits one per turn, and
+    the reply to the prompt is the final one — earlier ones are progress narration
+    from before the tool calls. Scanned from the end for that reason, and
+    unparseable lines are skipped like everywhere else in this module (a truncated
+    final line is normal for a killed dispatch).
+
+    None when no such item parses, so :func:`result_text` falls back to the
+    transcript.
+    """
+    for line in reversed(stdout.splitlines()):
+        stripped = line.strip()
+        if not stripped.startswith("{"):
+            continue
+        try:
+            event = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict) or event.get("type") != CODEX_ITEM_COMPLETED:
+            continue
+        item = event.get("item")
+        if not isinstance(item, dict) or item.get("type") != CODEX_AGENT_MESSAGE:
+            continue
+        text = item.get("text")
+        if isinstance(text, str):
+            return text
+    return None
 
 
 def _codex_turn_usages(stdout: str) -> list[dict]:

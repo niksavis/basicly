@@ -557,6 +557,12 @@ def parse_verdict(stdout: str) -> DeciderVerdict:
 
     Fail-closed: a decider that cannot follow the output contract must never
     be treated as having decided something.
+
+    Takes the agent's *own* text, so a metered dispatch must unwrap its usage
+    envelope first (:func:`basicly.runner.result_text`) — handed a raw claude
+    result object this parses the envelope, finds no ``decision`` key, and
+    abstains, which is exactly how a delegated decision silently stops being
+    delegated (basicly-gczc).
     """
     text = stdout.strip()
     start, end = text.find("{"), text.rfind("}")
@@ -648,11 +654,21 @@ def invoke_decider(  # noqa: PLR0911 — one return per distinct drop-to-human c
     # Bounded and metered like every other dispatch (basicly-kjc5.31): without the
     # timeout a hung decider hangs the pass forever, and without the run-record its
     # tokens never count against the session's D3 grant ceiling.
+    #
+    # Metered means passing `capture_usage` (basicly-gczc). Writing the run-record was
+    # never enough on its own: unflagged, the record carried the chars/4 estimate,
+    # and `policy.session_spend` counts an estimated dispatch as an *unmeterable*
+    # one — which zeroes the remaining budget, so a single delegated decision halted
+    # the whole grant. The flag is what makes the number the adapter's own. It also
+    # wraps the reply in a usage envelope, so the verdict is read back through
+    # `runner.result_text` below rather than off raw stdout.
     prompt = decider_prompt(item, intake_corpus(repo_root, root_issue))
     # The decider's own reserved slot: it must be dispatchable even with every
     # lane slot busy, because those lanes are what wait on its answers.
     with runner.process_budget().slot(runner.DECIDER):
-        result = runner.run(spec, prompt, repo_root, timeout=runner_config.runner_timeout)
+        result = runner.run(
+            spec, prompt, repo_root, capture_usage=True, timeout=runner_config.runner_timeout
+        )
     runner.record_dispatch(repo_root, item.issue_id, spec, result, prompt=prompt, phase="decide")
     if result.timed_out or result.handoff or result.returncode != 0:
         # One outcome, three causes: nothing usable came back, so the item stays
@@ -664,7 +680,7 @@ def invoke_decider(  # noqa: PLR0911 — one return per distinct drop-to-human c
             else "decider runner unavailable or failed"
         )
         return DeciderVerdict("", why, 0.0, abstain=True)
-    verdict = parse_verdict(result.stdout)
+    verdict = parse_verdict(runner.result_text(spec, result.stdout))
     if verdict.abstain or not verdict.decision:
         return verdict
     # Re-check the cap inside the lock before recording. The check above ran before

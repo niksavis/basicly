@@ -7,6 +7,8 @@ verify runner, judged checks via the agent-agnostic runner, and gate status.
 
 from __future__ import annotations
 
+import inspect
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -251,6 +253,12 @@ def test_evaluate_judged_is_bounded_and_metered(
 
     Unmetered, a judged dispatch spends tokens that never reach the session's D3
     ceiling; unbounded, a hung judge hangs the whole pass.
+
+    ``capture_usage`` is what makes the record's numbers the adapter's own
+    (basicly-gczc). Unflagged it carried a chars/4 estimate, which
+    ``policy.session_spend`` counts as an unmeterable dispatch — and one of those
+    zeroes the grant's remaining budget, so an unmetered judge did not merely
+    under-count the session, it halted it.
     """
     seen: dict[str, object] = {}
 
@@ -269,15 +277,94 @@ def test_evaluate_judged_is_bounded_and_metered(
     rubrics.evaluate("i", _judged_rubric(), tmp_path)
 
     assert seen["timeout"] == 3600.0  # the [runner] runner_timeout default
-    # capture_usage would flip some adapters' stdout to JSON, which parse_judged
-    # cannot read — the record falls back to the flagged estimate instead.
-    assert seen["capture_usage"] is False
+    # The flag flips some adapters' stdout to a usage envelope; the answer is read
+    # back out of it through runner.result_text, so both survive.
+    assert seen["capture_usage"] is True
     # The recorded inputs identify the dispatch (D9): the phase it ran in and the
     # exact prompt, which the record keeps only as a digest.
     assert len(recorded) == 1
     issue, phase, prompt = recorded[0]
     assert (issue, phase) == ("i", "validate")
     assert prompt and "q1" in prompt
+
+
+def test_the_judge_call_site_comment_matches_the_flag_it_describes() -> None:
+    """The prose at the judged dispatch claims metering; the flag has to be there too.
+
+    The basicly-ipx2 defect class, and this docstring's own predecessor is the
+    example: it explained at length why ``capture_usage`` was deliberately *not*
+    set, which was true prose about a real constraint — and the constraint's cost,
+    a halted grant on every validated lane, was nowhere in it. Dropping either side
+    fails here.
+    """
+    mentions = [line.strip() for line in inspect.getsource(rubrics.evaluate).splitlines()]
+    mentions = [line for line in mentions if "capture_usage" in line]
+    assert any("capture_usage=True" in line for line in mentions), (
+        "the prose claims the judge is metered through a call that does not capture usage"
+    )
+    assert any("capture_usage=True" not in line for line in mentions), (
+        "the flag is passed with no prose saying what metering means here"
+    )
+
+
+# What a judge replies with, and the same reply inside each envelope a metered
+# dispatch wraps it in. The last case is the plain-text arm: a store-measured
+# adapter's stdout was never wrapped, and neither was an adapter with no usage
+# format at all.
+_JUDGE_ANSWERS = "q1: yes - ok\nq2: no - missing\n"
+
+
+@pytest.mark.parametrize(
+    ("usage_format", "stdout"),
+    [
+        (runner.CLAUDE_JSON, json.dumps({"type": "result", "result": _JUDGE_ANSWERS, "usage": {}})),
+        (runner.CLAUDE_STREAM_JSON, json.dumps({"type": "result", "result": _JUDGE_ANSWERS})),
+        (
+            runner.CODEX_JSONL,
+            json.dumps({
+                "type": "item.completed",
+                "item": {"type": "agent_message", "text": _JUDGE_ANSWERS},
+            }),
+        ),
+        (None, _JUDGE_ANSWERS),
+    ],
+)
+def test_judged_answers_survive_their_usage_envelope(
+    usage_format: str | None,
+    stdout: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A metered judge's answer lines are unwrapped before the text parser sees them.
+
+    Every line of a usage envelope starts with ``{``, and the answer pattern is
+    line-anchored, so the naive one-line fix would resolve every judged check to
+    UNKNOWN — a silently unjudged rubric on a dispatch whose numbers finally looked
+    right.
+    """
+    spec = runner.RunnerSpec("x", runner.HEADLESS, ("x",), usage_format=usage_format)
+    monkeypatch.setattr(runner, "record_dispatch", lambda *_a, **_k: None)
+    monkeypatch.setattr(runner, "select_runner", lambda *_a, **_k: spec)
+    monkeypatch.setattr(
+        runner,
+        "run",
+        lambda *_a, **_k: runner.RunResult("x", (), executed=True, returncode=0, stdout=stdout),
+    )
+
+    verdicts = rubrics.evaluate("i", _judged_rubric(), tmp_path)
+
+    assert {v.check_id: v.answer for v in verdicts} == {"q1": YES, "q2": NO}
+
+
+def test_a_raw_envelope_judges_nothing() -> None:
+    """The control for the test above: unwrapped, every judged check goes UNKNOWN.
+
+    This is what the naive one-line fix ships — a rubric that checked nothing on a
+    dispatch whose token numbers finally looked right.
+    """
+    envelope = json.dumps({"type": "result", "result": _JUDGE_ANSWERS, "usage": {}})
+    verdicts = rubrics.parse_judged(envelope, list(_judged_rubric().checks))
+    assert {v.answer for v in verdicts} == {UNKNOWN}
 
 
 def test_evaluate_judged_timeout_is_unknown_not_no(
