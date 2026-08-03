@@ -57,3 +57,11 @@ node_modules/
 
 # bv (beads viewer) local config and caches
 .bv/
+
+# Session handover notes: a session's own claims about where it stopped, written
+# for whoever picks up next and deleted once acted on. Local on purpose — they are
+# unverified by construction, so committing them would put assertions in the repo
+# beside the code that is the actual authority. Ignored for the same reason
+# basicly.local.toml is: the harness refuses to land a worktree while the base
+# checkout carries dirt outside .beads/, so an untracked one blocks every landing.
+HANDOVER.md
