@@ -823,6 +823,79 @@ def _scope_block(ctx: _Ctx, worktree_name: str) -> AdvanceResult | None:
     )
 
 
+def _answered_unreliable_escalation(ctx: _Ctx) -> decisions.DecisionItem | None:
+    """The node's answered unreliable-gate escalation, or None when there is none.
+
+    Matched by handing each question back to the parser that owns the wording
+    (:func:`policy.gate_from_unreliable_escalation`) rather than by comparing against
+    a reconstructed string — the same reason ``decisions.settle_checkpoint`` matches
+    on content: a reworded ask must not silently stop being recognised, and an item
+    queued under an earlier wording still resolves.
+
+    Any generation matches, deliberately: the ladder this ends was built out of
+    generations, so "has this already been answered once" cannot be asked per
+    generation.
+
+    An unreadable queue reads as "no answer", the same stance
+    ``decompose.bead_class_and_scope`` takes on this path — and the safe direction
+    here, because the answer this looks for is what permits skipping a gate.
+    """
+    try:
+        items = decisions.items_on(ctx.repo_root, ctx.issue_id)
+    except RuntimeError, ValueError, OSError:
+        return None
+    return next(
+        (
+            item
+            for item in items
+            if item.kind == policy.REWORK_ESCALATION_KIND
+            and not item.pending
+            and policy.gate_from_unreliable_escalation(item.question) is not None
+        ),
+        None,
+    )
+
+
+def _landing_gate_override(ctx: _Ctx) -> str | None:
+    """The gate an answered, unspent ``land anyway`` authorises skipping once, else None.
+
+    The remedy the unreliable-gate escalation offers, carried out (basicly-tcmy.6).
+    Answering used only to release the lane: the landing re-attempted, the same flaky
+    gate tripped, and the identical question re-opened under the next generation — an
+    unbounded ladder with the offered remedy unimplemented. This is basicly-4tjt's
+    defect in the sibling escalation, and the shape of the fix is the one
+    :func:`policy.grant_rework_allowance` gave that one — the answer is the decision,
+    and the engine carries it out so the operator does not have to know that a second
+    command exists.
+
+    Read at the landing rather than when the answer is recorded, because the landing is
+    where the authorisation is used: the override is then spent where it is spent, and
+    it works whichever surface recorded the answer. This costs one comment scan on a
+    path that is about to run a whole verify suite.
+
+    A delegated answer does not override a gate, matching
+    ``cli._carry_out_rework_retry``'s stance and for a stronger reason: an autonomy
+    grant may dispose of the question, but skipping a landing gate is not something a
+    model gets to authorise for itself. The other offered choice — fix the flake —
+    stays open to it.
+
+    Reporting the gate, not a bool, so the caller spends the override against the same
+    gate name the answered question carried rather than a second guess at it — and so
+    an answer about some *other* gate cannot waive this one. Only the landing gate is
+    escalated this way today; reading the name is what keeps that from being an
+    assumption a later enqueue site can break.
+    """
+    item = _answered_unreliable_escalation(ctx)
+    if item is None or not policy.answer_lands_anyway(item.answer or ""):
+        return None
+    if (item.answered_by or "").startswith(decisions.DECIDER_BY_PREFIX):
+        return None
+    gate = policy.gate_from_unreliable_escalation(item.question)
+    if gate != merge.MERGE_GATE or policy.gate_override_spent(ctx.repo_root, ctx.issue_id, gate):
+        return None
+    return gate
+
+
 def _unreliable_landing_block(ctx: _Ctx, result: merge.MergeResult) -> AdvanceResult:
     """Record an unreliable landing gate and hold, escalating at the bound.
 
@@ -838,17 +911,33 @@ def _unreliable_landing_block(ctx: _Ctx, result: merge.MergeResult) -> AdvanceRe
     # unreliable gate defers its lane forever while looking merely slow. At the bound
     # the lane escalates to the same queue an exhausted budget uses, so a human sees
     # an untrustworthy gate rather than a lane that never finishes.
-    if events >= policy.MAX_UNRELIABLE_GATE_EVENTS:
-        question = policy.unreliable_gate_escalation_question(merge.MERGE_GATE)
-        decisions.enqueue(
-            ctx.repo_root,
-            ctx.issue_id,
-            policy.REWORK_ESCALATION_KIND,
-            question,
-            result.detail,
+    if events < policy.MAX_UNRELIABLE_GATE_EVENTS:
+        return _blocked(ctx, result.detail, landing=result)
+    # Ask once. `decisions.enqueue` is idempotent only while the item is *pending*: an
+    # answered one re-opens under the next generation, which is right for a fact that
+    # blocked again after a re-dispatch and wrong here, because this escalation's own
+    # remedies leave the flake in place. Re-asking produced an unbounded ladder of
+    # identical questions (basicly-tcmy.6), so an answered escalation ends the asking
+    # and the node holds on the answer it already has.
+    answered = _answered_unreliable_escalation(ctx)
+    if answered is not None:
+        return _blocked(
+            ctx,
+            f"{result.detail}; the escalation on gate {merge.MERGE_GATE} is already "
+            f"answered by {answered.answered_by}: {answered.answer!r}, and that answer "
+            "no longer authorises a landing — the flake is still there, so fix the gate "
+            "and advance again",
+            landing=result,
         )
-        return _blocked(ctx, f"escalated: {question}", landing=result)
-    return _blocked(ctx, result.detail, landing=result)
+    question = policy.unreliable_gate_escalation_question(merge.MERGE_GATE)
+    decisions.enqueue(
+        ctx.repo_root,
+        ctx.issue_id,
+        policy.REWORK_ESCALATION_KIND,
+        question,
+        result.detail,
+    )
+    return _blocked(ctx, f"escalated: {question}", landing=result)
 
 
 def _verify_and_land(
@@ -871,13 +960,33 @@ def _verify_and_land(
     The declared-scope check (:func:`_scope_block`, basicly-jr0l.44) sits here for
     the same two reasons — one funnel, and before the merge — and after the
     evidence check, so a landing missing both is held on the cheaper one first.
+
+    An answered ``land anyway`` (:func:`_landing_gate_override`) skips the landing's
+    re-verify for exactly one attempt. It is spent only once the landing actually
+    reached that gate: a lane that was not committed yet, or whose branch moved, never
+    ran it, and burning an operator's one-shot override on a state it did not touch
+    would repeat the mistake ``QueueResult.deferred`` exists to avoid.
     """
     for precondition in (_build_evidence_block, _scope_block):
         held = precondition(ctx, worktree_name)
         if held is not None:
             return held
     mode = verify_mode or ctx.inputs.verify_mode
-    result = merge.merge_worktree(ctx.repo_root, worktree_name, bead=ctx.issue_id, verify_mode=mode)
+    override = _landing_gate_override(ctx)
+    result = merge.merge_worktree(
+        ctx.repo_root,
+        worktree_name,
+        bead=ctx.issue_id,
+        verify_mode=mode,
+        override_gate=override is not None,
+    )
+    if override is not None and result.reached_gate:
+        policy.spend_gate_override(ctx.repo_root, ctx.issue_id, override)
+        # A landing that skipped a gate says so in its own report: the operator
+        # authorised it, but "merged @ abc1234" alone would read as a green landing.
+        result = replace(
+            result, detail=f"{result.detail} (gate '{override}' skipped: answered 'land anyway')"
+        )
     if result.status == merge.ALREADY_LANDED:
         # The merge already happened and the process died before the gate record.
         # Finish the landing forward: re-merging is impossible and re-running the

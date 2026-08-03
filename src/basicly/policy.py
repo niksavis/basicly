@@ -563,6 +563,50 @@ def gate_from_unreliable_escalation(question: str) -> str | None:
     return match.group("gate") if match else None
 
 
+# The answer that chooses ``land anyway`` over ``fix the flake``. Anchored on the
+# leading tokens so a rationale may follow ("land anyway - the flake is upstream"),
+# while ``fix the flake`` is not mistaken for it. It lives beside the question it
+# answers for the reason stated above :func:`rework_escalation_question`: the queue
+# carries the wording and nothing else, so a driver acting on the answer must not
+# have to guess either half of the format.
+_LAND_ANYWAY_RE = re.compile(r"^\s*land\s+anyway\b", re.IGNORECASE)
+
+
+def answer_lands_anyway(answer: str) -> bool:
+    """True when *answer* chooses ``land anyway`` on an unreliable-gate escalation."""
+    return _LAND_ANYWAY_RE.match(answer) is not None
+
+
+def _gate_override_marker(gate: str) -> str:
+    return f"{MARKER} gate-override-spent gate={gate}"
+
+
+def gate_override_spent(repo_root: Path, issue_id: str, gate: str) -> bool:
+    """True when the one landing an answered ``land anyway`` authorises was already taken."""
+    marker = _gate_override_marker(gate)
+    return any(_marker_matches(text, marker) for text in _comment_texts(repo_root, issue_id))
+
+
+def spend_gate_override(repo_root: Path, issue_id: str, gate: str) -> bool:
+    """Claim the single landing an answered ``land anyway`` authorises for *gate*.
+
+    True the first time and False forever after, which is what makes the override
+    one-shot. The answered decision is the authorisation; this marker is the record
+    that it has been used, so a standing answer cannot silently bypass *gate* on
+    every later landing of the same node.
+
+    The record is a marker rather than in-memory state for the same reason the rework
+    counters are: an advance is one process, the next advance is another, and the
+    tracker is the only thing both of them read. Additive and never cleared — ``br``
+    comments cannot be deleted, and "the override was spent at this point" is the
+    audit trail a landing that skipped a gate has to leave behind.
+    """
+    if gate_override_spent(repo_root, issue_id, gate):
+        return False
+    _run_br(repo_root, ["comments", "add", issue_id, _gate_override_marker(gate)])
+    return True
+
+
 # --- Human checkpoints ------------------------------------------------------
 
 
