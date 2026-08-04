@@ -43,7 +43,7 @@ from __future__ import annotations
 import contextlib
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -864,14 +864,17 @@ def _scope_block(ctx: _Ctx, worktree_name: str) -> AdvanceResult | None:
     )
 
 
-def _answered_unreliable_escalation(ctx: _Ctx) -> decisions.DecisionItem | None:
-    """The node's answered unreliable-gate escalation, or None when there is none.
+def _answered_gate_escalation(
+    ctx: _Ctx, gate_from_question: Callable[[str], str | None]
+) -> decisions.DecisionItem | None:
+    """The node's answered gate escalation of one wording, or None when there is none.
 
-    Matched by handing each question back to the parser that owns the wording
-    (:func:`policy.gate_from_unreliable_escalation`) rather than by comparing against
-    a reconstructed string — the same reason ``decisions.settle_checkpoint`` matches
-    on content: a reworded ask must not silently stop being recognised, and an item
-    queued under an earlier wording still resolves.
+    Matched by handing each question back to the parser that owns the wording rather
+    than by comparing against a reconstructed string — the same reason
+    ``decisions.settle_checkpoint`` matches on content: a reworded ask must not
+    silently stop being recognised, and an item queued under an earlier wording still
+    resolves. *gate_from_question* is that parser, so each caller recognises only its
+    own escalation and one wording's answer cannot dispose of another's.
 
     Any generation matches, deliberately: the ladder this ends was built out of
     generations, so "has this already been answered once" cannot be asked per
@@ -891,10 +894,20 @@ def _answered_unreliable_escalation(ctx: _Ctx) -> decisions.DecisionItem | None:
             for item in items
             if item.kind == policy.REWORK_ESCALATION_KIND
             and not item.pending
-            and policy.gate_from_unreliable_escalation(item.question) is not None
+            and gate_from_question(item.question) is not None
         ),
         None,
     )
+
+
+def _answered_unreliable_escalation(ctx: _Ctx) -> decisions.DecisionItem | None:
+    """The node's answered unreliable-gate escalation, or None when there is none."""
+    return _answered_gate_escalation(ctx, policy.gate_from_unreliable_escalation)
+
+
+def _answered_shared_gate_escalation(ctx: _Ctx) -> decisions.DecisionItem | None:
+    """The node's answered shared-tracker-gate escalation, or None when there is none."""
+    return _answered_gate_escalation(ctx, policy.gate_from_shared_gate_escalation)
 
 
 def _landing_gate_override(ctx: _Ctx) -> str | None:
@@ -981,6 +994,61 @@ def _unreliable_landing_block(ctx: _Ctx, result: merge.MergeResult) -> AdvanceRe
     return _blocked(ctx, f"escalated: {question}", landing=result)
 
 
+def _shared_gate_landing_block(ctx: _Ctx, result: merge.MergeResult) -> AdvanceResult:
+    """Attribute a tracker-wide landing gate to the lanes that invalidated it, and hold.
+
+    The gate asserts over the whole shared tracker and failed on another lane's
+    finishing record, so nothing here faults this work: record the attribution
+    against those lanes and spend none of this node's bounded budget on it
+    (basicly-qorx).
+
+    Escalated on the first occurrence rather than after a bound, which is the one way
+    this differs from :func:`_unreliable_landing_block`. The livelock that bound
+    exists for (basicly-jr0l.41) is the same, but the evidence is stronger: the record
+    is durable, so the next landing reaches the identical verdict and only a human
+    changing that record — or the constant it fails against — can clear it. Both
+    remedies are named in the question and neither needs the engine to carry it out.
+    """
+    policy.record_shared_gate_failure(
+        ctx.repo_root, ctx.issue_id, merge.MERGE_GATE, result.culprits, result.detail
+    )
+    question = policy.shared_gate_escalation_question(merge.MERGE_GATE, result.culprits)
+    # Ask once, for the reason `_unreliable_landing_block` states: `decisions.enqueue`
+    # is idempotent only while an item is pending, so an answered one would re-open
+    # under the next generation and build the ladder basicly-tcmy.6 recorded.
+    answered = _answered_shared_gate_escalation(ctx)
+    if answered is not None:
+        return _blocked(
+            ctx,
+            f"{result.detail}; the escalation on gate {merge.MERGE_GATE} is already "
+            f"answered by {answered.answered_by}: {answered.answer!r}, and the record "
+            "still fails the gate — fix it and advance again",
+            landing=result,
+        )
+    decisions.enqueue(
+        ctx.repo_root, ctx.issue_id, policy.REWORK_ESCALATION_KIND, question, result.detail
+    )
+    return _blocked(ctx, f"escalated: {question}", landing=result)
+
+
+def _no_evidence_landing_block(ctx: _Ctx, result: merge.MergeResult) -> AdvanceResult | None:
+    """The hold for a landing gate carrying no evidence against this lane, else None.
+
+    Two shapes, one rule. A gate that failed and then passed unchanged (basicly-55yh)
+    and a tracker-wide gate another lane's record invalidated (basicly-qorx) both block
+    the landing while faulting nothing in this diff, so neither may spend the node's
+    bounded rework budget. Naming the rule once is what keeps the second from being
+    read as a special case of the first: they differ in what clears them — a flake may
+    stop reproducing, a record in the shared tracker cannot — which is why each keeps
+    its own escalation.
+    """
+    if result.unreliable:
+        return _unreliable_landing_block(ctx, result)
+    if result.foreign:
+        return _shared_gate_landing_block(ctx, result)
+    return None
+
+
 def _verify_and_land(
     ctx: _Ctx, worktree_name: str, *, verify_mode: str | None = None
 ) -> AdvanceResult:
@@ -1037,8 +1105,8 @@ def _verify_and_land(
         # The build's work is not committed on the branch: block with guidance,
         # do not burn a rework attempt on an operator-fixable state (basicly-4psl).
         return _blocked(ctx, result.detail, landing=result)
-    if result.unreliable:
-        return _unreliable_landing_block(ctx, result)
+    if (held := _no_evidence_landing_block(ctx, result)) is not None:
+        return held
     if not result.merged:
         return _rework(ctx, merge.MERGE_GATE, f"merge failed: {result.detail}", landing=result)
     return _record_verify(ctx, result.detail, verify_mode=mode)

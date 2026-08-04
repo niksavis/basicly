@@ -2032,6 +2032,62 @@ def test_route_holds_a_lane_whose_gate_was_merely_unreliable(
     assert supervise.should_continue(routed) is True
 
 
+def test_route_holds_every_lane_a_siblings_declaration_invalidated_the_gate_for(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The measured defect: one lane's declaration charged both its siblings rework.
+
+    Every lane in a supervised pass shares one ``.beads`` through the redirect, so
+    the working-set ceiling asserted over basicly-tcmy.5's finishing record inside
+    the landings of basicly-tcmy.6 and basicly-tcmy.22 too, and each was charged
+    1/2 for a defect in neither diff (basicly-qorx). Both are green and committed,
+    so both take the ``held`` carry — and the pass holds rather than spending a
+    full verify run per remaining lane to reach the identical verdict.
+    """
+    monkeypatch.setattr(
+        supervise.loop,
+        "advance",
+        lambda _r, issue_id, **_k: _blocked_landing(issue_id, merge.VERIFY_FOREIGN),
+    )
+    monkeypatch.setattr(supervise, "_landing_order", lambda _r, outcomes: list(outcomes))
+    charged: list = []
+    monkeypatch.setattr(supervise.policy, "record_rework", lambda *a, **_k: charged.append(a) or 1)
+    outcomes = (_executed_outcome("epic.1"), _executed_outcome("epic.2"))
+
+    routed = supervise.route_outcomes(
+        tmp_path, _session(*(_lane(o.issue_id) for o in outcomes)), outcomes
+    )
+
+    assert [r.route for r in routed] == ["held", "held"]
+    assert charged == []
+    assert supervise.carried_forward(routed) == frozenset({"epic.1", "epic.2"})
+
+
+def test_route_still_charges_a_lane_for_a_defect_in_its_own_diff(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The control the acceptance criterion asks for, at the routing boundary.
+
+    The forgiveness above may only ever move a charge off a bystander: a lane whose
+    own gate went red still routes to ``rework``, which is where the loop's own
+    counter has already charged it.
+    """
+    monkeypatch.setattr(
+        supervise.loop,
+        "advance",
+        lambda _r, issue_id, **_k: _blocked_landing(issue_id, "verify-failed"),
+    )
+    monkeypatch.setattr(supervise, "_landing_order", lambda _r, outcomes: list(outcomes))
+    outcomes = (_executed_outcome("epic.1"),)
+
+    routed = supervise.route_outcomes(
+        tmp_path, _session(*(_lane(o.issue_id) for o in outcomes)), outcomes
+    )
+
+    assert [r.route for r in routed] == ["rework"]
+    assert supervise.carried_forward(routed) == frozenset()
+
+
 # --- Cancel and re-dispatch a lane a landing broke (D6, kjc5.26) --------------
 
 

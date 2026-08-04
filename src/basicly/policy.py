@@ -577,6 +577,171 @@ def answer_lands_anyway(answer: str) -> bool:
     return _LAND_ANYWAY_RE.match(answer) is not None
 
 
+# --- A shared-tracker gate failed on another lane's record (basicly-qorx) -----
+
+# Substring conjunctions identifying a gate failure that asserts over the whole
+# tracker rather than over the lane's own diff, each with the reason it does.
+#
+# Why the class needs a verdict of its own: every lane in a supervised pass shares
+# one `.beads` through the redirect, so a gate that reads the tracker reads *every*
+# lane's finishing record. Measured 2026-08-03 — basicly-tcmy.5 widened its own
+# `## Scope` mid-flight and its finishing record then failed the working-set
+# ceiling, so basicly-tcmy.6 and basicly-tcmy.22 hit the identical assertion inside
+# their own landings and each was charged a rework attempt against a cap of 2, for a
+# declaration in neither diff. Neither the re-run test (basicly-55yh) nor the
+# dependency register (basicly-kjc5.56) can see it: the record is durable, so the
+# failure reproduces, and it is this repo's own gate rather than a dependency's.
+#
+# Matching mirrors :data:`verify.DEPENDENCY_DEFECT_SIGNATURES` — per line and
+# conjunctive — with one extra requirement that is what makes forgiving admissible
+# here at all: the line must **name the bead** whose record failed the gate, because
+# the attribution is the whole point. A tracker-wide failure that names no culprit
+# gets no entry, since forgiving it would launder a failure nobody owns.
+SHARED_TRACKER_GATE_SIGNATURES: tuple[tuple[tuple[str, ...], str], ...] = (
+    (
+        ("completed at an estimate of", "above working_set_max"),
+        "the working-set ceiling asserts over every completed lane in the shared "
+        "tracker, so one lane's scope declaration fails it inside every sibling "
+        "landing of the same pass",
+    ),
+    (
+        ("failed at an estimate of", "admits it"),
+        "the working-set ceiling's upper half asserts over every failed lane in the "
+        "shared tracker, so one lane's record fails it inside every sibling landing "
+        "of the same pass",
+    ),
+)
+
+
+@dataclass(frozen=True)
+class SharedGateFailure:
+    """A tracker-wide gate failure and the lanes whose records invalidated it."""
+
+    culprits: tuple[str, ...]
+    reason: str
+
+
+def shared_tracker_gate_failure(output: str, issue_id: str) -> SharedGateFailure | None:
+    """The tracker-wide failure in *output* that is not *issue_id*'s to answer for.
+
+    None means charge the lane normally, and it covers both honest reasons to: the
+    output holds no tracker-wide signature at all, or it holds one that names
+    *issue_id* itself — a lane whose own record invalidated the gate is exactly the
+    lane the failure belongs to, so its own landing charges it. That keeps the
+    forgiveness one-directional: it can only ever move a charge off a bystander and
+    onto the declaration behind it, never off the declaration.
+
+    Culprits are read off the matching lines and restricted to *issue_id*'s own id
+    prefix, which is what makes reading ids out of gate output safe: the gate
+    asserts over one shared tracker, so every bead it can name is a bead of that
+    tracker, and a hyphenated word in the surrounding prose cannot be mistaken for
+    one.
+    """
+    prefix, _, _ = issue_id.partition("-")
+    if not prefix or prefix == issue_id:
+        return None
+    bead_id = re.compile(rf"\b{re.escape(prefix)}-[A-Za-z0-9]+(?:\.\d+)*\b")
+    culprits: list[str] = []
+    reasons: list[str] = []
+    for line in output.splitlines():
+        for substrings, reason in SHARED_TRACKER_GATE_SIGNATURES:
+            if not all(s in line for s in substrings):
+                continue
+            named = bead_id.findall(line)
+            if issue_id in named:
+                return None
+            culprits += [bead for bead in named if bead not in culprits]
+            if reason not in reasons:
+                reasons.append(reason)
+    if not culprits:
+        return None
+    return SharedGateFailure(tuple(culprits), "; ".join(reasons))
+
+
+SHARED_GATE_MARKER = f"{MARKER} gate-shared-tracker"
+GATE_INVALIDATED_MARKER = f"{MARKER} gate-invalidated"
+
+
+def shared_gate_events(repo_root: Path, issue_id: str, gate: str) -> int:
+    """Count the times *gate* failed on *issue_id*'s landing over another lane's record."""
+    marker = f"{SHARED_GATE_MARKER} gate={gate}"
+    return sum(1 for text in _comment_texts(repo_root, issue_id) if _marker_matches(text, marker))
+
+
+def record_shared_gate_failure(
+    repo_root: Path,
+    issue_id: str,
+    gate: str,
+    culprits: Sequence[str],
+    detail: str = "",
+) -> int:
+    """Attribute a tracker-wide *gate* failure to *culprits*; return the events on *issue_id*.
+
+    Two records, because the failure has two halves that belong to different beads.
+    On *issue_id* — the lane the gate blocked — an event marker, for the same reason
+    :func:`record_unreliable_gate` writes one: forgiving silently would make a lane
+    that keeps being blocked by other lanes' records look merely slow. On each
+    culprit, the attribution, so the declaration that invalidated a shared gate is
+    recorded where someone triaging that lane will see it.
+
+    Never a rework attempt on either side. The bystander did not earn one, and the
+    culprit's own landing charges it without help from here: the gate output names
+    that lane, so :func:`shared_tracker_gate_failure` returns None for it and the
+    ordinary charge applies.
+
+    The attribution is idempotent on its whole body, like
+    :func:`record_scope_violation`: a landing is retried on every advance, and one
+    comment per attempt would bury the finding in its own repetitions. The event
+    marker is not — counting attempts is what it is for.
+    """
+    suffix = f" {detail}" if detail else ""
+    _run_br(
+        repo_root,
+        [
+            "comments",
+            "add",
+            issue_id,
+            f"{SHARED_GATE_MARKER} gate={gate} culprits={','.join(culprits)}{suffix}",
+        ],
+    )
+    body = f"{GATE_INVALIDATED_MARKER} gate={gate} lanes={issue_id}"
+    for culprit in culprits:
+        if not any(_marker_matches(text, body) for text in _comment_texts(repo_root, culprit)):
+            _run_br(repo_root, ["comments", "add", culprit, body])
+    return shared_gate_events(repo_root, issue_id, gate)
+
+
+_SHARED_GATE_ESCALATION_RE = re.compile(r"^gate (?P<gate>\S+) failed on another lane's record:")
+
+
+def shared_gate_escalation_question(gate: str, culprits: Sequence[str]) -> str:
+    """The canonical queue question for a *gate* another lane's record invalidated.
+
+    Escalated on the **first** occurrence, where an unreliable gate gets
+    :data:`MAX_UNRELIABLE_GATE_EVENTS` attempts, and the difference is evidence
+    rather than taste: a flake may clear itself on the next landing, while a record
+    in the shared tracker is durable, so every retry reaches the identical verdict
+    and only delays the escalation — basicly-jr0l.16's reasoning about a
+    deterministic refusal, reached by the same argument.
+
+    Both remedies are the human's to carry out, and that is deliberate. The lane
+    itself cannot fix a sibling's record or the constant it fails against, so
+    offering it a ``land anyway`` here would put an unimplemented choice in the
+    queue — the defect basicly-4tjt records.
+    """
+    return (
+        f"gate {gate} failed on another lane's record: {', '.join(culprits)} "
+        "invalidated it in the shared tracker, not this lane's diff; fix that lane's "
+        "record, or reconcile the constant it fails against, then advance again"
+    )
+
+
+def gate_from_shared_gate_escalation(question: str) -> str | None:
+    """The gate a shared-tracker escalation asks about, or None when it is not one."""
+    match = _SHARED_GATE_ESCALATION_RE.match(question.strip())
+    return match.group("gate") if match else None
+
+
 def _gate_override_marker(gate: str) -> str:
     return f"{MARKER} gate-override-spent gate={gate}"
 

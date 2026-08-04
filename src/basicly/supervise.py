@@ -2938,6 +2938,18 @@ def _route_blocked_landing(
         # loop._rework already queued the escalation (kjc5.4); the pending item
         # now holds the lane until a human triages it.
         return RoutedOutcome(outcome.issue_id, "decision", landing.detail)
+    if attempt is not None and attempt.foreign:
+        # A tracker-wide gate failed on another lane's finishing record, which is
+        # what makes this a supervisor's problem rather than a lane's: every lane in
+        # the pass shares one `.beads` through the redirect, so the identical
+        # assertion fails inside every sibling's landing. This lane is green and
+        # committed and no evidence faults it, so it takes the ``held`` shape — carry
+        # it forward to land first next pass, charge it nothing, and do not re-dispatch
+        # an agent to rewrite a correct diff (basicly-qorx). The loop already
+        # attributed the failure to the culprits and escalated it; holding here is
+        # what stops the pass from spending a full verify run per remaining lane to
+        # reach the same verdict.
+        return RoutedOutcome(outcome.issue_id, "held", landing.detail)
     if attempt is not None and attempt.unreliable:
         # The gate failed and then passed unchanged, so this lane is green and
         # committed and only the gate was unreliable (basicly-55yh). That is
