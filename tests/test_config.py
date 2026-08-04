@@ -28,7 +28,15 @@ from basicly.config import (
     load_worktree_config,
     record_technology_selection,
 )
-from basicly.runner import AGENT_TIER, BUILTIN_RUNNERS, FAMILY_DEFAULT_TIER
+from basicly.runner import (
+    ADAPTER_WINDOW,
+    AGENT_TIER,
+    AGENT_WINDOW,
+    BUILTIN_RUNNERS,
+    DECLARED_WINDOW,
+    FALLBACK_WINDOW,
+    FAMILY_DEFAULT_TIER,
+)
 
 
 def test_default_config_toml_matches_builtin_defaults(tmp_path: Path) -> None:
@@ -780,6 +788,84 @@ def test_runner_config_rejects_malformed_context_window(tmp_path: Path) -> None:
         )
         with pytest.raises(ValueError, match="context_window"):
             load_runner_config(tmp_path)
+
+
+def test_context_windows_declares_a_builtin_window_without_restating_the_adapter(
+    tmp_path: Path,
+) -> None:
+    """AC: a repo declares its window per agent, and the spec records that it did.
+
+    The cheap path has to be the correct one (basicly-23ep). Declaring through
+    `[[runner.agents]]` replaces the builtin wholesale, so a consumer who only wanted
+    to state a window would also have to restate the command, the usage format and the
+    deny style — and a restatement that silently drops one of those is a worse defect
+    than the stale window it fixed. So the adapter must survive the declaration intact.
+    """
+    (tmp_path / CONFIG_FILE).write_text(
+        "[runner.context_windows]\nclaude = 1000000\n", encoding="utf-8"
+    )
+
+    by_name = {spec.name: spec for spec in load_runner_config(tmp_path).specs}
+
+    assert by_name["claude"].context_window == 1_000_000
+    assert by_name["claude"].context_window_source == DECLARED_WINDOW
+    # The rest of the builtin adapter is untouched by the declaration.
+    assert by_name["claude"].usage_format == "claude-stream-json"
+    assert by_name["claude"].command == ("claude", "-p", "{prompt}")
+    # And an agent nobody declared still says its window was defaulted, not chosen.
+    assert by_name["codex"].context_window_source == ADAPTER_WINDOW
+
+
+def test_context_windows_rejects_an_agent_it_cannot_name(tmp_path: Path) -> None:
+    """A typo must fail loudly — its only other symptom is the default it meant to replace.
+
+    That silence is the defect basicly-23ep is: a window nobody had checked, applied
+    because nothing said it had not been applied.
+    """
+    (tmp_path / CONFIG_FILE).write_text(
+        "[runner.context_windows]\nclaud = 1000000\n", encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="unknown agent 'claud'"):
+        load_runner_config(tmp_path)
+
+
+def test_context_windows_rejects_a_window_that_is_not_a_count_of_tokens(
+    tmp_path: Path,
+) -> None:
+    """Same stance as the per-agent key: a malformed window is an error, not a shrink."""
+    for value in ('"1m"', "0", "-1", "true"):
+        (tmp_path / CONFIG_FILE).write_text(
+            f"[runner.context_windows]\nclaude = {value}\n", encoding="utf-8"
+        )
+        with pytest.raises(ValueError, match="context_windows"):
+            load_runner_config(tmp_path)
+
+
+def test_an_agent_entry_declaring_its_own_window_records_that_it_declared_one(
+    tmp_path: Path,
+) -> None:
+    """The two declaration paths are distinguishable from the defaulted one.
+
+    `context_window` on an entry is a decision; its absence is the conservative
+    fallback. Recording which happened is what makes a stale window findable at all —
+    without it, a default and a checked figure read identically (basicly-23ep).
+    """
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[runner.agents]]\nname = "a"\ncommand = ["a", "{prompt}"]\ncontext_window = 300000\n'
+        '[[runner.agents]]\nname = "b"\ncommand = ["b", "{prompt}"]\n',
+        encoding="utf-8",
+    )
+
+    by_name = {spec.name: spec for spec in load_runner_config(tmp_path).specs}
+
+    assert (by_name["a"].context_window, by_name["a"].context_window_source) == (
+        300_000,
+        AGENT_WINDOW,
+    )
+    assert (by_name["b"].context_window, by_name["b"].context_window_source) == (
+        128_000,
+        FALLBACK_WINDOW,
+    )
 
 
 def test_sizing_config_context_ceiling_defaults_and_overrides(tmp_path: Path) -> None:

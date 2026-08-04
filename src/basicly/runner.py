@@ -36,7 +36,7 @@ import subprocess
 import threading
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -113,10 +113,44 @@ CODEX_AGENT_MESSAGE = "agent_message"
 
 # Context-window defaults per adapter (factory design §6, basicly-kjc5.6): the
 # denominator for the context-ceiling meter. Conservative published windows;
-# config-overridable per agent via `context_window`. Unknown agents get the
-# smallest of the big 3 so the ceiling errs toward finalizing early, never late.
+# config-overridable per agent via `context_window` or `[runner] context_windows`.
+# Unknown agents get the smallest of the big 3 so the ceiling errs toward
+# finalizing early, never late.
+#
+# **These are defaults, not measurements, and a default that goes unchecked rots
+# into a false capability claim** (basicly-23ep). Each was the published window of
+# the model its CLI dispatched when it was written, and nothing re-reads the
+# vendor's documentation afterwards — so a repo that upgrades its model keeps
+# metering against the window of a model it no longer runs. On this tree that cost
+# six spurious finalizations: `claude` declared 200_000 while lanes recorded a
+# measured occupancy up to 223_221, which put the 0.6 trigger at one fifth of its
+# intended point and spun a follow-up bead off every healthy long lane.
+#
+# Two consequences follow, and both are load-bearing:
+#
+# * The fix is NOT to write a bigger number here. A newer figure is the same
+#   unchecked declaration one generation later, and it would hand a consumer
+#   pinning a different model a window we invented for them. The window belongs in
+#   the consuming repo's config, beside the model that repo actually dispatches —
+#   which is why every resolved window now carries its own source
+#   (:data:`ADAPTER_WINDOW` and friends), exactly as `tier_source` and
+#   `forecast_source` do for their declarations.
+# * A declaration this shape has to be falsifiable. `context_occupancy` measures
+#   the same quantity the window bounds, so a recorded occupancy above the declared
+#   window is a proof the declaration is wrong — :func:`window_violations` is that
+#   proof, and `tests/test_runner.py` runs it over this repo's own ledger.
 DEFAULT_CONTEXT_WINDOW = 128_000
 _CONTEXT_WINDOWS = {"claude": 200_000, "codex": 400_000, "copilot": 128_000}
+
+# Provenance labels for a resolved context window, recorded verbatim on the run
+# record beside the window itself. The distinction that matters is declared versus
+# defaulted: a defaulted window is a number nobody in this repo has checked against
+# the model it dispatches, and reading one back as if it had been chosen is how
+# basicly-23ep happened.
+ADAPTER_WINDOW = "adapter default"  # _CONTEXT_WINDOWS, this adapter's published window
+FALLBACK_WINDOW = "conservative fallback"  # DEFAULT_CONTEXT_WINDOW, an agent we know nothing about
+AGENT_WINDOW = "agent context_window"  # [[runner.agents]] context_window
+DECLARED_WINDOW = "[runner] context_windows"  # the per-agent declaration, most specific
 
 # Flags appended for a usage-capturing dispatch. Trailing — after the prompt —
 # so a subcommand invocation like `codex exec` keeps the flag inside the
@@ -215,6 +249,12 @@ class RunnerSpec:
     # the [policy.sizing] context_ceiling meter (design D8). Per-adapter defaults
     # in _CONTEXT_WINDOWS; config-overridable per agent.
     context_window: int = DEFAULT_CONTEXT_WINDOW
+    # Which input decided the window above (basicly-23ep): one of ADAPTER_WINDOW,
+    # FALLBACK_WINDOW, AGENT_WINDOW or DECLARED_WINDOW. Carried for the same reason
+    # `tier_source` is — the number alone cannot say whether anyone chose it, and a
+    # window nobody chose is the defect this field exists to make visible. None only
+    # on a spec built by hand in a test.
+    context_window_source: str | None = None
 
     @property
     def binary(self) -> str | None:
@@ -232,6 +272,7 @@ BUILTIN_RUNNERS: tuple[RunnerSpec, ...] = (
         deny_style=DISALLOWED_TOOLS_FLAG,
         usage_format=CLAUDE_STREAM_JSON,
         context_window=_CONTEXT_WINDOWS["claude"],
+        context_window_source=ADAPTER_WINDOW,
     ),
     RunnerSpec(
         "codex",
@@ -241,6 +282,7 @@ BUILTIN_RUNNERS: tuple[RunnerSpec, ...] = (
         approval="never",
         usage_format=CODEX_JSONL,
         context_window=_CONTEXT_WINDOWS["codex"],
+        context_window_source=ADAPTER_WINDOW,
     ),
     RunnerSpec(
         "copilot",
@@ -249,8 +291,12 @@ BUILTIN_RUNNERS: tuple[RunnerSpec, ...] = (
         deny_style=DENY_TOOL_FLAG,
         usage_format=COPILOT_SESSION_STORE,
         context_window=_CONTEXT_WINDOWS["copilot"],
+        context_window_source=ADAPTER_WINDOW,
     ),
-    RunnerSpec(MANUAL_RUNNER, HANDOFF),
+    # The handoff runner dispatches nothing, so its window is inert — but labelling
+    # it keeps "no source recorded" meaning what it says: a spec nobody built through
+    # the config loader.
+    RunnerSpec(MANUAL_RUNNER, HANDOFF, context_window_source=FALLBACK_WINDOW),
 )
 
 
@@ -1639,6 +1685,50 @@ def context_occupancy(spec: RunnerSpec, result: RunResult) -> int | None:
     return None
 
 
+def window_violations(history: Mapping[str, list], specs: Mapping[str, RunnerSpec]) -> list[str]:
+    """Every recorded occupancy that exceeds its agent's declared window (basicly-23ep).
+
+    The declaration's falsifier. :func:`context_occupancy` measures how full the
+    model's window was at the *end* of a run, so it is denominated in the same
+    quantity ``RunnerSpec.context_window`` bounds — and a lane cannot occupy more of
+    a window than the window has. A record above the declaration is therefore not a
+    lane that ran too big; it is proof the declaration describes a model the runtime
+    no longer dispatches, which is exactly how ``claude`` sat at 200_000 while six
+    lanes crossed the derived trigger on their way to a healthy finish.
+
+    *history* is the dispatch ledger keyed by bead id (``run_record.dispatch_history``
+    on the live tree), taken as a parameter rather than read here so the check can be
+    exercised against a known-bad ledger instead of only against whatever this
+    machine happens to have recorded. Each violation names **both** figures, because
+    the number that has to change is not the one the reader is looking at.
+
+    A record whose agent has no spec is skipped rather than flagged: an agent this
+    config does not define has no declared window to contradict. That is the one
+    silence here, and it is a property of the config, not of the ledger.
+    """
+    violations: list[str] = []
+    for bead_id, entries in sorted(history.items()):
+        for entry in entries:
+            if not isinstance(entry, Mapping):
+                continue
+            occupancy = entry.get("context_tokens")
+            if isinstance(occupancy, bool) or not isinstance(occupancy, int):
+                continue
+            agent = entry.get("agent")
+            spec = specs.get(agent) if isinstance(agent, str) else None
+            if spec is None or occupancy <= spec.context_window:
+                continue
+            violations.append(
+                f"{bead_id} recorded a context occupancy of {occupancy:,} tokens on runner "
+                f"{spec.name!r}, above its declared context_window of "
+                f"{spec.context_window:,} ({spec.context_window_source or 'source unrecorded'}); "
+                f"a run cannot occupy more of a window than the window has, so the "
+                f"declaration is wrong — raise it to the window the model this runner "
+                f"dispatches actually has"
+            )
+    return violations
+
+
 _VERSION_CACHE: dict[str, str | None] = {}
 
 
@@ -1762,6 +1852,13 @@ def record_dispatch(  # noqa: PLR0913 — one parameter per recorded dispatch in
         # already hands over its forecast, and a second site deciding whether to
         # measure the outcome is how the pair stops being a pair.
         context_tokens=context_occupancy(spec, result),
+        # The denominator that occupancy was measured against, and where it came
+        # from (basicly-23ep). Recorded rather than re-derived at read time for the
+        # reason every sibling provenance field is: the config moves, and a record
+        # carrying an occupancy whose window has since changed cannot say which
+        # declaration its ceiling actually fired under.
+        context_window=spec.context_window,
+        context_window_source=spec.context_window_source,
         task_class=task_class,
         forecast_source=forecast_source,
         build_factor_source=build_factor_source,

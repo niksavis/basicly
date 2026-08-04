@@ -170,6 +170,17 @@ class RunRecord:
     # marker, and once enough lanes carry one the ambient term and the per-class
     # factors can be fitted to it instead of declared.
     context_tokens: int | None = None
+    # The window ``context_tokens`` was measured against, and which input decided it
+    # (``runner.ADAPTER_WINDOW`` and friends). The pair is the point, and it is the
+    # same declared-versus-measured discipline ``forecast_source`` follows one field
+    # up: a window is a *capability claim* about the model a runner dispatches, and a
+    # claim nobody re-checks goes stale silently — ``claude`` declared 200_000 while
+    # these very records measured 223_221 (basicly-23ep). Carrying the source makes a
+    # defaulted window distinguishable from a chosen one, and carrying the value makes
+    # the contradiction checkable per record rather than only against today's config.
+    # Null on a dispatch recorded before the fields existed.
+    context_window: int | None = None
+    context_window_source: str | None = None
     # The class the forecast was computed for, and where the forecast came from
     # (``decompose.FROZEN_FORECAST`` / ``DISPATCH_FORECAST``). Recorded rather than
     # re-derived because calibration reads a sample long after the fact and a closed
@@ -270,6 +281,8 @@ def build_record(  # noqa: PLR0913
     scope_tokens: int | None = None,
     forecast_tokens: int | None = None,
     context_tokens: int | None = None,
+    context_window: int | None = None,
+    context_window_source: str | None = None,
     task_class: str | None = None,
     forecast_source: str | None = None,
     build_factor_source: str | None = None,
@@ -292,7 +305,9 @@ def build_record(  # noqa: PLR0913
     same telemetry at finer grain (basicly-2rn9), null for an adapter that
     reports no split and for a spend billed in USD rather than AI credits.
     *context_tokens* is the measured working set the sizing forecast was trying
-    to predict (basicly-fcls), null wherever the adapter reports no occupancy.
+    to predict (basicly-fcls), null wherever the adapter reports no occupancy;
+    *context_window* and *context_window_source* are the declared window it was
+    measured against and which input declared it (basicly-23ep).
     """
     return RunRecord(
         agent=agent,
@@ -322,6 +337,8 @@ def build_record(  # noqa: PLR0913
         scope_tokens=scope_tokens,
         forecast_tokens=forecast_tokens,
         context_tokens=context_tokens,
+        context_window=context_window,
+        context_window_source=context_window_source,
         task_class=task_class,
         forecast_source=forecast_source,
         build_factor_source=build_factor_source,

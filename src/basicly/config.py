@@ -9,12 +9,15 @@ from pathlib import Path
 from . import permissions, session
 from .runner import (
     AGENT_TIER,
+    AGENT_WINDOW,
     AUTO,
     BUILTIN_RUNNERS,
+    DECLARED_WINDOW,
     DEFAULT_CONTEXT_WINDOW,
     DEFAULT_MAX_AGENT_PROCESSES,
     DEFAULT_STALL_AFTER,
     DENY_STYLES,
+    FALLBACK_WINDOW,
     FAMILY_DEFAULT_TIER,
     HEADLESS,
     PROMPT_VIA,
@@ -1037,6 +1040,7 @@ def load_runner_config(repo_root: Path) -> RunnerConfig:
 
     _inject_copilot_deny_tools(specs)
     _inject_copilot_session_store(specs, section)
+    _apply_context_windows(specs, section)
     _apply_default_tier(specs, default_tier)
 
     default = section.get("default")
@@ -1176,6 +1180,8 @@ def _parse_runner_agent(entry: object) -> RunnerSpec:
             f"allowed: {list(USAGE_FORMATS)}"
         )
 
+    context_window, context_window_source = _context_window(entry, name)
+
     return RunnerSpec(
         name=name.strip(),
         kind=HEADLESS,
@@ -1191,7 +1197,8 @@ def _parse_runner_agent(entry: object) -> RunnerSpec:
         git_name=git_name,
         git_email=git_email,
         usage_format=usage_format,
-        context_window=_context_window(entry, name),
+        context_window=context_window,
+        context_window_source=context_window_source,
     )
 
 
@@ -1231,20 +1238,56 @@ def _parse_model_tier(entry: dict, name: str) -> tuple[str | None, str | None]:
     return tier, vendor.strip() if isinstance(vendor, str) else None
 
 
-def _context_window(entry: dict, name: str) -> int:
-    """The entry's ``context_window`` for the ceiling meter (basicly-kjc5.6).
+def _context_window(entry: dict, name: str) -> tuple[int, str]:
+    """The entry's ``context_window`` and its provenance (basicly-kjc5.6, basicly-23ep).
 
     Same replaces-wholesale stance as ``usage_format``: an override of a builtin
     must restate its window or it falls to the conservative default. Malformed
     values raise — a silently shrunken window would mis-trigger the finalize
     protocol on every long run.
+
+    The source travels with the value because the two answers are not equally
+    trustworthy: a declared window is a figure someone checked against the model
+    this agent dispatches, and a defaulted one is a figure nobody has.
     """
     value = entry.get("context_window", DEFAULT_CONTEXT_WINDOW)
     if not isinstance(value, int) or isinstance(value, bool):
         raise ValueError(f"runner agent {name!r} has a 'context_window' that must be an integer")
     if value <= 0:
         raise ValueError(f"runner agent {name!r} has a 'context_window' that must be positive")
-    return value
+    source = AGENT_WINDOW if "context_window" in entry else FALLBACK_WINDOW
+    return value, source
+
+
+def _apply_context_windows(specs: dict[str, RunnerSpec], section: dict) -> None:
+    """Fold ``[runner] context_windows`` onto the named specs (basicly-23ep).
+
+    A ``[runner]`` sub-table rather than a ``[[runner.agents]]`` key, for the reason
+    ``copilot_session_store`` is one: an entry there replaces a builtin wholesale, so
+    declaring a window would force a consumer to restate the whole adapter — command,
+    usage format, deny style — and a restatement that drops one of those is a worse
+    defect than the window it fixed. Declaring the window is the *point* of this bead,
+    so the cheap path has to be the correct one.
+
+    An unknown agent name raises rather than being ignored. A window declared for an
+    agent that does not exist is a typo whose only symptom would be the silent default
+    it was written to replace, which is precisely the failure basicly-23ep is.
+    """
+    windows = section.get("context_windows")
+    if not isinstance(windows, dict):
+        return
+    for name, value in windows.items():
+        spec = specs.get(name)
+        if spec is None:
+            raise ValueError(
+                f"[runner] context_windows declares a window for unknown agent {name!r}; "
+                f"known agents: {sorted(specs)}"
+            )
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            raise ValueError(
+                f"[runner] context_windows {name!r} must be a positive integer of tokens"
+            )
+        specs[name] = replace(spec, context_window=value, context_window_source=DECLARED_WINDOW)
 
 
 def load_project_paths(repo_root: Path) -> ProjectPaths:

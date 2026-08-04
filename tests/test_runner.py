@@ -24,7 +24,8 @@ from typing import cast
 
 import pytest
 
-from basicly import models, runner
+from basicly import models, run_record, runner
+from basicly.config import load_runner_config
 from basicly.runner import (
     BUILTIN_RUNNERS,
     CLAUDE_JSON,
@@ -38,6 +39,8 @@ from basicly.runner import (
     RunnerSpec,
     RunResult,
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _which_none(_binary: str) -> str | None:
@@ -2665,3 +2668,163 @@ def test_record_dispatch_records_a_model_mismatch(
     (entry,) = (runner.run_record.load_run_records(tmp_path) or {})["basicly-t"]
     assert entry["model_mismatch"] is not None
     assert "claude-opus-5" in entry["model_mismatch"]
+
+
+# --- the declared context window, checked against the ledger (basicly-23ep) ---
+#
+# `RunnerSpec.context_window` is the denominator of the context-ceiling meter, and
+# it is the one input to that calculation that is a claim about the *runtime* rather
+# than a choice this repo made: it says how much window the model an agent dispatches
+# actually has. A claim like that goes stale silently — the model is upgraded, the
+# constant is not, and nothing in the engine notices.
+#
+# `runner.context_occupancy` measures the same quantity, which makes the claim
+# falsifiable: a run cannot occupy more of a window than the window has. These tests
+# are that falsifier, run over this repo's own dispatch ledger.
+
+# The measured occupancies this repo has recorded, read off the `[harness-run]`
+# markers on 2026-08-04 (`run_record.dispatch_history`). The fixture is the evidence
+# itself, not an invented input: six of these seven crossed the 120_000 trigger the
+# stale 200_000 declaration produced at the 0.6 ceiling, and every one of the six
+# finished its work. Two of them are above 200_000 outright, which is the impossible
+# reading that proves the declaration wrong rather than the lanes oversized.
+_RECORDED_OCCUPANCY = {
+    "basicly-tcmy.5": 223_221,
+    "basicly-gczc": 210_721,
+    "basicly-vkh0.10": 193_096,
+    "basicly-tcmy.6": 190_177,
+    "basicly-tcmy.22": 171_029,
+    "basicly-jr0l.64": 170_530,
+    "basicly-8ry8": 80_211,
+}
+
+# The window the `claude` adapter defaulted to before this repo declared one. Held
+# here as the known-bad input the gate has to reject, so the control cannot silently
+# become a copy of whatever the current declaration happens to be.
+_STALE_CLAUDE_WINDOW = 200_000
+
+
+def _ledger(occupancy: dict[str, int], agent: str = "claude") -> dict[str, list]:
+    """The measured occupancies shaped as a dispatch ledger."""
+    return {
+        bead: [{"agent": agent, "phase": "lane", "context_tokens": tokens}]
+        for bead, tokens in occupancy.items()
+    }
+
+
+def _repo_specs() -> dict[str, RunnerSpec]:
+    return {spec.name: spec for spec in load_runner_config(REPO_ROOT).specs}
+
+
+def test_no_recorded_occupancy_exceeds_its_runners_declared_window() -> None:
+    """The live gate: no dispatch this engine recorded may contradict the declaration.
+
+    Asserted over the committed tracker (`dispatch_history`), so it reads the same
+    evidence a fresh clone would (D11) and fires wherever the declared window and the
+    measured reality disagree — whether because a model shrank or, as in basicly-23ep,
+    because the model grew and the constant did not follow.
+
+    It fails only on a contradiction, never on a lane merely being large: a run well
+    inside its window is the healthy case and must not turn main red.
+    """
+    assert runner.window_violations(run_record.dispatch_history(REPO_ROOT), _repo_specs()) == []
+
+
+def test_the_ledger_holds_occupancy_the_stale_declaration_called_impossible() -> None:
+    """The positive control on the population the live gate reads (basicly-ipx2's lesson).
+
+    Without this, the test above is indistinguishable from one measuring an empty
+    ledger — and an empty ledger is what a machine with no `.basicly/usage/` and an
+    unreadable tracker would produce. It also pins *why* the declaration changed: the
+    refutation is a recorded measurement, not an argument.
+    """
+    measured = [
+        tokens
+        for entries in run_record.dispatch_history(REPO_ROOT).values()
+        for entry in entries
+        if isinstance(tokens := entry.get("context_tokens"), int)
+    ]
+    assert measured, "no dispatch carries a measured occupancy — the gate would be inert"
+    assert max(measured) > _STALE_CLAUDE_WINDOW
+
+
+def test_the_window_gate_names_both_figures_when_a_lane_outgrows_the_declaration() -> None:
+    """The known-bad control: the stale declaration is rejected, naming what to change.
+
+    Both figures, because the number the reader has to change is not the one they are
+    looking at: a violation reporting only the occupancy reads as "this lane was too
+    big", which is the misreading that spun six follow-up beads.
+    """
+    stale = replace(
+        _claude_spec(),
+        context_window=_STALE_CLAUDE_WINDOW,
+        context_window_source=runner.ADAPTER_WINDOW,
+    )
+
+    violations = runner.window_violations(_ledger(_RECORDED_OCCUPANCY), {"claude": stale})
+
+    assert len(violations) == 2  # only the two occupancies that exceed 200_000
+    report = "\n".join(violations)
+    assert "223,221" in report and "210,721" in report  # the measured occupancies
+    assert "200,000" in report  # the declaration they refute
+    assert runner.ADAPTER_WINDOW in report  # and that nobody chose it
+    # The healthy lanes below the declaration are not swept in with them.
+    assert "193,096" not in report and "80,211" not in report
+
+
+def test_an_occupancy_inside_the_declared_window_is_not_a_violation() -> None:
+    """The control that passes: the same seven records, against a window that fits them.
+
+    This is the pair the known-bad control needs. The records do not change between
+    the two tests — only the declaration does — so a failure here says the gate is
+    flagging size rather than contradiction.
+    """
+    declared = _repo_specs()["claude"]
+    assert max(_RECORDED_OCCUPANCY.values()) < declared.context_window
+
+    assert runner.window_violations(_ledger(_RECORDED_OCCUPANCY), {"claude": declared}) == []
+
+
+def test_a_record_whose_agent_has_no_spec_cannot_be_a_violation() -> None:
+    """An agent this config never defined has no declared window to contradict."""
+    ledger = _ledger({"basicly-x": 10_000_000}, agent="an-agent-nothing-declares")
+    assert runner.window_violations(ledger, _repo_specs()) == []
+
+
+def test_the_repo_declares_its_context_window_rather_than_inheriting_a_default() -> None:
+    """AC: the window is declared per agent in config, with its source recorded.
+
+    The defect basicly-23ep fixes is not that 200_000 was the wrong number — it was
+    right when written. It is that nothing recorded whether anyone had ever checked
+    it, so a default and a decision were indistinguishable. `claude` is the runner
+    this repo dispatches, so it is the one that must carry a declaration.
+    """
+    claude = _repo_specs()["claude"]
+    assert claude.context_window_source == runner.DECLARED_WINDOW
+    assert claude.context_window != runner.DEFAULT_CONTEXT_WINDOW
+    # An adapter this repo does not declare still says so, rather than reading as chosen.
+    assert _repo_specs()["codex"].context_window_source == runner.ADAPTER_WINDOW
+
+
+def test_record_dispatch_carries_the_window_the_occupancy_was_measured_against(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The measurement and its denominator land on one row, with the denominator's source.
+
+    Recorded rather than looked up later: the config moves, so a record carrying an
+    occupancy alone cannot say which declaration its ceiling fired under.
+    """
+    spec = replace(
+        _claude_spec(), context_window=1_000_000, context_window_source=runner.DECLARED_WINDOW
+    )
+    result = _executed(spec, _CLAUDE_STREAM)
+    monkeypatch.setattr(runner.run_record, "record_marker", lambda *_a, **_k: None)
+
+    runner.record_dispatch(tmp_path, "basicly-23ep", spec, result, prompt="p", phase="lane")
+
+    (entry,) = (runner.run_record.load_run_records(tmp_path) or {})["basicly-23ep"]
+    assert entry["context_window"] == 1_000_000
+    assert entry["context_window_source"] == runner.DECLARED_WINDOW
+    # The pair on one row: the measurement and the denominator it was taken against.
+    assert entry["context_tokens"] == runner.context_occupancy(spec, result)
+    assert entry["context_tokens"] < entry["context_window"]
