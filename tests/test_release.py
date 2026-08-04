@@ -338,9 +338,14 @@ def test_this_repos_own_capability_inventory_is_never_empty() -> None:
     """
     capabilities = release.shipped_capabilities(Path(__file__).resolve().parents[1])
 
-    names = {capability.name for capability in capabilities}
-    assert {"pytest", "projection-permissions"} <= names
-    assert all(capability.witness for capability in capabilities)
+    labels = {label for label, _ in capabilities}
+    assert {
+        f"{release.CAPABILITY_VERIFY_CHECK} 'pytest'",
+        f"{release.CAPABILITY_VERIFY_CHECK} 'projection-permissions'",
+    } <= labels
+    # A capability with no witness can never be refused, so the inventory would have
+    # teeth in name only.
+    assert all(witness for _, witness in capabilities)
 
 
 # --- The generated artefacts must survive this repo's own gates ---------------

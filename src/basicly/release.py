@@ -210,17 +210,7 @@ def plan_release(repo_root: Path, version: str, *, date: str | None = None) -> R
 CAPABILITY_VERIFY_CHECK = "verify check"
 
 
-@dataclass(frozen=True)
-class ShippedCapability:
-    """A capability the repo declares it ships, and the ledger key that proves it ran."""
-
-    kind: str
-    name: str
-    # The key :func:`recorded_executions` would carry it under.
-    witness: str
-
-
-def shipped_capabilities(repo_root: Path) -> tuple[ShippedCapability, ...]:
+def shipped_capabilities(repo_root: Path) -> tuple[tuple[str, str], ...]:
     """The capabilities *repo_root* declares it ships, derived from its committed config.
 
     **Derived, never hand-listed.** A curated inventory can be curated down to nothing
@@ -234,12 +224,23 @@ def shipped_capabilities(repo_root: Path) -> tuple[ShippedCapability, ...]:
     wired to no gate; ``vulture`` is declared at ``pyproject.toml:37`` and called from
     nowhere).
 
+    Each pair is ``(label, witness)``: the label names the capability the way a refusal
+    reports it, and the witness is the key :func:`recorded_executions` would carry it
+    under. A record with named fields would read better here and is deliberately not
+    used — its fields would be read only by this module, which is the shape
+    ``wired-or-deleted`` rejects, and there is no consumer outside this module to wire
+    one to. A pair carries the same two values without claiming to be a public type.
+
     The witness is the check's own ``command[0]``, the executable it invokes, which is
     the same reading the recorder makes — the ``tool-usage`` hook credits the head token
     of a pipeline segment. A check that hides its real work behind a wrapper (``uv run
     python .scripts/...``) is therefore witnessed by the *wrapper*, which is weaker
     evidence than a check naming its own tool; that is a property of how the command is
     declared, and the fix is the declaration, not a second parser here.
+
+    A tuple of pairs rather than a mapping, because two checks may legitimately share a
+    name and a mapping would silently drop one — an inventory that quietly shrinks is
+    the same defect as one curated down to nothing.
 
     Empty for a repo that declares no checks: a consumer with no ``[verify]`` section
     has made no capability claim for this gate to hold, and refusing its release would
@@ -248,7 +249,7 @@ def shipped_capabilities(repo_root: Path) -> tuple[ShippedCapability, ...]:
     that names nothing cannot refuse anything.
     """
     return tuple(
-        ShippedCapability(kind=CAPABILITY_VERIFY_CHECK, name=check.name, witness=check.command[0])
+        (f"{CAPABILITY_VERIFY_CHECK} {check.name!r}", check.command[0])
         for check in load_verify_config(repo_root).checks
     )
 
@@ -318,11 +319,10 @@ def unexercised_capabilities(repo_root: Path) -> tuple[str, ...]:
             "re-run (`basicly usage report` shows what is recorded)",
         )
     return tuple(
-        f"unexercised capability: {capability.kind} {capability.name!r} — the usage "
-        f"ledger records no execution of {capability.witness!r}; exercise it or drop "
-        "the claim before tagging"
-        for capability in capabilities
-        if counts.get(capability.witness, 0) <= 0
+        f"unexercised capability: {label} — the usage ledger records no execution of "
+        f"{witness!r}; exercise it or drop the claim before tagging"
+        for label, witness in capabilities
+        if counts.get(witness, 0) <= 0
     )
 
 
