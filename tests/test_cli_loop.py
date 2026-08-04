@@ -465,6 +465,9 @@ class _Preflight:
     halted: bool = False
     metered: str | None = None
     lanes: tuple[object, ...] = ()
+    # The root's (issue_id, status) parent-child dependents, as derive_session reads
+    # them. Varied so a test can pin a status the candidate rule has to decide on.
+    children: tuple[tuple[str, str], ...] = (("c.1", "open"),)
     # issue_id -> the band verdict to pin for it; anything absent sizes to nothing.
     admissions: dict[str, object] = field(default_factory=dict)
     # The calibration report to pin. Pinned like the band verdicts and for the same
@@ -509,10 +512,11 @@ def _preflight_fixture(monkeypatch: pytest.MonkeyPatch, pinned: _Preflight) -> N
         ),
     )
     monkeypatch.setattr(cli.worktree, "list_sessions", lambda _r: [])
+    children = pinned.children
     monkeypatch.setattr(
         cli.supervise,
         "derive_session",
-        lambda _r, root: supervise.SessionState(root, "open", (("c.1", "open"),), ()),
+        lambda _r, root: supervise.SessionState(root, "open", children, ()),
     )
     monkeypatch.setattr(
         cli.runner, "select_runner", lambda *_a, **_k: RunnerSpec("claude", HEADLESS)
@@ -649,6 +653,38 @@ def test_preflight_separates_an_under_floor_lane_from_one_inside_the_band(
     out = capsys.readouterr().out
     assert "under the floor - dispatches, but merge it with a sibling" in out
     assert "3512 tok  in band" not in out
+
+
+def test_preflight_leaves_a_deferred_candidate_out_of_the_band_table(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Deferring a child must remove it from the funding decision (basicly-toj6).
+
+    Measured on this repo's own tracker: ``basicly-vkh0.4`` had been deferred since
+    2026-07-30, and preflight still reported "2 open child(ren)", sized it into the
+    band table, and counted it in the fan-out forecast the operator mints a budget
+    against — so a parked bead could escalate a pass its ready siblings could
+    afford. ``c.1`` is the control: an open sibling is still sized and still counted.
+    """
+    _preflight_fixture(
+        monkeypatch,
+        _Preflight(
+            grant=Grant(level="L1", token_budget=10_000),
+            children=(("c.1", "open"), ("c.2", "deferred")),
+            admissions={
+                "c.1": _sized("c.1", 12_884, refused=False),
+                "c.2": _sized("c.2", 95_379, refused=True, violation="above"),
+            },
+        ),
+    )
+
+    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+
+    out = capsys.readouterr().out
+    assert "1 open child(ren)" in out
+    assert "12884 tok  in band" in out
+    assert "c.2" not in out
+    assert "REFUSED" not in out
 
 
 def test_preflight_flags_a_candidate_whose_scope_matched_no_file(

@@ -1140,7 +1140,7 @@ def _run_lane(ctx: _Ctx, binding: loop_state.WorktreeBinding) -> AdvanceResult:
             ctx, f"worktree {binding.name!r} has no session record; re-provision the lane"
         )
 
-    open_ids = [cid for cid, status in subtasks if status != "closed"]
+    open_ids = [cid for cid, status in subtasks if loop_state.is_dispatchable(status)]
     if not open_ids:
         return _integrate_lane(ctx, binding, Path(session.worktree_path))
     blocked_ids = set(loop_state.blocked_ids(ctx.repo_root))
@@ -1389,12 +1389,17 @@ def _build_children(ctx: _Ctx) -> AdvanceResult:
     A child driven through its own loop lands and tears down its worktree before
     closing, so only children with a live session go through the merge queue —
     the rest already self-landed.
+
+    Fan-in waits on the *dispatchable* children, not on every non-closed one: a
+    child somebody deferred is not work this pass owes, and holding the epic on it
+    parked the epic at "still open" with nothing left that could ever close
+    (basicly-toj6).
     """
     children = _child_states(ctx)
     if not children:
         return _blocked(ctx, "decompose approved but no child tracks are recorded")
     _ensure_child_worktrees(ctx, children)
-    still_open = [cid for cid, status in children if status != "closed"]
+    still_open = [cid for cid, status in children if loop_state.is_dispatchable(status)]
     if still_open:
         return _blocked(ctx, f"building: {len(still_open)} child track(s) still open")
 
@@ -1490,7 +1495,7 @@ def _ensure_child_worktrees(ctx: _Ctx, children: list[tuple[str, str]]) -> None:
     sizing = load_sizing_config(ctx.repo_root)
     existing = {session.name for session in worktree.list_sessions(ctx.repo_root)}
     room = wt_config.concurrency - len(existing)
-    open_children = {cid for cid, status in children if status != "closed"}
+    open_children = {cid for cid, status in children if loop_state.is_dispatchable(status)}
     ranked = [
         node.issue_id
         for node in loop_state.ready_ranked(ctx.repo_root)

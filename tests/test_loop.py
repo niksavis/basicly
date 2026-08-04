@@ -850,6 +850,32 @@ def test_decompose_builds_children_and_blocks_while_open(
     assert result.blocked and "1 child track(s) still open" in result.detail
 
 
+def test_decompose_fan_in_does_not_wait_on_a_deferred_child(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Every non-deferred child closed means the epic fans in (basicly-toj6).
+
+    ``still_open`` was ``status != "closed"``, so a child somebody deferred parked
+    the epic at "1 child track(s) still open" with nothing left that could ever
+    close it. The control is the test above: an ``in_progress`` sibling in the same
+    position does still hold the epic.
+    """
+    at(_state("decompose", has_children=True))
+    monkeypatch.setattr(policy, "checkpoint_approved", lambda *_a: True)
+    monkeypatch.setattr(
+        loop, "_child_states", lambda _ctx: [("i.1", "closed"), ("i.2", "deferred")]
+    )
+    monkeypatch.setattr(loop, "_ensure_child_worktrees", lambda *_a: None)
+    monkeypatch.setattr(worktree, "list_sessions", lambda *_a, **_k: [])
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
+    monkeypatch.setattr(verify, "report_gate", lambda *_a, **_k: (True, "ok"))
+
+    result = _advance(tmp_path)
+
+    assert result.to_phase == "verify" and result.action == "merged"
+    assert "still open" not in result.detail
+
+
 def test_decompose_merges_children_when_all_closed(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

@@ -99,6 +99,52 @@ def test_worktree_ref_rejects_unset_or_foreign(ref: str | None) -> None:
     assert loop_state.parse_worktree_ref(ref) is None
 
 
+# --- Dispatch candidacy (basicly-toj6) --------------------------------------
+
+
+@pytest.mark.parametrize("status", sorted(loop_state.DISPATCHABLE_STATUSES))
+def test_every_dispatchable_status_is_admitted(status: str) -> None:
+    """The rule admits exactly the set it names, so the constant is not decoration."""
+    assert loop_state.is_dispatchable(status) is True
+
+
+@pytest.mark.parametrize("status", ["closed", "tombstone", "deferred"])
+def test_a_terminal_or_parked_status_is_not_dispatchable(status: str) -> None:
+    """The named refusals: the work is over, or a human parked it (basicly-toj6).
+
+    ``deferred`` is the one this bead is about. The rule it replaced read
+    ``status != "closed"``, so deferring a bead removed it from nothing: it stayed
+    a sizing, funding and dispatch candidate, and it held its parent open.
+    """
+    assert loop_state.is_dispatchable(status) is False
+
+
+def test_the_named_sets_partition_the_known_vocabulary() -> None:
+    """Every status ``br schema`` declares is decided by name, none by omission.
+
+    This is what stops the rule from drifting the way its predecessor did: a
+    status added to :data:`loop_state.KNOWN_STATUSES` without a decision here
+    fails, instead of silently landing on whichever side the code happened to
+    default to.
+    """
+    refused = {"closed", "tombstone", "deferred"}
+    assert loop_state.DISPATCHABLE_STATUSES | refused == loop_state.KNOWN_STATUSES
+    assert not loop_state.DISPATCHABLE_STATUSES & refused
+
+
+@pytest.mark.parametrize("status", ["rework", "in_review"])
+def test_a_project_defined_status_is_admitted_rather_than_dropped(status: str) -> None:
+    """A project may define its own statuses, so an unknown one must not be defunded.
+
+    ``workflow.status_groups.ready`` in ``.beads/policy.yaml`` can widen readiness
+    to a status this vocabulary has never heard of (br's own example is
+    ``rework``). Refusing it would be the mirror of the bug being fixed: the child
+    would be left out of the band table *and* its parent would fan in over it.
+    """
+    assert status not in loop_state.KNOWN_STATUSES
+    assert loop_state.is_dispatchable(status) is True
+
+
 # --- Phase derivation -------------------------------------------------------
 
 
