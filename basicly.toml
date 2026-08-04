@@ -208,3 +208,39 @@ default = "auto"
 # unsizeable lane still defeats both dispatch cost gates (basicly-vz78): with no
 # forward forecast, this timeout is the only per-lane ceiling on a runaway run.
 runner_timeout = 1800
+
+# The context window each agent's model actually has, in tokens (basicly-23ep).
+# The denominator for the [policy.sizing] context_ceiling meter, and the one
+# number in that calculation that describes a *capability of the runtime* rather
+# than a choice this repo made — so it is declared here, beside the model it
+# describes, instead of inherited from a per-adapter default nobody re-checks.
+#
+# The default it replaces was 200000, correct when written and stale since. This
+# repo's own ledger refutes it: seven dispatches carry a measured `context_tokens`
+# and two of them (basicly-tcmy.5 at 223221, basicly-gczc at 210721) sit ABOVE
+# 200000, which cannot happen. The consequence was not a near miss — at the 0.6
+# ceiling the finalize protocol fired at 120000, so six healthy lanes were
+# truncated and each spun a `(context-ceiling overrun)` follow-up bead for work
+# that was never over any real limit.
+#
+# 1000000 is the window of Claude Opus 5, which is the model this repo dispatches:
+# every one of those seven records observed `claude-opus-5` (the runner pins no
+# model, so this is what the CLI ran, read off `observed_models` rather than
+# assumed). Checked against the vendor's live model documentation on 2026-08-04 —
+# not recalled, per the rule that made the previous figure wrong. The committed
+# model map corroborates it independently: `.basicly/core/models/model-map.json`
+# already records `claude-opus-5` at a 1000000-token context.
+#
+# That map is also the follow-on this bead deliberately does not take. It carries a
+# per-model `limit_tokens.context`, so a runner that pins a *tier* could resolve its
+# window from the map instead of declaring one — the window would then follow the
+# model automatically and could not go stale again. It cannot help here, because this
+# runner pins nothing: the model is only knowable after the dispatch, from what the
+# CLI reports it ran. Declaring the window is what a repo with an unpinned runner has.
+#
+# `tests/test_runner.py::test_no_recorded_occupancy_exceeds_its_runners_declared_window`
+# is the gate that keeps this honest: it fails, naming both figures, the first time
+# a lane records an occupancy this declaration says is impossible. Had it existed,
+# it would have caught the 200000 the first time a lane recorded 210721.
+[runner.context_windows]
+claude = 1_000_000
