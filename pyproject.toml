@@ -57,6 +57,59 @@ basicly = "basicly.cli:main"
 exclude_dirs = ["tests"]
 skips = ["B101"]
 
+# Dead-code gate (basicly-uexy). The paths and confidence live on the `vulture`
+# [[verify.checks]] entry in basicly.toml, beside every other check's arguments;
+# only the suppression list is here, because vulture reads it from nowhere else.
+#
+# Each name below reproduces a finding on the tree as of 2026-08-04, and
+# `.scripts/wired_or_deleted.py` fails the build when one stops reproducing, so the
+# list cannot rot into a blanket exemption. `basicly-tcmy.21` is the deletion half
+# that empties it — an entry is a debt, not a verdict that the name is fine.
+#
+# Two of them are true false positives rather than debt: `preserve_quotes` and
+# `width` are assigned on a ruamel `YAML()` instance (hooks.py:280,282), which reads
+# them from its own attributes, so no Python reference to either name exists to find.
+#
+# Matching is by bare name, which is the mechanism's limit and not a choice: an entry
+# like `width` or `delta` also silences a future unused name spelled the same way
+# anywhere under src/ or .scripts/. That is the strongest argument for emptying the
+# list rather than adding to it.
+[tool.vulture]
+ignore_names = [
+  "PERMISSION_TARGETS",
+  "PHASES",
+  "agent_context",
+  "approvals",
+  "baseline_failure_rate",
+  "baseline_runs",
+  "can_leave_classify",
+  "clear_overrides",
+  "config_overrides",
+  "copilot",
+  "declarers",
+  "delta",
+  "dispatches",
+  "error_tokens",
+  "fallback_sort",
+  "health_score",
+  "landed_package_cost",
+  "load_fragments",
+  "per_package",
+  "preserve_quotes",
+  "reachable",
+  "recent_failure_rate",
+  "recent_runs",
+  "reset_process_budget",
+  "should_escalate",
+  "stale_sessions",
+  "tagged",
+  "tags",
+  "tb",
+  "tone",
+  "width",
+  "window_violations",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/basicly"]
 exclude = ["**/__pycache__", "**/*.pyc"]

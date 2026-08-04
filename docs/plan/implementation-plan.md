@@ -79,9 +79,9 @@ commit, because every hand-written copy of them was stale within days:
 | --- | --- |
 | Engine modules (`src/basicly/*.py`) | 43 |
 | Test files | 69 |
-| `[[verify.checks]]` declared | 15 |
-| …of which run in `--mode fast` | 11 |
-| …of which run in `--mode full` | 14 |
+| `[[verify.checks]]` declared | 17 |
+| …of which run in `--mode fast` | 13 |
+| …of which run in `--mode full` | 16 |
 | …of which run in `--mode staged` | 3 |
 
 <!-- docs-claims:end plan-current-state -->

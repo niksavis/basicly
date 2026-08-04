@@ -77,6 +77,46 @@ name = "bandit"
 command = ["bandit", "-q", "-c", "pyproject.toml", "-r", ".scripts", ".basicly/core/hooks"]
 modes = ["fast", "full"]
 
+# Dead code (basicly-uexy). `vulture` was declared at pyproject.toml:37 and called
+# from nowhere — not by a check, not by a script — so the dependency that finds
+# instruments nobody connected was itself an instrument nobody connected. That is the
+# whole shape Phase S exists to remove, and it is this gate's own first finding.
+#
+# Scoped to `src` and `.scripts`, and the omission of `tests` is the point rather than
+# an oversight: with the tests out of scope, a name whose only reader is a test reads
+# as unused, which is exactly the rule — a reference from a test is not a consumer.
+# Suppressions live in `[tool.vulture] ignore_names` (pyproject.toml), vulture's only
+# mechanism, and `wired-or-deleted` below fails on any entry that stops reproducing.
+#
+# 60 is vulture's default confidence, kept rather than raised: the tiers above it
+# report only unreachable code, and every real finding on this tree — a record field
+# written and never read, a helper only a test calls — sits at 60.
+[[verify.checks]]
+name = "vulture"
+command = ["vulture", "--min-confidence", "60", "src", ".scripts"]
+modes = ["fast", "full"]
+
+# Wired-or-deleted (basicly-uexy): nothing merges with references only inside its own
+# module and under `tests/`. Covers the three surfaces vulture cannot see — a CLI
+# subcommand no hook, check, workflow or catalog instruction invokes (`permissions-check`
+# shipped exactly that way), a `config.py` key nothing reads, and a record field read
+# only by the module that declares it — and polices vulture's suppression list, which
+# vulture itself never re-checks.
+#
+# A repo-local script rather than a CLI subcommand pair, on the same grounds as
+# `docs-claims`: the wiring gated here is basicly's own, so there is nothing to
+# project. No `fix_command`, because the repair is a deletion or a call site, and
+# neither is mechanical. `uv run python` per basicly-tcmy.32.
+#
+# In `fast` as well as `full` despite spawning vulture a second time: measured 0.90s
+# (0.92/0.89/0.90 over three runs, of which vulture itself is 0.27s) against seconds
+# for pyright and pytest, so the cost is noise beside a merged instrument nobody
+# connected. Re-measure if a fifth surface is added; do not scale the number.
+[[verify.checks]]
+name = "wired-or-deleted"
+command = ["uv", "run", "python", ".scripts/wired_or_deleted.py"]
+modes = ["fast", "full"]
+
 [[verify.checks]]
 name = "lint-imports"
 # Enforces the import-linter contracts in `.importlinter`: the engine's tier stack

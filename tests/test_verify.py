@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import re
 import subprocess
 import sys
@@ -761,3 +762,219 @@ def test_the_interpreter_rule_accepts_uv_run_python_and_console_scripts() -> Non
 
     assert _interpreter_offences(script) == []
     assert _interpreter_offences(console) == []
+
+
+# --- Nothing merges wired to nothing (basicly-uexy) ---
+
+
+def _load_wired_or_deleted():
+    """Load the wired-or-deleted script from its path (``.scripts`` is not a package)."""
+    script_path = _REPO_ROOT / ".scripts" / "wired_or_deleted.py"
+    spec = importlib.util.spec_from_file_location("wired_or_deleted", script_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+wired = _load_wired_or_deleted()
+
+
+def _declared(name: str) -> VerifyCheck:
+    """The check this repo declares under *name*, or a failure naming what is missing."""
+    checks = {check.name: check for check in load_verify_config(_REPO_ROOT).checks}
+    assert name in checks, f"basicly.toml declares no [[verify.checks]] entry '{name}'"
+    return checks[name]
+
+
+def test_this_repo_runs_vulture_as_a_declared_verify_check() -> None:
+    """The dead-code tool must be *called*, which is the defect it was filed against.
+
+    ``vulture`` sat in the dev dependency group and was invoked by no check and no
+    script, so the tool that finds instruments nobody connected was one. Asserted on
+    the declared argv rather than by running it: what went missing was the call, and a
+    tool that reports findings is vulture's own problem.
+
+    ``tests`` must stay out of its paths. That exclusion is what makes "read only by a
+    test" a finding, so a well-meaning edit adding ``tests`` would quietly delete half
+    the rule while leaving the check green.
+    """
+    check = _declared("vulture")
+
+    assert check.command[0] == "vulture"
+    assert "src" in check.command
+    assert "tests" not in check.command
+
+
+def test_this_repo_runs_the_wired_or_deleted_gate_as_a_declared_verify_check() -> None:
+    """And the gate for the three surfaces vulture cannot see is wired too."""
+    check = _declared("wired-or-deleted")
+
+    assert check.command[-1].endswith("wired_or_deleted.py")
+    assert "fast" in check.modes and "full" in check.modes
+
+
+def test_the_gate_fails_when_no_vulture_check_is_declared(tmp_path: Path) -> None:
+    """Removing the vulture check must break the gate, not silence it.
+
+    The gate reads the declared command instead of restating it, so this is the same
+    assertion as the one above made from the other side: a tree whose ``basicly.toml``
+    has no vulture entry cannot pass, which is why the policing run below can trust
+    that the argv it re-runs is the one that ships.
+    """
+    (tmp_path / "basicly.toml").write_text('[[verify.checks]]\nname = "ruff"\n', encoding="utf-8")
+
+    with pytest.raises(wired.WiringError, match=r"declares no .* named 'vulture'"):
+        wired.declared_vulture_command(tmp_path)
+
+
+def test_an_unreferenced_command_is_reported_by_name() -> None:
+    """A command no invocation names is the ``permissions-check`` defect exactly."""
+    findings = wired.command_findings([("polish", "boots")], "nothing invokes it here")
+
+    assert [finding.key for finding in findings] == ["command:polish boots"]
+    assert "basicly polish boots" in findings[0].detail
+
+
+def test_a_command_is_wired_by_a_shell_line_or_an_argv_array() -> None:
+    """Both spellings an invocation is written in count as wiring."""
+    shell = wired.command_findings([("polish", "boots")], "run `basicly polish boots --all`")
+    argv = wired.command_findings([("polish", "boots")], '["basicly", "polish", "boots"]')
+
+    assert shell == [] and argv == []
+
+
+def test_a_command_is_not_wired_by_prose_that_omits_the_console_script() -> None:
+    """The invocation form is required, so prose reusing the words is not credit.
+
+    ``permissions-check`` was documented in full and gated nowhere, so a rule that a
+    mention anywhere satisfies would credit the defect it exists to catch.
+    """
+    findings = wired.command_findings([("catalog", "list")], "the catalog list of skills")
+
+    assert [finding.key for finding in findings] == ["command:catalog list"]
+
+
+def test_a_longer_command_does_not_wire_its_prefix() -> None:
+    """``merge`` is not satisfied by the ``merge-queue`` documented beside it."""
+    findings = wired.command_findings([("worktree", "merge")], "basicly worktree merge-queue")
+
+    assert [finding.key for finding in findings] == ["command:worktree merge"]
+
+
+def test_the_command_sweep_reads_a_non_empty_command_set() -> None:
+    """A sweep over nothing passes forever; the import contract failed that way."""
+    paths = wired.command_paths()
+
+    assert ("worktree", "create") in paths
+    assert ("check",) in paths
+
+
+def _plant_tree(root: Path) -> None:
+    """A miniature ``src/basicly`` where exactly two declarations are unwired."""
+    package = root / "src" / "basicly"
+    package.mkdir(parents=True)
+    (package / "widget.py").write_text(
+        "from dataclasses import dataclass\n\n\n"
+        "@dataclass\nclass Widget:\n    wired: bool\n    orphan: bool\n",
+        encoding="utf-8",
+    )
+    (package / "config.py").write_text(
+        "from dataclasses import dataclass\n\n\n@dataclass\nclass Config:\n    inert: bool\n",
+        encoding="utf-8",
+    )
+    (package / "consumer.py").write_text(
+        "from basicly.widget import Widget\n\n\n"
+        "def use(widget: Widget) -> bool:\n    return widget.wired\n",
+        encoding="utf-8",
+    )
+    tests = root / "tests"
+    tests.mkdir()
+    (tests / "test_widget.py").write_text(
+        "from basicly.widget import Widget\n\n\n"
+        "def test_orphan() -> None:\n    assert not Widget(True, False).orphan\n",
+        encoding="utf-8",
+    )
+
+
+def test_a_field_read_only_by_its_own_module_or_a_test_is_reported_by_name(
+    tmp_path: Path,
+) -> None:
+    """The control for the field rule, and for the ``tests/`` half of the rule.
+
+    ``orphan`` is read, but only by a test, which is the shape a green tick hides: the
+    suite proves the field can be constructed and nothing proves anyone wants it. A
+    ``config.py`` declaration is reported as a config key rather than a record field,
+    because an inert ``basicly.toml`` key and an unread record field are different
+    conversations with the person fixing them.
+    """
+    _plant_tree(tmp_path)
+
+    findings = wired.field_findings(tmp_path, wired.build_index(tmp_path))
+
+    assert sorted(finding.key for finding in findings) == [
+        "config-key:basicly.config.Config.inert",
+        "record-field:basicly.widget.Widget.orphan",
+    ]
+    reported = {finding.key: finding for finding in findings}
+    assert reported["record-field:basicly.widget.Widget.orphan"].location.endswith("widget.py:7")
+    assert "config key 'Config.inert'" in reported["config-key:basicly.config.Config.inert"].detail
+
+
+def test_a_field_a_second_module_reads_is_wired(tmp_path: Path) -> None:
+    """The other direction: ``Widget.wired`` is read by ``consumer`` and stays silent."""
+    _plant_tree(tmp_path)
+
+    findings = wired.field_findings(tmp_path, wired.build_index(tmp_path))
+
+    assert "record-field:basicly.widget.Widget.wired" not in {f.key for f in findings}
+
+
+def test_a_private_record_is_internal_by_design_and_not_reported(tmp_path: Path) -> None:
+    """An underscored record says "module-internal", so the rule does not apply."""
+    _plant_tree(tmp_path)
+    (tmp_path / "src" / "basicly" / "internal.py").write_text(
+        "from dataclasses import dataclass\n\n\n@dataclass\nclass _Scratch:\n    only_here: bool\n",
+        encoding="utf-8",
+    )
+
+    findings = wired.field_findings(tmp_path, wired.build_index(tmp_path))
+
+    assert "record-field:basicly.internal._Scratch.only_here" not in {f.key for f in findings}
+
+
+def test_a_vulture_suppression_that_stopped_reproducing_is_reported() -> None:
+    """The baseline must shrink with the deletions, not outlive them.
+
+    Vulture suppresses by bare name and never re-checks its own ignore list, so a name
+    ``basicly-tcmy.21`` deletes would leave an exemption behind that silences the next
+    unused name spelled the same way. That is the fail-open shape this phase exists to
+    remove, one indirection out.
+    """
+    findings = wired.suppression_findings(["deleted_since", "still_unused"], {"still_unused"})
+
+    assert [finding.key for finding in findings] == ["vulture-suppression:deleted_since"]
+    assert "no finding any more" in findings[0].detail
+
+
+def test_a_glob_vulture_suppression_is_refused() -> None:
+    """One wildcard silences a surface nobody enumerated, and cannot be policed."""
+    findings = wired.suppression_findings(["baseline_*"], {"baseline_runs"})
+
+    assert [finding.key for finding in findings] == ["vulture-suppression:baseline_*"]
+    assert "glob" in findings[0].detail
+
+
+def test_the_baseline_holds_only_findings_that_still_reproduce() -> None:
+    """Every exemption is a debt that must still be real, checked both ways.
+
+    A stale entry is as much a defect as a new finding: it is an exemption earning
+    nothing, and the gate reports it so ``basicly-tcmy.21`` cannot delete a symbol and
+    leave its suppression behind. Runs the real collection over this repo, which is the
+    only place the baseline means anything.
+    """
+    new, stale = wired.unexpected(wired.collect(_REPO_ROOT))
+
+    assert [finding.detail for finding in new] == []
+    assert stale == []
