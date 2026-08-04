@@ -957,6 +957,58 @@ def finalize_followup(
     return followup_id
 
 
+@dataclass(frozen=True)
+class CeilingVerdict:
+    """What the context meter said about one finished dispatch."""
+
+    occupancy: int | None
+    ceiling: int
+    overrun: bool
+    followup_id: str | None
+
+
+def meter_context_ceiling(  # noqa: PLR0913 — one parameter per metering input
+    repo_root: Path,
+    root_issue: str,
+    issue_id: str,
+    spec: runner.RunnerSpec,
+    result: runner.RunResult,
+    sizing: SizingConfig,
+    *,
+    landed: bool,
+) -> CeilingVerdict:
+    """Meter a finished dispatch against *spec*'s ceiling, finalizing if it crossed.
+
+    The one metering site both write paths reach (basicly-7kxq). This used to be
+    inline in the supervised lane and nowhere else, so the single-track path
+    dispatched unmetered: basicly-23ep was driven through ``loop run``, recorded
+    403051 tokens against a derived trigger of 120000, and was neither finalized
+    early nor given a follow-up — the same work, at the same size, truncated under
+    ``supervise`` and completed under ``loop run``. A second copy in ``loop`` is how
+    the two paths would come to disagree again, so the supervisor calls this rather
+    than keeping its own (the same reuse ``loop._dispatch_refused`` makes of
+    :func:`admit_working_set`, for the same reason).
+
+    *landed* is the caller's answer to "did this run leave a coherent partial
+    landing?". A run that failed or stopped on a missing fact lands nothing, gets
+    re-dispatched, and must not pin a premature remainder bead through the
+    idempotence marker (design 7.6).
+    """
+    occupancy = runner.context_occupancy(spec, result)
+    ceiling = ceiling_tokens(spec, sizing)
+    overrun = occupancy is not None and occupancy >= ceiling
+    followup_id = (
+        finalize_followup(
+            repo_root, root_issue, issue_id, occupancy=occupancy or 0, ceiling=ceiling
+        )
+        if overrun and landed
+        else None
+    )
+    return CeilingVerdict(
+        occupancy=occupancy, ceiling=ceiling, overrun=overrun, followup_id=followup_id
+    )
+
+
 # --- The working-set band at dispatch (D8 at the dispatch, basicly-jr0l.16) ---
 #
 # The sizing governor refuses an out-of-band *plan* at decompose, and nothing used
@@ -2280,24 +2332,18 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
         policy.record_needs_input(repo_root, lane.issue_id, needs.fact)
         # And one decision-queue item (basicly-kjc5.4) for `loop answer`.
         decisions.enqueue(repo_root, lane.issue_id, "needs-input", needs.fact, needs.detail)
-    occupancy = runner.context_occupancy(spec, result)
-    ceiling = ceiling_tokens(spec, sizing)
-    overrun = occupancy is not None and occupancy >= ceiling
-    # The follow-up is tied to a coherent partial landing (design 7.6): a run
-    # that failed or stopped on a missing fact lands nothing, gets re-dispatched
-    # by the routing layer, and must not pin a premature remainder bead through
-    # the idempotence marker.
-    followup_id = (
-        finalize_followup(
-            repo_root,
-            session.root_issue,
-            lane.issue_id,
-            occupancy=occupancy or 0,
-            ceiling=ceiling,
-        )
-        if overrun and result.returncode == 0 and needs is None
-        else None
+    # A lane that failed or stopped on a missing fact lands nothing and gets
+    # re-dispatched by the routing layer, so it is not a coherent partial landing.
+    verdict = meter_context_ceiling(
+        repo_root,
+        session.root_issue,
+        lane.issue_id,
+        spec,
+        result,
+        sizing,
+        landed=result.returncode == 0 and needs is None,
     )
+    occupancy, overrun, followup_id = verdict.occupancy, verdict.overrun, verdict.followup_id
     if result.returncode != 0:
         detail = f"runner exited {result.returncode}"
     elif needs is not None:

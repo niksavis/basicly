@@ -8,6 +8,8 @@ phase forward — the handlers and derive_phase never disagree.
 
 from __future__ import annotations
 
+import json
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -28,7 +30,7 @@ from basicly import (
     verify,
     worktree,
 )
-from basicly.config import LOOP_PHASES, PolicyConfig, RunnerConfig, WorktreeConfig
+from basicly.config import LOOP_PHASES, PolicyConfig, RunnerConfig, SizingConfig, WorktreeConfig
 from basicly.loop_state import NodeState, RankedNode, WorktreeBinding
 from basicly.policy import DoRResult, GateStatus
 from basicly.worktree import Session
@@ -364,6 +366,187 @@ def _unhalted() -> policy.SpendStatus:
     return policy.SpendStatus(
         grant=policy.Grant(level="L1", token_budget=1_000_000), spent_tokens=0, halted=False
     )
+
+
+# --- The context ceiling meters this path too (basicly-7kxq) -----------------
+#
+# `ceiling_tokens`, `OVERRUN_MARKER` and `finalize_followup` lived in `supervise`
+# with a single call site, so the interactive path dispatched unmetered: basicly-23ep
+# was driven through `loop run`, recorded 403051 tokens of occupancy against a
+# derived trigger of 120000 — 3.4x over — and was neither finalized early nor given
+# a follow-up bead. It ran to completion and committed normally. A suite that
+# exercised only `supervise` is what let that ship, so these drive the single-track
+# path against a stubbed-low ceiling.
+
+
+class _CeilingBr:
+    """br stand-in for the finalize protocol: show, comments, create, dep add."""
+
+    def __init__(self) -> None:
+        self.created: list[list[str]] = []
+        self.deps: list[tuple[str, ...]] = []
+        self.comments: dict[str, list[str]] = {}
+
+    def __call__(self, _repo_root: Path, args: list[str], **_k) -> SimpleNamespace:
+        if args[:1] == ["show"]:
+            return SimpleNamespace(stdout=json.dumps([_CEILING_ISSUE | {"id": args[1]}]))
+        if args[:2] == ["comments", "list"]:
+            texts = self.comments.get(args[2], [])
+            return SimpleNamespace(stdout=json.dumps([{"text": text} for text in texts]))
+        if args[:2] == ["comments", "add"]:
+            self.comments.setdefault(args[2], []).append(args[3])
+            return SimpleNamespace(stdout="{}")
+        if args[:1] == ["create"]:
+            self.created.append(args)
+            return SimpleNamespace(stdout=json.dumps({"id": f"new-{len(self.created)}"}))
+        if args[:2] == ["dep", "add"]:
+            self.deps.append(tuple(args[2:]))
+            return SimpleNamespace(stdout="{}")
+        raise AssertionError(f"unexpected br call: {args}")
+
+
+_CEILING_ISSUE = {
+    "status": "in_progress",
+    "title": "Build the parser",
+    "issue_type": "task",
+    "priority": 0,
+    "acceptance_criteria": "- parses all three formats",
+    "description": "Work.\n\n## Scope\n\n- `src/a/**`\n",
+}
+
+
+def _pin_ceiling(monkeypatch: pytest.MonkeyPatch, ceiling: float) -> _CeilingBr:
+    """Pin the finalize trigger at *ceiling* of the window and fake the tracker."""
+    monkeypatch.setattr(
+        loop,
+        "load_sizing_config",
+        lambda *_a: SizingConfig(
+            working_set_min=8_000,
+            working_set_max=64_000,
+            build_factors={},
+            calibration_min_samples=10,
+            calibration_window=50,
+            context_ceiling=ceiling,
+        ),
+    )
+    br = _CeilingBr()
+    monkeypatch.setattr(supervise, "_run_br", br)
+    return br
+
+
+def _occupying(monkeypatch: pytest.MonkeyPatch, tokens: int) -> None:
+    """Dispatch a claude run whose last streamed turn occupied *tokens* of window."""
+    turn = json.dumps({"type": "assistant", "message": {"usage": {"input_tokens": tokens}}})
+    monkeypatch.setattr(
+        runner,
+        "run",
+        lambda spec, *_a, **_k: runner.RunResult(
+            spec.name, tuple(spec.command), executed=True, returncode=0, stdout=turn
+        ),
+    )
+
+
+def test_a_single_track_dispatch_over_the_ceiling_spins_exactly_one_followup(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The finalize protocol reaches the interactive dispatch, not just the supervised one.
+
+    Same outcome a supervised lane gets: the partial work still lands on the next
+    advance, and the remainder becomes one follow-up gated on this bead.
+    """
+    _ready_leaf(at, monkeypatch)
+    _pin_runner(monkeypatch, "claude")
+    br = _pin_ceiling(monkeypatch, 0.05)  # 200000-token window -> a 10000 trigger
+    _occupying(monkeypatch, 12_000)
+
+    result = _advance(tmp_path)
+
+    assert len(br.created) == 1, "exactly one follow-up carries the remainder"
+    create = br.created[0]
+    assert create[1] == "Follow-up: Build the parser (context-ceiling overrun)"
+    assert "--parent" not in create, "no session root named means the follow-up is top-level"
+    assert ("new-1", "i", "-t", "blocks") in br.deps
+    assert br.comments["i"][-1].startswith(supervise.OVERRUN_MARKER)
+    assert result.blocked
+    assert "crossed the context ceiling" in result.detail
+    assert "12000" in result.detail and "10000" in result.detail
+    assert "new-1" in result.detail
+
+
+def test_a_single_track_dispatch_under_the_ceiling_spins_nothing(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The control: a run inside the window finishes exactly as it did before."""
+    _ready_leaf(at, monkeypatch)
+    _pin_runner(monkeypatch, "claude")
+    br = _pin_ceiling(monkeypatch, 0.05)
+    _occupying(monkeypatch, 9_999)
+
+    result = _advance(tmp_path)
+
+    assert br.created == []
+    assert result.blocked and "finished in worktree" in result.detail
+    assert "context ceiling" not in result.detail
+
+
+def test_a_single_track_overrun_that_landed_nothing_spins_no_followup(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A run that stopped on a missing fact lands nothing to follow up (design 7.6).
+
+    It gets re-dispatched once the fact is supplied, and a remainder bead pinned by
+    the idempotence marker now would survive that re-dispatch.
+    """
+    wt = tmp_path / "wt"
+    (wt / needs_input.SENTINEL_FILE.parent).mkdir(parents=True)
+    at(_state("classify", issue_type="task"))
+    monkeypatch.setattr(policy, "definition_of_ready", lambda *_a: DoRResult(True, ()))
+    monkeypatch.setattr(worktree, "list_sessions", lambda *_a, **_k: [])
+    monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        worktree, "create", lambda name, **_k: replace(_session(name), worktree_path=str(wt))
+    )
+    _pin_runner(monkeypatch, "claude")
+    br = _pin_ceiling(monkeypatch, 0.05)
+    _occupying(monkeypatch, 12_000)
+    (wt / needs_input.SENTINEL_FILE).write_text(
+        '{"fact": "prod db dialect", "detail": "no vendor marker"}', encoding="utf-8"
+    )
+    monkeypatch.setattr(policy, "record_needs_input", lambda *_a: None)
+    monkeypatch.setattr(loop.decisions, "enqueue", lambda *_a, **_k: None)
+
+    result = _advance(tmp_path)
+
+    assert br.created == []
+    assert result.blocked and result.needs_input == "prod db dialect"
+
+
+def test_a_single_track_overrun_parents_its_followup_under_the_session_root(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`loop run --root <epic>` names the session, so the remainder is its sibling.
+
+    The reproduction ran `loop run basicly-23ep --root basicly-yc0x`; a supervised
+    lane's remainder is a top-level package under that same root, and this path has
+    no other candidate for one.
+    """
+    _ready_leaf(at, monkeypatch)
+    _pin_runner(monkeypatch, "claude")
+    br = _pin_ceiling(monkeypatch, 0.05)
+    _occupying(monkeypatch, 12_000)
+    monkeypatch.setattr(loop.policy, "spend_status", lambda *_a, **_k: _unhalted())
+    monkeypatch.setattr(
+        supervise,
+        "admit_working_set",
+        lambda *_a, **_k: supervise.WorkingSetAdmission("i", None, "", refused=False),
+    )
+    monkeypatch.setattr(supervise, "escalate_working_set", lambda *_a, **_k: None)
+
+    loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="epic")
+
+    create = br.created[0]
+    parent_at = create.index("--parent")
+    assert tuple(create[parent_at : parent_at + 2]) == ("--parent", "epic")
 
 
 def test_dispatch_prompt_documents_the_needs_input_protocol(
