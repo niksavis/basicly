@@ -70,6 +70,13 @@ class _FakeBr:
         # tracker's clock a test advances between writes.
         self.now = _EPOCH
         self.stamps: dict[int, str] = {}
+        # Which issue each written comment landed on, keyed by position like the
+        # stamps. A comment a test seeds directly has no owner and every issue reads
+        # it, which is what keeps the single-issue tests reading their own fixtures;
+        # a comment written through `comments add` is visible only on its own issue,
+        # so a check that must tell one bead's markers from another's can (the
+        # attribution in basicly-qorx writes to two beads in one call).
+        self.owners: dict[int, str] = {}
 
     def __call__(self, _repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
         if args[:1] == ["lint"]:
@@ -91,12 +98,14 @@ class _FakeBr:
             listing = [
                 {"text": text, "created_at": self.stamps.get(i, _EPOCH)}
                 for i, text in enumerate(self.comments)
+                if self.owners.get(i, args[2]) == args[2]
             ]
             return _Proc(json.dumps(listing))
         if args[:2] == ["comments", "add"]:
             # br comments add <id> <text> — the marker text is the last arg.
             self.comments.append(args[-1])
             self.stamps[len(self.comments) - 1] = self.now
+            self.owners[len(self.comments) - 1] = args[2]
             return _Proc("")
         raise AssertionError(f"unexpected br call: {args}")
 
@@ -1733,6 +1742,172 @@ def test_the_gate_override_is_scoped_to_its_gate_and_is_not_a_rework_credit(
     assert policy.rework_attempts(tmp_path, "i", "merge") == 0
     assert policy.rework_allowances(tmp_path, "i", "merge") == 0
     assert policy.rework_charged(tmp_path, "i", "merge") == 0
+
+
+# --- A shared-tracker gate belongs to the lane that declared it (basicly-qorx) --
+
+# The gate's own output, captured by running the live ceiling gate against a ceiling
+# the record contradicts. Observed, never composed — and the reason that matters here
+# rather than as a principle: pytest **elides the middle** of a long assertion repr,
+# so the `assert [...] == []` line carries a truncated id and neither signature
+# substring, and the full violation only ever appears on the "Left contains one more
+# item" line. A composed one-line fixture would have keyed the register on a shape
+# the gate never emits (the defect basicly-vkh0.6's test records).
+_CEILING_FAILURE = (
+    "    def test_probe() -> None:\n"
+    ">       assert T._ceiling_violations(T.REPO_ROOT, 72_000) == []\n"
+    "E       AssertionError: assert ['basicly-tcm...east 128,000'] == []\n"
+    "E         \n"
+    "E         Left contains one more item: 'basicly-tcmy.5 completed at an estimate "
+    "of 128,000, above working_set_max 72,000; raise it to at least 128,000'\n"
+    "E         Use -v to get more diff\n"
+)
+
+
+def test_a_tracker_wide_gate_failure_is_attributed_to_the_lane_that_declared_it() -> None:
+    """The reported defect: a sibling's landing failed on tcmy.5's finishing record.
+
+    Every lane in a supervised pass shares one `.beads` through the redirect, so the
+    ceiling asserts over tcmy.5's record inside tcmy.6's own landing. The culprit is
+    read off the gate's output, which names it.
+    """
+    found = policy.shared_tracker_gate_failure(_CEILING_FAILURE, "basicly-tcmy.6")
+
+    assert found is not None
+    assert found.culprits == ("basicly-tcmy.5",)
+    assert "shared tracker" in found.reason
+
+
+def test_a_lane_named_by_the_gate_itself_still_owns_the_failure() -> None:
+    """The control the acceptance criterion asks for: the declaration is still charged.
+
+    tcmy.5 is the lane that widened its own `## Scope`, and its own landing hits the
+    same assertion. Forgiving there would make the mechanism a way to launder any
+    tracker-wide failure — it must only ever move a charge off a bystander.
+    """
+    assert policy.shared_tracker_gate_failure(_CEILING_FAILURE, "basicly-tcmy.5") is None
+
+
+def test_output_the_register_does_not_recognise_is_the_lanes_own_failure() -> None:
+    """A whitelist, in the direction that matters: an ordinary red test is not forgiven."""
+    assert policy.shared_tracker_gate_failure("E   assert 3 == 4\n", "basicly-tcmy.6") is None
+    # Names a sibling, but on a line no signature matches: naming a bead is not by
+    # itself evidence that the assertion was tracker-wide.
+    assert (
+        policy.shared_tracker_gate_failure(
+            "E   assert basicly-tcmy.5 in changed\n", "basicly-tcmy.6"
+        )
+        is None
+    )
+
+
+def test_only_ids_of_the_shared_tracker_are_read_as_culprits() -> None:
+    """Prose on the failing line must not be mistaken for a bead id.
+
+    The extraction is safe only because the gate asserts over one tracker: every id
+    it can name carries the lane's own prefix. A hyphenated word (or another repo's
+    id) on the same line is not a culprit.
+    """
+    line = (
+        "E  AssertionError: assert ['other-tcmy.5 completed at an estimate of 9,000, "
+        "above working_set_max 8,000; raise it to at least 16,000 read-capped'] == []\n"
+    )
+    assert policy.shared_tracker_gate_failure(line, "basicly-tcmy.6") is None
+
+
+def test_the_attribution_lands_on_the_culprit_and_the_event_on_the_blocked_lane(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Both halves of the record, each on the bead it belongs to."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+
+    events = policy.record_shared_gate_failure(
+        tmp_path, "basicly-tcmy.6", "merge", ("basicly-tcmy.5",), "verify full failed on pytest"
+    )
+
+    assert events == 1
+    assert policy.shared_gate_events(tmp_path, "basicly-tcmy.6", "merge") == 1
+    blocked = [c for i, c in enumerate(fake.comments) if fake.owners[i] == "basicly-tcmy.6"]
+    culprit = [c for i, c in enumerate(fake.comments) if fake.owners[i] == "basicly-tcmy.5"]
+    assert len(blocked) == 1 and blocked[0].startswith(policy.SHARED_GATE_MARKER)
+    assert "culprits=basicly-tcmy.5" in blocked[0]
+    assert culprit == [f"{policy.GATE_INVALIDATED_MARKER} gate=merge lanes=basicly-tcmy.6"]
+
+
+def test_the_blocked_lane_is_charged_no_rework_for_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The defect in one assertion: tcmy.6 was charged 1/2 for a defect in no diff of its."""
+    _install(monkeypatch, _FakeBr())
+    policy.record_shared_gate_failure(tmp_path, "basicly-tcmy.6", "merge", ("basicly-tcmy.5",))
+
+    assert policy.rework_attempts(tmp_path, "basicly-tcmy.6", "merge") == 0
+    assert policy.rework_charged(tmp_path, "basicly-tcmy.6", "merge") == 0
+    assert policy.should_escalate(tmp_path, "basicly-tcmy.6", "merge", CONFIG) is False
+    # Nor is it counted as a flake: the two are cleared by opposite evidence.
+    assert policy.unreliable_gate_events(tmp_path, "basicly-tcmy.6", "merge") == 0
+
+
+def test_the_attribution_is_idempotent_while_the_event_counts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A landing is retried on every advance: the finding must not bury itself.
+
+    The counts differ deliberately — the culprit's attribution is one finding however
+    many landings hit it, while the blocked lane's events are what make a lane that
+    keeps being blocked by other lanes visible instead of merely slow.
+    """
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+
+    for _ in range(3):
+        policy.record_shared_gate_failure(tmp_path, "basicly-tcmy.6", "merge", ("basicly-tcmy.5",))
+
+    assert policy.shared_gate_events(tmp_path, "basicly-tcmy.6", "merge") == 3
+    culprit = [c for i, c in enumerate(fake.comments) if fake.owners[i] == "basicly-tcmy.5"]
+    assert len(culprit) == 1
+
+
+def test_the_shared_gate_event_is_scoped_to_its_gate(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A tracker-wide merge gate says nothing about the verify gate."""
+    _install(monkeypatch, _FakeBr())
+    policy.record_shared_gate_failure(tmp_path, "basicly-tcmy.6", "merge", ("basicly-tcmy.5",))
+    assert policy.shared_gate_events(tmp_path, "basicly-tcmy.6", "verify") == 0
+
+
+def test_all_three_gate_escalations_stay_distinguishable_in_one_queue() -> None:
+    """They ride one decision kind, so only the wording tells them apart.
+
+    A third question joins the two: wrong work, untrustworthy result, and another
+    lane's record. A driver acting on one must never parse it as either other.
+    """
+    shared = policy.shared_gate_escalation_question("merge", ("basicly-tcmy.5",))
+    unreliable = policy.unreliable_gate_escalation_question("merge")
+    rework = policy.rework_escalation_question("merge")
+
+    assert policy.gate_from_shared_gate_escalation(shared) == "merge"
+    assert policy.gate_from_shared_gate_escalation(unreliable) is None
+    assert policy.gate_from_shared_gate_escalation(rework) is None
+    assert policy.gate_from_unreliable_escalation(shared) is None
+    assert policy.gate_from_rework_escalation(shared) is None
+    # The lane that has to be fixed is named in the question, because the queue
+    # carries the wording and nothing else.
+    assert "basicly-tcmy.5" in shared
+
+
+def test_the_shared_gate_question_offers_no_remedy_the_engine_leaves_unimplemented() -> None:
+    """basicly-4tjt's defect, not repeated: `land anyway` is not on offer here.
+
+    The lane cannot fix a sibling's record or the constant it fails against, and the
+    landing override is spent against the unreliable-gate wording alone — so offering
+    it here would put a choice in the queue that nothing carries out.
+    """
+    shared = policy.shared_gate_escalation_question("merge", ("basicly-tcmy.5",))
+    assert "land anyway" not in shared.lower()
+    assert policy.answer_lands_anyway(shared) is False
 
 
 # --- A budget meters the grant, not the session's lifetime (basicly-jr0l.17) ---

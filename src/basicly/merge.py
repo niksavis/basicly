@@ -77,6 +77,17 @@ COUPLING_DEP_TYPE = "related"
 # three docs files and was escalated for an upstream tracker flake.
 VERIFY_UNRELIABLE = "verify-unreliable"
 
+# Status for a landing whose verify gate failed on a *tracker-wide* assertion that
+# another lane's finishing record invalidated. Distinct from "verify-failed" for the
+# same reason VERIFY_UNRELIABLE is, and from VERIFY_UNRELIABLE because the two are
+# cleared by opposite evidence: a flake stops reproducing, while a record in the
+# shared tracker is durable and reproduces forever. Every lane in a supervised pass
+# shares one `.beads` through the redirect, so one lane's declaration failed this
+# gate inside two siblings' landings and charged each of them a rework attempt for a
+# defect in neither diff (basicly-qorx). Nothing here faults the lane, so it spends
+# no rework; the culprits are carried on the result for the caller to attribute.
+VERIFY_FOREIGN = "verify-foreign"
+
 # Status for a lane whose branch moved after the queue was formed. The queue ranked
 # it, and every earlier check read it, in a state that no longer exists — landing it
 # would merge commits this pass never looked at (basicly-jr0l.46). Like "not-ready"
@@ -125,7 +136,7 @@ class MergeResult:
 
     name: str
     # "merged" | "not-ready" | "rebase-conflicts" | "verify-failed"
-    # | "verify-unreliable" | "merge-conflicts" | "merge-failed"
+    # | "verify-unreliable" | "verify-foreign" | "merge-conflicts" | "merge-failed"
     # | "stale-branch" | "merge-unproven" | "already-landed"
     status: str
     detail: str
@@ -133,6 +144,11 @@ class MergeResult:
     # the message) because the queue attributes the missed coupling from them
     # (D5); empty when git reported none.
     conflicts: tuple[str, ...] = ()
+    # Lanes whose records invalidated a tracker-wide gate, for VERIFY_FOREIGN.
+    # Carried as data for the same reason *conflicts* is: the caller records the
+    # attribution against them, and must not have to parse it back out of the
+    # message (basicly-qorx).
+    culprits: tuple[str, ...] = ()
 
     @property
     def merged(self) -> bool:
@@ -154,6 +170,17 @@ class MergeResult:
         return self.status == VERIFY_UNRELIABLE
 
     @property
+    def foreign(self) -> bool:
+        """True when the gate failed on another lane's record in the shared tracker.
+
+        No evidence against the lane's work either, so no caller may charge it a
+        rework attempt (basicly-qorx) — but unlike :attr:`unreliable` it will not
+        clear on a re-attempt, so a caller must attribute it to :attr:`culprits`
+        rather than merely defer.
+        """
+        return self.status == VERIFY_FOREIGN
+
+    @property
     def reached_gate(self) -> bool:
         """True when the landing got as far as running (or skipping) its verify gate.
 
@@ -165,7 +192,44 @@ class MergeResult:
         return self.status not in PRE_GATE_STATUSES
 
 
-def _verify_for_landing(name: str, worktree_path: Path, verify_mode: str) -> MergeResult | None:
+def _shared_tracker_failure(
+    repo_root: Path, report: verify.VerifyReport, bead: str
+) -> policy.SharedGateFailure | None:
+    """The tracker-wide failure *every* failing check in *report* is explained by.
+
+    Same bound as :func:`verify.dependency_defect`, and for the same reason: a run
+    that mixes a gate another lane's record invalidated with a real failure is a real
+    failure, so one unexplained check ends the forgiveness. Culprits and reasons are
+    merged across the checks so a report faulting two lanes attributes to both.
+
+    Every culprit must be a bead ``.beads/issues.jsonl`` actually holds, and that
+    check is not ceremony: pytest elides the middle of a long assertion repr, so a
+    truncated line can leave a *partial* id ("basicly-tcm") beside text the register
+    matches. Attributing to that would forgive a real failure and blame nothing, so an
+    unreadable workspace or an unknown id means the lane keeps the failure — the safe
+    direction, since the forgiveness is what needs proving.
+    """
+    failures = [r for r in report.results if r.status == "fail"]
+    if not failures:
+        return None
+    known = known_bead_ids(repo_root)
+    if known is None:
+        return None
+    culprits: list[str] = []
+    reasons: list[str] = []
+    for result in failures:
+        found = policy.shared_tracker_gate_failure(result.output or "", bead)
+        if found is None or not set(found.culprits) <= known:
+            return None
+        culprits += [one for one in found.culprits if one not in culprits]
+        if found.reason not in reasons:
+            reasons.append(found.reason)
+    return policy.SharedGateFailure(tuple(culprits), "; ".join(reasons))
+
+
+def _verify_for_landing(
+    repo_root: Path, name: str, worktree_path: Path, verify_mode: str, bead: str
+) -> MergeResult | None:
     """Re-verify the rebased worktree: a blocking result, or None when it may land.
 
     Evidence before blame. When the gate fails, exactly the checks that failed are
@@ -180,6 +244,13 @@ def _verify_for_landing(name: str, worktree_path: Path, verify_mode: str) -> Mer
     backwards clock step persists for a window, so re-running inside that window
     reproduces a failure the work under test could not have caused. The re-run
     captures its output for that second test; no other run's output is diverted.
+
+    A third way, on the same captured output and last because it is the narrowest: a
+    failure that reproduces, is ours rather than a dependency's, and asserts over the
+    whole shared tracker on a record belonging to some *other* lane
+    (:func:`_shared_tracker_failure`). That is not the lane's work failing either,
+    and it is why *bead* is required here — the lane's own id is what separates "your
+    declaration broke this" from "a sibling's did" (basicly-qorx).
     """
     report = verify.run_verify(worktree_path, verify_mode)
     if report.passed:
@@ -197,6 +268,15 @@ def _verify_for_landing(name: str, worktree_path: Path, verify_mode: str) -> Mer
             name,
             VERIFY_UNRELIABLE,
             f"verify {verify_mode} failed on {failures} — known dependency defect, {defect}",
+        )
+    if (shared := _shared_tracker_failure(repo_root, rerun, bead)) is not None:
+        return MergeResult(
+            name,
+            VERIFY_FOREIGN,
+            f"verify {verify_mode} failed on {failures} — invalidated in the shared "
+            f"tracker by {', '.join(shared.culprits)}, not by this lane's diff: "
+            f"{shared.reason}",
+            culprits=shared.culprits,
         )
     return MergeResult(name, "verify-failed", f"verify {verify_mode} failed: {failures}")
 
@@ -641,7 +721,7 @@ def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing inp
 
     # 2. Re-verify in the worktree after the rebase.
     if not override_gate:
-        gate = _verify_for_landing(name, worktree_path, verify_mode)
+        gate = _verify_for_landing(repo_root, name, worktree_path, verify_mode, bead)
         if gate is not None:
             return gate
 
@@ -678,11 +758,16 @@ class QueueResult:
         """True when the lane was not landable yet and simply stays queued.
 
         Covers every no-charge outcome: work not yet committed on the branch, a
-        branch that moved after the queue was formed (basicly-jr0l.46), and a gate
-        that failed without reproducing (basicly-55yh). None of the three faults the
-        lane, so none spends an attempt.
+        branch that moved after the queue was formed (basicly-jr0l.46), a gate that
+        failed without reproducing (basicly-55yh), and a tracker-wide gate another
+        lane's record invalidated (basicly-qorx). None of the four faults the lane,
+        so none spends an attempt.
         """
-        return self.result.status in ("not-ready", STALE_BRANCH) or self.result.unreliable
+        return (
+            self.result.status in ("not-ready", STALE_BRANCH)
+            or self.result.unreliable
+            or self.result.foreign
+        )
 
 
 def unmerged_paths(cwd: Path) -> tuple[str, ...]:
@@ -1038,6 +1123,19 @@ def merge_queue(
             policy.record_unreliable_gate(repo_root, bead, MERGE_GATE, result.detail)
             results.append(QueueResult(result))
             continue
+        if result.foreign:
+            # A tracker-wide gate failed on another lane's finishing record. No
+            # evidence against this lane, so charge nothing — attribute it to the
+            # lanes that did invalidate it (basicly-qorx). Deliberately `break`
+            # where an unreliable gate continues: the record is durable and the gate
+            # asserts over the whole shared tracker, so every lane behind this one
+            # would pay a full verify run to reach the identical verdict. That is the
+            # signal about the base stopping the pass exists for.
+            policy.record_shared_gate_failure(
+                repo_root, bead, MERGE_GATE, result.culprits, result.detail
+            )
+            results.append(QueueResult(result))
+            break
         if result.conflicted:
             collisions.append((len(results), bead, result.conflicts))
             results.append(_bounce_back(repo_root, bead, result, config))

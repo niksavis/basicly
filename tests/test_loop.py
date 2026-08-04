@@ -2359,6 +2359,113 @@ def test_a_chronically_unreliable_gate_escalates_instead_of_deferring_forever(
     # tracker is faked — asserting it here would drag a real br call into a unit test.
 
 
+# --- A shared-tracker gate is not this lane's failure (basicly-qorx) -----------
+
+
+def _foreign_landing(
+    monkeypatch: pytest.MonkeyPatch, *, queue: tuple[decisions.DecisionItem, ...] = ()
+) -> dict:
+    """Drive a landing whose gate another lane's record invalidated.
+
+    *queue* is what the bead's decision queue already holds, so the ask-once guard
+    can be exercised without a real tracker.
+    """
+    seen: dict = {"charged": [], "attributed": [], "enqueued": []}
+    attempt = merge.MergeResult(
+        "i",
+        merge.VERIFY_FOREIGN,
+        "verify full failed on pytest — invalidated in the shared tracker by "
+        "basicly-tcmy.5, not by this lane's diff",
+        culprits=("basicly-tcmy.5",),
+    )
+    monkeypatch.setattr(merge, "merge_worktree", lambda *_a, **_k: attempt)
+    monkeypatch.setattr(policy, "record_rework", lambda *a, **_k: seen["charged"].append(a) or 1)
+    monkeypatch.setattr(
+        policy,
+        "record_shared_gate_failure",
+        lambda *a, **_k: seen["attributed"].append(a) or 1,
+    )
+    monkeypatch.setattr(decisions, "items_on", lambda *_a, **_k: queue)
+    monkeypatch.setattr(
+        decisions,
+        "enqueue",
+        lambda _root, _issue, kind, question, *_a, **_k: seen["enqueued"].append((kind, question)),
+    )
+    return seen
+
+
+def test_a_gate_another_lanes_record_failed_spends_no_rework_and_names_that_lane(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The measured defect: two siblings were charged 1/2 for a declaration in neither diff.
+
+    Every lane in a supervised pass shares one `.beads` through the redirect, so the
+    working-set ceiling asserted over basicly-tcmy.5's finishing record inside the
+    landings of basicly-tcmy.6 and basicly-tcmy.22 as well.
+    """
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    seen = _foreign_landing(monkeypatch)
+
+    result = _advance(tmp_path)
+
+    assert result.blocked
+    assert seen["charged"] == []  # the whole point
+    assert [(one[1], one[2], one[3]) for one in seen["attributed"]] == [
+        ("i", merge.MERGE_GATE, ("basicly-tcmy.5",))
+    ]
+
+
+def test_it_escalates_on_the_first_occurrence_rather_than_after_a_bound(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A flake may clear itself on the next landing; a record in the tracker will not.
+
+    So the bound an unreliable gate gets would only delay the escalation — every
+    retry reaches the identical verdict (basicly-jr0l.16's reasoning about a
+    deterministic refusal).
+    """
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    seen = _foreign_landing(monkeypatch)
+
+    result = _advance(tmp_path)
+
+    assert len(seen["enqueued"]) == 1
+    kind, question = seen["enqueued"][0]
+    assert kind == policy.REWORK_ESCALATION_KIND
+    assert policy.gate_from_shared_gate_escalation(question) == merge.MERGE_GATE
+    assert "basicly-tcmy.5" in question
+    assert "escalated" in result.detail
+
+
+def test_an_answered_shared_gate_escalation_is_not_asked_again(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Ask once: an answered item re-opens under the next generation, which is a ladder.
+
+    The remedies are the human's to carry out and neither is on this lane's side, so
+    the answer cannot release the landing — the node holds on the answer it has
+    (basicly-tcmy.6's ladder, not repeated).
+    """
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    answered = decisions.DecisionItem(
+        decision_id="i#f1a5e",
+        issue_id="i",
+        kind=policy.REWORK_ESCALATION_KIND,
+        question=policy.shared_gate_escalation_question(merge.MERGE_GATE, ("basicly-tcmy.5",)),
+        detail="invalidated in the shared tracker by basicly-tcmy.5",
+        answer="fixed tcmy.5's record",
+        answered_by="human",
+    )
+    seen = _foreign_landing(monkeypatch, queue=(answered,))
+
+    result = _advance(tmp_path)
+
+    assert result.blocked
+    assert seen["enqueued"] == []
+    assert "already answered by human" in result.detail
+    assert seen["charged"] == []
+
+
 # --- ...and the escalation's `land anyway` is carried out (basicly-tcmy.6) ------
 #
 # The defect: answering only released the lane. The landing re-attempted, the same

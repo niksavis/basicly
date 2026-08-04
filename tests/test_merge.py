@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -1415,6 +1416,170 @@ def test_merge_queue_spends_no_rework_on_an_unreliable_gate(
     assert results[1].result.merged is True
     # Forgiven, but not silently: the flake is recorded so a chronic one is visible.
     assert [(a[1], a[2]) for a in flakes] == [("b1", merge.MERGE_GATE)]
+
+
+# --- A shared-tracker gate is not this lane's failure (basicly-qorx) ----------
+
+# The live ceiling gate's own output, captured by running it against a ceiling the
+# record contradicts, so the register is keyed on what pytest really emits: the
+# `assert [...] == []` line carries an elided id and neither signature substring, and
+# the whole violation appears only on the "Left contains one more item" line.
+_TRACKER_WIDE = (
+    "E       AssertionError: assert ['basicly-tcm...east 128,000'] == []\n"
+    "E         Left contains one more item: 'basicly-tcmy.5 completed at an estimate "
+    "of 128,000, above working_set_max 72,000; raise it to at least 128,000'\n"
+)
+
+
+def _tracker(tmp_path: Path, *bead_ids: str) -> None:
+    """Give *tmp_path* a `.beads/issues.jsonl` holding exactly *bead_ids*."""
+    beads = tmp_path / ".beads"
+    beads.mkdir(parents=True, exist_ok=True)
+    beads.joinpath("issues.jsonl").write_text(
+        "".join(json.dumps({"id": one}) + "\n" for one in bead_ids), encoding="utf-8"
+    )
+
+
+def _reproduced(output: str) -> verify.VerifyReport:
+    return verify.VerifyReport("full", (verify.CheckResult("pytest", "fail", 1, output=output),))
+
+
+@pytest.mark.usefixtures("base_ready")
+def test_merge_worktree_faults_the_lane_whose_record_failed_a_tracker_wide_gate(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The reported defect: tcmy.6's landing failed on tcmy.5's finishing record.
+
+    Every lane in a supervised pass shares one `.beads` through the redirect, so the
+    working-set ceiling asserts over tcmy.5's record inside tcmy.6's own landing. It
+    reproduces (the record is durable) and it is our gate, not a dependency's, so
+    neither existing forgiveness sees it.
+    """
+    _tracker(tmp_path, "basicly-tcmy.5", "basicly-tcmy.6")
+    monkeypatch.setattr(
+        merge, "git", _FakeGit({**_HAS_WORK, "status": _Proc(0, ""), "rebase": _Proc(0)})
+    )
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: _FAILED)
+    monkeypatch.setattr(verify, "rerun_failures", lambda *_a, **_k: _reproduced(_TRACKER_WIDE))
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-tcmy.6")
+
+    assert result.status == merge.VERIFY_FOREIGN
+    assert result.foreign is True and result.unreliable is False
+    # Carried as data, because the caller records the attribution against it.
+    assert result.culprits == ("basicly-tcmy.5",)
+    assert "basicly-tcmy.5" in result.detail and "not by this lane's diff" in result.detail
+
+
+@pytest.mark.usefixtures("base_ready")
+def test_merge_worktree_still_faults_the_lane_the_gate_names_itself(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The control: tcmy.5 widened its own scope, so tcmy.5 owns the failure.
+
+    This is the direction that makes the mechanism admissible. It may only ever move
+    a charge off a bystander and onto the declaration behind it.
+    """
+    _tracker(tmp_path, "basicly-tcmy.5")
+    monkeypatch.setattr(
+        merge, "git", _FakeGit({**_HAS_WORK, "status": _Proc(0, ""), "rebase": _Proc(0)})
+    )
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: _FAILED)
+    monkeypatch.setattr(verify, "rerun_failures", lambda *_a, **_k: _reproduced(_TRACKER_WIDE))
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-tcmy.5")
+
+    assert result.status == "verify-failed"
+    assert result.foreign is False
+
+
+@pytest.mark.usefixtures("base_ready")
+def test_merge_worktree_will_not_forgive_a_lane_a_truncated_id_names(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A partial id is not a culprit, so the lane keeps the failure.
+
+    pytest elides the middle of a long assertion repr, and a rendering that leaves
+    `basicly-tcm` beside text the register matches is a rendering this mechanism must
+    not act on: attributing there would forgive a real failure and blame a bead that
+    does not exist. The tracker's own id list is the check.
+    """
+    _tracker(tmp_path, "basicly-tcmy.5", "basicly-tcmy.6")
+    elided = (
+        "E       AssertionError: assert ['basicly-tcm...completed at an estimate of "
+        "128,000, above working_set_max 72,000'] == []\n"
+    )
+    monkeypatch.setattr(
+        merge, "git", _FakeGit({**_HAS_WORK, "status": _Proc(0, ""), "rebase": _Proc(0)})
+    )
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: _FAILED)
+    monkeypatch.setattr(verify, "rerun_failures", lambda *_a, **_k: _reproduced(elided))
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-tcmy.6")
+
+    assert result.status == "verify-failed"
+
+
+@pytest.mark.usefixtures("base_ready")
+def test_merge_worktree_will_not_forgive_a_run_that_also_failed_on_its_own_work(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Every failing check must be explained, or the run is a real failure.
+
+    Same bound the dependency register carries: a report mixing a tracker-wide gate
+    with an ordinary red test is an ordinary red test.
+    """
+    _tracker(tmp_path, "basicly-tcmy.5", "basicly-tcmy.6")
+    mixed = verify.VerifyReport(
+        "full",
+        (
+            verify.CheckResult("pytest", "fail", 1, output=_TRACKER_WIDE),
+            verify.CheckResult("ruff", "fail", 1, output="E   F401 unused import\n"),
+        ),
+    )
+    monkeypatch.setattr(
+        merge, "git", _FakeGit({**_HAS_WORK, "status": _Proc(0, ""), "rebase": _Proc(0)})
+    )
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: _FAILED)
+    monkeypatch.setattr(verify, "rerun_failures", lambda *_a, **_k: mixed)
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-tcmy.6")
+
+    assert result.status == "verify-failed"
+
+
+def test_merge_queue_spends_no_rework_on_another_lanes_declaration(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The measured defect: two siblings were each charged 1/2 for tcmy.5's declaration."""
+    outcomes = {
+        "a": merge.MergeResult(
+            "a",
+            merge.VERIFY_FOREIGN,
+            "invalidated in the shared tracker by basicly-tcmy.5",
+            culprits=("basicly-tcmy.5",),
+        ),
+        "b": merge.MergeResult("b", "merged", "ok"),
+    }
+    monkeypatch.setattr(merge, "merge_worktree", lambda _r, name, **_kwargs: outcomes[name])
+    charged: list = []
+    monkeypatch.setattr(policy, "record_rework", lambda *a, **_k: charged.append(a) or 1)
+    attributed: list = []
+    monkeypatch.setattr(
+        policy, "record_shared_gate_failure", lambda *a, **_k: attributed.append(a) or 1
+    )
+
+    results = merge.merge_queue(tmp_path, [("a", "basicly-tcmy.6"), ("b", "basicly-tcmy.22")])
+
+    assert charged == []  # the whole point
+    assert results[0].deferred and results[0].attempts == 0 and results[0].escalate is False
+    # `break`, not `continue`: the gate asserts over the whole shared tracker, so
+    # every lane behind this one would pay a full verify run for the same verdict.
+    assert [q.result.name for q in results] == ["a"]
+    # Forgiven, but attributed: the declaration that invalidated the gate is recorded.
+    assert [(one[1], one[2], one[3]) for one in attributed] == [
+        ("basicly-tcmy.6", merge.MERGE_GATE, ("basicly-tcmy.5",))
+    ]
 
 
 # --- Naming what blocked a tracker-state commit (basicly-f7li) ----------------

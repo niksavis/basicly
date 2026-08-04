@@ -1050,6 +1050,34 @@ def test_the_ceiling_gate_names_the_lane_and_the_value_it_requires(
     assert "raise it to at least 16,000" in violations[0]  # rounded up to a floor-unit
 
 
+def test_a_violation_of_this_gate_is_attributed_to_the_lane_it_names(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The gate's wording is a *contract* with the shared-tracker register (basicly-qorx).
+
+    This gate reads the whole tracker, and every lane in a supervised pass shares one
+    `.beads` through the redirect — so when one lane's finishing record fails it, the
+    identical failure appears inside every sibling's landing.
+    ``policy.shared_tracker_gate_failure`` is what keeps that from charging the
+    siblings rework, and it recognises the failure by matching this text and reading
+    the bead id out of it. Reword the violation and that forgiveness goes silently
+    inert, which is a defect no other test here can see.
+    """
+    _write(tmp_path, "src/a.py", 16_000)
+    body = decompose._child_body(_child("t", "src/a.py"))
+    _install(monkeypatch, _FakeBrShow({"b-1": ("task", body)}))
+    _export(tmp_path, {"id": "b-1", "issue_type": "task", "description": body})
+    _record_run_tokens(tmp_path, "b-1", 1_000, scope_tokens=4_000)
+
+    violation = _ceiling_violations(tmp_path, 8_000)[0]
+
+    attributed = policy.shared_tracker_gate_failure(violation, "b-2")
+    assert attributed is not None and attributed.culprits == ("b-1",)
+    # And the lane the violation names still owns it — the control that keeps this
+    # from being a way to launder any tracker-wide failure.
+    assert policy.shared_tracker_gate_failure(violation, "b-1") is None
+
+
 def test_a_decider_dispatch_is_not_evidence_about_how_big_a_lane_can_be(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
