@@ -143,12 +143,41 @@ tracker's edges rather than by eye — `br dep tree <id>`, not judgement.
 Tracked by `basicly-yc0x`. Track A's evidence was re-verified at `cbbd47a`, line by line; Track B's
 and Track D's rows carry their beads' own evidence and should be re-checked before they are worked.
 
-**Status after the 2026-08-03 session.** Four beads shipped — `gczc`, `tcmy.5`, `tcmy.6`,
-`tcmy.22` — at a measured cost of **68.9M tokens / $48.36**, which is the first honest per-lane
-price this project has: **~17M tokens and $12 per code lane**, not the ~1M an old dogfood total
-implied. Every budget figure written before that date was sized on the wrong prior.
+**Status after the 2026-08-04 session.** Six beads shipped — `23ep`, `7kxq`, `uexy`, `irrm`,
+`qorx`, `toj6` — at a measured **78.5M tokens / $59.65**, a mean of **13.1M and $9.94 per lane**
+across six samples. That supersedes the single-sample ~17M/$12 figure recorded on 2026-08-03: the
+spread is wide (5.6M to 25.1M) and the mean is roughly half the top of it, so **size a pass on the
+mean and treat any single lane as a poor estimator of the next one**. Every dispatch metered
+`estimated: False`, so `gczc`'s meter fix holds across all seven.
 
-Three findings from that session outrank the beads they came from, and two are new P0s:
+**The 2026-08-03 rows below are corrected, not just extended.** `tcmy.5`, `tcmy.6` and `tcmy.22`
+were recorded as SHIPPED; each in fact crossed the context ceiling and **finalized early**, leaving
+`tcmy.39`, `tcmy.38` and `tcmy.37` to carry the remainder. They are partial landings. The cause was
+not their size — see `23ep` below.
+
+**The finding that reorders everything (`23ep`, closed).** `runner.py` declared the claude context
+window as **200000** while the dispatched model (Claude Opus 5) has **1000000**, so the finalize
+trigger sat at 120000 instead of ~600000 and **truncated healthy lanes for months** — twelve
+`(context-ceiling overrun)` follow-up beads, eight still open at the time. The repo's own telemetry
+had refuted the constant all along: a recorded occupancy of 223221 cannot fit a 200000 window. The
+fix declares the window per agent in `basicly.toml`, records its provenance, and ships
+`runner.window_violations` so the declaration is falsifiable against the ledger. **Validated on this
+session's own six lanes**: occupancies of 403051, 208904, 200996, 173228, 128113 and 123312 — every
+one over the old trigger, none near the corrected one. Six of six would have been spuriously
+truncated. Zero new overrun follow-ups were spun.
+
+**Its sibling (`7kxq`, closed).** Probing `23ep`'s gate showed the finalize protocol had exactly one
+caller, in `supervise.py` — so the **single-track `loop run` path recorded occupancy and never acted
+on it**. The two write paths disagreed about a bead's fate for reasons unrelated to the bead. Both
+now share one `meter_context_ceiling`. This was Phase S's shape exactly, an instrument built and
+never connected, and `uexy`'s gate would have caught it.
+
+**Deferred out of the release, deliberately:** `o486` (P2) carries the working-set band's own
+calibration — the band gates on a proxy running 3.16x–12.72x low against measured occupancy across
+nine pairs, and `config.py`'s maximum was derived by re-applying the estimator to its own output. It
+is blocked on `23ep` because calibrating against a trigger that was wrong by 5x would fit the error.
+
+Three findings from the 2026-08-03 session still stand, and one is the remaining P0:
 
 - **`tcmy.34` (P0, blocks `u6jq.1`)** — the dispatch forecast is **269× low at the median** over
   14 paired records (range 1×–591×). The narrowing that makes it tractable: the engine already
@@ -173,17 +202,27 @@ answered `retry` granted one further attempt instead of instantly re-escalating.
 
 ### Track A — lights-out blockers, and they gate the proof run
 
-All six now carry a `blocks` edge into `basicly-u6jq.1`, so the tracker refuses to hand out the
-proof run first.
+Each carries a `blocks` edge into `basicly-u6jq.1`, so the tracker refuses to hand out the proof run
+first. **`jr0l.65` is the only one still open.**
+
+One structural note earned the hard way on 2026-08-04: `supervise` fans out over a root's
+`parent-child` dependents, so a release epic that declares its blockers as `blocks` edges has **no
+children and cannot be a pass root at all**. `yc0x` was filed that way and `preflight` reported
+`0 open child(ren)`. Membership is now expressed as `parent-child`, which costs nothing — an epic
+with open children does not close either — and the four beads adopted had no parent of their own, so
+§14's rule that phase membership is a label rather than a re-parenting is intact. Attempting both at
+once is refused as a cycle.
 
 | Bead | Evidence at `cbbd47a` | Fix shape |
 | --- | --- | --- |
 | ~~**`gczc`** P0~~ **SHIPPED 2026-08-03** | `decisions.py:655` calls `runner.run` with no `capture_usage`. `policy.py:1305-1319`: one `estimated=True` record that is not `unstarted` sets `halted=True`. So one delegated decision ends the grant. | **Not a one-liner.** With `capture_usage=True`, claude's stdout becomes a JSON envelope and `decisions.parse_verdict` (`:562`) takes first-`{`→last-`}`, so it would parse the envelope and fail closed to abstain. `rubrics.py:281` omits the flag for exactly that reason. Root fix: a `result_text(spec, stdout)` unwrapper in `runner` (claude-json → `.result`, stream-json → last result event, codex-jsonl → last message; copilot's `--session-id` never touches stdout) with both call sites routed through it. Fallback: treat a corpus-bounded decider floor like `unstarted` — cheaper, but it under-meters a real agent run, so record that. |
 | ~~**`tcmy.5`** P1~~ **SHIPPED 2026-08-03** | `loop.py:627` records `phase="build"`; `supervise.py:2120,2226` record `phase="lane"`. `decompose.unsized_lane_tokens` reads only `lane`; `calibrated_build_factors` filters on no phase at all, so decider and rubric dispatches are build-factor samples. | One named write-phase set read by both consumers, and a seeded factor recorded as seeded rather than measured. Same family as `z2wi`: a number compared against a number denominated in a different quantity. |
 | ~~**`tcmy.6`** P1~~ **SHIPPED 2026-08-03** | `policy.gate_from_unreliable_escalation` (`policy.py:560`) has zero production callers — only `tests/test_loop.py:2171` and `tests/test_policy.py:1689`. `cli.py:3421` calls `gate_from_rework_escalation`, whose regex does not match the unreliable question. | Answering "land anyway" implements nothing, so the flake re-trips and the identical question re-enqueues under the next generation. Carry out the override once, or stop offering it. |
-| **`jr0l.65`** P1 | `_live_session_violations` (`policy.py:1394`) counts needs-input markers by text; only `_issue_is_closed` (`:1430`) discounts them. | Discount an *answered* marker exactly as a closed bead's is. `decisions.answer` already writes a second marker with the same id, so resolution is readable. Smallest item in the track. |
-| **`toj6`** P1 | `supervise.py:321` defines open children as `status != "closed"`, so a `deferred` bead is sized into the band, counted in `children_open`, and included in the funding forecast. | Exclude `deferred`. Leave the unsized-child question to `jr0l.61`. |
-| **`qorx`** P1 | `DEFAULT_WORKING_SET_MAX` derives from the largest completed estimate, which is a function of the lane's own `## Scope` — which a lane may rewrite while running, and `fcls` did. | Bound the ratchet; the design currently punishes accurate scope reporting. Pair with `jr0l.54` (verify the declared scope at landing instead of trusting it at decompose). |
+| **`jr0l.65`** P1 — **the only Track A item left** | `_live_session_violations` counts needs-input markers by text; only `_issue_is_closed` discounts them. **Line refs re-verified 2026-08-04 and corrected on the bead**: the two functions are at `policy.py:1438` and `policy.py:375`, not the `1394`/`1430` this row cited. | Discount an *answered* marker exactly as a closed bead's is — a third case of the rule both docstrings already state, that a marker on closed work is history rather than live state. `decisions.answer` writes a second marker with the same id, so resolution is readable and no schema growth is needed. Smallest item in the track. |
+| ~~**`toj6`** P1~~ **SHIPPED 2026-08-04** | `supervise.py:321` defined open children as `status != "closed"`, so a `deferred` bead was sized into the band, counted in `children_open`, and funded. | Excluded `deferred`. The unsized-child question stays with `jr0l.61`. |
+| ~~**`qorx`** P1~~ **SHIPPED 2026-08-04, re-scoped first** | The row below described the *ratchet*, and that half moved to `o486`: `23ep` replaced the derivation, which removed the self-declared input. | What actually shipped is the half the bead never carried, though `config.py`'s comment claimed it did — **the cross-lane blast radius**. A pass shares one `.beads`, so `tcmy.5`'s failing record charged rework to two siblings for a defect in neither diff. Now attributed to the lane whose declaration invalidated the gate. |
+| ~~**`23ep`** P0~~ **SHIPPED 2026-08-04** | Filed this session. `runner.py` declared claude's window at 200000 against a dispatched 1000000, so the finalize trigger sat at 120000 and truncated healthy lanes; the ledger already refuted it at 223221 occupancy. | Window declared per agent in `basicly.toml` with recorded provenance, plus `runner.window_violations` to keep the declaration falsifiable against the ledger. **Do not re-fix by writing a bigger constant** — that is the same unchecked declaration one generation on. |
+| ~~**`7kxq`** P1~~ **SHIPPED 2026-08-04** | Filed this session, found by probing `23ep`'s gate. The finalize protocol had one caller, so the single-track `loop run` path measured occupancy and never acted on it. | One shared `meter_context_ceiling` called from both write paths, replacing the supervised path's inline copy — a duplicated ceiling is how the two came to disagree. |
 
 ### Track B — close Phase S: the gates that never existed
 
@@ -196,20 +235,31 @@ until 2026-08-03.
 
 | Bead | Work |
 | --- | --- |
-| **`uexy`** P1 | **Wired-or-deleted.** Nothing merges without a reference from outside its own module and outside `tests/`. Wire `vulture` here — it is declared at `pyproject.toml:37` and called from nowhere, so the gate's first finding is the dependency that proves the gate was missing. Expect deletions — the 2026-08-02 evidence pass counted 11 commands, 19 config keys, 12 record fields and 16 never-varied parameters with no caller outside their own module. `tcmy.21` is the deletion half. |
-| **`irrm`** P1 | **Exercised-or-unproven.** No release tag while a shipped capability has zero executions in the ledger. This is the deterministic form of the rule that a capability claim on a consumer-facing surface must be exercised before it is published. |
+| ~~**`uexy`** P1~~ **SHIPPED 2026-08-04** | **Wired-or-deleted.** `vulture` was declared at `pyproject.toml:37` and called from nowhere; it now runs as a declared verify check and the gate fails on a symbol referenced only inside its own module or under `tests/`. `tcmy.21` remains the deletion half. |
+| ~~**`irrm`** P1~~ **SHIPPED 2026-08-04** | **Exercised-or-unproven.** No release tag while a shipped capability has zero executions in the ledger — the deterministic form of the rule that a consumer-facing capability claim must be exercised before it is published. **Its inventory surfaced a live false claim**: 221 dispatch records hold only `claude` and `manual`, so `codex` and `copilot` have never run while the README advertises all three; 8 of 34 skills and none of the 8 shipped tool skills are exercised. Recorded as its own finding, not silently absorbed. |
 | ~~**`tcmy.22`** P1~~ **SHIPPED 2026-08-03** | **Fix the suite the release rests on.** The git stub returns `_Proc(0)` for any unstubbed subcommand across 35 instantiations in `test_merge.py` alone; `work_repo` copytrees 331 MB including the live tracker DB and the gitignored local overlay; `conftest.py` resets neither `runner._BUDGET` nor `session._OVERRIDES`. |
 | **`m4zv.14`** P1 | **Signature-forgiveness half only.** The machine-global `~/.beads/.write.lock` makes the pytest gate flaky and each flake spends a rework attempt against a cap of 2. The root fix is the `v0.8.0` flip, so one more release pays the flake — but a recognised signature must stop it charging rework. |
 
 ### Track C — the release event
 
-**`u6jq.1`** — re-run the dogfood shape as a supervised multi-lane run. **Now blocked on
-`tcmy.34`** (the 269× forecast miss), added 2026-08-03: a proof run measured through that forecast
-measures the forecast. Note the ceiling this row still cites is stale against the measured price —
-one code lane is ~17M tokens, so a three-lane proof needs ~55M, not 10M. It doubles as the telemetry run for the tracker surface. Run it **after**
-Track A, behind `basicly loop preflight` and the forecast gate: the first attempt cost $34.16 for
-46.0M tokens, 13.7× the 3.36M baseline, and failed its criterion. **Cost is bounded by sizing the
-work, never by interrupting a working agent.**
+**`u6jq.1`** — re-run the dogfood shape as a supervised multi-lane run. **Two open blockers as of
+2026-08-04**: `tcmy.34` (the 269× forecast miss — a proof run measured through that forecast measures
+the forecast) and `jr0l.65`. Everything else that gated it has closed.
+
+Size it on the six-lane mean of **13.1M tokens / $9.94**, so a three-lane proof needs ~40M — not the
+10M this row once cited, and not the ~55M implied by the single 25.1M outlier. It doubles as the
+telemetry run for the tracker surface. Run it behind `basicly loop preflight` and the forecast gate:
+the first attempt cost $34.16 for 46.0M tokens, 13.7× the 3.36M baseline, and failed its criterion.
+**Cost is bounded by sizing the work, never by interrupting a working agent.**
+
+**What the 2026-08-04 session already demonstrated, short of the criterion.** A four-lane supervised
+pass ran `uexy`, `irrm`, `qorx` and `toj6` concurrently through the serial merge queue to `done: yes`
+with no human editing code, and a preceding two-lane sequence landed `23ep` and `7kxq` — six beads,
+zero new overrun follow-ups, every dispatch metered. That is not `u6jq.1`: the pass needed **three
+human approvals** (the L3 grant, its top-up, and the epic's own `decompose` checkpoint, which a
+covering grant cannot serve itself), and the criterion is zero interventions attributable to a
+*harness defect*. Those three are gates working as designed, so the honest reading is that the
+remaining distance is `tcmy.34` and `jr0l.65`, not the fan-out mechanics.
 
 ### Track D — bug fillers, opportunistic
 
@@ -431,6 +481,17 @@ Rules any release must honour. Each exists because breaking it cost a session or
 - **Assert a platform difference by injection, not by racing.** Make the platform difference test
   data; a passing local `pyright --pythonplatform Windows` is false comfort.
 - **A wall-clock timestamp is evidence; nothing branches on it.**
+- **A constant describing an external capability must be falsifiable against our own ledger.** It is
+  the one class of value that is *correct when written* and rots silently as the vendor ships, so no
+  gate catches it and no review re-reads it. `claude`'s context window sat at 200000 against a
+  dispatched 1000000 for months while the run records held occupancies above 200000 — a contradiction
+  that was mechanically detectable the whole time — and it truncated healthy lanes into twelve
+  follow-up beads (`23ep`). Where a field measures the same quantity a constant declares, wire the
+  comparison as a check; and fix such a constant by *declaring* it with recorded provenance, never by
+  pasting in a fresher number.
+- **A recurring follow-up shape is a symptom, not a workload.** Twelve beads named the truncation and
+  none asked why the trigger fired. Before working a queue of look-alike items, suspect the mechanism
+  that spawns them.
 
 ## 11. Document disposal register
 
