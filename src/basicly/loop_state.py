@@ -39,6 +39,45 @@ PHASES = ("intake", "classify", "decompose", "build", "verify", "ship", "done")
 # so the schema lives here.
 WORKTREE_REF_PREFIX = "worktree:"
 
+# The ``br`` status vocabulary this repo knows, per ``br schema`` ($defs/Status).
+# Named so the dispatch rule below can be written as the set it *admits*: the
+# rule used to read ``status != "closed"``, which silently admitted every status
+# beads added after it was written (basicly-toj6).
+KNOWN_STATUSES = frozenset({
+    "open",
+    "in_progress",
+    "blocked",
+    "deferred",
+    "draft",
+    "closed",
+    "tombstone",
+    "pinned",
+})
+
+# The statuses under which a child is a candidate for sizing, funding and
+# dispatch — and, the same thing read the other way, still holds its parent open.
+# What is left out, and why:
+#   closed, tombstone - terminal; the work is over.
+#   deferred          - parked by a human. Admitting it made deferring a no-op:
+#                       the bead stayed in the band table, counted toward the
+#                       open-child total, and drew a per-lane assumption into the
+#                       `cap x per-lane` forecast, so a deferred bead could
+#                       refuse a pass its ready siblings could afford.
+DISPATCHABLE_STATUSES = frozenset({"open", "in_progress", "blocked", "draft", "pinned"})
+
+
+def is_dispatchable(status: str) -> bool:
+    """True when a child in *status* may be sized, funded and dispatched.
+
+    ``br`` lets a project define its own statuses (``workflow.status_groups.ready``
+    in ``.beads/policy.yaml``, e.g. ``rework``), so a status outside
+    :data:`KNOWN_STATUSES` is admitted rather than dropped: refusing an unknown
+    status would both defund real work and let its parent fan in over it. The
+    refusals are therefore exactly the named non-dispatchable statuses, each one a
+    deliberate decision recorded above :data:`DISPATCHABLE_STATUSES`.
+    """
+    return status in DISPATCHABLE_STATUSES or status not in KNOWN_STATUSES
+
 
 # --- Worktree binding (external_ref) ----------------------------------------
 

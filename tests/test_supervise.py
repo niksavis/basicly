@@ -295,6 +295,38 @@ def test_derive_session_done_when_all_children_closed(
     assert supervise.derive_session(tmp_path, "closed-root").done is True
 
 
+def test_a_deferred_child_is_neither_sized_nor_holds_the_session_open(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A bead a human deferred is out of the candidate set at both sites (basicly-toj6).
+
+    ``open_children`` was ``status != "closed"``, and beads has more non-closed
+    statuses than that. So deferring a child removed it from nothing: preflight
+    sized it into the band table, counted it in ``open child(ren)``, and drew a
+    per-lane assumption for it into the pass forecast — a deferred bead could
+    refuse a pass its ready siblings could afford. The same property is the fan-in,
+    so an epic whose only survivor was deferred could never reach done either.
+    """
+    issues = {
+        "epic": _issue("epic", children=(("epic.1", "closed"), ("epic.2", "deferred"))),
+        "epic.2": _issue("epic.2", "deferred"),
+        # The control, so a rule that simply dropped every child would fail here:
+        # an open sibling is still a candidate and still holds the session open.
+        "control": _issue("control", children=(("control.1", "closed"), ("control.2", "open"))),
+        "control.2": _issue("control.2", "open"),
+    }
+    monkeypatch.setattr(supervise, "_run_br", _FakeBrShow(issues))
+    _fake_sessions(monkeypatch, set())
+
+    deferred_only = supervise.derive_session(tmp_path, "epic")
+    control = supervise.derive_session(tmp_path, "control")
+
+    assert deferred_only.open_children == ()
+    assert deferred_only.done is True
+    assert control.open_children == ("control.2",)
+    assert control.done is False
+
+
 def test_new_session_id_binds_root_and_varies() -> None:
     """Session ids carry the root issue and differ per start."""
     first = supervise.new_session_id("epic")
@@ -857,10 +889,10 @@ def test_finalize_followup_keeps_every_flag_next_to_its_value(
 # --- Ready lanes and concurrent dispatch ---------------------------------------
 
 
-def _lane(issue_id: str, live: bool = True) -> supervise.AdoptedLane:
+def _lane(issue_id: str, live: bool = True, status: str = "in_progress") -> supervise.AdoptedLane:
     return supervise.AdoptedLane(
         issue_id=issue_id,
-        status="in_progress",
+        status=status,
         binding=loop_state.WorktreeBinding(issue_id, f"harness/{issue_id}"),
         live=live,
     )
@@ -925,6 +957,25 @@ def test_ready_lanes_filters_blocked_and_dead_and_orders_by_rank(
     ready = supervise.ready_lanes(Path(), _session(*lanes))
 
     assert [lane.issue_id for lane in ready] == ["epic.4", "epic.1"]
+
+
+def test_ready_lanes_take_no_runner_for_a_deferred_lane(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A lane deferred mid-flight is still adopted, but never dispatched (basicly-toj6).
+
+    Adoption and dispatch are deliberately different questions here: dropping the
+    deferred lane from ``derive_session`` would hide its worktree from the merge
+    queue and from binding repair, so it stays adopted — it just takes no runner.
+    ``epic.1`` is the control: an identical live lane that is not deferred still
+    dispatches, so this cannot pass by returning nothing.
+    """
+    lanes = (_lane("epic.1"), _lane("epic.2", status="deferred"))
+    _patch_readiness(monkeypatch, ranked=((1, "epic.1"), (2, "epic.2")))
+
+    ready = supervise.ready_lanes(Path(), _session(*lanes))
+
+    assert [lane.issue_id for lane in ready] == ["epic.1"]
 
 
 def test_dispatch_lanes_runs_concurrently_up_to_the_cap(

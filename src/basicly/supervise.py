@@ -317,12 +317,24 @@ class SessionState:
 
     @property
     def open_children(self) -> tuple[str, ...]:
-        """Ids of the session's children that are not closed."""
-        return tuple(cid for cid, status in self.children if status != "closed")
+        """Ids of the children this session may still size, fund and dispatch.
+
+        The admitted statuses are named by
+        :func:`loop_state.is_dispatchable` rather than excluded one at a time.
+        A ``deferred`` child is not one of them, at either of the two sites that
+        read this: it is left out of the band table, the open-child total and the
+        ``cap x per-lane`` forecast, and it does not hold the session open below
+        (basicly-toj6).
+        """
+        return tuple(cid for cid, status in self.children if loop_state.is_dispatchable(status))
 
     @property
     def done(self) -> bool:
-        """True when the session's work is finished (root closed, or no open child)."""
+        """True when the session's work is finished (root closed, or no open child).
+
+        Fan-in reads the same rule as dispatch, so an epic whose only remaining
+        child is one somebody deferred completes instead of waiting on it forever.
+        """
         if self.root_status == "closed":
             return True
         return bool(self.children) and not self.open_children
@@ -1624,6 +1636,10 @@ def ready_lanes(
 
     *skip* drops lanes the caller is handling without a runner this pass — the
     ones carried forward to land (basicly-kjc5.18).
+
+    A lane whose status is not dispatchable (``deferred``) is still *adopted* —
+    dropping it from :func:`derive_session` would hide its worktree from landing
+    and from binding repair — but it takes no runner here (basicly-toj6).
     """
     blocked = set(loop_state.blocked_ids(repo_root))
     ranks = {node.issue_id: node.rank for node in loop_state.ready_ranked(repo_root)}
@@ -1631,6 +1647,7 @@ def ready_lanes(
         lane
         for lane in session.adopted
         if lane.live
+        and loop_state.is_dispatchable(lane.status)
         and lane.issue_id not in blocked
         and lane.issue_id not in skip
         # A lane waiting on a queued judgment must not burn a dispatch that
