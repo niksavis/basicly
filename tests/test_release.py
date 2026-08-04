@@ -9,6 +9,7 @@ where a test is not about them, and exercised directly where it is.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -18,7 +19,7 @@ import pytest
 
 from basicly import commit as commit_mod
 from basicly import policy as policy_mod
-from basicly import release
+from basicly import release, tracker_usage, usage
 from basicly.config import PolicyConfig
 
 CURRENT = "0.5.1"
@@ -209,6 +210,142 @@ def test_every_refusal_is_reported_from_one_run(repo: Path) -> None:
     result = release.run_release(repo, plan, issue_id="fx-1")
 
     assert len(result.refusals) >= 2
+
+
+# --- Exercised-or-unproven: no tag for a capability nothing ever ran (basicly-irrm) ---
+#
+# The refusal is proved by *planting* an unexercised capability, and each planting test
+# carries its positive control: a gate that refuses a planted zero and also refuses an
+# exercised one is not reading the ledger at all.
+
+
+def _declare_check(repo: Path, name: str, command: list[str]) -> None:
+    """Declare one `[[verify.checks]]` capability in the fixture, tree left clean."""
+    rendered = ", ".join(f'"{arg}"' for arg in command)
+    (repo / "basicly.toml").write_text(
+        f'[[verify.checks]]\nname = "{name}"\ncommand = [{rendered}]\nmodes = ["full"]\n',
+        encoding="utf-8",
+    )
+    _commit_fixture(repo)
+
+
+def _record_tool_executions(repo: Path, counts: dict[str, int]) -> None:
+    """Plant the `tool-usage` hook's counters, in the shape the hook writes them."""
+    usage_file = repo / usage.USAGE_FILE
+    usage_file.parent.mkdir(parents=True, exist_ok=True)
+    usage_file.write_text(
+        json.dumps({
+            tool: {"count": count, "last_used": "2026-07-26"} for tool, count in counts.items()
+        }),
+        encoding="utf-8",
+    )
+    _commit_fixture(repo)
+
+
+def _commit_fixture(repo: Path) -> None:
+    """Commit whatever a helper just planted.
+
+    The real `.basicly/usage/` self-ignores, so planting there never dirties this repo;
+    the fixture has no such ignore, and an uncommitted file would trip the clean-tree
+    refusal and mask the one under test.
+    """
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", "chore: plant a capability")
+
+
+@pytest.mark.usefixtures("no_regen")
+def test_a_planted_unexercised_capability_refuses_the_release(repo: Path) -> None:
+    """The acceptance criterion: a declared capability nothing ever ran blocks the tag."""
+    _declare_check(repo, "planted", ["never-run-tool"])
+    # A counter the hook created and never incremented is not an execution, so the zero
+    # must refuse exactly as an absent key does.
+    _record_tool_executions(repo, {"ruff": 12, "never-run-tool": 0})
+    plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
+
+    result = release.run_release(repo, plan, issue_id="fx-1")
+
+    assert result.refused
+    assert any("'planted'" in r and "'never-run-tool'" in r for r in result.refusals)
+    # Refused before the first byte: no bump, no tag, nothing to undo.
+    assert release.read_version(repo) == CURRENT
+    assert _git(repo, "status", "--porcelain").strip() == ""
+    assert "v0.6.0" not in _git(repo, "tag", "--list")
+
+
+def test_an_exercised_capability_does_not_block_the_tag(repo: Path) -> None:
+    """The positive control: with an execution recorded, the same shape passes."""
+    _declare_check(repo, "planted", ["recorded-tool"])
+    _record_tool_executions(repo, {"recorded-tool": 1})
+    plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
+
+    result = release.run_release(repo, plan, issue_id="fx-1", dry_run=True)
+
+    assert not result.refused, result.refusals
+
+
+def test_a_capability_the_committed_tracker_ledger_witnesses_counts_as_exercised(
+    repo: Path,
+) -> None:
+    """The tracker ledger is the committed half, so it must count as evidence.
+
+    A machine that never typed `br` in a shell has no counter for it, and reading only
+    the counters would refuse a release over a capability the ledger proves ran — the
+    false refusal a one-sided read produces.
+    """
+    _declare_check(repo, "tracker-gate", ["br", "gate", "report"])
+    (repo / tracker_usage.LEDGER_FILE).parent.mkdir(parents=True, exist_ok=True)
+    (repo / tracker_usage.LEDGER_FILE).write_text(
+        '{"binary":"br","subcommand":"gate report","site":"engine","ok":true}\n', encoding="utf-8"
+    )
+    _commit_fixture(repo)
+    plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
+
+    result = release.run_release(repo, plan, issue_id="fx-1", dry_run=True)
+
+    assert not result.refused, result.refusals
+
+
+@pytest.mark.usefixtures("no_regen")
+def test_a_declared_capability_with_no_ledger_at_all_is_refused(repo: Path) -> None:
+    """Absence of a record is not evidence of an execution, so the gate fails closed."""
+    _declare_check(repo, "planted", ["ruff"])
+    plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
+
+    result = release.run_release(repo, plan, issue_id="fx-1")
+
+    assert result.refused
+    assert any("no execution ledger" in r and "unproven" in r for r in result.refusals)
+    assert release.read_version(repo) == CURRENT
+
+
+def test_a_repo_that_declares_no_capability_is_not_refused(repo: Path) -> None:
+    """A consumer with no `[verify]` section published no claim for this gate to hold."""
+    assert release.shipped_capabilities(repo) == ()
+    plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
+
+    assert not release.run_release(repo, plan, issue_id="fx-1", dry_run=True).refused
+
+
+def test_this_repos_own_capability_inventory_is_never_empty() -> None:
+    """The other half of the empty-inventory rule: here, the gate must have teeth.
+
+    An inventory that names nothing refuses nothing, which is exactly how the import
+    contract reported `1 kept, 0 broken` for months. Asserted against the real tree, so
+    it fails if `[[verify.checks]]` is emptied or the reader stops finding it.
+
+    It deliberately does *not* assert the inventory is fully exercised: the counters are
+    machine-local and git-ignored, so that assertion would pass here and fail in CI.
+    """
+    capabilities = release.shipped_capabilities(Path(__file__).resolve().parents[1])
+
+    labels = {label for label, _ in capabilities}
+    assert {
+        f"{release.CAPABILITY_VERIFY_CHECK} 'pytest'",
+        f"{release.CAPABILITY_VERIFY_CHECK} 'projection-permissions'",
+    } <= labels
+    # A capability with no witness can never be refused, so the inventory would have
+    # teeth in name only.
+    assert all(witness for _, witness in capabilities)
 
 
 # --- The generated artefacts must survive this repo's own gates ---------------
