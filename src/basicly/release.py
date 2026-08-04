@@ -23,6 +23,14 @@ against being a linked worktree. That ordering is the whole design: a release th
 fails halfway leaves a bumped version and a regenerated projection with no commit,
 and recovering from that needs a destructive git command.
 
+**A tag may not publish an unexercised capability claim** (basicly-irrm). Every
+capability the repo *declares* it ships must have at least one recorded execution in
+the ledgers already on disk, and one that has none refuses the release naming it. That
+is the deterministic form of this repo's own rule that a capability claim on a
+consumer-facing surface must be exercised before it is published — a false claim in
+code is caught by a gate, one in a README is caught by a consumer — and it is the
+shape every Phase S defect had: an instrument built, shipped, and never run.
+
 One precondition is deliberately *not* re-run here: the deterministic verify suite.
 The `release-process` skill opens with "confirm required checks pass", and they are
 — by the `pre-commit` hooks on this run's own commit and by `pre-push` on the push
@@ -42,8 +50,8 @@ from datetime import date as date_cls
 from pathlib import Path
 
 from . import commit as commit_mod
-from . import merge, policy, worktree
-from .config import PolicyConfig
+from . import merge, policy, tracker_usage, usage, worktree
+from .config import PolicyConfig, load_verify_config
 
 # The version is single-sourced here and flows into every generated header
 # (`renderers.common.generated_header`), so a bump is one edit plus a regeneration.
@@ -195,6 +203,129 @@ def plan_release(repo_root: Path, version: str, *, date: str | None = None) -> R
     )
 
 
+# --- Exercised-or-unproven: no tag for a capability nothing ever ran (basicly-irrm) ---
+
+# The one kind of capability the repo declares today. Named so a second kind is an
+# entry rather than a second copy of the gate.
+CAPABILITY_VERIFY_CHECK = "verify check"
+
+
+@dataclass(frozen=True)
+class ShippedCapability:
+    """A capability the repo declares it ships, and the ledger key that proves it ran."""
+
+    kind: str
+    name: str
+    # The key :func:`recorded_executions` would carry it under.
+    witness: str
+
+
+def shipped_capabilities(repo_root: Path) -> tuple[ShippedCapability, ...]:
+    """The capabilities *repo_root* declares it ships, derived from its committed config.
+
+    **Derived, never hand-listed.** A curated inventory can be curated down to nothing
+    and then passes forever, which is the vacuous-instrument defect this gate exists to
+    remove: the import contract forbade modules that cannot exist and reported ``1 kept,
+    0 broken`` for months while proving nothing.
+
+    Today the declaration is the ``[[verify.checks]]`` gate set — each check names an
+    executable the repo commits to running, so a check whose tool has never executed
+    here is a gate that is declared and does nothing (``permissions-check`` shipped
+    wired to no gate; ``vulture`` is declared at ``pyproject.toml:37`` and called from
+    nowhere).
+
+    The witness is the check's own ``command[0]``, the executable it invokes, which is
+    the same reading the recorder makes — the ``tool-usage`` hook credits the head token
+    of a pipeline segment. A check that hides its real work behind a wrapper (``uv run
+    python .scripts/...``) is therefore witnessed by the *wrapper*, which is weaker
+    evidence than a check naming its own tool; that is a property of how the command is
+    declared, and the fix is the declaration, not a second parser here.
+
+    Empty for a repo that declares no checks: a consumer with no ``[verify]`` section
+    has made no capability claim for this gate to hold, and refusing its release would
+    be the gate inventing a requirement instead of reading one. ``test_release.py`` holds
+    the other half — that *this* repo's inventory is never empty — because an inventory
+    that names nothing cannot refuse anything.
+    """
+    return tuple(
+        ShippedCapability(kind=CAPABILITY_VERIFY_CHECK, name=check.name, witness=check.command[0])
+        for check in load_verify_config(repo_root).checks
+    )
+
+
+def recorded_executions(repo_root: Path) -> dict[str, int] | None:
+    """Executions per capability key across the ledgers on disk, or None with no ledger.
+
+    Both halves, unioned here rather than inside either one: :mod:`basicly.usage` and
+    :mod:`basicly.tracker_usage` are independent siblings in the engine's bottom tier
+    (``.importlinter``), so neither may read the other, and this module is the consumer
+    that legitimately reads both. Skipping a half would fabricate a refusal from evidence
+    that exists.
+
+    * the ``tool-usage`` hook's counters, keyed by the executable name as the recorder
+      wrote it — ``ruff``, ``basicly``, and ``skill:<slug>`` for a skill invocation. A
+      counter the hook created and never incremented is dropped: a zero is not an
+      execution.
+    * the tracker ledger's measured surfaces (:func:`tracker_usage.surface_executions`),
+      which is the *committed* half and so answers on a machine whose counters are empty.
+
+    ``None`` means no ledger exists at all, and the caller must keep it apart from a
+    recorded zero: absence of a record is not evidence that a capability ran. Both are
+    read from *repo_root* — the counters because the hook writes them into the checkout's
+    own ``.basicly/usage/``, and a release is refused from a linked worktree anyway.
+
+    A dispatch record (:mod:`basicly.run_record`) is deliberately not folded in: nothing
+    in the inventory is witnessed by an agent dispatch, and a key nobody writes would
+    read as a measured zero.
+    """
+    counters = usage.load_usage(repo_root)
+    surfaces = tracker_usage.surface_executions(repo_root)
+    if counters is None and not surfaces:
+        return None
+    counts: dict[str, int] = {}
+    for name, entry in (counters or {}).items():
+        if not isinstance(entry, dict):
+            continue
+        count = entry.get("count")
+        if isinstance(count, int) and not isinstance(count, bool) and count > 0:
+            counts[str(name)] = count
+    for key, calls in surfaces.items():
+        counts[key] = counts.get(key, 0) + calls
+    return counts
+
+
+def unexercised_capabilities(repo_root: Path) -> tuple[str, ...]:
+    """Reasons a tag would publish an unproven capability claim, in report order.
+
+    Fails closed on missing evidence. With capabilities declared and no ledger at all,
+    every one of them is *unproven* rather than exercised, so the release refuses and
+    says which ledger it looked for — the alternative reads a git-ignored file's absence
+    as a pass, which is precisely how a gate ends up green while doing nothing.
+
+    Reported one line per capability rather than one aggregate line, for the reason
+    :func:`blocking_reasons` reports all of its reasons together: each names a distinct
+    thing a human fixes, by exercising it or by dropping the claim.
+    """
+    capabilities = shipped_capabilities(repo_root)
+    if not capabilities:
+        return ()
+    counts = recorded_executions(repo_root)
+    if not counts:
+        return (
+            f"no execution ledger at {usage.USAGE_FILE.as_posix()} or "
+            f"{tracker_usage.LEDGER_FILE.as_posix()}, so every declared capability is "
+            f"unproven ({len(capabilities)} declared): exercise them on this machine and "
+            "re-run (`basicly usage report` shows what is recorded)",
+        )
+    return tuple(
+        f"unexercised capability: {capability.kind} {capability.name!r} — the usage "
+        f"ledger records no execution of {capability.witness!r}; exercise it or drop "
+        "the claim before tagging"
+        for capability in capabilities
+        if counts.get(capability.witness, 0) <= 0
+    )
+
+
 def blocking_reasons(repo_root: Path, plan: ReleasePlan, *, issue_id: str) -> tuple[str, ...]:
     """Deterministic reasons this release cannot proceed, in report order.
 
@@ -248,6 +379,7 @@ def blocking_reasons(repo_root: Path, plan: ReleasePlan, *, issue_id: str) -> tu
             f"unknown bead id {issue_id!r}: not in .beads/issues.jsonl — the "
             "beads-commit-msg gate would reject the release commit"
         )
+    reasons.extend(unexercised_capabilities(repo_root))
     return tuple(reasons)
 
 

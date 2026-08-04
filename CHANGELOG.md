@@ -236,6 +236,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   measured is worse than no figure. An unpredictable metric prints as `unknown`
   rather than as a confident zero (`basicly-jr0l.21`).
 
+- **`basicly release` refuses to tag while a shipped capability has zero recorded
+  executions.** Exercised-or-unproven: the capabilities the repo *declares* it ships are
+  derived from its own `[[verify.checks]]` and each is looked up in the ledgers already on
+  disk — the `tool-usage` counters and the committed tracker-surface ledger. One with no
+  execution refuses the release naming it, alongside every other pre-flight refusal and
+  before the first byte is written.
+
+  It is the deterministic form of the rule that a capability claim on a consumer-facing
+  surface must be exercised before it is published: a false claim in code is caught by a
+  gate, one in a README is caught by a consumer. The gate **fails closed** — declared
+  capabilities with no ledger at all are unproven, not exercised, because reading a
+  git-ignored file's absence as a pass is how a gate ends up green while doing nothing.
+  The inventory is derived rather than curated for the same reason: a hand-listed one can
+  be curated down to nothing and then passes forever (`basicly-irrm`).
+
 ### Changed
 
 - **A run record carries the context the lane actually consumed.** `RunRecord` has

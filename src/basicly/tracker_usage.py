@@ -485,3 +485,33 @@ def access_ratio(rows: list[SurfaceRow]) -> dict[str, int]:
     for row in rows:
         totals[row.access] += row.calls
     return dict(totals)
+
+
+# --- Recorded executions, read by the exercised-or-unproven gate (basicly-irrm) ---
+
+
+def surface_executions(repo_root: Path) -> dict[str, int]:
+    """Calls per measured surface, keyed as the release gate's evidence map wants them.
+
+    Two keys per surface — ``"<binary> <subcommand>"`` (``br show``, ``bv
+    --robot-next``) and the bare binary — because the two answer different questions and
+    both are asked. A frozen-surface question is about the pair; the
+    exercised-or-unproven gate (:func:`basicly.release.unexercised_capabilities`) asks
+    whether an *executable* ever ran, and this ledger is the committed half of that
+    evidence: a machine that never typed ``br`` in a shell has no counter for it, so
+    reading only the counters would refuse a release over a capability this ledger
+    proves ran.
+
+    Empty rather than None for an unrecorded repo. The gate's None — *no ledger at all,
+    so nothing is proven* — is a judgement over both ledgers, so the caller that reads
+    both makes it; this half cannot tell "never recorded" from "recorded nothing", and
+    inventing the distinction here would put two authorities on it.
+
+    :func:`summarize` already resolves ledger versus spool and the worktree redirect, so
+    this adds a key shape and nothing else.
+    """
+    counts: dict[str, int] = {}
+    for row in summarize(repo_root):
+        for key in (f"{row.binary} {row.subcommand}", row.binary):
+            counts[key] = counts.get(key, 0) + row.calls
+    return counts

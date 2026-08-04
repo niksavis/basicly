@@ -391,3 +391,30 @@ def test_access_ratio_totals_calls_per_class(repo: Path) -> None:
         tracker_usage.record(repo, "br", args, site=tracker_usage.SITE_ENGINE)
 
     assert tracker_usage.access_ratio(tracker_usage.summarize(repo)) == {"read": 2, "write": 1}
+
+
+# --- Surface executions, the release gate's committed evidence (basicly-irrm) ---
+
+
+def test_surface_executions_is_empty_without_a_ledger(repo: Path) -> None:
+    """Empty, never None — the no-evidence-at-all judgement spans both ledgers.
+
+    So the caller that reads both owns it, and this half never claims it.
+    """
+    assert tracker_usage.surface_executions(repo) == {}
+
+
+def test_surface_executions_credits_the_surface_and_the_bare_binary(repo: Path) -> None:
+    """The bare binary is a key too, so `br` is provable from the committed ledger.
+
+    Otherwise a machine that never typed `br` in a shell has no evidence for it and the
+    release gate refuses over a capability this ledger proves ran.
+    """
+    tracker_usage.record(repo, "br", ["show", "fx-1", "--json"], site=tracker_usage.SITE_ENGINE)
+    tracker_usage.record(repo, "br", ["gate", "report"], site=tracker_usage.SITE_ENGINE)
+
+    assert tracker_usage.surface_executions(repo) == {
+        "br show": 1,
+        "br gate report": 1,
+        "br": 2,
+    }
