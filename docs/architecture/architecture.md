@@ -526,6 +526,29 @@ set locally replaces the shared key wholesale (a local `checks`/`agents` list is
 concatenated). Projection config (`[paths]`, `[catalog]`) shapes repo-committed
 outputs, so it is repo-level only and never reads the overlay.
 
+**Both files are schema-checked on every load** (`config.CONFIG_SCHEMA`): an
+unrecognised section or key raises, naming the file, the containing section, what
+that section accepts, and which sections accept a name like it. A key the engine
+ignores leaves the file stating one behaviour and the engine performing another,
+and in the gitignored overlay there is no diff to review and no other gate — the
+symptom is only ever the default the key was written to replace. The schema is an
+allowlist over the whole config _surface_, not over this module's loaders: two
+entries (`[[verify.checks]]`, re-parsed by the pre-commit hook runner, and
+`[[privacy.denied]]`, read only by `internal-info-scan.py`) have no reader in
+`config.py` at all.
+
+_Forward compatibility._ The refusal is unconditional — no warn-then-error staging,
+no narrowing to near-misses of a known key — so a repo pinned to an older basicly
+whose config carries a key added since fails until it upgrades or removes the key.
+That cost is accepted because the alternative is the silent divergence above, and
+it is bounded by the message, which names the engine's version and says upgrading
+is one of the two fixes. Staging was rejected as unendable (the engine ships from
+`main`, so a warn phase has no graduation point) and unread (the reported incident
+already printed a visibly wrong number that was skimmed past); near-miss narrowing
+was rejected because it leaves a genuinely novel key silent, which is the same hole
+one generation on. Surfaced by every command, and as a first-line verdict rather
+than a traceback in `basicly loop preflight`.
+
 #### 4.4 Generated artifacts
 
 ```text

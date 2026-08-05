@@ -72,6 +72,7 @@ from .config import (
     load_verify_config,
     load_worktree_config,
     record_technology_selection,
+    unknown_config_keys,
 )
 from .hooks import (
     check_copilot_hooks,
@@ -3079,6 +3080,16 @@ def _cmd_loop_preflight(args: argparse.Namespace) -> int:
     """
     repo_root = _repo_root()
     blockers: list[str] = []
+
+    # First, and with an early return: every loader below refuses an unrecognised
+    # config name (basicly-1piy), so without this the report would die of an
+    # exception on the runner line and answer none of its other questions.
+    if unknown := unknown_config_keys(repo_root):
+        for problem in unknown:
+            print(f"config:    INVALID - {problem}")
+        print("VERDICT:   not ready - a config file declares a name this basicly cannot honour")
+        return 1
+    print("config:    recognised")
 
     dirty = worktree.git(["status", "--porcelain"], cwd=repo_root, check=False).stdout.strip()
     if dirty:

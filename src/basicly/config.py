@@ -6,7 +6,7 @@ import tomllib
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from . import permissions, session
+from . import __version__, permissions, session
 from .models import ModelResolutionError
 from .runner import (
     AGENT_TIER,
@@ -561,6 +561,250 @@ class ProjectPaths:
         return self.core_root.parent / "state" / "install.json"
 
 
+@dataclass(frozen=True)
+class _Table:
+    """The shape one TOML table accepts: keys, sub-tables, and arrays of tables."""
+
+    keys: frozenset[str] = frozenset()
+    tables: dict[str, _Table] = field(default_factory=dict)
+    arrays: dict[str, _Table] = field(default_factory=dict)
+    # The key names here are the consumer's to choose — an agent name, a loop
+    # phase, a task class — so there is no vocabulary to check them against at
+    # this layer. Each such table has its own validator downstream that names what
+    # it will accept ([runner] context_windows raises on an unknown agent;
+    # policy.evidence_status refuses an unusable phase).
+    open_keys: bool = False
+
+
+_OPEN_TABLE = _Table(open_keys=True)
+
+_VERIFY_CHECK_TABLE = _Table(
+    keys=frozenset({"name", "command", "modes", "staged_suffix", "fix_command"})
+)
+
+_RUNNER_AGENT_TABLE = _Table(
+    keys=frozenset({
+        "name",
+        "command",
+        "prompt_via",
+        "model",
+        "tier",
+        "vendor",
+        "sandbox",
+        "approval",
+        "deny_style",
+        "git_name",
+        "git_email",
+        "usage_format",
+        "context_window",
+    })
+)
+
+_SIZING_TABLE = _Table(
+    keys=frozenset({
+        "working_set_min",
+        "working_set_max",
+        "calibration_min_samples",
+        "calibration_window",
+        "context_ceiling",
+        "unsized_lane_quantile",
+    }),
+    tables={"build_factor": _OPEN_TABLE},
+)
+
+# Every section and key basicly.toml / basicly.local.toml may declare (basicly-1piy).
+#
+# An allowlist rather than a denylist of known-bad names, because a denylist is
+# silent on exactly the case that produced this bead: a key nobody thought to list.
+# The two entries here whose reader is not this module are the reason a denylist
+# could not work either way — `[[verify.checks]]` is re-parsed by the pre-commit
+# hook runner and `[[privacy.denied]]` is read *only* by
+# `.basicly/core/hooks/internal-info-scan.py`, so a schema derived from this
+# module's own loaders would have started rejecting a working machine-local gate.
+#
+# FORWARD COMPATIBILITY — the stance, and why this one:
+#
+# An unrecognised name is a hard error, in both files, with no warn-then-error
+# staging and no near-miss narrowing. The cost is real and accepted: a repo pinned
+# to an older basicly whose config carries a key added since fails every command
+# until it upgrades the engine or removes the key.
+#
+# That is the correct answer rather than a regression. An engine that cannot honour
+# a key and runs anyway leaves the config stating one behaviour and the engine
+# performing another, with no diff to review — which is this bead, and is the same
+# reasoning `[runner] context_windows` (basicly-23ep) and `[catalog] technologies`
+# already ship. A declaration whose only symptom is the silent default it was
+# written to replace is the defect it was meant to fix.
+#
+# The two alternatives were weighed and rejected:
+#
+# * Warn-then-error. A warning line is what gets skimmed, and the reported incident
+#   already had a visibly wrong number in the output — `forecast: ... all 5 lanes`
+#   after the override was written to make it 2 — which was read straight past. A
+#   warning would have been read the same way. Staging also needs a release to
+#   graduate, and this engine ships from `main`, so the warn phase would have no
+#   defined end.
+# * Erroring only on a near-miss of a known key. It would have caught this bead's
+#   own case, but it leaves a genuinely novel key silent, which is the same hole one
+#   generation on, and it makes the gate's coverage depend on a distance threshold
+#   no author can predict from their own typo.
+#
+# What makes the strict stance survivable is the message: it names the file, the
+# name, the sections that do accept it, and this engine's version, so the
+# version-skew case is diagnosed by the failure itself rather than investigated.
+CONFIG_SCHEMA: dict[str, _Table] = {
+    "paths": _Table(
+        keys=frozenset({"core_fragments", "overlay_fragments", "targets", "templates", "manifest"})
+    ),
+    "catalog": _Table(keys=frozenset({"technologies"})),
+    "worktree": _Table(keys=frozenset({"base_branch", "concurrency"})),
+    "verify": _Table(arrays={"checks": _VERIFY_CHECK_TABLE}),
+    "policy": _Table(
+        keys=frozenset({
+            "required_gates",
+            "max_rework",
+            "autonomy",
+            "notify_command",
+            "decider_max_decisions",
+            "max_subtasks_per_lane",
+            "scope_collision",
+        }),
+        tables={"evidence": _OPEN_TABLE, "sizing": _SIZING_TABLE},
+    ),
+    "runner": _Table(
+        keys=frozenset({
+            "default",
+            "decider",
+            "runner_timeout",
+            "max_agent_processes",
+            "stall_after",
+            "default_tier",
+            "copilot_session_store",
+        }),
+        tables={"context_windows": _OPEN_TABLE},
+        arrays={"agents": _RUNNER_AGENT_TABLE},
+    ),
+    # Read by .basicly/core/hooks/internal-info-scan.py, never by this module: the
+    # denylist is machine-local by design, so the only file it can live in is the
+    # gitignored overlay this schema also governs.
+    "privacy": _Table(arrays={"denied": _Table(keys=frozenset({"name", "token"}))}),
+}
+
+_ROOT_TABLE = _Table(tables=CONFIG_SCHEMA)
+
+
+def _config_documents(repo_root: Path) -> dict[str, dict]:
+    """Every config file that exists, parsed, keyed by filename, lowest layer first."""
+    documents: dict[str, dict] = {}
+    for filename in (CONFIG_FILE, LOCAL_CONFIG_FILE):
+        config_path = repo_root / filename
+        if config_path.exists():
+            documents[filename] = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    return documents
+
+
+def unknown_config_keys(repo_root: Path) -> list[str]:
+    """Every name in the config files this engine does not recognise (basicly-1piy).
+
+    One message per offending name, each naming the file, the containing section,
+    what that section does accept, and — the part that turns a refusal into a fix —
+    which sections accept a name like it. Empty when both files are clean.
+
+    Public because ``basicly loop preflight`` reports it as a blocker rather than
+    letting the loaders raise mid-report: preflight's whole contract is a checklist
+    ending in a verdict, and an exception thrown out of the middle of it answers
+    none of the remaining questions.
+    """
+    return _problems(_config_documents(repo_root))
+
+
+def _problems(documents: dict[str, dict]) -> list[str]:
+    """Every unrecognised name across already-parsed *documents*."""
+    return [
+        problem
+        for filename, data in documents.items()
+        for problem in _unknown_in_table(filename, data, _ROOT_TABLE, "")
+    ]
+
+
+def _unknown_in_table(filename: str, table: dict, schema: _Table, path: str) -> list[str]:
+    """Recursively collect the names *table* declares that *schema* does not accept."""
+    problems: list[str] = []
+    for name, value in table.items():
+        child = f"{path}.{name}" if path else str(name)
+        if name in schema.tables and isinstance(value, dict):
+            problems += _unknown_in_table(filename, value, schema.tables[name], child)
+        elif name in schema.arrays and isinstance(value, list):
+            for entry in value:
+                if isinstance(entry, dict):
+                    problems += _unknown_in_table(filename, entry, schema.arrays[name], child)
+        elif name in schema.keys or name in schema.tables or name in schema.arrays:
+            # A recognised name carrying the wrong TOML type: the loader that reads
+            # it decides what to do with that, and every one of them either falls
+            # back with a documented stance or raises. Not this pass's question.
+            continue
+        elif not schema.open_keys:
+            problems.append(_unknown_message(filename, name, value, schema, path))
+    return problems
+
+
+def _unknown_message(filename: str, name: object, value: object, schema: _Table, path: str) -> str:
+    """The refusal for one unrecognised *name*, including where it would be accepted."""
+    kind = "section" if isinstance(value, dict) else "key"
+    if path:
+        accepted = ", ".join(sorted(schema.keys | set(schema.tables) | set(schema.arrays)))
+        message = f"{filename}: unknown {kind} {name!r} in [{path}]; [{path}] accepts {accepted}"
+    else:
+        sections = ", ".join(f"[{section}]" for section in sorted(CONFIG_SCHEMA))
+        message = f"{filename}: unknown {kind} {name!r}; this file's sections are {sections}"
+
+    hints = _accepting_clause(name, "")
+    # A misplaced *section* is the reported failure — `[loop] concurrency` written
+    # for `[worktree] concurrency` — and there the name worth locating is the one
+    # inside it, not the section that has no home at all.
+    if isinstance(value, dict):
+        hints += [clause for key in value for clause in _accepting_clause(key, "its ")]
+    if hints:
+        message += " - " + "; ".join(hints)
+    return message
+
+
+def _accepting_clause(name: object, prefix: str) -> list[str]:
+    """``["its 'concurrency' is accepted in [worktree]"]``, or empty if nothing accepts it."""
+    where = _accepting(name)
+    return [f"{prefix}{name!r} is accepted in {', '.join(where)}"] if where else []
+
+
+def _accepting(name: object) -> list[str]:
+    """Rendered paths of every schema table that accepts a key called *name*."""
+    found: list[str] = []
+
+    def walk(schema: _Table, path: str, array: bool) -> None:
+        if name in schema.keys:
+            found.append(f"[[{path}]]" if array else f"[{path}]")
+        for child, table in schema.tables.items():
+            walk(table, f"{path}.{child}" if path else child, False)
+        for child, table in schema.arrays.items():
+            walk(table, f"{path}.{child}" if path else child, True)
+
+    walk(_ROOT_TABLE, "", False)
+    return sorted(found)
+
+
+def _validated_documents(repo_root: Path) -> dict[str, dict]:
+    """:func:`_config_documents`, refusing any file that declares a name we cannot honour."""
+    documents = _config_documents(repo_root)
+    if problems := _problems(documents):
+        raise ValueError(
+            "\n".join(problems)
+            + f"\nbasicly {__version__} refuses a config name it cannot honour rather than "
+            "ignoring it, because an ignored key leaves the file stating one behaviour and "
+            "the engine performing another. Remove or correct the name, or upgrade basicly "
+            "if it comes from a newer version."
+        )
+    return documents
+
+
 def _harness_section(repo_root: Path, name: str) -> dict:
     """The named harness section, with later layers overriding earlier ones.
 
@@ -572,13 +816,14 @@ def _harness_section(repo_root: Path, name: str) -> dict:
     concatenated). A missing file or a non-table section contributes nothing. Only
     harness sections go through this merge — projection config ([paths],
     [catalog]) reads basicly.toml alone.
+
+    Both files are schema-checked here, on every load and whichever section is
+    asked for: the whole point of basicly-1piy is that a key in a section this
+    caller never reads is exactly the one that goes unnoticed.
     """
     merged: dict = {}
-    for filename in (CONFIG_FILE, LOCAL_CONFIG_FILE):
-        config_path = repo_root / filename
-        if not config_path.exists():
-            continue
-        section = tomllib.loads(config_path.read_text(encoding="utf-8")).get(name, {})
+    for data in _validated_documents(repo_root).values():
+        section = data.get(name, {})
         if isinstance(section, dict):
             merged.update(section)
     merged.update(session.overrides_for(name))
@@ -909,13 +1154,15 @@ def load_technology_selection(repo_root: Path) -> frozenset[str] | None:
 
     Returns ``None`` when no selection is recorded (everything ships). Raises
     ``ValueError`` on a malformed or out-of-vocabulary selection — a typo that
-    silently dropped catalog content must never pass unnoticed.
+    silently dropped catalog content must never pass unnoticed — and on an
+    unrecognised name in *either* config file, including the overlay this loader
+    does not itself read (basicly-1piy): `basicly check` reaches the loaders on
+    this side, and it is where a bad overlay has to surface.
     """
-    config_path = repo_root / CONFIG_FILE
-    if not config_path.exists():
+    data = _validated_documents(repo_root).get(CONFIG_FILE)
+    if data is None:
         return None
 
-    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
     section = data.get("catalog", {})
     if not isinstance(section, dict) or "technologies" not in section:
         return None
@@ -1346,7 +1593,12 @@ def _apply_context_windows(specs: dict[str, RunnerSpec], section: dict) -> None:
 
 
 def load_project_paths(repo_root: Path) -> ProjectPaths:
-    """Load path settings from basicly.toml, falling back to defaults."""
+    """Load path settings from basicly.toml, falling back to defaults.
+
+    Schema-checks the overlay as well as basicly.toml (basicly-1piy), even though
+    [paths] is repo-level and never reads it: this is the loader `basicly build`
+    and `basicly check` go through, so it is the one that has to notice.
+    """
     defaults = ProjectPaths(
         core_fragments_dir=Path(".basicly/core/fragments"),
         overlay_fragments_dirs=(Path(".basicly-local/fragments"),),
@@ -1356,11 +1608,10 @@ def load_project_paths(repo_root: Path) -> ProjectPaths:
         legacy_fragments_dir=Path(".basicly/fragments"),
     )
 
-    config_path = repo_root / CONFIG_FILE
-    if not config_path.exists():
+    data = _validated_documents(repo_root).get(CONFIG_FILE)
+    if data is None:
         return defaults
 
-    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
     paths = data.get("paths", {})
     if not isinstance(paths, dict):
         return defaults

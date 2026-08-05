@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
+import basicly
 from basicly import permissions, run_record, runner
 from basicly.config import (
     CONFIG_FILE,
+    CONFIG_SCHEMA,
     DEFAULT_CONFIG_TOML,
     DEFAULT_MAX_AGENT_PROCESSES,
     DEFAULT_STALL_AFTER,
@@ -27,6 +30,7 @@ from basicly.config import (
     load_verify_config,
     load_worktree_config,
     record_technology_selection,
+    unknown_config_keys,
     untiered_metered_runners,
 )
 from basicly.runner import (
@@ -1139,3 +1143,196 @@ def test_policy_evidence_is_overridable_by_the_local_overlay(tmp_path: Path) -> 
         '[policy.evidence]\nverify = "local.log"\n', encoding="utf-8"
     )
     assert load_policy_config(tmp_path).evidence == {"verify": "local.log"}
+
+
+# --- Strict config schema: an unknown name fails loudly (basicly-1piy) ---
+
+_REPO_ROOT = Path(__file__).parent.parent
+
+# Every string literal this module hands to a config table's ``.get`` or to
+# ``_parse_path_value``. Both forms, because [paths] keys arrive as an argument
+# rather than inside the call.
+_CONFIG_KEY_READS = re.compile(r'\.get\(\s*"([a-z_]+)"|_parse_path_value\(paths,\s*"([a-z_]+)"')
+
+
+def _schema_names() -> set[str]:
+    """Every name CONFIG_SCHEMA accepts anywhere, flattened."""
+    names: set[str] = set()
+
+    def walk(table: object) -> None:
+        names.update(table.keys)  # type: ignore[attr-defined]
+        for child, sub in {**table.tables, **table.arrays}.items():  # type: ignore[attr-defined]
+            names.add(child)
+            walk(sub)
+
+    names.update(CONFIG_SCHEMA)
+    for section in CONFIG_SCHEMA.values():
+        walk(section)
+    return names
+
+
+def test_an_unknown_section_fails_and_names_the_section_that_accepts_its_key(
+    tmp_path: Path,
+) -> None:
+    """The reported reproduction: `[loop] concurrency` written for `[worktree]`.
+
+    It was silently ignored, and the only symptom was the committed default of 5
+    continuing to apply — indistinguishable from the override having worked at the
+    value it was already at. The refusal has to name where `concurrency` does live,
+    or the reader learns only that they were wrong, not what to write instead.
+    """
+    (tmp_path / LOCAL_CONFIG_FILE).write_text("[loop]\nconcurrency = 2\n", encoding="utf-8")
+
+    with pytest.raises(ValueError) as excinfo:
+        load_worktree_config(tmp_path)
+
+    message = str(excinfo.value)
+    assert LOCAL_CONFIG_FILE in message
+    assert "unknown section 'loop'" in message
+    assert "'concurrency' is accepted in [worktree]" in message
+
+
+def test_an_unknown_key_fails_and_names_what_its_section_accepts(tmp_path: Path) -> None:
+    """A near-miss inside a real section: the fix is one of the names printed."""
+    (tmp_path / CONFIG_FILE).write_text("[worktree]\nconcurency = 2\n", encoding="utf-8")
+
+    with pytest.raises(ValueError) as excinfo:
+        load_worktree_config(tmp_path)
+
+    assert "unknown key 'concurency' in [worktree]" in str(excinfo.value)
+    assert "[worktree] accepts base_branch, concurrency" in str(excinfo.value)
+
+
+def test_an_unknown_name_in_a_nested_table_fails(tmp_path: Path) -> None:
+    """Sub-tables are walked too — `[policy.sizing]` is where the band lives."""
+    (tmp_path / CONFIG_FILE).write_text(
+        "[policy.sizing]\nworking_set_ceiling = 99\n", encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError) as excinfo:
+        load_sizing_config(tmp_path)
+
+    assert "unknown key 'working_set_ceiling' in [policy.sizing]" in str(excinfo.value)
+
+
+def test_an_unknown_name_in_an_array_of_tables_fails(tmp_path: Path) -> None:
+    """`[[runner.agents]]` entries are tables with their own vocabulary."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[[runner.agents]]\nname = "x"\ncommand = ["x"]\nmodel_id = "y"\n', encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError) as excinfo:
+        load_runner_config(tmp_path)
+
+    assert "unknown key 'model_id' in [runner.agents]" in str(excinfo.value)
+
+
+def test_the_refusal_records_the_forward_compatibility_stance(tmp_path: Path) -> None:
+    """Strict in both directions, including against a *newer* config.
+
+    The accepted cost of erroring rather than warning is that a repo pinned to an
+    older basicly whose config carries a key added since fails every command. That
+    is survivable only because the failure diagnoses itself: it names this engine's
+    version and says upgrading is one of the two fixes. Asserted here so the stance
+    cannot be quietly dropped from the message it is recorded in.
+    """
+    (tmp_path / CONFIG_FILE).write_text("[worktree]\nfrom_the_future = 1\n", encoding="utf-8")
+
+    with pytest.raises(ValueError) as excinfo:
+        load_worktree_config(tmp_path)
+
+    assert basicly.__version__ in str(excinfo.value)
+    assert "upgrade basicly if it comes from a newer version" in str(excinfo.value)
+
+
+def test_a_malformed_overlay_fails_the_loaders_that_never_read_it(tmp_path: Path) -> None:
+    """[paths] and [catalog] are repo-level, but they still refuse a bad overlay.
+
+    `basicly check` reaches the config only through these two, so leaving them out
+    would put the gitignored file — the one with no diff to review, which is the
+    whole hazard — behind the one command a consumer runs to find drift.
+    """
+    (tmp_path / CONFIG_FILE).write_text('[catalog]\ntechnologies = ["python"]\n', encoding="utf-8")
+    (tmp_path / LOCAL_CONFIG_FILE).write_text("[worktree]\ntypo = 1\n", encoding="utf-8")
+
+    for load in (load_project_paths, load_technology_selection):
+        with pytest.raises(ValueError, match="unknown key 'typo'"):
+            load(tmp_path)
+
+
+def test_every_declared_name_is_reported_not_just_the_first(tmp_path: Path) -> None:
+    """One pass over the file, so a second typo is not a second failed run."""
+    (tmp_path / CONFIG_FILE).write_text(
+        "[worktree]\ntypo_one = 1\n\n[policy]\ntypo_two = 2\n", encoding="utf-8"
+    )
+
+    problems = unknown_config_keys(tmp_path)
+
+    assert len(problems) == 2
+    assert any("'typo_one'" in problem for problem in problems)
+    assert any("'typo_two'" in problem for problem in problems)
+
+
+def test_consumer_chosen_keys_in_an_open_table_are_accepted(tmp_path: Path) -> None:
+    """Three tables key on names the consumer picks, not on engine vocabulary.
+
+    An agent name, a loop phase and a task class. Each has its own downstream
+    validator that names what it will accept, so checking them against a fixed list
+    here would refuse a legitimate declaration the engine goes on to honour.
+    """
+    (tmp_path / CONFIG_FILE).write_text(
+        "[runner.context_windows]\nclaude = 1000\n\n"
+        '[policy.evidence]\nverify = "v.log"\n\n'
+        "[policy.sizing.build_factor]\nchore = 1.5\n",
+        encoding="utf-8",
+    )
+
+    assert unknown_config_keys(tmp_path) == []
+
+
+def test_the_privacy_denylist_only_a_hook_reads_is_accepted(tmp_path: Path) -> None:
+    """`[[privacy.denied]]` has no reader in config.py, and refusing it would break a gate.
+
+    `internal-info-scan.py` reads it straight out of basicly.local.toml and nothing
+    else does, precisely because the tokens must never be committed. A schema
+    derived from this module's own loaders would have started failing every command
+    on a machine that had configured the gate — the concrete reason this allowlist
+    is authored against the config surface rather than against config.py.
+    """
+    (tmp_path / LOCAL_CONFIG_FILE).write_text(
+        '[[privacy.denied]]\nname = "corp-domain"\ntoken = "internal.example"\n',
+        encoding="utf-8",
+    )
+
+    assert unknown_config_keys(tmp_path) == []
+
+
+def test_the_shipped_scaffold_declares_only_recognised_names(tmp_path: Path) -> None:
+    """`basicly install` must not scaffold a file its own loader then refuses."""
+    (tmp_path / CONFIG_FILE).write_text(DEFAULT_CONFIG_TOML, encoding="utf-8")
+
+    assert unknown_config_keys(tmp_path) == []
+
+
+def test_this_repos_own_config_declares_only_recognised_names() -> None:
+    """The authoring repo is the first consumer; its config has to pass its own gate."""
+    assert unknown_config_keys(_REPO_ROOT) == []
+
+
+def test_every_config_key_a_loader_reads_is_in_the_schema() -> None:
+    """The anti-staleness half: adding a key to a loader forces adding it here.
+
+    An allowlist's failure mode is the mirror of the denylist's — it goes stale by
+    refusing something real rather than by admitting something dead — and a schema
+    that refuses a key the engine honours is a worse bug than the one it fixes. So
+    the schema is checked against the literals `config.py` actually reads, and the
+    only names allowed on the schema side alone are the two whose readers live
+    outside this module (a hook and the pre-commit check runner).
+    """
+    source = (_REPO_ROOT / "src" / "basicly" / "config.py").read_text(encoding="utf-8")
+    read = {name or fallback for name, fallback in _CONFIG_KEY_READS.findall(source)}
+    # Section names reached through `_harness_section(repo_root, "<name>")`, which
+    # is a call form the pattern above cannot see.
+    read |= set(re.findall(r'_harness_section\(repo_root,\s*"([a-z_]+)"\)', source))
+
+    assert read - _schema_names() == set()
