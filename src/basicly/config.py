@@ -70,6 +70,15 @@ manifest = ".basicly/generated-manifest.json"
 base_branch = ""
 # Cap on how many worktrees may exist at once.
 concurrency = 5
+# Files this repo's convention has EVERY lane append its own entry to, which no
+# bead's "## Scope" therefore names — a changelog, a release-notes file. Two
+# lanes appending at the same anchor conflict when the later one rebases, so a
+# declared path serializes the plan's children instead of letting the merge
+# queue discover it. A child that really does not collide (it owns the entry, or
+# writes a distinct section) declares the path in its own scope AND under
+# "shared" to stay parallel. Absent = nothing is treated as append-only.
+#
+# append_only_paths = ["CHANGELOG.md"]
 
 # Deterministic verify gate. Each check runs in the listed modes; a "staged"
 # check with staged_suffix runs only against staged files of that suffix.
@@ -657,7 +666,7 @@ CONFIG_SCHEMA: dict[str, _Table] = {
         keys=frozenset({"core_fragments", "overlay_fragments", "targets", "templates", "manifest"})
     ),
     "catalog": _Table(keys=frozenset({"technologies"})),
-    "worktree": _Table(keys=frozenset({"base_branch", "concurrency"})),
+    "worktree": _Table(keys=frozenset({"base_branch", "concurrency", "append_only_paths"})),
     "verify": _Table(arrays={"checks": _VERIFY_CHECK_TABLE}),
     "policy": _Table(
         keys=frozenset({
@@ -837,6 +846,19 @@ class WorktreeConfig:
     # None means "fork from the branch currently checked out".
     base_branch: str | None
     concurrency: int
+    # The paths this repo's conventions have every lane append its own entry to
+    # (basicly-o8p0). Declared once here rather than per bead, because a per-bead
+    # declaration cannot work for a path every bead touches and no bead mentions:
+    # `CHANGELOG.md` appeared in no `## Scope`, so it was invisible to decompose's
+    # grouping and to preflight, and three lanes with provably disjoint scopes
+    # discovered it as a rebase conflict in the merge queue instead.
+    #
+    # Named ``append_only_paths`` and not ``shared_paths`` on purpose: a plan's
+    # ``shared`` declaration *removes* a serialization edge, and this list *adds*
+    # one, so the two must not read as the same word.
+    #
+    # Empty by default, so the mechanism is inert until a consumer names a path.
+    append_only_paths: tuple[str, ...] = ()
 
 
 def load_worktree_config(repo_root: Path) -> WorktreeConfig:
@@ -852,7 +874,51 @@ def load_worktree_config(repo_root: Path) -> WorktreeConfig:
     if not (isinstance(concurrency, int) and not isinstance(concurrency, bool) and concurrency > 0):
         concurrency = defaults.concurrency
 
-    return WorktreeConfig(base_branch=base_branch, concurrency=concurrency)
+    raw_paths = section.get("append_only_paths")
+    append_only = _append_only_paths(raw_paths) if isinstance(raw_paths, list) else ()
+
+    return WorktreeConfig(
+        base_branch=base_branch, concurrency=concurrency, append_only_paths=append_only
+    )
+
+
+# Glob metacharacters an append-only declaration may not contain (the set
+# ``decompose.globs_overlap`` acts on).
+_APPEND_ONLY_WILDCARDS = "*?["
+
+
+def _append_only_paths(entries: list) -> tuple[str, ...]:
+    """The validated ``[worktree] append_only_paths`` list, blanks dropped.
+
+    Raises rather than dropping what it cannot honour, on the same grounds as the
+    unknown-name refusal above: a silently ignored entry leaves the file naming a
+    path the grouping does not serialize, and the only symptom is the merge-queue
+    conflict this declaration exists to predict. An empty string names nothing, so
+    it is the one entry that can be dropped without hiding a declaration.
+
+    A glob is refused for the mirror of the reason ``decompose._parse_shared``
+    refuses one — that list *removes* serialization edges and this one *adds* them,
+    so a wildcard here would serialize every child against every other over a
+    subtree nobody can enumerate, and the plan would collapse for no nameable path.
+    """
+    paths: list[str] = []
+    for entry in entries:
+        if not isinstance(entry, str):
+            raise ValueError(
+                "[worktree] append_only_paths entries must be paths, got "
+                f"{type(entry).__name__}: {entry!r}"
+            )
+        path = entry.strip()
+        if not path:
+            continue
+        if any(char in path for char in _APPEND_ONLY_WILDCARDS):
+            raise ValueError(
+                f"[worktree] append_only_paths entry {path!r} is a glob; an append-only path must "
+                "be one literal path, because this list adds serialization edges and a wildcard "
+                "would serialize every lane over a subtree nobody can name"
+            )
+        paths.append(path)
+    return tuple(paths)
 
 
 @dataclass(frozen=True)

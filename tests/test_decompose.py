@@ -264,6 +264,109 @@ def test_collapse_note_speaks_only_for_a_live_collapse() -> None:
     assert decompose.collapse_note(()) == ""
 
 
+# --- A path every lane writes and no child declares (basicly-o8p0) -----------
+#
+# The reported failure: three lanes over `schema.py`, `config.py` and `usage.py` —
+# disjoint, `VERDICT: ready`, all three appending a `CHANGELOG.md` entry nobody
+# declared. Two landed and the third rebased onto an anchor that had moved twice,
+# conflicted, and spent both rework retries there. So the control in each test below
+# is the same plan with nothing configured: it must stay fully parallel, or the fix
+# has simply serialized every plan in every repo.
+
+_APPEND_ONLY = ("CHANGELOG.md",)
+
+
+def _disjoint_plan() -> tuple[ChildSpec, ...]:
+    """The reported pass: three children whose declared scopes cannot overlap."""
+    return tuple(_child(name, f"src/basicly/{name}.py") for name in ("schema", "config", "usage"))
+
+
+def test_a_configured_append_only_path_serializes_lanes_that_share_no_scope() -> None:
+    """The bead's case: disjoint scopes, one undeclared file, one serial chain."""
+    plan = _disjoint_plan()
+    assert decompose.group_children(plan, _APPEND_ONLY) == (0, 0, 0)
+
+
+def test_a_pass_that_shares_no_append_only_path_stays_parallel() -> None:
+    """The control: with nothing configured the same plan is three parallel groups."""
+    assert decompose.group_children(_disjoint_plan()) == (0, 1, 2)
+    assert decompose.group_children(_disjoint_plan(), ()) == (0, 1, 2)
+
+
+def test_a_child_may_declare_the_append_only_path_shared_and_stay_parallel() -> None:
+    """The escape hatch is the declaration that already existed, read from both sides.
+
+    A child that has thought about the path puts it in its own scope *and* under
+    ``shared``; two children that both did are appending distinct entries by their own
+    account, and the grouping leaves them parallel. Without that, a repo declaring one
+    append-only path could never fan out again.
+    """
+    plan = tuple(
+        ChildSpec(c.title, c.acceptance, (*c.scope, "CHANGELOG.md"), shared=("CHANGELOG.md",))
+        for c in _disjoint_plan()
+    )
+    assert decompose.group_children(plan, _APPEND_ONLY) == (0, 1, 2)
+
+
+def test_one_child_owning_the_append_only_path_still_serializes_the_pass() -> None:
+    """Weakest claim wins here too: a declared owner blocks the undeclared appenders."""
+    plan = list(_disjoint_plan())
+    plan[0] = ChildSpec(
+        plan[0].title, plan[0].acceptance, (*plan[0].scope, "CHANGELOG.md"), shared=()
+    )
+    assert decompose.group_children(tuple(plan), _APPEND_ONLY) == (0, 0, 0)
+
+
+def test_the_collapsing_path_report_names_the_configured_path_and_its_origin() -> None:
+    """The collapse must not read as a grouping bug on scopes a reader can see are disjoint.
+
+    The path is in no child's scope, so ``declarers`` is empty and the line has to say
+    where it came from — otherwise the report names a path nothing in the plan mentions
+    and the author cannot act on it.
+    """
+    plan = _disjoint_plan()
+    (item,) = decompose.collapsing_paths(plan, _APPEND_ONLY)
+    assert item.glob == "CHANGELOG.md"
+    assert item.declarers == ()
+    assert (item.groups, item.groups_without) == (1, 3)
+    assert item.neutralized is False
+
+    line = decompose.describe_collapsing_path(item, _APPEND_ONLY)
+    assert "`CHANGELOG.md`" in line
+    assert "[worktree] append_only_paths" in line
+    assert "no child declares it" in line
+
+
+def test_the_report_marks_an_append_only_path_every_child_declared_shared() -> None:
+    """Neutralized, and said so: the plan is informed rather than broken."""
+    plan = tuple(
+        ChildSpec(c.title, c.acceptance, (*c.scope, "CHANGELOG.md"), shared=("CHANGELOG.md",))
+        for c in _disjoint_plan()
+    )
+    (item,) = decompose.collapsing_paths(plan, _APPEND_ONLY)
+    assert item.neutralized is True
+    assert "no longer serializes" in decompose.describe_collapsing_path(item, _APPEND_ONLY)
+
+
+def test_two_configured_paths_are_both_named_rather_than_neither() -> None:
+    """Each one is independently sufficient, so a one-at-a-time counterfactual is silent.
+
+    Dropping `CHANGELOG.md` alone leaves `docs/release-notes.md` merging the same
+    children, so measuring per path against the plan-as-configured would report
+    nothing at all — the silence the diagnostic exists to remove.
+    """
+    contended = ("CHANGELOG.md", "docs/release-notes.md")
+    named = {item.glob for item in decompose.collapsing_paths(_disjoint_plan(), contended)}
+    assert named == set(contended)
+
+
+def test_the_preview_groups_a_plan_against_the_same_configured_paths() -> None:
+    """A dry run that ignored the convention would promise groups the run serializes."""
+    planned = decompose.preview(_disjoint_plan(), _APPEND_ONLY)
+    assert [child.group for child in planned] == [0, 0, 0]
+    assert [child.predecessor for child in planned] == [None, 0, 1]
+
+
 # --- Plan parsing -----------------------------------------------------------
 
 
@@ -486,6 +589,44 @@ def test_decompose_result_names_a_live_collapsing_path(
     assert [(item.glob, item.neutralized) for item in result.collapsing] == [
         ("pyproject.toml", False)
     ]
+
+
+def test_decompose_reads_the_append_only_paths_from_config_itself(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The recorded graph, from a repo config alone — no caller passes the list in.
+
+    The loop calls ``decompose.decompose`` with nothing but the plan, so a list only
+    the CLI knew about would serialize `basicly decompose` and leave the factory path
+    — the one that actually fans out — grouping as if the convention did not exist.
+    """
+    (tmp_path / "basicly.toml").write_text(
+        '[worktree]\nappend_only_paths = ["CHANGELOG.md"]\n', encoding="utf-8"
+    )
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+
+    result = decompose.decompose(tmp_path, "feat", _disjoint_plan())
+
+    assert result.parallel_groups == 1
+    assert len(fake.edges) == 2  # one chain through all three children
+    assert [(item.glob, item.neutralized) for item in result.collapsing] == [
+        ("CHANGELOG.md", False)
+    ]
+
+
+def test_decompose_stays_parallel_when_no_append_only_path_is_configured(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The control at the recording layer: no config, no chain, three lanes."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+
+    result = decompose.decompose(tmp_path, "feat", _disjoint_plan())
+
+    assert result.parallel_groups == 3
+    assert fake.edges == []
+    assert result.collapsing == ()
 
 
 def test_preview_matches_recorded_grouping(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

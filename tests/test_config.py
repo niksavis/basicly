@@ -172,6 +172,40 @@ def test_worktree_config_custom_values(tmp_path: Path) -> None:
     assert load_worktree_config(tmp_path).concurrency == DEFAULT_WORKTREE_CONCURRENCY
 
 
+def test_worktree_config_reads_the_append_only_paths(tmp_path: Path) -> None:
+    """The paths every lane writes and no bead declares, declared once (basicly-o8p0)."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[worktree]\nappend_only_paths = ["CHANGELOG.md", "docs/release-notes.md"]\n',
+        encoding="utf-8",
+    )
+    assert load_worktree_config(tmp_path).append_only_paths == (
+        "CHANGELOG.md",
+        "docs/release-notes.md",
+    )
+
+
+def test_append_only_paths_default_to_none_declared(tmp_path: Path) -> None:
+    """Inert until a consumer names a path: the mechanism serializes lanes when it fires."""
+    assert load_worktree_config(tmp_path).append_only_paths == ()
+    (tmp_path / CONFIG_FILE).write_text("[worktree]\nconcurrency = 2\n", encoding="utf-8")
+    assert load_worktree_config(tmp_path).append_only_paths == ()
+
+
+def test_an_append_only_glob_is_refused_rather_than_ignored(tmp_path: Path) -> None:
+    """A wildcard would serialize every lane over a subtree nobody can enumerate.
+
+    Refused rather than dropped for the same reason an unknown key is: an ignored
+    entry leaves the file naming a path the grouping does not serialize, and the only
+    symptom is the merge-queue conflict the declaration was written to predict.
+    """
+    (tmp_path / CONFIG_FILE).write_text(
+        '[worktree]\nappend_only_paths = ["docs/**"]\n', encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="is a glob"):
+        load_worktree_config(tmp_path)
+
+
 def test_verify_config_empty_without_section(tmp_path: Path) -> None:
     """No file or no [verify] section yields no checks."""
     assert load_verify_config(tmp_path).checks == ()
@@ -1200,7 +1234,7 @@ def test_an_unknown_key_fails_and_names_what_its_section_accepts(tmp_path: Path)
         load_worktree_config(tmp_path)
 
     assert "unknown key 'concurency' in [worktree]" in str(excinfo.value)
-    assert "[worktree] accepts base_branch, concurrency" in str(excinfo.value)
+    assert "[worktree] accepts append_only_paths, base_branch, concurrency" in str(excinfo.value)
 
 
 def test_an_unknown_name_in_a_nested_table_fails(tmp_path: Path) -> None:

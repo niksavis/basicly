@@ -1297,6 +1297,61 @@ def _band_verdict(admission: WorkingSetAdmission) -> str:
     return "in band"
 
 
+# --- Contention on a path no bead declares (basicly-o8p0) --------------------
+#
+# The one collision knowable before any lane starts, and the one the band table
+# cannot see: a path this repo's conventions have EVERY lane append its own entry to
+# appears in no bead's `## Scope`, so the disjoint-scope check that admits the pass is
+# reading an incomplete list. Measured on the basicly-u6jq.1 proof run: three lanes,
+# provably disjoint scopes, `VERDICT: ready`, and the third lane bounced twice on a
+# `CHANGELOG.md` rebase conflict and spent its whole rework budget getting there.
+#
+# Reported here rather than only serialized at decompose, because the lanes that
+# collided were hand-filed siblings that no plan ever grouped — nothing in
+# `decompose` runs for them, and preflight is the only surface that sees the set.
+
+
+def append_only_report(
+    repo_root: Path, lanes: tuple[str, ...], paths: tuple[str, ...]
+) -> tuple[str, ...]:
+    """Whether this pass's lanes will contend on a configured append-only path.
+
+    First line is coverage — which paths were checked, or that none is declared —
+    for the reason :func:`band_coverage` exists: a check that prints nothing when it
+    finds nothing is indistinguishable from a check that never ran, and this one is
+    inert until a consumer lists a path. Then one line per path two or more lanes
+    will each append to without declaring it.
+
+    A lane that *declares* the path in its own ``## Scope`` is left out of the count:
+    it has said out loud that it writes the file, so the scope-collision gate
+    (``loop._scope_block``) and the band both already see it. The undeclared lanes are
+    the population this bead is about.
+    """
+    if not paths:
+        return (
+            "no append-only path declared ([worktree] append_only_paths) - a path every "
+            "lane writes is invisible to the grouping until it is listed",
+        )
+    header = f"append-only: {', '.join(f'`{path}`' for path in paths)}"
+    if len(lanes) < 2:
+        return (f"{header} - {len(lanes)} lane(s) in this pass, so nothing contends",)
+    scopes = merge.declared_scopes(repo_root, lanes)
+    lines = [header]
+    for path in paths:
+        contending = tuple(lane for lane in lanes if path not in scopes.get(lane, ()))
+        if len(contending) < 2:
+            continue
+        lines.append(
+            f"  {len(contending)} lane(s) will each append to `{path}` and none declares it: "
+            f"{', '.join(contending)}"
+        )
+        lines.append(
+            "    the later ones rebase onto a moved anchor and bounce, so build them in "
+            "sequence, or give one lane the entry"
+        )
+    return tuple(lines)
+
+
 # --- The spend ceiling at pass admission (D3 looking forward, basicly-jr0l.22) ---
 #
 # ``policy.spend_status`` compares spend *already recorded* against the grant's
