@@ -1821,11 +1821,17 @@ def _cmd_usage_forecast(_args: argparse.Namespace) -> int:
     return 0
 
 
+# Rows of the unresolved-head bucket the report prints before truncating.
+_UNRESOLVED_ROWS = 15
+
+
 def _cmd_usage_report(_args: argparse.Namespace) -> int:
     """Report which tools and skills the recorded usage shows were actually used."""
     repo_root = _repo_root()
-    slugs = [skill.slug for skill in discover_skills(repo_root)]
-    report = usage.build_report(repo_root, slugs)
+    skills = discover_skills(repo_root)
+    slugs = [skill.slug for skill in skills]
+    commands = usage.catalog_commands(skill.instructions for skill in skills)
+    report = usage.build_report(repo_root, slugs, commands)
     if report is None:
         ui.say(
             f"No usage data at {usage.USAGE_FILE} — the tool-usage hook has not "
@@ -1839,6 +1845,24 @@ def _cmd_usage_report(_args: argparse.Namespace) -> int:
             f"Terminal tools ({len(report.tools)})",
             ["tool", "count", "last used"],
             [[e.name, str(e.count), e.last_used] for e in report.tools],
+        )
+    if report.unresolved:
+        # Shown, not hidden: most of these are parser misses, but a real tool this
+        # machine has not installed lands here too, and a bucket printed as a bare
+        # count would read as "all noise" for both. Truncated because years of
+        # accumulated misses run to hundreds of one-off words — the head of the list
+        # and the totals are what say whether the recorder is still missing today,
+        # and the count dropped is named rather than left to the reader to notice.
+        shown = report.unresolved[:_UNRESOLVED_ROWS]
+        dropped = len(report.unresolved) - len(shown)
+        suffix = f", {dropped} lower-count rows not shown" if dropped else ""
+        ui.table(
+            f"Unresolved heads ({len(report.unresolved)}, "
+            f"{sum(e.count for e in report.unresolved)} recorded{suffix}) — no command "
+            "of this name resolves here: parser misses, or tools absent from this "
+            "checkout. Neither used nor unused",
+            ["head", "count", "last used"],
+            [[e.name, str(e.count), e.last_used] for e in shown],
         )
     if report.skills:
         ui.table(

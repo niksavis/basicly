@@ -28,6 +28,10 @@ basicly usage report
 
 - The report tables terminal tools and skills by count with `last used`
   dates, and names never-used catalog skills — the culling candidates.
+- A third table, **Unresolved heads**, holds what resolves to no command
+  here: recorder misses (heredoc terminators, keywords, flag fragments)
+  and tools this machine has not installed. Cite neither side of it —
+  those rows are evidence of nothing about usage.
 - The counter file accumulates across sessions by design; do not reset or
   delete it. When the command reports no usage data, say so (the hook may
   not be active in this repo) and continue with the rest of the ritual.

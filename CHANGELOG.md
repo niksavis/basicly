@@ -452,6 +452,27 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   names the engine version and says upgrading is one of the two fixes
   (`basicly-1piy`).
 
+- **`basicly usage report` no longer presents heredoc terminators and Python keywords as
+  terminal tools.** The counter file accumulates across sessions and is deliberately never
+  reset, so it still carries rows written by recorders that have since been fixed: on this
+  repo's ledger the tools table led with `t` (123), `-` (121), `-d` (120), `def` (90),
+  `assert` (83), `PYEOF` (33) and `EOF` (28). That pollution was disqualifying in both
+  directions — it invented tools nobody ran, and a real command shredded into fragments was
+  undercounted, so a genuinely unused tool could read as used. The table is the culling
+  input for `session-finish`, which is exactly the audit where only the never-used side can
+  be fabricated.
+
+  A recorded head now reaches the table only if this checkout can resolve it to a command:
+  on `PATH`, in a repo-local bin dir (`node_modules/.bin`, `.venv/bin`, `.venv/Scripts` —
+  `markdownlint-cli2`'s 168 runs are only ever reached through `npx`), or among the commands
+  the catalog's own shell fences teach, so a tool this machine has not installed stays a
+  tool. Everything else is counted into a named **Unresolved heads** bucket with its count
+  and last-used date rather than dropped: those dates are what say the misses are historical,
+  and a silently discarded miss is how the next recorder regression would go unnoticed. On
+  this repo's counters the split is 108 tools against 393 unresolved heads, none of the
+  latter recorded after 2026-07-31. Classifying at read time keeps the recorder's job
+  observing and the reader's judging; the counter file is not rewritten (`basicly-3ymj`).
+
 - **A dispatch now records its forecast in the unit its actual is metered in, so the
   forecast/actual pair is a comparison rather than a unit conversion.** `record_dispatch`
   wrote `forecast_tokens` — a *working set*, the context a lane holds at once — while the
