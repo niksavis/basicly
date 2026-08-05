@@ -24,24 +24,6 @@ technologies = ["python", "node"]
 base_branch = ""
 # Cap on how many worktrees may exist at once.
 concurrency = 5
-# Paths this repo's own conventions have every lane append its own entry to, and
-# which therefore appear in no bead's `## Scope` (basicly-o8p0). `CHANGELOG.md` is
-# the whole list: the landing convention expects an `[Unreleased]` entry per lane,
-# so a three-lane pass over provably disjoint scopes still had all three inserting
-# at the same `### Fixed` anchor. Two landed; the third rebased onto an anchor that
-# had moved twice, hit conflicts, and spent both its rework retries there while
-# `loop preflight` had reported all three `in band` and `VERDICT: ready`.
-#
-# The cost of declaring it is real and accepted: `decompose` now serializes the
-# children of a plan against this path, so a fan-out that used to preview as N
-# parallel groups previews as one chain — which is what the merge queue was going to
-# enforce anyway, just before the work instead of after it. A child that genuinely
-# does not collide (it owns the entry, or writes a section nobody else touches)
-# declares `CHANGELOG.md` in its own scope AND under `shared` and stays parallel.
-#
-# Deliberately not a union merge of two prose entries: the changelog is
-# consumer-facing release copy, so an auto-resolved entry is text nobody reviewed.
-append_only_paths = ["CHANGELOG.md"]
 
 # Deterministic verify gate. Each check runs in the listed modes; a "staged"
 # check with staged_suffix runs only against staged files of that suffix. A check
