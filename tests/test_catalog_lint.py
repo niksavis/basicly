@@ -444,3 +444,29 @@ def test_a_malformed_overlay_agent_source_lints_as_one_violation(
 
     assert len(violations) == 1, violations
     assert expected in violations[0]
+
+
+# --- One run must spell one source one way (basicly-ky5z) ----------------------
+
+
+def test_a_load_time_failure_reports_the_same_path_style_as_the_lint_walk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A bad technology value is reported twice: at load time and by the vocabulary walk.
+
+    The load-time `ValidationError` used to render the absolute source path while the
+    walk rendered a repo-relative one, so a single run leaked a home directory into
+    whatever a reader pasted into an issue or a CI log. `lint_catalog` takes the root as
+    an argument but the error does not, so it falls back to the working directory -
+    which is what `cli._repo_root` means by the repo root.
+    """
+    root = _catalog(tmp_path)
+    _agent_source(root, "reviewer", "technologies: [notatechnology]\n")
+    monkeypatch.chdir(root)
+
+    violations = [v for v in lint_catalog(root) if "notatechnology" in v]
+
+    assert len(violations) == 2, f"both the load and the walk must report it: {violations}"
+    assert violations[0] == violations[1]
+    assert violations[0].startswith(".basicly/core/agents/reviewer/agent.yaml: ")
+    assert str(root) not in violations[0]

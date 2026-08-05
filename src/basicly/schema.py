@@ -187,17 +187,43 @@ class PlannedOutput:
     fragments: list[Fragment]
 
 
+def display_path(path: Path, repo_root: Path | None = None) -> str:
+    """Render ``path`` for a user-facing message: repo-relative, absolute when outside.
+
+    Every call site raises with an absolute source path, so a load-time failure used to
+    print a machine-specific path — leaking a home directory or a username into anything
+    pasted into an issue or a CI log — while ``catalog_lint`` reported its own violations
+    repo-relative. One lint run therefore showed the same finding in two path styles
+    (basicly-ky5z). ``repo_root`` defaults to the process working directory, which is what
+    ``cli._repo_root`` means by the repo root. A path outside the root keeps its absolute
+    form: a relative path spelled with ``..`` would be more misleading, not less.
+    """
+    root = repo_root
+    if root is None:
+        try:
+            root = Path.cwd()
+        except OSError:
+            return str(path)
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return str(path)
+
+
 class ValidationError(Exception):
     """Raised when a fragment or target registry is invalid."""
 
-    def __init__(self, message: str, path: Path | None = None) -> None:
-        """Initialize with a message and optional source path."""
+    def __init__(
+        self, message: str, path: Path | None = None, *, repo_root: Path | None = None
+    ) -> None:
+        """Initialize with a message, optional source path, and the root to show it against."""
         super().__init__(message)
         self.message = message
         self.path = path
+        self.repo_root = repo_root
 
     def __str__(self) -> str:
-        """Include the source path in the string when available."""
+        """Include the source path in the string when available, relative to the repo root."""
         if self.path:
-            return f"{self.path}: {self.message}"
+            return f"{display_path(self.path, self.repo_root)}: {self.message}"
         return self.message
