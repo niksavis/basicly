@@ -1122,10 +1122,13 @@ class WorkingSetAdmission:
     # :attr:`checked` reads off the estimate, not off this.
     absence: str = ""
 
-    @property
-    def record_inputs(self) -> dict[str, object]:
-        """The dispatch record's sizing keywords; empty when nothing was estimable."""
-        return {} if self.sizing is None else self.sizing.record_inputs()
+    def record_inputs(self, repo_root: Path) -> dict[str, object]:
+        """The dispatch record's sizing keywords; empty when nothing was estimable.
+
+        Takes *repo_root* because one of those keywords is the forecast **spend**,
+        which is resolved from this repo's calibration (basicly-tcmy.34).
+        """
+        return {} if self.sizing is None else self.sizing.record_inputs(repo_root)
 
     @property
     def checked(self) -> bool:
@@ -2239,7 +2242,7 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
             detail=f"dispatch refused before it started: {admission.violation}{held}",
             refused=True,
         )
-    lane_sizing = admission.record_inputs
+    lane_sizing = admission.record_inputs(repo_root)
     if not lane_sizing:
         # A lane with no readable scope is still dispatched, bounded at the assumed
         # figure — so record that figure as its forecast. Without it the pass is gated
@@ -2248,9 +2251,15 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
         # reported "no dispatch carries both", 17 actual with no forecast. The
         # telemetry that would calibrate the bound was the one thing the bound's own
         # dispatches never produced (basicly-jr0l.58).
+        #
+        # It lands on the **spend** field, because that is the quantity it is
+        # denominated in: `unsized_lane_tokens` is a quantile of measured lane actuals,
+        # so writing it to `forecast_tokens` put a whole-lane cost in the working-set
+        # slot and paired it against a whole-lane actual at a ratio of ~1x — a forecast
+        # that looks perfect while predicting the wrong quantity (basicly-tcmy.34).
         assumed_tokens, assumed_source = decompose.unsized_lane_tokens(repo_root, sizing)
         lane_sizing = {
-            "forecast_tokens": assumed_tokens,
+            "forecast_spend_tokens": assumed_tokens,
             # Namespaced, so a reader can never mistake an assumed bound for an
             # estimate derived from this lane's own declared scope.
             "forecast_source": f"assumed:{assumed_source}",

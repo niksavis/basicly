@@ -1723,6 +1723,47 @@ def _cmd_usage_tracker(args: argparse.Namespace) -> int:
     return 0
 
 
+def _spend_accuracy_report(repo_root: Path) -> None:
+    """Say whether the *spend* forecast lands near what the lanes really spent.
+
+    The table above compares a working set against a whole-lane cost, and that ratio is
+    mostly the turn multiplier — an operator reading it as forecast error concludes the
+    sizing governor is broken. This is the same-unit comparison, which is the one that
+    answers whether a grant minted from a forecast will hold (basicly-tcmy.34).
+    """
+    accuracy = decompose.spend_accuracy(repo_root, load_sizing_config(repo_root))
+    if not accuracy.pairs:
+        ui.say(
+            "No dispatch can be held to a spend forecast yet, so the band below is "
+            "unmeasured rather than met.",
+            style="warn",
+        )
+        return
+    median = accuracy.median_ratio
+    bases = ", ".join(
+        f"{sum(pair.basis == basis for pair in accuracy.pairs)} {basis}"
+        for basis in sorted({pair.basis for pair in accuracy.pairs})
+    )
+    ui.say(
+        f"Actual/forecast spend: median {median:.2f}x over {len(accuracy.pairs)} pair(s) "
+        f"({bases}), band {1 / decompose.SPEND_RATIO_BAND:.1f}x-"
+        f"{decompose.SPEND_RATIO_BAND:.0f}x."
+    )
+    for violation in accuracy.violations:
+        ui.say(violation, style="warn")
+    ui.say(
+        f"Not held to a spend forecast: {accuracy.unsized} metered write dispatch(es) "
+        f"with no forecast at all, {accuracy.unmetered} with no measured actual.",
+        style="muted",
+    )
+    if accuracy.incomparable:
+        ui.say(
+            "Not comparable, their recorded working-set forecast is above the band's "
+            f"ceiling: {', '.join(accuracy.incomparable)}.",
+            style="muted",
+        )
+
+
 def _cmd_usage_forecast(_args: argparse.Namespace) -> int:
     """Report the forecast error per dispatch, and what could not be paired.
 
@@ -1775,6 +1816,7 @@ def _cmd_usage_forecast(_args: argparse.Namespace) -> int:
         f"{report.unmetered} with neither (handoffs and un-sized helper dispatches).",
         style="muted",
     )
+    _spend_accuracy_report(_repo_root())
     return 0
 
 

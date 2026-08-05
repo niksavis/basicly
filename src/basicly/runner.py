@@ -1771,6 +1771,7 @@ def record_dispatch(  # noqa: PLR0913 — one parameter per recorded dispatch in
     phase: str | None = None,
     scope_tokens: int | None = None,
     forecast_tokens: int | None = None,
+    forecast_spend_tokens: int | None = None,
     task_class: str | None = None,
     forecast_source: str | None = None,
     build_factor_source: str | None = None,
@@ -1847,6 +1848,12 @@ def record_dispatch(  # noqa: PLR0913 — one parameter per recorded dispatch in
         phase=phase,
         scope_tokens=scope_tokens,
         forecast_tokens=forecast_tokens,
+        # The forecast in the unit this record's `tokens` is metered in — whole-lane
+        # spend, not working set (basicly-tcmy.34). Passed in rather than computed
+        # here: it is resolved from the estimate that gated the dispatch, and
+        # re-deriving it at record time would answer with a calibration the gate
+        # never saw.
+        forecast_spend_tokens=forecast_spend_tokens,
         # The actual beside the forecast (basicly-fcls). Computed here rather than
         # passed in for the same reason the usage split is: every dispatch site
         # already hands over its forecast, and a second site deciding whether to

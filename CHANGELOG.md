@@ -410,6 +410,36 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A dispatch now records its forecast in the unit its actual is metered in, so the
+  forecast/actual pair is a comparison rather than a unit conversion.** `record_dispatch`
+  wrote `forecast_tokens` — a *working set*, the context a lane holds at once — while the
+  same record's `tokens` is *whole-lane spend*, which an agentic loop re-sends its context
+  to accumulate. Comparing them yielded 64x-793x (median 307x) across 27 paired write
+  dispatches, and that number read as a forecast wrong by two orders of magnitude:
+  `basicly-gczc` was dispatched under an 8,000,000-token L3 grant on a forecast of 66,780
+  and spent 16,963,245, so the grant halted after the work was done and the ship checkpoint
+  dropped to a human. Every step of the engine behaved correctly; the number was wrong.
+
+  The right-unit number already existed and was already trusted — `decompose.forecast_spend`
+  computes it and `supervise.admit_pass_spend` refuses a pass on it — it simply never
+  reached the record. It does now, as `forecast_spend_tokens`, beside the working set rather
+  than replacing it: each has an actual of its own (`context_tokens` and `tokens`) and the
+  turn multiplier still has to be measured from the cross-unit ratio, so both halves stay.
+  The assumed bound a lane with no readable scope is gated at moves to the same field, being
+  a quantile of measured lane actuals: in the working-set slot it paired at ~1x and looked
+  like a perfect forecast of the wrong quantity.
+
+  `decompose.spend_accuracy` is the gate, and `basicly usage forecast` now reports it under
+  the existing table: actual over forecast **in one unit**, per recorded write dispatch,
+  which must stay inside one order of magnitude either way — under-forecasting spends money
+  no grant admitted, over-forecasting refuses a pass that would have fitted. It binds on the
+  history that already exists rather than only on records written from now on, by re-applying
+  today's calibration to the working set an older dispatch recorded; on this repo's committed
+  ledger the same 26 comparable dispatches come in at 0.19x-2.37x, median 0.94x. A record
+  whose working-set forecast the band itself would refuse cannot be converted and is named
+  rather than dropped — one exists, `basicly-tcmy.31`, carrying a factor of ~193 from the
+  spend-derived calibration `basicly-z2wi` deleted (`basicly-tcmy.34`).
+
 - **An answered question no longer holds every delegated ship in the session until its
   bead closes.** The L3 lights-out preconditions counted `needs-input` and rework-escalation
   markers by their presence alone, and only a *closed* bead discounted them — so one open

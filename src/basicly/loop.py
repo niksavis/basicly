@@ -687,7 +687,7 @@ def sizing_at_dispatch(repo_root: Path, issue_id: str) -> dict[str, object]:
     with contextlib.suppress(RuntimeError, ValueError, OSError):
         sizing = decompose.dispatch_sizing(repo_root, issue_id)
         if sizing is not None:
-            return sizing.record_inputs()
+            return sizing.record_inputs(repo_root)
     return {}
 
 

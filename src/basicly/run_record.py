@@ -156,7 +156,25 @@ class RunRecord:
     # re-derive them against a changed tree (D8 drift, basicly-kjc5.30).
     scope_tokens: int | None = None
     forecast_tokens: int | None = None
-    # The *actual* the two fields above forecast: how full the model's window was
+    # The **whole-lane spend** the same dispatch was forecast to cost — the quantity
+    # ``tokens`` above measures, and the one a budget bounds.
+    #
+    # ``forecast_tokens`` beside it is a **working set**: the context a lane holds at
+    # once, which is what a context window bounds. An agentic loop re-sends that
+    # context every turn, so the two are denominated in different quantities and their
+    # ratio is a turn multiplier rather than a forecast error — over 27 paired records
+    # on this repo it ran 64x-793x (median 307x) and read as a forecast wrong by two
+    # orders of magnitude (basicly-tcmy.34). The engine had already computed the
+    # right-unit number all along: ``decompose.forecast_spend`` produces it and
+    # ``supervise.admit_pass_spend`` refuses a pass on it. It simply never reached the
+    # record, so the only forecast a completed lane could be compared against was the
+    # one denominated in the other quantity.
+    #
+    # Recorded beside the working set rather than replacing it, because each has an
+    # actual of its own and neither comparison can be made without both halves:
+    # ``forecast_tokens`` against ``context_tokens``, and this against ``tokens``.
+    forecast_spend_tokens: int | None = None
+    # The *actual* the scope-and-forecast pair above predicts: how full the window was
     # when the lane finished (``runner.context_occupancy``), null wherever the
     # adapter cannot answer — claude's non-streaming envelope and copilot report
     # no per-turn occupancy, and a handoff ran nothing (basicly-fcls).
@@ -280,6 +298,7 @@ def build_record(  # noqa: PLR0913
     phase: str | None = None,
     scope_tokens: int | None = None,
     forecast_tokens: int | None = None,
+    forecast_spend_tokens: int | None = None,
     context_tokens: int | None = None,
     context_window: int | None = None,
     context_window_source: str | None = None,
@@ -308,6 +327,8 @@ def build_record(  # noqa: PLR0913
     to predict (basicly-fcls), null wherever the adapter reports no occupancy;
     *context_window* and *context_window_source* are the declared window it was
     measured against and which input declared it (basicly-23ep).
+    *forecast_spend_tokens* is the same dispatch's forecast in the unit *tokens*
+    is measured in — whole-lane spend rather than working set (basicly-tcmy.34).
     """
     return RunRecord(
         agent=agent,
@@ -336,6 +357,7 @@ def build_record(  # noqa: PLR0913
         phase=phase,
         scope_tokens=scope_tokens,
         forecast_tokens=forecast_tokens,
+        forecast_spend_tokens=forecast_spend_tokens,
         context_tokens=context_tokens,
         context_window=context_window,
         context_window_source=context_window_source,
@@ -841,11 +863,15 @@ class ForecastErrorReport:
         return {name: tuple(items) for name, items in sorted(grouped.items())}
 
 
-def _positive_int(entry: Mapping[str, object], key: str) -> int | None:
+def positive_int(entry: Mapping[str, object], key: str) -> int | None:
     """*entry*'s value at *key* when it is a usable positive count, else None.
 
     A zero forecast is rejected along with a missing one: it cannot be divided by,
     and a "forecast" of zero tokens is a recording defect rather than a prediction.
+
+    Public because every reader of this ledger needs the same rule and a second copy
+    would drift from it — ``decompose.spend_accuracy`` reads the same records to hold
+    a forecast against its actual (basicly-tcmy.34).
     """
     value = entry.get(key)
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
@@ -867,8 +893,8 @@ def forecast_errors(repo_root: Path) -> ForecastErrorReport:
         for entry in history:
             if not isinstance(entry, Mapping):
                 continue
-            forecast = _positive_int(entry, "forecast_tokens")
-            actual = _positive_int(entry, "tokens")
+            forecast = positive_int(entry, "forecast_tokens")
+            actual = positive_int(entry, "tokens")
             if forecast is None or actual is None:
                 if forecast is not None:
                     forecast_only += 1
