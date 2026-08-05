@@ -248,6 +248,34 @@ default = "auto"
 # unsizeable lane still defeats both dispatch cost gates (basicly-vz78): with no
 # forward forecast, this timeout is the only per-lane ceiling on a runaway run.
 runner_timeout = 1800
+# The model tier every dispatch of this repo resolves through (basicly-tcmy.35).
+# The tier vocabulary (basicly-kjc5.58), the committed map (basicly-kjc5.61) and
+# the pre-spawn refusal (basicly-kjc5.59) all shipped here, and this repo declared
+# no tier — so the refusal was unreachable, because it fires only when a tier *was*
+# declared, and every lane ran on whatever the agent CLI happened to default to
+# that day. What that cost is on the record: 48 metered claude dispatches carrying
+# an exact 313.30 USD of spend between them, not one of which names the model that
+# spent it, and 36 of them naming two different observed models for a single run.
+#
+# `high` is not a new choice. `high` x anthropic x anthropic resolves to
+# `claude-opus-5` in `.basicly/core/models/model-map.json`, and `claude-opus-5` is
+# the model every one of those 36 records observed — so this declaration pins what
+# the ledger already recorded rather than moving the work onto a different model.
+# What changes is that a dispatch's record now names the tier, where it came from
+# (`family default tier`) and whether it was honoured, which is what
+# `basicly-7bur`'s cost-per-landed-package and `basicly-u6jq.1`'s proof run need
+# before their numbers are about anything.
+#
+# A family default rather than a per-agent `[[runner.agents]] tier`, because the
+# claim is about this repo's work and not about one CLI: an agent that needs
+# another tier declares its own and keeps `agent tier` as its provenance.
+#
+# `config.untiered_metered_runners` is this declaration's falsifier, gated by
+# `tests/test_config.py`: delete this line and a metered dispatch is back to an
+# unnamed model, and the check fails naming the key rather than the symptom.
+# `basicly runner dry-run <prompt>` prints the tier and the resolved model id, so
+# a change here is checkable before a live run.
+default_tier = "high"
 
 # The context window each agent's model actually has, in tokens (basicly-23ep).
 # The denominator for the [policy.sizing] context_ceiling meter, and the one
@@ -264,19 +292,23 @@ runner_timeout = 1800
 # that was never over any real limit.
 #
 # 1000000 is the window of Claude Opus 5, which is the model this repo dispatches:
-# every one of those seven records observed `claude-opus-5` (the runner pins no
-# model, so this is what the CLI ran, read off `observed_models` rather than
-# assumed). Checked against the vendor's live model documentation on 2026-08-04 —
-# not recalled, per the rule that made the previous figure wrong. The committed
-# model map corroborates it independently: `.basicly/core/models/model-map.json`
-# already records `claude-opus-5` at a 1000000-token context.
+# every one of those seven records observed `claude-opus-5` — read off
+# `observed_models` rather than assumed, since nothing pinned a model when they
+# ran. Checked against the vendor's live model documentation on 2026-08-04 — not
+# recalled, per the rule that made the previous figure wrong. The committed model
+# map corroborates it independently: `.basicly/core/models/model-map.json` already
+# records `claude-opus-5` at a 1000000-token context.
 #
-# That map is also the follow-on this bead deliberately does not take. It carries a
-# per-model `limit_tokens.context`, so a runner that pins a *tier* could resolve its
-# window from the map instead of declaring one — the window would then follow the
-# model automatically and could not go stale again. It cannot help here, because this
-# runner pins nothing: the model is only knowable after the dispatch, from what the
-# CLI reports it ran. Declaring the window is what a repo with an unpinned runner has.
+# That map is also the follow-on neither bead takes. It carries a per-model
+# `limit_tokens.context`, so a runner that pins a *tier* could resolve its window
+# from the map instead of declaring one — the window would then follow the model
+# automatically and could not go stale again. When this was written that was
+# unreachable, because the runner pinned nothing and the model was only knowable
+# after the dispatch, from what the CLI reported it ran; `[runner] default_tier`
+# above (basicly-tcmy.35) is what makes it reachable, and the tier declared there
+# resolves to the same `claude-opus-5` whose map entry carries this exact figure.
+# Wiring that lookup is engine work rather than a declaration, so the window stays
+# declared here until it is done.
 #
 # `tests/test_runner.py::test_no_recorded_occupancy_exceeds_its_runners_declared_window`
 # is the gate that keeps this honest: it fails, naming both figures, the first time
