@@ -27,6 +27,35 @@ instructions: |
   after the first write restores the tree, so a half-released repo never needs a
   `git reset --hard`.
 
+  ### Exercise every declared check first, in both modes
+
+  It also refuses a tag while any `[[verify.checks]]` entry has no recorded
+  execution (`basicly-irrm`), and the execution ledger is written by `basicly
+  verify` itself — a check is witnessed by the engine that ran it and watched it
+  pass, not by anyone having typed its executable (`basicly-3yi3`). So a fresh
+  clone, or any checkout whose git-ignored `.basicly/usage/` is empty, refuses the
+  tag until the gates have actually run.
+
+  **One mode is not enough**, because a check is witnessed only in a mode that
+  declares it:
+
+  ```sh
+  uv run basicly verify --mode full   # then
+  uv run basicly verify --mode fast   # pyright is declared only by fast and staged
+  ```
+
+  Confirm it cleared with the dry run, which reports every blocking reason at once
+  and writes nothing:
+
+  ```sh
+  uv run basicly release <next-version> --issue <beads-id> --dry-run
+  ```
+
+  Do **not** clear a refusal by running the named tool by hand: that mints a witness
+  for a capability the gate never observed working, which is the defect the
+  engine-side witness replaced. Fix it by running the mode that declares the check,
+  or by dropping the claim.
+
   `--autonomous --root <epic>` is the delegated form. It needs an **L3** grant
   inside its spend ceiling with green lights-out preconditions; pass
   `--shipping <node>` to name the node whose gates are checked, because an open
