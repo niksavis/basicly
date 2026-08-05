@@ -251,6 +251,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The inventory is derived rather than curated for the same reason: a hand-listed one can
   be curated down to nothing and then passes forever (`basicly-irrm`).
 
+- **`vulture` runs as a declared verify check, and a merge is gated on a reference from
+  outside the module.** The wired-or-deleted gate fails when a symbol, config key,
+  command or record field is referenced only inside its own module or under `tests/`.
+  `vulture` was declared at `pyproject.toml:37` and called from nowhere — not by a
+  check, not by a script — so the dependency that finds instruments nobody connected
+  was itself an instrument nobody connected, and it is this gate's own first finding.
+  Scoped to `src` and `.scripts`, and the omission of `tests` is the point: a symbol
+  used only by its own tests is exactly what the gate is looking for. Suppressions live
+  in `[tool.vulture] ignore_names`, vulture's only mechanism, and the gate fails on any
+  entry that stops reproducing, so a suppression cannot outlive the finding it silenced.
+  Confidence stays at vulture's default 60 rather than being raised, because the tiers
+  above it report only unreachable code (`basicly-uexy`).
+
 ### Changed
 
 - **A run record carries the context the lane actually consumed.** `RunRecord` has
@@ -927,6 +940,62 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   filtered the same walk, so the fix was to make the fixture filter too rather than
   to suppress bytecode writing. A flake in a gate costs more than its runtime: it
   burns the loop's bounded rework budget (`basicly-y1wk`).
+
+- **A stale context-window constant was truncating healthy lanes, and the window is now
+  declared per agent with a falsifier.** The engine declared `claude`'s window as
+  `200_000` while the dispatched model serves `1_000_000`, so the finalize trigger sat
+  near 120000 instead of ~600000 and lanes were cut short and spun into follow-up beads
+  for months — twelve of them. The repo's own ledger had contradicted the constant the
+  whole time: a recorded occupancy of 223221 cannot fit a 200000 window.
+
+  The window now lives in `[runner.context_windows]` in `basicly.toml` rather than in
+  engine code, because a repo whose runner pins no model must *declare* what it
+  dispatches — the model is only knowable after the run, from what the CLI reports it
+  ran. And the declaration is falsifiable: `runner.window_violations` reports every
+  recorded occupancy above its agent's declared window, wired to a test that fails
+  naming both figures the first time a lane records an occupancy the declaration says is
+  impossible. Had it existed it would have caught the 200000 the first time a lane
+  recorded 210721.
+
+  **This class of constant may not be fixed by pasting in a fresher number** — that is
+  the same unchecked declaration one generation on. It is the one kind of value that is
+  correct when written and rots silently as the vendor ships, so no gate catches it and
+  no review re-reads it. Where a field measures the same quantity a constant declares,
+  wire the comparison as a check (`basicly-23ep`).
+
+- **The context ceiling now applies on the single-track dispatch path, not only the
+  supervised one.** The ceiling constants and the finalize protocol lived only in
+  `supervise.py`, and the protocol had exactly one caller — so `basicly loop run`
+  measured a lane's context occupancy and then did nothing with it. The two write paths
+  could reach opposite conclusions about a bead's fate for reasons having nothing to do
+  with the bead. Both now call one shared `meter_context_ceiling`, replacing the
+  supervised path's inline copy, because a duplicated ceiling is how the two came to
+  disagree in the first place (`basicly-7kxq`).
+
+- **A `deferred` child is no longer sized, funded or dispatched.** Open children were
+  defined as `status != "closed"`, and beads has at least three non-closed statuses — so
+  deferring a bead removed it from nothing: it stayed in the candidate set, was sized
+  into the band table, counted toward the open-child total, and was funded by the pass
+  forecast. It also held its epic open indefinitely. Excluded now at both sites that ask
+  the question (`basicly-toj6`).
+
+- **`basicly loop preflight` refuses its verdict when no lane could be provisioned.** It
+  reported `VERDICT: ready` for a pass that then dispatched nothing, which is the one
+  situation the command exists to prevent — its whole job is to answer the pre-run
+  checklist before a fan-out costs wall-clock and money. Three distinct causes reach that
+  state: an epic whose children have all closed, an epic whose every child is refused by
+  the band ceiling, and an unapproved `decompose` checkpoint that a covering grant cannot
+  serve. The verdict now refuses and names which one:
+
+  ```text
+  provision: NONE - 8 child(ren), none open; nothing left to provision a lane from
+  VERDICT:   not ready - the session has no open child to provision a lane from
+  ```
+
+  It also reports the root's own pending checkpoints, distinguishing one a live grant
+  delegates from one it cannot serve — reporting every unapproved checkpoint as a blocker
+  would make the verdict noise. Still read-only, and it still exits non-zero when a run
+  would be blocked, so CI or a wrapper can gate on it (`basicly-cdhq`).
 
 ## v0.6.0 - 2026-07-31
 
