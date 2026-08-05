@@ -211,6 +211,42 @@ Python 3.14 + `uv`, ships as a wheel, and every consumer already has it. A track
 that wheel is upgraded by `basicly install`, tested by the same suite, and gated by the same
 hooks.
 
+**It ships as a kit** (owner, 2026-08-05). "Inside the package" is where it *lives*, not what it
+*depends on*: the tracker is scripts plus data files in the repo, consumable with **zero `basicly`
+imports and nothing on `PATH`** — the same unit of delivery as the tier-injection kit
+(`design/tier-injection-kit.md` §1.2), which is already proven in this shape at
+`.basicly/core/kit/`. So another harness can adopt it the way we adopt `br` today, minus the
+binary.
+
+Three reasons this is a requirement rather than a nicety, and the first is the load-bearing one:
+
+1. **It turns `1.0.0`'s consumer criterion into a test instead of a claim.** "No external binary in
+   the critical path" (`basicly-ctdz`) is provable by driving the kit under `env -i` with `-S -I`,
+   which is how the tier kit is checked — *not by asserting it*. A tracker that merely lives in our
+   package can only be argued about.
+2. **It de-risks the migration.** The engine reaches `br` through 76 `run_br` references across 14
+   files and **17 distinct subcommands**, with no single read choke point — `show --json` is parsed
+   at 12 sites under four different absence contracts (`basicly-tcmy.14`). A kit can be built and
+   tested standalone and then swapped behind that one seam, rather than as 18 simultaneous parser
+   rewrites.
+3. **The data outlives the tool.** A work ledger is the longest-lived artifact the harness owns. If
+   `basicly` is ever abandoned the ledger and its scripts must stay usable, which is a property no
+   in-package-only design has.
+
+**The dependency direction is one-way and gated: the engine imports the kit; the kit imports
+nothing.** This is the amendment that makes the boundary safe rather than merely stated, because a
+boundary with no shared code invites the defect this repo keeps paying for — two copies that
+disagree. `session_issue_ids` had a second copy in `loop_state` that followed a narrower walk and
+disagreed **by 14 beads on a real root** (`basicly-tcmy.30`); the context ceiling had two
+implementations that reached opposite conclusions about a bead's fate (`basicly-7kxq`). The
+direction is enforceable with the contract layer already gating this repo — `lint-imports` is a
+live `[[verify.checks]]` entry — so it is a CI failure, not an intention.
+
+What the kit boundary forbids, stated so it is not rediscovered: the kit may not read `basicly`'s
+config loader, its logging, its session state or its policy module. It reads its own committed data
+and takes everything else as arguments. The tier kit's §6 rules apply unchanged — it is not a
+security boundary, it never calls the network or an LLM, and it never guesses.
+
 **Storage: an append-only event log is the truth; every other file is derived.**
 
 This corrects an error in the first draft of this document, which claimed append-only properties
@@ -234,6 +270,40 @@ a corrupt derivative something you delete rather than repair.
 
 The cost is honest: a fold is O(events) and a naive reader re-folds per query, which is what the
 index exists to amortise. §10 measures where that starts to matter.
+
+**The line encoding is open, and §7 still gates it.** Three candidates, raised 2026-08-05 when the
+owner asked whether a line-oriented format can serve a *graph* at all. The framing that resolves it:
+a ledger and a graph are not competing formats but different layers — the ledger is the write shape,
+a graph is a read projection — so the question is only what each layer's lines look like.
+
+| | **A. Event-object JSONL** | **B. Fact-per-line quad log** | **C. Hybrid** |
+| --- | --- | --- | --- |
+| Line | `{seq, ts, kind, record, …, prov}` | `<seq> <subj> <pred> <obj> <prov>` | A is truth, B is the derived graph |
+| A graph? | No — edges implicit, found by folding | **Yes** — every line is an edge | Yes, in the projection |
+| Agent token cost | High; keys repeat per line | Lowest | Low on the read path |
+| Graph query | Fold, then traverse | `rg` over the log answers directly | `rg` over the projection |
+| Prose (1523 comments today) | Natural | Awkward; needs content-addressed blobs (§9.4) | Natural |
+| Parse safety | High | Needs a strict encoder | High |
+
+**B is closer to this design than it looks**: it is the shape of N-Triples/N-Quads, whose fourth
+element exists precisely to carry provenance — which §9.6 already requires per *event*. In B the
+ledger and the graph are one artifact. Its real cost is prose, which §9.4's content-derived evidence
+ids can absorb.
+
+**Recommendation, not a decision: ship C.** JSON objects for the authoritative log (safe,
+extensible, and the shape our run-record and usage ledgers already use), plus a derived edge list in
+B's shape and a derived record snapshot. It costs nothing architecturally because derivatives are
+already mandated disposable, and it leaves the door open to collapsing to pure B if measurement ever
+shows the fold is the bottleneck.
+
+**The measurement that should govern this, taken 2026-08-05**: the current tracker is 603 records /
+2,112,691 bytes, median line 2,605 B, and a full open-read-parse costs **5.8–7.6 ms** while a full
+serialize-rewrite-rename costs **5.5–5.8 ms**. Two conclusions. The machine does not care which
+format we pick at this scale — so **do not choose on parse speed**. And reading the whole ledger is
+on the order of half a million tokens, so *no* on-disk format saves an agent that reads all of it:
+the dominant variable is whether a **scoped view** exists (one bead plus its edges plus its open
+blockers), which is a command rather than a format. What agents handle well is a small, explicit,
+labelled edge set — not traversal of a large one.
 
 **Visualization without a TUI.** A maintained TUI is a permanent cost. Prefer generated
 artifacts: a `--json` CLI surface for machines, a Mermaid or DOT dependency graph and a static
@@ -706,6 +776,19 @@ no tracker content can reach a shell.
   intended mechanism.
 - **No new runtime dependency**, which is most of §4's argument: a pure-Python tracker inherits the
   platform matrix `basicly` already tests rather than adding its own.
+- **Nothing machine-specific in anything the kit writes or installs**, which is the rule the tier
+  kit paid for and §4's kit requirement inherits. `basicly-dukb` shipped an installer that wrote an
+  interpreter path and a repository path into a *tracked* file, leaking a username into a commit and
+  breaking every teammate. Two things generalise from it. First, the committed rendering must use a
+  host-substituted placeholder plus `uv run --no-project --no-python-downloads python` — `uv`
+  because every committer already needs it for the projected git hooks, and because Windows ships no
+  `python3.exe` from the python.org installer (the name hits an App Execution Alias that opens the
+  Microsoft Store, a worse failure than a clean one). Second, **where neither a portable nor a
+  machine-local rendering is possible, refuse** — falling back to the absolute one reinstates the
+  bug. Second-guessing this from memory is what cost `dukb`: the test that pinned the defect
+  installed into a bare `tmp_path` while running from basicly's own checkout, so the kit was never
+  inside the repository being written to. A kit test fixture must be *a repository containing the
+  kit*.
 
 ## 13. Failure modes and recovery
 
