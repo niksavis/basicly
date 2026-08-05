@@ -7,6 +7,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import permissions, session
+from .models import ModelResolutionError
 from .runner import (
     AGENT_TIER,
     AGENT_WINDOW,
@@ -23,6 +24,7 @@ from .runner import (
     PROMPT_VIA,
     USAGE_FORMATS,
     RunnerSpec,
+    resolve_model,
 )
 from .schema import MODEL_TIERS, TECHNOLOGIES
 
@@ -1236,6 +1238,59 @@ def _parse_model_tier(entry: dict, name: str) -> tuple[str | None, str | None]:
     if vendor is not None and (not isinstance(vendor, str) or not vendor.strip()):
         raise ValueError(f"runner agent {name!r} has a 'vendor' that must be a non-empty string")
     return tier, vendor.strip() if isinstance(vendor, str) else None
+
+
+def untiered_metered_runners(config: RunnerConfig, *, repo_root: Path | None = None) -> list[str]:
+    """Every runner that would bill a metered dispatch to a model nobody named.
+
+    The falsifier for a tier declaration (basicly-tcmy.35). An *absent* tier is
+    invisible to every other gate here, and that is not an oversight in them: it is
+    indistinguishable from a deliberate no-tier choice, and
+    :class:`models.ModelResolutionError` — the refusal that catches a tier which
+    resolves to nothing — fires only once a tier *was* declared. So the repo that
+    ships the tier vocabulary itself ran 48 metered claude dispatches, an exact
+    313.30 USD of recorded spend, with ``model``, ``model_tier``, ``model_source``
+    and ``tier_honoured`` null on every one of them, and nothing went red.
+
+    This is the check that goes red. Every headless runner meters its spend — exactly
+    where the adapter reports usage, as a flagged chars/4 estimate otherwise — so
+    every one of them attributes a cost to some model, and a cost attributed to
+    nothing is what makes a per-model forecast or a cost-per-landed-package figure a
+    number about nothing. The handoff runner is skipped rather than flagged: it
+    spawns no process, spends nothing, and has no argv to pin a model onto.
+
+    Each message names the config key that fixes it, because the reader of a failure
+    needs to know what to declare, not which field came back null. Empty means every
+    metered dispatch this config can make resolves a model it can name.
+
+    Takes the loaded config as a value rather than reading it from disk, so the check
+    can be run against a config with the declaration *removed* — which is the only
+    way to know it still binds.
+    """
+    problems: list[str] = []
+    for spec in config.specs:
+        if spec.kind != HEADLESS:
+            continue
+        if spec.tier is None and spec.model is None:
+            problems.append(
+                f"runner {spec.name!r} meters what it spends but declares no model tier and no "
+                f"model, so its cost lands on a model nobody named and the tier refusal cannot "
+                f"fire; declare [runner] default_tier, or a 'tier' on [[runner.agents]] for "
+                f"{spec.name!r}"
+            )
+            continue
+        try:
+            resolution = resolve_model(spec, repo_root=repo_root)
+        except ModelResolutionError as exc:
+            problems.append(f"runner {spec.name!r} declares a tier that cannot be pinned: {exc}")
+            continue
+        if resolution.model is None:
+            problems.append(
+                f"runner {spec.name!r} declares tier {resolution.tier!r} ({resolution.source}) but "
+                f"no model was pinned, so the dispatch is metered against the session's own "
+                f"model: {resolution.note or 'the family cannot express a model'}"
+            )
+    return problems
 
 
 def _context_window(entry: dict, name: str) -> tuple[int, str]:

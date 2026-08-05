@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import permissions, runner
+from basicly import permissions, run_record, runner
 from basicly.config import (
     CONFIG_FILE,
     DEFAULT_CONFIG_TOML,
@@ -27,6 +27,7 @@ from basicly.config import (
     load_verify_config,
     load_worktree_config,
     record_technology_selection,
+    untiered_metered_runners,
 )
 from basicly.runner import (
     ADAPTER_WINDOW,
@@ -37,6 +38,10 @@ from basicly.runner import (
     FALLBACK_WINDOW,
     FAMILY_DEFAULT_TIER,
 )
+
+# This repo's own checkout: the subject of the declaration gates below, which assert
+# on the config and ledger it actually ships rather than on a fixture.
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_default_config_toml_matches_builtin_defaults(tmp_path: Path) -> None:
@@ -385,6 +390,94 @@ def test_a_default_tier_lands_on_every_spec_that_declares_none(tmp_path: Path) -
     # An explicit model pin is left alone: the pin wins, so a tier here would only
     # misreport where the model came from.
     assert by_name["pinned"].tier is None
+
+
+# --- The tier declaration this repo has to keep (basicly-tcmy.35) -------------
+
+# The model this repo's lanes were observed running before anything pinned one, read
+# off `observed_models` on the committed ledger. Held here as the value the declared
+# tier has to keep resolving to, so a tier change that quietly moves the work onto
+# another model fails instead of being re-recorded as the new normal.
+_OBSERVED_LANE_MODEL = "claude-opus-5"
+
+
+def _repo_runner_specs() -> dict[str, runner.RunnerSpec]:
+    return {spec.name: spec for spec in load_runner_config(REPO_ROOT).specs}
+
+
+def test_every_metered_runner_in_this_repo_resolves_a_model_it_can_name() -> None:
+    """The live gate, asserted on this repo's own config rather than a fixture.
+
+    basicly-tcmy.35 was not a defect in the resolver: it refuses an unresolvable tier
+    before spawning anything, and it is correct. The defect was the *input*. Nothing
+    here declared a tier, the refusal fires only when one was declared, and so 48
+    metered dispatches recorded an exact 313.30 USD of spend against no model at all
+    — with every existing gate green, because an absent tier reads exactly like a
+    deliberate no-tier choice. This asserts the input is present and resolves.
+    """
+    assert untiered_metered_runners(load_runner_config(REPO_ROOT), repo_root=REPO_ROOT) == []
+
+
+def test_the_gate_names_the_key_when_nothing_declares_a_tier(tmp_path: Path) -> None:
+    """The known-bad control: the config this repo had until basicly-tcmy.35.
+
+    Without it the gate above cannot be told apart from one that has no way to fail.
+    Every headless built-in is reported and each names `[runner] default_tier` — the
+    single line that fixes all of them — while the handoff runner is not swept in
+    with them: it spawns nothing, spends nothing, and has no argv to pin a model
+    onto, so flagging it would train the reader to ignore the check.
+    """
+    (tmp_path / CONFIG_FILE).write_text("[runner]\n", encoding="utf-8")
+    metered = [spec for spec in BUILTIN_RUNNERS if spec.kind == runner.HEADLESS]
+
+    problems = untiered_metered_runners(load_runner_config(tmp_path), repo_root=REPO_ROOT)
+
+    assert len(problems) == len(metered)
+    report = "\n".join(problems)
+    for spec in metered:
+        assert f"runner {spec.name!r}" in report
+    assert report.count("[runner] default_tier") == len(metered)
+    assert "manual" not in report
+
+
+def test_the_declared_tier_pins_the_model_this_repos_lanes_already_ran() -> None:
+    """The declaration records what already happens; it does not choose something new.
+
+    `high` resolves through the committed map to the model every dispatch that
+    reported one was observed running, so the work stays on that model and what
+    changes is only that the record can name it: the tier, where the tier came from,
+    and that it was honoured.
+    """
+    resolution = runner.resolve_model(_repo_runner_specs()["claude"], repo_root=REPO_ROOT)
+
+    assert resolution.tier == "high"
+    assert resolution.source == FAMILY_DEFAULT_TIER
+    assert resolution.honoured
+    assert resolution.model == _OBSERVED_LANE_MODEL
+
+
+def test_the_ledger_holds_the_metered_dispatches_that_named_no_model() -> None:
+    """The positive control on the population that filed basicly-tcmy.35.
+
+    Read off the committed tracker, so this is the evidence a fresh clone has (D11)
+    rather than a local usage file. Two facts, both load-bearing: dispatches carrying
+    a recorded cost exist at all, without which everything after the first assertion
+    is a filter over an empty list and passes vacuously; and on those records the
+    model that spent the money is recoverable only from what was *observed*, which is
+    the fact a declared tier turns into something the record states about itself.
+    """
+    metered = [
+        entry
+        for entries in run_record.dispatch_history(REPO_ROOT).values()
+        for entry in entries
+        if isinstance(cost := entry.get("cost"), int | float) and not isinstance(cost, bool)
+    ]
+    assert metered, "no dispatch carries a recorded cost — this control would be inert"
+
+    unnamed = [e for e in metered if e.get("model") is None and e.get("model_tier") is None]
+
+    assert unnamed
+    assert any(_OBSERVED_LANE_MODEL in (e.get("observed_models") or ()) for e in unnamed)
 
 
 def test_runner_config_model_defaults_none(tmp_path: Path) -> None:

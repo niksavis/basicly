@@ -106,6 +106,7 @@ ignore_names = [
   "tags",
   "tb",
   "tone",
+  "untiered_metered_runners",
   "width",
   "window_violations",
 ]
