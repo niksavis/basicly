@@ -289,12 +289,25 @@ def rerun_failures(
 # which a literal match on either prose form does not (learned the hard way: the
 # first version of this register held only the singular form and a landing
 # reproduced only the plural one).
+#
+# The lock entry is anchored on ``write lock at`` rather than on the whole timeout
+# sentence for the same reason: that phrase is common to every wording br uses when
+# it cannot take the lock, and the observed one ("Timed out after 400ms waiting for
+# write lock at <path>/.beads/.write.lock", reproduced 2026-08-05 by holding the
+# lock against br 0.2.16) is only the shape this repo has seen so far.
 DEPENDENCY_DEFECT_SIGNATURES: tuple[tuple[tuple[str, ...], str], ...] = (
     (
         ("RuntimeError: br ", "failed:", "cannot be before created_at"),
         "br rejects its own write when the host clock steps backwards between two "
         "writes; nothing in this repo sets either timestamp (basicly-vkh0.6 carries "
         "it as a requirement on the replacement)",
+    ),
+    (
+        ("RuntimeError: br ", "failed:", "write lock at"),
+        "br serialises every mutating command behind one .beads/.write.lock and "
+        "fails the command outright when it cannot take it before the timeout, so a "
+        "gate contends with whatever else drives the tracker at that moment; no diff "
+        "can make that contention its own fault (R8 in docs/design/work-tracker.md)",
     ),
 )
 

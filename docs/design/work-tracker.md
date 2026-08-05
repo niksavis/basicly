@@ -53,7 +53,7 @@ Stated by the owner, plus what the harness's own use has demonstrated:
 
 ### 2.1 Requirements carried forward from defects we have already paid for
 
-The requirements above are what we want. These seven are what we have already been
+The requirements above are what we want. These eight are what we have already been
 *billed* for — each is a `br` defect that cost real sessions, and the repo rule is that a
 dependency's defect is **requirements input for our own replacement** and the proof must become a
 committed gate, never a fix applied outside this repo (`basicly-vkh0.6`).
@@ -72,10 +72,22 @@ replacement lands, the module runs against it unchanged.
 | **R5.** Id shape | `--slug` mints ids like `basicly-fix-the-thing`, whose internal hyphens read as a prefix boundary | Broke our own `beads-commit-msg` gate (`basicly-jms0`); the standing rule is now "never `--slug`" | **An id is opaque and never re-parsed** — a short root plus a dotted child counter, with no separator that any consumer needs to interpret (§9.4) |
 | **R6.** Path leak | The export wrote `source_repo_path` on 328 of 332 records | Published two users' home-directory layouts into a committed, distributed file (`basicly-vkh0.5`) | **No committed artifact carries a host path**, username or hostname; portability is a property of the format, not of a scrubbing pass |
 | **R7.** Concurrency | Under the engine's own five-lane fan-out the storage layer tore its WAL: four of five lane dispatches died in the pre-flight read, each on a bead it had not been assigned, and `br` marked the failure `retryable: false` | Three lanes recovered on the dispatch rework; `basicly-tcmy.11` reached the rework cap without an agent ever starting and was parked, and the session's L3 grant halted with 43.4M of 60M tokens unspent (`basicly-vkh0.10`) | **N concurrent readers and one writer never corrupt shared state**, and a contention failure that *is* reported is marked retryable so the caller backs off (§9.3) |
+| **R8.** Lock scope | Every mutating command serialises behind one `.beads/.write.lock`, and *fails the command* when it cannot take it before the timeout rather than queueing behind it. The engine's lanes share one `.beads` through `redirect`, so every lane's gate contends with every other lane's writes and with whatever else drives the tracker at that moment | Two transient gate failures in one session, 2026-07-30 — a landing's `pytest` gate and a `pre-push` hook, each passing unchanged on the next attempt. A landing flake is not free: it spends a rework attempt against a cap of 2, so a second unlucky landing escalates to a human for a defect that does not exist (`basicly-m4zv.14`) | **Contention waits; a wait that gives up says so.** One writer per ledger, with the lock scoped to the ledger it protects and never to the machine or the home directory (§9.3), and a lock-acquisition failure reported as retryable so the caller backs off instead of the gate failing |
 
-R1, R5, R6 and R7 are already settled in the design (§9.5, §9.4, §12, §9.3). R2, R3 and R4 are
-constraints on the command layer that has not been written yet, and this table is where they are
-recorded so it cannot be written without them.
+R1, R5, R6, R7 and R8 are already settled in the design (§9.5, §9.4, §12, §9.3, §9.3). R2, R3 and
+R4 are constraints on the command layer that has not been written yet, and this table is where they
+are recorded so it cannot be written without them.
+
+R8 is the one entry whose defect **did not reproduce** when it was probed. `~/.beads/` does not
+exist on the machine that filed it, and on br 0.2.16 the suite passed 2119 tests under `-n auto`
+while 1297 concurrent external `br init` runs were driven against the same host (2026-08-01) — so
+the "machine-global lock" the incidents were originally attributed to is not what br does now, and
+`basicly.toml`'s comment saying so was retracted rather than left to mislead. It is carried anyway,
+because the requirement is a property we want from the replacement and not a bug report about br,
+and because the cost is already paid: the containment, if the contention returns, is the signature
+entry in `verify.DEPENDENCY_DEFECT_SIGNATURES`, which routes a lock-acquisition failure to
+`merge.VERIFY_UNRELIABLE` — bounded by `policy.MAX_UNRELIABLE_GATE_EVENTS` and charged to no
+lane's rework budget.
 
 R7 is the one whose gate could not be pointed at `br`. The other six are properties of a *response*,
 so the harness's defence against the bad input is directly assertable; this one is a property of a
@@ -497,6 +509,14 @@ cheap: an append is one line, so two writers do not contend for a record. Only t
 needs a lock, and because it is disposable a lost update to it is repaired by a rebuild rather
 than reconciled. The lock must be portable (§12) — the atomic write-then-rename the harness
 already uses, not `fcntl`.
+
+That lock is **scoped to the ledger it protects** — never to the machine, the home directory or any
+other path two unrelated repos could share (R8). Scope is what decides who contends: a lock one
+level too wide turns every unrelated process on the host into a competitor for a record it will
+never touch, and the failure that produces is a *gate* failing rather than a write waiting. Which
+is the second half of the rule: **a wait that gives up is a retryable failure and says so**, the
+same property R7 asks for and for the same reason — the caller must be able to tell "try again" from
+"your work is wrong" without reading prose.
 
 **Readers are the part this section used to leave implicit, and it is what R7 was billed for.**
 "Single writer" bounds the *writers*; it says nothing about the N lane processes reading the ledger

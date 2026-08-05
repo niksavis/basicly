@@ -1,6 +1,6 @@
 """Requirements the replacement tracker inherits from br's defects (basicly-vkh0.6).
 
-Plan §4 Phase 6: *carry Phase 0's defects forward as requirements*. Six defects in
+Plan §4 Phase 6: *carry Phase 0's defects forward as requirements*. Eight defects in
 `br` have already been paid for in sessions spent diagnosing them, and the repo
 rule is that a dependency's defect is **requirements input for our own
 replacement** and the proof must become a committed gate — never a fix applied
@@ -9,7 +9,7 @@ outside this repo.
 This module is that gate. One test per requirement, each exercising the harness's
 *own* defence against the **defective input**, so it fails if the defence is
 removed. The register in prose, with what each defect cost, is
-`docs/design/work-tracker.md` §2.1 (R1-R6); the ids here match it.
+`docs/design/work-tracker.md` §2.1 (R1-R8); the ids here match it.
 
 Two things this module deliberately is not:
 
@@ -612,14 +612,61 @@ def test_r7_a_lane_failure_that_is_not_the_store_still_costs_a_dispatch_attempt(
     assert charged == [supervise.DISPATCH_GATE]
 
 
+# --- R8: a contended write lock waits, and giving up is retryable -------------
+
+# br 0.2.16's answer to a held `.beads/.write.lock`, reproduced 2026-08-05 by taking
+# the lock and running a write against it, then wrapped as `br.run_br` wraps a failure.
+# Quoted for the same reason :data:`_R7_STORAGE_ERROR` is: composed fixtures are what
+# made the clock recogniser dead code through two "fixes" (basicly-aswc).
+_R8_LOCK_TIMEOUT = (
+    "E           RuntimeError: br create probe -t task -p 2 failed: "
+    "Error: Configuration error: Timed out after 400ms waiting for write lock at "
+    "/tmp/probe/.beads/.write.lock. Another br process may be holding .write.lock; "
+    "retry after it exits or investigate a stuck process."
+)
+
+
+def test_r8_a_contended_write_lock_does_not_spend_the_lanes_rework_budget(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """R8: a lock the replacement makes a lane *wait* for must not fail its gate.
+
+    br fails a mutating command outright when it cannot take the workspace write lock
+    before the timeout, and the engine's lanes all reach one `.beads` through
+    `redirect`, so a gate contends with every sibling landing and with every other br
+    command running on the host. Two gates failed that way in one session
+    (basicly-m4zv.14) and each passed unchanged on the next attempt.
+
+    Asserted at the landing's verdict rather than on the recogniser, because the
+    recogniser is only worth having if it changes what the failure costs: an
+    unreliable gate is bounded by ``MAX_UNRELIABLE_GATE_EVENTS`` and charged to no
+    rework budget, while ``verify-failed`` spends one of two attempts.
+    """
+    failed = verify.VerifyReport("full", (verify.CheckResult("pytest", "fail", 1),))
+    contended = verify.VerifyReport(
+        "full", (verify.CheckResult("pytest", "fail", 1, output=_R8_LOCK_TIMEOUT),)
+    )
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: failed)
+    monkeypatch.setattr(verify, "rerun_failures", lambda *_a, **_k: contended)
+
+    result = merge._verify_for_landing(tmp_path, "lane", tmp_path, "full", "basicly-x")
+
+    assert result is not None
+    assert result.status == merge.VERIFY_UNRELIABLE
+    assert result.unreliable is True
+    # The reason travels with the verdict: a reader must not have to guess which
+    # dependency was forgiven, or on what grounds.
+    assert ".beads/.write.lock" in result.detail
+
+
 # --- The register must stay complete -----------------------------------------
 
 
 def test_every_requirement_in_the_design_register_has_a_test_here() -> None:
     """A prose register nobody tests is a wish list.
 
-    The design doc numbers the requirements R1-R6; this asserts each id appears in
-    a test name in this module, so adding a seventh defect to the register without
+    The design doc numbers the requirements R1-R8; this asserts each id appears in
+    a test name in this module, so adding a ninth defect to the register without
     a gate fails here rather than being noticed years later.
     """
     design = (REPO_ROOT / "docs" / "design" / "work-tracker.md").read_text(encoding="utf-8")
