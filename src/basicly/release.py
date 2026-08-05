@@ -231,12 +231,19 @@ def shipped_capabilities(repo_root: Path) -> tuple[tuple[str, str], ...]:
     ``wired-or-deleted`` rejects, and there is no consumer outside this module to wire
     one to. A pair carries the same two values without claiming to be a public type.
 
-    The witness is the check's own ``command[0]``, the executable it invokes, which is
-    the same reading the recorder makes — the ``tool-usage`` hook credits the head token
-    of a pipeline segment. A check that hides its real work behind a wrapper (``uv run
-    python .scripts/...``) is therefore witnessed by the *wrapper*, which is weaker
-    evidence than a check naming its own tool; that is a property of how the command is
-    declared, and the fix is the declaration, not a second parser here.
+    The witness is the check's ``name``, namespaced by ``usage.VERIFY_CHECK_PREFIX`` and
+    recorded by the one component that ever executes a declared check:
+    :func:`basicly.verify.run_check` records every check it watches pass. It used to be
+    the check's ``command[0]``, read off the ``tool-usage`` hook's counters, and that
+    measured *who typed a word* rather than whether the check ran — a witness that was
+    simultaneously unsatisfiable and unfalsifiable (basicly-3yi3). Unsatisfiable for a
+    check nothing invokes by hand: ``vulture`` exists only as a declaration, so its
+    counter was never created and no verify run could create it, and the gate blocked
+    v0.7.0 over a check that had just passed. Unfalsifiable for a check behind a wrapper:
+    ``wired-or-deleted`` runs as ``uv run python .scripts/...``, and ``uv``'s thousands
+    of executions would stay healthy if the check were deleted outright. A name is
+    unique per declaration and nothing but the engine running that declaration can earn
+    it, which closes both directions with one key.
 
     A tuple of pairs rather than a mapping, because two checks may legitimately share a
     name and a mapping would silently drop one — an inventory that quietly shrinks is
@@ -249,7 +256,10 @@ def shipped_capabilities(repo_root: Path) -> tuple[tuple[str, str], ...]:
     that names nothing cannot refuse anything.
     """
     return tuple(
-        (f"{CAPABILITY_VERIFY_CHECK} {check.name!r}", check.command[0])
+        (
+            f"{CAPABILITY_VERIFY_CHECK} {check.name!r}",
+            f"{usage.VERIFY_CHECK_PREFIX}{check.name}",
+        )
         for check in load_verify_config(repo_root).checks
     )
 
@@ -257,12 +267,17 @@ def shipped_capabilities(repo_root: Path) -> tuple[tuple[str, str], ...]:
 def recorded_executions(repo_root: Path) -> dict[str, int] | None:
     """Executions per capability key across the ledgers on disk, or None with no ledger.
 
-    Both halves, unioned here rather than inside either one: :mod:`basicly.usage` and
-    :mod:`basicly.tracker_usage` are independent siblings in the engine's bottom tier
-    (``.importlinter``), so neither may read the other, and this module is the consumer
-    that legitimately reads both. Skipping a half would fabricate a refusal from evidence
-    that exists.
+    All three halves, unioned here rather than inside any one of them:
+    :mod:`basicly.usage` and :mod:`basicly.tracker_usage` are independent siblings in the
+    engine's bottom tier (``.importlinter``), so neither may read the other, and this
+    module is the consumer that legitimately reads both. Skipping a half would fabricate
+    a refusal from evidence that exists.
 
+    * the verify engine's own per-check ledger (:func:`usage.load_verify_checks`), keyed
+      here under ``usage.VERIFY_CHECK_PREFIX`` so a check's name can never collide with
+      a tool of the same name. This is the half every capability in today's inventory is
+      witnessed by, and the only one that reports a capability *passing* rather than
+      merely being named on a command line.
     * the ``tool-usage`` hook's counters, keyed by the executable name as the recorder
       wrote it — ``ruff``, ``basicly``, and ``skill:<slug>`` for a skill invocation. A
       counter the hook created and never incremented is dropped: a zero is not an
@@ -270,8 +285,17 @@ def recorded_executions(repo_root: Path) -> dict[str, int] | None:
     * the tracker ledger's measured surfaces (:func:`tracker_usage.surface_executions`),
       which is the *committed* half and so answers on a machine whose counters are empty.
 
+    The last two witness no capability the inventory declares today, and that is the
+    correction basicly-3yi3 made rather than an oversight: what they record is that a
+    human or an agent ran a *tool*, which is not evidence that the check wrapping it ran
+    (``uv`` at 6091 executions would look identical with ``wired-or-deleted`` deleted).
+    They stay because this function answers "what executions does this checkout have on
+    record", the ledger set is what the ``None`` below is judged over, and a second kind
+    of capability — one genuinely witnessed by a typed tool — is then an inventory entry
+    rather than a change here.
+
     ``None`` means no ledger exists at all, and the caller must keep it apart from a
-    recorded zero: absence of a record is not evidence that a capability ran. Both are
+    recorded zero: absence of a record is not evidence that a capability ran. All are
     read from *repo_root* — the counters because the hook writes them into the checkout's
     own ``.basicly/usage/``, and a release is refused from a linked worktree anyway.
 
@@ -280,19 +304,30 @@ def recorded_executions(repo_root: Path) -> dict[str, int] | None:
     read as a measured zero.
     """
     counters = usage.load_usage(repo_root)
+    check_runs = usage.load_verify_checks(repo_root)
     surfaces = tracker_usage.surface_executions(repo_root)
-    if counters is None and not surfaces:
+    if counters is None and check_runs is None and not surfaces:
         return None
     counts: dict[str, int] = {}
     for name, entry in (counters or {}).items():
-        if not isinstance(entry, dict):
-            continue
-        count = entry.get("count")
-        if isinstance(count, int) and not isinstance(count, bool) and count > 0:
-            counts[str(name)] = count
+        if executions := _counted(entry):
+            counts[str(name)] = executions
+    for name, entry in (check_runs or {}).items():
+        if executions := _counted(entry):
+            counts[f"{usage.VERIFY_CHECK_PREFIX}{name}"] = executions
     for key, calls in surfaces.items():
         counts[key] = counts.get(key, 0) + calls
     return counts
+
+
+def _counted(entry: object) -> int:
+    """The executions a counter entry records, or 0 — a zero is not an execution."""
+    if not isinstance(entry, dict):
+        return 0
+    count = entry.get("count")
+    if isinstance(count, int) and not isinstance(count, bool) and count > 0:
+        return count
+    return 0
 
 
 def unexercised_capabilities(repo_root: Path) -> tuple[str, ...]:
@@ -313,14 +348,16 @@ def unexercised_capabilities(repo_root: Path) -> tuple[str, ...]:
     counts = recorded_executions(repo_root)
     if not counts:
         return (
-            f"no execution ledger at {usage.USAGE_FILE.as_posix()} or "
-            f"{tracker_usage.LEDGER_FILE.as_posix()}, so every declared capability is "
-            f"unproven ({len(capabilities)} declared): exercise them on this machine and "
-            "re-run (`basicly usage report` shows what is recorded)",
+            f"no execution ledger at {usage.VERIFY_CHECKS_FILE.as_posix()}, "
+            f"{usage.USAGE_FILE.as_posix()} or {tracker_usage.LEDGER_FILE.as_posix()}, so "
+            f"every declared capability is unproven ({len(capabilities)} declared): "
+            "exercise them on this machine and re-run (`basicly verify` records every "
+            "check it runs; `basicly usage report` shows what is recorded)",
         )
     return tuple(
-        f"unexercised capability: {label} — the usage ledger records no execution of "
-        f"{witness!r}; exercise it or drop the claim before tagging"
+        f"unexercised capability: {label} — nothing has recorded an execution under "
+        f"{witness!r}; exercise it or drop the claim before tagging (`basicly verify` "
+        "records a check it runs and watches pass, in each mode that declares it)"
         for label, witness in capabilities
         if counts.get(witness, 0) <= 0
     )

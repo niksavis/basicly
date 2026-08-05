@@ -496,16 +496,19 @@ def surface_executions(repo_root: Path) -> dict[str, int]:
     Two keys per surface — ``"<binary> <subcommand>"`` (``br show``, ``bv
     --robot-next``) and the bare binary — because the two answer different questions and
     both are asked. A frozen-surface question is about the pair; the
-    exercised-or-unproven gate (:func:`basicly.release.unexercised_capabilities`) asks
-    whether an *executable* ever ran, and this ledger is the committed half of that
-    evidence: a machine that never typed ``br`` in a shell has no counter for it, so
-    reading only the counters would refuse a release over a capability this ledger
-    proves ran.
+    exercised-or-unproven gate (:func:`basicly.release.unexercised_capabilities`) reads
+    this as the *committed* half of its evidence, the one that answers on a machine
+    whose git-ignored counters are empty.
+
+    It no longer witnesses a verify check, and that is a correction rather than a
+    regression (basicly-3yi3): ``br gate report`` recorded here proves the tool ran, not
+    that the check declaring it ran, so the gate now keys a check by its own name and
+    takes the record from the engine that executes it.
 
     Empty rather than None for an unrecorded repo. The gate's None — *no ledger at all,
-    so nothing is proven* — is a judgement over both ledgers, so the caller that reads
-    both makes it; this half cannot tell "never recorded" from "recorded nothing", and
-    inventing the distinction here would put two authorities on it.
+    so nothing is proven* — is a judgement over every ledger, so the caller that reads
+    them all makes it; this half cannot tell "never recorded" from "recorded nothing",
+    and inventing the distinction here would put two authorities on it.
 
     :func:`summarize` already resolves ledger versus spool and the worktree redirect, so
     this adds a key shape and nothing else.

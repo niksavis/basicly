@@ -14,6 +14,10 @@ never part of a plain verify run, so the verdict a consumer (or CI) gets from
 
 Check subprocess output streams straight to the terminal (it is not captured),
 so the consumer sees each tool's own output live.
+
+Every check that passes is recorded in the engine's own execution ledger
+(:mod:`basicly.usage`), because this runner is the only thing that ever executes
+a declared check — see :func:`run_check`.
 """
 
 from __future__ import annotations
@@ -22,7 +26,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import br, worktree
+from . import br, usage, worktree
 from .config import VERIFY_GATE_PROVIDER, VerifyCheck, VerifyConfig, load_verify_config
 
 DEFAULT_GATE = "verify"
@@ -125,8 +129,25 @@ def staged_files(repo_root: Path, suffix: str) -> list[str] | None:
 def run_check(
     check: VerifyCheck, repo_root: Path, mode: str, *, capture: bool = False
 ) -> CheckResult:
-    """Run a single check, filtering to staged files in ``staged`` mode."""
-    return _run(check, list(check.command), repo_root, mode, capture=capture)
+    """Run a single check, filtering to staged files in ``staged`` mode.
+
+    A pass is recorded as an execution of the check (:func:`usage.record_verify_check`),
+    which is the evidence :func:`basicly.release.unexercised_capabilities` reads before
+    a tag. This is the only component that can produce it: a check is never typed at a
+    shell, so the ``tool-usage`` hook cannot see one, and the release gate was refusing
+    a tag over checks it had just watched pass (basicly-3yi3).
+
+    Only a pass. The two ways a declared capability demonstrably did *not* run — the
+    command is not on PATH (127) and it is not executable (126) — both surface as a
+    ``fail`` here, so crediting a failure would witness exactly the case the gate
+    exists to catch; a skip ran nothing at all. Recorded here rather than in
+    :func:`run_verify` so a re-run counts too, and not in :func:`_run`, which also
+    serves ``run_fix`` — a fixer passing says nothing about the check.
+    """
+    result = _run(check, list(check.command), repo_root, mode, capture=capture)
+    if result.status == "pass":
+        usage.record_verify_check(repo_root, check.name)
+    return result
 
 
 def run_fix(check: VerifyCheck, repo_root: Path, mode: str) -> CheckResult:
