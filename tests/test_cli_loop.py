@@ -18,7 +18,13 @@ from pathlib import Path
 import pytest
 
 from basicly import cli, decompose, loop, loop_state, supervise
-from basicly.config import CHECKPOINTS, RunnerSpec, WorktreeConfig, load_sizing_config
+from basicly.config import (
+    CHECKPOINTS,
+    LOCAL_CONFIG_FILE,
+    RunnerSpec,
+    WorktreeConfig,
+    load_sizing_config,
+)
 from basicly.decisions import DecisionItem
 from basicly.decompose import ChildSpec
 from basicly.loop import AdvanceResult, Inputs
@@ -583,6 +589,29 @@ def test_preflight_is_ready_when_nothing_blocks(
     out = capsys.readouterr().out
     assert code == 0
     assert "VERDICT:   ready" in out
+
+
+def test_preflight_refuses_an_unrecognised_config_name_before_anything_else(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """A bad overlay is a verdict, not a traceback (basicly-1piy).
+
+    Every loader below the first line raises on an unrecognised name, so without
+    the early return the checklist would die of an exception partway down and
+    answer none of its remaining questions — and preflight exists to answer them.
+    Nothing else is pinned here on purpose: reaching a second probe at all would
+    mean the refusal came too late.
+    """
+    monkeypatch.setattr(cli, "_repo_root", lambda: tmp_path)
+    (tmp_path / LOCAL_CONFIG_FILE).write_text("[loop]\nconcurrency = 2\n", encoding="utf-8")
+
+    code = cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "config:    INVALID" in out
+    assert "'concurrency' is accepted in [worktree]" in out
+    assert "VERDICT:   not ready" in out
 
 
 def _sized(

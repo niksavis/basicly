@@ -423,6 +423,35 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An unknown section or key in `basicly.toml` / `basicly.local.toml` now fails the
+  load instead of being silently ignored.** A `concurrency` written under `[loop]`,
+  whose real home is `[worktree]`, was dropped without a word: the only symptom was
+  the committed default of 5 continuing to apply, which is indistinguishable from the
+  override having worked at the value it was already at, and it cost a dispatch
+  decision made against a forecast the operator believed they had bounded. The
+  overlay is gitignored and machine-local, so a stale or misplaced key there diverges
+  one machine's behaviour from committed intent with no diff to review.
+
+  A strict allowlist over the whole config *surface* (`config.CONFIG_SCHEMA`), not a
+  denylist and not a schema derived from `config.py`'s own loaders — two live
+  entries, `[[verify.checks]]` and `[[privacy.denied]]`, are read by a hook rather
+  than by the module. The refusal names the file, the containing section, what that
+  section accepts, and which sections accept a name like it, so the reported case
+  reports `unknown section 'loop' ... its 'concurrency' is accepted in [worktree]`.
+  Every command surfaces it; `basicly loop preflight` reports it as a first-line
+  verdict rather than dying of a traceback partway down its checklist.
+
+  **Forward compatibility, decided and recorded:** the refusal is unconditional — no
+  warn-then-error staging, no narrowing to near-misses — so a repo pinned to an older
+  basicly whose config carries a key added since fails until it upgrades or removes
+  the key. That is the honest answer rather than a regression: an engine that cannot
+  honour a key and runs anyway is the defect above, one version apart. Staging was
+  rejected as unendable (the engine ships from `main`) and unread (the incident
+  already printed a visibly wrong number that was skimmed past); near-miss narrowing
+  leaves a genuinely novel key silent. The cost is bounded by the message, which
+  names the engine version and says upgrading is one of the two fixes
+  (`basicly-1piy`).
+
 - **A dispatch now records its forecast in the unit its actual is metered in, so the
   forecast/actual pair is a comparison rather than a unit conversion.** `record_dispatch`
   wrote `forecast_tokens` — a *working set*, the context a lane holds at once — while the
