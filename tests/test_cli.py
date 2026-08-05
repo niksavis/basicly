@@ -1190,6 +1190,33 @@ def test_cli_usage_report_tables_counters_and_flags_unused_skills(work_repo: Pat
     assert "Never-used catalog skills" in result.stdout
 
 
+def test_cli_usage_report_names_the_bucket_the_unparsed_heads_go_to(work_repo: Path) -> None:
+    """A head that names no command is reported as a parser miss, not as a tool.
+
+    The table is read as culling evidence, so `PYEOF` sitting in it at 33
+    executions is a fabricated tool — and the bucket has to be named on the
+    surface, because a reader who cannot see where those heads went reads their
+    absence as the parser having nothing to report (basicly-3ymj).
+    """
+    usage_dir = work_repo / ".basicly" / "usage"
+    # The fixture copies the live repo, which may carry real telemetry.
+    shutil.rmtree(usage_dir, ignore_errors=True)
+    usage_dir.mkdir(parents=True)
+    (usage_dir / "tool-usage.json").write_text(
+        json.dumps({
+            "rg": {"count": 7, "last_used": "2026-07-16"},
+            "PYEOF": {"count": 33, "last_used": "2026-07-16"},
+        }),
+        encoding="utf-8",
+    )
+    result = run_basicly(work_repo, "usage", "report")
+    assert result.returncode == 0, result.stderr
+    tools, _, unresolved = result.stdout.partition("Unresolved heads")
+    assert unresolved, result.stdout
+    assert "rg" in tools and "PYEOF" not in tools
+    assert "PYEOF" in unresolved and "33" in unresolved
+
+
 def test_cli_usage_report_notes_missing_data(work_repo: Path) -> None:
     """A repo without the hook's counter file gets a note, not an error."""
     shutil.rmtree(work_repo / ".basicly" / "usage", ignore_errors=True)
