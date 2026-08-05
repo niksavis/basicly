@@ -35,9 +35,14 @@ Parentheses are still required when the clause binds the exception —
 
 ## Type test doubles and helpers precisely
 
-`pyright` runs as a commit gate, so a loosely-typed test helper blocks the
-commit itself, not just CI. Annotate test doubles, fakes, and helper return
-values with the real type they stand in for — never a bare `object`:
+The pre-commit gate is more than `ruff`: it runs `pyright`, `bandit`, and
+`lint-imports` too (`basicly.toml`, mode `fast`). So a worktree with `ruff` and
+`pytest` both green can still be rejected at commit time, and a mistyped test
+helper blocks the commit itself rather than CI. Commit early and let the hook
+name the mismatch instead of inferring it from a clean `ruff check`.
+
+Be precise about the type a helper *produces*, and structural about the slot a
+double *fills*:
 
 - Return the concrete type, not `object` — `def _fake_args() ->
   argparse.Namespace:`, not `-> object`. An `object` returned where a concrete
@@ -46,6 +51,14 @@ values with the real type they stand in for — never a bare `object`:
 - Type a captured container to its real value type — `captured: dict[str,
   list[str]]`, not `dict[str, object]`. A `dict[str, object]` value trips
   `reportOperatorIssue` the moment the test indexes, iterates, or compares it.
+- Annotate a parameter that *receives* a double with a structural type —
+  `Callable[..., _Proc]` or a `Protocol` — never a sibling fake class. A helper
+  typed `def _install(monkeypatch, fake: _FakeBr)` checks clean until a second
+  fake or a `lambda` reaches it, and then pyright rejects those call sites with
+  `"_FakeBrShow" is not assignable to "_FakeBr" (reportArgumentType)`. The same
+  helper typed `Callable[..., _Proc]` accepts every one of them —
+  `tests/test_decompose.py:85`, which is fed `_FakeBr`, `_FakeBrShow`, and a
+  bare `lambda`.
 
 ## Cross-platform shell-out (fails only on Windows CI)
 
