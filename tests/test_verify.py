@@ -678,6 +678,38 @@ def test_dependency_defect_needs_the_br_wrapper_on_the_same_line() -> None:
     assert verify.dependency_defect(bare) is None
 
 
+def test_dependency_defect_forgives_a_br_write_lock_timeout() -> None:
+    """A contended tracker lock is not evidence against the lane's diff.
+
+    br fails a mutating command outright when it cannot take ``.beads/.write.lock``
+    before the timeout, and a landing that hits it spends a rework attempt against a
+    cap of 2 for a defect that does not exist (basicly-m4zv.14, R8).
+    """
+    contended = verify.VerifyReport(
+        "full", (verify.CheckResult("pytest", "fail", 1, output=_LOCK_TIMEOUT),)
+    )
+
+    reason = verify.dependency_defect(contended)
+
+    assert reason is not None
+    assert reason.startswith("pytest: ")
+    assert "one .beads/.write.lock" in reason
+
+
+def test_dependency_defect_needs_the_br_wrapper_on_the_lock_line_too() -> None:
+    """The same laundering guard as the clock entry, on the entry added beside it.
+
+    A test asserting *about* the lock message must not be able to forgive its own
+    failure by quoting it.
+    """
+    bare = verify.VerifyReport(
+        "full",
+        (verify.CheckResult("pytest", "fail", 1, output="E  assert 'write lock at' in message\n"),),
+    )
+
+    assert verify.dependency_defect(bare) is None
+
+
 def test_dependency_defect_refuses_when_only_some_failures_are_explained() -> None:
     """A run mixing a dependency defect with a real failure is a real failure."""
     mixed = verify.VerifyReport(
@@ -700,6 +732,16 @@ _CLOCK_PLURAL = (
     "E           RuntimeError: br close fx-sj2.1 --reason lane sub-task verified failed: "
     'Error: Validation errors: [ValidationError { field: "updated_at", '
     'message: "cannot be before created_at" }]\n'
+)
+# br 0.2.16's answer to a held `.beads/.write.lock`, reproduced 2026-08-05 by taking
+# the lock and running a write against it, then wrapped as `br.run_br` wraps it
+# (basicly-m4zv.14). Observed rather than composed: an invented fixture is what made
+# the clock recogniser dead code through two "fixes" (basicly-aswc).
+_LOCK_TIMEOUT = (
+    "E           RuntimeError: br create probe -t task -p 2 failed: "
+    "Error: Configuration error: Timed out after 400ms waiting for write lock at "
+    "/tmp/probe/.beads/.write.lock. Another br process may be holding .write.lock; "
+    "retry after it exits or investigate a stuck process.\n"
 )
 
 
