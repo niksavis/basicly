@@ -1335,6 +1335,90 @@ def test_a_needs_input_event_counts_only_while_its_bead_is_open(
     assert policy.lights_out_violations(tmp_path, "root", CONFIG, shipping="root.1") == ()
 
 
+def _seed_answered_wrinkle(
+    repo_root: Path, monkeypatch: pytest.MonkeyPatch, kind: str, question: str, *, answer: bool
+) -> _PerIssueBr:
+    """Install the epic fixture with root.2's wrinkle also queued, answered when asked.
+
+    The marker and its queue item are written together at every real call site
+    (``loop._runner_outcome``, ``supervise._rework``), so a fixture seeding only the
+    marker cannot tell an answered question from an unanswered one — which is the
+    whole distinction basicly-jr0l.65 turns on. *answer* is the control: the same
+    fixture with the item left pending.
+    """
+    marker = (
+        f"[harness-policy] needs-input {question}"
+        if kind == "needs-input"
+        else "[harness-policy] rework gate=verify"
+    )
+    fake = _epic_with_a_wrinkled_sibling(wrinkle=marker)
+    _install(monkeypatch, fake)
+    item = decisions.enqueue(repo_root, "root.2", kind, question)
+    if answer:
+        decisions.answer(repo_root, item.decision_id, "use v2", by="human")
+    return fake
+
+
+@pytest.mark.parametrize(
+    ("kind", "question"),
+    [
+        ("needs-input", "which API version"),
+        (policy.REWORK_ESCALATION_KIND, policy.rework_escalation_question("verify")),
+    ],
+)
+def test_an_answered_wrinkle_stops_counting_while_its_bead_stays_open(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, kind: str, question: str
+) -> None:
+    """basicly-jr0l.65, both directions of the one rule, on both marker families.
+
+    Measured on the 2026-08-02 basicly-tcmy pass: the question was answered, and every
+    delegated ship in the session stayed refused until the bead carrying it was
+    *closed*. Answering is a resolution exactly as closing is, so the marker retires
+    on the same rule - and the control, the identical marker with its question still
+    pending, must still refuse.
+    """
+    _seed_answered_wrinkle(tmp_path, monkeypatch, kind, question, answer=False)
+    live = policy.lights_out_violations(tmp_path, "root", CONFIG, shipping="root.1")
+    assert len(live) == 1
+
+    _seed_answered_wrinkle(tmp_path, monkeypatch, kind, question, answer=True)
+    assert policy.lights_out_violations(tmp_path, "root", CONFIG, shipping="root.1") == ()
+
+
+def test_an_answered_wrinkle_lets_the_grant_delegate_the_child_ship(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The consequence: the two merged, verified children ship without asking again."""
+    _seed_answered_wrinkle(tmp_path, monkeypatch, "needs-input", "which API version", answer=True)
+
+    result = policy.approve_checkpoint_guarded(
+        tmp_path, "root.1", "ship", interactive=False, grant_root="root"
+    )
+
+    assert result.status == "approved"
+    assert result.detail == "delegated under L3 grant"
+    assert policy.checkpoint_approved(tmp_path, "root.1", "ship")
+
+
+def test_a_fact_that_blocks_again_after_an_answer_counts_as_live(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Re-opening is what keeps the discount from being a permanent free pass.
+
+    ``decisions.enqueue`` re-opens an answered question under the next generation,
+    so the same fact blocking a second time is a *new*, unanswered item. Keying the
+    discount on the answered item alone would retire every later recurrence of that
+    fact for the rest of the session.
+    """
+    _seed_answered_wrinkle(tmp_path, monkeypatch, "needs-input", "which API version", answer=True)
+    policy.record_needs_input(tmp_path, "root.2", "which API version")
+    decisions.enqueue(tmp_path, "root.2", "needs-input", "which API version")
+
+    live = policy.lights_out_violations(tmp_path, "root", CONFIG, shipping="root.1")
+
+    assert live == ("3 needs-input event(s) recorded on root.2",)
+
+
 def test_a_closed_siblings_escalation_lets_the_grant_delegate_the_child_ship(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

@@ -410,6 +410,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An answered question no longer holds every delegated ship in the session until its
+  bead closes.** The L3 lights-out preconditions counted `needs-input` and rework-escalation
+  markers by their presence alone, and only a *closed* bead discounted them — so one open
+  bead carrying a question a human had already answered refused every later delegated ship.
+  Measured on the 2026-08-02 `basicly-tcmy` pass: two merged, verified children could not
+  ship under the grant until the answered sibling was closed, at which point both were
+  delegated with no further human input. Answering is a resolution exactly as closing is, so
+  both marker families now retire on it, read from the decision queue's existing answer
+  marker — no new state. An unanswered question still refuses, and a fact that blocks again
+  after a wrong answer re-opens under the next generation and counts as live again
+  (`basicly-jr0l.65`).
+
 - **The exercised-or-unproven release gate now reads the engine's own record of a check,
   not who typed the tool's name.** Its witness was the check's `command[0]` counted by the
   `tool-usage` hook — a count of what an agent typed at a shell — which made the gate
