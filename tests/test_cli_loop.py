@@ -489,6 +489,12 @@ class _Preflight:
     # reason: computing it walks the tracker export and the local record file, so left
     # live every preflight test would parse this repo's real 4MB of markers.
     calibration: object | None = None
+    # The configured append-only paths and each candidate's declared scope, for the
+    # contention warning (basicly-o8p0). Both pinned rather than read: left live the
+    # paths come off this repo's own basicly.toml — so declaring one there would start
+    # deciding unrelated assertions — and the scopes are a real `br show` per lane.
+    append_only: tuple[str, ...] = ()
+    scopes: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 def _calibration(**overrides) -> decompose.CalibrationStatus:
@@ -560,6 +566,13 @@ def _preflight_fixture(monkeypatch: pytest.MonkeyPatch, pinned: _Preflight) -> N
         lambda _r, issue_id, _s: pinned.admissions.get(
             issue_id, supervise.WorkingSetAdmission(issue_id, None, None, refused=False)
         ),
+    )
+    monkeypatch.setattr(cli.decompose, "append_only_paths", lambda *_a: pinned.append_only)
+    scopes = pinned.scopes
+    monkeypatch.setattr(
+        supervise.merge,
+        "declared_scopes",
+        lambda _r, beads: {b: scopes[b] for b in beads if b in scopes},
     )
     # Preflight also reads the root's own checkpoint state, the same reconstruction
     # `loop status` prints. Pinned for the same reason as the band verdicts: left live
@@ -782,6 +795,56 @@ def test_preflight_names_a_candidate_the_estimator_cannot_size(
     out = capsys.readouterr().out
     assert "c.1" in out
     assert "no scope the estimator can read" in out
+
+
+def test_preflight_warns_that_a_pass_will_contend_on_an_undeclared_path(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The one collision knowable before any lane starts, named before one starts.
+
+    The reported pass got `VERDICT: ready` for three lanes whose scopes were disjoint
+    and whose `CHANGELOG.md` entries were not, and paid for it with a rework budget in
+    the merge queue. Advisory on purpose — the remedy is a build order, and refusing
+    the pass would answer a predictable conflict by stopping the factory.
+    """
+    _preflight_fixture(
+        monkeypatch,
+        _Preflight(
+            grant=Grant(level="L1", token_budget=10_000),
+            children=(("c.1", "open"), ("c.2", "open"), ("c.3", "open")),
+            append_only=("CHANGELOG.md",),
+            scopes={
+                "c.1": ("src/basicly/schema.py",),
+                "c.2": ("src/basicly/config.py",),
+                "c.3": ("src/basicly/usage.py",),
+            },
+        ),
+    )
+
+    code = cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+
+    out = capsys.readouterr().out
+    assert "contend:   append-only: `CHANGELOG.md`" in out
+    assert "3 lane(s) will each append to `CHANGELOG.md` and none declares it: c.1, c.2, c.3" in out
+    assert code == 0
+    assert "VERDICT:   ready" in out
+
+
+def test_preflight_says_the_contention_check_is_inert_when_nothing_is_declared(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Silence would read as "checked, nothing found" on the repo's default config."""
+    _preflight_fixture(
+        monkeypatch,
+        _Preflight(
+            grant=Grant(level="L1", token_budget=10_000),
+            children=(("c.1", "open"), ("c.2", "open")),
+        ),
+    )
+
+    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+
+    assert "contend:   no append-only path declared" in capsys.readouterr().out
 
 
 def test_preflight_refuses_a_dirty_base_before_any_lane_runs(

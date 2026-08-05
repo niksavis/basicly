@@ -2768,19 +2768,23 @@ def _print_planned(planned: tuple[Any, ...]) -> None:
             print(f"      shared (not owned): {', '.join(child.spec.shared)}")
 
 
-def _print_collapsing_paths(collapsing: tuple[Any, ...]) -> None:
+def _print_collapsing_paths(collapsing: tuple[Any, ...], contended: tuple[str, ...] = ()) -> None:
     """Name the declared paths that are load-bearing for the grouping.
 
     Printed by the dry run and the real run from the same
     :func:`decompose.collapsing_paths` computation, so the preview cannot report a
     different collapse than the run it is meant to predict (basicly-u6tw's rule
     applied to basicly-jr0l.45). Silent when no single path decides anything.
+
+    *contended* is the configured append-only list, passed through so a path that no
+    child declared says where it came from instead of reading as a grouping bug
+    (basicly-o8p0).
     """
     if not collapsing:
         return
     print("collapsing paths:")
     for item in collapsing:
-        print(f"  {decompose.describe_collapsing_path(item)}")
+        print(f"  {decompose.describe_collapsing_path(item, contended)}")
 
 
 def _spend_metrics(spend: Any) -> str:
@@ -2830,13 +2834,17 @@ def cmd_decompose(args: argparse.Namespace) -> int:
     """Decompose a feature into child issues + a computed dependency graph."""
     repo_root = _repo_root()
     children = _load_decompose_children(args)
+    # The same list the real run loads, read once here so the dry run groups the plan
+    # against it too (basicly-o8p0): a preview that ignored the repo's append-only
+    # convention would promise parallel groups the run then serializes.
+    contended = decompose.append_only_paths(repo_root)
 
     if args.dry_run:
-        planned = decompose.preview(children)
+        planned = decompose.preview(children, contended)
         groups = 1 + max((c.group for c in planned), default=-1)
         print(f"decompose (dry-run): {len(planned)} children in {groups} parallel group(s)")
         _print_planned(planned)
-        _print_collapsing_paths(decompose.collapsing_paths(children))
+        _print_collapsing_paths(decompose.collapsing_paths(children, contended), contended)
         # The band verdict is the whole point of a dry run: a plan that previews
         # clean and is then refused on the real run is not a preview of anything
         # (basicly-u6tw). Same estimates and same guidance as `decompose` itself,
@@ -2865,7 +2873,7 @@ def cmd_decompose(args: argparse.Namespace) -> int:
     for group_index, group in enumerate(result.groups):
         print(f"  group {group_index}: {' -> '.join(group)}")
     print(f"serial order: {' '.join(result.serial_order)}")
-    _print_collapsing_paths(result.collapsing)
+    _print_collapsing_paths(result.collapsing, contended)
     return 0
 
 
@@ -3077,6 +3085,29 @@ def _print_preflight_calibration(repo_root: Path, sizing: SizingConfig) -> None:
     print(f"factors:   {detail} (never measured) - {factors}")
 
 
+def _print_preflight_contention(repo_root: Path, state: supervise.SessionState) -> None:
+    """Warn when this pass's lanes will contend on a path no bead declares (basicly-o8p0).
+
+    Advisory, never a blocker: the remedy is a build order, and refusing the pass would
+    turn a predictable conflict into a stopped factory. What it buys is that the
+    conflict is named *before* a lane starts, instead of arriving as a merge-queue
+    bounce that has already spent a rework cycle.
+
+    Written on the open children rather than on the lanes dispatchable right now,
+    because before any worktree exists the dispatchable count reads zero on a pass
+    that is genuinely about to start five lanes (the same reason
+    :func:`_provisioning_blockers` does not count them). A childless root is the leaf
+    case, where seeding provisions the root itself as the one lane — counted as one
+    rather than as none, so the line does not report "0 lane(s)" beside a report that
+    just said one is dispatchable.
+    """
+    lanes = state.open_children or ((state.root_issue,) if not state.children else ())
+    lines = supervise.append_only_report(repo_root, lanes, decompose.append_only_paths(repo_root))
+    print(f"contend:   {lines[0]}")
+    for line in lines[1:]:
+        print(line)
+
+
 def _print_band_report(
     working_sets: tuple[supervise.WorkingSetAdmission, ...], sizing: SizingConfig
 ) -> None:
@@ -3160,6 +3191,7 @@ def _cmd_loop_preflight(args: argparse.Namespace) -> int:
 
     blockers += _print_preflight_checkpoints(repo_root, args.issue, grant)
     blockers += _print_preflight_spend(repo_root, state, status)
+    _print_preflight_contention(repo_root, state)
     _print_preflight_calibration(repo_root, load_sizing_config(repo_root))
 
     ahead = worktree.git(

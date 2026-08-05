@@ -423,6 +423,28 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A path every lane appends to and no bead declares no longer serialises a pass
+  invisibly.** `CHANGELOG.md` is written by essentially every code lane — the landing
+  convention expects an `[Unreleased]` entry — and it appears in no bead's `## Scope`,
+  so it was invisible to `decompose`'s grouping and to `loop preflight`'s band table.
+  A three-lane pass over provably disjoint scopes (`schema.py`, `config.py`,
+  `usage.py`) preflighted as `VERDICT: ready`, then two lanes landed and the third
+  rebased onto an anchor that had moved twice, hit conflicts and spent both its rework
+  retries there. The existing `shared` declaration cannot help: it only ever
+  reclassifies a path a child already declared, and no child declares this one.
+
+  Such paths are now declared once in `[worktree] append_only_paths` and fed into the
+  same grouping `shared` feeds, from the other side — each one serialises the children
+  that would collide on it, so the sizer orders them instead of the merge queue
+  discovering them. A child that genuinely does not collide declares the path in its
+  own `scope` *and* under `shared` and stays parallel. `decompose --dry-run` names the
+  configured path and says where it came from, and `loop preflight` reports a
+  `contend:` line naming the path and the lanes that will each append to it — the one
+  collision knowable before any lane starts. The check is inert (and says so) until a
+  consumer lists a path; a glob is refused rather than ignored. Auto-resolving such a
+  conflict is deliberately *not* offered: a union merge of two prose entries is
+  consumer-facing release copy nobody reviewed (`basicly-o8p0`).
+
 - **An unknown section or key in `basicly.toml` / `basicly.local.toml` now fails the
   load instead of being silently ignored.** A `concurrency` written under `[loop]`,
   whose real home is `[worktree]`, was dropped without a word: the only symptom was

@@ -26,6 +26,17 @@ path *both* sides declared shared does not serialize them. Without it, one share
 manifest made every child overlap every other and the transitive closure collapsed
 a wholly parallel plan into a single chain (basicly-jr0l.45). Whichever way the
 grouping lands, :func:`collapsing_paths` names the path it turned on.
+
+The mirror case is a path no child declares at all, and it cost a rework budget
+before it was closed (basicly-o8p0): a repo convention — a changelog entry per
+landing — has *every* lane write one file, so it appears in no ``## Scope``, is
+invisible to the grouping and to the band table, and three lanes with provably
+disjoint scopes each inserted at the same anchor. Two landed and the third rebased
+onto a moved anchor and conflicted. Such a path cannot be declared per bead, since
+no bead mentions it, so it is declared once in ``[worktree] append_only_paths`` and
+enters the grouping here as *contended*: it serializes two children unless both
+declared it ``shared`` themselves, which is the same weakest-claim rule read from
+the undeclared side.
 """
 
 from __future__ import annotations
@@ -49,6 +60,7 @@ from .config import (
     SizingConfig,
     load_runner_config,
     load_sizing_config,
+    load_worktree_config,
 )
 
 DEFAULT_CHILD_TYPE = "task"
@@ -227,7 +239,13 @@ def scopes_overlap(a: tuple[str, ...], b: tuple[str, ...]) -> bool:
     return any(globs_overlap(ga, gb) for ga in a for gb in b)
 
 
-def serializes(a: ChildSpec, b: ChildSpec, *, ignoring: str | None = None) -> bool:
+def serializes(
+    a: ChildSpec,
+    b: ChildSpec,
+    *,
+    ignoring: str | None = None,
+    contended: tuple[str, ...] = (),
+) -> bool:
     """True when two children must be serialized against each other.
 
     Overlap through a path that **both** children declared ``shared`` does not
@@ -238,11 +256,23 @@ def serializes(a: ChildSpec, b: ChildSpec, *, ignoring: str | None = None) -> bo
     on the path — one child owning ``pyproject.toml`` still blocks every child that
     touches it, which is ccpm's designated-owner rule read from the other side.
 
-    *ignoring* drops one declared glob from both sides. That is the counterfactual
-    :func:`collapsing_paths` needs, and it is expressed here rather than by editing
-    the scopes because a scope emptied by the edit would compare as
-    "matches everything" and silently suppress the very split being measured.
+    *contended* are the configured append-only paths (``[worktree]
+    append_only_paths``) that this repo's conventions have every lane write and no
+    plan declare. Each one serializes the pair by default rather than when it is
+    declared, because "nobody mentioned it" is exactly the state the reported
+    failure was in — and the escape hatch stays the same declaration as above: a
+    child that has thought about the path puts it in its own ``scope`` *and*
+    ``shared``, and two children that both did are left parallel.
+
+    *ignoring* drops one declared glob from both sides, and the same path from
+    *contended*. That is the counterfactual :func:`collapsing_paths` needs, and it
+    is expressed here rather than by editing the scopes because a scope emptied by
+    the edit would compare as "matches everything" and silently suppress the very
+    split being measured.
     """
+    for path in contended:
+        if path != ignoring and not (path in a.shared and path in b.shared):
+            return True
     for glob_a in a.scope:
         if glob_a == ignoring:
             continue
@@ -256,7 +286,11 @@ def serializes(a: ChildSpec, b: ChildSpec, *, ignoring: str | None = None) -> bo
 
 
 def _group(
-    children: tuple[ChildSpec, ...], *, owned_only: bool, ignoring: str | None = None
+    children: tuple[ChildSpec, ...],
+    *,
+    owned_only: bool,
+    ignoring: str | None = None,
+    contended: tuple[str, ...] = (),
 ) -> tuple[int, ...]:
     """Union-find grouping over pairwise serialization (see :func:`group_children`).
 
@@ -278,7 +312,7 @@ def _group(
 
     for i in range(len(specs)):
         for j in range(i + 1, len(specs)):
-            if serializes(specs[i], specs[j], ignoring=ignoring):
+            if serializes(specs[i], specs[j], ignoring=ignoring, contended=contended):
                 parent[find(i)] = find(j)
 
     labels: dict[int, int] = {}
@@ -296,7 +330,9 @@ def _as_owned(spec: ChildSpec) -> ChildSpec:
     return spec if not spec.shared else replace(spec, shared=())
 
 
-def group_children(children: tuple[ChildSpec, ...]) -> tuple[int, ...]:
+def group_children(
+    children: tuple[ChildSpec, ...], contended: tuple[str, ...] = ()
+) -> tuple[int, ...]:
     """Assign each child a group index; children that serialize share a group.
 
     Union-find over :func:`serializes`: the transitive closure is one group
@@ -310,8 +346,25 @@ def group_children(children: tuple[ChildSpec, ...]) -> tuple[int, ...]:
     closure merged them into one chain and serialized work that was otherwise
     entirely parallel (basicly-jr0l.45). Declaring the manifest ``shared`` in each of
     them removes that one edge and leaves the modules to decide.
+
+    *contended* is the configured append-only path list (:func:`append_only_paths`),
+    which serializes for the opposite reason: nobody declared it, so nobody chose it
+    (basicly-o8p0). A caller that omits it groups the plan as if the repo declared no
+    such convention, which is what every caller meant before the list existed.
     """
-    return _group(children, owned_only=False)
+    return _group(children, owned_only=False, contended=contended)
+
+
+def append_only_paths(repo_root: Path) -> tuple[str, ...]:
+    """This repo's configured append-only paths, for the grouping to contend on.
+
+    One named reader for ``[worktree] append_only_paths`` so every surface that
+    groups a plan — the dry run, the real run, the loop's advance, preflight's
+    contention warning — contends on the same list. A preview that grouped against a
+    different list than the run would predict the wrong plan, which is the failure
+    :func:`describe_collapsing_path` is centralized against one layer up.
+    """
+    return load_worktree_config(repo_root).append_only_paths
 
 
 def chain_predecessors(groups: tuple[int, ...]) -> tuple[int | None, ...]:
@@ -356,7 +409,9 @@ class CollapsingPath:
     neutralized: bool
 
 
-def collapsing_paths(children: tuple[ChildSpec, ...]) -> tuple[CollapsingPath, ...]:
+def collapsing_paths(
+    children: tuple[ChildSpec, ...], contended: tuple[str, ...] = ()
+) -> tuple[CollapsingPath, ...]:
     """The declared paths that merge parallel groups, most-collapsing first (pure).
 
     A path is load-bearing when dropping it from every scope would leave the plan in
@@ -373,15 +428,33 @@ def collapsing_paths(children: tuple[ChildSpec, ...]) -> tuple[CollapsingPath, .
     reads as informed rather than broken. Both are reported: the AC for jr0l.45 wants
     the collapsing path named whether or not it was defused, because a name is how a
     reviewer checks that the declaration was honest.
+
+    A configured *contended* path is a candidate too, and usually the one candidate no
+    child declared — so it reports empty ``declarers``, which is how
+    :func:`describe_collapsing_path` tells the reader the path came from config
+    rather than from the plan (basicly-o8p0). Naming it is the whole remedy: the
+    collapse is otherwise a serial chain over scopes a reader can see are disjoint.
+
+    A contended candidate is measured against the plan with the append-only
+    convention off *entirely*, not merely with that one path off. Two configured
+    paths are each independently sufficient for the collapse, so dropping one at a
+    time would split nothing and report neither — the silence this diagnostic exists
+    to remove. The cost is that with two of them the counterfactual count is the same
+    for both, which is why the line reads "the declared scopes alone support N" rather
+    than attributing that number to the one path it names.
     """
-    owned = len(set(_group(children, owned_only=True)))
-    effective = len(set(_group(children, owned_only=False)))
+    owned = len(set(_group(children, owned_only=True, contended=contended)))
+    effective = len(set(_group(children, owned_only=False, contended=contended)))
     found: list[CollapsingPath] = []
-    for glob in sorted({glob for child in children for glob in child.scope}):
-        without = len(set(_group(children, owned_only=True, ignoring=glob)))
+    candidates = {glob for child in children for glob in child.scope} | set(contended)
+    for glob in sorted(candidates):
+        held = () if glob in contended else contended
+        without = len(set(_group(children, owned_only=True, ignoring=glob, contended=held)))
         if without <= owned:
             continue
-        without_effective = len(set(_group(children, owned_only=False, ignoring=glob)))
+        without_effective = len(
+            set(_group(children, owned_only=False, ignoring=glob, contended=held))
+        )
         found.append(
             CollapsingPath(
                 glob=glob,
@@ -394,12 +467,46 @@ def collapsing_paths(children: tuple[ChildSpec, ...]) -> tuple[CollapsingPath, .
     return tuple(sorted(found, key=lambda item: (-item.groups_without, item.glob)))
 
 
-def describe_collapsing_path(item: CollapsingPath) -> str:
+def _describe_contended_path(item: CollapsingPath) -> str:
+    """One report line for a path the *config* contends, not a child's scope."""
+    origin = f"`{item.glob}`: append-only by convention ([worktree] append_only_paths)"
+    if item.neutralized:
+        return (
+            f"{origin}, and every child that appends to it declared it 'shared', so it no longer "
+            f"serializes the plan — {item.groups_without} group(s)"
+        )
+    # A contended path is usually in nobody's scope — that is the case it exists for —
+    # but a child may also have declared it and *not* called it shared, which is a
+    # claim of ownership. Both serialize; saying which is what tells the reader
+    # whether the remedy is a declaration or a build order.
+    claim = (
+        "and no child declares it"
+        if not item.declarers
+        else "and not every child that declares it calls it 'shared'"
+    )
+    return (
+        f"{origin} {claim}, so it serializes the plan into {item.groups} group(s) where the "
+        f"declared scopes alone support {item.groups_without}. Build them in that order, or give "
+        "one child the entry and declare the path in its scope"
+    )
+
+
+def describe_collapsing_path(item: CollapsingPath, contended: tuple[str, ...] = ()) -> str:
     """One report line naming *item* and what it does to the grouping.
 
     Formatted here rather than at each surface so the dry run, the real run and the
     loop's advance detail cannot describe the same collapse three different ways.
+
+    *contended* is the caller's configured append-only list, so a path that entered
+    the grouping from ``[worktree] append_only_paths`` rather than from a declared
+    scope says where it came from (basicly-o8p0). Without that clause the line names
+    a path the reader cannot find in any child's scope and reads as a bug in the
+    grouping. It also carries a counterfactual measured against the convention being
+    off rather than that one path (see :func:`collapsing_paths`), which is why the two
+    branches word the counts differently.
     """
+    if item.glob in contended:
+        return _describe_contended_path(item)
     counts = (
         f"treating every declared path as owned, the plan is {item.groups} group(s) with it "
         f"and {item.groups_without} without"
@@ -1855,7 +1962,8 @@ def decompose(repo_root: Path, feature_id: str, children: tuple[ChildSpec, ...])
         raise ValueError("decompose needs at least one child spec")
 
     govern_working_set(repo_root, children, feature_id=feature_id)
-    groups = group_children(children)
+    contended = append_only_paths(repo_root)
+    groups = group_children(children, contended)
     predecessors = chain_predecessors(groups)
 
     inherited = feature_labels(repo_root, feature_id)
@@ -1878,7 +1986,9 @@ def decompose(repo_root: Path, feature_id: str, children: tuple[ChildSpec, ...])
         grouped.setdefault(child.group, []).append(child.issue_id)
     group_tuples = tuple(tuple(grouped[g]) for g in sorted(grouped))
 
-    return DecomposeResult(feature_id, tuple(created), group_tuples, collapsing_paths(children))
+    return DecomposeResult(
+        feature_id, tuple(created), group_tuples, collapsing_paths(children, contended)
+    )
 
 
 @dataclass(frozen=True)
@@ -1890,9 +2000,16 @@ class PlannedChild:
     predecessor: int | None
 
 
-def preview(children: tuple[ChildSpec, ...]) -> tuple[PlannedChild, ...]:
-    """Compute grouping and serial chains without touching ``br`` (pure)."""
-    groups = group_children(children)
+def preview(
+    children: tuple[ChildSpec, ...], contended: tuple[str, ...] = ()
+) -> tuple[PlannedChild, ...]:
+    """Compute grouping and serial chains without touching ``br`` (pure).
+
+    *contended* must be the same append-only list :func:`decompose` will load
+    (:func:`append_only_paths`), or the preview is not a preview of the run — the
+    grouping is exactly what the two have to agree on.
+    """
+    groups = group_children(children, contended)
     predecessors = chain_predecessors(groups)
     return tuple(
         PlannedChild(spec, groups[index], predecessors[index])
