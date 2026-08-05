@@ -410,6 +410,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The exercised-or-unproven release gate now reads the engine's own record of a check,
+  not who typed the tool's name.** Its witness was the check's `command[0]` counted by the
+  `tool-usage` hook — a count of what an agent typed at a shell — which made the gate
+  *unsatisfiable* for a check nobody types (`vulture` exists only as a `[[verify.checks]]`
+  entry, so no verify run could ever create its counter, and the gate refused to tag
+  v0.7.0 over a check it had just watched pass) and *unfalsifiable* for a check behind a
+  wrapper (`wired-or-deleted` runs as `uv run python ...`, and `uv` at 6,091 executions
+  would look identical with the check deleted outright). `basicly verify` now records every
+  check it runs and watches pass into `.basicly/usage/verify-checks.json`, and the gate
+  keys each capability by the check's own name — unique per declaration, and earnable only
+  by the engine running that declaration. A tag therefore needs each declared check
+  exercised in a mode that declares it; a check the engine has never run still refuses, and
+  the fail-closed stance on a missing ledger is unchanged (`basicly-3yi3`).
+
 - **A registered subcommand with no handler now fails loudly at every command group,
   not just at the top level.** Six sibling dispatchers spelled `return handler(args) if
   handler else 0` and a seventh (`usage`) did the same in a different shape, so a

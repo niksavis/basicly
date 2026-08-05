@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from basicly import cli, verify
+from basicly import cli, usage, verify
 from basicly.config import VerifyCheck, VerifyConfig, load_verify_config
 
 
@@ -143,6 +143,94 @@ def test_run_check_staged_appends_matching_files(
 
     verify.run_check(_check("ruff", ("staged",), ".py"), tmp_path, "staged")
     assert captured == ["ruff", "a.py", "b.py"]
+
+
+# --- The engine witnesses the checks it runs (basicly-3yi3) -------------------
+#
+# Nothing else can. A check exists only as a `[[verify.checks]]` entry, so the
+# `tool-usage` hook — which counts what an agent *typed* at a shell — never sees
+# one, and the exercised-or-unproven release gate was refusing a tag over checks
+# it had just watched pass.
+
+
+def test_run_check_records_a_passing_check_as_an_execution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A pass is the evidence the release gate reads, keyed by the check's name."""
+    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_k: _Proc(0))
+
+    verify.run_check(_check("vulture", ("full",)), tmp_path, "full")
+    verify.run_check(_check("vulture", ("full",)), tmp_path, "full")
+
+    recorded = usage.load_verify_checks(tmp_path)
+    assert recorded is not None
+    assert recorded["vulture"]["count"] == 2
+
+
+def test_the_recorded_ledger_never_dirties_the_tree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The release it unblocks also refuses a dirty tree, so the record must self-ignore.
+
+    A gate that has to be run before tagging, and whose record then blocks the tag it
+    was run for, is unsatisfiable in a different way — the shape this bead removed.
+    """
+    subprocess.run(["git", "init", "-b", "main"], cwd=tmp_path, check=True, capture_output=True)
+    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_k: _Proc(0))
+
+    verify.run_check(_check("vulture", ("full",)), tmp_path, "full")
+
+    assert (tmp_path / usage.VERIFY_CHECKS_FILE).exists()  # not vacuous: something was written
+    status = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=tmp_path, check=True, capture_output=True, text=True
+    )
+    assert status.stdout.strip() == ""
+
+
+def test_run_check_records_nothing_for_a_failure_or_a_skip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only a pass proves the capability works.
+
+    A `fail` covers the two states in which it demonstrably did not run at all —
+    command not found (127) and not executable (126) — and a skip ran nothing.
+    """
+    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_k: _Proc(1))
+    verify.run_check(_check("failing", ("full",)), tmp_path, "full")
+
+    monkeypatch.setattr(verify, "staged_files", lambda _root, _suffix: [])
+    verify.run_check(_check("skipped", ("staged",), ".py"), tmp_path, "staged")
+
+    assert usage.load_verify_checks(tmp_path) is None
+
+
+def test_a_fix_run_is_not_an_execution_of_the_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fixer is not the gate: `ruff format` passing says nothing about `--check`."""
+    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_k: _Proc(0))
+    check = VerifyCheck(
+        name="ruff-format",
+        command=("ruff", "format", "--check"),
+        modes=frozenset({"full"}),
+        fix_command=("ruff", "format"),
+    )
+
+    verify.run_fix(check, tmp_path, "full")
+
+    assert usage.load_verify_checks(tmp_path) is None
+
+
+def test_recording_can_never_fail_the_check_it_records(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Telemetry never becomes a verdict — an unwritable ledger path is swallowed."""
+    blocked = tmp_path / usage.VERIFY_CHECKS_FILE.parent
+    blocked.parent.mkdir(parents=True, exist_ok=True)
+    blocked.write_text("not a directory\n", encoding="utf-8")
+    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_k: _Proc(0))
+
+    assert verify.run_check(_check("vulture", ("full",)), tmp_path, "full").status == "pass"
 
 
 def test_run_verify_filters_by_mode_and_aggregates(

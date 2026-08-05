@@ -13,13 +13,14 @@ import json
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from basicly import commit as commit_mod
 from basicly import policy as policy_mod
-from basicly import release, tracker_usage, usage
+from basicly import release, tracker_usage, usage, verify
 from basicly.config import PolicyConfig
 
 CURRENT = "0.5.1"
@@ -231,11 +232,20 @@ def _declare_check(repo: Path, name: str, command: list[str]) -> None:
 
 def _record_tool_executions(repo: Path, counts: dict[str, int]) -> None:
     """Plant the `tool-usage` hook's counters, in the shape the hook writes them."""
-    usage_file = repo / usage.USAGE_FILE
-    usage_file.parent.mkdir(parents=True, exist_ok=True)
-    usage_file.write_text(
+    _plant_counters(repo, usage.USAGE_FILE, counts)
+
+
+def _record_check_runs(repo: Path, counts: dict[str, int]) -> None:
+    """Plant the verify engine's own ledger, in the shape `run_check` writes it."""
+    _plant_counters(repo, usage.VERIFY_CHECKS_FILE, counts)
+
+
+def _plant_counters(repo: Path, relative: Path, counts: dict[str, int]) -> None:
+    counter_file = repo / relative
+    counter_file.parent.mkdir(parents=True, exist_ok=True)
+    counter_file.write_text(
         json.dumps({
-            tool: {"count": count, "last_used": "2026-07-26"} for tool, count in counts.items()
+            key: {"count": count, "last_used": "2026-07-26"} for key, count in counts.items()
         }),
         encoding="utf-8",
     )
@@ -257,15 +267,15 @@ def _commit_fixture(repo: Path) -> None:
 def test_a_planted_unexercised_capability_refuses_the_release(repo: Path) -> None:
     """The acceptance criterion: a declared capability nothing ever ran blocks the tag."""
     _declare_check(repo, "planted", ["never-run-tool"])
-    # A counter the hook created and never incremented is not an execution, so the zero
-    # must refuse exactly as an absent key does.
-    _record_tool_executions(repo, {"ruff": 12, "never-run-tool": 0})
+    # A counter created and never incremented is not an execution, so the zero must
+    # refuse exactly as an absent key does.
+    _record_check_runs(repo, {"other-check": 12, "planted": 0})
     plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
 
     result = release.run_release(repo, plan, issue_id="fx-1")
 
     assert result.refused
-    assert any("'planted'" in r and "'never-run-tool'" in r for r in result.refusals)
+    assert any(f"{release.CAPABILITY_VERIFY_CHECK} 'planted'" in r for r in result.refusals)
     # Refused before the first byte: no bump, no tag, nothing to undo.
     assert release.read_version(repo) == CURRENT
     assert _git(repo, "status", "--porcelain").strip() == ""
@@ -275,7 +285,7 @@ def test_a_planted_unexercised_capability_refuses_the_release(repo: Path) -> Non
 def test_an_exercised_capability_does_not_block_the_tag(repo: Path) -> None:
     """The positive control: with an execution recorded, the same shape passes."""
     _declare_check(repo, "planted", ["recorded-tool"])
-    _record_tool_executions(repo, {"recorded-tool": 1})
+    _record_check_runs(repo, {"planted": 1})
     plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
 
     result = release.run_release(repo, plan, issue_id="fx-1", dry_run=True)
@@ -283,14 +293,50 @@ def test_an_exercised_capability_does_not_block_the_tag(repo: Path) -> None:
     assert not result.refused, result.refusals
 
 
-def test_a_capability_the_committed_tracker_ledger_witnesses_counts_as_exercised(
-    repo: Path,
-) -> None:
-    """The tracker ledger is the committed half, so it must count as evidence.
+def test_a_check_the_engine_ran_and_passed_is_exercised(repo: Path) -> None:
+    """The bug (basicly-3yi3): a check verify had just watched pass still blocked the tag.
 
-    A machine that never typed `br` in a shell has no counter for it, and reading only
-    the counters would refuse a release over a capability the ledger proves ran — the
-    false refusal a one-sided read produces.
+    End to end through the real runner rather than a planted ledger — the defect was
+    precisely that the component executing a check wrote no record anywhere, so a test
+    that plants the record cannot see it. `vulture` is declared here for the same reason
+    it broke the real release: it exists only as a check, so nothing ever types it.
+    """
+    interpreter = Path(sys.executable).as_posix()  # POSIX form: TOML would eat backslashes
+    _declare_check(repo, "vulture", [interpreter, "-c", ""])
+
+    report = verify.run_verify(repo, "full")
+    assert report.passed and [r.name for r in report.results] == ["vulture"]
+
+    plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
+    result = release.run_release(repo, plan, issue_id="fx-1", dry_run=True)
+
+    assert not result.refused, result.refusals
+
+
+def test_a_wrapper_executable_is_not_accepted_as_the_witness(repo: Path) -> None:
+    """`uv` running 6091 times says nothing about the check hiding behind it.
+
+    The gate's other failure mode, and the same cause: a witness that counts who typed
+    a word stays healthy for a check that was deleted outright.
+    """
+    _declare_check(repo, "wired-or-deleted", ["uv", "run", "python", ".scripts/x.py"])
+    _record_tool_executions(repo, {"uv": 6091, "python": 900})
+    plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
+
+    result = release.run_release(repo, plan, issue_id="fx-1", dry_run=True)
+
+    assert result.refused
+    assert any(
+        f"{release.CAPABILITY_VERIFY_CHECK} 'wired-or-deleted'" in r for r in result.refusals
+    )
+
+
+def test_the_checks_own_binary_running_elsewhere_is_not_a_witness(repo: Path) -> None:
+    """Same rule with the strongest rival evidence: the committed tracker ledger.
+
+    `br gate report` recorded there is a real, subcommand-precise execution — of the
+    tool, by something that is not this check. Until basicly-3yi3 that passed the gate,
+    which is how a declared check could be witnessed by work it never did.
     """
     _declare_check(repo, "tracker-gate", ["br", "gate", "report"])
     (repo / tracker_usage.LEDGER_FILE).parent.mkdir(parents=True, exist_ok=True)
@@ -302,7 +348,31 @@ def test_a_capability_the_committed_tracker_ledger_witnesses_counts_as_exercised
 
     result = release.run_release(repo, plan, issue_id="fx-1", dry_run=True)
 
-    assert not result.refused, result.refusals
+    assert result.refused
+    assert any(f"{release.CAPABILITY_VERIFY_CHECK} 'tracker-gate'" in r for r in result.refusals)
+
+
+def test_recorded_executions_unions_all_three_ledgers(repo: Path) -> None:
+    """Every ledger on disk is read, and the verify keys cannot collide with a tool name.
+
+    A check named `pytest` and a shell that typed `pytest` are different facts; they
+    share this map, so the namespace is what keeps the second from answering for the
+    first.
+    """
+    _record_tool_executions(repo, {"pytest": 785, "never-run-tool": 0})
+    _record_check_runs(repo, {"pytest": 2})
+    (repo / tracker_usage.LEDGER_FILE).parent.mkdir(parents=True, exist_ok=True)
+    (repo / tracker_usage.LEDGER_FILE).write_text(
+        '{"binary":"br","subcommand":"gate report","site":"engine","ok":true}\n', encoding="utf-8"
+    )
+
+    counts = release.recorded_executions(repo)
+
+    assert counts is not None
+    assert counts["pytest"] == 785
+    assert counts[f"{usage.VERIFY_CHECK_PREFIX}pytest"] == 2
+    assert counts["br gate report"] == 1
+    assert "never-run-tool" not in counts
 
 
 @pytest.mark.usefixtures("no_regen")
