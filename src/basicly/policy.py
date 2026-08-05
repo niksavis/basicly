@@ -404,6 +404,18 @@ def _marker_matches(text: str, marker: str) -> bool:
     return first_line == marker or first_line.startswith(marker + " ")
 
 
+def _marker_payload(text: str, marker: str) -> str | None:
+    """What *marker* carries on this comment, or None when it is not that marker.
+
+    Matched exactly as :func:`_marker_matches` does. The payload is taken from the
+    whole comment rather than its first line, so a fact recorded over several lines
+    comes back the way it was written.
+    """
+    if not _marker_matches(text, marker):
+        return None
+    return text.strip()[len(marker) :].strip()
+
+
 def _rework_allowance_marker(gate: str) -> str:
     return f"{MARKER} rework-allowance gate={gate}"
 
@@ -1005,7 +1017,12 @@ GRANT_COVERAGE: dict[str, tuple[str, ...]] = {
 
 _GRANT_PREFIX = f"{MARKER} grant level="
 _REVOKE_MARKER = f"{MARKER} grant revoked"
-_NEEDS_INPUT_MARKER = f"{MARKER} needs-input"
+# The queue kind enqueued alongside the marker below at the same call site, so an
+# answered question can retire the marker (basicly-jr0l.65). Duplicated from
+# ``decisions.KINDS`` for the same reason ``ENGINE_BY``'s value is: naming it here
+# would make the two modules a cycle.
+_NEEDS_INPUT_KIND = "needs-input"
+_NEEDS_INPUT_MARKER = f"{MARKER} {_NEEDS_INPUT_KIND}"
 
 
 @dataclass(frozen=True)
@@ -1600,16 +1617,39 @@ def record_needs_input(repo_root: Path, issue_id: str, fact: str) -> None:
     _run_br(repo_root, ["comments", "add", issue_id, f"{_NEEDS_INPUT_MARKER} {fact}"])
 
 
+def _answered_asks(repo_root: Path, issue_id: str) -> frozenset[tuple[str, str]]:
+    """The ``(kind, question)`` asks on *issue_id* whose latest queue item is answered.
+
+    Every marker :func:`_live_session_violations` counts is enqueued as a decision
+    item at the same call site, so the queue already records whether the fact was
+    supplied or the escalation triaged — reading resolution needs no new storage.
+
+    Keyed by the question because neither marker family carries the decision id: a
+    needs-input marker carries the fact, which *is* the item's question, and a rework
+    escalation's question is reconstructible from its gate
+    (:func:`rework_escalation_question`). Only the *latest* item per question counts,
+    so a fact that blocked again after a wrong answer — re-opened under the next
+    generation by ``decisions.enqueue`` — reads as live again.
+
+    Imported locally for the cycle reason :func:`_settle_checkpoint_queue` documents.
+    """
+    from . import decisions  # noqa: PLC0415 — see the cycle note above
+
+    latest: dict[tuple[str, str], bool] = {}
+    for item in decisions.items_on(repo_root, issue_id):
+        latest[item.kind, item.question] = item.pending
+    return frozenset(ask for ask, pending in latest.items() if not pending)
+
+
 def _live_session_violations(repo_root: Path, issue_id: str, config: PolicyConfig) -> list[str]:
     """The session-wide precondition violations *issue_id* still contributes.
 
-    Both markers this reads are append-only and nothing ever records one as
-    resolved, so a bead that once reached ``max_rework`` reported a live
-    session-wide violation forever: one shipped child (basicly-kjc5.56, closed
-    2026-07-27) dropped every later ship under its 55-child epic to a human and
-    permanently degraded L3 to L2 (basicly-i1s8). Closing the bead *is* the
-    resolution, so a closed bead's markers are discounted by the same rule that
-    makes a grant on a closed root issue dead whatever its markers say
+    Both markers this reads are append-only, so a bead that once reached
+    ``max_rework`` reported a live session-wide violation forever: one shipped child
+    (basicly-kjc5.56, closed 2026-07-27) dropped every later ship under its 55-child
+    epic to a human and permanently degraded L3 to L2 (basicly-i1s8). Closing the
+    bead *is* one resolution, so a closed bead's markers are discounted by the same
+    rule that makes a grant on a closed root issue dead whatever its markers say
     (basicly-hsrs) — a marker on closed work is history, not live state.
 
     needs-input is discounted on the same rule rather than being left behind. It
@@ -1618,26 +1658,46 @@ def _live_session_violations(repo_root: Path, issue_id: str, config: PolicyConfi
     of resolved history as history while the other stays live would leave the same
     permanent poisoning in place for any long epic.
 
-    Deliberately narrow — only *closed* work is discounted, so an escalation or a
-    missing fact on open work still refuses a delegated ship. Status is read last
-    and only when a violation was actually found, so it costs one extra ``br show``
-    for a bead carrying markers and nothing at all for the ordinary bead, which
-    stays at the single ``br comments list`` it already cost on every ship.
+    **Answering** the question is the other resolution, and it retires the marker on
+    the same rule (basicly-jr0l.65). Discounting only *closed* beads still poisoned
+    every later ship in a session from one open bead carrying a resolved question:
+    on the 2026-08-02 basicly-tcmy pass two merged, verified children could not ship
+    under the grant until the answered sibling was closed, at which point both were
+    delegated with no further human input. An answered ask is resolved state exactly
+    as a closed bead's marker is — the human already supplied what was missing, so
+    holding ship for it asks them the same question twice.
+
+    Still deliberately narrow: an unanswered ask on open work refuses a delegated
+    ship, unchanged. Resolution is read last and only for a bead that actually
+    carries a marker, so that bead costs one ``br show`` plus one ``br comments
+    list`` and the ordinary bead stays at the single ``br comments list`` it already
+    cost on every ship.
     """
     texts = _comment_texts(repo_root, issue_id)
-    violations: list[str] = []
-    needs = sum(1 for text in texts if _marker_matches(text, _NEEDS_INPUT_MARKER))
-    if needs:
-        violations.append(f"{needs} needs-input event(s) recorded on {issue_id}")
+    facts = [
+        fact for text in texts if (fact := _marker_payload(text, _NEEDS_INPUT_MARKER)) is not None
+    ]
+    capped: list[tuple[str, int]] = []
     for gate in config.required_gates:
         marker = _rework_marker(gate)
         attempts = sum(1 for text in texts if _marker_matches(text, marker))
         if attempts >= config.max_rework:
-            violations.append(
-                f"rework escalation on {issue_id} (gate {gate}: {attempts}/{config.max_rework})"
-            )
-    if violations and _issue_is_closed(repo_root, issue_id):
+            capped.append((gate, attempts))
+    if not facts and not capped:
         return []
+    if _issue_is_closed(repo_root, issue_id):
+        return []
+    answered = _answered_asks(repo_root, issue_id)
+    violations: list[str] = []
+    needs = sum(1 for fact in facts if (_NEEDS_INPUT_KIND, fact) not in answered)
+    if needs:
+        violations.append(f"{needs} needs-input event(s) recorded on {issue_id}")
+    for gate, attempts in capped:
+        if (REWORK_ESCALATION_KIND, rework_escalation_question(gate)) in answered:
+            continue
+        violations.append(
+            f"rework escalation on {issue_id} (gate {gate}: {attempts}/{config.max_rework})"
+        )
     return violations
 
 
@@ -1651,10 +1711,11 @@ def lights_out_violations(
 ) -> tuple[str, ...]:
     """The deterministic reasons an L3 ship delegation must refuse (D3).
 
-    Two preconditions are session-wide — zero rework escalations and zero
-    needs-input events on any still-*open* session bead — so any live wrinkle
-    anywhere drops ship back to a human, while a closed bead's resolved markers do
-    not (:func:`_live_session_violations`). The gate check is scoped to *shipping*,
+    Two preconditions are session-wide — zero *unresolved* rework escalations and
+    zero unresolved needs-input events across the session — so any live wrinkle
+    anywhere drops ship back to a human, while a marker whose bead has closed or
+    whose question has been answered does not
+    (:func:`_live_session_violations`). The gate check is scoped to *shipping*,
     the node actually being shipped (default: the root, for a single-node session).
 
     Scoping that one check is deliberate (basicly-kjc5.39, owner decision
