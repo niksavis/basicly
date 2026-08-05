@@ -2837,11 +2837,12 @@ def _format_advance(result: loop.AdvanceResult) -> str:
 
 def _print_preflight_spend(
     repo_root: Path, state: supervise.SessionState, status: policy.SpendStatus
-) -> None:
+) -> list[str]:
     """Report what a pass would cost: the live bound, or a forecast for a full fan-out.
 
     Split from :func:`_cmd_loop_preflight` to keep one statement budget per concern
-    rather than widening the lint cap.
+    rather than widening the lint cap. Returns the blockers the candidate set implies
+    (:func:`_provisioning_blockers`), because this is where the set is already read.
 
     The two branches answer different questions. With lanes already dispatchable, the
     real admission is shown — the same figure the gate will use. With none yet, the
@@ -2861,9 +2862,20 @@ def _print_preflight_spend(
         pass_spend = supervise.admit_pass_spend(repo_root, working_sets, status, sizing)
         print(f"spend:     {pass_spend.coverage}")
         _print_band_report(working_sets, sizing)
-        return
+        return []
     cap = load_worktree_config(repo_root).concurrency
-    print(f"forecast:  ~{per_lane * cap} tokens if all {cap} lanes start (cap x per-lane)")
+    # A root with no children at all is a leaf: seeding provisions the root itself as
+    # the single lane (``loop._start_build_leaf``), so price one rather than none.
+    open_count = len(state.open_children) or (0 if state.children else 1)
+    priced = min(cap, open_count)
+    if priced:
+        # Bounded by what exists, not by the cap alone. Unbounded, the same output said
+        # "0 open child(ren)" on one line and priced five lanes on the next, and a
+        # budget minted from that number funds a pass that cannot start (basicly-cdhq).
+        print(
+            f"forecast:  ~{per_lane * priced} tokens if all {priced} lanes start "
+            f"(per-lane x min(cap {cap}, {open_count} open))"
+        )
     # That forecast is the unsizeable-lane assumption times the cap whenever the
     # candidates declare no readable scope — a number describing none of them, which
     # reads exactly like one that does. So size the candidates here too: before a budget
@@ -2872,6 +2884,89 @@ def _print_preflight_spend(
         supervise.admit_working_set(repo_root, issue_id, sizing) for issue_id in state.open_children
     )
     _print_band_report(candidates, sizing)
+    return _provisioning_blockers(state, candidates)
+
+
+def _provisioning_blockers(
+    state: supervise.SessionState, candidates: tuple[supervise.WorkingSetAdmission, ...]
+) -> list[str]:
+    """Refuse a pass that has nothing to provision a lane from, naming which case it is.
+
+    The bead's own Expected line: a command whose job is to check everything a
+    supervised run needs must not report ready for a run that cannot dispatch a single
+    lane. Two causes reach that state through the candidate set (the third is the root's
+    own checkpoint, :func:`_print_preflight_checkpoints`), and they are reported apart
+    because the remedies are unrelated — one session is finished, the other needs its
+    children split.
+
+    Deliberately *not* written on the dispatchable-lane count: that counts *adopted*
+    lanes, and before any worktree exists it reads zero on a pass that is genuinely
+    ready. A childless root is not refused either — it is the leaf case, and seeding
+    provisions the root itself.
+    """
+    if not state.open_children:
+        if not state.children:
+            return []
+        print(
+            f"provision: NONE - {len(state.children)} child(ren), none open; "
+            "nothing left to provision a lane from"
+        )
+        return ["the session has no open child to provision a lane from"]
+    if candidates and all(candidate.refused for candidate in candidates):
+        print("provision: NONE - every open child is REFUSED by the band; split them before a pass")
+        return ["every open child is too large for the band, so no lane can dispatch"]
+    return []
+
+
+# The checkpoint the root's *own* advance must clear before any lane exists, keyed on
+# the phase the root is parked at — the guards in ``loop._on_intake`` and
+# ``loop._on_decompose``. Seeding drives the root through ``loop.run_until_blocked``,
+# which stops dead at a checkpoint and never reaches ``approve_checkpoint_guarded``, so
+# these need a human however high the grant is (basicly-cdhq).
+_SEEDING_CHECKPOINT = {"intake": "classify", "decompose": "decompose"}
+
+
+def _print_preflight_checkpoints(
+    repo_root: Path, root_issue: str, grant: policy.Grant | None
+) -> list[str]:
+    """Report the root's own unapproved checkpoints; return the ones that refuse a pass.
+
+    Observed 2026-08-04: a clean base, a live L3 grant, a funded forecast and five
+    in-band lanes preflighted as ready, and the pass it green-lit dispatched nothing —
+    ``seed-blocked ... decompose checkpoint awaiting human approval``. Checkpoint state
+    was the one precondition the report omitted, and ``loop status`` reconstructs it
+    already, so the cost is one read.
+
+    Only the checkpoint that blocks *provisioning* is a blocker. Every unapproved one
+    would be noise, and the distinction is the useful part: a grant that delegates
+    ``ship`` really does resolve a landed lane's approval without a human, while the
+    same grant cannot serve the root's own ``decompose`` — nothing on the seeding path
+    consults it.
+    """
+    node = loop_state.read_node_state(repo_root, root_issue)
+    blocking = _SEEDING_CHECKPOINT.get(node.phase)
+    # What the grant delegates, named once: it is the difference between the two lines
+    # below, and the surprising half of the report is that a grant covering `decompose`
+    # still cannot serve the root's own.
+    delegated = policy.GRANT_COVERAGE.get(grant.level, ()) if grant is not None else ()
+    delegates = f"the live {grant.level} grant" if grant is not None else ""
+    blockers: list[str] = []
+    pending = [name for name in CHECKPOINTS if name not in node.checkpoints]
+    if not pending:
+        print("checkpts:  all approved")
+        return blockers
+    for name in pending:
+        if name != blocking:
+            served = f"{delegates} delegates it" if name in delegated else ""
+            print(f"checkpts:  {name} pending - {served or 'a human, when the pass reaches it'}")
+            continue
+        why = "the root's own advance provisions the lanes and resolves no checkpoint itself"
+        if name in delegated:
+            why += f", so {delegates} cannot serve it"
+        print(f"checkpts:  {name} UNAPPROVED - blocks provisioning: {why}")
+        print(f"           approve: basicly policy checkpoint {root_issue} {name} --approve")
+        blockers.append(f"the root's {name} checkpoint blocks provisioning")
+    return blockers
 
 
 def _print_preflight_calibration(repo_root: Path, sizing: SizingConfig) -> None:
@@ -2986,7 +3081,8 @@ def _cmd_loop_preflight(args: argparse.Namespace) -> int:
         print(f"budget:    MISSING - the {metered!r} runner meters spend and no budget covers it")
         blockers.append("a metered runner needs a grant with a token budget")
 
-    _print_preflight_spend(repo_root, state, status)
+    blockers += _print_preflight_checkpoints(repo_root, args.issue, grant)
+    blockers += _print_preflight_spend(repo_root, state, status)
     _print_preflight_calibration(repo_root, load_sizing_config(repo_root))
 
     ahead = worktree.git(
