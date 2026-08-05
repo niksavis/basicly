@@ -3491,6 +3491,11 @@ def test_an_unsizeable_lane_records_the_bound_it_was_gated_on(
     dispatch carries both a forecast and a measured actual", 17 actual with no forecast.
     The telemetry needed to calibrate the bound was the one thing the bound's own
     dispatches never produced.
+
+    It lands on the *spend* field, because a quantile of measured lane actuals is a
+    whole-lane cost: writing it to ``forecast_tokens`` put it in the working-set slot,
+    where it paired against a whole-lane actual at ~1x and looked like a perfect forecast
+    of the wrong quantity (basicly-tcmy.34).
     """
     codex = _codex()
     _worker_fixture(monkeypatch, tmp_path, stdout=_codex_events(50_000))
@@ -3508,7 +3513,8 @@ def test_an_unsizeable_lane_records_the_bound_it_was_gated_on(
 
     supervise._dispatch_lane(tmp_path, _session(_lane("epic.1")), _lane("epic.1"), codex, _sizing())
 
-    assert captured["forecast_tokens"] == 16_002_352
+    assert captured["forecast_spend_tokens"] == 16_002_352
+    assert "forecast_tokens" not in captured
     # Namespaced, so nothing can read an assumption as an estimate off a real scope.
     assert captured["forecast_source"] == "assumed:measured"
 

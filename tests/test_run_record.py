@@ -696,6 +696,33 @@ def test_a_dispatch_record_carries_the_forecast_beside_the_actual(tmp_path: Path
     assert stored["forecast_source"] == "dispatch"
 
 
+def test_a_dispatch_record_carries_the_forecast_in_the_unit_its_actual_is_metered_in(
+    tmp_path: Path,
+) -> None:
+    """Both forecasts land on the record, and the spend half travels to a clone.
+
+    ``forecast_tokens`` is a working set and ``tokens`` is whole-lane spend, so the pair
+    the calibration was reading compared two quantities: on basicly-gczc that ratio was
+    254x and read as a forecast wrong by two orders of magnitude (basicly-tcmy.34). The
+    spend forecast is the number ``supervise.admit_pass_spend`` already gated on, and this
+    is it reaching the record.
+    """
+    entry = _entry(
+        tokens=16_963_245,
+        forecast_tokens=66_780,
+        forecast_spend_tokens=22_331_232,
+        task_class="bug",
+        prompt_sha256="deadbeef",
+        phase="build",
+    )
+    run_record.record(tmp_path, "b-1", entry)
+
+    stored = _records(tmp_path)["b-1"][0]
+    assert stored["forecast_tokens"] == 66_780
+    assert stored["forecast_spend_tokens"] == 22_331_232
+    assert stored["tokens"] == 16_963_245
+
+
 def test_forecast_errors_pairs_a_complete_record(tmp_path: Path) -> None:
     """A record with both halves yields a ratio and a signed miss."""
     run_record.record(

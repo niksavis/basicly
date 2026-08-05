@@ -1351,6 +1351,29 @@ re-sends its context every turn it carries the turn multiplier (which nothing mo
 well as any estimator error; and the summary is a **median**, because the measured misses span
 160x-420x and one such sample would drag a mean somewhere no dispatch has ever been.
 
+The pair the ratio above is computed from spans **two quantities**, and a dispatch now records
+the same-unit one beside it (`basicly-tcmy.34`). `forecast_spend_tokens` is what
+`decompose.forecast_spend` predicts and what `supervise.admit_pass_spend` already refuses a pass
+on — whole-lane spend, which is what `tokens` meters — so the forecast a completed lane can be
+held to no longer has to be the one denominated in context. Both halves stay, because each has an
+actual of its own (`forecast_tokens` against `context_tokens`, `forecast_spend_tokens` against
+`tokens`) and the turn multiplier is measured from the cross-unit ratio. The assumed bound an
+unsizeable lane is gated at (§12.8) records on the spend field for the same reason: it is a
+quantile of measured lane actuals, and in the working-set slot it paired at ~1x — a forecast that
+looked perfect while predicting the wrong quantity.
+
+`decompose.spend_accuracy` holds every recorded write dispatch to its spend forecast, and
+`basicly usage forecast` reports the verdict under the table: **one order of magnitude either
+way**, because under-forecasting spends money no grant admitted and over-forecasting refuses a
+pass that would have fitted. It binds on the history that already exists rather than only on
+records written from now on — an older record's working set is converted by today's calibration
+through the one converter `forecast_spend` uses — and on this repo's committed ledger the 26
+comparable dispatches come in at 0.19x-2.37x (median 0.94x) where the cross-unit comparison of
+the same records reads 64x-793x. A record whose recorded working set the band itself would refuse
+cannot be converted and is **named** rather than skipped: one exists, carrying a factor of ~193
+from the spend-derived calibration `basicly-z2wi` deleted, and a population quietly shrunk by a
+filter is how `basicly-ipx2` committed a false claim.
+
 **12.8.2 One named phase set, and a factor that says it was declared** (`basicly-tcmy.5`).
 Every dispatch records a **phase**, and the write phases — the interactive `build`
 (`loop._run_agent`) and the supervised `lane` (`supervise._dispatch_lane`) — are one named set

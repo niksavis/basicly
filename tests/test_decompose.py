@@ -2078,7 +2078,7 @@ def test_a_configured_build_factor_is_recorded_as_configured(tmp_path: Path) -> 
     )
 
 
-def test_the_recorded_dispatch_inputs_carry_the_factors_provenance() -> None:
+def test_the_recorded_dispatch_inputs_carry_the_factors_provenance(tmp_path: Path) -> None:
     """The source reaches the run record, where a later calibration reads the pair."""
     sizing = decompose.DispatchSizing(
         task_class="task",
@@ -2091,7 +2091,29 @@ def test_the_recorded_dispatch_inputs_carry_the_factors_provenance() -> None:
         source=decompose.DISPATCH_FORECAST,
     )
 
-    assert sizing.record_inputs()["build_factor_source"] == decompose.BUILD_FACTOR_SEED
+    assert sizing.record_inputs(tmp_path)["build_factor_source"] == decompose.BUILD_FACTOR_SEED
+
+
+def test_a_dispatch_records_its_forecast_in_both_units(tmp_path: Path) -> None:
+    """AC: the record carries the forecast the *spend* gate trusts, not only the working set.
+
+    The two numbers are 334x apart and only one of them is denominated in what a run
+    record's ``tokens`` measures, so recording the working set alone left every completed
+    lane comparable against nothing (basicly-tcmy.34).
+    """
+    sizing = decompose.DispatchSizing(
+        task_class="task",
+        estimate=decompose.CostEstimate(scope_tokens=1_000, overhead_tokens=0, build_factor=3.0),
+        source=decompose.DISPATCH_FORECAST,
+    )
+
+    inputs = sizing.record_inputs(tmp_path)
+
+    assert inputs["forecast_tokens"] == 3_000
+    # No history on a bare tree, so the declared prior is the multiplier in force.
+    prior = run_record.DECLARED_SPEND_PRIOR.tokens_per_working_set_token
+    assert prior is not None
+    assert inputs["forecast_spend_tokens"] == round(3_000 * prior)
 
 
 def test_a_frozen_estimate_round_trips_its_factor_provenance(
@@ -2169,3 +2191,176 @@ def test_the_calibration_status_names_the_class_that_measured(
 
     assert status.measured_classes == ("task",)
     assert not status.on_seeds
+
+
+# --- The spend forecast is within an order of magnitude (basicly-tcmy.34) ----
+
+
+def _record_spend_pair(  # noqa: PLR0913 — one parameter per seeded record field
+    repo: Path,
+    bead_id: str,
+    *,
+    tokens: int,
+    forecast_tokens: int | None = None,
+    forecast_spend_tokens: int | None = None,
+    task_class: str = "bug",
+    phase: str | None = run_record.LANE_PHASE,
+    estimated: bool = False,
+) -> None:
+    """Seed one write dispatch with an actual and whichever forecast half the test needs."""
+    run_record.record(
+        repo,
+        bead_id,
+        run_record.build_record(
+            agent="claude",
+            handoff=False,
+            returncode=0,
+            duration_s=100.0,
+            command=("claude",),
+            tokens=tokens,
+            estimated=estimated,
+            task_class=task_class,
+            forecast_tokens=forecast_tokens,
+            forecast_spend_tokens=forecast_spend_tokens,
+            phase=phase,
+        ),
+    )
+
+
+def test_the_spend_forecast_lands_within_an_order_of_magnitude_of_recorded_spend() -> None:
+    """The live gate: AC of basicly-tcmy.34, measured on this repo's own ledger.
+
+    `basicly-gczc` spent 16,963,245 tokens against a recorded forecast of 66,780 — 254x,
+    and the median across the paired population was 307x, which read as a forecast wrong
+    by two orders of magnitude. It was wrong by *unit*: the recorded number was a working
+    set and the actual is whole-lane spend. Held in one unit, the same records come in at
+    0.19x-2.37x.
+
+    Not an equality: a lane spending less than forecast is not a defect and must not turn
+    main red. It fails only when a recorded lane departs from its forecast by more than
+    `SPEND_RATIO_BAND`, and it names the lane and the factor.
+    """
+    accuracy = decompose.spend_accuracy(REPO_ROOT, load_sizing_config(REPO_ROOT))
+
+    assert accuracy.violations == ()
+
+
+def test_the_spend_gate_measures_a_populated_ledger() -> None:
+    """The positive control: the gate above must not be measuring an empty set.
+
+    A check whose population is empty passes for the same reason a correct one does, and
+    this repo has committed that mistake twice (basicly-ipx2, basicly-fcls). The named
+    bead is the one basicly-tcmy.34 was filed on, and it reaches the gate from the
+    committed tracker markers alone — so a fresh clone measures it too, rather than only
+    the machine that happens to hold `.basicly/usage/`.
+    """
+    accuracy = decompose.spend_accuracy(REPO_ROOT, load_sizing_config(REPO_ROOT))
+
+    assert len(accuracy.pairs) >= 20
+    assert "basicly-gczc" in {pair.bead for pair in accuracy.pairs}
+    # The median is the whole point of the fix: a same-unit comparison sits near 1x,
+    # while the working-set-against-spend comparison this replaced sat at 307x.
+    median = accuracy.median_ratio
+    assert median is not None
+    assert 0.1 <= median <= 10
+
+
+def test_a_lane_that_overran_its_forecast_by_two_orders_is_reported(tmp_path: Path) -> None:
+    """The known-bad control: the exact shape of basicly-tcmy.34, on a seeded ledger.
+
+    Without it the live gate is indistinguishable from one that cannot fail — and the
+    figures here are the real ones: the 66,780-token forecast the engine recorded for
+    `basicly-gczc` against the 16,963,245 tokens it spent, recorded in the same unit so
+    the 254x is a forecast error rather than a turn multiplier.
+    """
+    _record_spend_pair(tmp_path, "b-1", tokens=16_963_245, forecast_spend_tokens=66_780)
+
+    accuracy = decompose.spend_accuracy(tmp_path, _sizing())
+
+    assert len(accuracy.pairs) == 1
+    assert not accuracy.pairs[0].in_band
+    assert len(accuracy.violations) == 1
+    assert "b-1 spent 16,963,245 tokens" in accuracy.violations[0]
+    assert "forecast of 66,780" in accuracy.violations[0]
+    assert "254.017x" in accuracy.violations[0]
+
+
+def test_an_over_forecast_is_reported_too(tmp_path: Path) -> None:
+    """Both directions: a forecast 100x too big refuses passes that would have fitted.
+
+    The band exists because a spend forecast feeds a *grant*, and the two ways of being
+    wrong cost different things — money one way, throughput the other. A ceiling would
+    only have caught one of them.
+    """
+    _record_spend_pair(tmp_path, "b-1", tokens=100_000, forecast_spend_tokens=10_000_000)
+
+    accuracy = decompose.spend_accuracy(tmp_path, _sizing())
+
+    assert len(accuracy.violations) == 1
+    assert "0.010x" in accuracy.violations[0]
+
+
+def test_a_forecast_within_the_band_is_no_violation(tmp_path: Path) -> None:
+    """The band admits an honest miss: 2x is a forecast, not a defect."""
+    _record_spend_pair(tmp_path, "b-1", tokens=20_000_000, forecast_spend_tokens=10_000_000)
+
+    accuracy = decompose.spend_accuracy(tmp_path, _sizing())
+
+    assert accuracy.pairs[0].basis == decompose.RECORDED_SPEND_FORECAST
+    assert accuracy.violations == ()
+
+
+def test_an_older_record_is_compared_through_todays_calibration(tmp_path: Path) -> None:
+    """A record predating the spend field is still held to a spend forecast.
+
+    Deriving it is what makes the gate bind on the 26 dispatches already recorded rather
+    than only on ones written from now on. The working set is converted by the one
+    multiplier `forecast_spend` uses, so the derived number is what the engine would have
+    recorded had the field existed.
+    """
+    _record_spend_pair(tmp_path, "b-1", tokens=3_000_000, forecast_tokens=10_000)
+
+    accuracy = decompose.spend_accuracy(tmp_path, _sizing())
+
+    prior = run_record.DECLARED_SPEND_PRIOR.tokens_per_working_set_token
+    assert prior is not None
+    assert accuracy.pairs[0].basis == decompose.DERIVED_SPEND_FORECAST
+    assert accuracy.pairs[0].forecast_tokens == round(10_000 * prior)
+    assert accuracy.violations == ()
+
+
+def test_a_recorded_forecast_the_band_would_refuse_is_named_not_dropped(tmp_path: Path) -> None:
+    """A working set above the ceiling is evidence about a removed estimator, not a lane.
+
+    `basicly-tcmy.31` recorded a forecast of 6,762,766 tokens against a scope read-cost of
+    35,106 — a factor of ~193 from the spend-derived calibration basicly-z2wi deleted. No
+    spend forecast can be derived from it, and silently skipping it is how a filter came
+    to delete a whole population once already (basicly-ipx2), so it is reported by name.
+    """
+    _record_spend_pair(tmp_path, "b-1", tokens=8_574_169, forecast_tokens=6_762_766)
+
+    accuracy = decompose.spend_accuracy(tmp_path, _sizing())
+
+    assert accuracy.pairs == ()
+    assert accuracy.incomparable == ("b-1",)
+
+
+def test_the_spend_gate_samples_only_measured_write_dispatches(tmp_path: Path) -> None:
+    """A judge, a handoff and a chars/4 estimate are not evidence of what a lane spends.
+
+    The same two rules `unsized_lane_tokens` samples on, so the bound and this check
+    cannot come to disagree about what a lane dispatch is (basicly-tcmy.5).
+    """
+    _record_spend_pair(
+        tmp_path, "b-1", tokens=16_963_245, forecast_spend_tokens=66_780, phase="rubric"
+    )
+    _record_spend_pair(
+        tmp_path, "b-2", tokens=16_963_245, forecast_spend_tokens=66_780, estimated=True
+    )
+    _record_spend_pair(tmp_path, "b-3", tokens=16_963_245, forecast_spend_tokens=66_780, phase=None)
+
+    accuracy = decompose.spend_accuracy(tmp_path, _sizing())
+
+    assert accuracy.pairs == ()
+    assert accuracy.violations == ()
+    assert accuracy.unmetered == 1

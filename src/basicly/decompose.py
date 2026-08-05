@@ -36,6 +36,7 @@ import hashlib
 import json
 import math
 import re
+import statistics
 import tomllib
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, replace
@@ -942,7 +943,7 @@ class DispatchSizing:
     # :data:`FROZEN_FORECAST` or :data:`DISPATCH_FORECAST`.
     source: str
 
-    def record_inputs(self) -> dict[str, object]:
+    def record_inputs(self, repo_root: Path) -> dict[str, object]:
         """These inputs as ``record_dispatch`` keywords.
 
         On the sizing itself rather than at each dispatch site: both sites record
@@ -953,10 +954,27 @@ class DispatchSizing:
         (basicly-tcmy.5). Without it the record carries a number multiplied by a
         declared constant and no statement that it was declared, which is the state
         every sibling field on the record was designed not to be in.
+
+        Takes *repo_root* for one field: the forecast **spend**, which needs the
+        calibration this repo's history resolves. A lane's actual is metered in spend,
+        so recording only ``forecast_tokens`` left the pair comparing a working set
+        against a whole-lane cost — a 64x-793x ratio that read as estimator error
+        (basicly-tcmy.34). Both are recorded, and the spend half is the very number
+        :func:`supervise.admit_pass_spend` refuses a pass on.
+
+        Never raises: the calibration reads the tracker, and this is telemetry on the
+        critical path of every dispatch. An unreadable history records a null spend
+        forecast, which is what it is.
         """
+        spend: int | None = None
+        with contextlib.suppress(RuntimeError, ValueError, OSError):
+            spend = dispatch_spend_forecasts(repo_root, (self,), load_sizing_config(repo_root))[
+                0
+            ].tokens
         return {
             "scope_tokens": self.estimate.scope_tokens,
             "forecast_tokens": self.estimate.total,
+            "forecast_spend_tokens": spend,
             "task_class": self.task_class,
             "forecast_source": self.source,
             "build_factor_source": self.estimate.build_factor_source,
@@ -1082,6 +1100,27 @@ class SpendForecast:
         return self.tokens is None and self.cost is None and self.wall_clock_s is None
 
 
+def spend_from_working_set(
+    working_set: int, calibration: run_record.SpendCalibration
+) -> int | None:
+    """Predicted whole-lane spend for a lane holding *working_set* tokens of context.
+
+    The one place the turn multiplier is applied, so the working-set unit is converted
+    to the spend unit by exactly one rule: :func:`forecast_spend` predicts a package
+    about to run and :func:`spend_accuracy` re-derives the same number for a package
+    that already ran, and a second copy of the arithmetic is how those two would come
+    to disagree about what was forecast (basicly-tcmy.34).
+
+    None when nothing declares or measures the multiplier, and when the working set is
+    zero — a package with no readable scope material. Both are indeterminate, and a
+    zero would read as a free package.
+    """
+    multiplier = calibration.tokens_per_working_set_token.value
+    if multiplier is None or working_set <= 0:
+        return None
+    return round(working_set * multiplier)
+
+
 def forecast_spend(
     estimate: CostEstimate, calibration: run_record.SpendCalibration
 ) -> SpendForecast:
@@ -1091,9 +1130,7 @@ def forecast_spend(
     working set, so the turn multiplier lives in exactly one ratio and the other two
     stay a price and a rate — each independently replaceable by measured history.
     """
-    multiplier = calibration.tokens_per_working_set_token.value
-    working_set = estimate.total
-    tokens = round(working_set * multiplier) if multiplier is not None and working_set > 0 else None
+    tokens = spend_from_working_set(estimate.total, calibration)
     if tokens is None:
         return SpendForecast(None, None, None, calibration)
     usd = calibration.usd_per_million_tokens.value
@@ -1359,6 +1396,208 @@ def _quantile_high(values: list[int], quantile: float) -> int:
     ordered = sorted(values)
     index = math.ceil(quantile * len(ordered)) - 1
     return ordered[max(0, min(index, len(ordered) - 1))]
+
+
+# --- Is the spend forecast within an order of magnitude? (basicly-tcmy.34) ----
+#
+# A grant is minted from a forecast, so a forecast wrong by orders of magnitude is a
+# grant sized wrong: basicly-gczc was dispatched under an 8_000_000-token L3 grant,
+# spent 16_963_245, and the halt landed the ship checkpoint on a human after the work
+# was already done. Every step of the engine behaved correctly; the number was wrong.
+#
+# It was wrong by *unit*, not by calibration. The recorded forecast was a working set
+# and the recorded actual is whole-lane spend, and this is the check that holds the two
+# same-unit numbers against each other instead. Measured over the 26 comparable write
+# dispatches in this repo's committed ledger, the spend forecast lands at 0.19x-2.37x
+# of actual (median 0.94x) — inside one order of magnitude, both directions, with
+# nothing excluded but the one record below. The same records' working-set forecasts
+# sat at 64x-793x of the same actuals, which is the whole of the reported defect.
+#
+# Two directions, because a forecast has two failure modes and only one of them is the
+# one that hurt: under-forecasting spends money a grant did not admit, over-forecasting
+# refuses a pass that would have fitted. A band, therefore, rather than a ceiling.
+#
+# **One class of record cannot answer, and is counted rather than dropped.** A recorded
+# working-set forecast above `working_set_max` was not produced by the estimator this
+# check is about: basicly-tcmy.31 carries 6_762_766 against a scope read-cost of
+# 35_106, a factor of ~193 from the spend-derived calibration basicly-z2wi removed. Its
+# derived spend forecast is 2.26 billion tokens against 8_574_169 actual (0.004x), and
+# that is a measurement of a code path that no longer exists. The rule is the band's own
+# ceiling rather than the bead's name, so it stays checkable — and
+# :attr:`SpendAccuracy.incomparable` names every record it silences, because a
+# population quietly shrunk by a filter is how basicly-ipx2 committed a false claim.
+
+# How far actual spend may sit from its forecast before the forecast is not a forecast:
+# one order of magnitude, either way.
+SPEND_RATIO_BAND = 10.0
+
+# Where a pair's forecast came from. `recorded` is the number the dispatch itself
+# wrote down (available since basicly-tcmy.34); `derived` re-applies today's
+# calibration to the working set an older dispatch recorded, so the check binds on the
+# history that already exists instead of only on records written from now on — a gate
+# that measures an empty set is indistinguishable from a passing one.
+RECORDED_SPEND_FORECAST = "recorded"
+DERIVED_SPEND_FORECAST = "derived"
+
+
+@dataclass(frozen=True)
+class SpendPair:
+    """One dispatch's forecast whole-lane spend beside the spend it really incurred.
+
+    Both halves in tokens of spend, which is what makes it a pair. The working-set
+    forecast and its measured occupancy are the *other* pair
+    (``run_record.ForecastError``, ``RunRecord.context_tokens``); mixing one half of
+    each is the defect this exists to close.
+    """
+
+    bead: str
+    timestamp: str
+    forecast_tokens: int
+    actual_tokens: int
+    # :data:`RECORDED_SPEND_FORECAST` or :data:`DERIVED_SPEND_FORECAST`.
+    basis: str
+    task_class: str | None = None
+    model: str | None = None
+
+    @property
+    def ratio(self) -> float:
+        """Actual over forecast. One quantity on both sides, so 1.0 is a perfect call."""
+        return self.actual_tokens / self.forecast_tokens
+
+    @property
+    def in_band(self) -> bool:
+        """True while the forecast is within :data:`SPEND_RATIO_BAND` of the actual."""
+        return 1 / SPEND_RATIO_BAND <= self.ratio <= SPEND_RATIO_BAND
+
+
+@dataclass(frozen=True)
+class SpendAccuracy:
+    """Every dispatch whose forecast spend can be held to its actual, and what cannot."""
+
+    pairs: tuple[SpendPair, ...] = ()
+    # Metered write dispatches carrying no forecast of either kind: a lane whose bead
+    # declares no readable scope was never sized, so there is nothing to hold it to.
+    #
+    # Named `unsized` rather than `unforecast` deliberately: `wired_or_deleted` reports an
+    # unread record field by name, so reusing a name already baselined on another class
+    # (`supervise.PassSpendAdmission.unforecast`) would make that finding read as fixed.
+    unsized: int = 0
+    # Beads whose recorded working-set forecast the band itself would refuse, so no
+    # spend forecast can be derived from it. Named, never counted silently.
+    incomparable: tuple[str, ...] = ()
+    # Dispatches with no adapter-measured actual: a handoff, a killed run, or a chars/4
+    # transcript estimate, which is a floor on spend rather than a measurement of it.
+    unmetered: int = 0
+
+    @property
+    def median_ratio(self) -> float | None:
+        """Median actual/forecast across the pairs; None with no pairs.
+
+        A median for the reason ``ForecastErrorReport.median_ratio`` gives: one sample
+        from the tail of a wide spread drags a mean where no dispatch has ever been.
+        """
+        if not self.pairs:
+            return None
+        return statistics.median(pair.ratio for pair in self.pairs)
+
+    @property
+    def violations(self) -> tuple[str, ...]:
+        """Every pair outside the band, worst first, naming what a grant would get wrong.
+
+        Empty is the passing state, and :attr:`pairs` is what says whether that emptiness
+        was measured or merely unpopulated.
+        """
+        out = sorted(
+            (pair for pair in self.pairs if not pair.in_band),
+            key=lambda pair: -max(pair.ratio, 1 / pair.ratio),
+        )
+        return tuple(
+            f"{pair.bead} spent {pair.actual_tokens:,} tokens against a {pair.basis} "
+            f"forecast of {pair.forecast_tokens:,} ({pair.ratio:.3f}x), outside the "
+            f"{SPEND_RATIO_BAND:.0f}x band: a grant sized from that forecast is wrong "
+            f"by the same factor"
+            for pair in out
+        )
+
+
+def spend_accuracy(repo_root: Path, sizing: SizingConfig) -> SpendAccuracy:
+    """Hold every recorded write dispatch's forecast spend against what it really spent.
+
+    The population is the dispatch ledger (:func:`run_record.dispatch_history`, so the
+    committed markers count and a fresh clone measures the same thing), filtered to the
+    write phases and to adapter-measured actuals — the same two rules
+    :func:`unsized_lane_tokens` samples on, and for the same reasons: a rubric judge is
+    not a lane, and a chars/4 estimate is not a measurement.
+
+    A record that wrote its own spend forecast is compared against that number. An
+    older one is compared against today's calibration applied to the working set it did
+    record, via the one converter :func:`spend_from_working_set` — the alternative was a
+    check that could not run until new records existed, and this engine has been burned
+    before by a gate whose silence read as a pass.
+
+    Read-only and best-effort, like every other reader of the ledger: an unreadable
+    history yields an empty report, which :attr:`SpendAccuracy.pairs` makes visible.
+    """
+    report = run_record.forecast_errors(repo_root)
+    pairs: list[SpendPair] = []
+    incomparable: list[str] = []
+    unsized = unmetered = 0
+    for bead_id, history in sorted(run_record.dispatch_history(repo_root).items()):
+        for entry in history:
+            if not isinstance(entry, dict) or not run_record.is_write_phase(entry.get("phase")):
+                continue
+            actual = run_record.positive_int(entry, "tokens")
+            if actual is None or entry.get("estimated") is not False:
+                unmetered += 1
+                continue
+            task_class = entry.get("task_class")
+            model = entry.get("model")
+            recorded = run_record.positive_int(entry, "forecast_spend_tokens")
+            forecast, basis = recorded, RECORDED_SPEND_FORECAST
+            if forecast is None:
+                working_set = run_record.positive_int(entry, "forecast_tokens")
+                if working_set is None:
+                    unsized += 1
+                    continue
+                if working_set > sizing.working_set_max:
+                    incomparable.append(bead_id)
+                    continue
+                forecast, basis = (
+                    spend_from_working_set(
+                        working_set,
+                        run_record.calibrate_spend(
+                            report,
+                            model=model if isinstance(model, str) else None,
+                            task_class=task_class if isinstance(task_class, str) else None,
+                            min_samples=sizing.calibration_min_samples,
+                            window=sizing.calibration_window,
+                        ),
+                    ),
+                    DERIVED_SPEND_FORECAST,
+                )
+                if forecast is None:
+                    # No multiplier is declared or measured for this key, so no spend
+                    # number exists to hold the lane to — the same indeterminate answer
+                    # `SpendForecast` reports as None rather than as a zero.
+                    unsized += 1
+                    continue
+            pairs.append(
+                SpendPair(
+                    bead=bead_id,
+                    timestamp=str(entry.get("timestamp", "")),
+                    forecast_tokens=forecast,
+                    actual_tokens=actual,
+                    basis=basis,
+                    task_class=task_class if isinstance(task_class, str) else None,
+                    model=model if isinstance(model, str) else None,
+                )
+            )
+    return SpendAccuracy(
+        pairs=tuple(sorted(pairs, key=lambda pair: (pair.timestamp, pair.bead))),
+        unsized=unsized,
+        incomparable=tuple(sorted(set(incomparable))),
+        unmetered=unmetered,
+    )
 
 
 def freeze_estimate(
