@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 from basicly import cli, decompose, loop, loop_state, supervise
-from basicly.config import CHECKPOINTS, RunnerSpec, load_sizing_config
+from basicly.config import CHECKPOINTS, RunnerSpec, WorktreeConfig, load_sizing_config
 from basicly.decisions import DecisionItem
 from basicly.decompose import ChildSpec
 from basicly.loop import AdvanceResult, Inputs
@@ -470,6 +470,15 @@ class _Preflight:
     children: tuple[tuple[str, str], ...] = (("c.1", "open"),)
     # issue_id -> the band verdict to pin for it; anything absent sizes to nothing.
     admissions: dict[str, object] = field(default_factory=dict)
+    # The root's own derived phase and approved checkpoints, as `loop status` reads
+    # them. The default is a decomposed epic with every checkpoint already approved,
+    # so a test that says nothing about checkpoints keeps its old verdict.
+    phase: str = "decompose"
+    checkpoints: tuple[str, ...] = CHECKPOINTS
+    # The concurrency cap the fan-out forecast is bounded by. Pinned rather than read
+    # off this repo's own basicly.toml, so a retune of the cap cannot turn a forecast
+    # assertion into an unrelated failure.
+    cap: int = 5
     # The calibration report to pin. Pinned like the band verdicts and for the same
     # reason: computing it walks the tracker export and the local record file, so left
     # live every preflight test would parse this repo's real 4MB of markers.
@@ -528,6 +537,10 @@ def _preflight_fixture(monkeypatch: pytest.MonkeyPatch, pinned: _Preflight) -> N
     )
     monkeypatch.setattr(cli.supervise, "metered_without_a_budget", lambda *_a: metered)
     monkeypatch.setattr(cli.supervise, "ready_lanes", lambda *_a, **_k: lanes)
+    cap = pinned.cap
+    monkeypatch.setattr(
+        cli, "load_worktree_config", lambda *_a: WorktreeConfig(base_branch=None, concurrency=cap)
+    )
     monkeypatch.setattr(cli.decompose, "unsized_lane_tokens", lambda *_a: (1_000, "measured"))
     calibration = pinned.calibration or _calibration()
     monkeypatch.setattr(cli.decompose, "calibration_status", lambda *_a: calibration)
@@ -540,6 +553,21 @@ def _preflight_fixture(monkeypatch: pytest.MonkeyPatch, pinned: _Preflight) -> N
         "admit_working_set",
         lambda _r, issue_id, _s: pinned.admissions.get(
             issue_id, supervise.WorkingSetAdmission(issue_id, None, None, refused=False)
+        ),
+    )
+    # Preflight also reads the root's own checkpoint state, the same reconstruction
+    # `loop status` prints. Pinned for the same reason as the band verdicts: left live
+    # it is a real `br show` plus a marker scan per preflight test.
+    monkeypatch.setattr(
+        cli.loop_state,
+        "read_node_state",
+        lambda _r, issue_id, *_a: _node_state(
+            issue_id=issue_id,
+            issue_type="epic",
+            phase=pinned.phase,
+            worktree=None,
+            checkpoints=pinned.checkpoints,
+            has_children=bool(children),
         ),
     )
 
@@ -864,3 +892,185 @@ def test_preflight_says_an_unresolved_model_can_key_no_sample_at_all(
     out = capsys.readouterr().out
     assert "spend cal: SEEDS - no model pinned, so no sample can key in" in out
     assert "task 0/10" in out
+
+
+# --- Preflight: a verdict of "ready" has to mean a lane can start (basicly-cdhq) ---
+
+
+def test_preflight_refuses_a_root_whose_decompose_checkpoint_is_unapproved(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """AC: an epic with open children behind an unapproved decompose is not ready.
+
+    Measured 2026-08-04: preflight printed `VERDICT: ready` on a clean base with a live
+    L3 grant, and the supervise pass it green-lit dispatched nothing —
+    `seed-blocked ... decompose checkpoint awaiting human approval`. The checkpoint
+    state was the one precondition preflight never looked at, and it is the one that
+    cost the pass.
+    """
+    _preflight_fixture(
+        monkeypatch,
+        _Preflight(
+            grant=Grant(level="L3", token_budget=100_000),
+            phase="decompose",
+            checkpoints=("classify",),
+        ),
+    )
+
+    code = cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "checkpts:  decompose UNAPPROVED" in out
+    # The exact command, not a description of one: preflight exists so the remedy does
+    # not have to be recalled (basicly-p8ck).
+    assert "basicly policy checkpoint epic decompose --approve" in out
+    assert "VERDICT:   not ready" in out
+
+
+def test_preflight_separates_a_grant_delegated_checkpoint_from_one_it_cannot_serve(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """AC: the same L3 grant delegates both, and only one of them still needs a human.
+
+    Reporting every unapproved checkpoint as a blocker would make the verdict noise.
+    ``ship`` is genuinely delegated — supervise puts a landed lane's ship approval
+    through ``approve_checkpoint_guarded``. The root's own ``decompose`` is not: seeding
+    drives the root with ``loop.run_until_blocked``, which stops dead at a checkpoint and
+    never consults a grant at all, so an operator reading "I hold L3" reads it wrong.
+    """
+    _preflight_fixture(
+        monkeypatch,
+        _Preflight(
+            grant=Grant(level="L3", token_budget=100_000),
+            phase="decompose",
+            checkpoints=("classify",),
+        ),
+    )
+
+    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+
+    out = capsys.readouterr().out
+    assert "so the live L3 grant cannot serve it" in out
+    assert "checkpts:  ship pending - the live L3 grant delegates it" in out
+
+
+def test_preflight_is_ready_when_the_blocking_checkpoint_is_approved(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The control: approving decompose has to clear the refusal, not just soften it.
+
+    Without this the checkpoint report could refuse every pass and the assertion above
+    would still pass — a gate that never opens is as useless as one that never closes.
+    """
+    _preflight_fixture(
+        monkeypatch,
+        _Preflight(
+            grant=Grant(level="L3", token_budget=100_000),
+            phase="decompose",
+            checkpoints=("classify", "decompose"),
+        ),
+    )
+
+    code = cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "UNAPPROVED" not in out
+    assert "VERDICT:   ready" in out
+
+
+def test_preflight_refuses_a_root_with_no_open_child_left_to_provision(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The cheaper reproduction: a decomposed root whose children have all closed.
+
+    Measured 2026-08-05 on ``basicly-yc0x`` at d31f6bd — every child closed the day
+    before, so there was nothing to provision and no checkpoint involved at all, and
+    preflight still printed `VERDICT: ready`. The checkpoint is one cause of "this pass
+    cannot dispatch a lane"; an exhausted child set is another.
+    """
+    _preflight_fixture(
+        monkeypatch,
+        _Preflight(
+            grant=Grant(level="L3", token_budget=100_000),
+            children=(("c.1", "closed"), ("c.2", "closed")),
+        ),
+    )
+
+    code = cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "provision: NONE - 2 child(ren), none open" in out
+    assert "VERDICT:   not ready" in out
+
+
+def test_preflight_refuses_when_every_open_child_is_refused_by_the_band(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Children exist and none of them can dispatch, which is the same dead pass.
+
+    The band table already said so per candidate; the verdict above it did not read the
+    table. A row saying REFUSED and a verdict saying ready is the surface disagreeing
+    with itself.
+    """
+    _preflight_fixture(
+        monkeypatch,
+        _Preflight(
+            grant=Grant(level="L3", token_budget=100_000),
+            admissions={"c.1": _sized("c.1", 95_379, refused=True, violation="above")},
+        ),
+    )
+
+    code = cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "provision: NONE - every open child is REFUSED by the band" in out
+
+
+def test_preflight_still_prices_a_childless_root_as_its_own_lane(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The control for the refusal above: no children is a leaf root, not a dead pass.
+
+    Seeding a root with no children provisions the root itself as the single lane
+    (``loop._start_build_leaf``), so refusing it — or pricing it at zero — would break
+    the leaf case in the name of fixing the epic one.
+    """
+    _preflight_fixture(
+        monkeypatch, _Preflight(grant=Grant(level="L3", token_budget=100_000), children=())
+    )
+
+    code = cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "provision: NONE" not in out
+    assert "if all 1 lanes start" in out
+
+
+def test_preflight_forecast_never_prices_more_lanes_than_there_are_children(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The forecast has to be referenced to what exists, not to the concurrency cap.
+
+    Measured alongside the refusal above: the same output said `0 open child(ren)` on one
+    line and priced five lanes on the next, because the forecast multiplied the cap by
+    the per-lane figure without asking what there was to run. An operator minting a
+    budget from that number sizes a pass that cannot start.
+    """
+    _preflight_fixture(
+        monkeypatch,
+        _Preflight(
+            grant=Grant(level="L3", token_budget=100_000),
+            children=(("c.1", "open"), ("c.2", "open")),
+        ),
+    )
+
+    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+
+    out = capsys.readouterr().out
+    # 1000 per-lane (pinned in the fixture) x 2 open children, whatever the cap is.
+    assert "forecast:  ~2000 tokens if all 2 lanes start" in out
