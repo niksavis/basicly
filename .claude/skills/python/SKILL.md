@@ -35,8 +35,9 @@ Parentheses are still required when the clause binds the exception —
 
 ## Type test doubles and helpers precisely
 
-The pre-commit gate is more than `ruff`: it runs `pyright`, `bandit`, and
-`lint-imports` too (`basicly.toml`, mode `fast`). So a worktree with `ruff` and
+The pre-commit gate is much more than `ruff`: it runs every check declared for
+mode `fast` in `basicly.toml` — `pyright`, `bandit`, `lint-imports`, `vulture`,
+`docs-claims` and the projection gates among them. So a worktree with `ruff` and
 `pytest` both green can still be rejected at commit time, and a mistyped test
 helper blocks the commit itself rather than CI. Commit early and let the hook
 name the mismatch instead of inferring it from a clean `ruff check`.
@@ -56,8 +57,8 @@ double *fills*:
   typed `def _install(monkeypatch, fake: _FakeBr)` checks clean until a second
   fake or a `lambda` reaches it, and then pyright rejects those call sites with
   `"_FakeBrShow" is not assignable to "_FakeBr" (reportArgumentType)`. The same
-  helper typed `Callable[..., _Proc]` accepts every one of them —
-  `tests/test_decompose.py:85`, which is fed `_FakeBr`, `_FakeBrShow`, and a
+  helper typed `Callable[..., _Proc]` accepts every one of them — `_install`
+  in `tests/test_decompose.py`, which is fed `_FakeBr`, `_FakeBrShow`, and a
   bare `lambda`.
 
 ## Cross-platform shell-out (fails only on Windows CI)
