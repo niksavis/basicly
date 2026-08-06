@@ -589,6 +589,244 @@ def answer_lands_anyway(answer: str) -> bool:
     return _LAND_ANYWAY_RE.match(answer) is not None
 
 
+# --- Is the rework loop converging? (basicly-m4zv.5) -------------------------
+
+# What one rework round achieved, judged by comparing the failing gate's open
+# findings against the previous round's rather than by counting attempts. The
+# count is the wrong measure: a round that fixes one finding and introduces one
+# leaves the same number outstanding and is not progress, and a round that
+# reports the previous round's findings verbatim spends an attempt to re-derive a
+# verdict already on the bead.
+PROGRESSING = "progressing"
+STALLED = "stalled"
+DIVERGING = "diverging"
+
+# The signature history, per bead and per gate, lives here next to the rework
+# counter that already owns this accounting rather than beside any one caller: the
+# merge gate had its own copy first (basicly-bdd4) and two mechanisms counting
+# rounds is how they drift. A comment marker is the same durable, attributable,
+# clone-travelling carrier the counter uses, and ``_marker_matches`` keeps
+# ``gate=verify`` from cross-counting ``gate=verify-full``.
+FINDING_SET_MARKER = f"{MARKER} finding-set"
+
+# "The set grew" cannot be read off a digest, so the members are stored verbatim
+# and the previous set is recovered rather than hashed. That makes the record's
+# size the gate's business, hence a bound — kept small on purpose. The design's
+# 16 KiB event cap is derived, not measured, so it is no licence to write 16 KiB.
+#
+# A truncated set can only ever read as *less* divergent than it is (a grown set
+# whose extra members fall past the cap reads stalled instead of diverging), which
+# delays an escalation by one round and never suppresses one.
+MAX_FINDING_SET_MEMBERS = 20
+MAX_FINDING_MEMBER_CHARS = 120
+
+# How many consecutive rounds may report the same finding set before a human is
+# asked. One is a warning: a gate reports what it checks, so an agent may have
+# changed something real that this gate cannot see, and the round is only
+# *probably* wasted. Two is not — nothing changed twice in a row.
+#
+# Deliberately looser than the merge gate's own threshold
+# (:data:`supervise.MAX_REPEAT_BOUNCES`), which escalates on the first repeat
+# because re-applying one branch to one anchor is provably non-converging. The
+# verdict is shared; the threshold belongs to the caller.
+MAX_STALLED_REWORK_ROUNDS = 2
+
+
+@dataclass(frozen=True)
+class Convergence:
+    """Whether a gate's finding set moved between two consecutive rework rounds."""
+
+    verdict: str
+    members: tuple[str, ...]
+    previous: tuple[str, ...]
+    # Consecutive rounds that reported *members*, this one included: 1 the first
+    # time it repeats, 0 when it did not.
+    stalled_rounds: int
+
+    @property
+    def stalled(self) -> bool:
+        """True when this round reported exactly the previous round's findings."""
+        return self.verdict == STALLED
+
+    @property
+    def diverging(self) -> bool:
+        """True when every previous finding is still open and new ones joined them."""
+        return self.verdict == DIVERGING
+
+    @property
+    def detail(self) -> str:
+        """What the comparison found, for a human reading the bead or the queue."""
+        if self.stalled:
+            return (
+                f"the gate reported the same {len(self.members)} finding(s) as the previous "
+                f"attempt ({', '.join(self.members)}); this round changed nothing it reports"
+            )
+        if self.diverging:
+            added = ", ".join(m for m in self.members if m not in set(self.previous))
+            return (
+                f"the gate's finding set grew to {len(self.members)}: the previous "
+                f"{len(self.previous)} are all still open and {added} joined them"
+            )
+        return ""
+
+
+def finding_signature(findings: Sequence[str]) -> tuple[str, ...]:
+    """Reduce a gate's findings to a canonical, comparable, bounded member list (pure).
+
+    Deduped and sorted, because the order a gate happens to report its failures
+    in is not a fact about them, and two orderings of one finding set must not
+    read as two different rounds. Blank members are dropped and each is bounded
+    per :data:`MAX_FINDING_MEMBER_CHARS`; the list itself per
+    :data:`MAX_FINDING_SET_MEMBERS`.
+    """
+    members = {
+        member.strip()[:MAX_FINDING_MEMBER_CHARS]
+        for member in findings
+        if member and member.strip()
+    }
+    return tuple(sorted(members)[:MAX_FINDING_SET_MEMBERS])
+
+
+def _finding_set_marker(gate: str) -> str:
+    return f"{FINDING_SET_MARKER} gate={gate}"
+
+
+# The members ride as JSON so a finding carrying a comma, a space, or an ``=``
+# comes back exactly as the gate reported it — the set comparison is only as good
+# as the round trip.
+_FINDING_MEMBERS_RE = re.compile(r"findings=(?P<members>\[.*\])\s*\Z", re.DOTALL)
+
+
+def _parse_finding_members(payload: str) -> tuple[str, ...] | None:
+    """The member list a finding-set marker carries, or None when it carries none.
+
+    A record this cannot read is dropped rather than raised: it is one round of
+    history, and losing it costs at most a delayed escalation, where raising would
+    fail the rework path that was recording a *gate failure* — the wrong moment to
+    add a second way to fall over.
+    """
+    match = _FINDING_MEMBERS_RE.search(payload)
+    if match is None:
+        return None
+    try:
+        data = json.loads(match.group("members"))
+    except ValueError:
+        return None
+    if not isinstance(data, list):
+        return None
+    return tuple(str(item) for item in data)
+
+
+def _finding_set_history(repo_root: Path, issue_id: str, gate: str) -> list[tuple[str, ...]]:
+    """Every finding set recorded for *gate* on *issue_id*, oldest first."""
+    marker = _finding_set_marker(gate)
+    history: list[tuple[str, ...]] = []
+    for text in _comment_texts(repo_root, issue_id):
+        payload = _marker_payload(text, marker)
+        if payload is None:
+            continue
+        members = _parse_finding_members(payload)
+        if members is not None:
+            history.append(members)
+    return history
+
+
+def _compare_finding_sets(
+    history: Sequence[tuple[str, ...]], members: tuple[str, ...]
+) -> tuple[str, tuple[str, ...], int]:
+    """Judge *members* against the most recent entry in *history* (pure).
+
+    Only the most recent, because the rule is about *consecutive* rounds: a gate
+    that reported A, then B, then A again has moved twice, not stalled.
+    """
+    if not history:
+        return PROGRESSING, (), 0
+    previous = history[-1]
+    if members == previous:
+        rounds = 1
+        for earlier in reversed(history[:-1]):
+            if earlier != members:
+                break
+            rounds += 1
+        return STALLED, previous, rounds
+    if set(members) > set(previous):
+        return DIVERGING, previous, 0
+    return PROGRESSING, previous, 0
+
+
+def record_finding_set(
+    repo_root: Path, issue_id: str, gate: str, findings: Sequence[str]
+) -> Convergence:
+    """Record what *gate* reported this round and compare it with the previous round.
+
+    Written once per rework attempt, beside the attempt itself, which is what
+    keeps the two histories in step — :func:`record_rework` appends per call and
+    so does this, so the *n*-th signature belongs to the *n*-th attempt.
+
+    The comparison is the whole point of storing members rather than a digest: a
+    strict superset is divergence, which no hash could show. A gate reporting
+    nothing has no set to compare and is not this function's business — its
+    caller keeps the plain bounded cap.
+    """
+    members = finding_signature(findings)
+    verdict, previous, rounds = _compare_finding_sets(
+        _finding_set_history(repo_root, issue_id, gate), members
+    )
+    body = f"{_finding_set_marker(gate)} verdict={verdict} findings={json.dumps(list(members))}"
+    _run_br(repo_root, ["comments", "add", issue_id, body])
+    return Convergence(verdict=verdict, members=members, previous=previous, stalled_rounds=rounds)
+
+
+def finding_set_escalation(convergence: Convergence) -> str | None:
+    """Why a finding-set gate's rework loop must stop now, or None to keep spending.
+
+    The threshold for the gates that report findings rather than paths, so the
+    reason a human is being asked is written once and read by whoever asks.
+    """
+    if convergence.diverging:
+        return (
+            f"{convergence.detail} — rework is making the work worse, not better; "
+            "re-scope it, brief the agent with the gate's output, or fix it by hand"
+        )
+    if convergence.stalled_rounds >= MAX_STALLED_REWORK_ROUNDS:
+        return (
+            f"{convergence.detail}, and neither did the {convergence.stalled_rounds - 1} "
+            "round(s) before it — the rework loop is not converging; re-scope it, brief the "
+            "agent with the gate's output, or fix it by hand"
+        )
+    return None
+
+
+def _convergence_refund_marker(gate: str) -> str:
+    return f"{MARKER} convergence-refund gate={gate}"
+
+
+def spend_convergence_refund(repo_root: Path, issue_id: str, gate: str) -> bool:
+    """Refund the attempt a non-converging round charged — once per bead and gate.
+
+    The attempt is genuinely not the node's to pay for: it was charged before the
+    gate's findings could be compared, and it re-derived a verdict already on the
+    bead. Refunding it is what leaves the cap intact for whatever the human answers.
+
+    *Once*, for the reason basicly-jr0l.41 records against the flake counter:
+    "charge nothing and try again" with nothing counting the tries is a livelock —
+    no budget is spent, so no cap is ever reached, so the node defers forever while
+    looking merely slow. The first non-converging round is forgiven; a second is the
+    cap's business again, and the cap is what ends the loop when nobody answers the
+    escalation. Written as its own marker rather than inferred from
+    :func:`rework_allowances`, which an answered ``retry`` also writes: the two
+    authorise an attempt for different reasons and must stay tellable apart.
+
+    Returns True when it granted the refund.
+    """
+    marker = _convergence_refund_marker(gate)
+    if any(_marker_matches(text, marker) for text in _comment_texts(repo_root, issue_id)):
+        return False
+    grant_rework_allowance(repo_root, issue_id, gate)
+    _run_br(repo_root, ["comments", "add", issue_id, marker])
+    return True
+
+
 # --- A shared-tracker gate failed on another lane's record (basicly-qorx) -----
 
 # Substring conjunctions identifying a gate failure that asserts over the whole
