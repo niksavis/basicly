@@ -2347,6 +2347,8 @@ def _record_spend_pair(  # noqa: PLR0913 — one parameter per seeded record fie
     task_class: str = "bug",
     phase: str | None = run_record.LANE_PHASE,
     estimated: bool = False,
+    returncode: int = 0,
+    forecast_source: str | None = None,
 ) -> None:
     """Seed one write dispatch with an actual and whichever forecast half the test needs."""
     run_record.record(
@@ -2355,7 +2357,8 @@ def _record_spend_pair(  # noqa: PLR0913 — one parameter per seeded record fie
         run_record.build_record(
             agent="claude",
             handoff=False,
-            returncode=0,
+            returncode=returncode,
+            forecast_source=forecast_source,
             duration_s=100.0,
             command=("claude",),
             tokens=tokens,
@@ -2505,3 +2508,47 @@ def test_the_spend_gate_samples_only_measured_write_dispatches(tmp_path: Path) -
     assert accuracy.pairs == ()
     assert accuracy.violations == ()
     assert accuracy.unmetered == 1
+
+
+def test_a_failed_dispatch_is_not_held_to_a_whole_lane_forecast(tmp_path: Path) -> None:
+    """What a dying attempt spent is not what the work costs (basicly-5xcj).
+
+    The lane exited 1 after 33,880 tokens of startup against a 4,805,997 forecast — 0.007x
+    — and the gate read that as a forecast wrong by two orders of magnitude. Its sibling
+    record for the same bead, the attempt that actually ran, came in at 1.60x. Counted
+    rather than dropped: the failures are exactly the population a filter on an optional
+    field loses silently (basicly-ipx2).
+    """
+    _record_spend_pair(
+        tmp_path, "b-1", tokens=33_880, forecast_spend_tokens=4_805_997, returncode=1
+    )
+
+    accuracy = decompose.spend_accuracy(tmp_path, _sizing())
+
+    assert accuracy.pairs == ()
+    assert accuracy.violations == ()
+    assert accuracy.aborted == 1
+
+
+def test_an_assumed_fallback_forecast_is_named_not_compared(tmp_path: Path) -> None:
+    """A stand-in for an unsizeable bead is a placeholder, not a prediction.
+
+    `basicly-sco6` declares no scope the estimator can read, so the forecast fell back to
+    the measured whole-lane quantile — 16,576,875 tokens for a docs-only change that spent
+    1,218,172 (0.073x). Holding a placeholder to an actual is the basicly-z2wi shape one
+    level on: a number compared against a quantity it does not denominate. Named, so the
+    remedy (declare a scope) stays visible instead of the record vanishing.
+    """
+    _record_spend_pair(
+        tmp_path,
+        "b-1",
+        tokens=1_218_172,
+        forecast_spend_tokens=16_576_875,
+        forecast_source="assumed:measured",
+    )
+
+    accuracy = decompose.spend_accuracy(tmp_path, _sizing())
+
+    assert accuracy.pairs == ()
+    assert accuracy.violations == ()
+    assert accuracy.unscoped == ("b-1",)

@@ -1754,9 +1754,16 @@ def _spend_accuracy_report(repo_root: Path) -> None:
         ui.say(violation, style="warn")
     ui.say(
         f"Not held to a spend forecast: {accuracy.unsized} metered write dispatch(es) "
-        f"with no forecast at all, {accuracy.unmetered} with no measured actual.",
+        f"with no forecast at all, {accuracy.unmetered} with no measured actual, "
+        f"{accuracy.aborted} the runner reported as failed.",
         style="muted",
     )
+    if accuracy.unscoped:
+        ui.say(
+            "Not comparable, their forecast came from the `assumed:` fallback rather "
+            f"than a declared scope: {', '.join(accuracy.unscoped)}.",
+            style="muted",
+        )
     if accuracy.incomparable:
         ui.say(
             "Not comparable, their recorded working-set forecast is above the band's "

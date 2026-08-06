@@ -1595,6 +1595,23 @@ class SpendAccuracy:
     # Dispatches with no adapter-measured actual: a handoff, a killed run, or a chars/4
     # transcript estimate, which is a floor on spend rather than a measurement of it.
     unmetered: int = 0
+    # Dispatches the runner reported as `failed`. Their tokens are what the attempt
+    # spent before dying — `basicly-5xcj` exited 1 after 33,880 tokens of startup — so
+    # holding them to a whole-lane forecast measures the abort, not the work. Counted
+    # and reported, never dropped: a filter on an optional field hides a population,
+    # and the failures are the half a naive query would silently lose (`basicly-ipx2`).
+    aborted: int = 0
+    # Beads whose forecast came from the `assumed:` fallback rather than a declared
+    # scope. That number is the measured whole-lane quantile standing in for a bead the
+    # estimator could not size, so it is a placeholder, not a prediction — comparing it
+    # is the z2wi shape again, a number held against a quantity it does not denominate.
+    # `basicly-sco6` declares no scope, was assumed at 16,576,875, and spent 1,218,172.
+    #
+    # Named `unscoped` rather than `assumed` for the reason the sibling field above
+    # records: `wired_or_deleted` keys an unread record field by name, and
+    # `supervise.PassSpendAdmission.assumed` is already baselined, so reusing it made
+    # that finding read as fixed. The gate caught it on the first full run.
+    unscoped: tuple[str, ...] = ()
 
     @property
     def median_ratio(self) -> float | None:
@@ -1648,7 +1665,8 @@ def spend_accuracy(repo_root: Path, sizing: SizingConfig) -> SpendAccuracy:
     report = run_record.forecast_errors(repo_root)
     pairs: list[SpendPair] = []
     incomparable: list[str] = []
-    unsized = unmetered = 0
+    unscoped: list[str] = []
+    unsized = unmetered = aborted = 0
     for bead_id, history in sorted(run_record.dispatch_history(repo_root).items()):
         for entry in history:
             if not isinstance(entry, dict) or not run_record.is_write_phase(entry.get("phase")):
@@ -1656,6 +1674,15 @@ def spend_accuracy(repo_root: Path, sizing: SizingConfig) -> SpendAccuracy:
             actual = run_record.positive_int(entry, "tokens")
             if actual is None or entry.get("estimated") is not False:
                 unmetered += 1
+                continue
+            if entry.get("outcome") == "failed":
+                # What a dying attempt spent is not what the work costs.
+                aborted += 1
+                continue
+            source = entry.get("forecast_source")
+            if isinstance(source, str) and source.startswith("assumed:"):
+                # A stand-in for a bead the estimator could not size is not a forecast.
+                unscoped.append(bead_id)
                 continue
             task_class = entry.get("task_class")
             model = entry.get("model")
@@ -1704,6 +1731,8 @@ def spend_accuracy(repo_root: Path, sizing: SizingConfig) -> SpendAccuracy:
         unsized=unsized,
         incomparable=tuple(sorted(set(incomparable))),
         unmetered=unmetered,
+        aborted=aborted,
+        unscoped=tuple(sorted(set(unscoped))),
     )
 
 
