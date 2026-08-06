@@ -201,6 +201,66 @@ Friction we have already hit — each one is a requirement in disguise:
 - Deleting probe records leaves tombstones that the loop then commits.
 - No validation or vocabulary for `assignee`; unset on every record (`kjc5.38`).
 
+## 3.1 What other projects tell us — and which half of it is verified
+
+Literature research across four tracker lineages, 2026-08-06. The `external-review` rule
+binds here: a README is a claim, and this section separates what was **checked against
+docs, source or an issue tracker** from what was only **read**. Nothing below has been
+reproduced by us, and none of it may be cited as settled until it is.
+
+**Verified against a primary source, and load-bearing for our design:**
+
+- **Our own ancestor documents our pathology.** `beads`' author publishes that merge
+  conflicts are common, that a repo should be kept under 200–500 issues via `bd cleanup`,
+  and that agents bulk-reading the JSONL fail past ~25k tokens; its issue #534 records
+  "--no-db mode completely broken". A maintainer describing his own failure modes is the
+  strongest evidence available, and our WAL corruption under five-lane fan-out is that
+  lineage's signature defect rather than our bad luck.
+- **Structure must be edges the system owns.** GitHub shipped hierarchy *inside markdown*
+  as tasklists, then retired the feature in April 2025 and replaced it with first-class
+  sub-issue edges. Prose-embedded structure fails.
+- **One mutable shared document corrupts itself.** Task Master's single `tasks.json` has
+  its own tooling failing to parse its own output (#786). This is a warning aimed directly
+  at our derived snapshot, and it is why validation-on-write is not optional.
+- **Fossil is the one long-lived proof point** for canonical-log-plus-materialised-query:
+  event-sourced ticket changes with per-repo SQL projection, running sqlite.org for 18
+  years. It is the shape §4 adopts, and explicitly *not* beads' writable-cache-plus-export.
+- **Configurable workflow is the most-cited reason teams leave Jira**, and Linear's
+  counter-position is five fixed statuses with no custom workflows. Fossil's own bug-theory
+  document made the same argument in 2010. Three independent sources, one direction.
+- **Spec-driven tooling conflates two products.** A cited benchmark records 2,577 markdown
+  lines generated for 689 lines of code, and Spec Kit's own discussions say it "creates the
+  illusion of work". The lesson we take: *work state* is small, structural and must be
+  reliable; *generated planning prose* is large and disposable. Our tracker stores the
+  first and points at the second.
+
+**Read but NOT verified — treat as hypothesis, and check before building on any of it:**
+
+- **`git-bug`'s merge story.** Operation-based CRDT with Lamport clocks and
+  deterministic merge is described in its *design document only*; its behaviour under real
+  concurrent load was not observed, and its adoption stalled for reasons we did not
+  establish. Our §4.1 sequence deliberately takes the weakest useful piece of this idea
+  rather than the machinery.
+- **The in-repo-file tracker graveyard.** Two independent post-mortems agree the causes were
+  UUID/file proliferation, unsolved merge semantics, and no web UI for non-committers. **Half
+  of those do not apply to us** — one operator, agents, no casual reporters — so this is
+  weaker evidence against a git-native design than it first appears. Say which half you are
+  relying on.
+- **Field and nesting telemetry.** No published study isolates used from unused tracker
+  fields, and no telemetry on JQL ad-hoc versus saved-filter usage was found. Our own
+  measurements (`assignee` on 76/604, `notes` once, eight distinct type values) are the only
+  hard numbers we have, and they are ours alone.
+- **Vendor sufficiency claims are marketing.** Linear's "covers 90% of needs" is docs-adjacent
+  advertising, not a measurement.
+
+**What would change the design.** If lanes ever write tracker state *from worktrees* and
+merge through git, rather than serialising through the base checkout, then union-merge
+becomes load-bearing and §4 should flip to per-item append-only operation files —
+`git-bug`'s shape, minus the Lamport clocks, since commit order suffices for one repo.
+Today `.beads/redirect` routes every lane's writes to one checkout, which is precisely what
+makes the simpler design valid. **That redirect is therefore a design dependency, not an
+implementation detail**; if it goes, re-open this decision.
+
 ## 4. Proposed stack (to be confirmed by §7, not yet decided)
 
 **Pure Python inside the `basicly` package. No new runtime dependency, no second binary.**
