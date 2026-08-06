@@ -730,7 +730,7 @@ real?" — a decision above without a landed bead here is intent, not behavior.
 
 | Component | Bead(s) | Note |
 | --- | --- | --- |
-| 1 Run-record token telemetry | `kjc5.1`, `kjc5.14` | claude meters via stream-json; copilot has no counts (§7.5) |
+| 1 Run-record token telemetry | `kjc5.1`, `kjc5.14` | claude meters via stream-json; copilot meters out of band from its session store (§7.5) |
 | 2 Sizing estimator + DoR governor | `kjc5.2` | estimate still drifts across invocations (`kjc5.30`) |
 | 3 Autonomy grant ledger | `kjc5.3` | ledger exists; enforcement gaps below |
 | 4 Decision queue | `kjc5.4`, `kjc5.17` | writes serialized; decider not yet auto-invoked (`kjc5.40`) |
