@@ -1656,6 +1656,36 @@ def _ensure_child_worktrees(ctx: _Ctx, children: list[tuple[str, str]]) -> None:
         room -= 1
 
 
+def ensure_lane_worktrees(
+    repo_root: Path,
+    root_issue: str,
+    lanes: Sequence[tuple[str, str]],
+    *,
+    config: PolicyConfig | None = None,
+) -> tuple[str, ...]:
+    """Provision worktrees for an explicit lane set; the ids that gained one.
+
+    The same selection :func:`_ensure_child_worktrees` makes for a root's children
+    — scheduler rank, the worktree cap, the band's refusal — over a lane set the
+    caller names instead of one read off the ``parent-child`` edge. A supervised
+    pass whose lanes were chosen by label has no such edge to read (basicly-1lpo),
+    and the seeding path it would otherwise take provisions the root's *children*,
+    so a labelled cut could never be provisioned at all.
+
+    Public here rather than reimplemented in ``supervise`` so the cap and the
+    ranking keep their single definition; the *selection* of what to provision is
+    the caller's, which is the whole point of the split.
+    """
+    config = config or load_policy_config(repo_root)
+    state = loop_state.read_node_state(repo_root, root_issue, config)
+    ctx = _Ctx(repo_root, root_issue, state, config, Inputs())
+    before = {session.name for session in worktree.list_sessions(repo_root)}
+    _ensure_child_worktrees(ctx, list(lanes))
+    after = {session.name for session in worktree.list_sessions(repo_root)}
+    gained = after - before
+    return tuple(issue_id for issue_id, _ in lanes if _worktree_name(issue_id) in gained)
+
+
 def _bind_worktree(ctx: _Ctx, name: str, branch: str, *, issue_id: str | None = None) -> None:
     """Stash the worktree/branch binding on the issue's external_ref."""
     ref = loop_state.format_worktree_ref(name, branch)

@@ -2039,6 +2039,60 @@ def test_ensure_child_worktrees_skips_a_closed_child(
     assert created == ["i-2"]
 
 
+@pytest.mark.usefixtures("tracker_commits")
+def test_ensure_lane_worktrees_provisions_lanes_the_root_never_parented(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An explicit lane set is provisioned by the same primitive a fan-out root uses.
+
+    ``br`` permits one parent, so a release cut is assembled from beads that already
+    have an epic of origin and the pass selects them by label (basicly-1lpo). Nothing
+    on the seeding path could provision such a lane: it reaches
+    ``_ensure_child_worktrees`` only through the root's own decompose->build advance,
+    which reads the ``parent-child`` edge these lanes by definition do not have.
+    """
+    created = _pin_provisioning(monkeypatch, ranked=("origin.1", "other.9"), concurrency=2)
+    monkeypatch.setattr(
+        worktree, "list_sessions", lambda *_a, **_k: [_session(name) for name in created]
+    )
+    monkeypatch.setattr(
+        loop.loop_state, "read_node_state", lambda *_a, **_k: _state("decompose", issue_type="epic")
+    )
+
+    gained = loop.ensure_lane_worktrees(
+        tmp_path, "release", [("origin.1", "open"), ("other.9", "open")], config=CONFIG
+    )
+
+    assert created == ["origin-1", "other-9"]
+    assert gained == ("origin.1", "other.9"), "the ids that gained a worktree, for the routing"
+
+
+@pytest.mark.usefixtures("tracker_commits")
+def test_ensure_lane_worktrees_reports_only_what_it_provisioned(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A lane the cap or the band skipped is not reported as provisioned.
+
+    The seeding route depends on it: a pass that reports lanes it did not build routes
+    ``seeded`` and then dispatches nothing, and one that under-reports throws away
+    worktrees it just paid for (basicly-jr0l.57).
+    """
+    created = _pin_provisioning(monkeypatch, ranked=("origin.1", "other.9"), concurrency=1)
+    monkeypatch.setattr(
+        worktree, "list_sessions", lambda *_a, **_k: [_session(name) for name in created]
+    )
+    monkeypatch.setattr(
+        loop.loop_state, "read_node_state", lambda *_a, **_k: _state("decompose", issue_type="epic")
+    )
+
+    gained = loop.ensure_lane_worktrees(
+        tmp_path, "release", [("origin.1", "open"), ("other.9", "open")], config=CONFIG
+    )
+
+    assert created == ["origin-1"], "one slot, spent on the higher-ranked lane"
+    assert gained == ("origin.1",)
+
+
 def test_classify_leaf_forks_from_the_configured_base(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

@@ -315,6 +315,11 @@ class SessionState:
     root_status: str
     children: tuple[tuple[str, str], ...]  # (issue_id, status)
     adopted: tuple[AdoptedLane, ...]
+    # The label this pass selected its lanes with, when it was given one
+    # (:func:`lane_selection`). Carried on the state because every re-derivation
+    # inside a pass has to reproduce the same lane set — the selector is the one
+    # input that is *not* recoverable from the graph.
+    lane_label: str | None = None
 
     @property
     def open_children(self) -> tuple[str, ...]:
@@ -341,7 +346,68 @@ class SessionState:
         return bool(self.children) and not self.open_children
 
 
-def derive_session(repo_root: Path, root_issue: str) -> SessionState:
+class LaneSelectionError(RuntimeError):
+    """A lane selector named a set the pass cannot run: no bead carries it."""
+
+
+def _labelled_issues(repo_root: Path, args: list[str]) -> dict[str, str]:
+    """``{issue_id: status}`` for one ``br list`` query, whatever payload shape it uses."""
+    proc = _run_br(repo_root, args)
+    payload = json.loads(proc.stdout)
+    issues = payload.get("issues") if isinstance(payload, dict) else payload
+    return {
+        str(record["id"]): str(record.get("status", ""))
+        for record in issues or []
+        if isinstance(record, dict) and "id" in record
+    }
+
+
+def lane_selection(
+    repo_root: Path, label: str, *, exclude: Iterable[str] = ()
+) -> tuple[tuple[str, str], ...]:
+    """The ``(issue_id, status)`` pairs carrying *label* — a pass's explicit lane set.
+
+    Membership in a release cut is a **label**, not a parent-child edge (plan §14),
+    and ``br`` permits exactly one parent — so a cut assembled from beads that
+    already have an epic of origin could not be expressed as one supervised pass at
+    all, and four of six lanes on the ``v0.7.0`` cut had to be driven single-track
+    (basicly-1lpo). This is the query that decouples the two: what a pass *runs* and
+    what a bead's parent *is* are independent questions, and the ``parent-child``
+    edge was being made to answer both.
+
+    Two ``br list`` calls, because neither alone is the whole set. The default query
+    omits ``closed``, which the fan-in needs — a selection whose every bead has
+    closed is a *finished* session, and reading it as an empty one would report a
+    completed cut as blocked. Enumerating the status vocabulary instead would be
+    worse: :func:`loop_state.is_dispatchable` deliberately admits statuses a project
+    defined for itself, and a ``--status`` allowlist would silently drop them.
+
+    *exclude* drops ids that are not lanes of this pass — the root itself, which is
+    the pass's anchor rather than work it runs. Sorted by id so a pass is ordered by
+    the selection rather than by what order ``br`` happened to return; the scheduler
+    rank then orders the lanes that actually dispatch (``ready_lanes``).
+
+    Raises :class:`LaneSelectionError` when nothing is selected. A mistyped label
+    otherwise derives an empty session that reports itself blocked for a reason
+    unrelated to the typo.
+    """
+    selected = _labelled_issues(repo_root, ["list", "--label", label, "--json"])
+    selected |= _labelled_issues(
+        repo_root, ["list", "--label", label, "--status", "closed", "--json"]
+    )
+    for issue_id in exclude:
+        selected.pop(issue_id, None)
+    if not selected:
+        raise LaneSelectionError(
+            f"no bead outside the pass root carries label {label!r}; "
+            f"label the lanes first (br update <id> --add-label {label})"
+        )
+    return tuple(sorted(selected.items()))
+
+
+def derive_session(
+    repo_root: Path, root_issue: str, *, lane_label: str | None = None
+) -> SessionState:
     """Rebuild the session's state from ``br`` — the whole crash-recovery story.
 
     The supervisor keeps no side-state, so this derivation is both cold start
@@ -351,6 +417,14 @@ def derive_session(repo_root: Path, root_issue: str) -> SessionState:
     record still exists on disk. One ``br show`` per open child (matching the
     loop's per-issue reads); fine for a derivation pass, but the kjc5.6
     standing loop should not re-derive on every tick.
+
+    *lane_label* replaces the parent-child derivation with the label selector
+    (:func:`lane_selection`, basicly-1lpo): the lanes are then the beads carrying
+    that label and the root is the pass's anchor only — its grant, its decision
+    queue, its lock. Nothing else about the derivation changes, so the pass is
+    still a pure function of ``br`` and still restart-safe: re-reading the label
+    on the next tick picks up a bead labelled into the cut since (an overrun
+    follow-up inherits its lane's labels) and drops one labelled out of it.
     """
     proc = _run_br(repo_root, ["show", root_issue, "--json"])
     data = json.loads(proc.stdout)
@@ -358,11 +432,16 @@ def derive_session(repo_root: Path, root_issue: str) -> SessionState:
     if not isinstance(record, dict):
         raise RuntimeError(f"br show {root_issue} returned no issue record")
 
-    children = tuple(
-        (str(dep["id"]), str(dep.get("status", "")))
-        for dep in record.get("dependents") or []
-        if isinstance(dep, dict) and dep.get("dependency_type") == "parent-child" and "id" in dep
-    )
+    if lane_label is not None:
+        children = lane_selection(repo_root, lane_label, exclude=(root_issue,))
+    else:
+        children = tuple(
+            (str(dep["id"]), str(dep.get("status", "")))
+            for dep in record.get("dependents") or []
+            if isinstance(dep, dict)
+            and dep.get("dependency_type") == "parent-child"
+            and "id" in dep
+        )
 
     live_names = {session.name for session in worktree.list_sessions(repo_root)}
     adopted: list[AdoptedLane] = []
@@ -388,6 +467,7 @@ def derive_session(repo_root: Path, root_issue: str) -> SessionState:
         root_status=str(record.get("status", "")),
         children=children,
         adopted=tuple(adopted),
+        lane_label=lane_label,
     )
 
 
@@ -444,6 +524,10 @@ class Observation:
     done: bool
     lanes: tuple[LaneView, ...]
     pending_decisions: tuple[decisions.DecisionItem, ...]
+    # The label the observed lane set was selected with, echoed so a client can see
+    # *which* session these counts describe: a root can be supervised over its
+    # decomposition or over a labelled cut, and the two are different sessions.
+    lane_label: str | None = None
     # The recorded lock holder, or None when nobody is supervising this repo. A
     # holder past the staleness horizon is reported rather than hidden: "crashed
     # holder, takeover allowed" and "working" are exactly what a client attaches
@@ -470,7 +554,7 @@ class Observation:
         return self.holder is not None and self.holder_on_this_root and not self.holder_stale
 
 
-def observe(repo_root: Path, root_issue: str) -> Observation:
+def observe(repo_root: Path, root_issue: str, *, lane_label: str | None = None) -> Observation:
     """Snapshot the session a client just attached to — a pure read (design 7.3).
 
     Layer 3's status half. It is the same derivation the supervisor runs on
@@ -483,8 +567,13 @@ def observe(repo_root: Path, root_issue: str) -> Observation:
     Takes no lock and writes nothing, so any number of clients may attach while
     the supervisor works — and attaching to an *unsupervised* root is a valid
     read, not an error: ``holder`` is then None.
+
+    *lane_label* is the selector the supervisor was started with, when it was
+    given one: the lane set is then not the root's children, so a client that
+    omits it observes a truthful view of a *different* session — the root's
+    decomposition — and would report a running label pass as childless.
     """
-    state = derive_session(repo_root, root_issue)
+    state = derive_session(repo_root, root_issue, lane_label=lane_label)
     holder = read_holder(repo_root)
     grant = policy.active_grant(repo_root, root_issue)
     wait = policy.session_wait_summary(repo_root, root_issue)
@@ -496,6 +585,7 @@ def observe(repo_root: Path, root_issue: str) -> Observation:
         done=state.done,
         lanes=tuple(_lane_view(repo_root, lane) for lane in state.adopted),
         pending_decisions=decisions.pending(repo_root, root_issue),
+        lane_label=lane_label,
         holder=holder,
         holder_stale=holder is not None and holder.age_s >= STALE_AFTER_S,
         holder_on_this_root=holder is not None and holder.root_issue == root_issue,
@@ -2923,10 +3013,16 @@ def seed_lanes(
     start anyway. Provisioning is not cheap — a ``uv sync`` and an ``npm install`` per
     lane — so seeding five worktrees and then refusing the dispatch for want of a budget
     wastes minutes on a pass that was never going to run (basicly-kkux).
+
+    A pass whose lanes were selected by label takes :func:`_seed_selected_lanes`
+    instead: the root's advance provisions the root's *children*, which a labelled cut
+    by construction is not (basicly-1lpo).
     """
     declined = _seeding_declined(repo_root, session, skip=skip, admission=admission)
     if declined is not None:
         return declined
+    if session.lane_label is not None:
+        return _seed_selected_lanes(repo_root, session, skip=skip)
     try:
         steps = loop.run_until_blocked(repo_root, session.root_issue)
     except (RuntimeError, OSError, ValueError) as exc:
@@ -2935,6 +3031,65 @@ def seed_lanes(
     if final is None:
         return ()
     return _seeding_outcome(repo_root, session, steps, final, skip=skip)
+
+
+def _seed_selected_lanes(
+    repo_root: Path, session: SessionState, *, skip: frozenset[str]
+) -> tuple[RoutedOutcome, ...]:
+    """Provision a label-selected lane set directly, bypassing the root's own advance.
+
+    :func:`seed_lanes` delegates to ``loop.run_until_blocked`` on the *root*, whose
+    decompose->build advance provisions the root's ``parent-child`` children — and a
+    label-selected pass exists precisely because its lanes are not the root's
+    children (basicly-1lpo). Taking that route would drive a release epic through its
+    own checkpoints and provision nothing, so the selection is provisioned directly
+    through the primitive the root's advance itself uses
+    (:func:`loop.ensure_lane_worktrees`), which keeps the cap, the rank and the band
+    refusal identical for both kinds of pass.
+
+    Routed on what was *provisioned*, the rule :func:`_seeding_outcome` records: a
+    pass that built lanes must not report ``seed-blocked``, because that route is
+    deliberately non-retriable and the session would end discarding them.
+    """
+    lanes = tuple(
+        (issue_id, status)
+        for issue_id, status in session.children
+        if loop_state.is_dispatchable(status)
+    )
+    try:
+        gained = loop.ensure_lane_worktrees(repo_root, session.root_issue, lanes)
+    except (RuntimeError, OSError, ValueError) as exc:
+        return (
+            RoutedOutcome(session.root_issue, "error", f"seeding the selected lanes failed: {exc}"),
+        )
+    # Re-derived rather than read off *session*: the bindings that make a lane
+    # dispatchable did not exist when this pass derived its state.
+    derived = derive_session(repo_root, session.root_issue, lane_label=session.lane_label)
+    dispatchable = ready_lanes(repo_root, derived, skip=skip)
+    selected = f"{len(lanes)} lane(s) selected by label {session.lane_label!r}"
+    if dispatchable:
+        return (
+            RoutedOutcome(
+                session.root_issue,
+                "seeded",
+                f"provisioned {len(gained)} of {selected}, {len(dispatchable)} dispatchable",
+            ),
+        )
+    if gained:
+        return (
+            RoutedOutcome(
+                session.root_issue,
+                "seed-blocked",
+                f"provisioned {len(gained)} lane(s) but none is dispatchable ({', '.join(gained)})",
+            ),
+        )
+    return (
+        RoutedOutcome(
+            session.root_issue,
+            "seed-blocked",
+            f"no lane could be provisioned from {selected}",
+        ),
+    )
 
 
 def _seeding_outcome(
@@ -2966,7 +3121,7 @@ def _seeding_outcome(
     another pass could change — but it says so rather than claiming nothing was built.
     """
     live_before = frozenset(lane.issue_id for lane in session.adopted if lane.live)
-    derived = derive_session(repo_root, session.root_issue)
+    derived = derive_session(repo_root, session.root_issue, lane_label=session.lane_label)
     dispatchable = ready_lanes(repo_root, derived, skip=skip)
     if any(step.progressed for step in steps) or dispatchable:
         detail = final.detail

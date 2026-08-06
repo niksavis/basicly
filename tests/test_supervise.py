@@ -327,6 +327,153 @@ def test_a_deferred_child_is_neither_sized_nor_holds_the_session_open(
     assert control.done is False
 
 
+# --- Lane selection: a pass over beads that already have a parent (basicly-1lpo) ---
+
+
+class _FakeBrSelection(_FakeBrShow):
+    """br stand-in that also serves ``list --label``, and refuses every mutation.
+
+    The status filtering mirrors the installed binary, measured 2026-08-06: a plain
+    ``br list`` omits ``closed`` (107 of 621 beads on this tracker) and ``--status
+    closed`` returns exactly those. A selector implemented as one query would
+    therefore see a different set than one implemented as two, which is the
+    difference between a finished cut reporting ``done`` and reporting nothing.
+
+    Anything that writes raises, so a test can assert the pass composed itself
+    *without* re-parenting a bead — the whole point of selecting by label.
+    """
+
+    def __init__(self, issues: dict[str, dict], labelled: dict[str, tuple[str, ...]]) -> None:
+        super().__init__(issues)
+        self.labelled = labelled
+
+    def __call__(self, repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
+        if args[:1] == ["list"]:
+            label = args[args.index("--label") + 1]
+            closed_only = "--status" in args
+            records = [
+                {"id": issue_id, "status": self.issues[issue_id]["status"]}
+                for issue_id in self.labelled.get(label, ())
+                if (self.issues[issue_id]["status"] == "closed") is closed_only
+            ]
+            return _Proc(json.dumps({"issues": records, "total": len(records)}))
+        if args[:1] in (["update"], ["create"], ["dep"]):
+            raise AssertionError(f"a lane selection must not write to the tracker: {args}")
+        return super().__call__(repo_root, args, _check=_check)
+
+
+def _cut_fixture(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A release cut whose beads each already belong to their epic of origin.
+
+    The shape basicly-1lpo was filed on: ``release`` is the pass root and carries no
+    ``parent-child`` dependents at all, while every bead in the cut has a parent
+    already — ``br`` permits exactly one, so no edge to ``release`` can be added.
+    """
+    issues = {
+        "release": _issue("release"),  # no children: membership is the label
+        "origin.1": _issue("origin.1", "open") | {"parent": "origin"},
+        "origin.2": _issue("origin.2", "in_progress") | {"parent": "origin"},
+        "other.9": _issue("other.9", "open") | {"parent": "other"},
+        "unrelated": _issue("unrelated", "open"),
+    }
+    monkeypatch.setattr(
+        supervise,
+        "_run_br",
+        _FakeBrSelection(issues, {"release-v0.7.0": ("origin.1", "origin.2", "other.9")}),
+    )
+    _fake_sessions(monkeypatch, set())
+
+
+def test_a_labelled_cut_fans_out_over_beads_that_already_have_a_parent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The bead's own Expected line: a release cut assembles from beads with an epic.
+
+    Membership used to be readable only off the ``parent-child`` edge, and ``br``
+    permits one parent — so of the six beads chosen for the ``v0.7.0`` cut, the four
+    with an epic of origin were refused and had to be driven single-track, costing the
+    concurrency on four of six lanes (basicly-1lpo). Here the root has *no* children at
+    all, so a parent-child derivation yields an empty session: this asserts the pass
+    fans out over exactly the labelled set, and ``_FakeBrSelection`` asserts it did so
+    without writing a single edge.
+    """
+    _cut_fixture(monkeypatch)
+
+    state = supervise.derive_session(tmp_path, "release", lane_label="release-v0.7.0")
+
+    assert state.children == (
+        ("origin.1", "open"),
+        ("origin.2", "in_progress"),
+        ("other.9", "open"),
+    )
+    assert state.open_children == ("origin.1", "origin.2", "other.9")
+    assert state.lane_label == "release-v0.7.0"
+    # The control, and the AC's "a test fails if membership requires a parent-child
+    # edge": the same root, same tracker, without the selector is a session of nothing.
+    assert supervise.derive_session(tmp_path, "release").children == ()
+
+
+def test_an_unlabelled_bead_is_not_a_lane_of_the_cut(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A labelled cut is exactly the chosen set, not a fan-out over the ready set.
+
+    Rooting a pass at the epic of origin instead was rejected for this reason — it
+    offers every open child to routing, which then picks by scheduler score rather
+    than by the release's content (basicly-1lpo).
+    """
+    _cut_fixture(monkeypatch)
+
+    state = supervise.derive_session(tmp_path, "release", lane_label="release-v0.7.0")
+
+    assert "unrelated" not in dict(state.children)
+
+
+def test_a_cut_whose_every_bead_closed_is_done_rather_than_blocked(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The fan-in needs the closed half of the selection, which ``br list`` omits.
+
+    A selection read from one query would lose every closed bead, so a finished cut
+    would derive as a session with *no* lanes — and that is not ``done``, it is a pass
+    that exits 1 reporting "no ready lanes and nothing to land" on work that is over.
+    """
+    issues = {
+        "release": _issue("release"),
+        "done.1": _issue("done.1", "closed") | {"parent": "origin"},
+        "done.2": _issue("done.2", "closed") | {"parent": "other"},
+    }
+    monkeypatch.setattr(
+        supervise, "_run_br", _FakeBrSelection(issues, {"cut": ("done.1", "done.2")})
+    )
+    _fake_sessions(monkeypatch, set())
+
+    state = supervise.derive_session(tmp_path, "release", lane_label="cut")
+
+    assert state.children == (("done.1", "closed"), ("done.2", "closed"))
+    assert state.open_children == ()
+    assert state.done is True
+
+
+def test_a_selector_no_bead_carries_is_refused_not_derived_as_an_idle_session(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A mistyped label must say so, not derive a session that reports itself blocked.
+
+    The root is excluded from its own selection — it anchors the grant, the lock and
+    the decision queue rather than being work the pass runs — so a label only the root
+    carries is the same refusal as one nobody carries.
+    """
+    issues = {"release": _issue("release", "open")}
+    monkeypatch.setattr(supervise, "_run_br", _FakeBrSelection(issues, {"root-only": ("release",)}))
+    _fake_sessions(monkeypatch, set())
+
+    with pytest.raises(supervise.LaneSelectionError, match="typo-v9"):
+        supervise.derive_session(tmp_path, "release", lane_label="typo-v9")
+    with pytest.raises(supervise.LaneSelectionError, match="root-only"):
+        supervise.derive_session(tmp_path, "release", lane_label="root-only")
+
+
 def test_new_session_id_binds_root_and_varies() -> None:
     """Session ids carry the root issue and differ per start."""
     first = supervise.new_session_id("epic")
@@ -4878,7 +5025,7 @@ def _seed_fixture(
         return steps
 
     monkeypatch.setattr(supervise.loop, "run_until_blocked", fake_run_until_blocked)
-    monkeypatch.setattr(supervise, "derive_session", lambda _r, _i: after)
+    monkeypatch.setattr(supervise, "derive_session", lambda *_a, **_k: after)
     return advanced
 
 
@@ -4908,6 +5055,71 @@ def test_a_cold_root_provisions_its_lanes_instead_of_reporting_nothing_to_land(
     assert advanced == ["epic"], "the root itself must be advanced to fan out its children"
     assert [(r.issue_id, r.route) for r in routed] == [("epic", "seeded")]
     assert supervise.should_continue(routed), "the seeded lanes must be dispatched next pass"
+
+
+def test_a_labelled_pass_provisions_its_own_lanes_instead_of_advancing_the_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A cut selected by label cannot be seeded through the root's own advance.
+
+    Seeding delegates to ``loop.run_until_blocked`` on the root, whose
+    decompose->build advance provisions the root's ``parent-child`` children — so for
+    a labelled cut it would drive the release epic through its own checkpoints and
+    provision nothing, leaving the pass unable to cold-start at all (basicly-1lpo).
+    The lane set is provisioned directly instead, through the same primitive that
+    advance uses.
+    """
+    advanced = _seed_fixture(
+        monkeypatch,
+        steps=(_step("decomposed"),),
+        derived=_session(_lane("origin.1"), _lane("other.9")),
+    )
+    provisioned: list[tuple[str, tuple[tuple[str, str], ...]]] = []
+    monkeypatch.setattr(
+        supervise.loop,
+        "ensure_lane_worktrees",
+        lambda _r, root, lanes: (
+            provisioned.append((root, tuple(lanes))) or tuple(issue_id for issue_id, _ in lanes)
+        ),
+    )
+    cut = supervise.SessionState(
+        root_issue="epic",
+        root_status="open",
+        children=(("origin.1", "open"), ("other.9", "open"), ("done.2", "closed")),
+        adopted=(),
+        lane_label="release-v0.7.0",
+    )
+
+    routed = supervise.seed_lanes(tmp_path, cut)
+
+    assert advanced == [], "the root's own advance provisions its children, not the cut"
+    assert provisioned == [("epic", (("origin.1", "open"), ("other.9", "open")))], (
+        "a closed bead of the cut is not provisioned a worktree"
+    )
+    assert [(r.issue_id, r.route) for r in routed] == [("epic", "seeded")]
+    assert supervise.should_continue(routed), "the pass must go on to dispatch what it built"
+    assert "2 dispatchable" in routed[0].detail
+
+
+def test_a_labelled_pass_that_provisioned_nothing_stops_rather_than_spinning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The termination guard holds on the labelled path too, and names the selector."""
+    _seed_fixture(monkeypatch, steps=(_step("decomposed"),))
+    monkeypatch.setattr(supervise.loop, "ensure_lane_worktrees", lambda _r, _root, _lanes: ())
+    cut = supervise.SessionState(
+        root_issue="epic",
+        root_status="open",
+        children=(("origin.1", "open"),),
+        adopted=(),
+        lane_label="release-v0.7.0",
+    )
+
+    routed = supervise.seed_lanes(tmp_path, cut)
+
+    assert [r.route for r in routed] == ["seed-blocked"]
+    assert not supervise.should_continue(routed)
+    assert "1 lane(s) selected by label 'release-v0.7.0'" in routed[0].detail
 
 
 def test_a_root_that_cannot_seed_stops_the_session_rather_than_spinning(
