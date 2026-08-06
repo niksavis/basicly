@@ -1121,6 +1121,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   would make the verdict noise. Still read-only, and it still exits non-zero when a run
   would be blocked, so CI or a wrapper can gate on it (`basicly-cdhq`).
 
+- **The security scan now covers the portable kit, and a directory can no longer arrive
+  outside it unnoticed.** `bandit`'s `[[verify.checks]]` entry named `.scripts` and
+  `.basicly/core/hooks` — the whole set when it was written. `.basicly/core/kit` arrived
+  later, and nothing failed: a scan cannot notice a directory it was never pointed at,
+  which is the one failure shape a green security gate hides. That directory is the least
+  acceptable one to miss, since `basicly install` ships it into consumer repos and it runs
+  in an agent spawn path.
+
+  The kit is now a declared target, and because the target list is one a human maintains,
+  a test sweeps the tracked Python under `.scripts` and `.basicly/core` and fails when any
+  directory holding it sits outside the check — so the *next* such directory is caught
+  here instead of inheriting the same silence. Coverage in the argv being necessary and not
+  sufficient, a second test runs the declared command verbatim against a tree with an
+  unsafe module in the kit and asserts it fails, with the same command minus the kit target
+  over the same tree as the discriminator: that one passes, which is precisely the silent
+  green being removed (`basicly-5gn2`).
+
 ## v0.6.0 - 2026-07-31
 
 Delta: v0.5.1..v0.6.0
