@@ -61,6 +61,26 @@ commits through.
 
 Use `basicly worktree list` to see active sessions (stale ones are marked).
 
+## Hooks are already wired — never override `core.hooksPath`
+
+A linked worktree's `.git` is a **file**, not a directory, and git resolves its hooks to
+the shared common dir (`git rev-parse --git-path hooks` prints
+`<repo>/.git/hooks`). Provisioning installs the repo's hooks there, so a plain
+`git commit` in the worktree is gated exactly as on main and needs no extra flag.
+
+So never pass `-c core.hooksPath=...` from a worktree. A relative override such as
+`git -c core.hooksPath=.git/hooks commit` resolves against the worktree, where `.git` is
+a file and `.git/hooks` therefore does not exist — git finds no hooks, **skips every gate
+(pre-commit, commit-msg, the beads id check) and prints nothing**, so the commit looks
+clean because none of them ran. The bypass surfaces only later: in the recorded incident
+(`basicly-kjc5.9`) the next commit *without* the override was rejected for a subject the
+first one had carried straight through. To check where hooks resolve, read the path
+instead of setting it:
+
+```sh
+git rev-parse --git-path hooks
+```
+
 ## Claude Code note
 
 Claude Code's `worktree.bgIsolation` guard (default on) would force a background agent into
