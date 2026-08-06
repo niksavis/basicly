@@ -190,6 +190,3 @@ The resulting rule, which the two scopes now encode:
 
 - **basicly's own agents still declare no tier**, so the kit ships with nothing in this
   repo exercising it by default. `basicly-a3yi` is what would change that.
-- `basicly-5gn2` — bandit's `[[verify.checks]]` names `.scripts` and
-  `.basicly/core/hooks` only, so `.basicly/core/kit/` is unscanned though it ships to
-  consumers and runs in a spawn path.

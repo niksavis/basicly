@@ -5,9 +5,10 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
+import shutil
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 import yaml
@@ -1275,3 +1276,116 @@ def test_the_baseline_holds_only_findings_that_still_reproduce() -> None:
 
     assert [finding.detail for finding in new] == []
     assert stale == []
+
+
+# --- The security scan covers every harness directory, not the first two (basicly-5gn2) ---
+
+_HARNESS_PYTHON_ROOTS = (".scripts", ".basicly/core")
+
+_UNSAFE_MODULE = (
+    "import subprocess\n\n\ndef spawn(command):\n    return subprocess.run(command, shell=True)\n"
+)
+
+
+def _bandit_targets() -> tuple[str, ...]:
+    """The paths this repo's declared bandit check recurses into."""
+    for check in load_verify_config(_REPO_ROOT).checks:
+        if check.name == "bandit":
+            return tuple(check.command[check.command.index("-r") + 1 :])
+    raise AssertionError("this repo declares no bandit check")
+
+
+def _unscanned_directories(targets: tuple[str, ...], paths: list[str]) -> list[str]:
+    """Every directory holding one of *paths* that no bandit target recurses into."""
+    scanned = [PurePosixPath(target) for target in targets]
+    unscanned = {
+        str(directory)
+        for directory in (PurePosixPath(path).parent for path in paths)
+        if not any(directory == target or target in directory.parents for target in scanned)
+    }
+    return sorted(unscanned)
+
+
+def _tracked_harness_python() -> list[str]:
+    """Every tracked ``.py`` file under the roots the harness executes from."""
+    listing = subprocess.run(  # nosec B603 B607 - fixed argv, no shell, roots are literals
+        ["git", "ls-files", "--", *_HARNESS_PYTHON_ROOTS],
+        cwd=_REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return [line for line in listing.stdout.splitlines() if line.endswith(".py")]
+
+
+def test_bandit_scans_every_harness_python_directory() -> None:
+    """No directory of harness Python may sit outside the security scan.
+
+    The targets were written when ``.scripts`` and ``.basicly/core/hooks`` were the
+    whole set. ``.basicly/core/kit`` arrived later (basicly-wbsz.1) and inherited no
+    coverage, and nothing failed — the scan cannot notice a directory it was never
+    pointed at, which is the one failure shape a green security gate hides
+    (basicly-5gn2). Sweeping the tracked tree makes the *next* such directory fail
+    here instead.
+
+    Tracked files rather than a directory walk: an untracked scratch file is not
+    something the repo ships, and would otherwise fail a gate about what does.
+    """
+    tracked = _tracked_harness_python()
+    assert tracked, f"the sweep found no harness Python under {list(_HARNESS_PYTHON_ROOTS)}"
+
+    unscanned = _unscanned_directories(_bandit_targets(), tracked)
+
+    assert not unscanned, (
+        "harness Python outside the bandit check's targets; add each directory to the "
+        f"bandit [[verify.checks]] entry in basicly.toml: {unscanned}"
+    )
+
+
+def test_the_coverage_sweep_reports_a_directory_no_target_covers() -> None:
+    """The control for the sweep above, in the exact shape this bead was filed for."""
+    unscanned = _unscanned_directories(
+        (".scripts", ".basicly/core/hooks"),
+        [".scripts/docs_claims.py", ".basicly/core/kit/tier_resolver.py"],
+    )
+
+    assert unscanned == [".basicly/core/kit"]
+
+
+def test_bandit_fails_on_an_unsafe_construct_in_the_kit(tmp_path: Path) -> None:
+    """Being named as a target has to make an unsafe kit module *fail* the check.
+
+    Coverage in the argv is necessary and not sufficient — a scan is silent when its
+    config skips the rule — so this runs the declared command verbatim against a tree
+    shaped like the repo's, with the unsafe module in the kit. The same command minus
+    the kit target is run over the same tree as the discriminator: it passes, which is
+    the silent green this bead removes.
+
+    Asserts on the filename and the rule id rather than a rendered path, so the
+    separator bandit prints does not decide the verdict.
+    """
+    shutil.copy(_REPO_ROOT / "pyproject.toml", tmp_path / "pyproject.toml")
+    targets = _bandit_targets()
+    for target in targets:
+        (tmp_path / target).mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".basicly/core/kit/unsafe_probe.py").write_text(_UNSAFE_MODULE, encoding="utf-8")
+
+    def scan(paths: tuple[str, ...]) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(  # nosec B603 - argv read from committed config, no shell
+            ["bandit", "-q", "-c", "pyproject.toml", "-r", *paths],
+            cwd=tmp_path,
+            check=False,  # a non-zero exit is the assertion, not an error
+            capture_output=True,
+            text=True,
+        )
+
+    scanned = scan(targets)
+    without_the_kit = scan(tuple(path for path in targets if path != ".basicly/core/kit"))
+
+    assert scanned.returncode != 0, f"the unsafe kit module passed the scan: {scanned.stdout}"
+    assert "unsafe_probe.py" in scanned.stdout
+    assert "B602" in scanned.stdout
+    assert without_the_kit.returncode == 0, (
+        "the discriminator failed for another reason than the kit, so a passing scan "
+        f"above would prove nothing: {without_the_kit.stdout}"
+    )

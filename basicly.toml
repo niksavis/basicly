@@ -106,9 +106,25 @@ name = "pyright-windows"
 command = ["pyright", "--pythonplatform", "Windows"]
 modes = ["full"]
 
+# Security scan of the Python this repo executes outside its own package (basicly-5gn2).
+# `.basicly/core/kit` was added by basicly-wbsz.1 and inherited no coverage: the targets
+# were written when `.scripts` and the hooks were the whole set, and nothing failed when a
+# third directory appeared — the kit ships to consumers via `basicly install` and runs in
+# an agent spawn path, so it is the least acceptable one to miss. The targets are a list
+# a human maintains, so `tests/test_verify.py::test_bandit_scans_every_harness_python_directory`
+# fails when the next directory is added without being named here.
 [[verify.checks]]
 name = "bandit"
-command = ["bandit", "-q", "-c", "pyproject.toml", "-r", ".scripts", ".basicly/core/hooks"]
+command = [
+  "bandit",
+  "-q",
+  "-c",
+  "pyproject.toml",
+  "-r",
+  ".scripts",
+  ".basicly/core/hooks",
+  ".basicly/core/kit",
+]
 modes = ["fast", "full"]
 
 # Dead code (basicly-uexy). `vulture` was declared at pyproject.toml:37 and called
