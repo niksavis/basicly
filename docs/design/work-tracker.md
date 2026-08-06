@@ -53,7 +53,7 @@ Stated by the owner, plus what the harness's own use has demonstrated:
 
 ### 2.1 Requirements carried forward from defects we have already paid for
 
-The requirements above are what we want. These eight are what we have already been
+The requirements above are what we want. These nine are what we have already been
 *billed* for — each is a `br` defect that cost real sessions, and the repo rule is that a
 dependency's defect is **requirements input for our own replacement** and the proof must become a
 committed gate, never a fix applied outside this repo (`basicly-vkh0.6`).
@@ -74,7 +74,9 @@ replacement lands, the module runs against it unchanged.
 | **R7.** Concurrency | Under the engine's own five-lane fan-out the storage layer tore its WAL: four of five lane dispatches died in the pre-flight read, each on a bead it had not been assigned, and `br` marked the failure `retryable: false` | Three lanes recovered on the dispatch rework; `basicly-tcmy.11` reached the rework cap without an agent ever starting and was parked, and the session's L3 grant halted with 43.4M of 60M tokens unspent (`basicly-vkh0.10`) | **N concurrent readers and one writer never corrupt shared state**, and a contention failure that *is* reported is marked retryable so the caller backs off (§9.3) |
 | **R8.** Lock scope | Every mutating command serialises behind one `.beads/.write.lock`, and *fails the command* when it cannot take it before the timeout rather than queueing behind it. The engine's lanes share one `.beads` through `redirect`, so every lane's gate contends with every other lane's writes and with whatever else drives the tracker at that moment | Two transient gate failures in one session, 2026-07-30 — a landing's `pytest` gate and a `pre-push` hook, each passing unchanged on the next attempt. A landing flake is not free: it spends a rework attempt against a cap of 2, so a second unlucky landing escalates to a human for a defect that does not exist (`basicly-m4zv.14`) | **Contention waits; a wait that gives up says so.** One writer per ledger, with the lock scoped to the ledger it protects and never to the machine or the home directory (§9.3), and a lock-acquisition failure reported as retryable so the caller backs off instead of the gate failing |
 
-R1, R5, R6, R7 and R8 are already settled in the design (§9.5, §9.4, §12, §9.3, §9.3). R2, R3 and
+| **R9.** Destructive flush | A mutating command auto-flushed a **426-record database over a 612-record committed export**, deleting 187 records — 47 of them open — and reported success. `br sync --status` on that same checkout already said `JSONL is newer (import recommended)`: the condition was detected and the write allowed anyway. Measured refinement, 2026-08-06: that status is computed from **timestamps** and fires on a healthy checkout where the content is byte-identical, so it cannot be the guard | Recovered only because the export is committed — the database was the corrupt side. Nothing in the tracker layer noticed; three positive-control tests asserting a gate is not measuring an empty set were the only detection (`basicly-b2n2`) | **A publish never shrinks the artifact silently.** A write that would emit fewer records than the file it overwrites reports the shrink and requires explicit intent, and the comparison is on **content, not timestamps**. With the log authoritative and every other file derived (§4), the disagreeing-stores state cannot arise at all — but the derived snapshot still needs the shrink guard |
+
+R1, R5, R6, R7, R8 and R9 are already settled in the design (§9.5, §9.4, §12, §9.3, §9.3, §4). R2, R3 and
 R4 are constraints on the command layer that has not been written yet, and this table is where they
 are recorded so it cannot be written without them.
 
