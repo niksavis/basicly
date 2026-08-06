@@ -188,5 +188,14 @@ The resulting rule, which the two scopes now encode:
 
 ## 7. Open
 
-- **basicly's own agents still declare no tier**, so the kit ships with nothing in this
-  repo exercising it by default. `basicly-a3yi` is what would change that.
+What is still open about this kit is tracker state, not prose, so query it rather than
+reading a list here:
+
+```sh
+br list --label kit
+```
+
+The list this section used to carry is gone deliberately. It duplicated what the tracker
+already owns, so it went stale on every close — and because two lanes closing two kit
+items both edited this one anchor, it collided in a file neither bead declared. That is
+the failure this section caused (`basicly-3f76`).

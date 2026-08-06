@@ -602,10 +602,10 @@ br dep tree <issue>              # what blocks it
 
 | Phase | Epic | Release |
 | --- | --- | --- |
-| S — make what exists true | `basicly-vaal` (closed), gates on `uexy` / `irrm` | `v0.7.0` |
-| 0 — unattended run | `basicly-u6jq` | `v0.7.0` (`u6jq.1` is all that remains) |
-| 1 — buy the numbers | `basicly-agzx` | `v0.9.0` (`agzx.1` done) |
-| 2 — free deterministic gates | `basicly-m4zv` | `v0.9.0` (`m4zv.14` in `v0.7.0`) |
+| S — make what exists true | `basicly-vaal`, gates on `uexy` / `irrm` | `v0.7.0` |
+| 0 — unattended run | `basicly-u6jq` | `v0.7.0` |
+| 1 — buy the numbers | `basicly-agzx` | `v0.9.0` |
+| 2 — free deterministic gates | `basicly-m4zv` | `v0.9.0` |
 | 3 — absorb designs, pay docs debt | `basicly-imnu` | `v0.9.0` |
 | 4 — always-on relief | `basicly-a3ab` | `v0.10.0` |
 | 5 — judgment layer | `basicly-s2xf` | `v0.10.0` |
@@ -613,6 +613,12 @@ br dep tree <issue>              # what blocks it
 | 7 — factory hardening | `basicly-jr0l` | interleaved as capacity fillers |
 | multi — parallel factory | `basicly-kjc5` | children spread across releases |
 | — | `basicly-tcmy` (2026-08-01 review), `basicly-ze8z` (externalize operator knowledge), `basicly-uhiq` (document disposal), `basicly-ctdz` (own our state) | cross-cutting; children placed by release |
+
+Each row names **one epic**, which is the index *into* the tracker rather than a copy of its
+contents: the epic is stable, its children are not. So no row says which children remain, are
+done, or slipped — that is what the queries above answer, and a per-bead status written here
+would be stale by the next close and would put two lanes closing two items in one phase onto
+this single anchor (`basicly-3f76`).
 
 A release epic (`basicly-yc0x` for `v0.7.0`) carries `phase-meta` rather than a phase label,
 because a release is a cut across phases.
