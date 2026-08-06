@@ -1964,7 +1964,7 @@ def test_dispatch_lane_timeout_queues_a_stall(
     )
 
     assert queued == [("epic.1", "stall")]
-    assert "timed out" in outcome.detail
+    assert "stopped on runner_timeout after" in outcome.detail
     assert outcome.result is not None and outcome.result.timed_out
 
 
@@ -5672,3 +5672,246 @@ def test_inflight_note_reports_the_tokens_a_running_lane_has_reported() -> None:
 
     assert "epic.1 12s 84000 tok" in note
     assert "epic.2 3s," in note or note.endswith("epic.2 3s")
+
+
+# --- The terminal spend bound: D3 binding *during* a dispatch (basicly-lpsf) --
+
+
+def test_the_spend_bound_stops_a_running_lane_at_the_grant_remainder() -> None:
+    """AC: spend reaching the ceiling mid-run stops the dispatch on the spend bound.
+
+    The narrow exception to "cost is bounded by sizing the work, never by killing a
+    working agent": a grant's `token_budget` is the authorization ceiling a human
+    set, and honouring it only after the fact is not honouring it. Every other spend
+    gate here still refuses to *start* and leaves running lanes alone.
+    """
+    running = supervise.LaneStream()
+
+    with supervise.live_lane("epic.1", running):
+        # 4000 recorded of a 5000 budget leaves 1000, and nothing reported yet.
+        bound = supervise.SpendBound(lambda: _granted("L3", 5_000, 4_000))
+        assert bound() is None
+
+        # A turn inside the remainder is not a reason to kill a working lane.
+        running(_turn(400))
+        assert bound() is None
+
+        # The turn that crosses it is.
+        running(_turn(700))
+        reason = bound()
+
+    assert reason is not None
+    assert reason.bound == runner.SPEND_BOUND
+    assert "1100" in reason.detail and "1000" in reason.detail and "epic.1" in reason.detail
+
+
+def test_the_spend_bound_is_silent_where_there_is_no_ceiling_to_enforce() -> None:
+    """An ungranted or L1 session has no budget to bind, so nothing may be killed over one."""
+    running = supervise.LaneStream()
+    running(_turn(10_000_000))
+
+    with supervise.live_lane("epic.1", running):
+        assert supervise.SpendBound(lambda: _UNGRANTED)() is None
+        assert supervise.SpendBound(lambda: _granted("L1", None, 0))() is None
+
+
+def test_the_spend_bound_counts_a_lane_that_retired_into_the_records() -> None:
+    """The snapshot has to survive its siblings finishing, or it goes lax under fan-out.
+
+    `spend_status` costs a whole ledger walk (~800ms here), so the remainder is read
+    once and not re-read. A sibling that ends mid-dispatch moves its spend out of
+    `inflight_spend` and into a run record the snapshot predates — counted nowhere,
+    the ceiling would drift up by exactly the amount a concurrent pass spends, which
+    is the pass shape that produced the overshoot this bead exists for.
+    """
+    mine = supervise.LaneStream()
+    mine(_turn(300))
+    sibling = supervise.LaneStream()
+    sibling(_turn(800))
+
+    with supervise.live_lane("epic.1", mine):
+        with supervise.live_lane("epic.2", sibling):
+            # 2000 left of a 6000 budget, 1100 in flight across the two lanes.
+            bound = supervise.SpendBound(lambda: _granted("L3", 6_000, 4_000))
+            assert bound.remaining() == 2_000
+            assert bound() is None
+
+        # The sibling has ended: its 800 is now a run record the snapshot predates,
+        # so the remainder this works from comes down by exactly that much. Without
+        # it the 800 would be counted nowhere and the ceiling would drift up.
+        assert bound.remaining() == 1_200
+        assert bound() is None
+
+        mine(_turn(900))  # 1200 in flight against 1200 left
+        stopped = bound()
+
+    assert stopped is not None and stopped.bound == runner.SPEND_BOUND
+    assert "1200" in stopped.detail
+
+
+def test_the_spend_bound_reads_the_ledger_only_once_a_check_actually_runs() -> None:
+    """A dispatch that ends before its first poll must not pay for a ledger walk."""
+    reads = {"count": 0}
+
+    def status() -> policy.SpendStatus:
+        reads["count"] += 1
+        return _granted("L3", 5_000, 4_000)
+
+    bound = supervise.SpendBound(status)
+    assert reads["count"] == 0
+
+    bound()
+    bound()
+    # Snapshotted, not re-read: the remainder is a fixed point the live counters move
+    # against, and re-reading it per poll is the cost this design exists to avoid.
+    assert reads["count"] == 1
+
+
+def test_dispatch_lane_bounds_the_run_on_its_stream_before_the_wall_clock(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """AC: the lane dispatch hands the runner both bounds, with the clock underneath.
+
+    The wiring assertion, and it is the one that decides whether any of the rest is
+    reachable: a `runner.run` called without `bounds` is a lane back on the wall clock
+    as its working bound, which is what basicly-yvx9 measured at 95% of the real work
+    distribution.
+    """
+    codex = _codex()
+    _worker_fixture(monkeypatch, tmp_path, stdout=_codex_events(50_000))
+    seen: dict[str, object] = {}
+
+    def fake_run(spec: runner.RunnerSpec, *_a: object, **kw: object) -> runner.RunResult:
+        seen.update(kw)
+        return runner.RunResult(spec.name, (spec.name,), executed=True, returncode=0, stdout="")
+
+    monkeypatch.setattr(supervise.runner, "run", fake_run)
+
+    supervise._dispatch_lane(
+        tmp_path,
+        _session(_lane("epic.1")),
+        _lane("epic.1"),
+        codex,
+        _sizing(),
+        spend=_granted("L3", 5_000, 4_000),
+    )
+
+    bounds = seen["bounds"]
+    assert isinstance(bounds, runner.DispatchBounds)
+    assert bounds.quiet_after == runner.DEFAULT_QUIET_AFTER
+    assert isinstance(bounds.stop_when, supervise.SpendBound)
+    # Handed down rather than re-walked: the caller admitting the lane has just read
+    # this, and `spend_status` is the most expensive read in the dispatch path.
+    assert bounds.stop_when.remaining() == 1_000
+    # The backstop is still passed and still terminal.
+    assert seen["timeout"] == supervise.load_runner_config(tmp_path).runner_timeout
+
+
+def test_a_lane_stopped_on_a_bound_records_which_bound_and_names_it_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The kill is routed as a kill, attributed to the bound, and recorded as one.
+
+    Three surfaces read the same label — the salvage commit's reason, the queued stall
+    item, and the lane's detail — because a stop described one way in git history and
+    another in the tracker is a stop nobody can account for afterwards. The run record
+    is the fourth, and the only one that outlives the pass: `quiet_after` was declared
+    without a measurement, so the ledger saying how often it fired is the only thing
+    that will ever tighten it.
+    """
+    codex = _codex()
+    _worker_fixture(monkeypatch, tmp_path, stdout="")
+    stopped = runner.StopReason(runner.SPEND_BOUND, "1100 tokens against 1000 remaining")
+
+    monkeypatch.setattr(
+        supervise.runner,
+        "run",
+        lambda spec, *_a, **_k: runner.RunResult(
+            spec.name, (spec.name,), executed=True, timed_out=True, stopped=stopped
+        ),
+    )
+    salvaged: list[str] = []
+    monkeypatch.setattr(
+        supervise.commit,
+        "salvage",
+        lambda _c, _b, *, reason: (
+            salvaged.append(reason),
+            supervise.commit.Salvage("committed", "the worktree was committed as abc1234"),
+        )[1],
+    )
+    queued: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        supervise.decisions,
+        "enqueue",
+        lambda _r, issue, kind, question, *_a, **_k: (
+            queued.append((kind, question)),
+            decisions_item(issue, kind),
+        )[1],
+    )
+    recorded: list[dict] = []
+    monkeypatch.setattr(supervise.loop, "record_run", lambda *_a, **kw: recorded.append(kw))
+
+    outcome = supervise._dispatch_lane(
+        tmp_path, _session(_lane("epic.1")), _lane("epic.1"), codex, _sizing(), spend=_UNGRANTED
+    )
+
+    label = "spend bound: 1100 tokens against 1000 remaining"
+    assert salvaged == [label]
+    assert queued == [("stall", f"runner codex stopped on {label}: retry, re-dispatch, or park?")]
+    assert label in outcome.detail
+    assert recorded[0]["stopped_bound"] == runner.SPEND_BOUND
+
+
+def test_a_wall_clock_kill_records_no_bound_because_the_outcome_already_says_so(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Null is the backstop's signature, so a non-null value is evidence a new bound fired."""
+    codex = _codex()
+    _worker_fixture(monkeypatch, tmp_path, stdout="")
+    monkeypatch.setattr(
+        supervise.runner,
+        "run",
+        lambda spec, *_a, **_k: runner.RunResult(
+            spec.name, (spec.name,), executed=True, timed_out=True
+        ),
+    )
+    monkeypatch.setattr(
+        supervise.decisions,
+        "enqueue",
+        lambda _r, issue, kind, *_a, **_k: decisions_item(issue, kind),
+    )
+    recorded: list[dict] = []
+    monkeypatch.setattr(supervise.loop, "record_run", lambda *_a, **kw: recorded.append(kw))
+
+    supervise._dispatch_lane(
+        tmp_path, _session(_lane("epic.1")), _lane("epic.1"), codex, _sizing(), spend=_UNGRANTED
+    )
+
+    assert recorded[0]["stopped_bound"] is None
+
+
+def test_the_stall_flag_names_the_bound_a_quiet_lane_will_actually_reach(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The flag asks whether to intervene *before* the kill, so it must name the right one.
+
+    A lane quiet enough to be flagged is quiet on the stream too, so the next thing to
+    happen to it is the quiet bound — pointing the human at `runner_timeout`, twice as
+    far out, misdescribes how long they have to decide.
+    """
+    queued: list[str] = []
+    monkeypatch.setattr(
+        supervise.decisions,
+        "enqueue",
+        lambda _r, issue, kind, _q, detail="", **_k: (
+            queued.append(detail),
+            decisions_item(issue, kind),
+        )[1],
+    )
+
+    supervise.flag_stalled_lane(tmp_path, "epic.1", 900.0, 1800.0)
+
+    assert queued == [
+        "no commits and no file changes for 900s; the run continues "
+        "until the quiet bound (1800s), still holding a lane slot"
+    ]

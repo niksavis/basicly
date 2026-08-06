@@ -152,6 +152,18 @@ class RunRecord:
     adapter_version: str | None = None
     prompt_sha256: str | None = None
     phase: str | None = None
+    # Which terminal bound stopped this dispatch, for a run that did not reach its
+    # own exit (``runner.SPEND_BOUND``/``QUIET_BOUND``); null on a clean run and on
+    # the wall-clock backstop, which ``outcome`` already labels (basicly-lpsf).
+    #
+    # The field that makes the new bounds falsifiable. ``quiet_after`` had to be
+    # declared without a measurement — no inter-event gap has ever been recorded,
+    # because until basicly-rupz the stream every metered lane emits was requested,
+    # paid for and thrown away — so the only way it stops being a guess is for the
+    # ledger to say how often it fired and on what. A bound nothing records is a
+    # bound nobody can tighten, which is exactly how ``runner_timeout`` came to sit
+    # at 95% of the real work distribution for as long as it did.
+    stopped_bound: str | None = None
     # Sizing inputs frozen at dispatch, so a later calibration cannot silently
     # re-derive them against a changed tree (D8 drift, basicly-kjc5.30).
     scope_tokens: int | None = None
@@ -296,6 +308,7 @@ def build_record(  # noqa: PLR0913
     adapter_version: str | None = None,
     prompt_sha256: str | None = None,
     phase: str | None = None,
+    stopped_bound: str | None = None,
     scope_tokens: int | None = None,
     forecast_tokens: int | None = None,
     forecast_spend_tokens: int | None = None,
@@ -355,6 +368,7 @@ def build_record(  # noqa: PLR0913
         adapter_version=adapter_version,
         prompt_sha256=prompt_sha256,
         phase=phase,
+        stopped_bound=stopped_bound,
         scope_tokens=scope_tokens,
         forecast_tokens=forecast_tokens,
         forecast_spend_tokens=forecast_spend_tokens,

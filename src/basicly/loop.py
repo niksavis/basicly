@@ -707,8 +707,8 @@ def _runner_block(
         salvaged = _salvage_killed_run(issue_id, dispatch)
         return _blocked(
             ctx,
-            f"runner {spec.name!r} hit runner_timeout ({dispatch.timeout:.0f}s) "
-            f"in {target}; {salvaged.detail}",
+            f"runner {spec.name!r} stopped on "
+            f"{runner.stop_label(result, dispatch.timeout)} in {target}; {salvaged.detail}",
         )
     if result.returncode != 0:
         tail = (result.stderr or result.stdout).strip().splitlines()
@@ -753,7 +753,7 @@ def _salvage_killed_run(issue_id: str, dispatch: _Dispatch) -> commit.Salvage:
     already relies on, reached now by a killed headless run too.
     """
     salvaged = commit.salvage(
-        dispatch.cwd, issue_id, reason=f"runner_timeout after {dispatch.timeout:.0f}s"
+        dispatch.cwd, issue_id, reason=runner.stop_label(dispatch.result, dispatch.timeout)
     )
     advice = (
         "advance again to judge it"
