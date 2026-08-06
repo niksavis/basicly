@@ -162,7 +162,6 @@ BASELINE: frozenset[str] = frozenset({
     "record-field:basicly.runner.Capability.reachable",
     "record-field:basicly.skills.SkillDefinition.allowed_tools",
     "record-field:basicly.supervise.FoundInfo.affects",
-    "record-field:basicly.supervise.DispatchBundle.folded",
     "record-field:basicly.supervise.PassSpendAdmission.unforecast",
     "record-field:basicly.supervise.PassSpendAdmission.assumed",
     "record-field:basicly.supervise.PassSpendAdmission.assumed_source",
