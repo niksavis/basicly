@@ -82,7 +82,41 @@ CONFIG_MODULE = "src/basicly/config.py"
 TESTS_DIR = "tests"
 
 # Directories that hold no authored source, so nothing in them is a reference.
-SKIP_DIRS = frozenset({".git", ".venv", "__pycache__", "build", "dist", "node_modules"})
+#
+# `worktrees` is load-bearing rather than tidy (basicly-jr0l.70). A linked git worktree
+# placed *inside* the root — `.claude/worktrees/agent-<id>/` is what a parallel agent
+# spawn creates — holds a complete second copy of `src/basicly`, and every copy is a
+# distinct site label. So each field is "referenced outside its module" by its own
+# duplicate and the record-field surface returns nothing at all. Measured 2026-08-06
+# with two agent worktrees live: 48 modules indexed but 401 sites, and **all 44** of the
+# record-field baseline entries reported as stale suppressions at once.
+#
+# That failure mode is the dangerous one, not merely wrong: the gate's advice on a stale
+# entry is "remove the entry", so a maintainer following it during a parallel run would
+# empty the baseline and blind the surface permanently. It also cannot be caught by the
+# nested copy's own `tests/` exclusion, because `_is_test` keys on the *first* path part
+# and that is `.claude` here, not `tests`.
+SKIP_DIRS = frozenset({
+    ".git",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "node_modules",
+    "worktrees",
+})
+
+# The kit ships as a standalone deliverable with **zero `basicly` imports**, a boundary
+# the `kit-boundary` check enforces — so kit code structurally cannot consume a
+# `basicly` record field, and counting it as a referrer can only ever mask a finding.
+#
+# It masked a real one (basicly-jr0l.70): `migrate.py` and `events.py` use the ordinary
+# English words `folded` and `holds`, which retired the genuine suppressions for
+# `supervise.DispatchBundle.folded` and `worktree.RemovalVerdict.holds`. The module
+# docstring already names this hazard for catalog *prose* — "a field named `holds` or
+# `folded` would be masked by any skill that happens to use the English word" — and the
+# kit slipped through because it is Python rather than prose.
+KIT_DIR = ".basicly/core/kit"
 
 # Non-Python consumers of a record field: the templates that render one and the
 # schemas that validate one. Scanned as text, since a Jinja expression and a YAML
@@ -162,6 +196,7 @@ BASELINE: frozenset[str] = frozenset({
     "record-field:basicly.runner.Capability.reachable",
     "record-field:basicly.skills.SkillDefinition.allowed_tools",
     "record-field:basicly.supervise.FoundInfo.affects",
+    "record-field:basicly.supervise.DispatchBundle.folded",
     "record-field:basicly.supervise.PassSpendAdmission.unforecast",
     "record-field:basicly.supervise.PassSpendAdmission.assumed",
     "record-field:basicly.supervise.PassSpendAdmission.assumed_source",
@@ -209,6 +244,16 @@ def _relative(root: Path, path: Path) -> str:
 def _is_test(root: Path, path: Path) -> bool:
     """True for a file under ``tests/``, whose references never count."""
     return path.relative_to(root).parts[0] == TESTS_DIR
+
+
+def _is_kit(root: Path, path: Path) -> bool:
+    """True for a file under :data:`KIT_DIR`, whose references never count either.
+
+    Not an exemption but a consequence of the kit boundary: the kit may not import
+    ``basicly`` at all, so a name it shares with a record field is a coincidence of
+    vocabulary rather than a consumer.
+    """
+    return _relative(root, path).startswith(f"{KIT_DIR}/")
 
 
 def _dotted(root: Path, path: Path) -> str:
@@ -275,7 +320,7 @@ def build_index(root: Path) -> Index:
         referrers.setdefault(name, set()).add(site)
 
     for path in _iter_files(root, "**/*.py"):
-        if _is_test(root, path):
+        if _is_test(root, path) or _is_kit(root, path):
             continue
         site = _relative(root, path)
         try:

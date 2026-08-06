@@ -1278,6 +1278,73 @@ def test_the_baseline_holds_only_findings_that_still_reproduce() -> None:
     assert stale == []
 
 
+def _tiny_repo(root: Path) -> None:
+    """A minimal tree with one public record whose field nothing outside its module reads."""
+    module = root / "src" / "basicly" / "sample.py"
+    module.parent.mkdir(parents=True, exist_ok=True)
+    module.write_text(
+        "from dataclasses import dataclass\n\n\n"
+        "@dataclass(frozen=True)\nclass Sample:\n    folded: int\n",
+        encoding="utf-8",
+    )
+
+
+def test_a_nested_worktree_does_not_retire_every_record_field_finding(tmp_path: Path) -> None:
+    """A second copy of a module inside the root must not count as its own consumer.
+
+    Regression for basicly-jr0l.70. A parallel agent spawn puts a linked git worktree at
+    `.claude/worktrees/agent-<id>/`, so `src/basicly` is indexed twice under two site
+    labels and every field looks referenced from outside itself. Measured on the real
+    repo with two agent worktrees live: 48 modules but 401 sites, and **all 44**
+    record-field baseline entries reported stale at once.
+
+    The reason this is a P0 rather than noise is the advice: the gate says "remove the
+    entry", which during a parallel run empties the baseline and blinds the surface.
+    """
+    _tiny_repo(tmp_path)
+    before = wired.field_findings(tmp_path, wired.build_index(tmp_path))
+    assert [f.key for f in before] == ["record-field:basicly.sample.Sample.folded"]
+
+    # The duplicate a worktree-isolated agent leaves inside the root.
+    nested = tmp_path / ".claude" / "worktrees" / "agent-abc" / "src" / "basicly"
+    nested.mkdir(parents=True)
+    (nested / "sample.py").write_text(
+        (tmp_path / "src" / "basicly" / "sample.py").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    after = wired.field_findings(tmp_path, wired.build_index(tmp_path))
+    assert [f.key for f in after] == [f.key for f in before], (
+        "a nested checkout must not be a referrer site"
+    )
+
+
+def test_the_kit_is_not_a_referrer_because_it_cannot_import_basicly(tmp_path: Path) -> None:
+    """The kit sharing a field's English word is vocabulary, not a consumer.
+
+    Regression for basicly-jr0l.70. `.basicly/core/kit/**` ships standalone with zero
+    `basicly` imports, enforced by the `kit-boundary` check, so it structurally cannot
+    read a `basicly` record field. Counted as a referrer it silently retires genuine
+    suppressions - it retired `supervise.DispatchBundle.folded` and
+    `worktree.RemovalVerdict.holds` because `migrate.py` and `events.py` use the ordinary
+    words `folded` and `holds`.
+    """
+    _tiny_repo(tmp_path)
+    kit = tmp_path / ".basicly" / "core" / "kit" / "tracker"
+    kit.mkdir(parents=True)
+    (kit / "events.py").write_text(
+        '"""Fold the log."""\n\n\ndef fold(events: list[int]) -> int:\n'
+        "    folded = sum(events)\n    return folded\n",
+        encoding="utf-8",
+    )
+
+    findings = wired.field_findings(tmp_path, wired.build_index(tmp_path))
+
+    assert [f.key for f in findings] == ["record-field:basicly.sample.Sample.folded"], (
+        "kit vocabulary must not mask a record-field finding"
+    )
+
+
 # --- The security scan covers every harness directory, not the first two (basicly-5gn2) ---
 
 _HARNESS_PYTHON_ROOTS = (".scripts", ".basicly/core")
