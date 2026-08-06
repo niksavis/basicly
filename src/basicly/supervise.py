@@ -2408,13 +2408,47 @@ def retired_spend() -> int:
         return _RETIRED.tokens
 
 
-def inflight_overrun(remaining: int | None) -> tuple[int, dict[str, int]] | None:
+# How far the live per-turn sum over-reports the run record it is compared against
+# (basicly-jr0l.67). The two are *different denominations*: the record is one terminal
+# result object, the live figure accumulates every `assistant` event, and measurement
+# says the second is the larger. Four lanes, live figure over recorded tokens:
+#
+#   basicly-vkh0.9   >= 1.79   (7426083 at 667s of 700s / 4160032)
+#   basicly-lpsf         1.55   (25595734 / 16495867)
+#   basicly-vkh0.12      1.55   (11994844 / 7730640)
+#   basicly-vkh0.11      1.46   (16671836 at 1579s of 1641s / 11431736)
+#
+# Roughly constant rather than growing with turn count, which is what rules out the
+# obvious explanation (a cached prompt prefix re-counted once per turn would compound).
+# The real mechanism is not established — establishing it needs a captured stream
+# alongside its own result object, which no run record keeps — so this is an empirical
+# bound, deliberately above every sample, not a conversion factor.
+LIVE_OVERREPORT_BOUND = 2.0
+
+
+def inflight_overrun(
+    remaining: int | None, *, over_report: float = 1.0
+) -> tuple[int, dict[str, int]] | None:
     """The live spend that has met *remaining*, and the lanes holding it, or None.
 
-    The comparison both halves of the live ceiling make — the refusal to start
-    another lane (:func:`inflight_halt`) and the bound that stops one already
-    running (:class:`SpendBound`) — so the two cannot come to different verdicts
-    about the same grant.
+    *over_report* scales *remaining* into the live figure's denomination before the
+    comparison. It defaults to 1.0 — comparing the two directly — which is only sound
+    where reading the live figure as larger than it is fails **safely**.
+
+    That is the distinction this argument exists to make (basicly-jr0l.67). Both halves
+    of the live ceiling used to share one comparison, on the stated grounds that they
+    "cannot come to different verdicts about the same grant". They must: the halves have
+    opposite safety directions, so one shared predicate guarantees one of them is wrong.
+
+    * :func:`inflight_halt` declines to *start* a lane. An over-estimate there starts
+      fewer lanes than the grant would allow — conservative, and it costs throughput
+      only. It keeps the direct comparison.
+    * :class:`SpendBound` *kills a lane that is already running*. An over-estimate there
+      destroys work inside its own budget, and did: ``basicly-vkh0.11`` was killed having
+      reported 18120420 live against 18109328 remaining while its recorded cost was
+      11431736 — 6677592 tokens, a third of its allowance, still unspent. It passes
+      :data:`LIVE_OVERREPORT_BOUND` so a kill means the *recorded* spend has genuinely
+      passed the remainder.
 
     None whenever there is no ceiling to enforce, which is the ungranted and L1 case
     :attr:`policy.SpendStatus.remaining_tokens` collapses to None, and None when
@@ -2425,7 +2459,7 @@ def inflight_overrun(remaining: int | None) -> tuple[int, dict[str, int]] | None
         return None
     live = inflight_spend()
     reported = sum(live.values())
-    if not reported or reported < remaining:
+    if not reported or reported < remaining * over_report:
         return None
     return reported, live
 
@@ -2446,6 +2480,13 @@ def inflight_halt(status: policy.SpendStatus) -> str | None:
     A refusal to *start*, and the cheap half of the ceiling: *status* is read fresh
     at each call site, so the recorded number it subtracts from is current.
     :class:`SpendBound` is the other half, for a lane that is already running.
+
+    Compares the live figure against the remainder directly, without
+    :data:`LIVE_OVERREPORT_BOUND`, and that asymmetry is deliberate: the live figure
+    over-reports (basicly-jr0l.67), so reading it at face value here declines to start a
+    lane the grant might still have covered. That costs a lane's worth of throughput and
+    nothing else, which is the safe direction for a refusal — unlike the kill half, where
+    the same over-estimate destroys committed work.
     """
     overrun = inflight_overrun(status.remaining_tokens)
     if overrun is None:
@@ -2520,7 +2561,12 @@ class SpendBound:
     def __call__(self) -> runner.StopReason | None:
         """Why this dispatch must stop now, or None while the grant still covers it."""
         remaining = self.remaining()
-        overrun = inflight_overrun(remaining)
+        # Scaled into the live figure's denomination, because this half *kills*
+        # (basicly-jr0l.67). Firing at face value killed basicly-vkh0.11 with a third of
+        # its grant unspent; the salvage saved that lane's work only because it happened
+        # to be finished, and a kill 200s earlier would have shipped a partial event log
+        # as the foundation three later lanes build on.
+        overrun = inflight_overrun(remaining, over_report=LIVE_OVERREPORT_BOUND)
         if overrun is None:
             return None
         reported, live = overrun

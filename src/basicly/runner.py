@@ -1802,7 +1802,20 @@ def event_usage(spec: RunnerSpec, event: dict) -> Usage | None:
 
     The incremental half of :func:`extract_usage` (basicly-rupz): what one turn
     cost, read off the event as it arrives rather than off the terminal result
-    object at the end. Summing these across a dispatch converges on the very total
+    object at the end.
+
+    **Summing these does not converge on the recorded total** (basicly-jr0l.67).
+    Measured over four lanes, the live sum runs 1.46x to at least 1.79x the tokens
+    :func:`extract_usage` writes to the run record, roughly constant rather than
+    growing with turn count. Any caller comparing a live sum against a
+    record-denominated figure is mixing denominations and must scale — see
+    :data:`supervise.LIVE_OVERREPORT_BOUND`, which exists because comparing them
+    directly killed a lane with a third of its grant unspent.
+
+    The paragraph below is the claim that measurement refuted, kept because the
+    reasoning is what a fix has to disprove or repair:
+
+    Summing these across a dispatch converges on the very total
     :func:`extract_usage` reports — claude's result event re-counts
     ``cache_read_input_tokens`` per turn exactly as the per-turn blocks do, and
     codex's total *is* the sum over ``turn.completed`` — so a live meter built on

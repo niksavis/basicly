@@ -5696,13 +5696,65 @@ def test_the_spend_bound_stops_a_running_lane_at_the_grant_remainder() -> None:
         running(_turn(400))
         assert bound() is None
 
-        # The turn that crosses it is.
+        # Crossing the remainder at face value is no longer enough (basicly-jr0l.67):
+        # the live figure over-reports, so 1100 live may still be inside 1000 recorded.
         running(_turn(700))
+        assert bound() is None
+
+        # Past the scaled bound, the *recorded* spend has genuinely gone over.
+        running(_turn(1_000))
         reason = bound()
 
     assert reason is not None
     assert reason.bound == runner.SPEND_BOUND
-    assert "1100" in reason.detail and "1000" in reason.detail and "epic.1" in reason.detail
+    assert "2100" in reason.detail and "1000" in reason.detail and "epic.1" in reason.detail
+
+
+def test_a_live_figure_over_the_remainder_refuses_a_start_but_never_kills_a_lane() -> None:
+    """The two halves of the live ceiling must disagree, because they fail in opposite ways.
+
+    Regression for basicly-jr0l.67, reproduced from the lane it cost. The live per-turn sum
+    over-reports the run record it is compared against by 1.46x-1.79x measured, and both
+    halves used to share one face-value comparison. So a lane inside its budget was killed:
+    basicly-vkh0.11 stopped having reported 18120420 live against 18109328 remaining while
+    its recorded cost was 11431736, a third of the grant unspent. Its work survived only
+    because it happened to be finished — a kill 200s earlier would have shipped a partial
+    event log as the foundation three later lanes build on.
+
+    The asymmetry is the fix. On one live figure sitting between the remainder and the
+    scaled bound, the refusal fires (costing throughput, which is recoverable) and the kill
+    does not (which would cost work, which is not).
+    """
+    running = supervise.LaneStream()
+    status = _granted("L3", 5_000, 4_000)  # 1000 recorded remaining
+    running(_turn(1_500))  # over the remainder at face value, inside it once scaled
+
+    with supervise.live_lane("epic.1", running):
+        refusal = supervise.inflight_halt(status)
+        kill = supervise.SpendBound(lambda: status)()
+
+    assert refusal is not None, "the refusal to start reads the live figure at face value"
+    assert "1500" in refusal and "1000" in refusal
+    assert kill is None, "a lane inside its recorded budget must not be killed"
+
+
+def test_the_over_report_bound_sits_above_every_measured_ratio() -> None:
+    """The bound is empirical, so it has to stay above the samples it was derived from.
+
+    Not a tautology: the samples are the whole justification for the constant, and a later
+    edit lowering it back toward 1.0 reinstates the kill this bead exists to remove. The
+    highest measured ratio is basicly-vkh0.9's, and that one is a floor rather than a
+    reading — its live figure was last sampled at 667s of a 700s dispatch, so the true
+    ratio is above 1.79, not at it.
+    """
+    measured = {
+        "basicly-vkh0.9": 7_426_083 / 4_160_032,
+        "basicly-lpsf": 25_595_734 / 16_495_867,
+        "basicly-vkh0.12": 11_994_844 / 7_730_640,
+        "basicly-vkh0.11": 16_671_836 / 11_431_736,
+    }
+    assert max(measured.values()) < supervise.LIVE_OVERREPORT_BOUND
+    assert min(measured.values()) > 1.0, "every sample must show live over recorded"
 
 
 def test_the_spend_bound_is_silent_where_there_is_no_ceiling_to_enforce() -> None:
@@ -5742,7 +5794,10 @@ def test_the_spend_bound_counts_a_lane_that_retired_into_the_records() -> None:
         assert bound.remaining() == 1_200
         assert bound() is None
 
-        mine(_turn(900))  # 1200 in flight against 1200 left
+        mine(_turn(900))  # 1200 in flight against 1200 left — inside the scaled bound
+        assert bound() is None
+
+        mine(_turn(1_300))  # 2500 in flight, past 1200 scaled by the over-report bound
         stopped = bound()
 
     assert stopped is not None and stopped.bound == runner.SPEND_BOUND
