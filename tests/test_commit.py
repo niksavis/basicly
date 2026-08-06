@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -553,3 +554,122 @@ def test_the_body_and_the_trailers_are_separate_paragraphs() -> None:
         "Reads the recorded provenance.\n\n"
         "Harness-Model: claude-haiku-4-5\n"
     )
+
+
+# --- salvaging a killed dispatch's worktree (basicly-yvx9) ------------------
+
+
+SALVAGED_BUG = {
+    "id": "basicly-yvx9",
+    "issue_type": "bug",
+    "status": "in_progress",
+    "external_ref": "worktree:basicly-yvx9:harness/basicly-yvx9",
+}
+
+
+def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
+
+
+@pytest.fixture
+def killed_worktree(tmp_path: Path) -> Path:
+    """A real git repo standing in for the worktree a killed runner left behind."""
+    repo = tmp_path / "wt"
+    repo.mkdir()
+    _git(repo, "init", "-b", "harness/basicly-yvx9")
+    _git(repo, "config", "user.name", "Test")
+    _git(repo, "config", "user.email", "test@example.com")
+    (repo / "README.md").write_text("hi\n", encoding="utf-8")
+    _tracker(repo, SALVAGED_BUG)
+    # The tracker export is committed like this repo's own, so the fixture starts
+    # from a genuinely clean tree: anything dirty in a test is the killed run's work.
+    _git(repo, "add", "--all")
+    _git(repo, "commit", "-m", "init")
+    return repo
+
+
+def _subject(repo: Path) -> str:
+    return _git(repo, "log", "-1", "--pretty=%s").stdout.strip()
+
+
+def _dirty(repo: Path) -> str:
+    return _git(repo, "status", "--porcelain").stdout.strip()
+
+
+def test_the_killed_worktree_becomes_a_commit_the_landing_can_judge(
+    killed_worktree: Path,
+) -> None:
+    """The whole point (basicly-yvx9): the tree on disk survives the kill as a commit.
+
+    Exercised against a real git repo rather than a stub, because the claim is that
+    ``git`` accepts what the salvage assembles — the message included. A stub that
+    returns success would assert only that the code called ``commit``.
+    """
+    source = killed_worktree / "src" / "basicly"
+    source.mkdir(parents=True)
+    (source / "loop.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+    salvaged = commit.salvage(killed_worktree, "basicly-yvx9", reason="runner_timeout after 1800s")
+
+    assert salvaged.committed is True
+    assert _subject(killed_worktree) == (
+        "fix(loop): salvage the work a killed runner left uncommitted (basicly-yvx9)"
+    )
+    assert _dirty(killed_worktree) == "", "the rescued work is committed, not merely staged"
+    assert _hook_module().validate(_subject(killed_worktree))
+
+
+def test_the_salvage_commit_says_a_kill_produced_it(killed_worktree: Path) -> None:
+    """A reader of the history must see the kill, not an agent signing work off.
+
+    The bead is explicit that rescuing the diff must not turn a timeout into a
+    silent success: the body is where that stays true for anyone who arrives at
+    this commit later, without the run record that does not survive a clone.
+    """
+    (killed_worktree / "notes.txt").write_text("work\n", encoding="utf-8")
+
+    commit.salvage(killed_worktree, "basicly-yvx9", reason="runner_timeout after 1800s")
+
+    # Unwrapped before matching: the body is wrapped for a reader, and where the
+    # line breaks fall is not what this asserts.
+    body = " ".join(_git(killed_worktree, "log", "-1", "--pretty=%b").stdout.split())
+    assert "runner_timeout after 1800s" in body
+    assert "No agent signed this off" in body
+
+
+def test_a_clean_worktree_salvages_nothing_and_says_so(killed_worktree: Path) -> None:
+    """No uncommitted work is not a failure — and must not become an empty commit."""
+    salvaged = commit.salvage(killed_worktree, "basicly-yvx9", reason="runner_timeout after 1800s")
+
+    assert (salvaged.status, salvaged.committed) == ("empty", False)
+    assert "no uncommitted work" in salvaged.detail
+    assert _subject(killed_worktree) == "init", "nothing was committed"
+
+
+def test_a_rejected_salvage_leaves_the_work_where_the_kill_left_it(
+    monkeypatch: pytest.MonkeyPatch, killed_worktree: Path
+) -> None:
+    """The hooks stay the floor: a refused commit must not also lose the tree.
+
+    The rejection is injected rather than provoked with a real hook, so the
+    assertion is about this function's contract on any platform — a shell hook
+    script is not portable test data.
+    """
+    (killed_worktree / "notes.txt").write_text("work\n", encoding="utf-8")
+    monkeypatch.setattr(
+        commit, "run_commit", lambda *_a: commit.CommitResult(1, "prep\nhook refused: markdownlint")
+    )
+
+    salvaged = commit.salvage(killed_worktree, "basicly-yvx9", reason="runner_timeout after 1800s")
+
+    assert (salvaged.status, salvaged.committed) == ("refused", False)
+    assert "hook refused: markdownlint" in salvaged.detail
+    assert _dirty(killed_worktree) != "", "the killed run's work is still on disk"
+    assert _subject(killed_worktree) == "init"
+
+
+def test_a_worktree_that_is_not_a_repo_is_refused_rather_than_raising(tmp_path: Path) -> None:
+    """The caller is already handling a killed run; a failed rescue is not a crash."""
+    salvaged = commit.salvage(tmp_path, "basicly-yvx9", reason="runner_timeout after 1800s")
+
+    assert (salvaged.status, salvaged.committed) == ("refused", False)

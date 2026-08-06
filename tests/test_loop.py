@@ -1183,6 +1183,69 @@ def test_build_leaf_reworks_on_failed_merge(
     assert queued == [("i", "escalation")]
 
 
+# --- a hard-killed dispatch keeps its worktree (basicly-yvx9) ----------------
+
+
+def _killed_dispatch(cwd: Path) -> loop._Dispatch:
+    """The dispatch a wall-clock kill hands back: no returncode, ``timed_out`` set."""
+    spec = runner.RunnerSpec("claude", command=("claude", "-p"))
+    return loop._Dispatch(
+        spec=spec,
+        result=runner.RunResult("claude", spec.command, executed=True, timed_out=True),
+        cwd=cwd,
+        timeout=1800.0,
+    )
+
+
+def test_a_killed_dispatch_commits_its_worktree_and_points_at_the_next_advance(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The kill takes the agent out before its last step, so the harness takes it.
+
+    The advance still blocks — a timeout is a thing an operator should see — but it
+    blocks over a *committed* branch, so the next advance judges the diff instead of
+    refusing it as not-ready and paying for a second run (basicly-yvx9).
+    """
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    salvaged: list[tuple[Path, str, str]] = []
+
+    def fake_salvage(cwd, bead, *, reason):
+        salvaged.append((Path(cwd), bead, reason))
+        return loop.commit.Salvage("committed", "the worktree was committed as abc1234")
+
+    monkeypatch.setattr(loop.commit, "salvage", fake_salvage)
+    ctx = loop._Ctx(tmp_path, "i", _state("build"), CONFIG, loop.Inputs())
+
+    held = loop._runner_block(
+        ctx, _killed_dispatch(tmp_path / "wt"), issue_id="i", target="worktree 'i'"
+    )
+
+    assert salvaged == [(tmp_path / "wt", "i", "runner_timeout after 1800s")]
+    assert held is not None and held.action == "blocked"
+    assert "hit runner_timeout (1800s)" in held.detail
+    assert "the worktree was committed as abc1234; advance again to judge it" in held.detail
+
+
+def test_a_killed_dispatch_the_salvage_refused_still_asks_for_a_re_dispatch(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """With nothing committed there is nothing to judge, so the old advice stands."""
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    monkeypatch.setattr(
+        loop.commit,
+        "salvage",
+        lambda *_a, **_k: loop.commit.Salvage("empty", "the worktree held no uncommitted work"),
+    )
+    ctx = loop._Ctx(tmp_path, "i", _state("build"), CONFIG, loop.Inputs())
+
+    held = loop._runner_block(
+        ctx, _killed_dispatch(tmp_path / "wt"), issue_id="i", target="worktree 'i'"
+    )
+
+    assert held is not None
+    assert "no uncommitted work; inspect the worktree and re-dispatch" in held.detail
+
+
 # --- Is the rework loop converging? (basicly-m4zv.5) -------------------------
 
 

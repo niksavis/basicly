@@ -1499,6 +1499,7 @@ def _executed_outcome(issue_id: str, *, returncode: int | None = 0, **kw) -> sup
         occupancy=None,
         overrun=False,
         followup_id=None,
+        salvaged=kw.pop("salvaged", False),
         detail=kw.pop("detail", "finished; ready to land"),
     )
 
@@ -1660,6 +1661,71 @@ def test_route_needs_input_and_stall_hold_for_the_queue(tmp_path: Path) -> None:
     assert not any(r.progressed for r in routed)
 
 
+def test_route_salvaged_timeout_lands_so_the_verify_gate_judges_the_rescued_diff(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A clock is not evidence against a diff (basicly-yvx9).
+
+    Both lanes were hard-killed; the difference is whether the salvage found work
+    to commit. The one that did has something a landing can judge and takes it,
+    while the one that did not parks on its queue item exactly as before.
+    """
+    monkeypatch.setattr(
+        supervise.loop,
+        "advance",
+        lambda _r, issue_id, **_k: _advance_result(issue_id, "merged", "verify", "landed"),
+    )
+    monkeypatch.setattr(
+        supervise.policy,
+        "approve_checkpoint_guarded",
+        lambda *_a, **_k: policy.ApprovalResult("approved", detail="delegated under L3 grant"),
+    )
+    monkeypatch.setattr(
+        supervise.loop,
+        "run_until_blocked",
+        lambda _r, issue_id, **_k: [_advance_result(issue_id, "tore-down", "done", "closed")],
+    )
+    salvaged = _executed_outcome(
+        "epic.1", returncode=None, timed_out=True, salvaged=True, detail="timed out; committed"
+    )
+    lost = _executed_outcome("epic.2", returncode=None, timed_out=True, detail="timed out")
+
+    routed = supervise.route_outcomes(
+        tmp_path, _session(_lane("epic.1"), _lane("epic.2")), (salvaged, lost)
+    )
+
+    assert [(r.issue_id, r.route) for r in routed] == [
+        ("epic.1", "shipped"),
+        ("epic.2", "decision"),
+    ]
+
+
+def test_a_salvaged_timeout_whose_gate_is_red_reworks_instead_of_landing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Judged, never trusted: the rescued commit earns its landing or its findings.
+
+    This is what the salvage buys over a re-dispatch — the failing gate is a real
+    finding set about the killed run's actual diff, where an uncommitted tree only
+    ever produced "not-ready" and another full dispatch.
+    """
+    monkeypatch.setattr(
+        supervise.loop,
+        "advance",
+        lambda _r, issue_id, **_k: loop.AdvanceResult(
+            issue_id, "build", "build", "blocked", "verify failed: pytest (rework 1/2)"
+        ),
+    )
+    outcome = _executed_outcome(
+        "epic.1", returncode=None, timed_out=True, salvaged=True, detail="timed out; committed"
+    )
+
+    routed = supervise.route_outcomes(tmp_path, _session(_lane("epic.1")), (outcome,))
+
+    assert [r.route for r in routed] == ["rework"]
+    assert "verify failed" in routed[0].detail
+
+
 def test_route_handoff_stays_with_the_driving_agent(tmp_path: Path) -> None:
     """Interactive mode: a handoff lane is not a queue item, it is the human's turn."""
     handoff = supervise.LaneOutcome(
@@ -1714,6 +1780,85 @@ def test_dispatch_lane_timeout_queues_a_stall(
     assert queued == [("epic.1", "stall")]
     assert "timed out" in outcome.detail
     assert outcome.result is not None and outcome.result.timed_out
+
+
+def test_dispatch_lane_timeout_commits_the_worktree_and_still_queues_the_stall(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Both halves of the kill, on one dispatch (basicly-yvx9).
+
+    The worktree is committed so the diff survives the clock, *and* the stall item
+    is queued anyway — rescuing the work must not turn a timeout into a silent
+    success. The salvage is aimed at the lane's own worktree, not the base
+    checkout, or it would commit whatever the supervisor happened to be sitting on.
+    """
+    codex = _codex()
+    _br, _seen = _worker_fixture(monkeypatch, tmp_path, stdout="")
+    monkeypatch.setattr(
+        supervise.runner,
+        "run",
+        lambda spec, *_a, **_k: runner.RunResult(
+            spec.name, (spec.name,), executed=True, timed_out=True
+        ),
+    )
+    salvaged: list[tuple[Path, str, str]] = []
+
+    def fake_salvage(cwd, bead, *, reason):
+        salvaged.append((Path(cwd), bead, reason))
+        return supervise.commit.Salvage("committed", "the worktree was committed as abc1234")
+
+    monkeypatch.setattr(supervise.commit, "salvage", fake_salvage)
+    queued: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(
+        supervise.decisions,
+        "enqueue",
+        lambda _r, issue, kind, _q, detail="", **_k: (
+            queued.append((issue, kind, detail)),
+            decisions_item(issue, kind),
+        )[1],
+    )
+
+    outcome = supervise._dispatch_lane(
+        tmp_path, _session(_lane("epic.1")), _lane("epic.1"), codex, _sizing()
+    )
+
+    assert salvaged == [(tmp_path / "wt", "epic.1", "runner_timeout after 3600s")]
+    assert outcome.salvaged is True
+    assert "the worktree was committed as abc1234" in outcome.detail
+    assert [(issue, kind) for issue, kind, _d in queued] == [("epic.1", "stall")]
+    assert "abc1234" in queued[0][2], "the human triaging the kill is told what landed"
+
+
+def test_a_timeout_the_salvage_could_not_commit_still_parks_the_lane(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No commit, nothing to judge: the pre-existing hold is what the lane gets."""
+    codex = _codex()
+    _worker_fixture(monkeypatch, tmp_path, stdout="")
+    monkeypatch.setattr(
+        supervise.runner,
+        "run",
+        lambda spec, *_a, **_k: runner.RunResult(
+            spec.name, (spec.name,), executed=True, timed_out=True
+        ),
+    )
+    monkeypatch.setattr(
+        supervise.commit,
+        "salvage",
+        lambda *_a, **_k: supervise.commit.Salvage("refused", "the salvage commit was rejected"),
+    )
+    monkeypatch.setattr(
+        supervise.decisions,
+        "enqueue",
+        lambda _r, issue, kind, *_a, **_k: decisions_item(issue, kind),
+    )
+
+    outcome = supervise._dispatch_lane(
+        tmp_path, _session(_lane("epic.1")), _lane("epic.1"), codex, _sizing()
+    )
+
+    assert outcome.salvaged is False
+    assert "the salvage commit was rejected" in outcome.detail
 
 
 # --- Review hardening (kjc5.7): rework routes, held lanes, parked advance -------

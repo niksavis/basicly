@@ -24,6 +24,7 @@ from __future__ import annotations
 import contextlib
 import json
 import re
+import textwrap
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -527,3 +528,99 @@ def run_commit(repo_root: Path, envelope: Envelope) -> CommitResult:
     proc = git(["commit", "-m", envelope.message], cwd=repo_root, check=False)
     output = "".join(part for part in (proc.stdout, proc.stderr) if part)
     return CommitResult(proc.returncode, output.strip())
+
+
+# --- salvaging a killed dispatch's worktree (basicly-yvx9) ------------------
+
+
+# What the harness says when it commits for an agent that never got the chance.
+# Plain on purpose: the subject a reader meets in ``git log`` has to say the run
+# was cut short, because the agent's own sign-off is exactly what did not happen.
+SALVAGE_DESCRIPTION = "salvage the work a killed runner left uncommitted"
+
+# How much of git's own refusal is quoted back. A rejected commit can end in a
+# hook's full report; the caller puts this in a one-line block reason.
+_REFUSAL_CHARS = 200
+
+# The conventional commit-body wrap.
+_BODY_WIDTH = 72
+
+
+@dataclass(frozen=True)
+class Salvage:
+    """What became of the uncommitted work in a killed dispatch's worktree."""
+
+    # "committed" — the tree is a commit now, and the landing can judge it.
+    # "empty"     — there was no uncommitted work to rescue.
+    # "refused"   — git or a hook declined; the tree is left exactly as it was.
+    status: str
+    detail: str
+
+    @property
+    def committed(self) -> bool:
+        """True only when a commit now exists — the one thing a caller may act on."""
+        return self.status == "committed"
+
+
+def salvage(worktree_root: Path, bead: str, *, reason: str) -> Salvage:
+    """Commit whatever *worktree_root* holds uncommitted, for an agent that was killed.
+
+    Committing is the agent's last step and a hard kill is precisely the event
+    that removes it. Three runs in this repo's ledger were killed by ``[runner]
+    runner_timeout`` holding their whole finished diff, and the harness discarded
+    every one of them — 47.8M tokens, nine tenths of all the work this repo has
+    paid for that never landed — while carefully draining a few kilobytes of
+    their stdout (basicly-yvx9). The rescue is harness-side because it has to be:
+    signalling earlier so the agent could commit itself would depend on a
+    third-party CLI treating SIGTERM as "commit now", which none of them promise.
+
+    Nothing here judges the diff. A timeout is the harness's own decision, not
+    evidence against the change, and verify is the authority on a diff where a
+    clock is not — so the commit only makes the work *judgeable*: a red gate then
+    reworks the lane with real findings, where an uncommitted tree could only ever
+    produce "not-ready" and a second full dispatch for work already done.
+
+    The hooks stay in the path (:func:`run_commit`), so a tree the gates reject is
+    reported ``refused`` and left as the kill left it. *reason* names the kill and
+    goes in the commit body, where it survives the run record. Never raises: the
+    caller is already handling a killed run, and a failed rescue must not become a
+    second failure.
+    """
+    root = Path(worktree_root)
+    try:
+        staged = git(["add", "--all"], cwd=root, check=False)
+        if staged.returncode != 0:
+            return Salvage("refused", f"the worktree could not be staged: {_tail(staged.stderr)}")
+        if not has_staged_changes(root):
+            return Salvage("empty", "the worktree held no uncommitted work")
+        envelope = assemble(root, SALVAGE_DESCRIPTION, bead=bead, body=_salvage_body(reason))
+        result = run_commit(root, envelope)
+        if not result.committed:
+            return Salvage("refused", f"the salvage commit was rejected: {_tail(result.output)}")
+        head = git(["rev-parse", "--short", "HEAD"], cwd=root, check=False).stdout.strip()
+    except (RuntimeError, OSError, ValueError) as exc:
+        return Salvage("refused", f"the worktree could not be committed: {exc}")
+    return Salvage("committed", f"the worktree was committed as {head or 'a new commit'}")
+
+
+def _salvage_body(reason: str) -> str:
+    """The body that keeps the kill visible to whoever reads this commit later.
+
+    Wrapped, because this is the one part of the salvage a human meets in ``git
+    log`` — and a run record does not survive a clone, where the commit does.
+    """
+    return textwrap.fill(
+        f"The runner was killed by the harness ({reason}) with this work "
+        "uncommitted in its worktree, so the harness committed it: a timeout is "
+        "the harness's own decision and is not evidence against the diff. No "
+        "agent signed this off — the landing's verify gate judges it, and the "
+        "kill itself is reported separately.",
+        width=_BODY_WIDTH,
+    )
+
+
+def _tail(output: str) -> str:
+    """The last line of a command's output, capped, for a one-line refusal reason."""
+    lines = (output or "").strip().splitlines()
+    detail = lines[-1] if lines else "no output"
+    return detail if len(detail) <= _REFUSAL_CHARS else detail[:_REFUSAL_CHARS] + "…"
