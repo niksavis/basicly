@@ -6,6 +6,135 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.7.1 - 2026-08-06
+
+Delta: v0.7.0..v0.7.1
+
+### Added
+
+- **A new shipped skill, `interface-facts`, makes a third-party fact something you fetch
+  rather than recall.** Before writing code, a design note, or any claim that depends on how
+  an external interface behaves — a CLI flag, an API field, a model id, a price, a limit, a
+  version — the skill has you establish it against the vendor's current documentation, and it
+  applies the same standard to a claim a repo document already asserts.
+
+  It exists because a recalled interface fact reads exactly like a verified one. A design
+  document stated that one supported agent CLI reported no token counts, four hundred lines
+  above its own section documenting the extraction mechanism and the runner code that
+  implements it; the stale summary was read in preference to the section it cited and repeated
+  to the owner as fact. Nothing in the harness could have caught that, because every gate the
+  repo runs checks structure or behaviour — not whether a sentence about somebody else's tool
+  is still true (`basicly-x8r1`).
+
+### Changed
+
+- **A lane records its changelog entry in its own file, so two lanes can never
+  collide on one anchor.** A lane writes `changelog.d/<bead-id>.<category>.md`
+  instead of editing `CHANGELOG.md`. The filename carries the bead id, so it is
+  unique by construction and the collision becomes *impossible* rather than
+  detected — the shape that blocked three of the four unattended-run attempts on
+  2026-08-05/06 was two lanes at one anchor in a file no bead declared, each attempt
+  in a different file, so enumerating them could never finish.
+
+  `basicly release` assembles the fragments into the dated section, grouped under
+  their Keep a Changelog heading and ordered by category then filename, and deletes
+  them in the release commit. A hand-curated `## [Unreleased]` body still publishes
+  alongside them, and a fragment whose category the operator already opened is
+  appended to that section rather than opening a duplicate heading. An empty
+  fragment, an unparseable filename, or a changelog with no `[Unreleased]` heading
+  refuses the release before anything is written, because a lane's release note is
+  never allowed to vanish quietly.
+
+  `CHANGELOG.md` therefore leaves `[worktree] append_only_paths`, which is the point
+  rather than a regression: that list bought detection by serializing every lane
+  that touched the path, and there is now nothing to serialize (`basicly-4746`).
+
+- **The `harness-loop` skill now opens with the tracker-write habit that a measured data loss
+  earned.** Run `br sync --status` before any `br` write on a checkout you did not just leave,
+  and `br sync --import-only` first if it reports the committed export is newer. A mutating
+  command on a checkout in that state auto-flushes the *older database over the newer file*:
+  measured once at a 426-record database published over a 612-record export, deleting 187
+  records, 47 of them open, while `br create` reported success and no gate fired.
+
+  Two details are what make it a habit rather than a note. The export is recoverable only
+  because it is committed, so git is the backstop and the database is the side that gets
+  corrupted. And the status line is computed from *timestamps*, so it also says the export is
+  newer on a healthy checkout where the content is byte-identical and the import is a no-op —
+  which is exactly how people learn to ignore it. The skill also asks you to check the shape of
+  a tracker diff before committing: filing two beads is `+2` lines, so large deletions mean this
+  is in progress.
+
+  **This is guidance and a regression test, not a fix.** The underlying defect is still open
+  (`basicly-b2n2`); what shipped is the habit that avoids it and a gate holding the requirement
+  that a publish which would shrink the export must be refused rather than silent, so the
+  eventual fix cannot land without satisfying it.
+
+- **Two shipped skills absorbed process traps that had to be re-learned to be believed.** Both
+  cost a real session, and both are the kind of thing a rule cannot convey by warning about it
+  in general terms — so each is now a named section with the commands that work.
+
+  The `harness-loop` skill gained a *Watching a lane* section. A dispatched lane is a
+  subprocess of the engine rather than a subagent of the driving session, so nothing in an
+  agent's own tooling lists it; the section carries the four read commands that do answer it,
+  the rule that a worktree name replaces dots with hyphens (so watching the dotted path reports
+  "no worktree" forever), and both ways process-polling fails. `pgrep -f <pattern>` and
+  `pkill -f <pattern>` match the *caller's own* command line: the kill signals the invoking
+  shell and the target survives, and an `until ! pgrep -f …` wait can never exit — it spins to
+  timeout and reports the job as still running long after it succeeded, which is the damaging
+  half.
+
+  The `session-finish` skill now requires a durable artifact to be written straight to its final
+  path, and forbids a background process outliving the session. The scratchpad is cleaned
+  mid-session, which cost an 846-line design document and the transcript that produced it
+  (`basicly-yjwu`).
+
+### Fixed
+
+- **A lane bounced by a landing conflict is re-dispatched with the conflict as its
+  task, and an identical repeat escalates without spending the rework cap.** A
+  bounced lane was already re-dispatched, but the bounce published nothing, so the
+  supervisor assembled the prompt the agent had already satisfied — for work already
+  committed on its branch. The agent changed nothing, the landing re-derived the
+  identical conflict, and the second attempt escalated having learned nothing. This
+  fired three times on 2026-08-05/06, and every one of those conflicts was resolvable
+  by hand in about two minutes.
+
+  The bounce now publishes a `coupling` found-info record naming the conflicting
+  paths, which lanes landed over them, and both sides — the same channel the
+  supervisor already used for a collision it *predicted*, which the collision it
+  *observed* never got. It is written once the pass is over, not at the bounce, so no
+  pass ordering reaches a durable record. There is still no merge-time resolution: the
+  lane's own agent resolves on its own branch.
+
+  A landing that then fails with the same cause on the same paths as that lane's
+  previous one escalates to the decision queue immediately, and the attempt the loop
+  charged for it is refunded — re-applying one branch to one anchor cannot converge,
+  so the attempt could not have changed the outcome (`basicly-bdd4`).
+
+- **A rework loop that is not converging now stops on the finding set, not on the
+  attempt count.** Every gate that reports findings — a verify run's failed checks, a
+  lane's failed rubric checks, a landing's own report — records them on the bead as a
+  canonical member list, and the next round is compared against the previous one
+  rather than merely counted. The count was never the measure: an attempt that
+  re-derives the previous attempt's verdict verbatim was charged in full, and at
+  `[policy] max_rework = 2` a node could reach a human having spent its whole budget
+  re-reporting a finding set already on its own bead.
+
+  One repeated round **warns**, on the bead and in the escalation the cap raises, so
+  whoever triages it can see that a re-dispatch would learn nothing — a gate only
+  reports what it checks, so one repeat may still hide a real change. Two consecutive
+  repeated rounds **escalate immediately**, and the attempt is refunded so the
+  remaining cap survives for whatever the human answers. A finding set that *grew*
+  escalates on its first occurrence: the previous findings are all still open and new
+  ones joined them. The refund is spendable once per bead and gate, so a node nobody
+  answers still reaches its cap instead of being forgiven forever.
+
+  The signature history and the comparison now live in one place next to the rework
+  counter that owns this accounting, and the merge gate's repeat-bounce check
+  (`basicly-bdd4`) delegates to it. Only the threshold stays per gate: a repeated
+  landing conflict escalates on the first repeat, because re-applying one branch to
+  one anchor provably cannot converge (`basicly-m4zv.5`).
+
 ## v0.7.0 - 2026-08-06
 
 Delta: v0.6.0..v0.7.0
