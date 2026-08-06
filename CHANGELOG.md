@@ -443,7 +443,35 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (grants, gate results, derived phase) through the engine and not by grepping the
   export, which stays correct only for whole-tracker counting (`basicly-hsrs`).
 
+- **`basicly verify` records the run's verdict as an artifact.** `basicly-m4zv.13`
+  shipped the mechanism — a phase may declare a required evidence artifact and the
+  advance is refused unless the declared path exists and is non-empty — but no producer:
+  verify streams every check straight to the terminal and captured only on the diagnostic
+  re-run, so a *passing* run wrote nothing anywhere and declaring an artifact for the
+  verify phase would have refused every advance. `run_verify` now writes
+  `.basicly/usage/verify-run.json` with the mode, timestamp, aggregate verdict and each
+  check's name, status, return code and detail. Written from the one entry point every
+  run goes through, so the CLI, the loop's build→verify transition and the merge queue's
+  per-worktree run all produce it with no separate wiring. Self-ignored, like the run
+  records, because a landing refuses dirt outside `.beads/` and every run rewrites it
+  (`basicly-m0s4`).
+
+- **Two shipped skills gained guidance their own incidents earned.** The
+  `worktree-isolation` skill now warns that a *relative* `core.hooksPath` silently skips
+  every gate in a linked worktree — the failure is silent, which is what makes it worth a
+  line (`basicly-l7zo`). The `python` skill now names `pyright` as part of the pre-commit
+  gate and gives the structural-typing convention for test doubles, and drops a stale
+  line citation (`basicly-sco6`).
+
 ### Fixed
+
+- **A validation error no longer leaks a home directory into a pasted log.** A load-time
+  `ValidationError` rendered its source as an absolute path while `catalog lint` reported
+  its own violations repo-relative, so one lint run showed the same finding in two path
+  styles and the absolute one carried a username into anything pasted into an issue or a
+  CI log. Both now render through one `display_path` helper: repo-relative inside the
+  root, absolute outside it, since a path spelled with `..` would mislead more than it
+  clarifies (`basicly-ky5z`).
 
 - **A generated artifact every lane rebuilds no longer bounces the last lane to land.**
   The second variety of the class below, and the one none of that fix's remedies fit.
