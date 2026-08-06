@@ -222,6 +222,62 @@ def test_the_report_names_the_host_and_the_file_it_wrote(consumer: Path) -> None
     assert (consumer / ".claude" / "settings.json").as_posix() in joined.replace("\\", "/")
 
 
+# --- the restart the write requires -------------------------------------------
+
+
+def _restated(lines: list[str]) -> bool:
+    """Whether the report tells the reader to quit and relaunch the host.
+
+    Keyed on the two words the acceptance criterion is about rather than on the
+    constant, so a notice reworded into something that no longer says it fails
+    here instead of passing on an identity comparison.
+    """
+    joined = "\n".join(lines).lower()
+    return "quit" in joined and "relaunch" in joined
+
+
+def test_a_run_that_writes_says_the_host_must_be_quit_and_relaunched(consumer: Path) -> None:
+    """The hook is read at process start, so the success line is where the reader is."""
+    _, lines = _installer_in(consumer).install(["claude"], consumer, user=False, dry_run=False)
+
+    assert _restated(lines)
+    assert lines[-1] == kit.RESTART_NOTICE, "it is the next step, so it comes last"
+
+
+def test_a_dry_run_does_not_ask_for_a_restart_it_changed_nothing(consumer: Path) -> None:
+    """Nothing was written, so there is nothing a restart would pick up."""
+    _, lines = _installer_in(consumer).install(["claude"], consumer, user=False, dry_run=True)
+
+    assert not _restated(lines)
+    assert "would write" in "\n".join(lines), "positive control: it still reported the write"
+
+
+def test_an_already_installed_run_does_not_ask_for_a_restart(consumer: Path) -> None:
+    """A converge run leaves the settings byte-identical; restarting would be noise."""
+    kit_local = _installer_in(consumer)
+    _, first = kit_local.install(["claude"], consumer, user=False, dry_run=False)
+
+    _, second = kit_local.install(["claude"], consumer, user=False, dry_run=False)
+
+    assert _restated(first), "positive control: the run that wrote did say it"
+    assert not _restated(second)
+
+
+def test_a_host_that_installs_nothing_does_not_ask_for_a_restart(tmp_path: Path) -> None:
+    """A decline changed no file, so the notice would be advice for a non-event."""
+    _, lines = kit.install(["copilot"], tmp_path, user=False, dry_run=False)
+
+    assert not _restated(lines)
+
+
+def test_the_restart_notice_is_reported_once_for_the_whole_run(consumer: Path) -> None:
+    """It is the reader's next step, not a per-host fact to repeat."""
+    _, lines = _installer_in(consumer).install(list(kit.HOSTS), consumer, user=False, dry_run=False)
+
+    assert _restated(lines)
+    assert [line for line in lines if line == kit.RESTART_NOTICE] == [kit.RESTART_NOTICE]
+
+
 # --- converging rather than duplicating ---------------------------------------
 
 
@@ -482,3 +538,17 @@ def test_the_command_line_refuses_unparseable_settings_with_a_reason(consumer: P
     assert result.returncode == 1
     assert "refusing to overwrite" in result.stderr
     assert path.read_text(encoding="utf-8") == "{not json"
+
+
+def test_the_command_line_prints_the_restart_requirement_only_when_it_wrote(
+    consumer: Path,
+) -> None:
+    """Through the real entry point, which is the surface a consumer actually reads."""
+    wrote = _run(["--host", "claude"], repo=consumer)
+    assert wrote.returncode == 0, wrote.stderr
+    assert _restated([wrote.stdout])
+
+    converged = _run(["--host", "claude"], repo=consumer)
+    assert converged.returncode == 0, converged.stderr
+    assert "already installed" in converged.stdout
+    assert not _restated([converged.stdout])
