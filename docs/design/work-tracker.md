@@ -331,7 +331,8 @@ an export; we treat the log as authoritative and everything else as a projection
 a corrupt derivative something you delete rather than repair.
 
 The cost is honest: a fold is O(events) and a naive reader re-folds per query, which is what the
-index exists to amortise. §10 measures where that starts to matter.
+index exists to amortise. §10 measures where that starts to matter, and **§4.6 is the one field that
+answers the common query without an index at all**.
 
 **The derived snapshot is gitignored, not committed** (settled 2026-08-06 under review). Calling a
 file derived and then committing it recreates the dual-store failure this whole design exists to
@@ -385,6 +386,28 @@ The control is prevention, inside the validation that already runs on every writ
 pass** (secret patterns, absolute paths rewritten repo-relative) and a **per-event size cap**. The
 cap does double duty — §4.4 needs it as the interleave bound. Comments are already 45% of tracker
 traffic, so agent verbosity is the growth driver and the cap is the only thing bounding it.
+
+**The cap truncates; it never refuses, and it never conceals that it truncated.** Those are the two
+wrong answers. Refusing an oversized write loses the event — the fact that a gate ran, along with its
+output — and quietly clipping the payload makes a cut comment indistinguishable from a short one, so
+a reader cannot tell whether it is looking at the evidence or at a fragment. So an oversized payload
+is stored cut to the cap, carrying `truncated: true` and `original_length` beside it. The reader
+learns both that evidence was dropped **and how much**, which is the growth bound §9.1 leaves open.
+Four rules make it safe:
+
+- **Only free-text payloads truncate.** Never a field the fold reads — ids, `seq`, `kind`, status,
+  provenance, or §4.6's totals. Truncating one of those would make a derived value depend on the cap,
+  which breaks the fold determinism §14 asserts.
+- **Redact, then truncate, then measure.** Redaction can *lengthen* text (a matched pattern becomes a
+  placeholder), and a cut through the middle of a secret can defeat the pattern that would have
+  caught it. `original_length` is therefore the length of the redacted payload, not of what the agent
+  pasted — which is the honest number anyway, since the raw bytes were never ours to keep.
+- **Cut on a character boundary, and name the unit.** A byte-sliced UTF-8 payload stops being
+  decodable and takes the whole line down with it. `original_length` is in **bytes** and the field
+  says so; a length whose unit a reader has to guess is worse than no length.
+- **Truncation is a write-time property of the event, not a later rewrite.** It happens once, before
+  the event is authoritative, and nothing revisits it. That is the whole difference between this and
+  the compaction §9.1 declines.
 
 ### 4.3 The ten requirements, and the weakest link in each
 
@@ -500,6 +523,61 @@ in review. A Textual TUI stays possible later; it is not a first deliverable.
 **Cross-repo shape:** each repo owns its ledger under its own prefix and is its only writer;
 cross-repo work moves as offers recorded by each participant in its *own* ledger (§8), so no
 component ever writes across a repo boundary and there is no shared artifact to coordinate on.
+
+### 4.6 The running aggregate — the tail answers the common query, the fold stays the authority
+
+**Every event carries the value of the item's running aggregates as they hold immediately after
+that event.** One field — call it `totals` — and the overwhelmingly common query, *what is this
+item's spend, how many attempts has it had, how many events does it carry*, is answered by reading
+the item's last event instead of folding its history. That is the mechanism that makes §10's
+deferral of the index defensible rather than a hand-wave, and it costs one field per line.
+
+Absorbed as a **concept** from the only production append-only journal in the 2026-07-26 review, and
+designed here from first principles: that project's source is permanently out of bounds as an
+implementation reference on a licence question the owner declined to litigate
+(`research/references.md` §2.3), so what follows owes it the idea and nothing else — no port, no
+snippet, no line ranges. This is the clean-room boundary `references.md` §2.1 already imposes on the
+tracker work, applied to a second source.
+
+Four rules, and the first is what keeps a denormalized total from recreating the dual-store defect
+§4 exists to escape:
+
+- **The fold is the authority; a carried total is a cache that happens to live in the log.** Any
+  reader that must be *right* folds. `fsck` (§13) recomputes the fold and reports every event whose
+  carried totals disagree with it, which is what makes the denormalization checkable instead of a
+  second source of truth — and a disagreement is a **finding, never a repair in place** (§4.4).
+- **One accumulator, called from both sides.** The writer computes the totals by calling the *fold's*
+  accumulator over `(predecessor totals, this event)`, never a hand-written increment. Two copies
+  that disagree is the defect this repo keeps paying for — `session_issue_ids` disagreed by 14 beads
+  (`basicly-tcmy.30`), the context ceiling disagreed about a bead's whole fate (`basicly-7kxq`) — and
+  a denormalized aggregate is exactly the shape that invites a third.
+- **Only pure functions of the events qualify, and only per item.** A carried value must be a pure
+  function of the events up to and including its own: counts, sums, and the last status. Never a wall
+  clock (§9.5), never anything read from outside the log. Per *item* rather than per ledger, because
+  the writer already reads the item's max sequence to assign the next one (§4.1) — so the
+  predecessor's totals arrive in a read it is making anyway — while a ledger-wide counter would put
+  every item behind one number and fork on every branch.
+- **The totals are trustworthy exactly when the item's sequence chain is unforked.** Two branches
+  appending to one item both compute from the same predecessor, so after a union merge the tail
+  carries totals that omit the other side. This needs no new detector: it is the same visible,
+  fsck-reportable fork §4.1 already produces, and the rule is that a forked item's carried totals
+  are **void until a fold restates them**. A cache with a known invalidation condition is safe; one
+  without is the hand-wave.
+
+**What the tail read actually costs, stated rather than implied.** Whole-ledger totals are the last
+line of the current file. A single item's totals are a **reverse scan that stops at that item's first
+hit** — cheap in the ordinary case, and bounded in the worst by rotation, because §4's checkpoint at
+each rotation boundary carries every item's totals as of that boundary. That last part is a
+**requirement on the checkpoint**, stated here rather than assumed, because the bound depends on it:
+without it the reverse scan for a long-idle item walks the whole archive. So the bound is "current
+file, then one checkpoint", never "the whole history". That is the claim the deferral in §10 rests
+on, and it narrows the index's trigger: the index earns its place when a **cross-item** query cannot
+be served this way, not merely when some fold got slow.
+
+**The second payoff is evidential.** Because the total is recorded at the moment of the write, *what
+did this item's spend say when this dispatch marker was written* is answerable without folding
+anything — which is what a spend-accuracy check needs and what a snapshot holding only the present
+cannot give it.
 
 ## 5. Migration and coexistence
 
@@ -714,10 +792,24 @@ a ledger of near-identical JSON records better than any record-shrinking scheme,
 losslessly.
 
 So compaction solves a problem we do not have, at a cost that is fatal to D11: it discards
-evidence. **Our tracker will not implement lossy compaction.** Growth is bounded three ways
+evidence. **Our tracker will not implement lossy compaction.** Growth is bounded four ways
 instead — git compression, the ship-time rollup (`basicly-kjc5.50`) which summarises a package so
-its cost survives independently of the detail, and the event log itself, which bounds each write
-by the size of the change rather than by the record's accumulated history (§10).
+its cost survives independently of the detail, the event log itself, which bounds each write
+by the size of the change rather than by the record's accumulated history (§10), and honest
+truncation.
+
+**Honest truncation is the fourth bound, and the one the other three leave out (§4.2).** Git
+compression, the rollup and the per-change write all bound growth *given* bounded events; none of them
+bounds a single pasted payload, so an agent that pastes a 5 MB test log puts it in every clone of the
+repo — compressed, but not removable, since true removal from an append-only log is the history
+rewrite §4.2 requires explicit confirmation for. The per-event cap makes that ceiling explicit, and the
+recorded
+`original_length` is what keeps the cap from being the lossy compaction this section rejects. The
+distinction is the whole point: compaction discards evidence *after* the fact and leaves the record
+looking whole, while truncation drops it at the boundary and **says on the record that it did, and by
+how much**. "We kept the first N bytes of a 5 MB payload" is a checkable statement, and it tells a
+reader that the rest exists elsewhere — in the run's own output, in the branch it came from — rather
+than nowhere. "We summarised this" tells them neither.
 
 The early warning to watch is **maximum line length**, not total size: each issue is one line, so
 appending a comment rewrites that whole line. Our largest record is already 45 KB against a
@@ -845,6 +937,24 @@ nothing branches on it. Specifically:
   this, and a guard test in `tests/test_runner.py` fails on any new wall-clock interval, listing
   the two cross-process exemptions with their reasons.
 
+**This rule was an assertion until the 2026-07-26 review measured the alternative.** The one
+production append-only journal in that reference set carries **no sequence numbers** and mints its
+event ids from the wall clock plus a random component, so its only total order is the order its lines
+happen to sit in the file. In its own committed **6,467-event** fixture, **44.5% of events share a
+millisecond** with another event — a measured property of published data, recorded at
+`research/references.md` §2.3 and `research/2026-07-26-sota-review.md`, and usable independently of
+the licence question that puts that project's source out of bounds (§4.6).
+
+Three things follow, and the first is the number's actual force. At that collision rate a millisecond
+timestamp **is not an ordering at all for nearly half the log** — a reader that sorts by it gets an
+arbitrary permutation inside every collided group, and those groups hold 44.5% of events. Second, the
+order that does exist there is **unrecorded**: it survives as file position, which a union merge, a
+rebuild, or any sort destroys silently, and silently is the operative word — nothing in the data says
+the order was lost. Third, we would sit in the same regime or a worse one, because the engine writes
+in **bursts**: a multi-lane pass appends for several lanes inside the same few milliseconds, which is
+precisely the shape that produces collisions. §4.1's one integer field buys the ordering their design
+leaves to chance, which is why that field is not over-engineering.
+
 The general form: **the ledger must be totally ordered by something we assign, so that a
 misbehaving host clock degrades the quality of our evidence and never the correctness of our
 state.**
@@ -905,6 +1015,12 @@ records a plain in-process fold beats the external CLI by two orders of magnitud
 all — so **the index is deliberately deferred**, not designed now. That is the measurement the
 cache decision waits on (§7), and the rule is: build the index when a measured fold exceeds the
 loop's per-advance budget, not before.
+
+**What makes that deferral defensible rather than optimistic is §4.6.** Without a carried aggregate,
+"defer the index" means every current-value query re-folds and the 10k-record cliff above is the whole
+answer. With one, the common query never folds at all — it reads the item's last event — so the fold
+cost above is the cost of the *checkable* path and of cross-item reports, not of ordinary reads. The
+trigger for building an index narrows accordingly: a **cross-item** query the tail cannot serve.
 
 **Line-length skew is the other scaling axis.** Median record is 1,942 B, p95 is 4,285 B, and the
 maximum is **45,296 B** — the `basicly-kjc5` epic, 23× the median, thick with comments. Under a
@@ -1020,6 +1136,20 @@ application; sprint, estimation, or reporting ceremony beyond what the loop cons
 TUI (§4); real-time collaboration; or import from third-party trackers beyond the one-off beads
 import in §5. Each of those is how a tool like this becomes unmaintainable, and none of them is
 required by the loop.
+
+**One rejection is worth naming rather than listing, because it is the plausible one: LLM-based
+monitoring of the ledger.** The production journal §9.5 cites watches its own runs with *sentinels* —
+injected model calls, with a per-million-token cost model attached to them. We decline that, and not
+on taste. It puts a **paid third-party service in the tracker's runtime path**, which is the exact
+thing `basicly-ctdz` forbids: the test there is whether we can absorb a component's breaking change
+on our own schedule, and a hosted model endpoint answers no — ids are deprecated, prices change, and
+availability is somebody else's operational decision. It also contradicts the kit boundary, which
+states that the kit never calls the network or an LLM (§4). And it is nondeterministic where every
+other part of this design is deterministic: a monitor whose verdict on the *same* log can differ
+between two runs cannot be a thing a gate reads. Finally the condition it exists to catch — a lane
+that has stopped making progress — is **already covered deterministically** by `StallWatchdog`
+(`src/basicly/runner.py:2546`), on a monotonic clock as §9.5 requires. A cheaper deterministic check
+that already exists beats a paid probabilistic one that does not.
 
 ## 16. The rejected alternative: a versioned database
 
