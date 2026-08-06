@@ -1,5 +1,6 @@
 {
   "includeCoAuthoredBy": false,
+  "outputStyle": "Tired Engineer",
   "permissions": {
     "allow": [
       "Bash",
