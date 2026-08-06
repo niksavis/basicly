@@ -29,6 +29,14 @@ one lane's state must not hold the others hostage:
   paths so the graph learns without holding the bounce back
   (:func:`record_pass_couplings`), and the lane's own agent re-applies its intent
   on the new base at the next dispatch.
+- **A generated artifact is rebuilt, not bounced** (basicly-lyro). The one exception
+  to the rule above, and it is not a resolution of anything: a path declared in
+  ``[worktree] generated_paths`` is a function of the tree, so when *every* unmerged
+  path is on that list the rebase discards both sides, re-runs the repo's
+  ``regenerate_command``, and continues. No lane is faulted and no rework is spent,
+  because there is no coupling to learn — three lanes editing three different catalog
+  sources all legitimately change the projection manifest. One undeclared path in the
+  set and the whole rebase bounces untouched (:func:`_rebuild_generated_conflicts`).
 - **The edge never depends on landing order** (D9, basicly-kjc5.32). Attribution
   runs once the pass is over, over every landing rather than the prefix that
   happened to precede a bounce, and reads declared scopes rather than what each
@@ -46,12 +54,12 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from . import br, decompose, policy, run_record, verify
-from .config import PolicyConfig, load_policy_config
-from .worktree import Session, current_branch, git, load_session
+from .config import PolicyConfig, load_policy_config, load_worktree_config
+from .worktree import Session, current_branch, git, load_session, run
 
 MERGE_GATE = "merge"
 
@@ -63,6 +71,13 @@ CONFLICT_STATUSES = ("rebase-conflicts", "merge-conflicts")
 # with `br sync --merge`). A collision here is engine bookkeeping, never evidence
 # of a coupling the decomposition missed.
 ENGINE_PATHS = (".beads/",)
+
+# Runaway backstop for :func:`_rebuild_generated_conflicts`. Each pass through the
+# loop resolves every unmerged path and advances the rebase by one commit, so a
+# branch needs more commits than this to reach it legitimately; a rebase that has not
+# finished by then is not understood, and an un-understood rebase is aborted rather
+# than driven further.
+MAX_REGENERATED_REBASE_STEPS = 100
 
 # Dependency type for a missed coupling. Deliberately not `blocks`: the edge
 # teaches the next decomposition, and `br blocked` (so `supervise.ready_lanes`)
@@ -705,19 +720,23 @@ def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing inp
 
     # 1. Rebase onto the *current* base so serialized merges stay conflict-free.
     rebase = git(["rebase", base, branch], cwd=worktree_path, check=False)
+    regenerated: tuple[str, ...] = ()
     if rebase.returncode != 0:
-        # Read the collided paths out of the stopped rebase before aborting: the
-        # queue needs them to attribute the missed coupling (D5), and they are
-        # gone once the rebase state is discarded.
-        conflicts = unmerged_paths(worktree_path)
-        git(["rebase", "--abort"], cwd=worktree_path, check=False)
-        where = f" in: {', '.join(conflicts)}" if conflicts else ""
-        return MergeResult(
-            name,
-            "rebase-conflicts",
-            f"rebase of {branch} onto {base} hit conflicts{where}",
-            conflicts=conflicts,
-        )
+        rebuilt = _rebuild_generated_conflicts(repo_root, worktree_path)
+        if rebuilt is None:
+            # Read the collided paths out of the stopped rebase before aborting: the
+            # queue needs them to attribute the missed coupling (D5), and they are
+            # gone once the rebase state is discarded.
+            conflicts = unmerged_paths(worktree_path)
+            git(["rebase", "--abort"], cwd=worktree_path, check=False)
+            where = f" in: {', '.join(conflicts)}" if conflicts else ""
+            return MergeResult(
+                name,
+                "rebase-conflicts",
+                f"rebase of {branch} onto {base} hit conflicts{where}",
+                conflicts=conflicts,
+            )
+        regenerated = rebuilt
 
     # 2. Re-verify in the worktree after the rebase.
     if not override_gate:
@@ -736,7 +755,13 @@ def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing inp
         )
 
     # 4/5. Merge, then prove the merge — a "merged" status is unreachable without it.
-    return _merge_and_prove(repo_root, name, base=base, branch=branch, bead=bead)
+    landed = _merge_and_prove(repo_root, name, base=base, branch=branch, bead=bead)
+    if landed.merged and regenerated:
+        # Say it out loud wherever the landing is reported. This is the one place the
+        # queue resolves a conflict rather than bouncing it, and a resolution nobody
+        # is told about is indistinguishable from a rebase that never conflicted.
+        return replace(landed, detail=f"{landed.detail} (regenerated {', '.join(regenerated)})")
+    return landed
 
 
 @dataclass(frozen=True)
@@ -768,6 +793,55 @@ class QueueResult:
             or self.result.unreliable
             or self.result.foreign
         )
+
+
+def _rebuild_generated_conflicts(repo_root: Path, worktree_path: Path) -> tuple[str, ...] | None:
+    """Finish a stopped rebase whose conflicts are all declared generated (basicly-lyro).
+
+    Returns the rebuilt paths when the rebase now runs to completion, and None when
+    the caller must abort and bounce — which is every case that is not provably this
+    one. The bound is deliberate and is what keeps the merge queue's "never resolve a
+    conflict here" rule intact for source: this resolves only when *every* unmerged
+    path is named in ``[worktree] generated_paths``, so one undeclared path in the set
+    hands the whole rebase back to the lane untouched.
+
+    Regeneration is not a merge. Both sides are discarded and the artifact is rebuilt
+    from the tree the rebase has actually produced, because a generated file is a
+    function of that tree and picking a side would leave it describing neither parent
+    — which is exactly what a three-lane catalog pass hit on
+    ``.basicly/generated-manifest.json``, spending a lane's whole rework budget.
+
+    A residual staleness is caught rather than shipped: the artifact is rebuilt at
+    each stop, so the last stop that touches it sees the tree the rebase ends with,
+    and anything that slips past that is caught by the post-rebase verify gate (the
+    ``projection-*`` checks fail on a stale projection), which bounces the lane as it
+    does today. Nothing here can land a wrong artifact silently.
+    """
+    config = load_worktree_config(repo_root)
+    declared = frozenset(config.generated_paths)
+    if not declared or not config.regenerate_command:
+        return None
+
+    rebuilt: set[str] = set()
+    for _ in range(MAX_REGENERATED_REBASE_STEPS):
+        conflicts = unmerged_paths(worktree_path)
+        if not conflicts or not declared.issuperset(conflicts):
+            return None
+        if run(list(config.regenerate_command), cwd=worktree_path, check=False).returncode != 0:
+            return None
+        # `git add` on an unmerged path is what marks it resolved, whether or not the
+        # rebuild changed its bytes.
+        if git(["add", "--", *conflicts], cwd=worktree_path, check=False).returncode != 0:
+            return None
+        rebuilt.update(conflicts)
+        # core.editor=true: `rebase --continue` reuses the replayed commit's message
+        # but still opens an editor to confirm it, and nothing is attended here.
+        proceed = git(
+            ["-c", "core.editor=true", "rebase", "--continue"], cwd=worktree_path, check=False
+        )
+        if proceed.returncode == 0:
+            return tuple(sorted(rebuilt))
+    return None
 
 
 def unmerged_paths(cwd: Path) -> tuple[str, ...]:

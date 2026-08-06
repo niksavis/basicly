@@ -206,6 +206,62 @@ def test_an_append_only_glob_is_refused_rather_than_ignored(tmp_path: Path) -> N
         load_worktree_config(tmp_path)
 
 
+def test_worktree_config_reads_the_generated_paths_and_their_rebuild(tmp_path: Path) -> None:
+    """The artifacts every lane rebuilds and no bead declares (basicly-lyro)."""
+    (tmp_path / CONFIG_FILE).write_text(
+        "[worktree]\n"
+        'generated_paths = [".basicly/generated-manifest.json"]\n'
+        'regenerate_command = ["basicly", "build"]\n',
+        encoding="utf-8",
+    )
+
+    config = load_worktree_config(tmp_path)
+
+    assert config.generated_paths == (".basicly/generated-manifest.json",)
+    assert config.regenerate_command == ("basicly", "build")
+
+
+def test_generated_paths_default_to_none_declared(tmp_path: Path) -> None:
+    """Inert until a consumer names one: the mechanism overwrites a file when it fires."""
+    assert load_worktree_config(tmp_path).generated_paths == ()
+    assert load_worktree_config(tmp_path).regenerate_command == ()
+    (tmp_path / CONFIG_FILE).write_text("[worktree]\nconcurrency = 2\n", encoding="utf-8")
+    assert load_worktree_config(tmp_path).generated_paths == ()
+
+
+def test_a_generated_glob_is_refused_rather_than_ignored(tmp_path: Path) -> None:
+    """This list authorises overwriting both sides of a conflict, so it must name what it covers."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[worktree]\ngenerated_paths = [".basicly/**"]\nregenerate_command = ["true"]\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=r"generated_paths.*is a glob"):
+        load_worktree_config(tmp_path)
+
+
+def test_generated_paths_without_a_rebuild_command_are_refused(tmp_path: Path) -> None:
+    """A path list with no command would silently do nothing — the defect it was written to fix."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[worktree]\ngenerated_paths = [".basicly/generated-manifest.json"]\n', encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="without regenerate_command"):
+        load_worktree_config(tmp_path)
+
+
+def test_a_rebuild_command_alone_is_inert_rather_than_refused(tmp_path: Path) -> None:
+    """The reverse is harmless: a command with no path list authorises nothing."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[worktree]\nregenerate_command = ["basicly", "build"]\n', encoding="utf-8"
+    )
+
+    config = load_worktree_config(tmp_path)
+
+    assert config.generated_paths == ()
+    assert config.regenerate_command == ("basicly", "build")
+
+
 def test_verify_config_empty_without_section(tmp_path: Path) -> None:
     """No file or no [verify] section yields no checks."""
     assert load_verify_config(tmp_path).checks == ()
@@ -1234,7 +1290,9 @@ def test_an_unknown_key_fails_and_names_what_its_section_accepts(tmp_path: Path)
         load_worktree_config(tmp_path)
 
     assert "unknown key 'concurency' in [worktree]" in str(excinfo.value)
-    assert "[worktree] accepts append_only_paths, base_branch, concurrency" in str(excinfo.value)
+    assert "[worktree] accepts append_only_paths, base_branch, concurrency, generated_paths" in str(
+        excinfo.value
+    )
 
 
 def test_an_unknown_name_in_a_nested_table_fails(tmp_path: Path) -> None:

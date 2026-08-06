@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import subprocess  # nosec B404
+import sys
 from pathlib import Path
 
 import pytest
@@ -1622,3 +1624,257 @@ def test_the_warning_is_empty_when_nothing_foreign_is_dirty(
     """A declined commit on a clean tree is 'nothing pending', which needs no words."""
     monkeypatch.setattr(merge, "git", _FakeGit({"status": _Proc(0, "")}))
     assert merge.skipped_tracker_commit_warning(tmp_path) == ""
+
+
+# --- A generated artifact is rebuilt, not bounced (basicly-lyro) --------------
+#
+# The second variety of basicly-o8p0's class: a path every lane writes and no bead
+# declares, but one that is a pure function of the tree. Serializing the lanes buys
+# nothing and picking a side leaves the artifact describing neither parent, so the
+# landing rebuilds it and continues. The bound is what keeps the queue's "never
+# resolve a conflict here" rule intact for source, so every test below is really a
+# test of the bound.
+
+
+def _declare_generated(repo_root: Path, *paths: str, command: str = '["true"]') -> None:
+    """Write a `[worktree]` config declaring *paths* rebuildable by *command*."""
+    (repo_root / "basicly.toml").write_text(
+        f"[worktree]\ngenerated_paths = {list(paths)!r}\nregenerate_command = {command}\n".replace(
+            "'", '"'
+        ),
+        encoding="utf-8",
+    )
+
+
+_REBASE_STOPPED = {"rebase": _Proc(1, "CONFLICT")}
+_REBASE_RESUMED = "-c core.editor=true rebase --continue"
+
+
+@pytest.mark.usefixtures("base_ready")
+def test_a_conflict_confined_to_declared_generated_paths_is_rebuilt_and_continues(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The lane lands, and nothing about it is a bounce: no rework, no abort."""
+    _declare_generated(tmp_path, ".basicly/generated-manifest.json")
+    fake = _FakeGit({
+        **_HAS_WORK,
+        **_REBASE_STOPPED,
+        "status": _Proc(0, ""),
+        "diff": _Proc(0, ".basicly/generated-manifest.json\n"),
+        "add": _Proc(0),
+        _REBASE_RESUMED: _Proc(0),
+        "merge-tree": _Proc(0),
+        "merge": _Proc(0),
+        "rev-parse": _Proc(0, "def456"),
+        "merge-base": _Proc(0),
+    })
+    monkeypatch.setattr(merge, "git", fake)
+    monkeypatch.setattr(merge, "run", lambda *_a, **_k: _Proc(0))
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-lyro")
+
+    assert result.merged is True
+    assert ["rebase", "--abort"] not in fake.calls
+    assert ".basicly/generated-manifest.json" in result.detail  # the resolution is never silent
+
+
+@pytest.mark.usefixtures("base_ready")
+def test_one_undeclared_path_in_the_set_bounces_the_whole_rebase_untouched(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A genuine source conflict is still the lane's, even when a generated file rode along."""
+    _declare_generated(tmp_path, ".basicly/generated-manifest.json")
+    fake = _FakeGit({
+        **_HAS_WORK,
+        **_REBASE_STOPPED,
+        "status": _Proc(0, ""),
+        "diff": _Proc(0, ".basicly/generated-manifest.json\nsrc/shared.py\n"),
+    })
+    monkeypatch.setattr(merge, "git", fake)
+    monkeypatch.setattr(
+        merge, "run", lambda *_a, **_k: pytest.fail("the rebuild ran on an undeclared conflict")
+    )
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-lyro")
+
+    assert result.status == "rebase-conflicts" and result.conflicted
+    assert result.conflicts == (".basicly/generated-manifest.json", "src/shared.py")
+    assert ["rebase", "--abort"] in fake.calls
+
+
+@pytest.mark.usefixtures("base_ready")
+def test_a_conflict_on_a_generated_path_bounces_while_nothing_is_declared(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Inert until a consumer declares one — this is today's behaviour, kept."""
+    fake = _FakeGit({
+        **_HAS_WORK,
+        **_REBASE_STOPPED,
+        "status": _Proc(0, ""),
+        "diff": _Proc(0, ".basicly/generated-manifest.json\n"),
+    })
+    monkeypatch.setattr(merge, "git", fake)
+    monkeypatch.setattr(
+        merge, "run", lambda *_a, **_k: pytest.fail("the rebuild ran with nothing declared")
+    )
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-lyro")
+
+    assert result.status == "rebase-conflicts"
+    assert ["rebase", "--abort"] in fake.calls
+
+
+@pytest.mark.usefixtures("base_ready")
+def test_a_failing_rebuild_bounces_rather_than_landing_a_half_resolved_rebase(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The command is the whole authority for the resolution; if it fails there is none."""
+    _declare_generated(tmp_path, ".basicly/generated-manifest.json")
+    fake = _FakeGit({
+        **_HAS_WORK,
+        **_REBASE_STOPPED,
+        "status": _Proc(0, ""),
+        "diff": _Proc(0, ".basicly/generated-manifest.json\n"),
+    })
+    monkeypatch.setattr(merge, "git", fake)
+    monkeypatch.setattr(merge, "run", lambda *_a, **_k: _Proc(1, "build failed"))
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-lyro")
+
+    assert result.status == "rebase-conflicts"
+    assert ["rebase", "--abort"] in fake.calls
+    assert not fake.ran("merge")
+
+
+@pytest.mark.usefixtures("base_ready")
+def test_a_rebase_that_will_not_finish_is_aborted_rather_than_driven_forever(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The runaway backstop: an un-understood rebase bounces, it does not spin."""
+    _declare_generated(tmp_path, "manifest.json")
+    fake = _FakeGit({
+        **_HAS_WORK,
+        **_REBASE_STOPPED,
+        "status": _Proc(0, ""),
+        "diff": _Proc(0, "manifest.json\n"),
+        "add": _Proc(0),
+        _REBASE_RESUMED: _Proc(1, "still stopped"),  # never advances
+    })
+    monkeypatch.setattr(merge, "git", fake)
+    monkeypatch.setattr(merge, "run", lambda *_a, **_k: _Proc(0))
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-lyro")
+
+    assert result.status == "rebase-conflicts"
+    resumes = [call for call in fake.calls if call[-1] == "--continue"]
+    assert len(resumes) == merge.MAX_REGENERATED_REBASE_STEPS
+    assert ["rebase", "--abort"] in fake.calls
+
+
+# The proof against real git, not a stub: the stubbed tests above fix the decision,
+# and this one fixes that the decision is executable — that `rebase --continue` is
+# actually reachable unattended, and that what lands is the artifact rebuilt from the
+# merged tree rather than either parent's copy of it.
+
+_REBUILD_SCRIPT = """\
+import json
+import pathlib
+
+sources = sorted(p.name for p in pathlib.Path("sources").glob("*.txt"))
+pathlib.Path("manifest.json").write_text(json.dumps(sources, indent=2) + "\\n", encoding="utf-8")
+"""
+
+
+def _git_here(cwd: Path, *args: str) -> str:
+    proc = subprocess.run(  # nosec B603 B607
+        ["git", *args], cwd=cwd, check=True, capture_output=True, text=True
+    )
+    return proc.stdout.strip()
+
+
+def _add_source(tree: Path, name: str) -> None:
+    """Add one catalog-style source and rebuild the manifest it feeds, as a lane would."""
+    (tree / "sources" / f"{name}.txt").write_text(f"{name}\n", encoding="utf-8")
+    subprocess.run(  # nosec B603
+        [sys.executable, "rebuild.py"], cwd=tree, check=True, capture_output=True
+    )
+    _git_here(tree, "add", "-A")
+    _git_here(tree, "commit", "-m", f"add {name}")
+
+
+@pytest.fixture
+def diverged_lane(tmp_path: Path) -> tuple[Path, Session]:
+    """A base and a lane that each added a different source and rebuilt one manifest."""
+    repo = tmp_path / "repo"
+    (repo / "sources").mkdir(parents=True)
+    _git_here(tmp_path, "init", "-q", "-b", "main", str(repo))
+    _git_here(repo, "config", "user.email", "tester@example.invalid")
+    _git_here(repo, "config", "user.name", "tester")
+    (repo / "rebuild.py").write_text(_REBUILD_SCRIPT, encoding="utf-8")
+    (repo / "basicly.toml").write_text(
+        "[worktree]\n"
+        'generated_paths = ["manifest.json"]\n'
+        f'regenerate_command = [{json.dumps(sys.executable)}, "rebuild.py"]\n',
+        encoding="utf-8",
+    )
+    _add_source(repo, "a")
+    base_head = _git_here(repo, "rev-parse", "HEAD")
+
+    lane = tmp_path / "feat"
+    _git_here(repo, "worktree", "add", "-q", "-b", "harness/feat", str(lane), "main")
+    _add_source(lane, "c")
+    _add_source(repo, "b")
+
+    return repo, Session(
+        name="feat",
+        branch="harness/feat",
+        base="main",
+        base_head=base_head,
+        worktree_path=str(lane),
+        created_at="2026-08-06T00:00:00Z",
+    )
+
+
+def test_two_lanes_that_rebuild_one_manifest_land_without_bouncing(
+    monkeypatch: pytest.MonkeyPatch, diverged_lane: tuple[Path, Session]
+) -> None:
+    """Against real git: the landing rebuilds the manifest and the pass does not serialise."""
+    repo, session = diverged_lane
+    monkeypatch.setattr(merge, "load_session", lambda _n, _r: session)
+    monkeypatch.setattr(merge, "reconcile_beads", lambda _r: None)
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
+
+    result = merge.merge_worktree(repo, "feat", bead="basicly-lyro")
+
+    assert result.status == "merged", result.detail
+    # Neither parent's manifest says this: main's had a+b, the lane's had a+c. Only a
+    # rebuild on the merged tree does, which is why picking a side was never an option.
+    assert json.loads((repo / "manifest.json").read_text(encoding="utf-8")) == [
+        "a.txt",
+        "b.txt",
+        "c.txt",
+    ]
+    assert "manifest.json" in result.detail
+
+
+def test_the_same_pass_still_bounces_when_a_source_really_conflicts(
+    monkeypatch: pytest.MonkeyPatch, diverged_lane: tuple[Path, Session]
+) -> None:
+    """The control: one undeclared conflicting path and real git hands the lane back."""
+    repo, session = diverged_lane
+    lane = Path(session.path)
+    for tree, text in ((lane, "lane\n"), (repo, "base\n")):
+        (tree / "sources" / "shared.txt").write_text(text, encoding="utf-8")
+        _git_here(tree, "add", "-A")
+        _git_here(tree, "commit", "-m", "touch the shared source")
+    monkeypatch.setattr(merge, "load_session", lambda _n, _r: session)
+    monkeypatch.setattr(merge, "reconcile_beads", lambda _r: None)
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
+
+    result = merge.merge_worktree(repo, "feat", bead="basicly-lyro")
+
+    assert result.status == "rebase-conflicts"
+    assert "sources/shared.txt" in result.conflicts
+    assert _git_here(repo, "status", "--porcelain") == ""  # base untouched
+    assert _git_here(lane, "status", "--porcelain") == ""  # the rebase was aborted cleanly

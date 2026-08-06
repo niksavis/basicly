@@ -79,6 +79,17 @@ concurrency = 5
 # "shared" to stay parallel. Absent = nothing is treated as append-only.
 #
 # append_only_paths = ["CHANGELOG.md"]
+#
+# Artifacts every lane's edit regenerates and no bead declares — a projection
+# manifest, a lockfile. They collide the same way, but serializing the lanes buys
+# nothing: the file is a function of the tree, so it simply needs rebuilding once.
+# A landing rebase whose conflicts are ALL in this list is resolved by running
+# regenerate_command in the lane's worktree and continuing; a conflict touching any
+# other path still bounces to the lane, untouched. Both keys or neither — a path
+# list with no command is refused rather than silently doing nothing.
+#
+# generated_paths = [".basicly/generated-manifest.json"]
+# regenerate_command = ["basicly", "build"]
 
 # Deterministic verify gate. Each check runs in the listed modes; a "staged"
 # check with staged_suffix runs only against staged files of that suffix.
@@ -666,7 +677,15 @@ CONFIG_SCHEMA: dict[str, _Table] = {
         keys=frozenset({"core_fragments", "overlay_fragments", "targets", "templates", "manifest"})
     ),
     "catalog": _Table(keys=frozenset({"technologies"})),
-    "worktree": _Table(keys=frozenset({"base_branch", "concurrency", "append_only_paths"})),
+    "worktree": _Table(
+        keys=frozenset({
+            "base_branch",
+            "concurrency",
+            "append_only_paths",
+            "generated_paths",
+            "regenerate_command",
+        })
+    ),
     "verify": _Table(arrays={"checks": _VERIFY_CHECK_TABLE}),
     "policy": _Table(
         keys=frozenset({
@@ -859,6 +878,21 @@ class WorktreeConfig:
     #
     # Empty by default, so the mechanism is inert until a consumer names a path.
     append_only_paths: tuple[str, ...] = ()
+    # The artifacts every lane's edit regenerates and no bead declares — the second
+    # variety of the class above (basicly-lyro). `.basicly/generated-manifest.json`
+    # collides for the same reason `CHANGELOG.md` does, but none of that list's
+    # remedies fit: the conflict is not semantic (the file is a function of the tree),
+    # so serializing the lanes buys nothing, giving one lane the entry is meaningless
+    # because every lane's edit legitimately changes it, and a union merge would
+    # corrupt it outright — it is JSON, not a line-oriented log. The remedy is to
+    # rebuild it once on the merged tree, so this list *removes* a bounce rather than
+    # adding a serialization edge, and must not be folded into `append_only_paths`.
+    generated_paths: tuple[str, ...] = ()
+    # The deterministic rebuild for `generated_paths`, run in the lane's worktree with
+    # the stopped rebase resolved. Declared rather than inferred: how a repo rebuilds
+    # its artifacts is the repo's fact, and an engine that guessed would auto-resolve
+    # a conflict with a command nobody wrote down.
+    regenerate_command: tuple[str, ...] = ()
 
 
 def load_worktree_config(repo_root: Path) -> WorktreeConfig:
@@ -877,48 +911,102 @@ def load_worktree_config(repo_root: Path) -> WorktreeConfig:
     raw_paths = section.get("append_only_paths")
     append_only = _append_only_paths(raw_paths) if isinstance(raw_paths, list) else ()
 
+    raw_generated = section.get("generated_paths")
+    generated = (
+        _literal_paths(raw_generated, "generated_paths") if isinstance(raw_generated, list) else ()
+    )
+    raw_command = section.get("regenerate_command")
+    regenerate = _regenerate_command(raw_command) if isinstance(raw_command, list) else ()
+    if generated and not regenerate:
+        raise ValueError(
+            "[worktree] generated_paths is declared without regenerate_command; the engine "
+            "cannot rebuild an artifact it has no command for, so the declaration would "
+            "silently do nothing and the conflict would still bounce the lane"
+        )
+
     return WorktreeConfig(
-        base_branch=base_branch, concurrency=concurrency, append_only_paths=append_only
+        base_branch=base_branch,
+        concurrency=concurrency,
+        append_only_paths=append_only,
+        generated_paths=generated,
+        regenerate_command=regenerate,
     )
 
 
-# Glob metacharacters an append-only declaration may not contain (the set
+# Glob metacharacters a ``[worktree]`` path declaration may not contain (the set
 # ``decompose.globs_overlap`` acts on).
-_APPEND_ONLY_WILDCARDS = "*?["
+_PATH_LIST_WILDCARDS = "*?["
+
+# Why each ``[worktree]`` path list refuses a glob. Both refuse, for mirror-image
+# reasons, and the message has to carry the right one or the author cannot tell which
+# rule they hit from the failure alone.
+_GLOB_REFUSALS = {
+    "append_only_paths": (
+        "an append-only path must be one literal path, because this list adds "
+        "serialization edges and a wildcard would serialize every lane over a subtree "
+        "nobody can name"
+    ),
+    "generated_paths": (
+        "a generated path must be one literal path, because this list authorises the "
+        "engine to overwrite both sides of a conflict on it, and a wildcard would extend "
+        "that authority over source files nobody listed"
+    ),
+}
 
 
 def _append_only_paths(entries: list) -> tuple[str, ...]:
     """The validated ``[worktree] append_only_paths`` list, blanks dropped.
-
-    Raises rather than dropping what it cannot honour, on the same grounds as the
-    unknown-name refusal above: a silently ignored entry leaves the file naming a
-    path the grouping does not serialize, and the only symptom is the merge-queue
-    conflict this declaration exists to predict. An empty string names nothing, so
-    it is the one entry that can be dropped without hiding a declaration.
 
     A glob is refused for the mirror of the reason ``decompose._parse_shared``
     refuses one — that list *removes* serialization edges and this one *adds* them,
     so a wildcard here would serialize every child against every other over a
     subtree nobody can enumerate, and the plan would collapse for no nameable path.
     """
+    return _literal_paths(entries, "append_only_paths")
+
+
+def _literal_paths(entries: list, key: str) -> tuple[str, ...]:
+    """The validated ``[worktree] <key>`` literal-path list, blanks dropped.
+
+    Raises rather than dropping what it cannot honour, on the same grounds as the
+    unknown-name refusal above: a silently ignored entry leaves the file naming a
+    path the engine does not act on, and the only symptom is the merge-queue conflict
+    the declaration exists to handle. An empty string names nothing, so it is the one
+    entry that can be dropped without hiding a declaration.
+    """
     paths: list[str] = []
     for entry in entries:
         if not isinstance(entry, str):
             raise ValueError(
-                "[worktree] append_only_paths entries must be paths, got "
-                f"{type(entry).__name__}: {entry!r}"
+                f"[worktree] {key} entries must be paths, got {type(entry).__name__}: {entry!r}"
             )
         path = entry.strip()
         if not path:
             continue
-        if any(char in path for char in _APPEND_ONLY_WILDCARDS):
-            raise ValueError(
-                f"[worktree] append_only_paths entry {path!r} is a glob; an append-only path must "
-                "be one literal path, because this list adds serialization edges and a wildcard "
-                "would serialize every lane over a subtree nobody can name"
-            )
+        if any(char in path for char in _PATH_LIST_WILDCARDS):
+            raise ValueError(f"[worktree] {key} entry {path!r} is a glob; {_GLOB_REFUSALS[key]}")
         paths.append(path)
     return tuple(paths)
+
+
+def _regenerate_command(entries: list) -> tuple[str, ...]:
+    """The validated ``[worktree] regenerate_command`` argv, blanks dropped.
+
+    An argv list and never a shell string: the command runs unattended inside a lane's
+    worktree, so the repo's own "parameterize, never concatenate" rule applies to the
+    one command the engine is authorised to run there.
+    """
+    command: list[str] = []
+    for entry in entries:
+        if not isinstance(entry, str):
+            raise ValueError(
+                "[worktree] regenerate_command entries must be argv strings, got "
+                f"{type(entry).__name__}: {entry!r}"
+            )
+        word = entry.strip()
+        if word:
+            command.append(word)
+    return tuple(command)
 
 
 @dataclass(frozen=True)
