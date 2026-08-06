@@ -358,6 +358,41 @@ the ceiling to protect.
   `.beads/issues.jsonl` and makes the next landing refuse on a dirty base. Commit it
   between steps.
 
+### Watching a lane — use these commands, do not invent one
+
+A dispatched lane is a `claude -p` subprocess of the engine, not a subagent of your
+session, so nothing in your own tooling lists it. These four reads answer every
+question about it, and re-deriving them per session is how the traps below get
+re-discovered:
+
+```sh
+basicly loop status <id>                       # phase, worktree binding, gates, rework
+basicly worktree list                          # what is provisioned right now
+git -C <repo>.worktrees/<name> status --short  # is the agent editing
+git -C <repo>.worktrees/<name> log --oneline main..HEAD   # has it committed
+```
+
+A worktree name replaces dots with hyphens: `basicly-jr0l.65` provisions
+`basicly-jr0l-65`. Watching the dotted path reports "no worktree" forever.
+
+**Never poll for the process.** `pgrep -f <pattern>` and `pkill -f <pattern>` match the
+*caller's own command line*, so both self-match:
+
+- `pkill -f "loop run <id>"` SIGTERMs the invoking shell — exit 144, and the target
+  survives.
+- `until ! pgrep -f "loop run <id>"; do sleep …; done` can never exit, because the
+  waiter's own command line contains the pattern. It spins until timeout **and reports
+  the job as still running long after it succeeded**, which is the damaging half.
+
+Guard the pattern (`[l]oop run`) or resolve a PID first — but prefer not asking about
+processes at all. The loop keeps no side-state, so `loop status` plus the worktree's
+git state is the authoritative read, and it stays correct after a crash or a restart.
+
+**Read a landing from its own summary line, never from a filtered tail.** `grep`-ing a
+run's output for `[merged]` hides a failure whose message you did not predict; a
+`tail -n` of hook output cuts the one line naming the failing gate. Capture the run to
+a file and read the summary block.
+
 ## Resuming after a switch
 
 Because state lives in `br` (issue status, the worktree binding on

@@ -56,6 +56,16 @@ Follow the repo's retro rules:
   summary; anything unintentional gets removed before finishing.
 - Confirm the tracker matches reality (`br ready`; claimed issues either
   closed or annotated with their true state).
+- **No background process may outlive the session.** A watcher left spinning keeps
+  burning CPU and, worse, reports stale state — an `until`-loop waiting on a job that
+  had already succeeded claimed it was still running for 30 minutes. List what is
+  running and stop it before summarising.
+- **Anything worth keeping is in the repo, not in a temp directory.** The scratchpad is
+  cleaned mid-session without warning: an 846-line design document and the agent
+  transcript that produced it were both destroyed between writing and installing them,
+  and only survived because the decisions were still recoverable from the conversation.
+  Write a durable artifact straight to its final path, or have the agent that produces
+  it write there. Treat a scratchpad file as lost the moment you stop looking at it.
 - End with a summary of: what changed (with issue ids), what was verified
   (gates run, their results), what remains open, and the usage-statistics
   highlights from step 1.
