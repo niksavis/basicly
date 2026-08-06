@@ -1363,12 +1363,20 @@ def test_bandit_fails_on_an_unsafe_construct_in_the_kit(tmp_path: Path) -> None:
 
     Asserts on the filename and the rule id rather than a rendered path, so the
     separator bandit prints does not decide the verdict.
+
+    The kit directory is built independently of *targets* rather than as a side
+    effect of iterating them: were the kit target dropped from the config, deriving
+    it from *targets* would leave the module unwritten and this test would die of
+    ``FileNotFoundError`` during setup instead of reporting the silent green it
+    exists to name.
     """
+    unsafe_module = tmp_path / ".basicly/core/kit/unsafe_probe.py"
     shutil.copy(_REPO_ROOT / "pyproject.toml", tmp_path / "pyproject.toml")
     targets = _bandit_targets()
     for target in targets:
         (tmp_path / target).mkdir(parents=True, exist_ok=True)
-    (tmp_path / ".basicly/core/kit/unsafe_probe.py").write_text(_UNSAFE_MODULE, encoding="utf-8")
+    unsafe_module.parent.mkdir(parents=True, exist_ok=True)
+    unsafe_module.write_text(_UNSAFE_MODULE, encoding="utf-8")
 
     def scan(paths: tuple[str, ...]) -> subprocess.CompletedProcess[str]:
         return subprocess.run(  # nosec B603 - argv read from committed config, no shell
