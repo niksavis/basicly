@@ -1768,6 +1768,54 @@ def test_resolve_dispatch_sizing_separates_an_undeclared_scope_from_an_unreadabl
     assert unreadable.absence == decompose.SCOPE_UNREADABLE
 
 
+def test_resolve_dispatch_sizing_calls_a_scope_matching_no_file_greenfield(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A third absence, and the one that cost a wave (basicly-jr0l.69).
+
+    A declared scope whose globs match nothing reads to zero, so the only forecast left
+    is instruction overhead. That is the same invented number an undeclared scope is
+    refused for, and invented in the dangerous direction: a lane creating a module and
+    its tests from nothing is the expensive case. Measured, two such lanes forecast at
+    657033 spent 13367072 and 7730640 - 20.3x and 11.8x outside the accuracy band.
+
+    Distinct from `undeclared`, because the bead did its part: the scope is there and
+    well formed, and the files simply do not exist yet.
+    """
+    _install(monkeypatch, _scoped_bead("src/created-later.py"))
+    greenfield = decompose.resolve_dispatch_sizing(tmp_path, "b-1")
+
+    assert greenfield.sizing is None, "an overhead-only forecast is not a forecast"
+    assert greenfield.absence == decompose.SCOPE_GREENFIELD
+
+    # The same bead sizes normally the moment its scope exists, so this is about the
+    # files rather than about the declaration.
+    _write(tmp_path, "src/created-later.py", 16_000)
+    assert decompose.resolve_dispatch_sizing(tmp_path, "b-1").sizing is not None
+
+
+def test_greenfield_is_checked_before_a_frozen_estimate_is_honoured(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Order matters, and getting it wrong is what let the bad number reach the ledger.
+
+    `decompose` freezes an estimate for each child, and at that moment a greenfield
+    child's files do not exist - so the frozen figure is overhead-only. Honoured, it
+    comes back with `forecast_source` reading `frozen`, indistinguishable from a real
+    prediction while resting on nothing. Rejecting the scope first is what stops that.
+    """
+    _install(monkeypatch, _scoped_bead("src/created-later.py"))
+    frozen_calls: list[object] = []
+
+    def _never(*args: object) -> None:
+        frozen_calls.append(args)
+        raise AssertionError("a frozen estimate must not be consulted for a greenfield scope")
+
+    monkeypatch.setattr(decompose, "forecast_for", _never)
+    assert decompose.resolve_dispatch_sizing(tmp_path, "b-1").absence == decompose.SCOPE_GREENFIELD
+    assert frozen_calls == []
+
+
 def test_resolve_dispatch_sizing_calls_a_record_without_the_fields_unreadable(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

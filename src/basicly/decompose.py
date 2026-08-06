@@ -848,6 +848,26 @@ def unparsed_scope_warning(description: str) -> str | None:
 #   nobody decomposed. A gate can act on it, because re-reading will not change it.
 SCOPE_UNREADABLE = "unreadable"
 SCOPE_UNDECLARED = "undeclared"
+# * **greenfield** — the record read fine and its globs are well formed, but every one
+#   of them matches nothing on disk, so :func:`scope_read_cost` returns zero and the
+#   only forecast left is pure overhead. Structural like *undeclared*, and it carries
+#   the same epistemic weight: a forecast against a scope that does not exist yet is
+#   the "invented number" :func:`resolve_dispatch_sizing` already refuses to produce
+#   for a bead declaring no scope at all (basicly-jr0l.69).
+#
+#   Measured 2026-08-06, which is what promoted this from a nicety to a gate failure.
+#   Reading cost is a sound proxy for a lane that *edits* files and inverts for one
+#   that *creates* them — writing a module and its tests from nothing is the expensive
+#   case, not the cheap one:
+#
+#     bead        recorded forecast   actual spend   ratio
+#     vkh0.13              657033      13367072     20.3x   <- broke the 10x band
+#     vkh0.12              657033       7730640     11.8x
+#
+#   Against the measured unsized-lane bound instead, every lane of that wave lands
+#   inside the band at 1.24x-3.98x, which is why the answer is to route these to that
+#   bound rather than to widen the band.
+SCOPE_GREENFIELD = "greenfield"
 
 
 def _read_class_and_scope(issue: object) -> tuple[tuple[str, tuple[str, ...]] | None, str]:
@@ -1116,11 +1136,25 @@ def resolve_dispatch_sizing(repo_root: Path, issue_id: str) -> SizingLookup:
     the error report is built to skip. Which absence it was travels in
     :attr:`SizingLookup.absence`, because a bead that declares no scope is a fact a
     gate can act on and a failed read is not.
+
+    Unsized on the same grounds when every declared glob matches nothing
+    (:data:`SCOPE_GREENFIELD`, basicly-jr0l.69). That case used to yield an
+    overhead-only forecast, which is the very invented number the paragraph above
+    refuses — and it is invented in the *dangerous* direction, because a lane creating
+    a module and its tests from nothing is the expensive case. Measured: two lanes
+    forecast at 657033 spent 13367072 and 7730640, breaking the 10x accuracy band.
     """
     info, absence = _read_bead(repo_root, issue_id)
     if info is None:
         return SizingLookup(None, absence)
     task_class, scope = info
+    # Checked before the frozen estimate is honoured, not after: the freeze records
+    # whatever the scope read at decompose time, so a child whose files did not exist
+    # then carries a frozen overhead-only number that looks like a prediction of record
+    # (`forecast_source` reads `frozen`) while resting on nothing. Rejecting it here is
+    # what makes the accuracy gate's `assumed:` exclusion reach these records.
+    if scope and scope_read_cost(repo_root, scope) == 0:
+        return SizingLookup(None, SCOPE_GREENFIELD)
     frozen = forecast_for(repo_root, task_class, scope)
     if frozen is not None:
         return SizingLookup(DispatchSizing(task_class, frozen, FROZEN_FORECAST))
@@ -1682,6 +1716,19 @@ def spend_accuracy(repo_root: Path, sizing: SizingConfig) -> SpendAccuracy:
             source = entry.get("forecast_source")
             if isinstance(source, str) and source.startswith("assumed:"):
                 # A stand-in for a bead the estimator could not size is not a forecast.
+                unscoped.append(bead_id)
+                continue
+            if entry.get("scope_tokens") == 0:
+                # Same rule, reached by a different route (basicly-jr0l.69): a record
+                # whose scope read to zero was forecast from pure overhead, so it is a
+                # stand-in too — whatever `forecast_source` calls it. These predate the
+                # `greenfield` absence and would otherwise be scored as prediction
+                # skill: two of them missed by 20.3x and 11.8x, which is a fact about
+                # the estimator having nothing to read, not about the lane.
+                #
+                # Not a widened band. The band is untouched and every record that had a
+                # scope to forecast from is still held to it; this drops the ones that
+                # never carried a prediction at all.
                 unscoped.append(bead_id)
                 continue
             task_class = entry.get("task_class")

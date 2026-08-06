@@ -1251,9 +1251,13 @@ def admit_working_set(repo_root: Path, issue_id: str, sizing: SizingConfig) -> W
         lookup = decompose.resolve_dispatch_sizing(repo_root, issue_id)
     resolved = lookup.sizing
     if resolved is None:
+        # Greenfield counts with undeclared, not with unreadable (basicly-jr0l.69):
+        # both are structural facts about the package that re-reading will not change,
+        # and both leave the working set genuinely unknown. Only a failed tracker read
+        # stays silent, because that is a fact about the tracker.
         unchecked = (
             policy.unchecked_working_set(issue_id, sizing)
-            if lookup.absence == decompose.SCOPE_UNDECLARED
+            if lookup.absence in (decompose.SCOPE_UNDECLARED, decompose.SCOPE_GREENFIELD)
             else None
         )
         return WorkingSetAdmission(issue_id, None, unchecked, refused=False, absence=lookup.absence)
@@ -1287,7 +1291,7 @@ def escalate_working_set(
     """
     if admission.violation is None:
         return None
-    unsized = admission.absence == decompose.SCOPE_UNDECLARED
+    unsized = admission.absence in (decompose.SCOPE_UNDECLARED, decompose.SCOPE_GREENFIELD)
     item = decisions.enqueue(
         repo_root,
         admission.issue_id,
