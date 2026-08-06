@@ -2828,3 +2828,372 @@ def test_record_dispatch_carries_the_window_the_occupancy_was_measured_against(
     # The pair on one row: the measurement and the denominator it was taken against.
     assert entry["context_tokens"] == runner.context_occupancy(spec, result)
     assert entry["context_tokens"] < entry["context_window"]
+
+
+# --- The dispatch's event stream, read while it runs (basicly-rupz) -----------
+#
+# Every metered lane already asks its CLI for a per-turn event stream, and the
+# runner used to collect the whole thing with one `communicate` — so every
+# intermediate event was requested, paid for, and dropped unread. These pin the
+# incremental read, and the three properties that make it safe to have: the
+# terminal totals do not move, an undecodable byte does not silence the reader,
+# and neither pipe can fill.
+
+
+def _emitter(body: str) -> str:
+    """A child program that writes a stream to stdout, prelude included."""
+    return "import json, os, sys, time\n" + body
+
+
+def _streaming_spec(body: str, *, usage_format: str = CLAUDE_STREAM_JSON) -> RunnerSpec:
+    """A spec whose "agent CLI" is *body*, declaring a streaming usage format."""
+    return RunnerSpec(
+        "claude" if usage_format == CLAUDE_STREAM_JSON else "codex",
+        HEADLESS,
+        (sys.executable, "-c", _emitter(body), PROMPT_PLACEHOLDER),
+        usage_format=usage_format,
+    )
+
+
+def test_event_usage_sums_to_the_terminal_total_on_both_streaming_adapters() -> None:
+    """The live meter must be denominated in the same quantity as the grant.
+
+    The convergence claim, against both pinned live fixtures: accruing the per-turn
+    usage as it arrives reaches exactly the total `extract_usage` reports off the
+    terminal object at the end. That is what makes a mid-dispatch spend reading
+    comparable to a grant's remainder rather than a second, differently-defined
+    number — claude's result event re-counts `cache_read_input_tokens` per turn just
+    as the per-turn blocks do, and codex's total *is* the sum over `turn.completed`.
+    """
+    for spec, stream in ((_claude_spec(), _CLAUDE_STREAM), (_codex_spec(), _CODEX_EVENTS)):
+        live = sum(
+            usage.tokens
+            for event in runner._claude_stream_events(stream)
+            if (usage := runner.event_usage(spec, event)) is not None
+        )
+        terminal = runner.extract_usage(spec, _executed(spec, stream))
+        assert terminal is not None
+        assert live == terminal.tokens, spec.name
+
+
+def test_event_usage_is_none_for_an_adapter_with_no_stream_format() -> None:
+    """An out-of-band adapter measures elsewhere; it must not have a per-turn figure invented."""
+    copilot = next(s for s in BUILTIN_RUNNERS if s.name == "copilot")
+    turn = {"type": "assistant", "message": {"usage": {"input_tokens": 5}}}
+    assert runner.event_usage(copilot, turn) is None
+    # And an event of the right family that simply carries no usage stays None
+    # rather than becoming a fabricated zero.
+    assert runner.event_usage(_claude_spec(), {"type": "system", "subtype": "init"}) is None
+    assert runner.event_usage(_codex_spec(), {"type": "turn.completed"}) is None
+
+
+def test_run_observes_each_event_while_the_dispatch_is_still_running(tmp_path: Path) -> None:
+    """AC: an event is observed *while the process runs*, not collected at its end.
+
+    Proved by a handshake rather than by a clock: the child writes its first event
+    and then waits for a file the sink creates, so it reaches its second write only
+    if the sink already ran. A reader that collected at exit leaves the child waiting
+    until its own bound, on which it writes **nothing** and exits 9 — so the
+    regression is a missing event and a failed run, not merely a slow pass. The bound
+    is a failure ceiling, never the thing asserted: a healthy run clears the
+    handshake as fast as the two processes can see the file.
+    """
+    ack = tmp_path / "ack"
+    body = (
+        "ack = sys.argv[1]\n"
+        "turn = {'type':'assistant','message':{'usage':{'input_tokens':7,'output_tokens':3}}}\n"
+        "sys.stdout.write(json.dumps(turn) + '\\n'); sys.stdout.flush()\n"
+        "deadline = time.monotonic() + 30\n"
+        "while not os.path.exists(ack):\n"
+        "    if time.monotonic() >= deadline:\n"
+        "        sys.exit(9)\n"
+        "    time.sleep(0.01)\n"
+        "res = {'type':'result','result':'ok','usage':{'input_tokens':7,'output_tokens':3}}\n"
+        "sys.stdout.write(json.dumps(res) + '\\n')\n"
+    )
+    spec = RunnerSpec(
+        "claude",
+        HEADLESS,
+        (sys.executable, "-c", _emitter(body), str(ack), PROMPT_PLACEHOLDER),
+        usage_format=CLAUDE_STREAM_JSON,
+    )
+    seen: list[runner.StreamEvent] = []
+
+    def sink(event: runner.StreamEvent) -> None:
+        seen.append(event)
+        ack.touch()
+
+    result = runner.run(spec, "go", tmp_path, capture_usage=True, on_event=sink, timeout=60.0)
+
+    assert result.returncode == 0
+    # The second event exists at all only because the first was observed mid-run.
+    assert [event.data["type"] for event in seen if event.data] == ["assistant", "result"]
+    assert seen[0].usage is not None and seen[0].usage.tokens == 10
+
+
+def test_streaming_leaves_the_captured_output_and_the_totals_identical(tmp_path: Path) -> None:
+    """Additive: the same dispatch read incrementally must report the same everything.
+
+    The whole change is worthless if it moves a spend number, so both paths run the
+    same child and every downstream read is compared — the transcript itself, the
+    metered total, and the agent's own reply out of the envelope.
+    """
+    body = (
+        "for line in json.loads(sys.argv[1]):\n"
+        "    sys.stdout.write(line + '\\n'); sys.stdout.flush()\n"
+        "sys.stderr.write('a warning\\n')\n"
+    )
+    spec = RunnerSpec(
+        "claude",
+        HEADLESS,
+        (
+            sys.executable,
+            "-c",
+            _emitter(body),
+            json.dumps(_CLAUDE_STREAM.splitlines()),
+            PROMPT_PLACEHOLDER,
+        ),
+        usage_format=CLAUDE_STREAM_JSON,
+    )
+
+    batched = runner.run(spec, "go", tmp_path, capture_usage=True, timeout=60.0)
+    streamed = runner.run(
+        spec, "go", tmp_path, capture_usage=True, on_event=lambda _e: None, timeout=60.0
+    )
+
+    assert streamed.stdout == batched.stdout
+    assert streamed.stderr == batched.stderr
+    assert streamed.returncode == batched.returncode == 0
+    assert runner.extract_usage(spec, streamed) == runner.extract_usage(spec, batched)
+    assert runner.result_text(spec, streamed.stdout) == runner.result_text(spec, batched.stdout)
+
+
+def test_stream_reader_replaces_undecodable_bytes_and_keeps_reading(tmp_path: Path) -> None:
+    """AC: an undecodable line must not silence the reader (basicly-6gkg).
+
+    Decoding moves onto our reader threads here, and a `UnicodeDecodeError` on one
+    of those kills the thread while the caller sees a clean exit and no output — the
+    symptom is silence. Byte 0x81 is the probe because it is undecodable under both
+    encodings a host is likely to prefer: a bare continuation byte in UTF-8, and
+    unmapped in cp1252. So this is a fact about a byte, asserted on every platform.
+    """
+    body = (
+        "turn = {'type':'assistant','message':{'usage':{'input_tokens':4,'output_tokens':1}}}\n"
+        "sys.stdout.write(json.dumps(turn) + '\\n'); sys.stdout.flush()\n"
+        "sys.stdout.buffer.write(b'progress \\x81 note\\n'); sys.stdout.buffer.flush()\n"
+        "res = {'type':'result','result':'ok','usage':{'input_tokens':4,'output_tokens':1}}\n"
+        "sys.stdout.write(json.dumps(res) + '\\n')\n"
+    )
+    spec = _streaming_spec(body)
+    seen: list[runner.StreamEvent] = []
+
+    result = runner.run(
+        spec, "go", tmp_path, capture_usage=True, on_event=seen.append, timeout=60.0
+    )
+
+    assert result.returncode == 0
+    # Replaced, not dropped and not raised: the run is visible as undecodable.
+    assert "\ufffd" in result.stdout
+    # And the reader carried on — the events on *both* sides of the bad line arrived,
+    # which is the property whose absence would have looked like a silent success.
+    assert [event.data["type"] for event in seen if event.data] == ["assistant", "result"]
+    usage = runner.extract_usage(spec, result)
+    assert usage is not None and usage.estimated is False
+
+
+def test_streaming_drains_stderr_so_neither_pipe_can_fill(tmp_path: Path) -> None:
+    """`communicate` exists to avoid pipe deadlock, and the replacement must too.
+
+    A child writing more stderr than a pipe buffer holds (64 KiB on Linux) blocks
+    forever if only stdout is read, so the timeout below would fire instead of the
+    run completing. Both halves are asserted: the run finished, and the whole of
+    that stderr came back.
+    """
+    noise = 200_000
+    body = (
+        "sys.stderr.write('x' * int(sys.argv[1])); sys.stderr.flush()\n"
+        "res = {'type':'result','result':'ok','usage':{'input_tokens':1,'output_tokens':1}}\n"
+        "sys.stdout.write(json.dumps(res) + '\\n')\n"
+    )
+    spec = RunnerSpec(
+        "claude",
+        HEADLESS,
+        (sys.executable, "-c", _emitter(body), str(noise), PROMPT_PLACEHOLDER),
+        usage_format=CLAUDE_STREAM_JSON,
+    )
+
+    result = runner.run(
+        spec, "go", tmp_path, capture_usage=True, on_event=lambda _e: None, timeout=60.0
+    )
+
+    assert result.timed_out is False
+    assert result.returncode == 0
+    assert len(result.stderr) == noise
+
+
+def test_streaming_timeout_keeps_the_partial_transcript(tmp_path: Path) -> None:
+    """A killed streaming dispatch must still report what it had said.
+
+    The reader threads hold the pipes, so the `_drain` path `communicate` needs
+    would find them closed and report nothing — and a killed lane's partial
+    transcript is exactly what the salvage commit and the chars/4 floor read
+    (basicly-yvx9). So the streaming read owns its own timeout.
+    """
+    body = (
+        "turn = {'type':'assistant','message':{'usage':{'input_tokens':7,'output_tokens':3}}}\n"
+        "sys.stdout.write(json.dumps(turn) + '\\n'); sys.stdout.flush()\n"
+        "time.sleep(60)\n"
+    )
+    seen: list[runner.StreamEvent] = []
+
+    result = runner.run(
+        _streaming_spec(body), "go", tmp_path, capture_usage=True, on_event=seen.append, timeout=1.0
+    )
+
+    assert result.timed_out is True
+    assert result.returncode is None
+    assert '"type": "assistant"' in result.stdout
+    assert len(seen) == 1
+
+
+def test_streamed_events_are_redacted_before_the_sink_sees_them(tmp_path: Path) -> None:
+    """The events carry the agent's own text, so redaction runs here too (basicly-3p2i).
+
+    Redacted *before* the line is parsed, so neither the text nor the decoded object
+    can carry the credential. The usage still has to read: the placeholder is legal
+    inside a JSON string, which is what makes that ordering safe.
+    """
+    token = "ghp_" + "b" * 30
+    body = (
+        "turn = {'type':'assistant','text':'pushed with ' + sys.argv[1],\n"
+        "        'message':{'usage':{'input_tokens':4,'output_tokens':1}}}\n"
+        "sys.stdout.write(json.dumps(turn) + '\\n')\n"
+    )
+    spec = RunnerSpec(
+        "claude",
+        HEADLESS,
+        (sys.executable, "-c", _emitter(body), token, PROMPT_PLACEHOLDER),
+        usage_format=CLAUDE_STREAM_JSON,
+    )
+    seen: list[runner.StreamEvent] = []
+
+    result = runner.run(
+        spec, "go", tmp_path, capture_usage=True, on_event=seen.append, timeout=60.0
+    )
+
+    (event,) = seen
+    assert token not in event.line and "<redacted:github-token>" in event.line
+    assert event.data is not None and token not in json.dumps(event.data)
+    # Still parsed, and still metered: over-redaction must not cost the measurement.
+    assert event.usage is not None and event.usage.tokens == 5
+    assert token not in result.stdout
+
+
+def test_a_sink_that_raises_never_stops_the_stream(tmp_path: Path) -> None:
+    """A failing consumer must not leave the rest of the dispatch unobserved.
+
+    The same containment `StallWatchdog` gives its notifier: the sink is the
+    caller's code running on our reader thread, and an exception there would kill
+    the thread and silently truncate the transcript.
+    """
+    body = (
+        "for turn in (1, 2, 3):\n"
+        "    sys.stdout.write(json.dumps({'type':'assistant','n':turn,\n"
+        "        'message':{'usage':{'input_tokens':turn,'output_tokens':0}}}) + '\\n')\n"
+    )
+    seen: list[int] = []
+
+    def angry(event: runner.StreamEvent) -> None:
+        if event.data is not None:
+            seen.append(event.data["n"])
+        raise RuntimeError("sink is broken")
+
+    result = runner.run(
+        _streaming_spec(body), "go", tmp_path, capture_usage=True, on_event=angry, timeout=60.0
+    )
+
+    assert seen == [1, 2, 3]
+    assert result.returncode == 0
+    assert result.stdout.count("assistant") == 3
+
+
+def test_a_sink_is_inert_for_an_adapter_that_measures_out_of_band(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An out-of-band adapter's stdout is plain text, so a sink must not be assumed.
+
+    Asserted through the fake `Popen`, which offers only `communicate`: taking the
+    streaming path would need `wait` and fail loudly. And the default decode is left
+    alone there, because that path decodes where the error is already loud.
+    """
+    captured = _patch_popen(monkeypatch, stdout="plain text answer")
+    copilot = next(s for s in BUILTIN_RUNNERS if s.name == "copilot")
+    seen: list[runner.StreamEvent] = []
+
+    result = runner.run(
+        copilot, "go", Path("/work"), capture_usage=True, on_event=seen.append, timeout=60.0
+    )
+
+    assert seen == []
+    assert result.stdout == "plain text answer"
+    assert captured["errors"] is None
+
+
+def test_no_sink_keeps_a_streaming_adapter_on_the_single_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A caller that wants no events pays for no reader threads and no decode change."""
+    captured = _patch_popen(monkeypatch, stdout=_CLAUDE_STREAM)
+
+    result = runner.run(_claude_spec(), "go", Path("/work"), capture_usage=True)
+
+    assert captured["errors"] is None
+    assert result.stdout == _CLAUDE_STREAM
+
+
+def test_an_unmetered_dispatch_streams_nothing_even_with_a_sink(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without `capture_usage` the CLI was never asked for a stream, so there is none.
+
+    The flags requesting the per-turn stream are appended only by a usage-capturing
+    dispatch (`_apply_usage`), so a sink here would be waiting on events the argv
+    never asked for.
+    """
+    captured = _patch_popen(monkeypatch, stdout="plain")
+    seen: list[runner.StreamEvent] = []
+
+    runner.run(_claude_spec(), "go", Path("/work"), on_event=seen.append)
+
+    assert seen == []
+    assert captured["errors"] is None
+
+
+def test_streaming_sends_a_stdin_prompt_without_deadlocking(tmp_path: Path) -> None:
+    """A stdin-injecting adapter still gets its prompt, and the readers keep draining.
+
+    Writing the prompt from the calling thread is only safe because the readers are
+    already running — that is the deadlock `communicate` exists to avoid — so the
+    child echoes back a prompt bigger than a pipe buffer to prove it.
+    """
+    body = (
+        "prompt = sys.stdin.read()\n"
+        "res = {'type':'result','result':str(len(prompt)),\n"
+        "       'usage':{'input_tokens':1,'output_tokens':1}}\n"
+        "sys.stdout.write(json.dumps(res) + '\\n')\n"
+    )
+    spec = RunnerSpec(
+        "claude",
+        HEADLESS,
+        (sys.executable, "-c", _emitter(body)),
+        prompt_via="stdin",
+        usage_format=CLAUDE_STREAM_JSON,
+    )
+    prompt = "y" * 200_000
+
+    result = runner.run(
+        spec, prompt, tmp_path, capture_usage=True, on_event=lambda _e: None, timeout=60.0
+    )
+
+    assert result.timed_out is False
+    assert runner.result_text(spec, result.stdout) == str(len(prompt))

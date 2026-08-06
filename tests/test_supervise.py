@@ -12,11 +12,14 @@ spins an idempotent follow-up bead when a run crosses the context ceiling.
 from __future__ import annotations
 
 import ast
+import contextlib
 import json
 import os
 import subprocess
 import threading
 import time
+from collections.abc import Callable
+from concurrent.futures import Future
 from pathlib import Path
 
 import pytest
@@ -5417,3 +5420,255 @@ def test_a_running_lane_reports_its_elapsed_time_while_it_runs(
     running = [line for line in lines if line.startswith("running:")]
     assert running, "a lane in flight must report before it finishes, not only after"
     assert "epic.1" in running[0]
+
+
+# --- The lane's live event stream (basicly-rupz) -------------------------------
+#
+# The dispatch's per-turn event stream was requested by every metered lane and
+# read by nobody: the runner collected it with one `communicate` after the process
+# was down. These pin what consuming it buys — liveness that does not depend on a
+# file changing, and a spend figure that exists *during* a dispatch rather than
+# only once the run record is written.
+
+
+def _turn(tokens: int) -> runner.StreamEvent:
+    """One streamed event carrying *tokens* of per-turn usage."""
+    return runner.StreamEvent(
+        line=json.dumps({"type": "assistant"}),
+        data={"type": "assistant"},
+        usage=runner.Usage(tokens=tokens, cost=None, estimated=False),
+    )
+
+
+def test_lane_stream_moves_its_fingerprint_and_accrues_on_every_event() -> None:
+    """The two readings the pass takes off a running lane, from the same events."""
+    stream = supervise.LaneStream()
+    idle = stream.fingerprint()
+
+    stream(_turn(120))
+    first = stream.fingerprint()
+    # A second identical event is still a second event: a lane repeating itself is
+    # working, not wedged, so the count moves even when the line does not.
+    stream(_turn(120))
+
+    assert first != idle
+    assert stream.fingerprint() != first
+    assert (stream.events, stream.spent) == (2, 240)
+
+
+def test_lane_stream_counts_an_event_that_carries_no_usage() -> None:
+    """Liveness and spend are different questions: a progress event proves only the first."""
+    stream = supervise.LaneStream()
+
+    stream(runner.StreamEvent(line="Warning: starting up"))
+
+    assert stream.events == 1
+    assert stream.spent == 0  # nothing measured, so nothing accrued
+
+
+def test_dispatch_lane_drives_the_watchdog_and_the_spend_meter_from_the_stream(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """AC: an event restarts the stall clock and reaches the spend meter, mid-dispatch.
+
+    Asserted from *inside* the dispatch, which is the only place the claim is
+    falsifiable — once the run ends, both facts are knowable from the run record
+    again and that is exactly the gap this closes. The git probe is frozen, so the
+    fingerprint can only have moved because of the event: that is the blind spot
+    being covered, a lane whose work is real but whose tree has not changed yet.
+    """
+    codex = _codex()
+    _worker_fixture(monkeypatch, tmp_path, stdout=_codex_events(50_000))
+    monkeypatch.setattr(supervise, "lane_activity", lambda _cwd: "frozen")
+    probe = _capture_stall_probe(monkeypatch)
+    seen: dict[str, object] = {}
+
+    def fake_run(
+        spec: runner.RunnerSpec, *_a: object, on_event: runner.EventSink, **_kw: object
+    ) -> runner.RunResult:
+        seen["quiet"] = probe()
+        seen["before"] = supervise.inflight_spend()
+        on_event(_turn(31_337))
+        seen["busy"] = probe()
+        seen["after"] = supervise.inflight_spend()
+        return runner.RunResult(
+            spec.name, (spec.name,), executed=True, returncode=0, stdout=_codex_events(50_000)
+        )
+
+    monkeypatch.setattr(supervise.runner, "run", fake_run)
+
+    supervise._dispatch_lane(tmp_path, _session(_lane("epic.1")), _lane("epic.1"), codex, _sizing())
+
+    # The watchdog clock: the event alone moved the fingerprint, with git frozen.
+    assert seen["busy"] != seen["quiet"]
+    # The spend meter: the lane's own tokens were visible while it still ran.
+    assert seen["before"] == {"epic.1": 0}
+    assert seen["after"] == {"epic.1": 31_337}
+    # And dropped on the way out, or the run record written just after would count
+    # the same dispatch twice.
+    assert supervise.inflight_spend() == {}
+
+
+def test_dispatch_lane_keeps_the_git_probe_beside_the_stream(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A commit still restarts the clock, so an adapter with no stream is unaffected.
+
+    The stream is not a replacement. It emits nothing inside a single long tool call,
+    and git state does not move while an agent runs a long test suite — so the lane
+    is quiet only when both signals are, and either one moving is proof of life.
+    """
+    codex = _codex()
+    _worker_fixture(monkeypatch, tmp_path, stdout=_codex_events(50_000))
+    activity = {"reading": "before"}
+    monkeypatch.setattr(supervise, "lane_activity", lambda _cwd: activity["reading"])
+    probe = _capture_stall_probe(monkeypatch)
+    seen: dict[str, object] = {}
+
+    def fake_run(spec: runner.RunnerSpec, *_a: object, **_kw: object) -> runner.RunResult:
+        seen["before"] = probe()
+        activity["reading"] = "after the commit"
+        seen["after"] = probe()
+        return runner.RunResult(spec.name, (spec.name,), executed=True, returncode=0, stdout="")
+
+    monkeypatch.setattr(supervise.runner, "run", fake_run)
+
+    supervise._dispatch_lane(tmp_path, _session(_lane("epic.1")), _lane("epic.1"), codex, _sizing())
+
+    assert seen["before"] != seen["after"]
+
+
+def _capture_stall_probe(monkeypatch: pytest.MonkeyPatch) -> Callable[[], str]:
+    """Replace the watchdog with one that samples nothing, and return its probe.
+
+    Sampled by hand rather than on a thread: these tests are about *what the probe
+    reads*, and a real watchdog would make that a race against its poll interval.
+    """
+    captured: dict[str, Callable[[], object]] = {}
+
+    class _Watchdog:
+        def __init__(
+            self, _after: float, *, probe: Callable[[], str], on_stall: Callable[[], object]
+        ) -> None:
+            captured["probe"] = probe
+            captured["on_stall"] = on_stall
+
+        def __enter__(self) -> _Watchdog:
+            return self
+
+        def __exit__(self, *_exc: object) -> None:
+            return None
+
+    monkeypatch.setattr(supervise.runner, "StallWatchdog", _Watchdog)
+    return lambda: str(captured["probe"]())
+
+
+def test_inflight_halt_refuses_a_start_against_what_the_running_lanes_reported() -> None:
+    """The live half of D3: a lane must not start on a remainder already in flight.
+
+    The gap is on the record — a 20000000-token grant was overshot to 22164783
+    because `spend_status` is read before a pass and written after it, with nothing
+    in between. The lanes that overshot it were still running when this check ran.
+    """
+    running = supervise.LaneStream()
+    running(_turn(4_500))
+
+    with supervise.live_lane("epic.1", running):
+        # 4000 recorded of a 5000 budget leaves 1000, and one running lane has
+        # already reported 4500 that no record carries yet.
+        halt = supervise.inflight_halt(_granted("L3", 5_000, 4_000))
+        # A comfortable remainder is still admitted, or the ceiling would refuse
+        # every pass that has a lane in flight.
+        assert supervise.inflight_halt(_granted("L3", 5_000_000, 4_000)) is None
+
+    assert halt is not None
+    assert "4500" in halt and "1000" in halt and "epic.1" in halt
+    # And a finished lane no longer counts: its record is the source now.
+    assert supervise.inflight_halt(_granted("L3", 5_000, 4_000)) is None
+
+
+def test_inflight_halt_is_silent_where_there_is_no_ceiling() -> None:
+    """An ungranted or L1 session has no budget to bind, exactly as check_pass_spend has none."""
+    running = supervise.LaneStream()
+    running(_turn(10_000_000))
+
+    with supervise.live_lane("epic.1", running):
+        assert supervise.inflight_halt(_UNGRANTED) is None
+        assert supervise.inflight_halt(_granted("L1", None, 0)) is None
+
+
+def test_dispatch_lanes_declines_to_start_a_lane_the_running_lanes_outspent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The refusal is a *start*, and the queued lane is the one that pays it.
+
+    Cost is bounded by sizing the work, never by interrupting a working agent — so
+    the in-flight reading may only stop a lane that has not begun. Two lanes under a
+    cap of one: the first runs to completion untouched, and the second finds the
+    grant spent by a meter no run record carries.
+
+    The first lane's meter is held open past its return rather than raced against a
+    concurrent one, because the ordering is what has to be deterministic here: what
+    is under test is that a lane's admission consults in-flight spend at all, not
+    that the pool overlaps lanes — which ``dispatch_lanes`` pins separately.
+    """
+    lanes = (_lane("epic.1"), _lane("epic.2"))
+    _patch_readiness(monkeypatch, ranked=((1, "epic.1"), (2, "epic.2")))
+    monkeypatch.setattr(supervise.runner, "select_runner", lambda *_a, **_k: _MANUAL_SPEC)
+    monkeypatch.setattr(supervise.decompose, "unsized_lane_tokens", lambda *_a: (10, "measured"))
+    monkeypatch.setattr(
+        supervise.policy, "spend_status", lambda *_a, **_k: _granted("L3", 5_000, 0)
+    )
+    held = contextlib.ExitStack()
+
+    def fake_dispatch(
+        _repo: object, _session: object, lane: supervise.AdoptedLane, *_a: object, **_kw: object
+    ) -> supervise.LaneOutcome:
+        # The first lane reports past the whole grant while it runs — the state no
+        # run record describes yet, and the one the real overshoot happened in.
+        stream = supervise.LaneStream()
+        stream(_turn(6_000))
+        held.enter_context(supervise.live_lane(lane.issue_id, stream))
+        return _outcome(lane.issue_id)
+
+    monkeypatch.setattr(supervise, "_dispatch_lane", fake_dispatch)
+
+    with held:
+        outcomes = supervise.dispatch_lanes(
+            Path(), _session(*lanes), admission=_granted("L3", 5_000, 0), cap=1
+        )
+
+    first, second = outcomes
+    assert first.issue_id == "epic.1" and first.detail == "test"  # ran, uninterrupted
+    assert second.issue_id == "epic.2"
+    assert second.result is None
+    assert "not started" in second.detail and "6000" in second.detail
+    # Nothing leaks past the pass: the meters are gone once the stack closes.
+    assert supervise.inflight_spend() == {}
+
+
+def test_inflight_note_reports_the_tokens_a_running_lane_has_reported() -> None:
+    """Surfacing it: the operator's other half of "is this lane worth its slot?".
+
+    Impossible before — the runner drained its pipes only after the process was
+    down. A lane with no stream to read shows elapsed alone rather than a
+    fabricated zero, because a measured 0 and an unmeasurable one are different
+    claims (the same rule the usage split follows).
+    """
+    metered, unmetered = _lane("epic.1"), _lane("epic.2")
+    futures: dict[Future[supervise.LaneOutcome], supervise.AdoptedLane] = {
+        Future(): metered,
+        Future(): unmetered,
+    }
+    started = {"epic.1": time.monotonic() - 12.0, "epic.2": time.monotonic() - 3.0}
+    stream = supervise.LaneStream()
+    stream(_turn(84_000))
+
+    with (
+        supervise.live_lane("epic.1", stream),
+        supervise.live_lane("epic.2", supervise.LaneStream()),
+    ):
+        note = supervise._inflight_note(started, futures, set(futures))
+
+    assert "epic.1 12s 84000 tok" in note
+    assert "epic.2 3s," in note or note.endswith("epic.2 3s")

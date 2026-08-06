@@ -39,6 +39,7 @@ import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import IO
 
 from . import models, run_record
 from .redact import redact_secrets
@@ -110,6 +111,10 @@ COPILOT_SHUTDOWN_EVENT = "session.shutdown"
 # still has a parseable answer.
 CODEX_ITEM_COMPLETED = "item.completed"
 CODEX_AGENT_MESSAGE = "agent_message"
+# The codex `--json` event that carries a turn's token usage. Named because both
+# the batch reader (:func:`_codex_turn_usages`) and the incremental one
+# (:func:`_codex_turn_usage`) key on it, and they must key on the same string.
+CODEX_TURN_COMPLETED = "turn.completed"
 
 # Context-window defaults per adapter (factory design §6, basicly-kjc5.6): the
 # denominator for the context-ceiling meter. Conservative published windows;
@@ -954,6 +959,182 @@ def _drain(proc: subprocess.Popen[str]) -> tuple[str, str]:
         return "", ""
 
 
+# --- Incremental event stream: read the dispatch while it runs (basicly-rupz) --
+
+# Usage formats whose stdout *is* an event stream — JSONL, one object per turn,
+# emitted as the agent works rather than at its end. Only these have anything to
+# observe mid-dispatch: ``claude-json`` emits its one object at the very end and
+# ``copilot-session-store`` measures out of band, so both keep the single-buffer
+# read and a sink handed to them is inert.
+STREAMING_FORMATS = (CLAUDE_STREAM_JSON, CODEX_JSONL)
+
+# How the stream reader decodes. Explicit, and the whole reason this is named
+# rather than left default (basicly-6gkg): on the streaming path the decode
+# happens on *our* reader threads, and a UnicodeDecodeError there kills the
+# thread while the caller sees a clean exit and an empty transcript. The symptom
+# is silence, in the one place it would be hardest to notice — a lane that
+# printed a byte the platform encoding cannot represent would read as a lane
+# that printed nothing. Replacement characters are the fail-safe: the stream
+# keeps being read, and the undecodable run is visible as U+FFFD rather than as
+# an absence.
+STREAM_ERRORS = "replace"
+
+# Ceiling on waiting for a reader thread once the process is down. Its pipes are
+# closed by the exit, so a live reader finishes its last line in microseconds;
+# one somehow still blocked is abandoned rather than waited on, exactly as
+# :func:`_drain` abandons a descendant that still holds the pipe.
+READER_JOIN_S = KILL_GRACE_S
+
+
+@dataclass(frozen=True)
+class StreamEvent:
+    """One line of a streaming dispatch's stdout, observed while it still runs.
+
+    *line* is the redacted text with its newline stripped, *data* the JSON object
+    it parsed to (None for a plain-text line the CLI interleaved), and *usage*
+    the per-turn token usage the event reported, when it carries one.
+    """
+
+    line: str
+    data: dict | None = None
+    usage: Usage | None = None
+
+
+# What a caller supplies to observe a dispatch as it happens. Return value
+# ignored; see :func:`_emit` for why a raising sink is contained.
+EventSink = Callable[[StreamEvent], object]
+
+
+def _streaming(spec: RunnerSpec, *, capture_usage: bool) -> bool:
+    """Whether a dispatch of *spec* emits an event stream a sink can be driven from."""
+    return capture_usage and spec.usage_format in STREAMING_FORMATS
+
+
+def _stream_object(line: str) -> dict | None:
+    """One stream line parsed as a JSON object, or None when it is not one.
+
+    The same tolerance the batch readers have (:func:`_claude_stream_events`): a
+    dispatch interleaves plain-text warnings with its stream and a killed one ends
+    mid-line, so an unparseable line is skipped rather than fatal.
+    """
+    stripped = line.strip()
+    if not stripped.startswith("{"):
+        return None
+    try:
+        obj = json.loads(stripped)
+    except json.JSONDecodeError:
+        return None
+    return obj if isinstance(obj, dict) else None
+
+
+def _emit(spec: RunnerSpec, line: str, on_event: EventSink) -> None:
+    """Redact one stdout line, parse it, and hand the event to *on_event*.
+
+    Redacted *before* parsing, so nothing a sink can reach — neither the raw text
+    nor the decoded object — carries a credential the agent echoed
+    (basicly-3p2i). Two facts make that ordering safe on JSON: the
+    ``<redacted:...>`` placeholder is legal inside a JSON string, and the generic
+    secret-assignment rule cannot match a JSON member at all, because a JSON key
+    is followed by a closing quote where the rule needs its ``:``. A redaction
+    that did break a line would degrade it to a text-only event — which is what an
+    unparseable line already becomes — and never to a wrong total, because every
+    total is parsed from the raw buffer :func:`_read_streaming` keeps.
+
+    Contained: a sink that raises must not take down the reader thread and leave
+    the rest of the dispatch unobserved, the same stance :class:`StallWatchdog`
+    takes on its notifier.
+    """
+    text = redact_secrets(line.rstrip("\n"))
+    data = _stream_object(text)
+    event = StreamEvent(
+        line=text, data=data, usage=event_usage(spec, data) if data is not None else None
+    )
+    with contextlib.suppress(Exception):
+        on_event(event)
+
+
+def _pump(stream: IO[str], on_line: Callable[[str], object]) -> None:
+    """Hand every line of *stream* to *on_line* until EOF, then close it.
+
+    One thread per pipe, which is what ``communicate`` was doing for us and what
+    keeps either pipe from filling while the other is read. A read that fails
+    because the process went down mid-line is the end of the stream, not an error:
+    the caller already has the exit status.
+    """
+    try:
+        for line in iter(stream.readline, ""):
+            on_line(line)
+    except OSError, ValueError:
+        return
+    finally:
+        with contextlib.suppress(OSError, ValueError):
+            stream.close()
+
+
+@dataclass(frozen=True)
+class _Streamed:
+    """What :func:`_read_streaming` collected, shaped like ``communicate`` plus status."""
+
+    stdout: str
+    stderr: str
+    returncode: int | None
+    timed_out: bool
+
+
+def _read_streaming(
+    proc: subprocess.Popen[str],
+    spec: RunnerSpec,
+    stdin: str | None,
+    timeout: float | None,
+    on_event: EventSink,
+) -> _Streamed:
+    """Read *proc* to completion line by line, handing stdout events to *on_event*.
+
+    Replaces ``communicate`` on a streaming dispatch and keeps both of its
+    guarantees. Neither pipe may fill, so stderr gets a reader of its own that
+    does nothing but collect. And the returned buffers must be exactly what
+    ``communicate`` would have returned — so the lines are kept **raw** and
+    joined, with redaction applied to the sink's copy and, by the caller, to the
+    whole transcript. That is what makes this additive: ``extract_usage`` and
+    every total downstream of it read the same bytes they read before.
+
+    Owns its own timeout rather than raising into :func:`run`'s handler: the
+    reader threads hold the pipes, so ``_drain``'s ``communicate`` would find them
+    closed and report nothing — and a killed dispatch's partial transcript is
+    exactly what the salvage commit and the chars/4 floor read.
+    """
+    out_lines: list[str] = []
+    err_lines: list[str] = []
+
+    def observe(line: str) -> None:
+        out_lines.append(line)
+        _emit(spec, line, on_event)
+
+    readers = (
+        threading.Thread(target=_pump, args=(proc.stdout, observe), daemon=True),
+        threading.Thread(target=_pump, args=(proc.stderr, err_lines.append), daemon=True),
+    )
+    for reader in readers:
+        reader.start()
+    if stdin is not None and proc.stdin is not None:
+        # Written from this thread only because the readers above are already
+        # draining — that is the deadlock ``communicate`` exists to avoid. A
+        # child that exited before reading it is not an error here; its status is.
+        with contextlib.suppress(OSError, ValueError):
+            proc.stdin.write(stdin)
+            proc.stdin.close()
+    timed_out = False
+    try:
+        returncode: int | None = proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        returncode = None
+        _kill_tree(proc)
+    for reader in readers:
+        reader.join(READER_JOIN_S)
+    return _Streamed("".join(out_lines), "".join(err_lines), returncode, timed_out)
+
+
 def run(  # noqa: PLR0913 — mirrors the CLI surface
     spec: RunnerSpec,
     prompt: str,
@@ -962,6 +1143,7 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     dry_run: bool = False,
     capture_usage: bool = False,
     timeout: float | None = None,
+    on_event: EventSink | None = None,
 ) -> RunResult:
     """Invoke *spec* on *prompt* in *cwd*, capturing output.
 
@@ -984,6 +1166,20 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     :class:`models.ModelResolutionError` and no agent process starts, so the
     dispatch never silently runs on the wrong model. The tier is read off the
     spec, where the config loader has already applied ``[runner] default_tier``.
+
+    *on_event* observes the dispatch **while it runs** (basicly-rupz). A metered
+    dispatch on a :data:`STREAMING_FORMATS` adapter already asks its CLI for a
+    per-turn event stream; supplying a sink is what stops that stream being paid
+    for and thrown away. The pipes are then read line by line on their own reader
+    threads, each stdout line reaching the sink as a :class:`StreamEvent` — proof
+    of life for a watchdog, and per-turn usage for a spend meter that would
+    otherwise learn what the lane cost only once the run record was written.
+
+    Additive by construction: the buffers this returns are the same ones the
+    single-read path returns, so :func:`extract_usage` and every total downstream
+    of it are unmoved. A sink handed to a non-streaming adapter is inert — an
+    out-of-band format has no stream to assume — and no sink at all keeps the
+    dispatch on ``communicate`` exactly as before.
     """
     # Resolve first, and ahead of the handoff return, so a refusal costs no
     # process and a handoff still records that its tier could not be honoured.
@@ -1023,6 +1219,10 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     env = {**os.environ, **br_attribution_env(spec), **(identity or {})}
     start = time.perf_counter()
     timed_out = False
+    # The sink survives only for a dispatch that has a stream to feed it; for any
+    # other adapter it is dropped here, which is what makes it inert rather than a
+    # promise the format cannot keep.
+    sink = on_event if _streaming(spec, capture_usage=capture_usage) else None
     # Popen, not subprocess.run: run's timeout kills only the direct child, and
     # the dispatch must be started in its own process group to be killable as a
     # tree at all (basicly-kjc5.15). POSIX gets a new session, whose id is the
@@ -1037,13 +1237,24 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        # Only on the streaming path, and only there because that is the path
+        # whose decode happens on a reader thread we own, where the error is
+        # silent (basicly-6gkg, :data:`STREAM_ERRORS`). ``communicate`` below
+        # keeps the default so its behaviour is untouched.
+        errors=STREAM_ERRORS if sink is not None else None,
         env=env,
         start_new_session=os.name != "nt",
         creationflags=CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
     )
     try:
-        stdout, stderr = proc.communicate(input=stdin, timeout=timeout)
-        returncode: int | None = proc.returncode
+        if sink is not None:
+            streamed = _read_streaming(proc, spec, stdin, timeout, sink)
+            stdout, stderr = streamed.stdout, streamed.stderr
+            returncode: int | None = streamed.returncode
+            timed_out = streamed.timed_out
+        else:
+            stdout, stderr = proc.communicate(input=stdin, timeout=timeout)
+            returncode = proc.returncode
     except subprocess.TimeoutExpired:
         timed_out = True
         returncode = None
@@ -1055,7 +1266,11 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
         # its children running against the worktree. Take the tree down here
         # instead, then let the interrupt propagate.
         _kill_tree(proc)
-        _drain(proc)
+        if sink is None:
+            # The reader threads already own the pipes on the streaming path, so
+            # ``_drain``'s ``communicate`` would find them closed and report
+            # nothing; the kill above is the whole of what an interrupt needs.
+            _drain(proc)
         raise
     duration_s = time.perf_counter() - start
     # Redact secrets at the source so no downstream surface (CLI print, loop log)
@@ -1354,6 +1569,59 @@ def _claude_last_turn_usage(stdout: str) -> dict | None:
     return None
 
 
+def event_usage(spec: RunnerSpec, event: dict) -> Usage | None:
+    """The per-turn usage *event* reports, or None when it carries none.
+
+    The incremental half of :func:`extract_usage` (basicly-rupz): what one turn
+    cost, read off the event as it arrives rather than off the terminal result
+    object at the end. Summing these across a dispatch converges on the very total
+    :func:`extract_usage` reports — claude's result event re-counts
+    ``cache_read_input_tokens`` per turn exactly as the per-turn blocks do, and
+    codex's total *is* the sum over ``turn.completed`` — so a live meter built on
+    them is denominated in the same quantity as the grant it spends against, which
+    is the whole point of metering mid-dispatch at all.
+
+    Converges on, never replaces. The terminal object stays the one thing that
+    reaches the run record, so nothing here can move a recorded total.
+    """
+    if spec.usage_format == CLAUDE_STREAM_JSON:
+        return _claude_turn_usage(event)
+    if spec.usage_format == CODEX_JSONL:
+        return _codex_turn_usage(event)
+    return None
+
+
+def _claude_turn_usage(event: dict) -> Usage | None:
+    """One claude ``assistant`` event's usage block, summed the way the total is.
+
+    No cost: ``total_cost_usd`` lives only on the terminating result event, so a
+    per-turn cost would have to be invented and this reports None instead.
+    """
+    if event.get("type") != "assistant":
+        return None
+    message = event.get("message")
+    if not isinstance(message, dict) or not isinstance(message.get("usage"), dict):
+        return None
+    usage = message["usage"]
+    values = [usage[key] for key in _CLAUDE_TOKEN_KEYS if isinstance(usage.get(key), int)]
+    if not values:
+        return None
+    return Usage(tokens=sum(values), cost=None, estimated=False)
+
+
+def _codex_turn_usage(event: dict) -> Usage | None:
+    """One codex ``turn.completed`` event's usage, split exactly as the total is."""
+    if event.get("type") != CODEX_TURN_COMPLETED:
+        return None
+    usage = event.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    values = [usage[key] for key in _CODEX_TOKEN_KEYS if isinstance(usage.get(key), int)]
+    if not values:
+        return None
+    return Usage(tokens=sum(values), cost=None, estimated=False, **_codex_usage_split([usage]))
+
+
 def _codex_jsonl_usage(stdout: str) -> Usage | None:
     """Sum token usage over codex's ``--json`` event stream (JSONL).
 
@@ -1447,7 +1715,7 @@ def _codex_turn_usages(stdout: str) -> list[dict]:
             event = json.loads(stripped)
         except json.JSONDecodeError:
             continue
-        if not isinstance(event, dict) or event.get("type") != "turn.completed":
+        if not isinstance(event, dict) or event.get("type") != CODEX_TURN_COMPLETED:
             continue
         usage = event.get("usage")
         if isinstance(usage, dict):
@@ -2050,10 +2318,10 @@ class StallWatchdog:
     lane is still holding a concurrency slot.
 
     Activity is whatever *probe* returns: any change in that fingerprint counts as
-    progress and restarts the clock. The supervisor fingerprints the lane's commits
-    and worktree dirtiness, which is the real progress signal for a lane — it has
-    to commit its work — and is far cheaper to sample than the agent's stdout,
-    which the runner does not read incrementally.
+    progress and restarts the clock. The supervisor fingerprints the lane's event
+    stream *and* its commits and worktree dirtiness, so the lane is quiet only when
+    both are — either alone has a blind spot, and an event is proof of life whether
+    or not any file changed (basicly-rupz, :class:`basicly.supervise.LaneStream`).
 
     *on_stall* fires **once** per dispatch: the point is one queue item per wedged
     lane, not one per poll.
