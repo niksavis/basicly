@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.7.0 - 2026-08-06
+
+Delta: v0.6.0..v0.7.0
+
 ### Added
 
 - **`basicly loop preflight <root>` answers the whole pre-run checklist as a command.**
