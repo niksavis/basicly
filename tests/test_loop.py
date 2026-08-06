@@ -1222,7 +1222,7 @@ def test_a_killed_dispatch_commits_its_worktree_and_points_at_the_next_advance(
 
     assert salvaged == [(tmp_path / "wt", "i", "runner_timeout after 1800s")]
     assert held is not None and held.action == "blocked"
-    assert "hit runner_timeout (1800s)" in held.detail
+    assert "stopped on runner_timeout after 1800s" in held.detail
     assert "the worktree was committed as abc1234; advance again to judge it" in held.detail
 
 

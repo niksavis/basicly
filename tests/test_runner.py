@@ -3197,3 +3197,250 @@ def test_streaming_sends_a_stdin_prompt_without_deadlocking(tmp_path: Path) -> N
 
     assert result.timed_out is False
     assert runner.result_text(spec, result.stdout) == str(len(prompt))
+
+
+# --- Terminal bounds: what stops a dispatch ahead of the wall clock (lpsf) ----
+#
+# The wall clock was the working bound and was calibrated *inside* the upper tail
+# of real work — the longest successful lane measured 1712s against an 1800s cap,
+# 95.1% of it. These pin the two bounds that replace it, and the property that
+# makes replacing it safe: a lane that is emitting events and inside its budget
+# now outlives the bound that used to kill it.
+#
+# Every one of them uses a generous `timeout` as a **failure ceiling**, never as
+# the thing asserted. If a bound fails to fire, the run reaches that ceiling and
+# comes back with `stopped is None` — so the regression is a wrong attribution,
+# not a hung suite.
+
+
+def _spending_child(sleep_s: float = 60.0) -> str:
+    """A child that reports one turn of usage and then works silently for *sleep_s*."""
+    return (
+        "turn = {'type':'assistant','message':"
+        "{'usage':{'input_tokens':7,'output_tokens':3}}}\n"
+        "sys.stdout.write(json.dumps(turn) + '\\n'); sys.stdout.flush()\n"
+        f"time.sleep({sleep_s})\n"
+    )
+
+
+def test_a_dispatch_is_stopped_on_the_spend_bound_not_on_its_wall_clock(tmp_path: Path) -> None:
+    """AC: spend reaching the grant ceiling mid-run stops the dispatch, not the clock.
+
+    The child reports a turn and then works for a minute, so the *only* two things
+    that can end it are the spend bound and the 60s ceiling. Attribution is the
+    assertion: a wall-clock kill reports `stopped is None`, so a bound that never
+    fired cannot pass this by killing the run some other way.
+
+    The predicate reads the same quantity the supervisor's does — tokens the stream
+    has reported — because that is what makes it event-driven rather than timed: it
+    can only flip after a usage event lands.
+    """
+    seen: list[runner.StreamEvent] = []
+
+    def stop_when() -> runner.StopReason | None:
+        # Snapshotted: `seen` is appended from the runner's reader thread while
+        # this runs on the one waiting on the process.
+        spent = sum(event.usage.tokens for event in tuple(seen) if event.usage is not None)
+        if spent < 10:
+            return None
+        return runner.StopReason(runner.SPEND_BOUND, f"{spent} tokens against 10 remaining")
+
+    result = runner.run(
+        _streaming_spec(_spending_child()),
+        "go",
+        tmp_path,
+        capture_usage=True,
+        on_event=seen.append,
+        timeout=60.0,
+        bounds=runner.DispatchBounds(stop_when=stop_when),
+    )
+
+    assert result.stopped == runner.StopReason(runner.SPEND_BOUND, "10 tokens against 10 remaining")
+    # A bound stop *is* a hard kill: same tree kill, same absent returncode, so every
+    # routing path that keys on `timed_out` treats it as one.
+    assert result.timed_out is True
+    assert result.returncode is None
+    # And the transcript the kill stranded still comes back — it is what the salvage
+    # commit and the chars/4 floor read.
+    assert '"input_tokens": 7' in result.stdout
+
+
+def test_a_dispatch_with_a_silent_stream_is_stopped_on_the_quiet_bound(tmp_path: Path) -> None:
+    """AC: no events for the configured quiet bound stops the dispatch as wedged.
+
+    A process that is up, holding its pipe, and saying nothing — which is precisely
+    the case `lane_activity`'s git probe cannot distinguish from a lane thinking, and
+    the case an event stream can: an event is proof of life whether or not a file
+    changed, so the *absence* of one for long enough is the wedge.
+    """
+    result = runner.run(
+        _streaming_spec("time.sleep(60)\n"),
+        "go",
+        tmp_path,
+        capture_usage=True,
+        on_event=lambda _e: None,
+        timeout=60.0,
+        bounds=runner.DispatchBounds(quiet_after=0.3),
+    )
+
+    assert result.stopped is not None
+    assert result.stopped.bound == runner.QUIET_BOUND
+    assert "no stream events for 0.3s" in result.stopped.detail
+    assert result.timed_out is True
+
+
+def test_a_lane_emitting_events_inside_its_budget_outlives_the_bound(tmp_path: Path) -> None:
+    """AC: an emitting, in-budget lane runs past the bound that would have killed it.
+
+    The point of the whole bead, at a scale a test can run: this dispatch takes ~1s
+    against a 0.3s quiet bound and finishes clean. It survives only because each
+    event restarts the quiet window — a bound measured from the dispatch's *start*,
+    which is what a wall clock is, would have killed it three times over.
+
+    Deliberately generous on the margin (10 events, ~0.1s apart, against a 0.3s
+    window) so a loaded machine slows the run without failing it: what is asserted is
+    that the run reached its own exit, never how long it took to.
+    """
+    body = (
+        "turn = {'type':'assistant','message':{'usage':{'input_tokens':1,'output_tokens':0}}}\n"
+        "for _ in range(10):\n"
+        "    sys.stdout.write(json.dumps(turn) + '\\n'); sys.stdout.flush()\n"
+        "    time.sleep(0.1)\n"
+        "res = {'type':'result','result':'ok','usage':{'input_tokens':1,'output_tokens':0}}\n"
+        "sys.stdout.write(json.dumps(res) + '\\n')\n"
+    )
+    seen: list[runner.StreamEvent] = []
+
+    result = runner.run(
+        _streaming_spec(body),
+        "go",
+        tmp_path,
+        capture_usage=True,
+        on_event=seen.append,
+        timeout=60.0,
+        bounds=runner.DispatchBounds(quiet_after=0.3, stop_when=lambda: None),
+    )
+
+    assert result.returncode == 0
+    assert result.stopped is None
+    assert result.timed_out is False
+    assert len(seen) == 11
+
+
+def test_a_bound_whose_predicate_raises_leaves_the_dispatch_to_the_backstop(
+    tmp_path: Path,
+) -> None:
+    """A `stop_when` that fails is not a kill — the wall clock is still underneath.
+
+    `SpendBound` reads a tracker and a run-record file, and a transient failure there
+    must never become a terminal verdict on a working lane. Contained rather than
+    propagated for the same reason the stall notifier is: the predicate only observes.
+    """
+
+    def angry() -> runner.StopReason | None:
+        raise RuntimeError("the ledger was locked")
+
+    result = runner.run(
+        _streaming_spec("time.sleep(0.05)\n"),
+        "go",
+        tmp_path,
+        capture_usage=True,
+        on_event=lambda _e: None,
+        timeout=60.0,
+        bounds=runner.DispatchBounds(stop_when=angry),
+    )
+
+    assert result.returncode == 0
+    assert result.stopped is None
+
+
+def test_the_wall_clock_stays_terminal_underneath_both_bounds(tmp_path: Path) -> None:
+    """Demoted, never removed: a stream that stops while the process does not exit.
+
+    The pathological case neither new bound can see — here the child holds the pipe
+    open and emits nothing, with the quiet bound switched off. Something must still
+    end it, and `stopped is None` is what says the backstop was what did.
+    """
+    result = runner.run(
+        _streaming_spec("time.sleep(60)\n"),
+        "go",
+        tmp_path,
+        capture_usage=True,
+        on_event=lambda _e: None,
+        timeout=0.3,
+        bounds=runner.DispatchBounds(stop_when=lambda: None),
+    )
+
+    assert result.timed_out is True
+    assert result.stopped is None
+    assert runner.stop_label(result, 0.3) == "runner_timeout after 0s"
+
+
+def test_stop_label_names_the_bound_every_surface_reports_it_by() -> None:
+    """One spelling for the queue item, the salvage commit and the routed outcome."""
+    killed = runner.RunResult("claude", (), executed=True, timed_out=True)
+    assert runner.stop_label(killed, 3600.0) == "runner_timeout after 3600s"
+
+    bounded = replace(killed, stopped=runner.StopReason(runner.SPEND_BOUND, "0 left"))
+    assert runner.stop_label(bounded, 3600.0) == "spend bound: 0 left"
+
+
+def test_an_unbounded_dispatch_still_takes_its_wall_clock_in_one_wait(tmp_path: Path) -> None:
+    """Bounds are additive: with none armed, the read is the single wait it always was.
+
+    The regression this guards is the slicing loop leaking into the unbounded path and
+    turning one `proc.wait(timeout)` into a poll — same outcome, but paid for on every
+    dispatch that asked for nothing.
+    """
+    inert = runner.DispatchBounds()
+    assert inert.armed is False
+
+    result = runner.run(
+        _streaming_spec("time.sleep(60)\n"),
+        "go",
+        tmp_path,
+        capture_usage=True,
+        on_event=lambda _e: None,
+        timeout=0.3,
+        bounds=inert,
+    )
+
+    assert result.timed_out is True
+    assert result.stopped is None
+
+
+def test_the_bound_interval_samples_several_times_per_quiet_window() -> None:
+    """A bound checked once per window lands up to a whole window late."""
+    assert runner.DispatchBounds().interval() == runner.STOP_POLL_S
+    # Capped at the poll ceiling, so a 30-minute window is not sampled every 7 minutes.
+    assert runner.DispatchBounds(quiet_after=1800.0).interval() == runner.STOP_POLL_S
+    # And scaled down under it, so a tight window is still sampled inside itself.
+    assert runner.DispatchBounds(quiet_after=0.4).interval() == 0.1
+
+
+def test_the_quiet_bound_default_leaves_room_for_the_longest_real_tool_call(
+    tmp_path: Path,
+) -> None:
+    """The ordering the three bounds are only coherent in (basicly-lpsf).
+
+    An agent emits nothing while a single tool call runs, so the quiet bound has to
+    clear the longest legitimate one — this repo's own test suite, measured at 76s —
+    or it kills working lanes exactly as the wall clock did. And it has to sit above
+    `stall_after`, so the human-facing flag always arrives before anything terminal,
+    and below `runner_timeout`, which is what makes the wall clock the backstop
+    rather than the working bound.
+    """
+    engine = load_runner_config(tmp_path)  # no basicly.toml: the shipped defaults
+    assert engine.stall_after < engine.quiet_after < engine.runner_timeout
+    # 76s is the measured figure (`uv run pytest -q`, 2026-08-06); the margin is what
+    # keeps a slower machine's gate run from reading as a wedge.
+    assert engine.quiet_after >= 10 * 76
+
+    # And this repo declares the same ordering, which is the falsifier for the
+    # demotion itself: a `runner_timeout` back inside the work distribution would
+    # make the wall clock the working bound again however the engine is configured.
+    declared = load_runner_config(REPO_ROOT)
+    assert declared.stall_after < declared.quiet_after < declared.runner_timeout
+    # 1712s is the longest *successful* lane on this repo's ledger. A backstop at or
+    # below it is a backstop that fires in normal operation.
+    assert declared.runner_timeout > 1712

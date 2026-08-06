@@ -319,10 +319,16 @@ class RunResult:
     # Wall-clock seconds around the subprocess; None when nothing executed
     # (a handoff or a dry run). Feeds the loop's run-record (basicly-z6dh).
     duration_s: float | None = None
-    # The dispatch hit [runner] runner_timeout and was hard-killed
+    # A terminal bound stopped the dispatch and its process tree was hard-killed
     # (basicly-kjc5.7, design section 6): the supervisor routes this to the
-    # decision queue as a stall flag. returncode is None on a timeout.
+    # decision queue as a stall flag. returncode is None whenever it is set.
     timed_out: bool = False
+    # *Which* bound ended it, when the wall clock was not the one that did
+    # (basicly-lpsf). None on a clean run, and None on a `runner_timeout` kill —
+    # so every existing reader of `timed_out` keeps its meaning and only the
+    # message a routed outcome carries has to tell the bounds apart. Read it
+    # through :func:`stop_label`.
+    stopped: StopReason | None = None
     # The session id this dispatch supplied on its argv, when its usage format
     # measures out of band (basicly-2rn9). It is the key
     # :func:`extract_usage` reads the agent's own usage store by, so it has to
@@ -1005,6 +1011,115 @@ class StreamEvent:
 EventSink = Callable[[StreamEvent], object]
 
 
+# --- Terminal bounds: what stops a dispatch before its own exit (basicly-lpsf) -
+
+# The bound names a stopped dispatch is attributed to. Constants rather than
+# literals because a routed outcome, a salvage commit message and a queue item
+# all name the same one, and three spellings of "spend" would silently become
+# three different bounds to a reader of the ledger.
+SPEND_BOUND = "spend"
+QUIET_BOUND = "quiet"
+
+# Default seconds of a *silent* stream before a dispatch is stopped as wedged.
+# Deliberately far above any single tool call a working lane makes: an agent
+# emits nothing while one runs, so this bound must clear the longest legitimate
+# one or it kills working lanes exactly as the wall clock did (basicly-yvx9).
+# The longest such call this repo makes is its own test suite, measured at 76s
+# (`uv run pytest -q`, 2552 passed, 2026-08-06), and this default sits 23x above
+# it. It is deliberately *above* `DEFAULT_STALL_AFTER` (900s) too, so the
+# human-facing flag always arrives first and a wedge can be intervened in before
+# anything terminal happens to it.
+#
+# Uncalibrated, and it says so: no inter-event gap has ever been measured here,
+# because until basicly-rupz the stream every metered lane emits was discarded
+# unread. This is the first release that records one, so the figure to replace
+# this with is the one the next passes produce.
+DEFAULT_QUIET_AFTER = 1800.0
+
+# Ceiling on how long a waiting dispatch goes between bound checks. Small enough
+# that a bound lands promptly and large enough to be free next to the dispatch it
+# watches — a `stop_when` that walks a ledger is the caller's cost to bound, which
+# is why `supervise.SpendBound` snapshots rather than re-reads.
+STOP_POLL_S = 0.5
+
+
+@dataclass(frozen=True)
+class StopReason:
+    """Why a dispatch was stopped short of running to its own exit.
+
+    *bound* is one of the module's ``*_BOUND`` names and *detail* is what a human
+    reads on the queue item: the numbers the bound compared, never a restatement
+    of its name.
+    """
+
+    bound: str
+    detail: str
+
+
+# Consulted while a streaming dispatch runs; a reason stops it, None lets it run.
+StopCheck = Callable[[], "StopReason | None"]
+
+
+@dataclass(frozen=True)
+class DispatchBounds:
+    """The terminal bounds a streaming dispatch is stopped on, ahead of the wall clock.
+
+    The wall clock was the working bound and is now the backstop (basicly-lpsf).
+    It had to be, because it was the only terminal signal there was — and it is
+    the one signal that carries no information about whether work is happening,
+    so it was calibrated inside the upper tail of real work: the longest
+    *successful* lane measured 1712s against an 1800s cap, 95.1% of it. These are
+    the bounds that do carry that information, and both are reachable only
+    because the dispatch's event stream is now read as it arrives.
+
+    * *quiet_after* — seconds of a silent stream before the dispatch is stopped
+      as wedged. An event is proof of life whether or not any file changed, which
+      is what the git-state probe behind :class:`StallWatchdog` could never say.
+    * *stop_when* — an arbitrary predicate, re-read every :meth:`interval` while
+      the dispatch runs. What the supervisor puts here is the D3 spend ceiling:
+      tokens accrue monotonically and are the resource that actually matters, so
+      a spend bound is strictly better than any clock. Its input only ever moves
+      when a usage event lands, so the bound is reached within one interval of
+      the event that reached it — the predicate is polled, the *quantity* it
+      reads is event-driven.
+
+    Both are optional and a bounds object with neither set is inert, which leaves
+    the dispatch on the wall clock alone exactly as before.
+    """
+
+    quiet_after: float | None = None
+    stop_when: StopCheck | None = None
+
+    @property
+    def armed(self) -> bool:
+        """Whether anything here can stop a dispatch."""
+        return self.quiet_after is not None or self.stop_when is not None
+
+    def interval(self) -> float:
+        """How long to wait between bound checks.
+
+        Several samples per quiet window, for the reason :class:`StallWatchdog`
+        samples that way: a bound checked once per window lands up to a whole
+        window late. :data:`STOP_POLL_S` is the ceiling, so a bound with no quiet
+        window still lands within half a second of the event that reached it.
+        """
+        if self.quiet_after is None:
+            return STOP_POLL_S
+        return max(0.01, min(STOP_POLL_S, self.quiet_after / 4))
+
+
+def stop_label(result: RunResult, timeout: float) -> str:
+    """How a killed dispatch's terminal bound reads on a queue item or salvage commit.
+
+    One spelling for every surface that reports a kill — the routed outcome, the
+    stall item, the salvage commit trailer — so a bound cannot be described one
+    way in the tracker and another in git history.
+    """
+    if result.stopped is not None:
+        return f"{result.stopped.bound} bound: {result.stopped.detail}"
+    return f"runner_timeout after {timeout:.0f}s"
+
+
 def _streaming(spec: RunnerSpec, *, capture_usage: bool) -> bool:
     """Whether a dispatch of *spec* emits an event stream a sink can be driven from."""
     return capture_usage and spec.usage_format in STREAMING_FORMATS
@@ -1079,14 +1194,60 @@ class _Streamed:
     stderr: str
     returncode: int | None
     timed_out: bool
+    stopped: StopReason | None = None
 
 
-def _read_streaming(
+class _Liveness:
+    """When this dispatch last emitted, for the quiet bound to measure against.
+
+    Stamped on the runner's stdout reader thread and read from the thread waiting
+    on the process, so both ends take the lock. Monotonic, for the reason
+    :class:`StallWatchdog` measures idle time that way: a wall-clock reading can
+    step backwards and would hand the wedged lane a fresh window.
+    """
+
+    def __init__(self) -> None:
+        """Start the quiet window at the moment the dispatch was handed over."""
+        self._lock = threading.Lock()
+        self._at = time.monotonic()
+
+    def stamp(self) -> None:
+        """Record an event having just arrived."""
+        with self._lock:
+            self._at = time.monotonic()
+
+    def quiet_for(self) -> float:
+        """Seconds since the last event, or since the dispatch started."""
+        with self._lock:
+            return time.monotonic() - self._at
+
+
+def _bound_reached(bounds: DispatchBounds, liveness: _Liveness) -> StopReason | None:
+    """Which of *bounds* this dispatch has reached, or None while it is inside them.
+
+    Quiet first, because a wedged dispatch reports no usage and would otherwise be
+    attributed to whichever bound happened to be checked first. A *stop_when* that
+    raises is treated as "no reason": the predicate reads a tracker and a run-record
+    file, and a transient failure there must not become a kill — the wall-clock
+    backstop is still underneath, which is the whole point of keeping it.
+    """
+    if bounds.quiet_after is not None and liveness.quiet_for() >= bounds.quiet_after:
+        return StopReason(QUIET_BOUND, f"no stream events for {bounds.quiet_after:g}s")
+    if bounds.stop_when is None:
+        return None
+    try:
+        return bounds.stop_when()
+    except OSError, RuntimeError, ValueError:
+        return None
+
+
+def _read_streaming(  # noqa: PLR0913 — one parameter per independent read input
     proc: subprocess.Popen[str],
     spec: RunnerSpec,
     stdin: str | None,
     timeout: float | None,
     on_event: EventSink,
+    bounds: DispatchBounds | None = None,
 ) -> _Streamed:
     """Read *proc* to completion line by line, handing stdout events to *on_event*.
 
@@ -1102,12 +1263,19 @@ def _read_streaming(
     reader threads hold the pipes, so ``_drain``'s ``communicate`` would find them
     closed and report nothing — and a killed dispatch's partial transcript is
     exactly what the salvage commit and the chars/4 floor read.
+
+    *bounds* are the terminal bounds ahead of that wall clock (basicly-lpsf).
+    Reaching one kills the tree the same way a timeout does and returns the same
+    partial transcript — the run is stopped either way, and the only difference is
+    which bound the outcome is attributed to.
     """
     out_lines: list[str] = []
     err_lines: list[str] = []
+    liveness = _Liveness()
 
     def observe(line: str) -> None:
         out_lines.append(line)
+        liveness.stamp()
         _emit(spec, line, on_event)
 
     readers = (
@@ -1123,16 +1291,61 @@ def _read_streaming(
         with contextlib.suppress(OSError, ValueError):
             proc.stdin.write(stdin)
             proc.stdin.close()
-    timed_out = False
-    try:
-        returncode: int | None = proc.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        timed_out = True
-        returncode = None
-        _kill_tree(proc)
+    outcome = _wait_bounded(proc, timeout, bounds, liveness)
     for reader in readers:
         reader.join(READER_JOIN_S)
-    return _Streamed("".join(out_lines), "".join(err_lines), returncode, timed_out)
+    return replace(outcome, stdout="".join(out_lines), stderr="".join(err_lines))
+
+
+def _wait_bounded(
+    proc: subprocess.Popen[str],
+    timeout: float | None,
+    bounds: DispatchBounds | None,
+    liveness: _Liveness,
+) -> _Streamed:
+    """Wait for *proc*, killing it on whichever bound it reaches first.
+
+    Unbounded, this is one ``proc.wait(timeout)`` and behaves exactly as it did.
+    Bounded, the same wait is taken in :meth:`DispatchBounds.interval` slices so
+    the bounds can be re-checked between them — the process is still *waited* on,
+    never polled for liveness, so a dispatch that exits inside a slice is
+    collected immediately rather than at the end of it.
+
+    The remaining wall clock is recomputed against a monotonic start on every
+    pass instead of being decremented by the nominal slice, for the reason
+    :class:`StallWatchdog` measures its window that way: a slice and a bound check
+    can both overrun on a loaded machine, and summing the nominal figure would
+    push the backstop out by however loaded the box is.
+    """
+    started = time.monotonic()
+    while True:
+        remaining = None if timeout is None else timeout - (time.monotonic() - started)
+        if remaining is not None and remaining <= 0:
+            _kill_tree(proc)
+            return _Streamed("", "", None, timed_out=True)
+        if bounds is None or not bounds.armed:
+            slice_s = remaining
+        elif remaining is None:
+            slice_s = bounds.interval()
+        else:
+            slice_s = min(bounds.interval(), remaining)
+        try:
+            return _Streamed("", "", proc.wait(timeout=slice_s), timed_out=False)
+        except subprocess.TimeoutExpired:
+            pass
+        if bounds is None or not bounds.armed:
+            # The slice *was* the whole remaining wall clock, so the next pass
+            # takes the timeout branch above; no bound can be reached here.
+            continue
+        reason = _bound_reached(bounds, liveness)
+        if reason is not None:
+            _kill_tree(proc)
+            # `timed_out` as well as `stopped`: the dispatch was hard-killed with
+            # its tree, which is the fact every existing routing path keys on, and
+            # `stopped` is what tells the surfaces that report it which bound did
+            # it. A stopped run that claimed a clean exit would land as a green
+            # lane carrying half a change.
+            return _Streamed("", "", None, timed_out=True, stopped=reason)
 
 
 def run(  # noqa: PLR0913 — mirrors the CLI surface
@@ -1144,6 +1357,7 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     capture_usage: bool = False,
     timeout: float | None = None,
     on_event: EventSink | None = None,
+    bounds: DispatchBounds | None = None,
 ) -> RunResult:
     """Invoke *spec* on *prompt* in *cwd*, capturing output.
 
@@ -1154,6 +1368,7 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     :func:`extract_usage`. *timeout* hard-kills the dispatch after that many
     seconds (basicly-kjc5.7): the result comes back ``timed_out`` with whatever
     output was captured, so the caller can route the stall instead of hanging.
+    It is the **backstop**, not the working bound (basicly-lpsf) — see *bounds*.
     The kill takes the dispatch's **whole process tree** with it — see
     :func:`_kill_tree`; an agent CLI's children must not outlive the stall that
     was queued for it (basicly-kjc5.15). Rescuing the buffered output is only half
@@ -1180,6 +1395,16 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     of it are unmoved. A sink handed to a non-streaming adapter is inert — an
     out-of-band format has no stream to assume — and no sink at all keeps the
     dispatch on ``communicate`` exactly as before.
+
+    *bounds* are the terminal bounds that stop the dispatch ahead of *timeout*
+    (:class:`DispatchBounds`, basicly-lpsf) — a silent stream, and whatever the
+    caller's own predicate decides, which for a lane is the D3 spend ceiling.
+    They ride the same reader the sink does, so they need one: bounds supplied
+    without a sink, or to an adapter with no stream, leave the dispatch on the
+    wall clock alone. Reaching one is reported as ``timed_out`` with
+    :attr:`RunResult.stopped` naming the bound, because a bound stop *is* a hard
+    kill — same tree kill, same partial transcript, same salvage — and only the
+    attribution differs.
     """
     # Resolve first, and ahead of the handoff return, so a refusal costs no
     # process and a handoff still records that its tier could not be honoured.
@@ -1219,6 +1444,7 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     env = {**os.environ, **br_attribution_env(spec), **(identity or {})}
     start = time.perf_counter()
     timed_out = False
+    stopped: StopReason | None = None
     # The sink survives only for a dispatch that has a stream to feed it; for any
     # other adapter it is dropped here, which is what makes it inert rather than a
     # promise the format cannot keep.
@@ -1248,10 +1474,11 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     )
     try:
         if sink is not None:
-            streamed = _read_streaming(proc, spec, stdin, timeout, sink)
+            streamed = _read_streaming(proc, spec, stdin, timeout, sink, bounds)
             stdout, stderr = streamed.stdout, streamed.stderr
             returncode: int | None = streamed.returncode
             timed_out = streamed.timed_out
+            stopped = streamed.stopped
         else:
             stdout, stderr = proc.communicate(input=stdin, timeout=timeout)
             returncode = proc.returncode
@@ -1286,6 +1513,7 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
         stderr=redact_secrets(stderr),
         duration_s=duration_s,
         timed_out=timed_out,
+        stopped=stopped,
         session_id=session_id,
         model_resolution=carried,
     )
@@ -2040,6 +2268,7 @@ def record_dispatch(  # noqa: PLR0913 — one parameter per recorded dispatch in
     *,
     prompt: str | None = None,
     phase: str | None = None,
+    stopped_bound: str | None = None,
     scope_tokens: int | None = None,
     forecast_tokens: int | None = None,
     forecast_spend_tokens: int | None = None,
@@ -2117,6 +2346,11 @@ def record_dispatch(  # noqa: PLR0913 — one parameter per recorded dispatch in
         adapter_version=adapter_version(spec),
         prompt_sha256=digest,
         phase=phase,
+        # Passed in rather than read off `result` here, so the ledger records the
+        # bound the *dispatch site* acted on. The two can only agree, and a record
+        # that derived it independently would be a second opinion about a fact the
+        # routing has already used (basicly-lpsf).
+        stopped_bound=stopped_bound,
         scope_tokens=scope_tokens,
         forecast_tokens=forecast_tokens,
         # The forecast in the unit this record's `tokens` is metered in — whole-lane
@@ -2312,10 +2546,12 @@ def reset_process_budget() -> None:
 class StallWatchdog:
     """Flag a dispatch that shows no activity for *after* seconds (design section 6).
 
-    A *flag*, not a kill. ``runner_timeout`` stays the only terminal action, so a
-    slow-but-working run is never cut short — this exists so a human learns about
-    a wedge in minutes instead of at the hard kill an hour later, while the wedged
-    lane is still holding a concurrency slot.
+    A *flag*, not a kill — and deliberately the earliest of the three bounds, so a
+    human learns about a wedge while it is still theirs to intervene in rather than
+    after something terminal has already happened to it. The terminal ones are
+    :class:`DispatchBounds` and, underneath them, ``runner_timeout``
+    (basicly-lpsf); ``stall_after`` sits below ``quiet_after`` for exactly that
+    reason. A slow-but-working run is never cut short here.
 
     Activity is whatever *probe* returns: any change in that fingerprint counts as
     progress and restarts the clock. The supervisor fingerprints the lane's event

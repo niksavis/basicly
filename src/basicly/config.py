@@ -16,6 +16,7 @@ from .runner import (
     DECLARED_WINDOW,
     DEFAULT_CONTEXT_WINDOW,
     DEFAULT_MAX_AGENT_PROCESSES,
+    DEFAULT_QUIET_AFTER,
     DEFAULT_STALL_AFTER,
     DENY_STYLES,
     FALLBACK_WINDOW,
@@ -706,6 +707,7 @@ CONFIG_SCHEMA: dict[str, _Table] = {
             "runner_timeout",
             "max_agent_processes",
             "stall_after",
+            "quiet_after",
             "default_tier",
             "copilot_session_store",
         }),
@@ -1396,8 +1398,14 @@ class RunnerConfig:
     # Runner used for decider invocations (design 7.1); None falls back to the
     # session default.
     decider: str | None = None
-    # Hard kill per dispatch, in seconds (design section 6, basicly-kjc5.7); a
-    # timed-out lane routes to the decision queue as a stall flag.
+    # Backstop hard kill per dispatch, in seconds (design section 6,
+    # basicly-kjc5.7); a killed lane routes to the decision queue as a stall flag.
+    # No longer the working bound (basicly-lpsf): `quiet_after` below and the
+    # spend ceiling bind first, and this is what is left for the pathological case
+    # neither can see — a process that hangs holding the pipe, or a stream that
+    # stops while the process does not exit. Set it where it never fires in normal
+    # operation; calibrating it against the work distribution is what made it kill
+    # working lanes.
     runner_timeout: float = 3600.0
     # Ceiling on concurrently live agent processes across every class the engine
     # spawns (design section 6, component 8). One global number rather than
@@ -1405,10 +1413,16 @@ class RunnerConfig:
     # concurrency (one average helper per lane) and the bound is API/RAM, not CPU.
     max_agent_processes: int = DEFAULT_MAX_AGENT_PROCESSES
     # Seconds of no activity before a dispatch is *flagged* possibly-stuck to the
-    # decision queue (design section 6). A flag, not a kill: `runner_timeout`
-    # stays the only terminal action, so a slow-but-working run is never killed
-    # early — the human just learns about a wedge in minutes instead of an hour.
+    # decision queue (design section 6). A flag, not a kill, and the earliest of
+    # the three bounds on purpose: a human sees the wedge while intervening is
+    # still their call, before `quiet_after` makes it terminal.
     stall_after: float = DEFAULT_STALL_AFTER
+    # Seconds of a *silent event stream* before a dispatch is killed as wedged
+    # (basicly-lpsf). Terminal, where `stall_after` only flags — and reachable at
+    # all only because the dispatch's own stream is now read as it arrives
+    # (basicly-rupz): an event is proof of life whether or not a file changed,
+    # which is the question the git-state probe behind `stall_after` cannot answer.
+    quiet_after: float = DEFAULT_QUIET_AFTER
     # Family fallback model tier (basicly-kjc5.59), used for an agent that
     # declares none. None means no tier is implied at all, which leaves the
     # dispatch unpinned exactly as before — a default tier here would silently
@@ -1470,6 +1484,7 @@ def load_runner_config(repo_root: Path) -> RunnerConfig:
             section.get("max_agent_processes"), DEFAULT_MAX_AGENT_PROCESSES
         ),
         stall_after=_positive_float(section.get("stall_after"), DEFAULT_STALL_AFTER),
+        quiet_after=_positive_float(section.get("quiet_after"), DEFAULT_QUIET_AFTER),
         default_tier=default_tier,
     )
 

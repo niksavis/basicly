@@ -15,6 +15,7 @@ from basicly.config import (
     CONFIG_SCHEMA,
     DEFAULT_CONFIG_TOML,
     DEFAULT_MAX_AGENT_PROCESSES,
+    DEFAULT_QUIET_AFTER,
     DEFAULT_STALL_AFTER,
     DEFAULT_WORKING_SET_MAX,
     DEFAULT_WORKING_SET_MIN,
@@ -1163,6 +1164,25 @@ def test_runner_config_stall_after(tmp_path: Path) -> None:
     assert load_runner_config(tmp_path).stall_after == DEFAULT_STALL_AFTER
     (tmp_path / CONFIG_FILE).write_text("[runner]\nstall_after = true\n", encoding="utf-8")
     assert load_runner_config(tmp_path).stall_after == DEFAULT_STALL_AFTER
+
+
+def test_runner_config_quiet_after(tmp_path: Path) -> None:
+    """quiet_after defaults to 1800s; positive overrides land, junk falls back.
+
+    The terminal bound that replaced the wall clock as a lane's working bound
+    (basicly-lpsf). Junk falling back to the default rather than to *no bound* is the
+    part that matters: an unparseable value must never leave a dispatch with only the
+    backstop, which is the state this bead exists to end.
+    """
+    assert load_runner_config(tmp_path).quiet_after == DEFAULT_QUIET_AFTER
+    (tmp_path / CONFIG_FILE).write_text("[runner]\nquiet_after = 2400\n", encoding="utf-8")
+    assert load_runner_config(tmp_path).quiet_after == 2400.0
+    (tmp_path / CONFIG_FILE).write_text("[runner]\nquiet_after = 0.5\n", encoding="utf-8")
+    assert load_runner_config(tmp_path).quiet_after == 0.5
+    (tmp_path / CONFIG_FILE).write_text("[runner]\nquiet_after = -1\n", encoding="utf-8")
+    assert load_runner_config(tmp_path).quiet_after == DEFAULT_QUIET_AFTER
+    (tmp_path / CONFIG_FILE).write_text("[runner]\nquiet_after = true\n", encoding="utf-8")
+    assert load_runner_config(tmp_path).quiet_after == DEFAULT_QUIET_AFTER
 
 
 def test_runner_config_max_agent_processes(tmp_path: Path) -> None:

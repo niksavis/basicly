@@ -286,17 +286,50 @@ max_rework = 2
 # `loop run`/`loop advance` take no `--runner`, so the handoff can only be
 # restored from config (basicly-nvm1).
 default = "auto"
-# Hard wall-clock bound per lane. Lower than the 3600s default while an
-# unsizeable lane still defeats both dispatch cost gates (basicly-vz78): with no
-# forward forecast, this timeout is the only per-lane ceiling on a runaway run.
+# Backstop, no longer the working bound (basicly-lpsf). At 1800 this was a bound
+# calibrated *inside* the upper tail of real work — the longest successful lane
+# measured 1712s against it, 95.1%, and 10 of 68 successes finished past 80% — so
+# it killed lanes that were working. It was there because it was the only terminal
+# signal there was, and it is the one signal that says nothing about whether work
+# is happening.
 #
-# The kill no longer costs the run: the harness commits whatever the worktree
-# holds on the way out and the landing judges that diff, because a clock is not
-# evidence against a change (basicly-yvx9). The number is still calibrated inside
-# the upper tail of real work — the longest success measured 1712s against this
-# 1800 — so it kills lanes that are working, and raising it only moves the cliff;
-# retiring the wall clock as the working bound is basicly-lpsf.
-runner_timeout = 1800
+# `quiet_after` below and the spend ceiling now bind first, and both read the
+# dispatch's own event stream (basicly-rupz), so they can tell a working lane from
+# a wedged one. Restored to the 3600 default it had been lowered from, which leaves
+# it for what neither of those can see: a process that hangs holding the pipe, or a
+# stream that stops while the process does not exit.
+#
+# Not a licence to run long. The forward cost gates (basicly-vz78) and the spend
+# bound are what bound a runaway now, and both are denominated in tokens rather
+# than seconds. Raising this alone would have been the trap this bead was filed to
+# avoid: it moves the cliff one tail-length out and weakens the only runaway bound
+# in the process.
+#
+# The kill costs the run nothing either way: the harness commits whatever the
+# worktree holds on the way out and the landing judges that diff, because a clock
+# is not evidence against a change (basicly-yvx9).
+runner_timeout = 3600
+# Terminal quiet bound: seconds of a *silent* event stream before a lane is killed
+# as wedged. Left at the engine default (1800s), stated here because it is the
+# bound that replaced the wall clock and a reader of this file should see all three
+# together — `stall_after` flags at 900s, this kills at 1800s, `runner_timeout`
+# backstops at 3600s.
+#
+# Uncalibrated, and there is no honest way to calibrate it yet: no inter-event gap
+# has ever been measured, because until basicly-rupz the stream was requested, paid
+# for and discarded. What bounds it from below is the longest single tool call a
+# lane here makes with the stream silent, and the largest one this repo has is its
+# own test suite at 76s (`uv run pytest -q`, 2552 passed, measured 2026-08-06).
+# 1800 is 23x that. Tighten it once the passes this ships with have recorded what
+# the real gaps are.
+#
+# Declaration deliberately deferred to a second landing (basicly-69az): the engine
+# that lands this commit is base's, whose schema does not yet know the key, so a
+# lane that adds a `CONFIG_SCHEMA` entry *and* declares it cannot land in one
+# commit — it dies with a bare unknown-key refusal before verify runs. Costs
+# nothing here because `DEFAULT_QUIET_AFTER` is 1800.0, so the value below is what
+# the engine already uses; uncommenting it is the whole of the follow-up.
+# quiet_after = 1800
 # The model tier every dispatch of this repo resolves through (basicly-tcmy.35).
 # The tier vocabulary (basicly-kjc5.58), the committed map (basicly-kjc5.61) and
 # the pre-spawn refusal (basicly-kjc5.59) all shipped here, and this repo declared
