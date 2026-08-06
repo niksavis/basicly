@@ -322,14 +322,7 @@ runner_timeout = 3600
 # own test suite at 76s (`uv run pytest -q`, 2552 passed, measured 2026-08-06).
 # 1800 is 23x that. Tighten it once the passes this ships with have recorded what
 # the real gaps are.
-#
-# Declaration deliberately deferred to a second landing (basicly-69az): the engine
-# that lands this commit is base's, whose schema does not yet know the key, so a
-# lane that adds a `CONFIG_SCHEMA` entry *and* declares it cannot land in one
-# commit — it dies with a bare unknown-key refusal before verify runs. Costs
-# nothing here because `DEFAULT_QUIET_AFTER` is 1800.0, so the value below is what
-# the engine already uses; uncommenting it is the whole of the follow-up.
-# quiet_after = 1800
+quiet_after = 1800
 # The model tier every dispatch of this repo resolves through (basicly-tcmy.35).
 # The tier vocabulary (basicly-kjc5.58), the committed map (basicly-kjc5.61) and
 # the pre-spawn refusal (basicly-kjc5.59) all shipped here, and this repo declared
