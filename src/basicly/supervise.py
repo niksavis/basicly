@@ -56,7 +56,7 @@ import secrets
 import subprocess
 import threading
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
@@ -2132,7 +2132,15 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
         # pass-entry verdict could not see it (basicly-jr0l.59). A lane already running
         # is never interrupted; this only declines to *start* one.
         live = policy.spend_status(repo_root, session.root_issue)
-        if live.halted:
+        # Recorded spend first, then what the running lanes have reported and no
+        # record carries yet (basicly-rupz): the grant that was overshot was
+        # overshot by lanes that were still in flight when this check ran.
+        exhausted = (
+            "the grant was exhausted while this lane waited for a slot"
+            if live.halted
+            else inflight_halt(live)
+        )
+        if exhausted:
             return LaneOutcome(
                 issue_id=lane.issue_id,
                 runner_name=spec.name,
@@ -2141,7 +2149,7 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
                 occupancy=None,
                 overrun=False,
                 followup_id=None,
-                detail="not started: the grant was exhausted while this lane waited for a slot",
+                detail=f"not started: {exhausted}",
             )
         started[lane.issue_id] = time.monotonic()
         # Per-lane containment: a transient br failure (e.g. a locked tracker
@@ -2205,12 +2213,13 @@ def _inflight_note(
     by_future: dict[Future[LaneOutcome], AdoptedLane],
     pending: set[Future[LaneOutcome]],
 ) -> str:
-    """One line naming each still-running lane and how long it has been running.
+    """One line naming each still-running lane, how long it has run, and what it has spent.
 
-    Elapsed only, deliberately. Tokens-so-far would be the other half an operator wants,
-    but the runner drains its pipes only after the process is down (basicly-kjc5.15, and
-    see :func:`lane_activity`), so there is nothing incremental to read without
-    restructuring the dispatch — tracked separately rather than half-done here.
+    Tokens-so-far is the other half an operator wants, and it used to be unavailable
+    here — the runner drained its pipes only after the process was down. It now comes
+    off the lane's live event stream (:class:`LaneStream`, basicly-rupz). Reported only
+    once a lane has reported some: an adapter that measures out of band has no stream
+    to read, and a fabricated 0 would be indistinguishable from a measured one.
 
     A monotonic clock, because this is a duration; a wall clock can step backwards and
     report a lane as having run for a negative time.
@@ -2226,16 +2235,22 @@ def _inflight_note(
         # saying: the operator would otherwise read the silence as a stall.
         queued = len(pending)
         return f"{queued} lane(s) queued behind the concurrency cap, none started yet"
-    return ", ".join(f"{issue_id} {elapsed:.0f}s" for issue_id, elapsed in running)
+    live = inflight_spend()
+    return ", ".join(
+        f"{issue_id} {elapsed:.0f}s" + (f" {live[issue_id]} tok" if live.get(issue_id) else "")
+        for issue_id, elapsed in running
+    )
 
 
 def lane_activity(cwd: Path) -> str:
     """A fingerprint of a lane's visible progress: its commits plus its dirty tree.
 
-    The two things a working lane changes. Reading the agent's stdout would be the
-    other signal, but the runner drains its pipes only after the process is down
-    (basicly-kjc5.15), so there is nothing incremental to sample; commits and file
-    writes are both cheaper and closer to what "progress" means for a lane.
+    The two things a working lane changes, and half of the liveness signal — the
+    other half is the lane's own event stream (:class:`LaneStream`). This one has a
+    blind spot the stream covers: a lane spending ten minutes inside one test run
+    writes no file and makes no commit, so this reading stands still while the lane
+    works. It is kept because the stream has the mirror-image blind spot, emitting
+    nothing inside that same long tool call.
     """
     head = subprocess.run(
         ["git", "-C", str(cwd), "rev-parse", "HEAD"],
@@ -2250,6 +2265,132 @@ def lane_activity(cwd: Path) -> str:
         check=False,
     )
     return hashlib.sha256(f"{head.stdout}\n{dirty.stdout}".encode()).hexdigest()
+
+
+# --- Live lane telemetry, read off the dispatch's own stream (basicly-rupz) ----
+
+
+class LaneStream:
+    """One lane's running view of its dispatch, as its event stream arrives.
+
+    The sink :func:`runner.run` feeds (:class:`runner.StreamEvent`). Every metered
+    lane already asks its CLI for a per-turn event stream and the harness used to
+    throw it away; this is what consumes it, and it answers the two questions a
+    pass could previously only guess at.
+
+    * **Is the lane alive?** Any event is proof of life, whether or not a file
+      changed, so :meth:`fingerprint` moves on every one.
+    * **What has it spent?** Per-turn usage accrues as it arrives, so the session's
+      standing against its D3 grant is knowable *during* a dispatch instead of only
+      once the run record is written. That gap is on the record: a 20000000-token
+      grant was overshot to 22164783 because ``policy.spend_status`` is read before
+      a pass and written after it, with nothing in between.
+
+    Neither authoritative nor terminal. ``runner.extract_usage`` over the terminal
+    result object stays the one number that reaches the run record, and nothing here
+    kills a lane — cost is bounded by sizing the work, never by interrupting a
+    working agent (:func:`policy.check_pass_spend`). What the live figure buys is
+    that the *next* lane's admission can see it.
+
+    Written from the runner's reader thread and read from the supervisor's, so every
+    access takes the lock.
+    """
+
+    def __init__(self) -> None:
+        """An unstarted meter: no events, nothing spent."""
+        self._lock = threading.Lock()
+        self._events = 0
+        self._tokens = 0
+
+    def __call__(self, event: runner.StreamEvent) -> None:
+        """Record one event. Called on the runner's stdout reader thread."""
+        with self._lock:
+            self._events += 1
+            if event.usage is not None:
+                self._tokens += event.usage.tokens
+
+    @property
+    def events(self) -> int:
+        """How many events this dispatch has emitted so far."""
+        with self._lock:
+            return self._events
+
+    @property
+    def spent(self) -> int:
+        """Tokens the dispatch has reported so far, summed over its turns."""
+        with self._lock:
+            return self._tokens
+
+    def fingerprint(self) -> str:
+        """A reading that changes on every event, for :class:`runner.StallWatchdog`.
+
+        The count rather than the last line: two identical lines are still two
+        events, and a lane repeating itself is working, not wedged.
+        """
+        return f"events:{self.events}"
+
+
+# The in-flight lane meters of the pass currently running, keyed by issue id.
+# Module-level because the reader is a *different* lane's admission check — the
+# point is that a lane waiting on a concurrency slot can see what the lanes already
+# running have spent, which no run record says yet. One supervisor holds the lock
+# file and runs one session at a time, so there is a single pass to account for.
+_LIVE_LANES: dict[str, LaneStream] = {}
+_LIVE_LOCK = threading.Lock()
+
+
+@contextlib.contextmanager
+def live_lane(issue_id: str, stream: LaneStream) -> Iterator[LaneStream]:
+    """Publish *stream* as *issue_id*'s in-flight meter for the dispatch's duration.
+
+    Dropped on the way out, and that is not tidying: the run record written just
+    after is this lane's spend, so a meter left registered would have the same
+    dispatch counted twice.
+    """
+    with _LIVE_LOCK:
+        _LIVE_LANES[issue_id] = stream
+    try:
+        yield stream
+    finally:
+        with _LIVE_LOCK:
+            _LIVE_LANES.pop(issue_id, None)
+
+
+def inflight_spend() -> dict[str, int]:
+    """Tokens each currently-running lane has reported but not yet recorded."""
+    with _LIVE_LOCK:
+        live = tuple(_LIVE_LANES.items())
+    return {issue_id: stream.spent for issue_id, stream in live}
+
+
+def inflight_halt(status: policy.SpendStatus) -> str | None:
+    """Why the lanes already running have used up the grant's remainder, or None.
+
+    The live half of D3, and the half that was missing. ``spend_status`` compares
+    *recorded* spend against the budget, and a lane's record is written when it
+    ends — so a pass whose running lanes have already reported more than the grant
+    had left is admitted by a status that cannot see them.
+
+    A refusal to *start*, exactly like :func:`policy.check_pass_spend`: a lane that
+    is already running is never interrupted over this. None whenever there is no
+    ceiling to enforce, which is the ungranted and L1 case
+    :attr:`policy.SpendStatus.remaining_tokens` collapses to None — and None when
+    nothing in flight has reported anything, so this can only ever *add* a refusal
+    that the recorded-spend half of the ceiling has not already made.
+    """
+    remaining = status.remaining_tokens
+    if remaining is None:
+        return None
+    live = inflight_spend()
+    reported = sum(live.values())
+    if not reported or reported < remaining:
+        return None
+    level = status.grant.level if status.grant is not None else "active"
+    lanes = ", ".join(f"{issue_id} {tokens}" for issue_id, tokens in sorted(live.items()))
+    return (
+        f"the lanes already running have reported {reported} tokens against {remaining} "
+        f"remaining under the {level} grant ({lanes})"
+    )
 
 
 # The mid-run stall flag's question, named once so :func:`resolve_stall_flag` can
@@ -2454,16 +2595,29 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
         # A lane draws on the reserved lane slots, so it never waits behind a helper
         # (component 8, basicly-kjc5.11). The watchdog only *flags* a wedge
         # (basicly-kjc5.25) — the timeout below is still the sole terminal action.
+        #
+        # Liveness is fingerprinted over the dispatch's own event stream *and* its
+        # git state, so the lane counts as quiet only when both are (basicly-rupz).
+        # Either alone has a blind spot: git state does not move while the agent runs
+        # a long test suite, and the stream emits nothing inside that same long tool
+        # call. An adapter with no stream to read contributes a constant, which
+        # leaves the probe exactly the git reading it was.
+        stream = LaneStream()
         watchdog = runner.StallWatchdog(
             runner_config.stall_after,
-            probe=lambda: lane_activity(cwd),
+            probe=lambda: f"{stream.fingerprint()} {lane_activity(cwd)}",
             on_stall=lambda: flag_stalled_lane(
                 repo_root, lane.issue_id, runner_config.stall_after, runner_config.runner_timeout
             ),
         )
-        with watchdog, runner.process_budget().slot(runner.LANE):
+        with watchdog, live_lane(lane.issue_id, stream), runner.process_budget().slot(runner.LANE):
             result = runner.run(
-                spec, bundle.prompt, cwd, capture_usage=True, timeout=runner_config.runner_timeout
+                spec,
+                bundle.prompt,
+                cwd,
+                capture_usage=True,
+                timeout=runner_config.runner_timeout,
+                on_event=stream,
             )
     except (RuntimeError, OSError, ValueError) as exc:
         record_unstarted_dispatch(repo_root, lane.issue_id, spec, exc)

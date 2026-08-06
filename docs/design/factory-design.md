@@ -526,12 +526,24 @@ New parameters (all in the overridable sections per the dual-use constraint):
 | `[verify]`        | level→mode mapping        | sub-task `fast`; lane `full`+validate; ship `full`+validate; merge re-verify `full` | D4: deterministic by change class |
 
 Stall detection (`basicly-kjc5.25`) is `runner.StallWatchdog`, started around each lane
-dispatch: it samples `supervise.lane_activity` — a digest of the lane's HEAD plus its dirty
-tree — and enqueues one `stall` decision item when that fingerprint holds still for
-`stall_after`. It never kills; `runner_timeout` stays the only terminal action, so a
-slow-but-working run is not cut short. Commits and file writes are the sampled signal rather
-than agent stdout, because the runner drains its pipes only after the process is down
-(`basicly-kjc5.15`) and so has nothing incremental to read.
+dispatch: it samples a digest of the lane's own event stream (`supervise.LaneStream`) *plus*
+`supervise.lane_activity` — the lane's HEAD and its dirty tree — and enqueues one `stall`
+decision item when that combined fingerprint holds still for `stall_after`. It never kills;
+`runner_timeout` stays the only terminal action, so a slow-but-working run is not cut short.
+
+Both signals are sampled because each alone has a blind spot (`basicly-rupz`). Git state does
+not move while an agent runs a long test suite, and the stream emits nothing inside that same
+long tool call — so a lane counts as quiet only when neither has moved, and an event is proof
+of life whether or not any file changed. Reading the stream at all is what `basicly-rupz`
+added: every metered lane already requested a per-turn event stream and the runner collected
+it with one `communicate` after the process was down, so each intermediate event was paid for
+and dropped. `runner.run` now takes an optional sink and reads its pipes on reader threads
+(`errors="replace"`, because a decode error on a reader thread is silent — `basicly-6gkg`),
+leaving the terminal result object and every total `extract_usage` reports untouched. The
+per-turn usage it surfaces also gives the D3 ceiling a live reading: `supervise.inflight_halt`
+declines to *start* a lane against a remainder the running lanes have already reported, which
+no run record carries yet. It never interrupts a running lane — cost is bounded by sizing the
+work.
 
 Process-budget reservation classes (fixed semantics, not config): `concurrency` slots
 reserved for lane runners, 1 slot reserved for the decider (prevents decision-queue
