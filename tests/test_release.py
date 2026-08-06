@@ -213,6 +213,294 @@ def test_every_refusal_is_reported_from_one_run(repo: Path) -> None:
     assert len(result.refusals) >= 2
 
 
+# --- One changelog fragment per lane, assembled at release (basicly-4746) ---
+#
+# The mechanism only earns its cost if the collision it removes is *impossible* rather
+# than detected, so the fan-out test below carries its positive control: three lanes
+# editing one `### Fixed` anchor must still conflict, or the harness is proving nothing.
+
+
+@pytest.fixture
+def real_generator(repo: Path) -> Path:
+    """Swap the stand-in generator for the real one and commit it.
+
+    Assembly is judged end to end here: what a consumer reads is the *dated* section,
+    and the fragments only reach it through the generator's promotion of
+    ``[Unreleased]``. A stand-in that skips the promotion would let a broken fold pass.
+    """
+    source = Path(__file__).resolve().parents[1] / release.CHANGELOG_SCRIPT
+    (repo / release.CHANGELOG_SCRIPT).write_text(
+        source.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", "chore: use the real changelog generator")
+    return repo
+
+
+def _write_fragments(repo: Path, bodies: dict[str, str], *, commit: bool = True) -> None:
+    """Write ``changelog.d`` entries the way a lane does, and land them on the branch."""
+    directory = repo / release.FRAGMENT_DIR
+    directory.mkdir(exist_ok=True)
+    for name, body in bodies.items():
+        (directory / name).write_text(body, encoding="utf-8")
+    if commit:
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-m", "feat: lane entries")
+
+
+def _dated_section(repo: Path, tag: str) -> str:
+    """The body of *tag*'s dated section — what the release workflow publishes."""
+    text = (repo / release.CHANGELOG_FILE).read_text(encoding="utf-8")
+    after = text.split(f"## {tag} - ", 1)[1]
+    return after.split("\n## ", 1)[0]
+
+
+@pytest.mark.usefixtures("no_regen")
+def test_a_release_assembles_every_fragment_into_the_dated_section_and_deletes_them(
+    real_generator: Path,
+) -> None:
+    """The acceptance criterion's second half: every fragment publishes, none survives."""
+    repo = real_generator
+    _write_fragments(
+        repo,
+        {
+            "lane-2.fixed.md": "- second fixed entry\n",
+            "lane-1.fixed.md": "- first fixed entry\n",
+            "lane-3.added.md": "- an added entry\n",
+        },
+    )
+    plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
+
+    result = release.run_release(repo, plan, issue_id="fx-1")
+
+    assert not result.refused and result.tagged
+    section = _dated_section(repo, "v0.6.0")
+    for entry in ("- first fixed entry", "- second fixed entry", "- an added entry"):
+        assert entry in section
+    # Deterministic order: category first (Keep a Changelog's own sequence), then
+    # filename — never the directory listing, which differs by filesystem.
+    assert section.index("### Added") < section.index("### Fixed")
+    assert section.index("- first fixed entry") < section.index("- second fixed entry")
+    # One heading per category: a second `### Fixed` is a duplicate-sibling lint
+    # failure and a section no reader can scan.
+    assert section.count("### Fixed") == 1
+    # Consumed, in this run's own commit — a fragment left behind republishes next time.
+    assert not list((repo / release.FRAGMENT_DIR).glob("*.md"))
+    deleted = _git(repo, "show", "--name-status", "--format=", "HEAD")
+    assert deleted.count("D\tchangelog.d/") == 3
+    assert _git(repo, "status", "--porcelain").strip() == ""
+
+
+@pytest.mark.usefixtures("no_regen")
+def test_a_curated_unreleased_body_publishes_alongside_the_fragments(
+    real_generator: Path,
+) -> None:
+    """The transition promise: editing the changelog by hand is never broken."""
+    repo = real_generator
+    (repo / release.CHANGELOG_FILE).write_text(
+        "# Changelog\n\n## [Unreleased]\n\n### Fixed\n\n- what a human wrote by hand\n",
+        encoding="utf-8",
+    )
+    _write_fragments(repo, {"lane-9.fixed.md": "- what a lane recorded\n"})
+    plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
+
+    result = release.run_release(repo, plan, issue_id="fx-1")
+
+    assert not result.refused
+    section = _dated_section(repo, "v0.6.0")
+    # The curated section keeps its position and gains the fragment, rather than the
+    # fragment opening a second `### Fixed` beside it.
+    assert section.count("### Fixed") == 1
+    assert section.index("- what a human wrote by hand") < section.index("- what a lane recorded")
+
+
+def test_fragments_are_ordered_by_category_then_filename(repo: Path) -> None:
+    """Ordering is computed, never inherited from the directory listing."""
+    _write_fragments(
+        repo,
+        {
+            "zz.added.md": "- z\n",
+            "aa.fixed.md": "- a\n",
+            "aa.added.md": "- a\n",
+            "zz.security.md": "- z\n",
+        },
+        commit=False,
+    )
+
+    fragments, misnamed = release.scan_fragments(repo)
+
+    assert not misnamed
+    assert [fragment.path.name for fragment in fragments] == [
+        "aa.added.md",
+        "zz.added.md",
+        "aa.fixed.md",
+        "zz.security.md",
+    ]
+
+
+def test_the_fragment_directorys_readme_is_not_a_lane_entry(repo: Path) -> None:
+    """The directory documents itself without publishing itself."""
+    _write_fragments(
+        repo, {"README.md": "# Changelog fragments\n", "aa.fixed.md": "- a\n"}, commit=False
+    )
+
+    fragments, misnamed = release.scan_fragments(repo)
+
+    assert not misnamed
+    assert [fragment.path.name for fragment in fragments] == ["aa.fixed.md"]
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("no-category.md", "not named <bead-id>.<category>.md"),
+        ("lane-1.improved.md", "not named <bead-id>.<category>.md"),
+        (".fixed.md", "not named <bead-id>.<category>.md"),
+    ],
+)
+def test_a_fragment_nothing_can_place_refuses_the_release(
+    repo: Path, name: str, expected: str
+) -> None:
+    """Never tidied away: a dropped fragment is a release note nobody notices is gone."""
+    _write_fragments(repo, {name: "- an entry that would vanish\n"})
+    plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
+
+    result = release.run_release(repo, plan, issue_id="fx-1")
+
+    assert result.refused and any(expected in reason for reason in result.refusals)
+    assert any(name in reason for reason in result.refusals)
+    assert release.read_version(repo) == CURRENT
+
+
+def test_an_empty_fragment_refuses_the_release(repo: Path) -> None:
+    """An empty file is a lane that meant to say something; assembling it says nothing."""
+    _write_fragments(repo, {"lane-1.fixed.md": "\n\n"})
+    plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
+
+    result = release.run_release(repo, plan, issue_id="fx-1")
+
+    assert result.refused and any("is empty" in reason for reason in result.refusals)
+
+
+def test_a_changelog_with_nowhere_to_fold_the_fragments_is_refused(repo: Path) -> None:
+    """Fail closed rather than invent a heading: the promotion reads that body."""
+    (repo / release.CHANGELOG_FILE).write_text("# Changelog\n", encoding="utf-8")
+    _write_fragments(repo, {"lane-1.fixed.md": "- an entry\n"})
+    plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
+
+    result = release.run_release(repo, plan, issue_id="fx-1")
+
+    assert result.refused
+    assert any(release.UNRELEASED_HEADING in reason for reason in result.refusals)
+
+
+def test_a_dry_run_names_the_fragments_in_assembly_order_and_deletes_none(repo: Path) -> None:
+    """The pre-flight shows the section's order before the section exists."""
+    _write_fragments(repo, {"lane-2.fixed.md": "- b\n", "lane-1.added.md": "- a\n"})
+    plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
+
+    result = release.run_release(repo, plan, issue_id="fx-1", dry_run=True)
+
+    assert not result.refused
+    assembled = [step for step in result.steps if step.startswith("assemble ")]
+    assert assembled == [
+        "assemble 2 changelog fragment(s) from changelog.d/ and delete them: "
+        "lane-1.added.md, lane-2.fixed.md"
+    ]
+    assert len(list((repo / release.FRAGMENT_DIR).glob("*.md"))) == 2
+    assert _git(repo, "status", "--porcelain").strip() == ""
+
+
+def _lane(repo: Path, base: str, branch: str, writes: dict[str, str]) -> None:
+    """Branch off *base*, write *writes*, commit, and return to *base* — one lane."""
+    _git(repo, "checkout", "-q", "-b", branch, base)
+    for relative, text in writes.items():
+        path = repo / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", f"feat: {branch}")
+    _git(repo, "checkout", "-q", base)
+
+
+def _land_serially(repo: Path, base: str, branches: list[str]) -> list[str]:
+    """Rebase then fast-forward each branch in turn; return the ones that conflicted.
+
+    The merge queue's own shape (``merge.merge_worktree`` rebases onto the base and
+    merges), reduced to the part this change is about — whether the rebase applies.
+    """
+    conflicted: list[str] = []
+    for branch in branches:
+        rebase = subprocess.run(
+            ["git", "rebase", base, branch], cwd=repo, capture_output=True, text=True, check=False
+        )
+        if rebase.returncode != 0:
+            conflicted.append(branch)
+            subprocess.run(["git", "rebase", "--abort"], cwd=repo, capture_output=True, check=False)
+            _git(repo, "checkout", "-q", base)
+            continue
+        _git(repo, "checkout", "-q", base)
+        _git(repo, "merge", "--ff-only", branch)
+    return conflicted
+
+
+def test_three_lanes_each_recording_a_changelog_entry_all_land_without_a_conflict(
+    repo: Path,
+) -> None:
+    """The direct inverse of the run that blocked: three lanes, three files, no anchor.
+
+    Attempt 1 of the unattended pass put three lanes at one `### Fixed` anchor over
+    provably disjoint scopes; two landed and the third burned both rework retries on
+    the rebase. Here each lane's filename carries its own bead id, so there is no
+    shared file left to conflict on.
+    """
+    for lane in (1, 2, 3):
+        _lane(
+            repo,
+            "main",
+            f"harness/lane-{lane}",
+            {
+                f"changelog.d/lane-{lane}.fixed.md": f"- lane {lane} fixed something\n",
+                f"src/basicly/lane_{lane}.py": f'"""Lane {lane}."""\n',
+            },
+        )
+
+    conflicted = _land_serially(repo, "main", [f"harness/lane-{lane}" for lane in (1, 2, 3)])
+
+    assert conflicted == []
+    fragments, misnamed = release.scan_fragments(repo)
+    assert not misnamed
+    assert [fragment.path.name for fragment in fragments] == [
+        "lane-1.fixed.md",
+        "lane-2.fixed.md",
+        "lane-3.fixed.md",
+    ]
+
+
+def test_the_shared_anchor_the_fragments_replace_does_still_conflict(repo: Path) -> None:
+    """The positive control: a harness that never conflicts proves nothing about the fix."""
+    anchor = "# Changelog\n\n## [Unreleased]\n\n### Fixed\n\n- an existing entry\n"
+    (repo / release.CHANGELOG_FILE).write_text(anchor, encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", "chore: seed the anchor")
+    for lane in (1, 2, 3):
+        _lane(
+            repo,
+            "main",
+            f"harness/anchor-{lane}",
+            {
+                "CHANGELOG.md": anchor.replace(
+                    "### Fixed\n\n", f"### Fixed\n\n- lane {lane} fixed something\n"
+                ),
+                f"src/basicly/anchor_{lane}.py": f'"""Lane {lane}."""\n',
+            },
+        )
+
+    conflicted = _land_serially(repo, "main", [f"harness/anchor-{lane}" for lane in (1, 2, 3)])
+
+    assert conflicted == ["harness/anchor-2", "harness/anchor-3"]
+
+
 # --- Exercised-or-unproven: no tag for a capability nothing ever ran (basicly-irrm) ---
 #
 # The refusal is proved by *planting* an unexercised capability, and each planting test

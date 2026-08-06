@@ -25,27 +25,19 @@ base_branch = ""
 # Cap on how many worktrees may exist at once.
 concurrency = 5
 # Paths this repo's own conventions have every lane append its own entry to, and
-# which therefore appear in no bead's `## Scope` (basicly-o8p0). `CHANGELOG.md` is
-# the whole list: the landing convention expects an `[Unreleased]` entry per lane,
-# so a three-lane pass over provably disjoint scopes still had all three inserting
-# at the same `### Fixed` anchor. Two landed; the third rebased onto an anchor that
-# had moved twice, hit conflicts, and spent both its rework retries there while
-# `loop preflight` had reported all three `in band` and `VERDICT: ready`.
+# which therefore appear in no bead's `## Scope` (basicly-o8p0). Declaring one here
+# makes `decompose` serialize the children that would collide on it and makes
+# `loop preflight` warn before a lane starts, instead of the merge queue bouncing
+# the later lanes at a rework retry each.
 #
-# The cost of declaring it is real and accepted: `decompose` now serializes the
-# children of a plan against this path, so a fan-out that used to preview as N
-# parallel groups previews as one chain — which is what the merge queue was going to
-# enforce anyway, just before the work instead of after it. A child that genuinely
-# does not collide (it owns the entry, or writes a section nobody else touches)
-# declares `CHANGELOG.md` in its own scope AND under `shared` and stays parallel.
-#
-# Deliberately not a union merge of two prose entries: the changelog is
-# consumer-facing release copy, so an auto-resolved entry is text nobody reviewed.
-#
-# Landed one commit after the schema, deliberately: the landing runs the base
-# engine against the worktree's config, so a lane adding a key and using it in one
-# commit cannot land at all (`basicly-69az`).
-append_only_paths = ["CHANGELOG.md"]
+# **Empty on purpose, and do not put `CHANGELOG.md` back.** It was the whole list,
+# and serializing every lane was the cost of detecting a collision the repo's own
+# landing convention created. `basicly-4746` removed the cause instead: a lane writes
+# `changelog.d/<bead-id>.<category>.md` and `basicly release` assembles the fragments,
+# so no two lanes share a changelog file and there is nothing left to serialize. The
+# list stays for a path a future convention genuinely shares — the mechanism is not
+# wrong, the changelog just no longer needs it.
+append_only_paths = []
 # Artifacts every lane rebuilds and no bead declares (basicly-lyro). The projection
 # manifest is a pure function of the tree, so two lanes editing different catalog
 # sources both rewrite it and the second one's landing rebase conflicts on an artifact
