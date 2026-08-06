@@ -1828,6 +1828,220 @@ def test_the_gate_override_is_scoped_to_its_gate_and_is_not_a_rework_credit(
     assert policy.rework_charged(tmp_path, "i", "merge") == 0
 
 
+# --- Is the rework loop converging? (basicly-m4zv.5) -------------------------
+
+
+def _round(tmp_path: Path, *findings: str, gate: str = "verify") -> policy.Convergence:
+    """One rework round on *gate*, reporting *findings*."""
+    return policy.record_finding_set(tmp_path, "i", gate, findings)
+
+
+def test_a_repeated_finding_set_is_stalled_and_counts_its_consecutive_rounds(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The defect: nothing anywhere compared attempt 2's findings against attempt 1's.
+
+    The count is not the measure — these three rounds report two findings each and
+    the third has learned exactly what the first did.
+    """
+    _install(monkeypatch, _FakeBr())
+
+    first = _round(tmp_path, "pytest", "ruff")
+    second = _round(tmp_path, "pytest", "ruff")
+    third = _round(tmp_path, "pytest", "ruff")
+
+    assert (first.verdict, first.stalled_rounds) == (policy.PROGRESSING, 0)
+    assert (second.verdict, second.stalled_rounds) == (policy.STALLED, 1)
+    assert (third.verdict, third.stalled_rounds) == (policy.STALLED, 2)
+
+
+def test_a_grown_finding_set_is_diverging_and_names_what_joined(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Rework that adds a failure without fixing one is worse than no progress."""
+    _install(monkeypatch, _FakeBr())
+    _round(tmp_path, "pytest")
+
+    grown = _round(tmp_path, "pytest", "ruff")
+
+    assert grown.verdict == policy.DIVERGING and grown.stalled_rounds == 0
+    # Only what joined is named as new; the finding that was already open is not.
+    assert "grew to 2" in grown.detail and "ruff joined them" in grown.detail
+
+
+def test_a_finding_set_that_traded_one_finding_for_another_is_progressing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The control on both rules: same size, different members, so neither verdict fires.
+
+    A round that fixed ``ruff`` and broke ``mypy`` did different work — it is not the
+    previous round repeated and it is not the previous round plus more, so it keeps
+    spending the ordinary bounded cap rather than escalating.
+    """
+    _install(monkeypatch, _FakeBr())
+    _round(tmp_path, "pytest", "ruff")
+
+    traded = _round(tmp_path, "pytest", "mypy")
+
+    assert traded.verdict == policy.PROGRESSING and traded.detail == ""
+
+
+def test_a_finding_set_that_returns_after_moving_is_not_a_consecutive_stall(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A, then B, then A moved twice; only the *previous* round is the comparison."""
+    _install(monkeypatch, _FakeBr())
+    _round(tmp_path, "pytest")
+    _round(tmp_path, "ruff")
+
+    back = _round(tmp_path, "pytest")
+
+    assert back.verdict == policy.PROGRESSING
+
+
+def test_the_history_is_per_gate_and_never_crosses_a_name_that_extends_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Two gates reporting one finding name must not read as one gate repeating itself."""
+    _install(monkeypatch, _FakeBr())
+    _round(tmp_path, "acceptance", gate="verify")
+
+    assert _round(tmp_path, "acceptance", gate="rubric").verdict == policy.PROGRESSING
+    assert _round(tmp_path, "acceptance", gate="verify-full").verdict == policy.PROGRESSING
+    # ...while the gate that did repeat itself still reads as stalled.
+    assert _round(tmp_path, "acceptance", gate="verify").verdict == policy.STALLED
+
+
+def test_a_finding_carrying_a_separator_round_trips_out_of_the_record(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The comparison is only as good as the round trip, so members are stored as JSON.
+
+    A finding is a check name the repo chose, and a space, a comma or an ``=`` in one
+    must not split it into two members or merge two into one.
+    """
+    _install(monkeypatch, _FakeBr())
+    awkward = ("pytest -q tests/a.py", "ruff check, formatted", "gate=x")
+    _round(tmp_path, *awkward)
+
+    repeat = _round(tmp_path, *awkward)
+
+    assert repeat.verdict == policy.STALLED
+    assert repeat.previous == policy.finding_signature(awkward)
+
+
+def test_the_stored_finding_set_is_bounded_in_members_and_in_length(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A gate that reports hundreds of failures must not write a comment to match."""
+    _install(monkeypatch, _FakeBr())
+    flood = [f"check-{n:03d}-{'x' * 400}" for n in range(60)]
+
+    recorded = _round(tmp_path, *flood)
+
+    assert len(recorded.members) == policy.MAX_FINDING_SET_MEMBERS
+    assert max(len(m) for m in recorded.members) == policy.MAX_FINDING_MEMBER_CHARS
+
+
+def test_an_unreadable_finding_set_record_is_dropped_rather_than_raised(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A corrupt marker costs one round of history, never the rework path itself.
+
+    This runs while a gate is *already* failing, so a second way to fall over here
+    would turn a bounded rework attempt into a crashed advance.
+    """
+    fake = _FakeBr()
+    fake.comments.append(f"{policy.FINDING_SET_MARKER} gate=verify verdict=stalled findings=[oops")
+    _install(monkeypatch, fake)
+
+    assert _round(tmp_path, "pytest").verdict == policy.PROGRESSING
+    assert _round(tmp_path, "pytest").verdict == policy.STALLED
+
+
+def test_a_finding_set_record_is_no_rework_credit_and_no_attempt(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A fourth marker on the same bead, so no existing counter may read it as its own."""
+    _install(monkeypatch, _FakeBr())
+    _round(tmp_path, "pytest")
+
+    assert policy.rework_attempts(tmp_path, "i", "verify") == 0
+    assert policy.rework_recorded(tmp_path, "i") == 0
+    assert policy.rework_allowances(tmp_path, "i", "verify") == 0
+    assert policy.unreliable_gate_events(tmp_path, "i", "verify") == 0
+
+
+def test_the_signature_is_free_of_the_order_and_the_repetition_a_gate_reported(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Two orderings of one finding set are one round, not two."""
+    _install(monkeypatch, _FakeBr())
+    _round(tmp_path, "ruff", "pytest")
+
+    assert _round(tmp_path, "pytest", "ruff", "pytest", "  ", "").verdict == policy.STALLED
+
+
+def test_the_finding_set_threshold_warns_once_and_then_stops_the_loop() -> None:
+    """One stalled round is a warning; two consecutive rounds are not (the AC).
+
+    A gate reports what it checks, so one repeat may hide a real change the gate
+    cannot see. Two in a row cannot.
+    """
+    members = ("pytest",)
+    warned = policy.Convergence(policy.STALLED, members, members, 1)
+    stopped = policy.Convergence(policy.STALLED, members, members, 2)
+
+    assert policy.finding_set_escalation(warned) is None
+    assert warned.detail  # the warning itself is still available to the caller
+    assert "not converging" in (policy.finding_set_escalation(stopped) or "")
+
+
+def test_a_diverging_round_stops_the_loop_on_its_first_occurrence() -> None:
+    """Divergence needs no second round: the previous findings are all still open."""
+    diverging = policy.Convergence(policy.DIVERGING, ("pytest", "ruff"), ("pytest",), 0)
+
+    assert "worse, not better" in (policy.finding_set_escalation(diverging) or "")
+
+
+def test_a_progressing_round_never_stops_the_loop() -> None:
+    """The control: the bounded cap stays the only thing that ends a converging loop."""
+    assert policy.finding_set_escalation(policy.Convergence(policy.PROGRESSING, (), (), 0)) is None
+
+
+def test_the_non_convergence_refund_is_spendable_exactly_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Forgiving every round would be the jr0l.41 livelock again, under a new name.
+
+    No budget spent means no cap reached, so a node nobody answers would re-derive
+    the same verdict forever while looking merely slow. One round is forgiven; after
+    that the cap is what ends the loop.
+    """
+    _install(monkeypatch, _FakeBr())
+    _to_cap(tmp_path)
+
+    assert policy.spend_convergence_refund(tmp_path, "i", "verify") is True
+    assert policy.rework_charged(tmp_path, "i", "verify") == CONFIG.max_rework - 1
+
+    assert policy.spend_convergence_refund(tmp_path, "i", "verify") is False
+    assert policy.rework_charged(tmp_path, "i", "verify") == CONFIG.max_rework - 1
+
+
+def test_the_refund_is_scoped_to_its_gate_and_told_apart_from_an_answered_retry(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Two things authorise an attempt for different reasons, so each keeps its own marker."""
+    _install(monkeypatch, _FakeBr())
+    policy.spend_convergence_refund(tmp_path, "i", "verify")
+
+    # The other gate is untouched, and the operator's own remedy is still available.
+    assert policy.spend_convergence_refund(tmp_path, "i", "merge") is True
+    assert policy.grant_rework_allowance(tmp_path, "i", "verify") == 0
+    assert policy.rework_allowances(tmp_path, "i", "verify") == 2
+    assert policy.rework_attempts(tmp_path, "i", "verify") == 0
+
+
 # --- A shared-tracker gate belongs to the lane that declared it (basicly-qorx) --
 
 # The gate's own output, captured by running the live ceiling gate against a ceiling

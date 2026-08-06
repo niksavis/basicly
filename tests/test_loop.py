@@ -170,6 +170,34 @@ def _pin_runner(monkeypatch: pytest.MonkeyPatch, default: str) -> None:
     )
 
 
+def _pin_finding_sets(
+    monkeypatch: pytest.MonkeyPatch, *verdicts: policy.Convergence
+) -> list[tuple[str, str, tuple[str, ...]]]:
+    """Hand the loop scripted convergence verdicts; return each finding set it recorded.
+
+    The comparison itself is policy's and is tested there against a fake tracker.
+    What a test here asserts is the loop's half: which findings it hands over, and
+    what it does with the verdict it gets back. Rounds past *verdicts* progress.
+    """
+    recorded: list[tuple[str, str, tuple[str, ...]]] = []
+    scripted = list(verdicts)
+
+    def record(_repo_root, issue_id, gate, findings):
+        members = policy.finding_signature(findings)
+        recorded.append((issue_id, gate, members))
+        if scripted:
+            return scripted.pop(0)
+        return policy.Convergence(policy.PROGRESSING, members, (), 0)
+
+    monkeypatch.setattr(policy, "record_finding_set", record)
+    return recorded
+
+
+def _stalled(rounds: int, *members: str) -> policy.Convergence:
+    """A verdict saying this round reported *members* for the *rounds*-th time running."""
+    return policy.Convergence(policy.STALLED, members, members, rounds)
+
+
 def _ready_leaf(at, monkeypatch: pytest.MonkeyPatch) -> dict:
     """Pin a ready leaf at classify with a fake worktree; return the create record."""
     at(_state("classify", issue_type="task"))
@@ -1155,6 +1183,167 @@ def test_build_leaf_reworks_on_failed_merge(
     assert queued == [("i", "escalation")]
 
 
+# --- Is the rework loop converging? (basicly-m4zv.5) -------------------------
+
+
+def _red_landing(at, monkeypatch: pytest.MonkeyPatch, status: str = "verify-failed") -> list[tuple]:
+    """A leaf at ``build`` whose landing fails *status*; return the refunds it grants."""
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    monkeypatch.setattr(
+        merge,
+        "merge_worktree",
+        lambda *_a, **_k: merge.MergeResult("i", status, "verify full failed: pytest"),
+    )
+    monkeypatch.setattr(policy, "record_rework", lambda *_a: 1)  # inside the cap
+    monkeypatch.setattr(loop.decisions, "enqueue", lambda *_a, **_k: None)
+    refunds: list[tuple] = []
+
+    def refund(_repo_root, issue_id, gate):
+        refunds.append((issue_id, gate))
+        return True
+
+    monkeypatch.setattr(policy, "spend_convergence_refund", refund)
+    monkeypatch.setattr(policy, "rework_charged", lambda *_a: 0)
+    return refunds
+
+
+def test_one_stalled_rework_round_warns_on_the_bead_and_keeps_spending(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A single repeat is a warning, not an escalation (the AC's first clause).
+
+    The gate reports only what it checks, so this round may have changed something
+    real that this gate cannot see — the loop says so and keeps its ordinary cap.
+    """
+    refunds = _red_landing(at, monkeypatch)
+    _pin_finding_sets(monkeypatch, _stalled(1, "pytest"))
+
+    result = _advance(tmp_path)
+
+    assert result.action == "blocked" and refunds == []
+    assert "warning:" in result.detail and "changed nothing it reports" in result.detail
+
+
+def test_a_stalled_round_that_is_also_the_cap_round_queues_the_warning_with_it(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """At ``max_rework=2`` the first repeat *is* the cap round (the observed shape).
+
+    The warning has to reach the queue item and not only the returned detail, or the
+    human triaging the cap escalation cannot see that the last attempt learned
+    nothing the gate reports — which is the fact that decides between re-dispatching
+    and re-scoping.
+    """
+    _red_landing(at, monkeypatch)
+    monkeypatch.setattr(policy, "record_rework", lambda *_a: CONFIG.max_rework)  # at the cap
+    _pin_finding_sets(monkeypatch, _stalled(1, "pytest"))
+    queued: list[str] = []
+    monkeypatch.setattr(
+        loop.decisions,
+        "enqueue",
+        lambda _r, _issue, _kind, _q, reason, *_a, **_k: queued.append(reason),
+    )
+
+    result = _advance(tmp_path)
+
+    assert result.action == "escalated"
+    assert len(queued) == 1 and "changed nothing it reports" in queued[0]
+
+
+def test_a_second_stalled_rework_round_escalates_without_consuming_the_cap(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The observed defect, closed: attempt 2 re-derived attempt 1's verdict verbatim.
+
+    It escalates before the cap is reached *and* refunds the attempt, so the human's
+    answer still has the budget the loop would otherwise have spent re-reporting a
+    finding set already on the bead.
+    """
+    refunds = _red_landing(at, monkeypatch)
+    _pin_finding_sets(monkeypatch, _stalled(2, "pytest"))
+    queued: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(
+        loop.decisions,
+        "enqueue",
+        lambda _r, issue, kind, question, *_a, **_k: queued.append((issue, kind, question)),
+    )
+
+    result = _advance(tmp_path)
+
+    assert result.action == "escalated"
+    assert refunds == [("i", merge.MERGE_GATE)]  # charged, then refunded
+    assert "this attempt refunded" in result.detail and "not converging" in result.detail
+    # The ordinary rework escalation, so an answered `retry` stays executable.
+    assert queued == [("i", "escalation", policy.rework_escalation_question(merge.MERGE_GATE))]
+
+
+def test_a_second_escalation_says_the_refund_is_gone_and_still_stops(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Once the refund is spent the cap is the backstop again, and the node says so.
+
+    Forgiving every round would mean no budget is ever spent, so no cap is ever
+    reached — the jr0l.41 livelock under a new name.
+    """
+    _red_landing(at, monkeypatch)
+    monkeypatch.setattr(policy, "spend_convergence_refund", lambda *_a: False)
+    monkeypatch.setattr(policy, "rework_charged", lambda *_a: 2)
+    _pin_finding_sets(monkeypatch, _stalled(3, "pytest"))
+
+    result = _advance(tmp_path)
+
+    assert result.action == "escalated"
+    assert "already spent" in result.detail and "rework 2/2" in result.detail
+
+
+def test_a_growing_finding_set_escalates_on_its_first_occurrence(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Divergence needs no second round: rework made the work worse (the AC's third clause)."""
+    refunds = _red_landing(at, monkeypatch)
+    _pin_finding_sets(
+        monkeypatch, policy.Convergence(policy.DIVERGING, ("pytest", "ruff"), ("pytest",), 0)
+    )
+
+    result = _advance(tmp_path)
+
+    assert result.action == "escalated" and refunds == [("i", merge.MERGE_GATE)]
+    assert "worse, not better" in result.detail
+
+
+def test_a_landing_reports_its_status_and_the_gates_own_rendering_as_its_findings(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A red landing's finding set is what makes a repeat of it detectable.
+
+    Tagged with the status so a cause can never compare equal to a check name.
+    """
+    _red_landing(at, monkeypatch)
+    recorded = _pin_finding_sets(monkeypatch)
+
+    _advance(tmp_path)
+
+    assert recorded == [
+        ("i", merge.MERGE_GATE, ("status=verify-failed", "verify full failed: pytest"))
+    ]
+
+
+def test_a_collided_landing_records_no_finding_set_in_the_loop(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The merge gate's own half belongs to the bounce, which owns its threshold.
+
+    Recording it here too would compare the bounce's round against itself and refund
+    twice for one attempt (basicly-bdd4 landed that half in `supervise`).
+    """
+    _red_landing(at, monkeypatch, status="merge-conflicts")
+    recorded = _pin_finding_sets(monkeypatch)
+
+    result = _advance(tmp_path)
+
+    assert recorded == [] and result.blocked
+
+
 # --- verify / ship / done ---------------------------------------------------
 
 
@@ -2000,9 +2189,12 @@ def test_lane_subtask_verify_failure_reworks_the_subtask_not_the_lane(
     monkeypatch.setattr(
         policy, "record_rework", lambda _r, issue, gate: reworked.append((issue, gate)) or 1
     )
+    findings = _pin_finding_sets(monkeypatch)
     result = loop.advance(tmp_path, "i", config=CONFIG)
     assert reworked == [("i.1", "verify")]
     assert result.blocked and "verify fast failed: pytest" in result.detail
+    # The sub-task's own finding set, on its own record, so a repeat is detectable.
+    assert findings == [("i.1", "verify", ("pytest",))]
 
 
 def test_lane_follows_the_dependency_chain_not_the_tracker_order(
@@ -2095,9 +2287,12 @@ def test_lane_validate_gate_blocks_the_landing_when_it_fails(
         merge, "merge_worktree", lambda *_a, **_k: pytest.fail("validate must gate the landing")
     )
     monkeypatch.setattr(policy, "record_rework", lambda *_a: 1)
+    findings = _pin_finding_sets(monkeypatch)
     result = loop.advance(tmp_path, "i", config=CONFIG)
     assert recorded == ["i"]
     assert result.blocked and "lane validate failed: acceptance" in result.detail
+    # The failed checks are the rubric gate's finding set (basicly-m4zv.5).
+    assert findings == [("i", rubrics.RUBRIC_GATE, ("acceptance",))]
 
 
 def test_lane_validate_evaluates_in_the_lane_worktree(

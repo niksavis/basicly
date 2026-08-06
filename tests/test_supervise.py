@@ -1897,10 +1897,12 @@ def _patch_collision_pass(
     # The bounce path itself reads and writes comments (the brief, the failure
     # signature); keep it off the real tracker. Distinct from the alias above:
     # `merge.br.try_run_br` is the coupling-edge seam, this one is supervise's.
+    # The signature history is policy's own, so its alias is a seam too.
     fake = _FakeBr({bead: {"id": bead, "description": ""} for bead in scopes})
     monkeypatch.setattr(supervise, "_run_br", fake)
     monkeypatch.setattr(supervise, "_try_run_br", fake)
     monkeypatch.setattr(decisions, "_run_br", fake)
+    monkeypatch.setattr(policy, "_run_br", fake)
     return couplings, fake
 
 
@@ -2155,6 +2157,7 @@ def _bounce_twice(
     )
     _install_br(monkeypatch, fake)
     monkeypatch.setattr(supervise, "_try_run_br", fake)
+    monkeypatch.setattr(policy, "_run_br", fake)
 
     routes: list[supervise.RoutedOutcome] = []
     for conflicts in (("src/shared.py",), second):
@@ -2203,6 +2206,65 @@ def test_a_bounce_on_different_paths_is_not_a_repeat(
 
     assert [r.route for r in routes] == ["bounced", "bounced"]
     assert allowances == []
+
+
+def test_the_bounce_signature_is_stored_by_the_shared_finding_set_mechanism(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """One mechanism, not two: the merge gate's history is policy's, keyed to its gate.
+
+    The comparison and the storage are the same ones the finding-reporting gates use
+    (basicly-m4zv.5); only the threshold above is the merge gate's own. A second copy
+    living here is how the two counts drift.
+    """
+    fake = _FakeBr({"epic.1": {"id": "epic.1", "description": ""}})
+    monkeypatch.setattr(supervise, "_landing_order", lambda _r, outcomes: list(outcomes))
+    monkeypatch.setattr(supervise.merge, "record_coupling", lambda *_a: None)
+    monkeypatch.setattr(
+        supervise.loop,
+        "advance",
+        lambda _r, issue_id, **_k: _blocked_landing(issue_id, "merge-conflicts", ("src/a.py",)),
+    )
+    _install_br(monkeypatch, fake)
+    monkeypatch.setattr(supervise, "_try_run_br", fake)
+    monkeypatch.setattr(policy, "_run_br", fake)
+
+    supervise.route_outcomes(tmp_path, _session(_lane("epic.1")), (_executed_outcome("epic.1"),))
+
+    signatures = [c for c in fake.comments["epic.1"] if c.startswith(policy.FINDING_SET_MARKER)]
+    assert signatures == [
+        f"{policy.FINDING_SET_MARKER} gate={merge.MERGE_GATE} verdict={policy.PROGRESSING} "
+        'findings=["src/a.py", "status=merge-conflicts"]'
+    ]
+
+
+def test_a_bounce_survives_a_tracker_that_refuses_the_signature(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A lost signature costs one comparison; it must not cost the bounce.
+
+    The lane still has to be briefed and its collision attributed, so a tracker
+    hiccup here degrades to the plain bounded cap rather than routing an ``error``.
+    """
+    monkeypatch.setattr(supervise, "_landing_order", lambda _r, outcomes: list(outcomes))
+    monkeypatch.setattr(supervise.merge, "record_coupling", lambda *_a: None)
+    monkeypatch.setattr(
+        supervise.loop,
+        "advance",
+        lambda _r, issue_id, **_k: _blocked_landing(issue_id, "merge-conflicts", ("src/a.py",)),
+    )
+    _install_br(monkeypatch, _FakeBr({}))
+
+    def refuse(*_a, **_k):
+        raise RuntimeError("br comments add failed")
+
+    monkeypatch.setattr(policy, "record_finding_set", refuse)
+
+    routed = supervise.route_outcomes(
+        tmp_path, _session(_lane("epic.1")), (_executed_outcome("epic.1"),)
+    )
+
+    assert [r.route for r in routed] == ["bounced"]
 
 
 def test_route_still_holds_later_lanes_when_a_gate_fails(

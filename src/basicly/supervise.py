@@ -3134,48 +3134,47 @@ def _route_blocked_landing(
     return RoutedOutcome(outcome.issue_id, "rework", landing.detail)
 
 
-# Durable per-lane record of what a landing bounce failed on, so the next bounce
-# can tell a new collision from a verbatim repeat of the last one. It has to
-# outlive the pass that wrote it — the repeat is what the *following* pass sees —
-# and a marker comment is the same durable, attributable carrier policy's rework
-# counter uses. Only the lane's own status and conflicting paths go in, so no
-# pass ordering reaches a durable record (D9).
-CONFLICT_MARKER = "[harness-conflict]"
+# The merge gate's convergence threshold, and the strictest one there is: the
+# *first* repeat stops the lane, where a finding-set gate warns once first
+# (:data:`policy.MAX_STALLED_REWORK_ROUNDS`). The verdict is shared; this number is
+# the one thing about it that is the merge gate's own, so it is named here rather
+# than assumed by whoever reads ``stalled``.
+MAX_REPEAT_BOUNCES = 1
 
 
-def conflict_signature(attempt: merge.MergeResult) -> str:
-    """What a landing failed on, reduced to a comparable value (pure).
+def conflict_signature(attempt: merge.MergeResult) -> tuple[str, ...]:
+    """What a landing failed on, reduced to a comparable finding set (pure).
 
-    Status plus the conflicting paths, sorted — the signature a merge gate
-    reports, as opposed to the finding set a test gate reports (basicly-m4zv.5).
-    Sorted because git's ordering is not a fact about the collision, and two
-    orderings of one conflict must not read as two different failures.
+    The merge gate's members are its cause and its conflicting paths, where a
+    test gate's are its failing checks — one shape, so one mechanism can store and
+    compare both (basicly-m4zv.5). :func:`policy.finding_signature` sorts and
+    dedupes them, because git's ordering is not a fact about the collision and two
+    orderings of one conflict must not read as two different failures. The status
+    is tagged rather than bare so a cause can never be mistaken for a path.
+
+    Only the lane's own status and paths go in, so no pass ordering reaches a
+    durable record (D9).
     """
-    return " ".join((attempt.status, *sorted(attempt.conflicts)))
+    return policy.finding_signature((f"status={attempt.status}", *attempt.conflicts))
 
 
-def _last_conflict_signature(repo_root: Path, issue_id: str) -> str:
-    """The signature of *issue_id*'s most recent bounce, or ``""`` when it has none.
+def _bounce_convergence(
+    repo_root: Path, issue_id: str, attempt: merge.MergeResult
+) -> policy.Convergence | None:
+    """Record this bounce's signature and judge it; None when the tracker refused.
 
-    Only the latest: the rule is about *consecutive* attempts, so a lane that
-    bounced on one anchor, then on another, then on the first again has not
-    repeated itself — it moved twice.
+    Tolerant on purpose, exactly as the comment write and read it replaced were:
+    the bounce still has a lane to brief and a coupling to attribute, and letting a
+    tracker hiccup turn a routable bounce into an ``error`` route would cost more
+    than the missed comparison — one lost signature delays an escalation by a
+    bounce and suppresses none.
     """
     try:
-        proc = _run_br(repo_root, ["comments", "list", issue_id, "--json"])
-        comments = json.loads(proc.stdout)
+        return policy.record_finding_set(
+            repo_root, issue_id, merge.MERGE_GATE, conflict_signature(attempt)
+        )
     except RuntimeError, OSError, ValueError:
-        return ""
-    if not isinstance(comments, list):
-        return ""
-    recorded = ""
-    for comment in comments:
-        if not isinstance(comment, dict):
-            continue
-        text = str(comment.get("text", "")).strip()
-        if text.startswith(CONFLICT_MARKER):
-            recorded = text[len(CONFLICT_MARKER) :].strip()
-    return recorded
+        return None
 
 
 def _bounce_lane(
@@ -3200,39 +3199,44 @@ def _bounce_lane(
     What *is* recorded here is the failure signature, because it is order-free
     and the next bounce needs it: a landing that failed exactly as it failed last
     time escalates instead of spending another attempt
-    (:func:`_escalate_repeat_bounce`).
+    (:func:`_escalate_repeat_bounce`). It is recorded through
+    :func:`policy.record_finding_set`, which is where every gate's signature
+    history lives, and the threshold below is the merge gate's own.
 
     There is no resolution of any kind here: the base was left untouched and the
     lane keeps its commits for its agent to re-apply on the new base.
     """
     collisions.append((issue_id, attempt.conflicts))
-    signature = conflict_signature(attempt)
-    repeated = signature == _last_conflict_signature(repo_root, issue_id)
-    _try_run_br(repo_root, ["comments", "add", issue_id, f"{CONFLICT_MARKER} {signature}"])
-    if repeated:
-        return _escalate_repeat_bounce(repo_root, issue_id, signature)
+    convergence = _bounce_convergence(repo_root, issue_id, attempt)
+    if convergence is not None and convergence.stalled_rounds >= MAX_REPEAT_BOUNCES:
+        return _escalate_repeat_bounce(repo_root, issue_id, convergence)
     # At the rework cap the loop already queued the escalation, so the lane is
     # held by a pending decision rather than re-dispatched — say so.
     route = "decision" if landing.action == "escalated" else "bounced"
     return RoutedOutcome(issue_id, route, f"bounced back to the lane: {landing.detail}")
 
 
-def _escalate_repeat_bounce(repo_root: Path, issue_id: str, signature: str) -> RoutedOutcome:
+def _escalate_repeat_bounce(
+    repo_root: Path, issue_id: str, convergence: policy.Convergence
+) -> RoutedOutcome:
     """A landing that failed exactly as it failed last time: stop, and charge nothing.
 
-    The cheapest convergence check there is, and the one the gate that actually
-    fired needs: a merge bounce carries a cause and a file list, not findings, so
-    a finding-set comparison would miss it entirely (basicly-m4zv.5). Byte-equal
-    signatures need no rubric and no model — the round is stalled by definition,
-    and re-applying the same branch to the same anchor cannot converge.
+    The strictest threshold on the shared convergence verdict, and the merge
+    gate's own: it escalates on the *first* repeat where a finding-set gate warns
+    and escalates on the second (:data:`policy.MAX_STALLED_REWORK_ROUNDS`). A
+    repeated finding set is only probably stalled, since an agent may have changed
+    something the gate does not report; re-applying one branch to one anchor
+    provably cannot converge, so there is nothing a second attempt could do
+    differently.
 
     The attempt is *refunded* rather than merely reported. The loop's landing
     already charged it (:func:`loop._rework`) before the supervisor saw the
     shape, and an attempt that could not have changed the outcome is not one the
     lane spent: on 2026-08-05 that charge was the whole remaining budget, and the
     pass ended on a human decision the first bounce had already reported verbatim.
-    :func:`policy.grant_rework_allowance` offsets it additively, so the history
-    still says how many attempts were made.
+    :func:`policy.spend_convergence_refund` offsets it additively — and only once,
+    so a lane nobody answers still reaches its cap rather than bouncing forever
+    forgiven.
 
     Deliberately blind to *why* the branch is unchanged. A second consecutive
     collision on one anchor is a decomposition the graph got wrong, and a human
@@ -3241,7 +3245,8 @@ def _escalate_repeat_bounce(repo_root: Path, issue_id: str, signature: str) -> R
     escalation, and :func:`decisions.enqueue` is idempotent per question, so a
     landing that already escalated at the cap is not queued twice.
     """
-    policy.grant_rework_allowance(repo_root, issue_id, merge.MERGE_GATE)
+    signature = " ".join(convergence.members)
+    policy.spend_convergence_refund(repo_root, issue_id, merge.MERGE_GATE)
     item = decisions.enqueue(
         repo_root,
         issue_id,

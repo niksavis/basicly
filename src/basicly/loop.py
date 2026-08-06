@@ -43,7 +43,7 @@ from __future__ import annotations
 import contextlib
 import json
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -1108,8 +1108,41 @@ def _verify_and_land(
     if (held := _no_evidence_landing_block(ctx, result)) is not None:
         return held
     if not result.merged:
-        return _rework(ctx, merge.MERGE_GATE, f"merge failed: {result.detail}", landing=result)
+        return _rework(
+            ctx,
+            merge.MERGE_GATE,
+            f"merge failed: {result.detail}",
+            landing=result,
+            findings=_landing_findings(result),
+        )
     return _record_verify(ctx, result.detail, verify_mode=mode)
+
+
+def _landing_findings(result: merge.MergeResult) -> tuple[str, ...]:
+    """What a failed landing reported, as finding-set members (pure).
+
+    A conflict reports none *here*: its members are its paths, and
+    :func:`supervise._bounce_lane` records and judges them at the bounce, where
+    the merge gate's stricter threshold and its refund live. Recording them in both
+    places would compare a round against itself. The two cannot both fire for one
+    round, because a landing has exactly one status.
+
+    Every other failure — a red verify above all, which is the shape this rule was
+    written for — carries its finding set only in the report's ``detail``, which is
+    the gate's own rendering of it and is stable round to round for the same
+    failures (``verify full failed: pytest, ruff``). So a *repeat* is detectable,
+    which is what bounds the loop. It is one member rather than a parsed list, on
+    purpose: a growing set of failing checks therefore reads as a change rather
+    than as divergence, and closing that needs the failing checks carried as data
+    on :class:`merge.MergeResult` — merge's contract to widen, not a string this
+    function guesses at.
+
+    Tagged with the status for the same reason the bounce tags its own: a cause
+    must never compare equal to a path or to a check name.
+    """
+    if result.conflicted:
+        return ()
+    return (f"status={result.status}", result.detail)
 
 
 # --- Lane mini-loop: sequential sub-tasks in one worktree (basicly-kjc5.9) ----
@@ -1236,6 +1269,7 @@ def _run_subtask(
             verify.DEFAULT_GATE,
             f"{where}: verify {_SUBTASK_VERIFY_MODE} failed: {', '.join(report.failures)}",
             issue_id=subtask_id,
+            findings=report.failures,
         )
     _run_br(
         ctx.repo_root,
@@ -1343,12 +1377,17 @@ def _validate_lane(ctx: _Ctx, cwd: Path) -> AdvanceResult | None:
     ]
     rubrics.report_gate(ctx.repo_root, ctx.issue_id, verdicts)
     if rubrics.gate_status(verdicts) == "fail":
-        failed = ", ".join(
+        failed = [
             verdict.check_id
             for verdict in verdicts
             if verdict.kind == rubrics.DETERMINISTIC and verdict.answer == rubrics.NO
+        ]
+        return _rework(
+            ctx,
+            rubrics.RUBRIC_GATE,
+            f"lane validate failed: {', '.join(failed)}",
+            findings=failed,
         )
-        return _rework(ctx, rubrics.RUBRIC_GATE, f"lane validate failed: {failed}")
     disputed = rubrics.judged_failures(verdicts)
     if disputed:
         return _hold_for_validate_decision(ctx, disputed)
@@ -1428,17 +1467,23 @@ def _record_verify(ctx: _Ctx, detail: str, *, verify_mode: str | None = None) ->
     if gate_error is not None:
         return _blocked(ctx, gate_error)
     if not report.passed:
-        return _rework(ctx, verify.DEFAULT_GATE, f"verify failed: {', '.join(report.failures)}")
+        return _rework(
+            ctx,
+            verify.DEFAULT_GATE,
+            f"verify failed: {', '.join(report.failures)}",
+            findings=report.failures,
+        )
     return _moved(ctx, "verify", "merged", detail)
 
 
-def _rework(
+def _rework(  # noqa: PLR0913 — one parameter per recorded fact
     ctx: _Ctx,
     gate: str,
     reason: str,
     *,
     issue_id: str | None = None,
     landing: merge.MergeResult | None = None,
+    findings: Sequence[str] = (),
 ) -> AdvanceResult:
     """Record a rework attempt for *gate* and block, escalating at the cap.
 
@@ -1449,9 +1494,36 @@ def _rework(
     rather than spending the whole lane's rework budget. *landing* carries the
     merge attempt that failed, so a driver can route a scope collision
     differently from a red gate (basicly-kjc5.20).
+
+    *findings* is what the gate reported this round — a verify report's failures,
+    a rubric's failed checks. Given one, the round is also judged for
+    *convergence* against the previous round's set, because the cap alone counts
+    attempts and cannot see that an attempt learned nothing (basicly-m4zv.5).
+    This is the one funnel every finding-reporting gate passes through, so the
+    check belongs here rather than at each of them.
+
+    The merge gate deliberately passes none. Its finding set is paths, its
+    threshold is stricter, and :func:`supervise._bounce_lane` records and judges
+    it at the bounce — where the refund and the graph edge are. Recording it here
+    too would compare each round against itself and refund twice.
     """
     target = issue_id or ctx.issue_id
     attempts = policy.record_rework(ctx.repo_root, target, gate)
+    convergence = (
+        policy.record_finding_set(ctx.repo_root, target, gate, findings) if findings else None
+    )
+    if convergence is not None:
+        stop = policy.finding_set_escalation(convergence)
+        if stop is not None:
+            return _escalate_stalled_rework(ctx, target, gate, f"{reason}; {stop}", landing)
+        if convergence.stalled:
+            # The first stalled round is a warning, not an escalation: the bead now
+            # says the attempt changed nothing the gate reports, and the next one
+            # stops the loop. It goes in the *reason*, not only in the returned
+            # detail, because at a low ``max_rework`` this round is also the cap
+            # round — and then this sentence is what the human triaging the queue
+            # item needs in order to see that a re-dispatch would learn nothing.
+            reason = f"{reason}; warning: {convergence.detail}"
     action = "escalated" if attempts >= ctx.config.max_rework else "blocked"
     if action == "escalated":
         decisions.enqueue(
@@ -1465,6 +1537,44 @@ def _rework(
         ctx,
         f"{reason} (rework {attempts}/{ctx.config.max_rework})",
         action=action,
+        landing=landing,
+    )
+
+
+def _escalate_stalled_rework(
+    ctx: _Ctx,
+    target: str,
+    gate: str,
+    reason: str,
+    landing: merge.MergeResult | None,
+) -> AdvanceResult:
+    """A rework loop that is not converging: stop now, and charge nothing for it.
+
+    The attempt is *refunded* — once, and :func:`policy.spend_convergence_refund`
+    is where that bound and its reason live. The whole defect this closes is a node
+    reaching a human having burnt its budget re-reporting a finding set it already
+    had, so whatever cap remains is left intact for the answer to spend; forgiving
+    every subsequent round instead would mean no cap is ever reached and nothing
+    ends the loop if nobody answers.
+
+    The queue item is the ordinary rework escalation, so an answered ``retry``
+    stays executable and ``decisions.enqueue`` is idempotent per question — a
+    node that already escalated at the cap is not queued twice.
+    """
+    refunded = policy.spend_convergence_refund(ctx.repo_root, target, gate)
+    attempts = policy.rework_charged(ctx.repo_root, target, gate)
+    spent = "this attempt refunded" if refunded else "the refund for this was already spent"
+    decisions.enqueue(
+        ctx.repo_root,
+        target,
+        policy.REWORK_ESCALATION_KIND,
+        policy.rework_escalation_question(gate),
+        reason,
+    )
+    return _blocked(
+        ctx,
+        f"{reason} (rework {attempts}/{ctx.config.max_rework}, {spent})",
+        action="escalated",
         landing=landing,
     )
 
