@@ -76,6 +76,31 @@ PIN_FILES = (
 PIN_RE_TEMPLATE = r"(?<![\w.])v{version}(?!\w|\.\d)"
 
 CHANGELOG_SCRIPT = Path(".scripts") / "generate_release_changelog.py"
+CHANGELOG_FILE = Path("CHANGELOG.md")
+
+# One file per lane, assembled here (basicly-4746). A lane records its user-facing
+# change as `changelog.d/<bead-id>.<category>.md` instead of editing CHANGELOG.md.
+# The filename carries the bead id, so it is unique by construction and two lanes
+# cannot write the same file — the collision becomes *impossible* rather than
+# detected. The answer it replaces declared CHANGELOG.md in `[worktree]
+# append_only_paths`, which serialized every lane that touched it and still trailed
+# the next unenumerated shared file: three of four unattended-run attempts failed on
+# two lanes at one anchor, each in a different file nobody had enumerated.
+FRAGMENT_DIR = Path("changelog.d")
+
+# The directory's own documentation, not a lane's entry.
+FRAGMENT_DOC = "README.md"
+
+# Keep a Changelog's section set, in the order a dated section lists them. This
+# ordering is the deterministic half of assembly — category first, then filename —
+# so two machines whose directory listings differ still produce identical output.
+FRAGMENT_CATEGORIES = ("added", "changed", "deprecated", "removed", "fixed", "security")
+
+# Fragments are folded into this body and the generator promotes it into the dated
+# section, so assembly reuses the promotion the release already performs instead of
+# becoming a second writer of the same text. Pinned against the generator's own
+# constant by ``test_release_changelog``.
+UNRELEASED_HEADING = "## [Unreleased]"
 
 # The changelog heading and the release workflow key on this exact date format.
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -96,6 +121,14 @@ class PinSite:
 
 
 @dataclass(frozen=True)
+class ChangelogFragment:
+    """One lane's changelog entry, and the section it assembles under."""
+
+    path: Path
+    category: str
+
+
+@dataclass(frozen=True)
 class ReleasePlan:
     """Everything a release will change, computed before anything is written."""
 
@@ -103,6 +136,12 @@ class ReleasePlan:
     version: str
     date: str
     pins: tuple[PinSite, ...]
+    # In assembly order. Defaulted so a caller that only cares about the version
+    # (the CLI's own tests) still constructs a plan in one line. The *misnamed* files
+    # are deliberately not a second field: only :func:`blocking_reasons` reads them,
+    # and a record field with no consumer beyond its own module is the shape
+    # ``wired-or-deleted`` rejects — it re-scans instead.
+    fragments: tuple[ChangelogFragment, ...] = ()
 
     @property
     def tag(self) -> str:
@@ -176,6 +215,34 @@ def _pin_re(version: str) -> re.Pattern[str]:
     return re.compile(PIN_RE_TEMPLATE.format(version=re.escape(version)))
 
 
+def scan_fragments(repo_root: Path) -> tuple[tuple[ChangelogFragment, ...], tuple[Path, ...]]:
+    """Every lane fragment in assembly order, plus every file whose name does not parse.
+
+    A file that does not parse is *reported*, never skipped. Skipping it would drop a
+    lane's release note on the floor with nothing to notice — the same silent-loss
+    shape the anchor collisions had, just one step later.
+
+    Ordering is ``(category, filename)`` and nothing else: the directory listing order
+    differs by filesystem, and a release reproduced on another machine has to produce
+    the same section text.
+    """
+    directory = repo_root / FRAGMENT_DIR
+    if not directory.is_dir():
+        return (), ()
+    fragments: list[ChangelogFragment] = []
+    misnamed: list[Path] = []
+    for path in sorted(directory.glob("*.md"), key=lambda item: item.name):
+        if path.name == FRAGMENT_DOC:
+            continue
+        bead, _, category = path.stem.rpartition(".")
+        if not bead or category not in FRAGMENT_CATEGORIES:
+            misnamed.append(path.relative_to(repo_root))
+            continue
+        fragments.append(ChangelogFragment(path=path.relative_to(repo_root), category=category))
+    fragments.sort(key=lambda item: (FRAGMENT_CATEGORIES.index(item.category), item.path.name))
+    return tuple(fragments), tuple(misnamed)
+
+
 def plan_release(repo_root: Path, version: str, *, date: str | None = None) -> ReleasePlan:
     """Compute the release plan for *version* without touching the tree.
 
@@ -195,11 +262,13 @@ def plan_release(repo_root: Path, version: str, *, date: str | None = None) -> R
         hits = len(pin_re.findall(path.read_text(encoding="utf-8")))
         if hits:
             pins.append(PinSite(path=rel, occurrences=hits))
+    fragments, _misnamed = scan_fragments(repo_root)
     return ReleasePlan(
         current_version=current,
         version=version,
         date=date or date_cls.today().isoformat(),
         pins=tuple(pins),
+        fragments=fragments,
     )
 
 
@@ -363,6 +432,152 @@ def unexercised_capabilities(repo_root: Path) -> tuple[str, ...]:
     )
 
 
+# --- Changelog fragments: one file per lane, assembled at release (basicly-4746) ---
+
+
+def _unreleased_bounds(lines: list[str]) -> tuple[int, int] | None:
+    """``(heading index, index of the next release heading)``, or None with no heading."""
+    for idx, line in enumerate(lines):
+        if not line.startswith(UNRELEASED_HEADING):
+            continue
+        end = idx + 1
+        while end < len(lines) and not lines[end].startswith("## "):
+            end += 1
+        return idx, end
+    return None
+
+
+def _section_end(lines: list[str], heading: str) -> int | None:
+    """Where content appended to *heading*'s section belongs, or None if it is absent.
+
+    Stops at ``## `` or ``### `` only, never at a bare ``#``: a curated entry may
+    carry a fenced shell snippet, and a ``# comment`` inside one is not a heading.
+    """
+    for idx, line in enumerate(lines):
+        if line.strip() != heading:
+            continue
+        end = idx + 1
+        while end < len(lines) and not lines[end].startswith(("## ", "### ")):
+            end += 1
+        while end > idx + 1 and not lines[end - 1].strip():
+            end -= 1
+        return end
+    return None
+
+
+def _fragment_body(repo_root: Path, fragment: ChangelogFragment) -> list[str]:
+    """A fragment's lines, trimmed of the blank padding an editor leaves behind."""
+    text = (repo_root / fragment.path).read_text(encoding="utf-8")
+    lines = [line.rstrip() for line in text.splitlines()]
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return lines
+
+
+def _merge_unreleased(
+    repo_root: Path, body: list[str], fragments: tuple[ChangelogFragment, ...]
+) -> list[str]:
+    """The ``[Unreleased]`` body with every fragment folded under its category heading.
+
+    A curated section keeps its position and its content: a fragment whose category
+    the operator already opened lands at the end of *that* section rather than
+    opening a second one. Two ``### Fixed`` under one release heading is both a
+    duplicate-sibling markdownlint failure and a section no reader can scan — and
+    the hand-curated body publishing beside the fragments is the transition promise,
+    not a nicety.
+    """
+    merged = [line.rstrip() for line in body]
+    while merged and not merged[-1].strip():
+        merged.pop()
+    for category in FRAGMENT_CATEGORIES:
+        entries = [fragment for fragment in fragments if fragment.category == category]
+        if not entries:
+            continue
+        block: list[str] = []
+        for entry in entries:
+            if block:
+                block.append("")
+            block.extend(_fragment_body(repo_root, entry))
+        heading = f"### {category.capitalize()}"
+        at = _section_end(merged, heading)
+        if at is None:
+            if merged:
+                merged.append("")
+            merged.extend([heading, "", *block])
+        else:
+            merged[at:at] = ["", *block]
+    return merged
+
+
+def _assemble_fragments(repo_root: Path, plan: ReleasePlan) -> None:
+    """Fold every lane's fragment into ``[Unreleased]``, then delete the files.
+
+    A pre-step to the generator rather than a second writer of the dated section:
+    the generator already promotes the ``[Unreleased]`` body into ``## vX.Y.Z``, so
+    assembling into that body reuses a promotion the release performs anyway, and an
+    operator who curated the changelog by hand is never broken.
+
+    The files are deleted in the run that consumed them — a fragment left behind is
+    republished by the next release — and the deletions ride the release commit's
+    ``git add -A``. A failure afterwards restores them with everything else
+    (:func:`_restore`).
+    """
+    if not plan.fragments:
+        return
+    path = repo_root / CHANGELOG_FILE
+    lines = path.read_text(encoding="utf-8").splitlines()
+    bounds = _unreleased_bounds(lines)
+    if bounds is None:  # pragma: no cover - blocking_reasons refuses this before any write
+        raise SystemExit(f"{CHANGELOG_FILE.as_posix()} has no {UNRELEASED_HEADING!r} heading")
+    start, end = bounds
+    merged = _merge_unreleased(repo_root, lines[start + 1 : end], plan.fragments)
+    updated = [*lines[: start + 1], "", *merged, "", *lines[end:]]
+    path.write_text("\n".join(updated).rstrip() + "\n", encoding="utf-8")
+    for fragment in plan.fragments:
+        (repo_root / fragment.path).unlink()
+
+
+def _fragment_reasons(repo_root: Path) -> tuple[str, ...]:
+    """Why the fragments on disk cannot be assembled, in report order.
+
+    Every one of these is a lane's release note that would otherwise vanish, so they
+    refuse the tag instead of being tidied away: the whole point of the per-lane file
+    is that nothing about it is silent.
+
+    Re-scans rather than reading the plan, so the misnamed half never has to be a
+    plan field only this function would read.
+    """
+    fragments, misnamed = scan_fragments(repo_root)
+    reasons = [
+        f"changelog fragment {path.as_posix()} is not named <bead-id>.<category>.md "
+        f"(category: {', '.join(FRAGMENT_CATEGORIES)}); rename it or move it out of "
+        f"{FRAGMENT_DIR.as_posix()}/ — a fragment nothing can place is a release note "
+        "that would be dropped"
+        for path in misnamed
+    ]
+    reasons.extend(
+        f"changelog fragment {fragment.path.as_posix()} is empty; write the entry or "
+        "delete the file"
+        for fragment in fragments
+        if not _fragment_body(repo_root, fragment)
+    )
+    if fragments and _unreleased_bounds(_changelog_lines(repo_root)) is None:
+        reasons.append(
+            f"{len(fragments)} changelog fragment(s) to assemble but "
+            f"{CHANGELOG_FILE.as_posix()} has no '{UNRELEASED_HEADING}' heading to fold "
+            "them into; add it — the release promotes that body into the dated section"
+        )
+    return tuple(reasons)
+
+
+def _changelog_lines(repo_root: Path) -> list[str]:
+    """The changelog's lines, or none at all when the file does not exist yet."""
+    path = repo_root / CHANGELOG_FILE
+    return path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+
+
 def blocking_reasons(repo_root: Path, plan: ReleasePlan, *, issue_id: str) -> tuple[str, ...]:
     """Deterministic reasons this release cannot proceed, in report order.
 
@@ -416,6 +631,7 @@ def blocking_reasons(repo_root: Path, plan: ReleasePlan, *, issue_id: str) -> tu
             f"unknown bead id {issue_id!r}: not in .beads/issues.jsonl — the "
             "beads-commit-msg gate would reject the release commit"
         )
+    reasons.extend(_fragment_reasons(repo_root))
     reasons.extend(unexercised_capabilities(repo_root))
     return tuple(reasons)
 
@@ -534,8 +750,9 @@ def _write_changelog(repo_root: Path, plan: ReleasePlan) -> None:
     the nearest previous semantic tag and upserts the section idempotently, and it
     has its own tests.
 
-    It promotes whatever sits under `## [Unreleased]` into the dated section, so the
-    prose a human curated *before* this run is what the tag carries. Curating
+    It promotes whatever sits under `## [Unreleased]` into the dated section — by
+    this point that body holds both the prose a human curated *before* this run and
+    every lane fragment :func:`_assemble_fragments` just folded into it. Curating
     afterwards cannot work: this commit and the annotated tag are one step, and the
     release workflow reads CHANGELOG.md from the tagged commit (basicly-m3od.1).
     """
@@ -603,10 +820,20 @@ def run_release(  # noqa: PLR0913 — mirrors the CLI surface
         f"bump {VERSION_FILE.as_posix()}: {plan.current_version} -> {plan.version}",
         "regenerate projected files so their headers carry the new version",
         f"rewrite install pins {plan.current_tag} -> {plan.tag}: {pins or '(none found)'}",
+    ]
+    if plan.fragments:
+        # Named in assembly order, so the dry run shows the section's order before
+        # the section exists.
+        names = ", ".join(fragment.path.name for fragment in plan.fragments)
+        steps.append(
+            f"assemble {len(plan.fragments)} changelog fragment(s) from "
+            f"{FRAGMENT_DIR.as_posix()}/ and delete them: {names}"
+        )
+    steps.extend([
         f"upsert CHANGELOG.md section '## {plan.tag} - {plan.date}'",
         f"commit '{COMMIT_SUBJECT}' referencing {issue_id}",
         f"annotate tag {plan.tag} with '{plan.tag} ({plan.date})'",
-    ]
+    ])
     if dry_run:
         steps.append("(dry run: nothing was written)")
         return ReleaseResult(plan=plan, steps=tuple(steps), dry_run=True, tagged=False)
@@ -615,6 +842,7 @@ def run_release(  # noqa: PLR0913 — mirrors the CLI surface
         _bump_version_file(repo_root, plan)
         _regenerate(repo_root)
         _rewrite_pins(repo_root, plan)
+        _assemble_fragments(repo_root, plan)
         _write_changelog(repo_root, plan)
         _git(repo_root, ["add", "-A"])
         _git(repo_root, ["commit", "-m", commit_message(plan, issue_id)])

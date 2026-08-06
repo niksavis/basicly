@@ -5,6 +5,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+from basicly import release
+
 
 def _load_module():
     """Load the generate-release-changelog script module from its path."""
@@ -193,3 +195,14 @@ def test_rerun_does_not_replace_a_curated_section_with_a_commit_dump() -> None:
     ]
     assert "second (999999)" not in again
     assert _heading_order(again) == _heading_order(promoted)
+
+
+def test_the_fragment_assembler_and_the_generator_agree_on_the_unreleased_heading() -> None:
+    """One heading string, two modules: a drift here loses every lane's fragment.
+
+    ``release._assemble_fragments`` folds the fragments into this heading's body and
+    this generator promotes that body into the dated section. If the two spellings
+    ever diverge the release refuses (no heading to fold into) or, worse, assembles
+    into a body nothing promotes — so pin them to each other rather than to a literal.
+    """
+    assert release.UNRELEASED_HEADING == _load_module().UNRELEASED_HEADING

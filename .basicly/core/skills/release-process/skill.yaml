@@ -17,8 +17,9 @@ instructions: |
 
   It bumps the single-sourced `__version__`, regenerates the version-stamped
   projections, rewrites the `vX.Y.Z` install pins in `README.md`,
-  `site/index.html` and both `.scripts/bootstrap.*` shims, upserts the dated
-  `CHANGELOG.md` section, commits, and creates the annotated tag.
+  `site/index.html` and both `.scripts/bootstrap.*` shims, assembles the
+  `changelog.d/` fragments into the dated `CHANGELOG.md` section, commits, and
+  creates the annotated tag.
 
   It refuses **before writing anything** on a dirty tree, a non-forward version,
   an existing tag, a bad date, an unknown `--issue`, a commit subject the
@@ -61,15 +62,35 @@ instructions: |
   `--shipping <node>` to name the node whose gates are checked, because an open
   epic's own verify gate is never green.
 
-  ### Write the notes under `## [Unreleased]` first
+  ### The notes come from `changelog.d/`, and they must be there first
 
-  The run promotes the `## [Unreleased]` body into the dated `## vX.Y.Z - <date>`
-  section and leaves `[Unreleased]` empty; the commit-subject dump is only the
-  fallback for a release nobody wrote notes for. So curate the prose beforehand,
-  under `[Unreleased]`, in the `### Added` / `### Changed` / `### Fixed` shape the
-  dated sections use.
+  Each lane leaves its entry in `changelog.d/<bead-id>.<category>.md` rather than
+  editing `CHANGELOG.md` — one file per lane, so two lanes can never collide on one
+  anchor (`basicly-4746`). The run folds every fragment into the `## [Unreleased]`
+  body under its Keep a Changelog heading, ordered by category then filename so the
+  section is byte-identical on any machine, promotes that body into the dated
+  `## vX.Y.Z - <date>` section, deletes the fragments in the same commit, and leaves
+  `[Unreleased]` empty. The commit-subject dump is only the fallback for a release
+  with neither fragments nor curated prose.
 
-  Curating afterwards does not work and is the trap this replaced
+  Check what will publish before you tag — the dry run lists the fragments in the
+  order they assemble:
+
+  ```sh
+  ls changelog.d/
+  uv run basicly release <next-version> --issue <beads-id> --dry-run
+  ```
+
+  A **hand-curated `[Unreleased]` body still publishes**, beside the fragments and
+  keeping its position, so editing the changelog directly is never broken; a
+  fragment whose category the operator already opened is appended to that section
+  rather than opening a duplicate heading. Anything the run cannot place refuses the
+  tag before the first byte is written and names itself: an empty fragment, a
+  filename that is not `<bead-id>.<category>.md`, or a changelog with no
+  `[Unreleased]` heading. Do not tidy such a file away — a lane's release note is
+  never allowed to vanish quietly.
+
+  Writing the notes afterwards does not work and is the trap this replaced
   (`basicly-m3od.1`): the commit and the annotated tag are one step, and
   `.github/workflows/release.yml` reads `CHANGELOG.md` from the **tagged** commit,
   so anything added in a later commit never reaches the published release body. A
