@@ -49,6 +49,7 @@ from pathlib import Path
 
 from . import (
     classify,
+    commit,
     decisions,
     decompose,
     loop_state,
@@ -703,10 +704,11 @@ def _runner_block(
     """
     spec, result = dispatch.spec, dispatch.result
     if result.timed_out:
+        salvaged = _salvage_killed_run(issue_id, dispatch)
         return _blocked(
             ctx,
             f"runner {spec.name!r} hit runner_timeout ({dispatch.timeout:.0f}s) "
-            f"in {target}; inspect the worktree and re-dispatch",
+            f"in {target}; {salvaged.detail}",
         )
     if result.returncode != 0:
         tail = (result.stderr or result.stdout).strip().splitlines()
@@ -734,6 +736,31 @@ def _runner_block(
         reason = f"runner {spec.name!r} needs input in {target}: {needs.detail or needs.fact}"
         return _blocked(ctx, reason, needs_input=needs.fact)
     return None
+
+
+def _salvage_killed_run(issue_id: str, dispatch: _Dispatch) -> commit.Salvage:
+    """Commit the killed dispatch's worktree, and say what the next advance can do.
+
+    The kill takes the agent out before its last step, which is the commit — so
+    the harness makes one instead and the *next* advance judges it, exactly as it
+    would have judged the agent's own (basicly-yvx9). Nothing else changes: this
+    advance still blocks, because a timeout is a thing an operator should see.
+
+    Both dispatch paths reach this. A leaf's next advance lands the salvaged
+    commit through :func:`_verify_and_land`; a lane sub-task's next advance sees
+    the commit through :func:`_subtask_committed` and verifies it rather than
+    re-dispatching the sub-task — which is the same idempotence the handoff runner
+    already relies on, reached now by a killed headless run too.
+    """
+    salvaged = commit.salvage(
+        dispatch.cwd, issue_id, reason=f"runner_timeout after {dispatch.timeout:.0f}s"
+    )
+    advice = (
+        "advance again to judge it"
+        if salvaged.committed
+        else "inspect the worktree and re-dispatch"
+    )
+    return replace(salvaged, detail=f"{salvaged.detail}; {advice}")
 
 
 def record_run(

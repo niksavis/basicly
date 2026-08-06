@@ -289,6 +289,13 @@ default = "auto"
 # Hard wall-clock bound per lane. Lower than the 3600s default while an
 # unsizeable lane still defeats both dispatch cost gates (basicly-vz78): with no
 # forward forecast, this timeout is the only per-lane ceiling on a runaway run.
+#
+# The kill no longer costs the run: the harness commits whatever the worktree
+# holds on the way out and the landing judges that diff, because a clock is not
+# evidence against a change (basicly-yvx9). The number is still calibrated inside
+# the upper tail of real work — the longest success measured 1712s against this
+# 1800 — so it kills lanes that are working, and raising it only moves the cliff;
+# retiring the wall clock as the working bound is basicly-lpsf.
 runner_timeout = 1800
 # The model tier every dispatch of this repo resolves through (basicly-tcmy.35).
 # The tier vocabulary (basicly-kjc5.58), the committed map (basicly-kjc5.61) and

@@ -63,6 +63,7 @@ from pathlib import Path
 
 from . import (
     br,
+    commit,
     decisions,
     decompose,
     loop,
@@ -1659,6 +1660,11 @@ class LaneOutcome:
     # deterministic refusal cannot be fixed by re-running it, so it must route to
     # the queue rather than burn the bounded dispatch retries.
     refused: bool = False
+    # True when a hard-killed dispatch's worktree was committed on its way out
+    # (basicly-yvx9). Only ever set beside a timed-out result, and it is what tells
+    # the routing there is a diff to judge: a killed run with nothing committed has
+    # nothing for the landing to say anything about, and parks on its queue item.
+    salvaged: bool = False
     # True when the dispatch died on a *transient* failure of the tracker's storage
     # layer rather than on anything about this lane (basicly-vkh0.10). Nothing
     # spawned and the lane's tree is untouched, so charging it a dispatch rework
@@ -2396,15 +2402,33 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
         # Consume any sentinel the killed run managed to write — leaving it
         # would mis-attribute the fact to the *next* dispatch after triage.
         stale_needs = needs_input.take(cwd)
-        # Hard-kill stall (design section 6): route to the decision queue and
-        # hold the lane until a human (or the decider) triages it.
+        # The tree is where the run's whole value sits, and the kill took the agent
+        # out before the commit that is its last step — so the harness commits it
+        # (basicly-yvx9). Judged, never trusted: the routing below sends a salvaged
+        # lane to the landing, where a red gate reworks it with real findings.
+        salvaged = commit.salvage(
+            cwd,
+            lane.issue_id,
+            reason=f"runner_timeout after {runner_config.runner_timeout:.0f}s",
+        )
+        # Hard-kill stall (design section 6): queue it whatever the salvage found.
+        # A timeout is a thing a human should see, and rescuing the diff must not
+        # turn one into a silent success — the item is what keeps the kill on the
+        # record even when the work goes on to land.
         stall = decisions.enqueue(
             repo_root,
             lane.issue_id,
             "stall",
             f"runner {spec.name} hit runner_timeout "
             f"({runner_config.runner_timeout:.0f}s): retry, re-dispatch, or park?",
-            stale_needs.fact if stale_needs is not None else "",
+            "; ".join(
+                part
+                for part in (
+                    salvaged.detail,
+                    stale_needs.fact if stale_needs is not None else "",
+                )
+                if part
+            ),
         )
         return LaneOutcome(
             issue_id=lane.issue_id,
@@ -2414,8 +2438,9 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
             occupancy=None,
             overrun=False,
             followup_id=None,
+            salvaged=salvaged.committed,
             detail=f"timed out after {runner_config.runner_timeout:.0f}s; "
-            f"stall queued as {stall.decision_id}",
+            f"{salvaged.detail}; stall queued as {stall.decision_id}",
         )
     if result.handoff:
         return LaneOutcome(
@@ -2631,10 +2656,15 @@ def route_outcomes(
     Blocked shapes route to the decision queue: a needs-input fact and a timeout
     stall were queued at dispatch, a failed run retries under the bounded rework
     cap and escalates at it, and a landed lane whose ship checkpoint no grant
-    covers queues a checkpoint request for the human. *beat* fires between
-    outcomes; per-outcome failures are contained to that lane's route so one br
-    hiccup cannot discard the rest of the pass. Outcomes are returned in the
-    order they were processed (landing order), not in the order they came in.
+    covers queues a checkpoint request for the human. A hard-killed lane whose
+    worktree was salvaged is the one shape that does both — the stall item holds
+    the *timeout* for a human while the *diff* goes to the landing to be judged
+    (basicly-yvx9).
+
+    *beat* fires between outcomes; per-outcome failures are contained to that
+    lane's route so one br hiccup cannot discard the rest of the pass. Outcomes
+    are returned in the order they were processed (landing order), not in the
+    order they came in.
     """
     routed: list[RoutedOutcome] = []
     landing_blocked = False
@@ -2649,8 +2679,11 @@ def route_outcomes(
     for outcome in _landing_order(repo_root, pass_outcomes):
         if beat is not None:
             beat()
-        is_green = _is_green(outcome)
-        if landing_blocked and is_green:
+        # A salvaged timeout is not green — the run was killed — but it does try to
+        # land, so it needs the same pre-landing head sha and the same "stop landing
+        # after a failure this pass" treatment as a green lane (basicly-yvx9).
+        lands = _is_green(outcome) or outcome.salvaged
+        if landing_blocked and lands:
             routed.append(
                 RoutedOutcome(
                     outcome.issue_id,
@@ -2659,7 +2692,7 @@ def route_outcomes(
                 )
             )
             continue
-        before = merge.head_sha(repo_root) if is_green else ""
+        before = merge.head_sha(repo_root) if lands else ""
         try:
             one = _route_one(repo_root, session, outcome, landed, collisions)
         except (RuntimeError, OSError, ValueError) as exc:
@@ -2670,7 +2703,7 @@ def route_outcomes(
         routed.append(one)
         if one.progressed:
             landed.append((outcome.issue_id, merge.changed_paths(repo_root, before)))
-        elif is_green and one.route not in ("bounced", "re-dispatch"):
+        elif lands and one.route not in ("bounced", "re-dispatch"):
             landing_blocked = True
     return _attribute_pass_couplings(repo_root, tuple(routed), collisions, landed)
 
@@ -3076,14 +3109,37 @@ def _route_one(
     # (basicly-jr0l.16): the refusal is deterministic arithmetic, so every retry
     # would reach the identical verdict and only delay the escalation that already
     # holds the lane.
-    if (
-        outcome.refused
-        or (result is not None and result.timed_out)
-        or outcome.needs_fact is not None
-    ):
+    if outcome.refused or outcome.needs_fact is not None:
         return RoutedOutcome(issue_id, "decision", outcome.detail)
+    if result is not None and result.timed_out:
+        return _route_timeout(repo_root, session, outcome, landed, collisions)
     if result is None or result.returncode != 0:
         return _route_failed(repo_root, issue_id, outcome)
+    return _land_green(repo_root, session, outcome, landed, collisions)
+
+
+def _route_timeout(
+    repo_root: Path,
+    session: SessionState,
+    outcome: LaneOutcome,
+    landed: list[tuple[str, tuple[str, ...]]],
+    collisions: list[tuple[str, tuple[str, ...]]],
+) -> RoutedOutcome:
+    """Where a hard-killed lane goes, decided by whether its worktree was rescued.
+
+    A kill whose worktree :func:`commit.salvage` committed lands like any other
+    committed lane (basicly-yvx9). The stall item queued at dispatch already holds
+    the *timeout* for a human; what routes here is the *diff*, and verify is the
+    authority on a diff where a clock is not — green lands, red reworks the lane
+    with real findings about the code the killed run actually wrote.
+
+    With nothing committed the lane parks on that queue item, exactly as every
+    timeout did before: there is no diff for a landing to judge, and the killed run
+    is not a failure of the work that a bounded re-dispatch could fix — it would
+    only reach the same clock.
+    """
+    if not outcome.salvaged:
+        return RoutedOutcome(outcome.issue_id, "decision", outcome.detail)
     return _land_green(repo_root, session, outcome, landed, collisions)
 
 

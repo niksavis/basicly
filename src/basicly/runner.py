@@ -974,7 +974,10 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     output was captured, so the caller can route the stall instead of hanging.
     The kill takes the dispatch's **whole process tree** with it — see
     :func:`_kill_tree`; an agent CLI's children must not outlive the stall that
-    was queued for it (basicly-kjc5.15).
+    was queued for it (basicly-kjc5.15). Rescuing the buffered output is only half
+    of what a kill strands: the *worktree* holds the run's actual value, and
+    committing it is the caller's job (:func:`commit.salvage`, basicly-yvx9) —
+    this layer owns the process, not the tree.
 
     A declared model tier is resolved here, before anything is spawned
     (basicly-kjc5.59): an unresolvable tier raises
