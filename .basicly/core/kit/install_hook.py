@@ -42,6 +42,13 @@ rather than appended, so the second run changes nothing and duplicates nothing.
 Hooks the consumer wrote themselves are matched by the script they run, never by
 position, and are left untouched.
 
+**A run that writes says the host must be restarted** (basicly-e3z6). The host
+reads its hooks once, at process start; clearing the conversation reloads neither
+hooks nor agent definitions (measured on basicly-wbsz.3), so a consumer who stops
+at this installer's success line gets no injection and every diagnostic they can
+reach says the hook is installed correctly. A dry run and an already-installed
+converge run do **not** say it, because nothing changed for a restart to pick up.
+
 A ``settings.json`` that exists but cannot be parsed is **refused, never
 overwritten** — it is the consumer's file and a mangled one is a worse outcome
 than an uninstalled hook.
@@ -101,6 +108,15 @@ CANNOT_INTERCEPT = {
 }
 
 HOSTS = ("claude", *sorted(CANNOT_INTERCEPT))
+
+# Printed only after a run that actually wrote a hook. The host loads its hooks
+# once, at process start, and clearing the conversation reloads neither hooks nor
+# agent definitions (measured on basicly-wbsz.3) - so without this line the
+# success report is where a consumer stops, and the hook silently never fires.
+RESTART_NOTICE = (
+    "quit and relaunch the host CLI process for this to take effect: hooks are "
+    "read once at startup, and clearing the conversation does not reload them"
+)
 
 
 def hook_command(
@@ -233,22 +249,31 @@ def merge_hook(settings: dict, command: str) -> dict:
 
 def install_claude(
     root: Path, *, user: bool, dry_run: bool, interpreter: str | None = None
-) -> tuple[bool, str]:
-    """Install the hook for Claude Code; return ``(installed, message)``."""
+) -> tuple[bool, bool, str]:
+    """Install the hook for Claude Code; return ``(installed, wrote, message)``.
+
+    ``wrote`` is narrower than ``installed`` on purpose: a dry run and an
+    already-installed converge run both leave the host in a working state, but
+    neither changed a file, so neither is a reason to tell someone to restart.
+    """
     hook = Path(__file__).resolve().parent / HOOK_FILENAME
     if not hook.is_file():
-        return False, f"claude: {hook} is missing, so there is no hook to install"
+        return False, False, f"claude: {hook} is missing, so there is no hook to install"
     path = settings_path(root, user=user)
     scope = "user" if user else "project"
     current = load_settings(path)
     updated = merge_hook(current, hook_command(hook, interpreter, root=root, user=user))
     if updated == current:
-        return True, f"claude: already installed ({scope} scope) in {path}"
+        return True, False, f"claude: already installed ({scope} scope) in {path}"
     if dry_run:
-        return True, f"claude: would write the {HOOK_EVENT}/{HOOK_MATCHER} hook to {path}"
+        return True, False, f"claude: would write the {HOOK_EVENT}/{HOOK_MATCHER} hook to {path}"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(updated, indent=2) + "\n", encoding="utf-8")
-    return True, f"claude: wrote the {HOOK_EVENT}/{HOOK_MATCHER} hook ({scope} scope) to {path}"
+    return (
+        True,
+        True,
+        f"claude: wrote the {HOOK_EVENT}/{HOOK_MATCHER} hook ({scope} scope) to {path}",
+    )
 
 
 def install(
@@ -259,17 +284,28 @@ def install(
     dry_run: bool,
     interpreter: str | None = None,
 ) -> tuple[bool, list[str]]:
-    """Install for each requested host; return ``(any_installed, report lines)``."""
+    """Install for each requested host; return ``(any_installed, report lines)``.
+
+    The restart notice is the last line, and only when some host was actually
+    written to - once for the whole run rather than once per host, because it is
+    the reader's next step, not a property of any one host.
+    """
     lines = []
     installed = False
+    wrote = False
     for host in hosts:
         reason = CANNOT_INTERCEPT.get(host)
         if reason is not None:
             lines.append(f"{host}: nothing installed - {reason}")
             continue
-        ok, message = install_claude(root, user=user, dry_run=dry_run, interpreter=interpreter)
+        ok, written, message = install_claude(
+            root, user=user, dry_run=dry_run, interpreter=interpreter
+        )
         installed = installed or ok
+        wrote = wrote or written
         lines.append(message)
+    if wrote:
+        lines.append(RESTART_NOTICE)
     return installed, lines
 
 

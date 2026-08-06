@@ -181,6 +181,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   survive. A `settings.json` that exists but cannot be parsed is **refused, never
   overwritten** — it is the consumer's file.
 
+  **A run that writes now ends by saying the host CLI process must be quit and
+  relaunched**, because hooks are read once at startup and clearing the conversation
+  reloads neither them nor agent definitions — so the success line was where a
+  consumer stopped, with every diagnostic they could reach reporting the hook
+  correctly installed. A dry run and an already-installed converge run stay silent
+  about it: nothing changed for a restart to pick up (`basicly-e3z6`).
+
 - **The tier injection kit is documented**, in `.basicly/core/kit/README.md` (how to
   use it) and `docs/design/tier-injection-kit.md` (why it is shaped this way). They
   state which host resolves a tier dynamically and which falls back to static

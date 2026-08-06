@@ -107,8 +107,10 @@ seconds earlier were both rejected as "Agent type not found" in a conversation b
 `/clear`, while agents predating the process start loaded normally — which rules out the
 alternative explanation that the unrecognized `tier:` frontmatter key was getting the
 definitions rejected. The README says so in the install steps rather than in a
-troubleshooting note, because that is where the reader is. `basicly-e3z6` carries putting
-it in the installer's own success output.
+troubleshooting note, because that is where the reader is — and the installer itself ends
+a run that wrote with the same instruction, because a reader who follows the entry point
+never opens the README at all (`basicly-e3z6`). A dry run and an already-installed
+converge run do not say it: nothing changed for a restart to pick up.
 
 ## 4. The live proof
 
@@ -188,8 +190,6 @@ The resulting rule, which the two scopes now encode:
 
 - **basicly's own agents still declare no tier**, so the kit ships with nothing in this
   repo exercising it by default. `basicly-a3yi` is what would change that.
-- `basicly-e3z6` — the installer should print the restart requirement in its success
-  output.
 - `basicly-5gn2` — bandit's `[[verify.checks]]` names `.scripts` and
   `.basicly/core/hooks` only, so `.basicly/core/kit/` is unscanned though it ships to
   consumers and runs in a spawn path.
