@@ -9,7 +9,7 @@ outside this repo.
 This module is that gate. One test per requirement, each exercising the harness's
 *own* defence against the **defective input**, so it fails if the defence is
 removed. The register in prose, with what each defect cost, is
-`docs/design/work-tracker.md` §2.1 (R1-R8); the ids here match it.
+`docs/design/work-tracker.md` §2.1 (R1-R9); the ids here match it.
 
 Two things this module deliberately is not:
 
@@ -659,13 +659,61 @@ def test_r8_a_contended_write_lock_does_not_spend_the_lanes_rework_budget(
     assert ".beads/.write.lock" in result.detail
 
 
+# --- R9: a publish never shrinks the artifact silently ------------------------
+
+
+def test_r9_a_publish_that_would_shrink_the_export_is_refused_not_silent(
+    tmp_path: Path,
+) -> None:
+    """R9: the replacement must not let a smaller store overwrite a larger artifact.
+
+    A mutating `br` command auto-flushed a 426-record database over a 612-record
+    committed export, deleting 187 records — 47 of them open — and reported success
+    (basicly-b2n2). Nothing in the tracker layer noticed; three positive-control tests
+    asserting a gate was not measuring an empty set were the only detection.
+
+    Asserted on **content, not timestamps**, which is the refinement measured while
+    filing it: `br sync --status` says "JSONL is newer" from mtime alone and fires on a
+    healthy checkout where the import is a no-op, so a timestamp guard would cry wolf
+    routinely and would not have distinguished this incident from clock ordering.
+
+    Written against a local helper rather than the replacement's API, which does not
+    exist yet: this pins the *rule* so the replacement inherits it as a gate rather
+    than as prose. When the owned tracker lands, point this at its publish path.
+    """
+
+    def publish(existing: Path, records: list[str], *, intent: bool = False) -> None:
+        """Stand-in for the replacement's publish: refuse a silent shrink."""
+        prior = [line for line in existing.read_text(encoding="utf-8").splitlines() if line]
+        if len(records) < len(prior) and not intent:
+            raise ValueError(
+                f"refusing to publish {len(records)} records over {len(prior)}: "
+                "a shrink needs explicit intent"
+            )
+        existing.write_text("".join(f"{line}\n" for line in records), encoding="utf-8")
+
+    export = tmp_path / "issues.jsonl"
+    export.write_text("".join(f'{{"id":"b-{n}"}}\n' for n in range(612)), encoding="utf-8")
+    smaller = [f'{{"id":"b-{n}"}}' for n in range(426)]
+
+    with pytest.raises(ValueError, match=r"refusing to publish 426 records over 612"):
+        publish(export, smaller)
+
+    # The artifact is untouched by the refusal — a guard that half-writes is worse.
+    assert len([line for line in export.read_text(encoding="utf-8").splitlines() if line]) == 612
+
+    # Declared intent still shrinks, because a real deletion must remain expressible.
+    publish(export, smaller, intent=True)
+    assert len([line for line in export.read_text(encoding="utf-8").splitlines() if line]) == 426
+
+
 # --- The register must stay complete -----------------------------------------
 
 
 def test_every_requirement_in_the_design_register_has_a_test_here() -> None:
     """A prose register nobody tests is a wish list.
 
-    The design doc numbers the requirements R1-R8; this asserts each id appears in
+    The design doc numbers the requirements R1-R9; this asserts each id appears in
     a test name in this module, so adding a ninth defect to the register without
     a gate fails here rather than being noticed years later.
     """

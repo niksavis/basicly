@@ -33,6 +33,33 @@ basicly loop status <issue>     # phase, worktree binding, gates, checkpoints, r
 Pick the next actionable issue with `br ready` / `br scheduler --json`; `basicly
 loop status` then tells you which phase it is parked in and what it is waiting on.
 
+## Before any `br` write on a checkout you did not just leave
+
+```sh
+br sync --status
+```
+
+If it reports `JSONL is newer (import recommended)`, run `br sync --import-only`
+**first**. A mutating `br` command on a checkout whose committed export is newer than
+the local database auto-flushes the **older database over the newer file**: measured
+once at 426 records published over 612, **187 records deleted, 47 of them open**, and
+`br create` reported success with no gate firing (`basicly-b2n2`).
+
+Two things make this worth a standing habit rather than a note:
+
+- The export is recoverable **only because it is committed** — `git show
+  <good-ref>:.beads/issues.jsonl` restores it, then `--import-only`, then
+  `--flush-only`. The database is the side that gets corrupted.
+- The status line is computed from **timestamps**, so it also says "JSONL is newer" on
+  a perfectly healthy checkout where the content is byte-identical and the import is a
+  no-op. Do not learn to ignore it; run the import, it costs nothing when there is
+  nothing to do.
+
+**Check the shape of the diff before committing tracker state.** A commit that files two
+beads is `+2` lines. If `git diff --cached --stat .beads/issues.jsonl` shows large
+deletions, stop — that is the defect above in progress. `grep -c . .beads/issues.jsonl`
+against the count you started with is the fastest confirmation.
+
 ## Tracker state is zero-touch — the engine commits it, you never do
 
 One tracker, everywhere: a loop-provisioned worktree shares the base
