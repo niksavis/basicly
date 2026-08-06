@@ -1726,6 +1726,42 @@ def test_a_salvaged_timeout_whose_gate_is_red_reworks_instead_of_landing(
     assert "verify failed" in routed[0].detail
 
 
+def test_a_salvaged_landing_that_fails_stops_the_pass_like_any_other(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A rescued lane earns the same "signal about the base" stop a green one does.
+
+    ``route_outcomes`` pauses landing after a failure so nothing is stacked on a
+    base no further merge may be built on. That test keys on ``_is_green``, and a
+    salvaged lane is deliberately *not* green — the run was killed — so it takes
+    ``outcome.salvaged`` to make its landing count as one that happened at all.
+    Without it the failure is silently not a stop, and the sibling behind it lands
+    on the very base the first landing just failed against.
+    """
+    monkeypatch.setattr(
+        supervise.loop,
+        "advance",
+        lambda _r, issue_id, **_k: loop.AdvanceResult(
+            issue_id, "build", "build", "blocked", "merge commit rejected"
+        ),
+    )
+    monkeypatch.setattr(supervise, "_landing_order", lambda _r, outcomes: list(outcomes))
+    salvaged = _executed_outcome(
+        "epic.1", returncode=None, timed_out=True, salvaged=True, detail="timed out; committed"
+    )
+    behind = _executed_outcome("epic.2")
+
+    routed = supervise.route_outcomes(
+        tmp_path, _session(_lane("epic.1"), _lane("epic.2")), (salvaged, behind)
+    )
+
+    assert [(r.issue_id, r.route) for r in routed] == [
+        ("epic.1", "rework"),
+        ("epic.2", "held"),
+    ]
+    assert "landing paused" in routed[1].detail
+
+
 def test_route_handoff_stays_with_the_driving_agent(tmp_path: Path) -> None:
     """Interactive mode: a handoff lane is not a queue item, it is the human's turn."""
     handoff = supervise.LaneOutcome(
