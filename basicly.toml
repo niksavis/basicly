@@ -46,6 +46,18 @@ concurrency = 5
 # engine against the worktree's config, so a lane adding a key and using it in one
 # commit cannot land at all (`basicly-69az`).
 append_only_paths = ["CHANGELOG.md"]
+# Artifacts every lane rebuilds and no bead declares (basicly-lyro). The projection
+# manifest is a pure function of the tree, so two lanes editing different catalog
+# sources both rewrite it and the second one's landing rebase conflicts on an artifact
+# with no semantic disagreement in it. Measured: three lanes editing three different
+# skills — `basicly-l7zo`, `basicly-5xcj`, `basicly-sco6` — landed two and burned both
+# of the third's rework attempts here.
+#
+# Deliberately not in `append_only_paths`: that list makes lanes serialize, which is
+# the right answer for prose nobody can auto-merge and the wrong one here. Nothing
+# needs serializing — the file just needs rebuilding once on the merged tree.
+generated_paths = [".basicly/generated-manifest.json"]
+regenerate_command = ["basicly", "build"]
 
 # Deterministic verify gate. Each check runs in the listed modes; a "staged"
 # check with staged_suffix runs only against staged files of that suffix. A check
