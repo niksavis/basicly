@@ -1352,6 +1352,28 @@ def append_only_report(
     return tuple(lines)
 
 
+def generated_report(paths: tuple[str, ...], command: tuple[str, ...]) -> tuple[str, ...]:
+    """What this pass will do with a landing conflict on a rebuildable artifact.
+
+    Reported beside :func:`append_only_report` because the two are the same collision
+    with opposite remedies, and an operator who reads only the ``contend:`` line would
+    conclude a shared artifact must serialise the pass when it need not (basicly-lyro).
+
+    Says so when nothing is declared, for the reason that report does: the undeclared
+    state is the one that costs a lane its rework budget, and it is only ever
+    discovered at the merge queue, after the money is spent.
+    """
+    if not paths:
+        return (
+            "no generated path declared ([worktree] generated_paths) - a landing conflict "
+            "on an artifact every lane rebuilds bounces the lane instead of being rebuilt",
+        )
+    return (
+        f"generated: {', '.join(f'`{path}`' for path in paths)} - a landing conflict confined "
+        f"to these is rebuilt with `{' '.join(command)}` and continues, spending no rework",
+    )
+
+
 # --- The spend ceiling at pass admission (D3 looking forward, basicly-jr0l.22) ---
 #
 # ``policy.spend_status`` compares spend *already recorded* against the grant's

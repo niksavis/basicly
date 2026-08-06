@@ -495,6 +495,10 @@ class _Preflight:
     # deciding unrelated assertions — and the scopes are a real `br show` per lane.
     append_only: tuple[str, ...] = ()
     scopes: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    # The configured generated artifacts and their rebuild, for the `regen:` line
+    # (basicly-lyro). Pinned for the same reason `append_only` is.
+    generated: tuple[str, ...] = ()
+    regenerate: tuple[str, ...] = ()
 
 
 def _calibration(**overrides) -> decompose.CalibrationStatus:
@@ -549,9 +553,16 @@ def _preflight_fixture(monkeypatch: pytest.MonkeyPatch, pinned: _Preflight) -> N
     )
     monkeypatch.setattr(cli.supervise, "metered_without_a_budget", lambda *_a: metered)
     monkeypatch.setattr(cli.supervise, "ready_lanes", lambda *_a, **_k: lanes)
-    cap = pinned.cap
+    cap, generated, regenerate = pinned.cap, pinned.generated, pinned.regenerate
     monkeypatch.setattr(
-        cli, "load_worktree_config", lambda *_a: WorktreeConfig(base_branch=None, concurrency=cap)
+        cli,
+        "load_worktree_config",
+        lambda *_a: WorktreeConfig(
+            base_branch=None,
+            concurrency=cap,
+            generated_paths=generated,
+            regenerate_command=regenerate,
+        ),
     )
     monkeypatch.setattr(cli.decompose, "unsized_lane_tokens", lambda *_a: (1_000, "measured"))
     calibration = pinned.calibration or _calibration()
@@ -845,6 +856,49 @@ def test_preflight_says_the_contention_check_is_inert_when_nothing_is_declared(
     cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
 
     assert "contend:   no append-only path declared" in capsys.readouterr().out
+
+
+def test_preflight_reports_the_artifacts_a_landing_rebuilds_instead_of_bouncing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The other half of the same collision: these paths need no build order (basicly-lyro).
+
+    Beside `contend:` on purpose. An operator who read only that line would conclude a
+    shared artifact must serialise the pass, when the merge queue rebuilds this one and
+    spends no rework — and today the only place to learn that is the merge queue.
+    """
+    _preflight_fixture(
+        monkeypatch,
+        _Preflight(
+            grant=Grant(level="L1", token_budget=10_000),
+            children=(("c.1", "open"), ("c.2", "open")),
+            generated=(".basicly/generated-manifest.json",),
+            regenerate=("basicly", "build"),
+        ),
+    )
+
+    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+
+    out = capsys.readouterr().out
+    assert "regen:     generated: `.basicly/generated-manifest.json`" in out
+    assert "rebuilt with `basicly build`" in out and "spending no rework" in out
+
+
+def test_preflight_says_the_rebuild_check_is_inert_when_nothing_is_declared(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Silence reads as "checked, nothing found", and the undeclared state is the costly one."""
+    _preflight_fixture(
+        monkeypatch,
+        _Preflight(
+            grant=Grant(level="L1", token_budget=10_000),
+            children=(("c.1", "open"), ("c.2", "open")),
+        ),
+    )
+
+    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+
+    assert "regen:     no generated path declared" in capsys.readouterr().out
 
 
 def test_preflight_refuses_a_dirty_base_before_any_lane_runs(
