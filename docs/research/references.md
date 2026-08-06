@@ -160,6 +160,17 @@ of events in their own committed fixture share a millisecond is a measured prope
 data, and it is the finding that turns `work-tracker.md` §9.5 from an assertion into evidence. The
 mechanism adoption is held pending the licence question.
 
+**Resolved 2026-07-30 by owner decision, and closed out 2026-08-06.** We do **not** pursue a legal
+review — the question is not worth the cost when the measurements were the value and we already have
+them. Two standing consequences. hankweave *source* is **permanently** out of bounds as an
+implementation reference, not merely pending something. And the two mechanisms are usable as
+**concepts**, obtained clean-room from a written description exactly as §2.1 requires for
+`beads_rust`: they are now designed from first principles in `design/work-tracker.md` §4.6 (a running
+aggregate carried per event, with the fold kept as the authority) and §4.2 (truncation that records
+`original_length` rather than summarising), with the clean-room posture recorded in §4.6 itself. No
+port, no snippet, and no line ranges from their tree in either section — which is why neither cites
+one.
+
 Note also, for a different reason: their `NOTICE.md` records that hankweave orchestrates Claude
 through `@anthropic-ai/claude-agent-sdk`, which it states is **not** open source. Irrelevant to our
 own dependency policy, but it is the second time in this set that a project's real constraints lived
