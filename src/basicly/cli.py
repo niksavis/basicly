@@ -3008,8 +3008,60 @@ def _provisioning_blockers(
 _SEEDING_CHECKPOINT = {"intake": "classify", "decompose": "decompose"}
 
 
+def _preflight_session(repo_root: Path, args: argparse.Namespace) -> supervise.SessionState | None:
+    """The session preflight reports on, or None once it has reported why there is none.
+
+    The empty-selector case is *answered* rather than raised: a command whose whole job
+    is to report what would block a pass has to report its own lane selector matching
+    nothing (basicly-1lpo), and printing the verdict here keeps the caller's one
+    statement budget per concern.
+    """
+    try:
+        state = supervise.derive_session(repo_root, args.issue, lane_label=args.label)
+    except supervise.LaneSelectionError as exc:
+        print(f"select:    INVALID - {exc}")
+        print("VERDICT:   not ready - the lane selector names no bead to run")
+        return None
+    if args.label is not None:
+        print(
+            f"select:    {len(state.children)} bead(s) carry label {args.label!r}; "
+            f"{len(state.open_children)} still open"
+        )
+    return state
+
+
+def _print_preflight_coverage(
+    repo_root: Path, state: supervise.SessionState, grant: policy.Grant | None
+) -> None:
+    """Report selected lanes the grant's session does not reach (basicly-1lpo).
+
+    A labelled lane set and a grant's session are two different walks: the grant
+    covers the root plus its ``parent-child`` descent and its ``blocks``
+    dependencies (:func:`policy.session_issue_ids`), while a label expresses
+    membership with no edge at all. An uncovered lane still dispatches, so this is
+    a report rather than a blocker — but every checkpoint that lane reaches is a
+    human's, which is a pass that reads as lights-out and stalls one checkpoint in.
+    The remedy is the edge a release cut already means: the root waits on it.
+    """
+    if state.lane_label is None or grant is None:
+        return
+    covered = frozenset(policy.session_issue_ids(repo_root, state.root_issue))
+    outside = [issue_id for issue_id, _ in state.children if issue_id not in covered]
+    if not outside:
+        print(
+            f"coverage:  all {len(state.children)} selected lane(s) under the {grant.level} grant"
+        )
+        return
+    print(
+        f"coverage:  {len(outside)} of {len(state.children)} selected lane(s) outside the "
+        f"{grant.level} grant's session - their checkpoints are a human's"
+    )
+    print(f"           cover each: br dep add {state.root_issue} <id> -t blocks")
+    print(f"           uncovered: {', '.join(outside)}")
+
+
 def _print_preflight_checkpoints(
-    repo_root: Path, root_issue: str, grant: policy.Grant | None
+    repo_root: Path, root_issue: str, grant: policy.Grant | None, *, seeds_from_root: bool = True
 ) -> list[str]:
     """Report the root's own unapproved checkpoints; return the ones that refuse a pass.
 
@@ -3024,9 +3076,14 @@ def _print_preflight_checkpoints(
     ``ship`` really does resolve a landed lane's approval without a human, while the
     same grant cannot serve the root's own ``decompose`` — nothing on the seeding path
     consults it.
+
+    *seeds_from_root* is False for a pass whose lanes were selected by label: the root's
+    advance is then not the provisioning path (``supervise._seed_selected_lanes``), so
+    its own checkpoints refuse nothing and reporting one as a blocker would refuse a
+    pass that is ready (basicly-1lpo).
     """
     node = loop_state.read_node_state(repo_root, root_issue)
-    blocking = _SEEDING_CHECKPOINT.get(node.phase)
+    blocking = _SEEDING_CHECKPOINT.get(node.phase) if seeds_from_root else None
     # What the grant delegates, named once: it is the difference between the two lines
     # below, and the surprising half of the report is that a grant covering `decompose`
     # still cannot serve the root's own.
@@ -3179,7 +3236,9 @@ def _cmd_loop_preflight(args: argparse.Namespace) -> int:
     sessions = worktree.list_sessions(repo_root)
     print(f"worktrees: {len(sessions)} live")
 
-    state = supervise.derive_session(repo_root, args.issue)
+    state = _preflight_session(repo_root, args)
+    if state is None:
+        return 1
     stale = [lane.issue_id for lane in state.adopted if not lane.live]
     if stale:
         print(f"stale:     {', '.join(stale)} - binding outlived its worktree, will be repaired")
@@ -3209,7 +3268,10 @@ def _cmd_loop_preflight(args: argparse.Namespace) -> int:
         print(f"budget:    MISSING - the {metered!r} runner meters spend and no budget covers it")
         blockers.append("a metered runner needs a grant with a token budget")
 
-    blockers += _print_preflight_checkpoints(repo_root, args.issue, grant)
+    _print_preflight_coverage(repo_root, state, grant)
+    blockers += _print_preflight_checkpoints(
+        repo_root, args.issue, grant, seeds_from_root=state.lane_label is None
+    )
     blockers += _print_preflight_spend(repo_root, state, status)
     _print_preflight_contention(repo_root, state)
     _print_preflight_calibration(repo_root, load_sizing_config(repo_root))
@@ -3398,6 +3460,13 @@ def _apply_session_overrides(repo_root: Path, args: argparse.Namespace) -> tuple
     return session_config.override_pairs()
 
 
+def _print_delegated(delegated: tuple[supervise.DelegatedDecision, ...]) -> None:
+    """Report what the decider disposed of this pass, and what it handed to a human."""
+    for decided in delegated:
+        verb = "decided" if decided.answered else "to human"
+        print(f"decider:  {decided.decision_id} [{decided.kind}] {verb} - {decided.detail}")
+
+
 def _print_supervise_header(repo_root: Path, session_id: str, overrides: tuple[str, ...]) -> None:
     """The session's opening lines: id, any override, and the process budget.
 
@@ -3452,7 +3521,7 @@ def _cmd_loop_supervise(args: argparse.Namespace) -> int:
     try:
         while True:
             hb.check()
-            state = supervise.derive_session(repo_root, args.issue)
+            state = supervise.derive_session(repo_root, args.issue, lane_label=args.label)
             _print_session(state)
             if state.done:
                 print("done:     yes")
@@ -3467,9 +3536,7 @@ def _cmd_loop_supervise(args: argparse.Namespace) -> int:
             delegated = supervise.delegate_decisions(
                 repo_root, state, beat=hb.check, admission=admission
             )
-            for decided in delegated:
-                verb = "decided" if decided.answered else "to human"
-                print(f"decider:  {decided.decision_id} [{decided.kind}] {verb} - {decided.detail}")
+            _print_delegated(delegated)
             # Let the graph learn from discoveries before this pass reads it
             # (basicly-kjc5.24): an edge added now gates dispatch and orders the
             # landings in this same pass, not the next one.
@@ -3514,6 +3581,11 @@ def _cmd_loop_supervise(args: argparse.Namespace) -> int:
                 else:
                     print("blocked:  no ready lanes and nothing to land")
                 return 1
+    except supervise.LaneSelectionError as exc:
+        # Refused rather than reported blocked: an empty selection is a mistyped
+        # selector, not a session with nothing to do.
+        print(f"supervise: refused - {exc}", file=sys.stderr)
+        return 1
     except supervise.LockLostError as exc:
         print(f"supervise: stopped - {exc}", file=sys.stderr)
         return 1
@@ -3550,6 +3622,11 @@ def _print_dispatch(
 def _print_session(state: supervise.SessionState) -> None:
     print(f"root:     {state.root_issue} ({state.root_status})")
     open_children = state.open_children
+    if state.lane_label is not None:
+        # Which session these counts describe, printed for the same reason the config
+        # override is: a log has to show that the lanes are a labelled cut and not the
+        # root's own children (basicly-1lpo).
+        print(f"select:   label {state.lane_label!r}")
     print(f"children: {len(state.children)} total, {len(open_children)} open")
     if state.adopted:
         for lane in state.adopted:
@@ -3569,8 +3646,12 @@ def _cmd_loop_session(args: argparse.Namespace) -> int:
     contends for the lock a running supervisor holds and it is equally valid on
     a root nobody is supervising. Exits 0 whichever it finds — the observation
     itself succeeded; ``loop decisions`` is the command that signals blocked.
+
+    ``--label`` has to be the one the supervisor was started with: the lane set is
+    then a labelled cut rather than the root's children, and omitting it observes a
+    different session than the one running (basicly-1lpo).
     """
-    view = supervise.observe(_repo_root(), args.issue)
+    view = supervise.observe(_repo_root(), args.issue, lane_label=args.label)
     if args.json:
         # ``supervised`` is a derived property, which asdict drops — and it is the
         # one question a machine client always asks, so emit it explicitly.
@@ -3601,6 +3682,8 @@ def _supervisor_line(view: supervise.Observation) -> str:
 def _print_observation(view: supervise.Observation) -> None:
     print(f"root:       {view.root_issue} ({view.root_status})")
     print(f"supervisor: {_supervisor_line(view)}")
+    if view.lane_label is not None:
+        print(f"select:     label {view.lane_label!r}")
     print(f"children:   {view.children_total} total, {view.children_open} open")
     if view.lanes:
         for lane in view.lanes:
@@ -4394,6 +4477,24 @@ def _add_session_override_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_lane_selector_arg(parser: argparse.ArgumentParser) -> None:
+    """Add ``--label``, the pass's explicit lane set (basicly-1lpo).
+
+    Shared by the three commands that read a session — supervise, preflight and the
+    client attach — because they must all read the *same* session: a root can be
+    supervised over its decomposition or over a labelled cut, and a client that omits
+    the selector reports a running label pass as childless.
+    """
+    parser.add_argument(
+        "--label",
+        metavar="LABEL",
+        help="Fan out over the beads carrying LABEL instead of the root's parent-child "
+        "children, so a release cut can be assembled from beads that already have an "
+        "epic of origin (br permits one parent); the root then anchors the grant, the "
+        "lock and the decision queue only",
+    )
+
+
 def _add_loop_input_args(parser: argparse.ArgumentParser) -> None:
     """Add the shared agent-input flags that map onto a ``loop.Inputs``."""
     parser.add_argument(
@@ -4454,6 +4555,7 @@ def _add_loop_parser(subparsers: argparse._SubParsersAction) -> None:
         "runner, grant, budget, lane count and forecast spend (read-only)",
     )
     l_pre.add_argument("issue", help="Root issue the session would be bound to")
+    _add_lane_selector_arg(l_pre)
     l_advance = loop_sub.add_parser(
         "advance", help="Advance one loop step (exit non-zero when blocked)"
     )
@@ -4482,6 +4584,7 @@ def _add_loop_parser(subparsers: argparse._SubParsersAction) -> None:
         "outcomes, land green work - until done or blocked on a human",
     )
     l_supervise.add_argument("issue", help="Root issue (feature or epic) the session is bound to")
+    _add_lane_selector_arg(l_supervise)
     # Every path that can dispatch takes the session overrides, not only `supervise`
     # (basicly-nvm1). Without them on `advance`/`run`, one committed `[runner] default`
     # had to serve two incompatible modes: a real agent so a supervised pass dispatches
@@ -4496,6 +4599,7 @@ def _add_loop_parser(subparsers: argparse._SubParsersAction) -> None:
         "(read-only; takes no lock)",
     )
     l_sess.add_argument("issue", help="Session root issue")
+    _add_lane_selector_arg(l_sess)
     l_sess.add_argument("--json", action="store_true", help="Machine-readable output")
     l_dec = loop_sub.add_parser(
         "decisions", help="List the session's pending decisions (pure read over br)"

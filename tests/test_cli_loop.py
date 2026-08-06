@@ -367,6 +367,29 @@ def test_loop_session_reports_human_wait_apart_from_dispatch(
     assert "wait:       1.5h human, 45s delegated (dispatch 2m)" in capsys.readouterr().out
 
 
+def test_loop_session_observes_the_labelled_cut_it_was_given(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A client has to be able to attach to the session that is actually running.
+
+    A root can be supervised over its decomposition or over a labelled cut, and those
+    are different lane sets — so a client that could not name the selector would report
+    a running label pass as childless (basicly-1lpo).
+    """
+    seen: list[str | None] = []
+    monkeypatch.setattr(
+        supervise,
+        "observe",
+        lambda *_a, lane_label=None, **_k: (
+            seen.append(lane_label) or _observation(lane_label=lane_label)
+        ),
+    )
+
+    assert cli.main(["loop", "session", "basicly-epic", "--label", "release-v0.7.0"]) == 0
+    assert seen == ["release-v0.7.0"]
+    assert "select:     label 'release-v0.7.0'" in capsys.readouterr().out
+
+
 def test_loop_session_names_an_unsupervised_root(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -499,6 +522,11 @@ class _Preflight:
     # (basicly-lyro). Pinned for the same reason `append_only` is.
     generated: tuple[str, ...] = ()
     regenerate: tuple[str, ...] = ()
+    # The bead ids a grant on the root covers, for the coverage line a labelled cut
+    # gets (basicly-1lpo). Pinned because the real walk is a `br show` per node; the
+    # default covers every lane this fixture selects, so only a test about coverage
+    # has to think about it.
+    covered: tuple[str, ...] = ("epic", "c.1", "c.2")
 
 
 def _calibration(**overrides) -> decompose.CalibrationStatus:
@@ -541,7 +569,9 @@ def _preflight_fixture(monkeypatch: pytest.MonkeyPatch, pinned: _Preflight) -> N
     monkeypatch.setattr(
         cli.supervise,
         "derive_session",
-        lambda _r, root: supervise.SessionState(root, "open", children, ()),
+        lambda _r, root, *, lane_label=None: supervise.SessionState(
+            root, "open", children, (), lane_label=lane_label
+        ),
     )
     monkeypatch.setattr(
         cli.runner, "select_runner", lambda *_a, **_k: RunnerSpec("claude", HEADLESS)
@@ -564,6 +594,7 @@ def _preflight_fixture(monkeypatch: pytest.MonkeyPatch, pinned: _Preflight) -> N
             regenerate_command=regenerate,
         ),
     )
+    monkeypatch.setattr(cli.policy, "session_issue_ids", lambda *_a: pinned.covered)
     monkeypatch.setattr(cli.decompose, "unsized_lane_tokens", lambda *_a: (1_000, "measured"))
     calibration = pinned.calibration or _calibration()
     monkeypatch.setattr(cli.decompose, "calibration_status", lambda *_a: calibration)
@@ -602,13 +633,37 @@ def _preflight_fixture(monkeypatch: pytest.MonkeyPatch, pinned: _Preflight) -> N
     )
 
 
+def test_the_lane_selector_is_on_every_command_that_reads_a_session() -> None:
+    """The wiring, so the selector cannot exist in a handler but not in its parser.
+
+    All three of these read a session and must read the *same* one: supervise runs the
+    cut, preflight checks it, and a client attaches to it (basicly-1lpo).
+    """
+    parser = cli._build_parser()
+    for command in ("supervise", "preflight", "session"):
+        args = parser.parse_args(["loop", command, "basicly-x", "--label", "release-v0.7.0"])
+        assert args.label == "release-v0.7.0", command
+    # And absent by default, so the parent-child derivation stays the plain case.
+    assert parser.parse_args(["loop", "supervise", "basicly-x"]).label is None
+
+
+def _preflight_args(**overrides: object) -> argparse.Namespace:
+    """The parsed args ``loop preflight`` is invoked with.
+
+    One factory rather than a literal per test: these tests call the command function
+    directly, so every flag the parser defines has to be present here or the call
+    fails on an attribute the real invocation always has.
+    """
+    return argparse.Namespace(**{"issue": "epic", "label": None} | overrides)
+
+
 def test_preflight_is_ready_when_nothing_blocks(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The happy path has to exit 0, or a wrapper gating on it can never proceed."""
     _preflight_fixture(monkeypatch, _Preflight(grant=Grant(level="L1", token_budget=10_000)))
 
-    code = cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+    code = cli._cmd_loop_preflight(_preflight_args())
 
     out = capsys.readouterr().out
     assert code == 0
@@ -629,7 +684,7 @@ def test_preflight_refuses_an_unrecognised_config_name_before_anything_else(
     monkeypatch.setattr(cli, "_repo_root", lambda: tmp_path)
     (tmp_path / LOCAL_CONFIG_FILE).write_text("[loop]\nconcurrency = 2\n", encoding="utf-8")
 
-    code = cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+    code = cli._cmd_loop_preflight(_preflight_args())
 
     out = capsys.readouterr().out
     assert code == 1
@@ -675,7 +730,7 @@ def test_preflight_sizes_each_candidate_when_none_is_dispatchable_yet(
         ),
     )
 
-    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+    cli._cmd_loop_preflight(_preflight_args())
 
     out = capsys.readouterr().out
     # Read the band off the config rather than pinning 8000..64000 here: the numbers are
@@ -704,7 +759,7 @@ def test_preflight_distinguishes_an_admitted_candidate_from_a_refused_one(
         ),
     )
 
-    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+    cli._cmd_loop_preflight(_preflight_args())
 
     out = capsys.readouterr().out
     assert "12884 tok  in band" in out
@@ -729,7 +784,7 @@ def test_preflight_separates_an_under_floor_lane_from_one_inside_the_band(
         ),
     )
 
-    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+    cli._cmd_loop_preflight(_preflight_args())
 
     out = capsys.readouterr().out
     assert "under the floor - dispatches, but merge it with a sibling" in out
@@ -759,7 +814,7 @@ def test_preflight_leaves_a_deferred_candidate_out_of_the_band_table(
         ),
     )
 
-    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+    cli._cmd_loop_preflight(_preflight_args())
 
     out = capsys.readouterr().out
     assert "1 open child(ren)" in out
@@ -786,7 +841,7 @@ def test_preflight_flags_a_candidate_whose_scope_matched_no_file(
         ),
     )
 
-    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+    cli._cmd_loop_preflight(_preflight_args())
 
     assert "in band, but its scope matched no file" in capsys.readouterr().out
 
@@ -801,7 +856,7 @@ def test_preflight_names_a_candidate_the_estimator_cannot_size(
     """
     _preflight_fixture(monkeypatch, _Preflight(grant=Grant(level="L1", token_budget=10_000)))
 
-    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+    cli._cmd_loop_preflight(_preflight_args())
 
     out = capsys.readouterr().out
     assert "c.1" in out
@@ -832,7 +887,7 @@ def test_preflight_warns_that_a_pass_will_contend_on_an_undeclared_path(
         ),
     )
 
-    code = cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+    code = cli._cmd_loop_preflight(_preflight_args())
 
     out = capsys.readouterr().out
     assert "contend:   append-only: `CHANGELOG.md`" in out
@@ -853,7 +908,7 @@ def test_preflight_says_the_contention_check_is_inert_when_nothing_is_declared(
         ),
     )
 
-    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+    cli._cmd_loop_preflight(_preflight_args())
 
     assert "contend:   no append-only path declared" in capsys.readouterr().out
 
@@ -877,7 +932,7 @@ def test_preflight_reports_the_artifacts_a_landing_rebuilds_instead_of_bouncing(
         ),
     )
 
-    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+    cli._cmd_loop_preflight(_preflight_args())
 
     out = capsys.readouterr().out
     assert "regen:     generated: `.basicly/generated-manifest.json`" in out
@@ -896,7 +951,7 @@ def test_preflight_says_the_rebuild_check_is_inert_when_nothing_is_declared(
         ),
     )
 
-    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+    cli._cmd_loop_preflight(_preflight_args())
 
     assert "regen:     no generated path declared" in capsys.readouterr().out
 
@@ -910,7 +965,7 @@ def test_preflight_refuses_a_dirty_base_before_any_lane_runs(
         _Preflight(dirty="M a.py\nM b.py\n", grant=Grant(level="L1", token_budget=10_000)),
     )
 
-    code = cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+    code = cli._cmd_loop_preflight(_preflight_args())
 
     out = capsys.readouterr().out
     assert code == 1
@@ -924,7 +979,7 @@ def test_preflight_refuses_a_metered_runner_with_no_budget(
     """The `kkux` hazard, surfaced before the run instead of during it."""
     _preflight_fixture(monkeypatch, _Preflight(metered="claude"))
 
-    code = cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+    code = cli._cmd_loop_preflight(_preflight_args())
 
     out = capsys.readouterr().out
     assert code == 1
@@ -941,7 +996,7 @@ def test_preflight_forecasts_a_full_fan_out_when_no_lane_is_dispatchable_yet(
     """
     _preflight_fixture(monkeypatch, _Preflight(grant=Grant(level="L1", token_budget=10_000)))
 
-    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+    cli._cmd_loop_preflight(_preflight_args())
 
     out = capsys.readouterr().out
     assert "forecast:" in out
@@ -961,7 +1016,7 @@ def test_preflight_says_the_forecast_is_still_on_seeds(
     """
     _preflight_fixture(monkeypatch, _Preflight(grant=Grant(level="L1", token_budget=10_000)))
 
-    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+    cli._cmd_loop_preflight(_preflight_args())
 
     out = capsys.readouterr().out
     assert "spend cal: SEEDS" in out
@@ -986,7 +1041,7 @@ def test_preflight_names_the_class_whose_spend_stopped_being_a_seed(
         ),
     )
 
-    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+    cli._cmd_loop_preflight(_preflight_args())
 
     out = capsys.readouterr().out
     assert "spend cal: measured for bug" in out
@@ -1010,7 +1065,7 @@ def test_preflight_says_when_a_build_factor_was_configured_rather_than_seeded(
         ),
     )
 
-    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+    cli._cmd_loop_preflight(_preflight_args())
 
     out = capsys.readouterr().out
     assert "factors:   some configured (never measured)" in out
@@ -1033,7 +1088,7 @@ def test_preflight_says_an_unresolved_model_can_key_no_sample_at_all(
         ),
     )
 
-    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+    cli._cmd_loop_preflight(_preflight_args())
 
     out = capsys.readouterr().out
     assert "spend cal: SEEDS - no model pinned, so no sample can key in" in out
@@ -1063,7 +1118,7 @@ def test_preflight_refuses_a_root_whose_decompose_checkpoint_is_unapproved(
         ),
     )
 
-    code = cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+    code = cli._cmd_loop_preflight(_preflight_args())
 
     out = capsys.readouterr().out
     assert code == 1
@@ -1094,11 +1149,106 @@ def test_preflight_separates_a_grant_delegated_checkpoint_from_one_it_cannot_ser
         ),
     )
 
-    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+    cli._cmd_loop_preflight(_preflight_args())
 
     out = capsys.readouterr().out
     assert "so the live L3 grant cannot serve it" in out
     assert "checkpts:  ship pending - the live L3 grant delegates it" in out
+
+
+def test_preflight_over_a_labelled_cut_reports_it_and_keeps_the_roots_checkpoint(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A labelled pass is not seeded by the root's advance, so its checkpoint blocks nothing.
+
+    The test above refuses this exact fixture: an unapproved ``decompose`` on the root
+    blocks provisioning, because the root's own advance is what provisions the lanes.
+    A cut selected by label is provisioned directly (basicly-1lpo), so the same
+    checkpoint would refuse a pass that is ready — the release epic never advances at
+    all. It is still *reported*, since a pass will meet it when the release ships.
+    """
+    _preflight_fixture(
+        monkeypatch,
+        _Preflight(
+            grant=Grant(level="L3", token_budget=100_000),
+            phase="decompose",
+            checkpoints=("classify",),
+        ),
+    )
+
+    code = cli._cmd_loop_preflight(_preflight_args(label="release-v0.7.0"))
+
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert "select:    1 bead(s) carry label 'release-v0.7.0'; 1 still open" in out
+    assert "checkpts:  decompose pending" in out
+    assert "UNAPPROVED" not in out
+    assert "VERDICT:   ready" in out
+
+
+def test_preflight_refuses_a_lane_selector_no_bead_carries(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A mistyped selector is answered, not raised as a traceback over a half-report."""
+    _preflight_fixture(monkeypatch, _Preflight(grant=Grant(level="L1", token_budget=10_000)))
+
+    def _refuse(*_a: object, **_k: object) -> None:
+        raise supervise.LaneSelectionError("no bead outside the pass root carries label 'typo'")
+
+    monkeypatch.setattr(cli.supervise, "derive_session", _refuse)
+
+    code = cli._cmd_loop_preflight(_preflight_args(label="typo"))
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "select:    INVALID - no bead outside the pass root carries label 'typo'" in out
+    assert "VERDICT:   not ready - the lane selector names no bead to run" in out
+
+
+def test_preflight_names_a_selected_lane_the_grant_does_not_cover(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A label expresses membership with no edge, and a grant is walked over edges.
+
+    So a labelled cut can dispatch lanes the grant does not reach, and every checkpoint
+    those lanes hit is a human's — a pass that reads as lights-out and stalls one
+    checkpoint in. Reported rather than refused: the lane does dispatch (basicly-1lpo).
+    """
+    _preflight_fixture(
+        monkeypatch,
+        _Preflight(
+            grant=Grant(level="L3", token_budget=100_000),
+            children=(("c.1", "open"), ("origin.7", "open")),
+            covered=("epic", "c.1"),
+        ),
+    )
+
+    code = cli._cmd_loop_preflight(_preflight_args(label="release-v0.7.0"))
+
+    out = capsys.readouterr().out
+    assert code == 0, "an uncovered lane still dispatches, so the verdict stands"
+    assert "coverage:  1 of 2 selected lane(s) outside the L3 grant's session" in out
+    assert "cover each: br dep add epic <id> -t blocks" in out
+    assert "uncovered: origin.7" in out
+
+
+def test_preflight_says_when_every_selected_lane_is_covered(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The control: the coverage line has to be able to come back clean.
+
+    A report that only ever names a problem is one an operator learns to ignore, and it
+    would pass the assertion above while claiming every lane is uncovered.
+    """
+    _preflight_fixture(
+        monkeypatch,
+        _Preflight(grant=Grant(level="L3", token_budget=100_000), covered=("epic", "c.1")),
+    )
+
+    cli._cmd_loop_preflight(_preflight_args(label="release-v0.7.0"))
+
+    out = capsys.readouterr().out
+    assert "coverage:  all 1 selected lane(s) under the L3 grant" in out
 
 
 def test_preflight_is_ready_when_the_blocking_checkpoint_is_approved(
@@ -1118,7 +1268,7 @@ def test_preflight_is_ready_when_the_blocking_checkpoint_is_approved(
         ),
     )
 
-    code = cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+    code = cli._cmd_loop_preflight(_preflight_args())
 
     out = capsys.readouterr().out
     assert code == 0
@@ -1144,7 +1294,7 @@ def test_preflight_refuses_a_root_with_no_open_child_left_to_provision(
         ),
     )
 
-    code = cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+    code = cli._cmd_loop_preflight(_preflight_args())
 
     out = capsys.readouterr().out
     assert code == 1
@@ -1169,7 +1319,7 @@ def test_preflight_refuses_when_every_open_child_is_refused_by_the_band(
         ),
     )
 
-    code = cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+    code = cli._cmd_loop_preflight(_preflight_args())
 
     out = capsys.readouterr().out
     assert code == 1
@@ -1189,7 +1339,7 @@ def test_preflight_still_prices_a_childless_root_as_its_own_lane(
         monkeypatch, _Preflight(grant=Grant(level="L3", token_budget=100_000), children=())
     )
 
-    code = cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+    code = cli._cmd_loop_preflight(_preflight_args())
 
     out = capsys.readouterr().out
     assert code == 0
@@ -1215,7 +1365,7 @@ def test_preflight_forecast_never_prices_more_lanes_than_there_are_children(
         ),
     )
 
-    cli._cmd_loop_preflight(argparse.Namespace(issue="epic"))
+    cli._cmd_loop_preflight(_preflight_args())
 
     out = capsys.readouterr().out
     # 1000 per-lane (pinned in the fixture) x 2 open children, whatever the cap is.
