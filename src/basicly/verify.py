@@ -13,7 +13,9 @@ never part of a plain verify run, so the verdict a consumer (or CI) gets from
 ``run_verify`` is unchanged.
 
 Check subprocess output streams straight to the terminal (it is not captured),
-so the consumer sees each tool's own output live.
+so the consumer sees each tool's own output live. The run's *verdict* is also
+persisted as a run artifact (:func:`_write_run_artifact`), which is what gives
+the declared-evidence gate something to point at.
 
 Every check that passes is recorded in the engine's own execution ledger
 (:mod:`basicly.usage`), because this runner is the only thing that ever executes
@@ -22,8 +24,11 @@ a declared check — see :func:`run_check`.
 
 from __future__ import annotations
 
+import json
+import os
 import subprocess
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from . import br, usage, worktree
@@ -226,11 +231,92 @@ def _run(
     )
 
 
+# --- The run artifact the evidence gate points at (basicly-m0s4) -------------
+#
+# ``[policy.evidence]`` (basicly-m4zv.13) refuses an advance past a phase unless
+# that phase's declared artifact exists and is non-empty — presence only, the
+# engine never opens it. It ships no producer by design, and verify had nothing
+# to point at: check output streams straight to the terminal and is captured only
+# on the diagnostic re-run, so a *passing* run wrote nothing anywhere and
+# declaring an artifact for the verify phase would have refused every advance.
+#
+# This is that producer. It lives in the self-ignored ``.basicly/usage/``
+# directory for the reason ``run_record`` puts its records there: the landing
+# refuses to merge while the checkout carries dirt outside ``.beads/``, so a file
+# rewritten by every verify run must not be tracked. The bead keeps the durable
+# half — ``policy.record_evidence`` records the declared *path* on the issue.
+#
+# Verdict metadata only, never a check's output. Streaming is the contract a
+# consumer watching a gate depends on, so nothing here captures anything; and the
+# redaction rule ``run_record`` states holds the same way — a tool's stdout can
+# carry a secret, a status and a return code cannot.
+
+RUN_ARTIFACT = Path(".basicly/usage/verify-run.json")
+
+
+def _write_run_artifact(repo_root: Path, report: VerifyReport) -> Path | None:
+    """Persist *report*'s verdict to :data:`RUN_ARTIFACT`; its path, or None if unwritable.
+
+    Always non-empty, including for a mode that configures no checks: the object
+    still records that a run happened and found nothing to run, which is a
+    different fact from no run at all — and an empty file fails the gate.
+
+    Written for a failing run too. The artifact is the record of a run, not of a
+    pass; the verdict is what the required ``verify`` gate is for, and an artifact
+    that appeared only on success would make "the file is here" mean two things.
+
+    Never raises. The verdict is what the caller asked for and must not be lost to
+    an artifact write — and the failure is not silent, because with no file on
+    disk the evidence gate refuses the advance and names this exact path. Writes
+    through a pid-scoped temporary file rather than
+    :func:`basicly.projection.atomic_write_text` for the reason
+    :func:`basicly.usage.record_verify_check` does: two runs in one checkout would
+    otherwise interleave a truncated write with the other's rename.
+    """
+    path = repo_root / RUN_ARTIFACT
+    payload = {
+        "mode": report.mode,
+        "recorded_at": datetime.now(UTC).isoformat(),
+        "passed": report.passed,
+        "checks": [
+            {
+                "name": r.name,
+                "status": r.status,
+                "returncode": r.returncode,
+                "detail": r.detail,
+            }
+            for r in report.results
+        ],
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        gitignore = path.parent / ".gitignore"
+        if not gitignore.exists():
+            gitignore.write_text("*\n", encoding="utf-8")
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        tmp.replace(path)
+    except OSError:
+        return None
+    return path
+
+
 def run_verify(repo_root: Path, mode: str, config: VerifyConfig | None = None) -> VerifyReport:
-    """Run every check configured for *mode* and collect the results."""
+    """Run every check configured for *mode*, collect the results, record the run.
+
+    The artifact is written here rather than by each caller because this is the
+    one entry point every full verify run goes through — the CLI, the loop's
+    build->verify transition, the merge queue's per-worktree run — so a consumer
+    declaring ``[policy.evidence] verify`` gets a producer without wiring one
+    (basicly-m0s4). Not from :func:`rerun_failures`: that re-runs only the checks
+    that failed, and overwriting the run's record with a subset would leave the
+    artifact describing a run that never happened.
+    """
     config = config or load_verify_config(repo_root)
     results = tuple(run_check(check, repo_root, mode) for check in config.for_mode(mode))
-    return VerifyReport(mode=mode, results=results)
+    report = VerifyReport(mode=mode, results=results)
+    _write_run_artifact(repo_root, report)
+    return report
 
 
 def rerun_failures(
