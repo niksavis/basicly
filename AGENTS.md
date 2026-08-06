@@ -93,6 +93,21 @@ uv run basicly permissions-check
 - If rules conflict, prefer safety/security boundaries.
 - If repeated attempts at one approach fail, report the pattern and propose a different approach instead of retrying.
 
+## Model Tier Routing
+
+A dispatch declares one of four tiers, cheapest first — `low`, `medium`, `high`,
+`maximum` — never a provider model id, which each surface spells its own way. Anthropic:
+haiku, sonnet, opus, fable; OpenAI: luna, terra, sol; Google and Moonshot ship three
+classes, so `maximum` resolves onto `high`.
+
+Route by reliability, not sticker price: cost is tokens plus wall-clock plus human
+interventions **per landed correct change**, and a weak model's mistakes return as
+rework and bounced merges billed to that same change. `low` earns only work whose wrong
+answer is caught mechanically and redone cheaply — a brief already carrying the code and
+its tests; implementation from prose, decomposition, design and judgments expensive to
+be wrong start at `high`. No declared tier is a bug, not a default: the dispatch
+inherits the session's own model.
+
 ## External Review
 
 A research or design document is where a third-party project's advertising gets

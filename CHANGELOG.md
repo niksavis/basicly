@@ -264,6 +264,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Confidence stays at vulture's default 60 rather than being raised, because the tiers
   above it report only unreachable code (`basicly-uexy`).
 
+- **The tier ladder and the unit of cost ship as guidance, not just as a design
+  document.** A new path-scoped `model-tier-routing` fragment loads when an agent edits
+  `.basicly/core/agents/**`, `.basicly/core/models/**` or `basicly.toml` — the three
+  places a tier is actually chosen. It states the four-tier ladder (`low`, `medium`,
+  `high`, `maximum`) with the per-vendor classes behind it, and the rule that cost is
+  measured **per landed correct change** rather than per dispatch, so a tier is picked
+  for the reliability a role needs instead of for its sticker price.
+
+  Until now nothing the harness distributed said either thing, so every agent choosing a
+  model — and the roster design itself — reasoned from the price of one dispatch, while
+  the weaker model's mistakes came back as rework, review cycles and bounced merges
+  billed to the same change. Scoped rather than always-on because the always-on baseline
+  is at its calibrated cap; it costs the claude and copilot baselines nothing and was
+  written to the codex headroom that was left (`basicly-5xcj`).
+
 ### Changed
 
 - **A run record carries the context the lane actually consumed.** `RunRecord` has

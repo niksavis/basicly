@@ -759,16 +759,19 @@ inherits that failure.
    | Surface | chars | cap | headroom |
    | --- | --- | --- | --- |
    | `.claude/CLAUDE.md` (claude) | 8278 | 9000 | 722 |
-   | `AGENTS.md` (codex) | 11120 | 12000 | 880 |
+   | `AGENTS.md` (codex) | 11989 | 12000 | 11 |
    | `.github/copilot-instructions.md` (copilot) | 8381 | 9000 | 619 |
 
    <!-- docs-claims:end always-on-sizes -->
 
    So **`copilot-instructions.md` is the tightest always-on surface** and binds for an
    always-on fragment, while **`AGENTS.md` binds for the path-scoped tier** — a scoped
-   fragment costs `AGENTS.md` ~1500 chars (measured 1462 and 1614 for the two that
-   exist) and costs the other two nothing, so the **next** scoped fragment can already
-   overflow the codex cap: compare it against the `AGENTS.md` headroom above.
+   fragment costs `AGENTS.md` 900-1600 chars (measured 869, 1462 and 1614 for the three
+   that exist) and costs the other two nothing. The codex headroom above is now into the
+   low tens of characters, spent deliberately: `model-tier-routing` was written to the
+   budget that was left rather than at its natural length. The **next** scoped fragment does not fit,
+   so it needs the cap recalibrated on measured evidence (the `basicly-c5to` precedent)
+   rather than a round-number trim of guidance.
 2. **Enforced vs. judgment split**: enforced rules are one line pointing at the
    command/config; judgment rules are prose, and should be the shorter of the two
    sections.
