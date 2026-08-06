@@ -120,8 +120,9 @@ dependency clusters a cut draws from (§14). Rows are in shipping order.
 
 | Release | Content and reason | Size |
 | --- | --- | --- |
-| **`v0.7.0`** | **Trustworthy factory.** Every open defect that can halt or corrupt a lights-out run, the two Phase S gates that were never filed, then the unattended-run proof as the release event. `basicly-yc0x`. | 6–8 sessions |
-| **`v0.8.0`** | **Own the work graph.** The `br` replacement: frozen surface → event log → import → shadow → dual-write → flip. Removes `br` from the consumer floor, which is the single biggest `1.0.0` blocker. `basicly-vkh0`. | 5–8 sessions |
+| ~~**`v0.7.0`**~~ | **SHIPPED 2026-08-06.** Trustworthy factory. 19 beads closed over two sessions. **Exit criterion 5 was not met** — see §5.1. `basicly-yc0x`. | shipped |
+| **`v0.7.1`** | **End the shared-anchor collision class**, and carry the unattended-run proof `v0.7.0` could not. `4746` (a changelog fragment per lane, so collision is impossible by construction), `bdd4` (dispatch a bounced lane to resolve its conflict rather than replaying the rebase), `3f76` (design docs stop carrying bead-id lists), `m4zv.5` (a stalled rework round escalates without spending the cap). A patch, not a minor, **only if** a curated `[Unreleased]` body keeps working alongside fragments. | 1–2 sessions |
+| **`v0.8.0`** | **Own the work graph.** The `br` replacement: event log → kit → cutover behind the `br.py` seam. Removes `br` from the consumer floor, which is the single biggest `1.0.0` blocker. Plus streaming telemetry (`wctc`, `jr0l.66`), which turns the context ceiling from a post-hoc diagnosis into a preventive guard and makes the grant's spend ceiling bind *within* a pass. `basicly-vkh0`. | 5–8 sessions |
 | **`v0.9.0`** | **Evidence, gates, docs.** Cost per landed package (`7bur`), AST localisation (`agzx.2`), the Phase 2 deterministic gates (`m4zv.2`–`.6`) built against the owned tracker, the D4 amendment, the tutorial layer (`imnu.2`), the install capability tier (`imnu.3`), the ceremony threshold (`imnu.5`), parameter learning (`3ifz`). | 6–9 sessions |
 | **`v0.10.0`** | **The judgment layer and always-on relief.** The roster (`s2xf`), gated on `7bur`'s numbers by construction; the Phase 4 authoring pass and the empty-glob check (`a3ab.1`–`.3`). | 5–8 sessions |
 | **`v1.0.0`** | **Stabilize and declare.** Surface audit and semver freeze, the breaking-marker gate, the fresh-consumer acceptance test. `1.0` is a promise, so the last release proves the promise instead of adding capability. | 3–5 sessions |
@@ -283,6 +284,41 @@ resolved in two places), `tcmy.25` (scope read cost reads binaries as text), `ky
 
 **Explicitly out**: the tracker replacement, `7bur`, `agzx.2`, `m4zv.2`–`.6`, the roster, the
 Phase 4 authoring pass, and everything in §9.
+
+### 5.1 `v0.7.0` shipped with exit criterion 5 unmet — the record
+
+Tagged 2026-08-06. Criteria 1–4 and 6 were met and verified by exercise. **Criterion 5 —
+`u6jq.1`, a supervised multi-lane run completing with zero human interventions — was not**,
+and the release documents that rather than claiming it.
+
+Four attempts over two sessions. Each failed on a *different* file, and three of the four on
+one shape: **two lanes editing the same anchor in a file no bead declares.**
+
+| Attempt | Blocked on | Outcome |
+| --- | --- | --- |
+| 1 | `CHANGELOG.md`, three lanes at one `### Fixed` anchor | 2 of 3 landed; `o8p0` filed and fixed |
+| 2 | `pytest` red on `main` — the spend gate compared a failed dispatch and an `assumed:` placeholder against whole-lane forecasts | fixed at the root; gate now 0 violations, median 0.96x |
+| 3 | `.basicly/generated-manifest.json` | 2 of 3 landed; `lyro` filed and fixed |
+| 4 | `docs/design/tier-injection-kit.md` §7, which lists two of the running beads by name | 2 of 3 landed |
+
+**The proof run did its job.** It found three real defects that four prior supervised passes
+never surfaced, and all three shipped. What it could not do is pass, because the remaining
+cause is a **convention, not a bug**: while lanes edit shared prose at one anchor, no pass
+completes unattended, and the enumerate-the-paths approach can never finish — nobody predicted
+a design document's open-items list.
+
+Two structural facts make retrying pointless, and both are now filed:
+
+1. `o8p0`'s remedy is **advisory** — it warns and recommends a build order; it cannot prevent
+   a collision, and it only knows paths someone declared.
+2. **A rebase bounce cannot converge under rework.** Attempt two replays the identical rebase
+   against the identical moved anchor. Observed three times in one session; it is `m4zv.5`'s
+   thesis, and it means every prose collision costs the full cap before escalating.
+
+`v0.7.1` carries the fix, and `4746`'s acceptance criterion — three concurrent lanes each
+adding a changelog entry, none conflicting — *is* the evidence `u6jq.1` needs. So the proof
+lands with the release that makes it possible, rather than being re-attempted against a cause
+we already understand.
 
 ## 6. `v0.8.0` — own the work graph
 
