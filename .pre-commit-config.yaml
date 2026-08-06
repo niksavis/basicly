@@ -68,6 +68,14 @@ repos:
     - pre-commit
     pass_filenames: false
     always_run: true
+  - id: kit-boundary
+    name: kit-boundary
+    entry: uv run python .basicly/core/hooks/kit-boundary.py
+    language: system
+    stages:
+    - pre-commit
+    pass_filenames: false
+    always_run: true
   - id: commit-msg-script
     name: commit-msg-script
     entry: uv run python .basicly/core/hooks/commit-msg.py
