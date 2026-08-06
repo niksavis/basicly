@@ -1853,11 +1853,13 @@ def _patch_collision_pass(
     *,
     collides: str,
     scopes: dict[str, tuple[str, ...]],
-) -> list[tuple[str, str]]:
+) -> tuple[list[tuple[str, str]], _FakeBr]:
     """A pass where *collides* bounces on ``src/shared.py`` and the rest land.
 
     Declared scopes come from *scopes*, as ``## Scope`` on each bead would. Returns
-    the list the recorded coupling edges accumulate into.
+    the list the recorded coupling edges accumulate into, and the ``br`` stand-in
+    holding the comments the bounce wrote — the bounce brief and the failure
+    signature both land there.
     """
 
     def advance(_r, issue_id, **_k):
@@ -1892,14 +1894,21 @@ def _patch_collision_pass(
             couplings.append((args[2], args[3]))
 
     monkeypatch.setattr(supervise.merge.br, "try_run_br", try_run_br)
-    return couplings
+    # The bounce path itself reads and writes comments (the brief, the failure
+    # signature); keep it off the real tracker. Distinct from the alias above:
+    # `merge.br.try_run_br` is the coupling-edge seam, this one is supervise's.
+    fake = _FakeBr({bead: {"id": bead, "description": ""} for bead in scopes})
+    monkeypatch.setattr(supervise, "_run_br", fake)
+    monkeypatch.setattr(supervise, "_try_run_br", fake)
+    monkeypatch.setattr(decisions, "_run_br", fake)
+    return couplings, fake
 
 
 def test_route_bounces_a_collided_lane_and_lands_the_rest(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A scope collision is the lane's problem, not the pass's (D5/kjc5.20)."""
-    couplings = _patch_collision_pass(
+    couplings, _ = _patch_collision_pass(
         monkeypatch,
         collides="epic.2",
         scopes={
@@ -1933,7 +1942,7 @@ def test_route_records_the_same_coupling_edge_under_either_completion_order(
     scopes = {"epic.1": ("src/shared.py",), "epic.2": ("src/*.py",)}
 
     def run(collides: str, order: tuple[str, ...]) -> list[tuple[str, str]]:
-        couplings = _patch_collision_pass(monkeypatch, collides=collides, scopes=scopes)
+        couplings, _ = _patch_collision_pass(monkeypatch, collides=collides, scopes=scopes)
         outcomes = tuple(_executed_outcome(issue_id) for issue_id in order)
         supervise.route_outcomes(
             tmp_path, _session(*(_lane(o.issue_id) for o in outcomes)), outcomes
@@ -1956,7 +1965,7 @@ def test_route_attributes_a_bounce_against_a_lane_that_landed_after_it(
     The colliding lane routes *second*, so an incremental attribution had nothing
     to blame and recorded no edge at all (kjc5.32).
     """
-    couplings = _patch_collision_pass(
+    couplings, _ = _patch_collision_pass(
         monkeypatch,
         collides="epic.1",
         scopes={"epic.1": ("src/shared.py",), "epic.2": ("src/shared.py",)},
@@ -1976,7 +1985,7 @@ def test_route_records_no_coupling_onto_a_lane_outside_the_conflicting_scope(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A landing whose declared scope cannot match the conflicting path is not blamed."""
-    couplings = _patch_collision_pass(
+    couplings, _ = _patch_collision_pass(
         monkeypatch,
         collides="epic.2",
         scopes={"epic.1": ("docs/**",), "epic.2": ("src/shared.py",)},
@@ -2001,6 +2010,7 @@ def test_route_bounce_records_no_coupling_when_nothing_landed_the_paths(
         lambda _r, issue_id, **_k: _blocked_landing(issue_id, "rebase-conflicts", ("src/a.py",)),
     )
     monkeypatch.setattr(supervise, "_landing_order", lambda _r, outcomes: list(outcomes))
+    _install_br(monkeypatch, _FakeBr({}))
     couplings: list[tuple[str, str]] = []
     monkeypatch.setattr(
         supervise.merge, "record_coupling", lambda _r, bead, on: couplings.append((bead, on))
@@ -2026,6 +2036,7 @@ def test_route_bounce_at_the_rework_cap_parks_on_the_decision_queue(
     )
     monkeypatch.setattr(supervise, "_landing_order", lambda _r, outcomes: list(outcomes))
     monkeypatch.setattr(supervise.merge, "record_coupling", lambda *_a: None)
+    _install_br(monkeypatch, _FakeBr({}))
 
     routed = supervise.route_outcomes(
         tmp_path, _session(_lane("epic.1")), (_executed_outcome("epic.1"),)
@@ -2033,6 +2044,165 @@ def test_route_bounce_at_the_rework_cap_parks_on_the_decision_queue(
 
     assert [r.route for r in routed] == ["decision"]
     assert supervise.should_continue(routed) is False
+
+
+# --- A bounce briefs its lane, and a repeat of it escalates (basicly-bdd4) -----
+
+
+def _briefs_on(fake: _FakeBr, bead: str) -> tuple[supervise.FoundInfo, ...]:
+    """The found-info records the pass published on *bead*, as a lane would read them."""
+    parsed = (supervise.parse_found_info(text, bead) for text in fake.comments.get(bead, []))
+    return tuple(info for info in parsed if info is not None)
+
+
+def test_a_bounced_lane_is_briefed_with_the_conflicting_paths_and_both_sides(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The measured defect: a re-dispatched bounce was handed nothing new.
+
+    ``bounced`` is retriable and not carried forward, so the lane *is*
+    re-dispatched — but the bounce published no record, and ``build_bundle``
+    assembles the prompt from the loop's fixed dispatch prompt plus published
+    records. The agent got the prompt it had already satisfied, changed nothing,
+    and the landing re-derived the identical conflict (basicly-bdd4). So the
+    assertion is on the *next prompt*, not merely on the record: that is the
+    surface the defect was on.
+    """
+    _, fake = _patch_collision_pass(
+        monkeypatch,
+        collides="epic.2",
+        scopes={"epic.1": ("src/shared.py",), "epic.2": ("src/shared.py",)},
+    )
+    outcomes = tuple(_executed_outcome(f"epic.{n}") for n in (1, 2))
+
+    routed = supervise.route_outcomes(
+        tmp_path, _session(*(_lane(o.issue_id) for o in outcomes)), outcomes
+    )
+
+    assert [r.route for r in routed] == ["merged", "bounced"]
+    (brief,) = _briefs_on(fake, "epic.2")
+    assert brief.kind == "coupling" and brief.affects == ("epic.2",)
+    assert "src/shared.py" in brief.summary  # the conflicting path
+    assert "epic.1" in brief.summary  # who landed over it
+    # Both sides, and the instruction that keeps it a resolution, not a replay.
+    assert "already on this lane's branch" in brief.detail
+    assert "as they now stand on the base" in brief.detail
+    prompt = supervise.build_bundle(tmp_path, "epic.2").prompt
+    assert "src/shared.py" in prompt and "epic.1" in prompt
+    # The sibling that landed cleanly is briefed about nothing.
+    assert _briefs_on(fake, "epic.1") == ()
+
+
+def test_a_bounce_brief_names_the_paths_when_no_landing_is_attributable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Attribution is a bonus; the conflicting paths are the lane's own evidence.
+
+    A landing whose declared scope cannot cover the conflicting path is not
+    blamed, so no edge is recorded — the brief is still owed, because the paths
+    do not depend on the attribution having found anyone.
+    """
+    couplings, fake = _patch_collision_pass(
+        monkeypatch,
+        collides="epic.2",
+        scopes={"epic.1": ("docs/**",), "epic.2": ("src/shared.py",)},
+    )
+    outcomes = tuple(_executed_outcome(f"epic.{n}") for n in (1, 2))
+
+    supervise.route_outcomes(tmp_path, _session(*(_lane(o.issue_id) for o in outcomes)), outcomes)
+
+    assert couplings == []
+    (brief,) = _briefs_on(fake, "epic.2")
+    assert "src/shared.py" in brief.summary and "epic.1" not in brief.summary
+
+
+def test_conflict_signature_is_free_of_the_order_git_reported_the_paths_in() -> None:
+    """Two orderings of one collision are one failure, not two (D9-adjacent)."""
+    forward = merge.MergeResult("epic.1", "merge-conflicts", "d", conflicts=("b.py", "a.py"))
+    reversed_ = merge.MergeResult("epic.1", "merge-conflicts", "d", conflicts=("a.py", "b.py"))
+
+    assert supervise.conflict_signature(forward) == supervise.conflict_signature(reversed_)
+    # The cause discriminates too: the same paths under a different status differ.
+    other = merge.MergeResult("epic.1", "rebase-conflicts", "d", conflicts=("a.py", "b.py"))
+    assert supervise.conflict_signature(other) != supervise.conflict_signature(forward)
+
+
+def _bounce_twice(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    second: tuple[str, ...],
+) -> tuple[list[supervise.RoutedOutcome], list[tuple[str, str]]]:
+    """Bounce ``epic.1`` on ``src/shared.py``, then on *second*; return both routes.
+
+    Two separate passes over one persisted tracker, which is the interleaving the
+    repeat rule is about: the previous signature has to outlive the pass that
+    wrote it.
+    """
+    fake = _FakeBr({"epic.1": {"id": "epic.1", "description": ""}})
+    allowances: list[tuple[str, str]] = []
+    monkeypatch.setattr(supervise, "_landing_order", lambda _r, outcomes: list(outcomes))
+    monkeypatch.setattr(supervise.merge, "record_coupling", lambda *_a: None)
+    monkeypatch.setattr(
+        supervise.decisions,
+        "enqueue",
+        lambda _r, issue, kind, *_a, **_k: decisions_item(issue, kind),
+    )
+    monkeypatch.setattr(
+        supervise.policy,
+        "grant_rework_allowance",
+        lambda _r, issue, gate: allowances.append((issue, gate)) or 0,
+    )
+    _install_br(monkeypatch, fake)
+    monkeypatch.setattr(supervise, "_try_run_br", fake)
+
+    routes: list[supervise.RoutedOutcome] = []
+    for conflicts in (("src/shared.py",), second):
+        monkeypatch.setattr(
+            supervise.loop,
+            "advance",
+            lambda _r, issue_id, _c=conflicts, **_k: _blocked_landing(
+                issue_id, "merge-conflicts", _c
+            ),
+        )
+        routes.extend(
+            supervise.route_outcomes(
+                tmp_path, _session(_lane("epic.1")), (_executed_outcome("epic.1"),)
+            )
+        )
+    return routes, allowances
+
+
+def test_a_second_identical_bounce_escalates_without_charging_the_rework_cap(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The observed non-converging retry: attempt 2 learned what attempt 1 reported.
+
+    Both attempts failed on the same file with the same cause, and re-applying the
+    same branch to the same anchor cannot converge — so the second attempt is
+    refunded (the loop's landing had already charged it) and a human is asked,
+    instead of the budget being spent to re-derive attempt 1's report verbatim
+    (basicly-bdd4, basicly-m4zv.5).
+    """
+    routes, allowances = _bounce_twice(monkeypatch, tmp_path, second=("src/shared.py",))
+
+    assert [r.route for r in routes] == ["bounced", "decision"]
+    assert allowances == [("epic.1", merge.MERGE_GATE)]
+    assert "identically twice" in routes[1].detail and "src/shared.py" in routes[1].detail
+
+
+def test_a_bounce_on_different_paths_is_not_a_repeat(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The control: a lane that collided somewhere new made progress and keeps its budget.
+
+    Without this the rule would escalate every second bounce, which is a cap of
+    one under another name.
+    """
+    routes, allowances = _bounce_twice(monkeypatch, tmp_path, second=("src/other.py",))
+
+    assert [r.route for r in routes] == ["bounced", "bounced"]
+    assert allowances == []
 
 
 def test_route_still_holds_later_lanes_when_a_gate_fails(

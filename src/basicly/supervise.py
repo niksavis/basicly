@@ -2606,9 +2606,14 @@ def route_outcomes(
     - A **scope collision** bounces back to the owning lane and the pass keeps
       going, and the remaining green lanes still land. A lane's wrong scope
       declaration is its own problem, not a reason to stall everyone. The missed
-      coupling is recorded once the pass is over
-      (:func:`_attribute_pass_couplings`) rather than at the bounce, so the edge
-      cannot depend on which lanes had landed by then (D9, basicly-kjc5.32).
+      coupling — and the brief naming the conflicting paths and both sides, which
+      is what gives the lane's next dispatch something to do
+      (:func:`_record_bounce_briefs`) — is recorded once the pass is over
+      (:func:`_attribute_pass_couplings`) rather than at the bounce, so neither
+      can depend on which lanes had landed by then (D9, basicly-kjc5.32). A
+      landing that failed *identically* to the lane's previous one escalates
+      there and then, refunded rather than charged
+      (:func:`_escalate_repeat_bounce`).
     - A lane a *landing this pass* already **broke** — its branch no longer
       merges cleanly, and that landing's paths are why — is cancelled before its
       own landing is attempted and re-dispatched with the collision recorded for
@@ -2688,7 +2693,8 @@ def _attribute_pass_couplings(
     the edge is literally identical either way.
 
     The bounced lanes' details are completed here for the same reason: which lane
-    to name is not known while the pass is still running.
+    to name is not known while the pass is still running — and so is the brief
+    each bounced lane's next dispatch reads (:func:`_record_bounce_briefs`).
 
     Best-effort like every tracker read on the landing path: a tracker that will
     not answer costs the graph an edge, never the pass.
@@ -2700,8 +2706,68 @@ def _attribute_pass_couplings(
             repo_root, collisions, [bead for bead, _ in landed]
         )
     except RuntimeError, OSError, ValueError:
-        return routed
+        # The brief is still owed: the conflicting paths are the lane's own
+        # evidence and do not depend on the attribution succeeding.
+        attributed = {}
+    _record_bounce_briefs(repo_root, collisions, attributed)
     return tuple(_reporting_couplings(one, attributed.get(one.issue_id, ())) for one in routed)
+
+
+def _record_bounce_briefs(
+    repo_root: Path,
+    collisions: list[tuple[str, tuple[str, ...]]],
+    attributed: dict[str, tuple[str, ...]],
+) -> None:
+    """Tell each bounced lane's *next* dispatch what its landing conflicted on (D6).
+
+    Without this a re-dispatched bounce says nothing new. ``bounced`` is
+    retriable and deliberately not carried forward, so the lane does get a fresh
+    agent — but :func:`build_bundle` assembles its prompt from the loop's fixed
+    dispatch prompt plus the records published against it, and the bounce
+    published none. The agent was handed the prompt it had already satisfied for
+    work already committed on its branch, changed nothing, and the next landing
+    re-derived the identical conflict; the second attempt escalated having
+    learned nothing (basicly-bdd4, observed three times on 2026-08-05/06).
+
+    So the brief is the same ``kind=coupling`` channel :func:`_preempt_lane`
+    already uses for the collision the supervisor *predicts* — the collision it
+    *observes* simply never got it. It names the conflicting paths and both
+    sides, which is what turns the re-dispatch into a resolvable task rather
+    than a replay.
+
+    Published here rather than at the bounce for the D9 reason the coupling edge
+    is: the culprits are not known while the pass is still running, so naming
+    whoever had landed by then would leak pass order into a durable record. With
+    no attribution the paths still stand on their own.
+
+    Best-effort per record: a tracker that will not take one brief must not cost
+    the other lanes theirs, nor the pass.
+    """
+    for bead, conflicts in collisions:
+        paths = ", ".join(conflicts) or "paths git did not name"
+        culprits = attributed.get(bead, ())
+        who = ", ".join(culprits) if culprits else "another lane"
+        try:
+            record_found_info(
+                repo_root,
+                bead,
+                FoundInfo(
+                    kind="coupling",
+                    summary=(
+                        f"{paths}: this branch no longer rebases onto its base, because "
+                        f"{who} landed over those paths"
+                    ),
+                    detail=(
+                        "your side is the commits already on this lane's branch; the "
+                        "other side is those paths as they now stand on the base. "
+                        "Resolve each conflicting path against both sides and commit on "
+                        "this branch — the work itself is done, do not redo it."
+                    ),
+                    affects=(bead,),
+                ),
+            )
+        except RuntimeError, OSError, ValueError:
+            continue
 
 
 def _reporting_couplings(one: RoutedOutcome, culprits: tuple[str, ...]) -> RoutedOutcome:
@@ -3036,7 +3102,7 @@ def _route_blocked_landing(
     """
     attempt = landing.landing
     if attempt is not None and attempt.conflicted:
-        return _bounce_lane(outcome.issue_id, landing, attempt, collisions)
+        return _bounce_lane(repo_root, outcome.issue_id, landing, attempt, collisions)
     if landing.action == "escalated":
         # loop._rework already queued the escalation (kjc5.4); the pending item
         # now holds the lane until a human triages it.
@@ -3068,7 +3134,52 @@ def _route_blocked_landing(
     return RoutedOutcome(outcome.issue_id, "rework", landing.detail)
 
 
+# Durable per-lane record of what a landing bounce failed on, so the next bounce
+# can tell a new collision from a verbatim repeat of the last one. It has to
+# outlive the pass that wrote it — the repeat is what the *following* pass sees —
+# and a marker comment is the same durable, attributable carrier policy's rework
+# counter uses. Only the lane's own status and conflicting paths go in, so no
+# pass ordering reaches a durable record (D9).
+CONFLICT_MARKER = "[harness-conflict]"
+
+
+def conflict_signature(attempt: merge.MergeResult) -> str:
+    """What a landing failed on, reduced to a comparable value (pure).
+
+    Status plus the conflicting paths, sorted — the signature a merge gate
+    reports, as opposed to the finding set a test gate reports (basicly-m4zv.5).
+    Sorted because git's ordering is not a fact about the collision, and two
+    orderings of one conflict must not read as two different failures.
+    """
+    return " ".join((attempt.status, *sorted(attempt.conflicts)))
+
+
+def _last_conflict_signature(repo_root: Path, issue_id: str) -> str:
+    """The signature of *issue_id*'s most recent bounce, or ``""`` when it has none.
+
+    Only the latest: the rule is about *consecutive* attempts, so a lane that
+    bounced on one anchor, then on another, then on the first again has not
+    repeated itself — it moved twice.
+    """
+    try:
+        proc = _run_br(repo_root, ["comments", "list", issue_id, "--json"])
+        comments = json.loads(proc.stdout)
+    except RuntimeError, OSError, ValueError:
+        return ""
+    if not isinstance(comments, list):
+        return ""
+    recorded = ""
+    for comment in comments:
+        if not isinstance(comment, dict):
+            continue
+        text = str(comment.get("text", "")).strip()
+        if text.startswith(CONFLICT_MARKER):
+            recorded = text[len(CONFLICT_MARKER) :].strip()
+    return recorded
+
+
 def _bounce_lane(
+    repo_root: Path,
     issue_id: str,
     landing: loop.AdvanceResult,
     attempt: merge.MergeResult,
@@ -3083,16 +3194,73 @@ def _bounce_lane(
     naming whoever had landed by the time this bounce happened is the pass-order
     dependence D9 forbids, so the conflicting paths are noted as evidence and
     :func:`_attribute_pass_couplings` attributes them once the pass is over
-    (basicly-kjc5.32).
+    (basicly-kjc5.32) — and publishes the brief the lane's next dispatch reads
+    (:func:`_record_bounce_briefs`).
+
+    What *is* recorded here is the failure signature, because it is order-free
+    and the next bounce needs it: a landing that failed exactly as it failed last
+    time escalates instead of spending another attempt
+    (:func:`_escalate_repeat_bounce`).
 
     There is no resolution of any kind here: the base was left untouched and the
     lane keeps its commits for its agent to re-apply on the new base.
     """
     collisions.append((issue_id, attempt.conflicts))
+    signature = conflict_signature(attempt)
+    repeated = signature == _last_conflict_signature(repo_root, issue_id)
+    _try_run_br(repo_root, ["comments", "add", issue_id, f"{CONFLICT_MARKER} {signature}"])
+    if repeated:
+        return _escalate_repeat_bounce(repo_root, issue_id, signature)
     # At the rework cap the loop already queued the escalation, so the lane is
     # held by a pending decision rather than re-dispatched — say so.
     route = "decision" if landing.action == "escalated" else "bounced"
     return RoutedOutcome(issue_id, route, f"bounced back to the lane: {landing.detail}")
+
+
+def _escalate_repeat_bounce(repo_root: Path, issue_id: str, signature: str) -> RoutedOutcome:
+    """A landing that failed exactly as it failed last time: stop, and charge nothing.
+
+    The cheapest convergence check there is, and the one the gate that actually
+    fired needs: a merge bounce carries a cause and a file list, not findings, so
+    a finding-set comparison would miss it entirely (basicly-m4zv.5). Byte-equal
+    signatures need no rubric and no model — the round is stalled by definition,
+    and re-applying the same branch to the same anchor cannot converge.
+
+    The attempt is *refunded* rather than merely reported. The loop's landing
+    already charged it (:func:`loop._rework`) before the supervisor saw the
+    shape, and an attempt that could not have changed the outcome is not one the
+    lane spent: on 2026-08-05 that charge was the whole remaining budget, and the
+    pass ended on a human decision the first bounce had already reported verbatim.
+    :func:`policy.grant_rework_allowance` offsets it additively, so the history
+    still says how many attempts were made.
+
+    Deliberately blind to *why* the branch is unchanged. A second consecutive
+    collision on one anchor is a decomposition the graph got wrong, and a human
+    deciding that is the point of the escalation — whether the lane's agent tried
+    and failed or never tried at all. The queue item is the loop's own rework
+    escalation, and :func:`decisions.enqueue` is idempotent per question, so a
+    landing that already escalated at the cap is not queued twice.
+    """
+    policy.grant_rework_allowance(repo_root, issue_id, merge.MERGE_GATE)
+    item = decisions.enqueue(
+        repo_root,
+        issue_id,
+        policy.REWORK_ESCALATION_KIND,
+        policy.rework_escalation_question(merge.MERGE_GATE),
+        (
+            f"the landing failed identically to the previous attempt ({signature}); "
+            "re-applying this branch to the same anchor cannot converge — re-scope it, "
+            "serialize it, or resolve the conflict by hand"
+        ),
+    )
+    return RoutedOutcome(
+        issue_id,
+        "decision",
+        (
+            f"bounced identically twice on {signature}; escalated without charging "
+            f"rework ({item.decision_id})"
+        ),
+    )
 
 
 def _route_failed(repo_root: Path, issue_id: str, outcome: LaneOutcome) -> RoutedOutcome:
