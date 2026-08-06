@@ -301,8 +301,21 @@ boundary with no shared code invites the defect this repo keeps paying for — t
 disagree. `session_issue_ids` had a second copy in `loop_state` that followed a narrower walk and
 disagreed **by 14 beads on a real root** (`basicly-tcmy.30`); the context ceiling had two
 implementations that reached opposite conclusions about a bead's fate (`basicly-7kxq`). The
-direction is enforceable with the contract layer already gating this repo — `lint-imports` is a
-live `[[verify.checks]]` entry — so it is a CI failure, not an intention.
+direction is gated by `.basicly/core/hooks/kit-boundary.py`, wired as a `[[verify.checks]]` entry
+in `--mode full` (what CI runs) and as a `pre-commit` hook that ships to consumers with the kit —
+so it is a CI failure and a commit failure, not an intention.
+
+**Corrected 2026-08-06 (`basicly-vkh0.16`).** This paragraph previously named `lint-imports` as
+the enforcement, on the grounds that it is already a live `[[verify.checks]]` entry. That was
+**unenforceable, not merely unimplemented**, and the distinction matters: import-linter analyses a
+single `root_package`, declared as `basicly` in `.importlinter` with containers `basicly` and
+`basicly.renderers`. The kit is flat modules with no `__init__.py`, outside that package and not on
+`sys.path`, so the tool never opens a kit file — no contract that could have been added there would
+have reached it. Measured rather than reasoned: `tests/test_kit_boundary.py::test_import_linter_cannot_see_a_kit_violation`
+seeds `import basicly.config` into a kit beside a staged copy of the package and records
+`lint-imports` reporting `2 kept, 0 broken` while the new gate fails on the same line. A fail-open
+gate is indistinguishable from a pass, which is the exact shape `basicly-tcmy.2` rewrote the
+`.importlinter` contracts to escape — this document had recreated it one section later.
 
 What the kit boundary forbids, stated so it is not rediscovered: the kit may not read `basicly`'s
 config loader, its logging, its session state or its policy module. It reads its own committed data

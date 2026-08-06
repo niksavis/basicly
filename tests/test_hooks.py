@@ -92,6 +92,7 @@ def test_manifest_lists_every_catalog_hook() -> None:
         "secret-scan",
         "tracker-path-scan",
         "internal-info-scan",
+        "kit-boundary",
         "commit-msg-script",
         "beads-commit-msg-script",
         "pre-push-script",

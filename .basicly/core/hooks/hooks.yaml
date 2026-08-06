@@ -48,6 +48,17 @@ hooks:
     stage: pre-commit
     always_run: true
     pass_filenames: false
+  # The one-way kit boundary (basicly-vkh0.16). A hook rather than only a
+  # `[[verify.checks]]` entry because this is the wiring that travels: the kit is
+  # copied into consumer repos by `basicly install`, and a consumer's basicly.toml
+  # is its own — it would never declare the check. The verify entry covers this
+  # repo's CI (`full`, run by pre-push.py); this covers commit time, here and
+  # there, so the two wirings do not duplicate each other's work.
+  - id: kit-boundary
+    script: kit-boundary.py
+    stage: pre-commit
+    always_run: true
+    pass_filenames: false
   - id: commit-msg-script
     script: commit-msg.py
     stage: commit-msg

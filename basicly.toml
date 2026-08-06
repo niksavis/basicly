@@ -159,6 +159,28 @@ name = "wired-or-deleted"
 command = ["uv", "run", "python", ".scripts/wired_or_deleted.py"]
 modes = ["fast", "full"]
 
+# The one-way kit boundary (basicly-vkh0.16). `docs/design/work-tracker.md` §4 named
+# `lint-imports` below as the enforcement for it. That was not a gap in the wiring, it
+# was unenforceable: import-linter analyses one `root_package`, declared as `basicly`,
+# and the kit is flat modules under `.basicly/core/kit` with no `__init__.py` and not
+# on `sys.path`, so the tool never opens a kit file. It would have reported `kept`
+# forever — the same fail-open shape the contract two entries down was rewritten to
+# escape. `tests/test_kit_boundary.py::test_import_linter_cannot_see_a_kit_violation`
+# runs both gates on one seeded violation and records the disagreement.
+#
+# `full` only, and that is not a downgrade: the same script is wired at `pre-commit`
+# in `.basicly/core/hooks/hooks.yaml`, so commit time is covered by the hook and CI by
+# this entry (quality-gates runs `pre-push.py`, i.e. mode `full`). Declaring it in
+# `fast` as well would run it twice on every commit for nothing. The hook is also the
+# wiring that reaches consumers, whose basicly.toml is their own.
+#
+# `uv run python`, per the rule `test_no_verify_check_invokes_a_bare_python_interpreter`
+# holds: a bare `python` on windows-latest is a system interpreter.
+[[verify.checks]]
+name = "kit-boundary"
+command = ["uv", "run", "python", ".basicly/core/hooks/kit-boundary.py"]
+modes = ["full"]
+
 [[verify.checks]]
 name = "lint-imports"
 # Enforces the import-linter contracts in `.importlinter`: the engine's tier stack
