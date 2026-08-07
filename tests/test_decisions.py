@@ -67,13 +67,14 @@ class _FakeBr:
 
 
 def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
-    monkeypatch.setattr(decisions, "_run_br", fake)
-    # invoke_decider consults D3's spend ceiling (basicly-kjc5.23), and policy
-    # reads br through its own alias — each module's alias is the seam for the
-    # subcommands it spawns directly.
+    # invoke_decider consults D3's spend ceiling (basicly-kjc5.23), and policy still
+    # reads br through its own alias for the subcommands it spawns directly.
     monkeypatch.setattr(policy, "_run_br", fake)
-    # The record read is not one of those: it goes through `br.read_record`, the one
-    # seam every consumer in the package shares (basicly-tcmy.14).
+    # Neither the record read nor the marker traffic is one of those: they go through
+    # `br.read_record` and `br.add_comment`/`br.read_comments`, the seams every consumer
+    # in the package shares (basicly-tcmy.14, basicly-s5li). `decisions` has no alias of
+    # its own left — every call it makes is a marker.
+    monkeypatch.setattr(br, "run_br", fake)
     monkeypatch.setattr(br, "try_run_br", fake)
 
 

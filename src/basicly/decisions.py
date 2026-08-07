@@ -39,7 +39,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import br, policy, run_record, runner
-from .br import run_br as _run_br
+from .br import add_comment as _add_comment
+from .br import read_comments as _read_comments
 from .config import (
     PolicyConfig,
     load_policy_config,
@@ -155,7 +156,7 @@ def enqueue(  # noqa: PLR0913 — mirrors the CLI surface
             generation += 1
         payload = json.dumps({"question": question, "detail": detail}, sort_keys=True)
         header = f"{MARKER} id={decision_id} kind={kind}"
-        _run_br(repo_root, ["comments", "add", issue_id, f"{header}\n{payload}"])
+        _add_comment(repo_root, issue_id, f"{header}\n{payload}")
         item = DecisionItem(
             decision_id=decision_id,
             issue_id=issue_id,
@@ -211,7 +212,7 @@ def answer(  # noqa: PLR0913 — mirrors the CLI surface
         body["confidence"] = confidence
     payload = json.dumps(body, sort_keys=True)
     header = f"{MARKER} id={decision_id} answered by={by}"
-    _run_br(repo_root, ["comments", "add", issue_id, f"{header}\n{payload}"])
+    _add_comment(repo_root, issue_id, f"{header}\n{payload}")
     _record_wait(repo_root, item, by)
     return DecisionItem(
         decision_id=decision_id,
@@ -355,18 +356,9 @@ def get(repo_root: Path, decision_id: str) -> DecisionItem | None:
 
 def _items_on(repo_root: Path, issue_id: str) -> dict[str, DecisionItem]:
     """All items recorded on one bead, answers folded in, keyed by decision id."""
-    proc = _run_br(repo_root, ["comments", "list", issue_id, "--json"])
-    try:
-        comments = json.loads(proc.stdout)
-    except json.JSONDecodeError:
-        return {}
-    if not isinstance(comments, list):
-        return {}
     items: dict[str, DecisionItem] = {}
     answers: dict[str, tuple[str, str]] = {}
-    for comment in comments:
-        if not isinstance(comment, dict):
-            continue
+    for comment in _read_comments(repo_root, issue_id):
         parsed = _parse_marker(
             str(comment.get("text", "")), issue_id, str(comment.get("created_at", ""))
         )

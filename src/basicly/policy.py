@@ -36,6 +36,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from . import br, run_record
+from .br import add_comment as _add_comment
+from .br import read_comments as _read_comments
 from .br import run_br as _run_br
 from .config import (
     AUTONOMY_LEVELS,
@@ -456,14 +458,17 @@ def gate_status(repo_root: Path, issue_id: str, config: PolicyConfig) -> GateSta
 
 
 def _comments(repo_root: Path, issue_id: str) -> list[dict]:
-    """One bead's comments as ``br`` reports them, each with its ``created_at``.
+    """One bead's markers, each with its ``created_at``, from whichever store owns them.
 
     The wait meter needs the stamp and not only the text (basicly-kjc5.51): the
     tracker's own timestamps are what make a wait interval derivable without any
-    new state. A non-dict entry is dropped rather than raised.
+    new state. Both stores supply one — br's ``created_at`` and the owned ledger's
+    event ``ts`` — which is why this can go through the seam at all (basicly-s5li).
+
+    Hard by construction: every family read through here is a counter or a refusal,
+    so a store that cannot answer must raise rather than report an empty history.
     """
-    proc = _run_br(repo_root, ["comments", "list", issue_id, "--json"])
-    return [c for c in json.loads(proc.stdout) if isinstance(c, dict)]
+    return _read_comments(repo_root, issue_id)
 
 
 def _comment_texts(repo_root: Path, issue_id: str) -> list[str]:
@@ -564,7 +569,7 @@ def record_rework(repo_root: Path, issue_id: str, gate: str) -> int:
     compares it against ``max_rework``. An allowance granted for an answered
     ``retry`` has to be visible at that comparison, not only in the history.
     """
-    _run_br(repo_root, ["comments", "add", issue_id, _rework_marker(gate)])
+    _add_comment(repo_root, issue_id, _rework_marker(gate))
     return rework_charged(repo_root, issue_id, gate)
 
 
@@ -586,7 +591,7 @@ def grant_rework_allowance(repo_root: Path, issue_id: str, gate: str) -> int:
     the cap for every node in the repo, which is one of the two wrong levers this
     exists to replace.
     """
-    _run_br(repo_root, ["comments", "add", issue_id, _rework_allowance_marker(gate)])
+    _add_comment(repo_root, issue_id, _rework_allowance_marker(gate))
     return rework_charged(repo_root, issue_id, gate)
 
 
@@ -619,7 +624,7 @@ def record_unreliable_gate(repo_root: Path, issue_id: str, gate: str, detail: st
     the two cannot be confused by a reader or by a counter.
     """
     suffix = f" {detail}" if detail else ""
-    _run_br(repo_root, ["comments", "add", issue_id, f"{_unreliable_gate_marker(gate)}{suffix}"])
+    _add_comment(repo_root, issue_id, f"{_unreliable_gate_marker(gate)}{suffix}")
     return unreliable_gate_events(repo_root, issue_id, gate)
 
 
@@ -869,7 +874,7 @@ def record_finding_set(
         _finding_set_history(repo_root, issue_id, gate), members
     )
     body = f"{_finding_set_marker(gate)} verdict={verdict} findings={json.dumps(list(members))}"
-    _run_br(repo_root, ["comments", "add", issue_id, body])
+    _add_comment(repo_root, issue_id, body)
     return Convergence(verdict=verdict, members=members, previous=previous, stalled_rounds=rounds)
 
 
@@ -919,7 +924,7 @@ def spend_convergence_refund(repo_root: Path, issue_id: str, gate: str) -> bool:
     if any(_marker_matches(text, marker) for text in _comment_texts(repo_root, issue_id)):
         return False
     grant_rework_allowance(repo_root, issue_id, gate)
-    _run_br(repo_root, ["comments", "add", issue_id, marker])
+    _add_comment(repo_root, issue_id, marker)
     return True
 
 
@@ -1041,19 +1046,15 @@ def record_shared_gate_failure(
     marker is not — counting attempts is what it is for.
     """
     suffix = f" {detail}" if detail else ""
-    _run_br(
+    _add_comment(
         repo_root,
-        [
-            "comments",
-            "add",
-            issue_id,
-            f"{SHARED_GATE_MARKER} gate={gate} culprits={','.join(culprits)}{suffix}",
-        ],
+        issue_id,
+        f"{SHARED_GATE_MARKER} gate={gate} culprits={','.join(culprits)}{suffix}",
     )
     body = f"{GATE_INVALIDATED_MARKER} gate={gate} lanes={issue_id}"
     for culprit in culprits:
         if not any(_marker_matches(text, body) for text in _comment_texts(repo_root, culprit)):
-            _run_br(repo_root, ["comments", "add", culprit, body])
+            _add_comment(repo_root, culprit, body)
     return shared_gate_events(repo_root, issue_id, gate)
 
 
@@ -1114,7 +1115,7 @@ def spend_gate_override(repo_root: Path, issue_id: str, gate: str) -> bool:
     """
     if gate_override_spent(repo_root, issue_id, gate):
         return False
-    _run_br(repo_root, ["comments", "add", issue_id, _gate_override_marker(gate)])
+    _add_comment(repo_root, issue_id, _gate_override_marker(gate))
     return True
 
 
@@ -1136,7 +1137,7 @@ def approve_checkpoint(repo_root: Path, issue_id: str, name: str) -> None:
     if name not in CHECKPOINTS:
         raise ValueError(f"unknown checkpoint {name!r}; expected one of {list(CHECKPOINTS)}")
     if not checkpoint_approved(repo_root, issue_id, name):
-        _run_br(repo_root, ["comments", "add", issue_id, _checkpoint_marker(name)])
+        _add_comment(repo_root, issue_id, _checkpoint_marker(name))
 
 
 # --- Interactive-confirmation gate on checkpoint approval -------------------
@@ -1541,12 +1542,12 @@ def _write_grant(repo_root: Path, root_issue: str, level: str, token_budget: int
         spent_at_issue=meter.measured_tokens,
         unmetered_at_issue=meter.unmetered_dispatches,
     )
-    _run_br(repo_root, ["comments", "add", root_issue, _grant_marker(grant)])
+    _add_comment(repo_root, root_issue, _grant_marker(grant))
 
 
 def revoke_grant(repo_root: Path, root_issue: str) -> None:
     """Record a revocation marker; the ledger's last-wins scan turns the grant off."""
-    _run_br(repo_root, ["comments", "add", root_issue, _REVOKE_MARKER])
+    _add_comment(repo_root, root_issue, _REVOKE_MARKER)
 
 
 def _grant_declined(grant: Grant, name: str, reasons: Sequence[str], *, scope: str = "") -> str:
@@ -1627,7 +1628,7 @@ def _grant_approval(
                 "",
             )
     marker = f"{_checkpoint_marker(name)} under grant {grant.level}"
-    _run_br(repo_root, ["comments", "add", issue_id, marker])
+    _add_comment(repo_root, issue_id, marker)
     # Nothing to close on the first ask — the grant approves before any challenge
     # is minted, which is exactly the wait it exists to remove. It does close one
     # when the grant only became able to approve later (a spend halt lifted by a
@@ -2025,7 +2026,7 @@ def record_needs_input(repo_root: Path, issue_id: str, fact: str) -> None:
     the trace the L3 lights-out precondition counts (zero needs-input events in
     the session — D3).
     """
-    _run_br(repo_root, ["comments", "add", issue_id, f"{_NEEDS_INPUT_MARKER} {fact}"])
+    _add_comment(repo_root, issue_id, f"{_NEEDS_INPUT_MARKER} {fact}")
 
 
 def _answered_asks(repo_root: Path, issue_id: str) -> frozenset[tuple[str, str]]:
@@ -2293,10 +2294,7 @@ def record_wait_request(repo_root: Path, issue_id: str, name: str) -> str | None
     wait_id = wait_id_for_checkpoint(issue_id, name)
     if _open_wait_stamp(repo_root, issue_id, wait_id) is not None:
         return None
-    _run_br(
-        repo_root,
-        ["comments", "add", issue_id, f"{WAIT_MARKER} id={wait_id} kind=checkpoint requested"],
-    )
+    _add_comment(repo_root, issue_id, f"{WAIT_MARKER} id={wait_id} kind=checkpoint requested")
     return wait_id
 
 
@@ -2374,7 +2372,7 @@ def record_wait(  # noqa: PLR0913 — one parameter per recorded fact
         sort_keys=True,
     )
     header = f"{WAIT_MARKER} id={wait_id} kind={kind} answered waited_s={waited_s} by={by}"
-    _run_br(repo_root, ["comments", "add", issue_id, f"{header}\n{payload}"])
+    _add_comment(repo_root, issue_id, f"{header}\n{payload}")
     return event
 
 
@@ -2653,7 +2651,7 @@ def record_evidence(repo_root: Path, issue_id: str, phase: str, declared: str) -
     body = f"{EVIDENCE_MARKER} phase={phase} path={declared}"
     if any(_marker_matches(text, body) for text in _comment_texts(repo_root, issue_id)):
         return False
-    _run_br(repo_root, ["comments", "add", issue_id, body])
+    _add_comment(repo_root, issue_id, body)
     return True
 
 
@@ -2693,7 +2691,7 @@ def record_scope_violation(
         body += f" collides={','.join(colliding)}"
     if any(_marker_matches(text, body) for text in _comment_texts(repo_root, issue_id)):
         return False
-    _run_br(repo_root, ["comments", "add", issue_id, body])
+    _add_comment(repo_root, issue_id, body)
     return True
 
 

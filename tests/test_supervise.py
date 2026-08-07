@@ -516,16 +516,17 @@ class _FakeBr:
 
 
 def _install_br(monkeypatch: pytest.MonkeyPatch, fake: object) -> None:
-    """Route both br aliases build_bundle reads through to one fake.
+    """Route every br seam build_bundle reads through to one fake.
 
-    ``build_bundle`` scans found-info via supervise's alias and the lane's
-    answered decisions via decisions' own. The record read goes through
-    ``br.read_record`` instead, the one seam every consumer in the package shares
-    (basicly-tcmy.14), so the fake is installed on the spawn *it* uses as well —
-    leaving that one out lets a record read spawn a real br mid-test.
+    ``build_bundle`` scans found-info via supervise's own alias — still a direct
+    ``comments list`` spawn (basicly-wpc8's) — and the lane's answered decisions
+    through ``br.read_comments``. The record read goes through ``br.read_record``.
+    Both of the latter are seams every consumer in the package shares
+    (basicly-tcmy.14, basicly-s5li), so the fake is installed on the spawns *they*
+    use as well — leaving one out lets a read spawn a real br mid-test.
     """
     monkeypatch.setattr(supervise, "_run_br", fake)
-    monkeypatch.setattr(decisions, "_run_br", fake)
+    monkeypatch.setattr(br, "run_br", fake)
     monkeypatch.setattr(br, "try_run_br", fake)
 
 
@@ -2227,7 +2228,6 @@ def _patch_collision_pass(
     fake = _FakeBr({bead: {"id": bead, "description": ""} for bead in scopes})
     _install_br(monkeypatch, fake)
     monkeypatch.setattr(supervise, "_try_run_br", fake)
-    monkeypatch.setattr(decisions, "_run_br", fake)
     monkeypatch.setattr(policy, "_run_br", fake)
 
     def try_run_br(_r, args):
@@ -3267,12 +3267,15 @@ def _attach_br(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
     """Route every module observe() reads br through to one fake.
 
     Each module owns its own ``_run_br`` alias for the subcommands it spawns directly,
-    so those are installed per module. The **record** read is no longer one of them: it
-    goes through ``br.read_record``, the one seam every consumer in the package shares
-    (basicly-tcmy.14), so the fake is installed on the spawn that uses too.
+    so those are installed per module. Two reads are no longer among them: the **record**
+    read goes through ``br.read_record`` and the **marker** read through
+    ``br.read_comments`` (basicly-tcmy.14, basicly-s5li), so the fake is installed on the
+    spawns those use too. ``decisions`` has no alias left — every call it makes is a
+    marker.
     """
-    for module in (supervise, policy, decisions, loop_state):
+    for module in (supervise, policy, loop_state):
         monkeypatch.setattr(module, "_run_br", fake)
+    monkeypatch.setattr(br, "run_br", fake)
     monkeypatch.setattr(br, "try_run_br", fake)
 
 
@@ -3516,9 +3519,9 @@ def test_dispatch_halt_is_one_idempotent_queue_item(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Every halted pass re-surfaces the same item, not a fresh notification each time."""
-    br = _FakeBr({"epic": _issue("epic")})
-    monkeypatch.setattr(decisions, "_run_br", br)
-    monkeypatch.setattr(loop_state, "_run_br", br)
+    fake = _FakeBr({"epic": _issue("epic")})
+    monkeypatch.setattr(br, "run_br", fake)
+    monkeypatch.setattr(loop_state, "_run_br", fake)
     monkeypatch.setattr(decisions, "_notify", lambda *_a, **_k: None)
     admission = _granted("L2", 5000, 6000)
 
@@ -3527,7 +3530,7 @@ def test_dispatch_halt_is_one_idempotent_queue_item(
 
     assert first.decision_id == second.decision_id
     assert first.kind == "escalation"
-    assert len(br.comments["epic"]) == 1
+    assert len(fake.comments["epic"]) == 1
 
 
 def test_an_unmeterable_halt_asks_its_own_question(
@@ -3538,9 +3541,9 @@ def test_an_unmeterable_halt_asks_its_own_question(
     Items are keyed by (issue, kind, question), so sharing the budget wording would
     also fold the two halts into one item and hide whichever arrived second.
     """
-    br = _FakeBr({"epic": _issue("epic")})
-    monkeypatch.setattr(decisions, "_run_br", br)
-    monkeypatch.setattr(loop_state, "_run_br", br)
+    fake = _FakeBr({"epic": _issue("epic")})
+    monkeypatch.setattr(br, "run_br", fake)
+    monkeypatch.setattr(loop_state, "_run_br", fake)
     monkeypatch.setattr(decisions, "_notify", lambda *_a, **_k: None)
     spent = _granted("L2", 5000, 6000)
     unmetered = policy.SpendStatus(
@@ -3556,7 +3559,7 @@ def test_an_unmeterable_halt_asks_its_own_question(
 
     assert budget_item.decision_id != unmetered_item.decision_id
     assert "no measurable usage" in unmetered_item.question
-    assert len(br.comments["epic"]) == 2
+    assert len(fake.comments["epic"]) == 2
 
 
 # --- Autonomous delegation: the decider in the pass (basicly-kjc5.40) ---------
