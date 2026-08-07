@@ -1,0 +1,14 @@
+# Tier-2 routing evidence for `tool-jq` (docs/design/catalog-efficacy-design.md §6).
+# Prompts paraphrase how a user actually asks; copying the description in would
+# game the eval. A failure here means fix the description, not the prompt.
+schema_version: 1
+trigger:
+  positive:
+    - prompt: "pull one field out of this json response"
+    - prompt: "reshape this json array inside a shell pipeline"
+    - prompt: "filter the records in this json file"
+  negative:
+    - prompt: "edit a value in this yaml manifest"
+      owner: tool-yq
+    - prompt: "inspect the headers this endpoint returns"
+      owner: tool-curl

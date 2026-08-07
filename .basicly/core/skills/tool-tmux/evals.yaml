@@ -1,0 +1,14 @@
+# Tier-2 routing evidence for `tool-tmux` (docs/design/catalog-efficacy-design.md §6).
+# Prompts paraphrase how a user actually asks; copying the description in would
+# game the eval. A failure here means fix the description, not the prompt.
+schema_version: 1
+trigger:
+  positive:
+    - prompt: "keep this long-running process alive across panes"
+    - prompt: "split the terminal and orchestrate two windows"
+    - prompt: "my multiplexer keybindings are not firing"
+  negative:
+    - prompt: "interop between windows and linux is breaking my tool"
+      owner: wsl
+    - prompt: "run the npm job in the background"
+      owner: node

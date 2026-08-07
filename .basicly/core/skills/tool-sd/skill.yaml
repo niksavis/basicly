@@ -2,7 +2,7 @@
 schema_version: 1
 name: tool-sd
 invocation: model
-description: Use sd for fast, readable search-and-replace in files with safer defaults than sed. Trigger when batch textual replacements are needed across files.
+description: Use sd for fast, readable search-and-replace in files with safer defaults than sed. Trigger when swapping one string for another in a batch of files at once.
 instructions: |
   # tool-sd
 

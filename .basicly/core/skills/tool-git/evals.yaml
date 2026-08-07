@@ -1,0 +1,14 @@
+# Tier-2 routing evidence for `tool-git` (docs/design/catalog-efficacy-design.md §6).
+# Prompts paraphrase how a user actually asks; copying the description in would
+# game the eval. A failure here means fix the description, not the prompt.
+schema_version: 1
+trigger:
+  positive:
+    - prompt: "show me what is staged versus what changed"
+    - prompt: "what branch am I on and do I have uncommitted changes"
+    - prompt: "review the history that touched this file"
+  negative:
+    - prompt: "claim the issue I am about to work on"
+      owner: tool-br
+    - prompt: "put this work in its own sibling checkout"
+      owner: worktree-isolation

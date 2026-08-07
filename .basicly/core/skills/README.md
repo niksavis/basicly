@@ -33,19 +33,19 @@ by design: that absence is what keeps it out of the model's always-loaded index.
 | `tool-bat` | `user` | any |  |
 | `tool-br` | `model` | any | Use br (beads_rust) as the primary task/issue tracker for this repo. Trigger when planning work, creating or claiming issues, checking what is ready to work on, or preparing a commit that must reference a beads issue id. |
 | `tool-curl` | `model` | any | Use curl for low-level HTTP requests, headers, and data transfer debugging. Trigger when APIs, webhooks, download checks, or protocol-level diagnostics are required. |
-| `tool-fd` | `model` | any | Use fd or fd-find for fast filename and path discovery with sane defaults. Trigger when file enumeration by pattern is needed without complex find syntax. |
+| `tool-fd` | `model` | any | Use fd or fd-find for fast filename and path discovery with sane defaults. Trigger when listing or enumerating files and directories by name or glob pattern, without complex find syntax. |
 | `tool-fzf` | `user` | any |  |
 | `tool-git` | `model` | any | Use git for repository state inspection, safe staging, diff review, and history-aware change management. Trigger when the task involves commits, branches, diffs, or version control decisions. |
 | `tool-git-delta` | `user` | any |  |
 | `tool-jq` | `model` | any | Use jq to parse, filter, and transform JSON in shell pipelines. Trigger when structured JSON extraction or reshaping is needed. |
-| `tool-ripgrep` | `model` | any | Use ripgrep for extremely fast text and regex search across repositories. Trigger when locating symbols, strings, or patterns at scale. |
-| `tool-sd` | `model` | any | Use sd for fast, readable search-and-replace in files with safer defaults than sed. Trigger when batch textual replacements are needed across files. |
+| `tool-ripgrep` | `model` | any | Use ripgrep to grep or search a whole repo for text or a regex, extremely fast. Trigger when locating symbols, strings, or patterns at scale. |
+| `tool-sd` | `model` | any | Use sd for fast, readable search-and-replace in files with safer defaults than sed. Trigger when swapping one string for another in a batch of files at once. |
 | `tool-shellcheck` | `model` | any | Use shellcheck to statically analyze shell scripts for bugs, portability issues, and quoting mistakes. Trigger whenever shell scripts are created or modified. |
 | `tool-starship` | `user` | `starship` |  |
 | `tool-tmux` | `model` | `tmux` | Use tmux for session orchestration, pane/window control, and resilient long-running terminal workflows. Trigger when the task needs terminal multiplexing or keybinding troubleshooting. |
 | `tool-tree` | `model` | any | Use tree to visualize directory layout quickly in a token-efficient form. Trigger when understanding project structure or summarizing file hierarchies. |
-| `tool-typos` | `model` | any | Use typos to detect spelling mistakes in code, comments, and docs with low false positives. Trigger when proofreading source content or enforcing text quality. |
-| `tool-uv` | `model` | `python` | Use uv for fast Python dependency sync, environment management, and command execution. Trigger for Python setup, install, lint, test, and script workflows in this repo. |
+| `tool-typos` | `model` | any | Use typos to detect spelling mistakes and misspelled words in code, comments, and docs with low false positives. Trigger when proofreading source content or enforcing text quality. |
+| `tool-uv` | `model` | `python` | Use uv for fast Python dependency sync, virtualenv and environment management, and command execution. Trigger for Python setup, install, lint, test, and script workflows in this repo. |
 | `tool-wezterm` | `user` | `wezterm` |  |
 | `tool-wget` | `model` | any | Use wget for robust non-interactive downloads, retries, and mirror-style fetch operations. Trigger when reliable file retrieval or resumable downloads are needed. |
 | `tool-xh` | `model` | any | Use xh as a user-friendly HTTP client for API testing and response inspection. Trigger when quick REST calls with clean defaults are needed. |

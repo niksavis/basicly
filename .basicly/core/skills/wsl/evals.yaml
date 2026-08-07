@@ -1,0 +1,14 @@
+# Tier-2 routing evidence for `wsl` (docs/design/catalog-efficacy-design.md §6).
+# Prompts paraphrase how a user actually asks; copying the description in would
+# game the eval. A failure here means fix the description, not the prompt.
+schema_version: 1
+trigger:
+  positive:
+    - prompt: "file access under /mnt/c is painfully slow"
+    - prompt: "windows and linux interop is breaking my tool"
+    - prompt: "it works in my terminal but not from a script"
+  negative:
+    - prompt: "orchestrate panes in a terminal multiplexer"
+      owner: tool-tmux
+    - prompt: "check this shell script for quoting bugs"
+      owner: tool-shellcheck

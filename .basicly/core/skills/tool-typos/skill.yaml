@@ -2,7 +2,7 @@
 schema_version: 1
 name: tool-typos
 invocation: model
-description: Use typos to detect spelling mistakes in code, comments, and docs with low false positives. Trigger when proofreading source content or enforcing text quality.
+description: Use typos to detect spelling mistakes and misspelled words in code, comments, and docs with low false positives. Trigger when proofreading source content or enforcing text quality.
 instructions: |
   # tool-typos
 

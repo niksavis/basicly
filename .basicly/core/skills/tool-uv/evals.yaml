@@ -1,0 +1,14 @@
+# Tier-2 routing evidence for `tool-uv` (docs/design/catalog-efficacy-design.md §6).
+# Prompts paraphrase how a user actually asks; copying the description in would
+# game the eval. A failure here means fix the description, not the prompt.
+schema_version: 1
+trigger:
+  positive:
+    - prompt: "sync this project's python dependencies"
+    - prompt: "run the test suite in this project's environment"
+    - prompt: "set up the virtualenv for this repo"
+  negative:
+    - prompt: "install the npm packages"
+      owner: node
+    - prompt: "add type hints to this module"
+      owner: python

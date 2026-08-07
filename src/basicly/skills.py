@@ -35,6 +35,12 @@ from .schema import ValidationError, technology_selected, validate_technologies
 SKILLS_SOURCE_DIR = Path(".basicly/core/skills")
 SKILL_SOURCE_FILE = "skill.yaml"
 SKILL_FILE_NAME = "SKILL.md"
+# Tier-2 routing evidence (basicly-m4zv.2), colocated with the entry it is about
+# so a reviewer sees the description and the prompts that must reach it in one
+# diff. A catalog *source*, not a bundled resource: it is read by `catalog lint`
+# and never projected, because an agent loading a skill has no use for the eval
+# corpus and every reason not to pay for it.
+EVAL_SOURCE_FILE = "evals.yaml"
 
 # The invocation axis (basicly-m4zv.1, catalog-efficacy-design §3.5).
 MODEL_INVOKED = "model"
@@ -329,18 +335,21 @@ def _is_generated_skill(path: Path) -> bool:
 
 
 def _resource_files(skill: SkillDefinition) -> list[Path]:
-    """Relative paths of every bundled file (everything but the skill.yaml source).
+    """Relative paths of every bundled file (everything but the catalog sources).
 
     A stray top-level ``SKILL.md`` in the source is skipped so it can never
-    clobber the rendered one (catalog-lint also rejects it as a source).
+    clobber the rendered one (catalog-lint also rejects it as a source), and the
+    top-level ``evals.yaml`` is skipped because it is catalog evidence rather
+    than something the agent loading the skill should be handed.
     """
     src_dir = skill.source_dir
+    skipped = {Path(SKILL_SOURCE_FILE), Path(SKILL_FILE_NAME), Path(EVAL_SOURCE_FILE)}
     files: list[Path] = []
     for candidate in sorted(src_dir.rglob("*")):
         if not candidate.is_file():
             continue
         rel = candidate.relative_to(src_dir)
-        if rel == Path(SKILL_SOURCE_FILE) or rel == Path(SKILL_FILE_NAME):
+        if rel in skipped:
             continue
         files.append(rel)
     return files

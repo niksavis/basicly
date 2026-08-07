@@ -1,0 +1,14 @@
+# Tier-2 routing evidence for `tool-sd` (docs/design/catalog-efficacy-design.md §6).
+# Prompts paraphrase how a user actually asks; copying the description in would
+# game the eval. A failure here means fix the description, not the prompt.
+schema_version: 1
+trigger:
+  positive:
+    - prompt: "replace this term in every file at once"
+    - prompt: "batch substitute across the tree without sed quoting pain"
+    - prompt: "swap one string for another in these sources"
+  negative:
+    - prompt: "grep the repo for every occurrence of this term"
+      owner: tool-ripgrep
+    - prompt: "rewrite the call structurally, not textually"
+      owner: tool-ast-grep

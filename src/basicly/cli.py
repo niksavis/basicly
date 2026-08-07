@@ -2130,6 +2130,9 @@ def cmd_catalog_lint(_args: argparse.Namespace) -> int:
     repo_root = _repo_root()
     for warning in catalog_lint.skill_warnings(repo_root):
         print(f"catalog lint: warning: {warning}", file=sys.stderr)
+    # The Tier-2 CI metric, printed whether the gate passes or fails: a floor is
+    # only raisable by someone who can see how much headroom the catalog has.
+    print(f"catalog lint: {catalog_lint.routing_outcome(repo_root).summary()}")
     violations = catalog_lint.lint_catalog(repo_root)
     if violations:
         print("catalog lint: FAILED", file=sys.stderr)

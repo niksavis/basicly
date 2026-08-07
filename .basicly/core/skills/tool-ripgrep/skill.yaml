@@ -2,7 +2,7 @@
 schema_version: 1
 name: tool-ripgrep
 invocation: model
-description: Use ripgrep for extremely fast text and regex search across repositories. Trigger when locating symbols, strings, or patterns at scale.
+description: Use ripgrep to grep or search a whole repo for text or a regex, extremely fast. Trigger when locating symbols, strings, or patterns at scale.
 instructions: |
   # tool-ripgrep
 
