@@ -537,6 +537,19 @@ entries (`[[verify.checks]]`, re-parsed by the pre-commit hook runner, and
 `[[privacy.denied]]`, read only by `internal-info-scan.py`) have no reader in
 `config.py` at all.
 
+**Which schema does the checking is a property of the tree, not of the process.** A
+repo that ships its own `src/basicly/config.py` — this one, and each of its lane
+worktrees — is checked against the `CONFIG_SCHEMA` declared in _that_ file, read
+statically on every validation. Without this, `loop advance` could not land
+a lane that adds a key: the landing runs from the base checkout, so the engine
+validating the lane's `basicly.toml` is the pre-merge one, and it refused a name the
+lane's own code introduces one commit later (basicly-69az, reproduced four times).
+Static because the tree under test has not merged yet — importing it would run a
+second engine inside the process landing it, and the question here is a set of names,
+not behaviour. It fails closed: a schema this reader cannot model falls back to the
+running engine's, and the refusal then names the ordering rule instead of reading as a
+typo. A consumer repo ships no engine source and is unaffected.
+
 _Forward compatibility._ The refusal is unconditional — no warn-then-error staging,
 no narrowing to near-misses of a known key — so a repo pinned to an older basicly
 whose config carries a key added since fails until it upgrades or removes the key.
