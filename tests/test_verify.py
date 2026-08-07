@@ -1492,3 +1492,47 @@ def test_bandit_fails_on_an_unsafe_construct_in_the_kit(tmp_path: Path) -> None:
         "the discriminator failed for another reason than the kit, so a passing scan "
         f"above would prove nothing: {without_the_kit.stdout}"
     )
+
+
+# --- A landing must verify the lane, not the base checkout (basicly-ihg3) -----
+#
+# lint-imports is the only configured check that resolves its target by *import*
+# rather than by path: pyright and vulture read files under cwd, so they follow the
+# worktree, while import-linter imports the `basicly` package the active venv points
+# at. Spelled bare, it therefore analysed the base checkout during every landing —
+# `basicly loop advance` runs verify as a subprocess and PATH carried the base
+# `.venv/bin`. A lane adding a new module failed with `module basicly.<new> does not
+# exist`, a finding that is not about the lane's tree and that no amount of bounded
+# rework could act on: basicly-u2hl.2 escalated at rework 2/2 on it.
+
+
+def _import_resolving_checks() -> tuple[VerifyCheck, ...]:
+    """The declared checks that find their target by importing it, not by reading a path."""
+    by_name = {check.name: check for check in load_verify_config(_REPO_ROOT).checks}
+    return tuple(by_name[name] for name in ("lint-imports",) if name in by_name)
+
+
+def test_an_import_resolving_check_runs_under_the_project_environment() -> None:
+    """Every import-resolving check is spelled `uv run`, so it analyses this checkout."""
+    checks = _import_resolving_checks()
+    assert checks, "this repo declares no import-resolving check"
+    for check in checks:
+        assert tuple(check.command[:2]) == ("uv", "run"), (
+            f"the {check.name} check is spelled {check.command}, which resolves from PATH; "
+            "under a landing that is the base checkout's venv, so it would verify a package "
+            "the lane does not have"
+        )
+
+
+def test_a_path_reading_check_needs_no_uv_run_prefix() -> None:
+    """The discriminator: a path-reading check is not required to carry the prefix.
+
+    Without this, the assertion above would pass just as well if every check in the
+    file happened to start with `uv run` for unrelated reasons, and would stop being
+    evidence about import resolution specifically.
+    """
+    by_name = {check.name: check for check in load_verify_config(_REPO_ROOT).checks}
+    assert by_name["vulture"].command[0] == "vulture"
+    assert "src" in by_name["vulture"].command, (
+        "vulture is being cited as a path-reading check, so it must name the paths it reads"
+    )

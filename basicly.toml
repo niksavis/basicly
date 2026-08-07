@@ -265,7 +265,15 @@ name = "lint-imports"
 # consumer repo, which is this repo's own named defect class: a fail-open gate is
 # indistinguishable from a pass. `tests/test_import_contracts.py` is the control
 # pair that keeps the replacement falsifiable.
-command = ["lint-imports"]
+#
+# `uv run`, not a bare `lint-imports` (basicly-ihg3). This is the only configured check that
+# resolves its target by *import* rather than by path — pyright and vulture read files under
+# cwd — so a bare spelling follows the inherited venv instead of the checkout being verified.
+# A landing runs verify as a subprocess of `basicly loop advance`, launched with `uv run` from
+# the base checkout, so PATH carried the base `.venv/bin` and import-linter analysed the base
+# package: every lane adding a new module failed with `module basicly.<new> does not exist`,
+# a finding no amount of bounded rework could act on.
+command = ["uv", "run", "lint-imports"]
 modes = ["fast", "full"]
 
 [[verify.checks]]
