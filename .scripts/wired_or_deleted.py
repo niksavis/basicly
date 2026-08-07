@@ -159,7 +159,16 @@ BASELINE: frozenset[str] = frozenset({
     "command:status",
     "command:usage forecast",
     "command:usage tracker",
-    # Record fields read only by their own module or by a test (45).
+    # Record fields read only by their own module or by a test (44). Was 45:
+    # `RunRecord.config_overrides` acquired a consumer when `tuning` began reading the
+    # ledger — it reads the field's value back out of the record JSON as
+    # `entry["config_overrides"]` (basicly-3ifz.1).
+    #
+    # `CostRollup.dispatches` stays: it still has none. Retiring it in the same pass was
+    # the masking hazard this module documents above — `tuning` had declared its own
+    # `dispatches` name, and the index matches bare names, so a *different* record's
+    # field reported the consumer. `tuning` names it `dispatches_read` for that reason;
+    # renaming it back reproduces this finding.
     "record-field:basicly.agents.AgentOutputRoot.claude_passthrough",
     "record-field:basicly.agents.AgentDefinition.deprecated_model",
     "record-field:basicly.decisions.DecisionItem.queued_at",
@@ -189,7 +198,6 @@ BASELINE: frozenset[str] = frozenset({
     "record-field:basicly.release.ReleasePlan.current_version",
     "record-field:basicly.release.ReleasePlan.pins",
     "record-field:basicly.release.ReleaseResult.tagged",
-    "record-field:basicly.run_record.RunRecord.config_overrides",
     "record-field:basicly.run_record.CostRollup.dispatches",
     "record-field:basicly.run_record.ForecastError.actual_cost",
     "record-field:basicly.run_record.ForecastError.actual_wall_clock_s",

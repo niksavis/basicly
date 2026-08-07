@@ -36,6 +36,23 @@ basicly usage report
   delete it. When the command reports no usage data, say so (the hook may
   not be active in this repo) and continue with the rest of the ritual.
 
+### Are the factory's own numbers still right?
+
+The dispatch ledger answers a second question the close-out should ask:
+
+```sh
+basicly usage tuning
+```
+
+- One row per governed parameter — the value in force for the dispatches
+  it summarises, the outcome distribution under that value, and a
+  recommendation with its sample size, labelled `measured` or `seeded`.
+- It changes nothing, by design. Report a recommendation worth acting on;
+  never edit `basicly.toml` from it without the owner's say-so.
+- A `seeded` row means the sample is under the calibration minimum, so the
+  declared prior stands — do not cite it as a measurement. A row with zero
+  samples is naming a bound nothing records, which is itself the finding.
+
 ## 2) Self-improvement retro
 
 Follow the repo's retro rules:

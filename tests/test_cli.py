@@ -1292,6 +1292,86 @@ def test_cli_usage_forecast_explains_an_empty_report(work_repo: Path) -> None:
     assert "1 actual with no forecast" in result.stdout
 
 
+def _lane_records(count: int) -> dict:
+    """*count* executed lane dispatches on one bead, each with a distinct duration."""
+    return {
+        "b-1": [
+            {
+                "agent": "claude",
+                "outcome": "executed",
+                "phase": "lane",
+                "timestamp": f"2026-07-{day:02d}T09:00:00+00:00",
+                "duration_s": 100.0 * day,
+            }
+            for day in range(10, 10 + count)
+        ]
+    }
+
+
+def _advice(stdout: str, key: str) -> str:
+    """The unfolded advice line for *key*.
+
+    Asserted on rather than the table above it: rich folds a wide table's cells across
+    lines on a narrow terminal, so the table is scannable and the advice line is the
+    one a consumer can grep whole.
+    """
+    for line in stdout.splitlines():
+        if line.strip().startswith(f"{key}: "):
+            return line
+    raise AssertionError(f"{key} is missing from the report:\n{stdout}")
+
+
+def test_cli_usage_tuning_advises_each_governed_parameter(work_repo: Path) -> None:
+    """The report names the value in force, the sample size, and measured-or-seeded."""
+    _run_records(work_repo, _lane_records(10))
+    result = run_basicly(work_repo, "usage", "tuning")
+    assert result.returncode == 0, result.stderr
+    # 10 samples, the longest run is 1900s, and the backstop doubles it.
+    advice = _advice(result.stdout, "runner.runner_timeout")
+    assert "3600 s in force" in advice
+    assert "advised 3800 s from 10 sample(s) (measured)" in advice
+    assert "10 local" in result.stdout
+
+
+def test_cli_usage_tuning_labels_a_thin_sample_as_seeded(work_repo: Path) -> None:
+    """Under the calibration minimum the declared prior stands, and says what it displaces."""
+    _run_records(work_repo, _lane_records(3))
+    result = run_basicly(work_repo, "usage", "tuning")
+    assert result.returncode == 0, result.stderr
+    assert "advised 3600 s from 3 sample(s) (seeded)" in _advice(
+        result.stdout, "runner.runner_timeout"
+    )
+    assert "it would displace the value in force" in result.stdout
+    # The three durations are 1000s, 1100s and 1200s, so the backstop statistic would
+    # have produced 2400. It must not appear anywhere: a number fitted to three samples
+    # and merely labelled "seeded" is still read as a measurement.
+    assert "2400" not in result.stdout
+
+
+def test_cli_usage_tuning_lists_a_parameter_nothing_measures(work_repo: Path) -> None:
+    """A bound with no recorded signal prints with zero samples rather than vanishing."""
+    _run_records(work_repo, _lane_records(10))
+    result = run_basicly(work_repo, "usage", "tuning")
+    assert result.returncode == 0, result.stderr
+    advice = _advice(result.stdout, "runner.stall_after")
+    assert "900 s in force" in advice
+    assert "no recommendation (unobserved)" in advice
+    assert "no dispatch record carries a signal" in advice
+
+
+def test_cli_usage_tuning_changes_no_configuration(work_repo: Path) -> None:
+    """Advisory, not self-modifying: every config file survives the run byte-identical."""
+    _run_records(work_repo, _lane_records(10))
+    configs = ["basicly.toml", "pyproject.toml", ".importlinter"]
+    before = {name: (work_repo / name).read_bytes() for name in configs}
+
+    result = run_basicly(work_repo, "usage", "tuning")
+
+    assert result.returncode == 0, result.stderr
+    assert {name: (work_repo / name).read_bytes() for name in configs} == before
+    assert "This report changed nothing" in result.stdout
+
+
 def test_cli_status_reports_authoring_repo(work_repo: Path) -> None:
     """In the authoring repo, status names the repo kind and skips install state."""
     result = run_basicly(work_repo, "status")
