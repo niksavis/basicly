@@ -2573,6 +2573,14 @@ def _report_active_grant(repo_root: Path, issue: str) -> int:
     Non-zero for "no grant" so a script can branch on it: every checkpoint being
     human is the safe state, but it is not the state a caller asking for a grant
     was hoping to find.
+
+    Two lines, because there are two authorities and reading them as one is what
+    stalled a P0 for sessions (basicly-u6jq.2). A bare ``delegable: classify,
+    decompose, ship`` reads as "the loop classifies and decomposes for you"; it
+    only ever meant the *checkpoint approval* over those phases, while the input
+    each phase needs had no producer at all. So approving and originating are
+    named separately, and an L1 grant — which approves the decompose checkpoint but
+    may not propose the plan it would approve — says so out loud.
     """
     grant = policy.active_grant(repo_root, issue)
     if grant is None:
@@ -2580,8 +2588,10 @@ def _report_active_grant(repo_root: Path, issue: str) -> int:
         return 1
     budget = f", token budget {grant.token_budget}" if grant.token_budget is not None else ""
     covers = ", ".join(policy.GRANT_COVERAGE[grant.level]) or "(nothing)"
+    proposes = ", ".join(policy.PROPOSAL_COVERAGE[grant.level]) or "(nothing)"
     coverage = _coverage_phrase(repo_root, issue)
-    print(f"grant: {grant.level} ({issue}){budget}, {coverage} - delegable: {covers}")
+    print(f"grant: {grant.level} ({issue}){budget}, {coverage}")
+    print(f"       approves checkpoints: {covers} - originates proposals: {proposes}")
     return 0
 
 
