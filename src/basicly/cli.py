@@ -44,6 +44,7 @@ from . import (
     supervise,
     tracker_surface,
     tracker_usage,
+    tuning,
     ui,
     usage,
     verify,
@@ -1829,6 +1830,100 @@ def _cmd_usage_forecast(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _census_text(counts: dict[str, int]) -> str:
+    """Render a name -> count map as ``3 local, 12 tracker``; ``-`` when empty."""
+    return ", ".join(f"{count} {name}" for name, count in counts.items()) or "-"
+
+
+def _recommendation_cell(parameter: tuning.ParameterTuning) -> str:
+    """The advised value, its provenance and the sample size behind it.
+
+    All three in one cell on purpose: a number without its label reads as measured,
+    and a label without its sample size cannot be argued with.
+    """
+    if parameter.recommendation is None:
+        return f"- ({parameter.status})"
+    advised = tuning.render_value(parameter.recommendation)
+    return f"{advised} ({parameter.status}, n={parameter.samples})"
+
+
+def _advice_line(parameter: tuning.ParameterTuning) -> str:
+    """One parameter's whole claim on a single soft-wrapped line.
+
+    The table above it is the scannable overview, and rich folds a wide table's cells
+    across lines on a narrow terminal — which is fine to read and impossible to grep.
+    So every fact the table carries is restated here, unfolded, where a consumer (and
+    the test that holds this command to its promises) can find it whole.
+    """
+    unit = parameter.unit
+    if parameter.recommendation is None:
+        advice = f"no recommendation ({parameter.status})"
+    else:
+        values = sorted(item.value for item in parameter.observations)
+        advice = (
+            f"advised {tuning.render_value(parameter.recommendation)} {unit} from "
+            f"{parameter.samples} sample(s) ({parameter.status}), observed "
+            f"{tuning.render_value(values[0])}-{tuning.render_value(values[-1])} {unit}"
+        )
+    return (
+        f"  {parameter.key}: {tuning.render_value(parameter.in_force)} {unit} in force, "
+        f"{advice} — {parameter.basis}."
+    )
+
+
+def _cmd_usage_tuning(_args: argparse.Namespace) -> int:
+    """Advise every governed parameter from the recorded dispatches, and change nothing.
+
+    Every parameter prints, including the ones nothing measures: a report that listed
+    only what it could advise on would make "no evidence exists for this bound" look
+    exactly like "this bound is fine", which is the state the tuner exists to expose.
+    """
+    report = tuning.tuning_report(_repo_root())
+    ui.table(
+        f"Advisory parameter tuning ({report.dispatches} dispatch(es) read: "
+        f"{_census_text(report.sources)})",
+        ["parameter", "in force", "samples", "source", "outcomes", "recommendation"],
+        [
+            [
+                parameter.key,
+                f"{tuning.render_value(parameter.in_force)} {parameter.unit}",
+                str(parameter.samples),
+                _census_text(parameter.sources),
+                _census_text(parameter.outcomes),
+                _recommendation_cell(parameter),
+            ]
+            for parameter in report.parameters
+        ],
+    )
+    ui.say(
+        f"Measured past {report.min_samples} sample(s) (`[policy.sizing] "
+        f"calibration_min_samples`), over the newest {report.window}.",
+        style="muted",
+    )
+    for parameter in report.parameters:
+        ui.say(_advice_line(parameter), style="muted")
+        for cohort in parameter.cohorts:
+            ui.say(
+                f"      under {cohort.in_force} {parameter.unit}: {cohort.samples} sample(s), "
+                f"{_census_text(cohort.outcomes)} ({_census_text(cohort.sources)})",
+                style="muted",
+            )
+        if parameter.status == tuning.SEEDED:
+            ui.say(
+                f"      seeded: {parameter.samples} sample(s) is under {parameter.min_samples}, "
+                f"so the declared prior {tuning.render_value(parameter.prior)} "
+                f"{parameter.unit} stands — it would displace the value in force "
+                f"{tuning.render_value(parameter.in_force)} {parameter.unit}.",
+                style="warn",
+            )
+    ui.say(
+        "This report changed nothing. A tuner proposes and a human or a gate disposes: "
+        "apply a recommendation by editing basicly.toml yourself.",
+        style="ok",
+    )
+    return 0
+
+
 # Rows of the unresolved-head bucket the report prints before truncating.
 _UNRESOLVED_ROWS = 15
 
@@ -1890,11 +1985,12 @@ def _cmd_usage_report(_args: argparse.Namespace) -> int:
 
 
 def cmd_usage(args: argparse.Namespace) -> int:
-    """Dispatch the usage telemetry subcommands (report / tracker / forecast)."""
+    """Dispatch the usage telemetry subcommands (report / tracker / forecast / tuning)."""
     handlers = {
         "report": _cmd_usage_report,
         "tracker": _cmd_usage_tracker,
         "forecast": _cmd_usage_forecast,
+        "tuning": _cmd_usage_tuning,
     }
     return _dispatch(args, "usage_command", handlers, group="usage")
 
@@ -4776,6 +4872,10 @@ def _add_usage_parser(subparsers: argparse._SubParsersAction) -> None:
     usage_sub.add_parser(
         "forecast",
         help="Report the forecast error per dispatch, and the records that cannot be paired",
+    )
+    usage_sub.add_parser(
+        "tuning",
+        help="Advise each governed parameter from recorded outcomes (changes no config)",
     )
     tracker_parser = usage_sub.add_parser(
         "tracker", help="Report the measured br/bv surface Phase 6 freezes its scope from"

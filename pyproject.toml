@@ -87,7 +87,6 @@ ignore_names = [
   "config_overrides",
   "copilot",
   "delta",
-  "dispatches",
   "error_tokens",
   "fallback_sort",
   "health_score",

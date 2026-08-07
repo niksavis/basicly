@@ -885,6 +885,7 @@ names were removed, not aliased).
 | `basicly permissions-build` / `permissions-check` | Projects the catalog agent-permissions deny-list (`.basicly/core/permissions/permissions.yaml`) into the co-owned `.claude/settings.json` `permissions.deny`, the way hooks are managed: ensure-present (managed patterns merged in, consumer-added entries preserved, nothing pruned — an extra deny is fail-safe and a flat deny string has no per-entry marker), with a semantic subset-match drift check. Claude-only: Copilot CLI has no config-file deny (session-scoped `--deny-tool` flag only) and Codex forbids project-scope override of `sandbox_mode`/`approval_policy`, so those guardrails are invocation-only — the copilot runner injects the deny-list as `--deny-tool` flags at dispatch (`basicly-lqz5`), while Codex sandbox/approval defaults remain to wire (`basicly-t0kt`) |
 | `basicly usage report` | Reports the tool/skill counts recorded by the `tool-usage` agent hook (token-free telemetry in `.basicly/usage/`) and names never-used catalog skills — the culling input (§4.3) |
 | `basicly usage forecast` | Reports the forecast error per dispatch — actual spend over forecast working set, per bead/class/model, with a median — from the run records and the committed `[harness-run]` markers. Refuses to compute an error for a record missing either half and reports those as unpaired counts, so an empty report explains itself (§12.8.1, `basicly-jr0l.34`) |
+| `basicly usage tuning` | Advises every governed factory parameter from the recorded dispatches, over the local run records **and** the committed `[harness-run]` markers, naming which corpus each sample came from. Per parameter it prints the value in force for the dispatches it summarises (a session override puts its dispatches in their own cohort), the outcome distribution under that value, and a recommendation with its sample size labelled `measured` or `seeded` — below `[policy.sizing] calibration_min_samples` the declared prior stands and the row names the in-force value it would displace. A parameter the ledger records nothing about still prints, with a sample size of zero, no recommendation and the reason it has none. **Advisory only: it writes nothing** (§12.8.3, `basicly-3ifz.1`) |
 | `basicly usage tracker [--promote] [--refresh-surface] [--as-json]` | Reports the measured `br`/`bv` surface Phase 6 freezes its replacement scope from. `--promote` folds the spool into the committed ledger before reporting, `--refresh-surface` re-probes `br`/`bv` `--help` and rewrites the committed surface inventory (needs `br` on PATH), `--as-json` emits the whole report for the freeze |
 | `basicly catalog list [fragment\|skill\|agent]` | Table of catalog sources of the given kind (default `fragment`); the authoring/inspection verbs live under the `catalog` group |
 | `basicly catalog new <fragment\|skill\|agent> NAME [--category C] [--description D]` | Scaffold a new `<id>.fragment.yaml` / `skill.yaml` / `agent.yaml` source (§4.2 source format); `--category` sets a fragment's category, `--description` seeds the one-line summary |
@@ -1442,6 +1443,48 @@ reports both: the per-class paired-sample counts against `calibration_min_sample
 verdict they add up to, and whether any build factor is anything but a seed — so an operator
 minting a budget from the forecast learns it rests on a prior before the money is granted, rather
 than by reading source.
+
+**12.8.3 The parameters in force, held against the outcomes they produced** (`basicly-3ifz.1`).
+Almost every number governing the factory is set by judgment and then never revisited.
+`basicly usage tuning` (`tuning.py`) is the readable half of the feedback loop the exceptions
+already have: it reads the dispatch ledger from **both** corpora — the self-ignored local run
+records and the committed `[harness-run]` markers, deduplicated on (bead, timestamp) so a
+dispatch recorded in both is one sample labelled `both` — and reports, per governed parameter,
+the value in force for the dispatches it summarises, the outcome distribution under that value,
+and a recommendation with its sample size.
+
+Three rules keep it from becoming another declared number:
+
+- **It writes nothing.** Deterministic checks block, judged checks advise, the engine disposes;
+  a tuner proposes a `basicly.toml` change and a human or a gate applies it. Nothing in the read
+  path opens a file for writing.
+- **A seed never reads as a measurement.** At or above `[policy.sizing] calibration_min_samples`
+  the recommendation is the statistic over the newest `calibration_window` observations, labelled
+  `measured`. Below it the **declared prior** stands, labelled `seeded`, and the row names the
+  in-force value it would displace — deliberately not a number fitted to three samples, which
+  would still be read as a measurement whatever the label said. The prior is read from the config
+  loader's own dataclass fallback rather than copied, so it cannot drift from the value actually
+  in force. Same discipline as `run_record.SpendCalibration`, one layer down.
+- **A parameter nothing measures still prints**, with a sample size of zero, no recommendation
+  and the reason it has none. `stall_after`, `quiet_after`, `max_agent_processes`,
+  `[worktree] concurrency`, `max_subtasks_per_lane`, `decider_max_decisions` and the two
+  calibration bounds are all in that state today: a bound nothing records is a bound nobody can
+  tighten, and omitting the row makes "no evidence exists" look exactly like "this is fine".
+
+The statistics split by what being wrong costs. A **backstop** (`runner_timeout`,
+`context_ceiling`) fires on work already in progress and destroys it, so it is read from the
+worst observed run with headroom rather than from a quantile — calibrating `runner_timeout`
+against the work distribution is what had it killing working lanes (`basicly-lpsf`). A **band**
+(`working_set_min`/`working_set_max`) refuses a package, and both refusals are recoverable — merge
+with a sibling, or split into more top-level packages — so it is read at the quantiles of what
+really happened. `max_rework` is write dispatches per bead at the ceiling quantile less the first
+attempt, which is not rework. The per-class **build factors** are fitted to measured
+`context_tokens` over declared `scope_tokens` — the working set the factor predicts — and never to
+spend, which is working set times a turn count nothing models (§12.8.2, `basicly-z2wi`).
+
+A session override is the one per-dispatch record of a parameter's value (`config_overrides`), so
+dispatches run under one form their own **cohort** with their own outcome distribution; pooling
+them would report outcomes under a value that never governed half of them.
 
 **Fleet rollup (`basicly-h0f0`).** `basicly status --fleet [--root PATH]` (`fleet.py`) is the
 cross-repo view dimension 3 calls for: it discovers the basicly-installed repos under a workspace

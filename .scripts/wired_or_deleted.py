@@ -159,7 +159,9 @@ BASELINE: frozenset[str] = frozenset({
     "command:status",
     "command:usage forecast",
     "command:usage tracker",
-    # Record fields read only by their own module or by a test (45).
+    # Record fields read only by their own module or by a test (43). Was 45:
+    # `RunRecord.config_overrides` and `CostRollup.dispatches` acquired a consumer
+    # when `tuning` began reading the ledger (basicly-3ifz.1).
     "record-field:basicly.agents.AgentOutputRoot.claude_passthrough",
     "record-field:basicly.agents.AgentDefinition.deprecated_model",
     "record-field:basicly.decisions.DecisionItem.queued_at",
@@ -189,8 +191,6 @@ BASELINE: frozenset[str] = frozenset({
     "record-field:basicly.release.ReleasePlan.current_version",
     "record-field:basicly.release.ReleasePlan.pins",
     "record-field:basicly.release.ReleaseResult.tagged",
-    "record-field:basicly.run_record.RunRecord.config_overrides",
-    "record-field:basicly.run_record.CostRollup.dispatches",
     "record-field:basicly.run_record.ForecastError.actual_cost",
     "record-field:basicly.run_record.ForecastError.actual_wall_clock_s",
     "record-field:basicly.runner.Capability.reachable",
