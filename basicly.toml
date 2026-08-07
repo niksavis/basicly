@@ -56,13 +56,17 @@ rank1_floor_high_water = 0.85
 #             the engine spawns still read out of it.
 #
 # **This repo is on `external`, and the rung above it is not a config edit.** Step 1
-# of §5 is the import, and it has not been run here: `.basicly/ledger/` holds the
-# usage ledger and the surface inventory but no `events-*.jsonl`. Setting `dual`
-# against an empty ledger records only what happens *next*, and setting `owned`
-# against one would read every existing bead as deleted. The order is: run
-# `.basicly/core/kit/tracker/migrate.py` over `.beads/issues.jsonl` and commit the
-# log, then `dual`, then run the shadow differential and read `clean` **and**
-# `conclusive` off it, then `owned`.
+# of §5 is the import, and it ran on 2026-08-07: `.basicly/ledger/events-0001.jsonl`
+# holds 3775 events over 643 records, every one carrying the export's digest. Step 2
+# is the shadow differential, and the command is `basicly tracker shadow` — it reads
+# the owned ledger against the **live** br, writes to neither, and answers `clean`
+# and `conclusive` as two separate verdicts. Live and not a re-import, because an
+# import cannot express a deletion and two derivatives of one lossy snapshot agree
+# with each other and prove nothing (§5.1). What is left: `dual`, then a run that comes
+# back clean **and** conclusive, then `owned`. The first run (2026-08-07) is conclusive
+# and **not** clean: 331 of 643 compared records carry a passing `verify` gate row on the
+# live tracker and none on the ledger, because no export carries a gate field for the
+# import to have read — so only the dual write can close that gap.
 [tracker]
 mode = "external"
 

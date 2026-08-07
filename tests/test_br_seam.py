@@ -19,6 +19,11 @@ things this bead has to show:
   `basicly-vkh0.18` reported against the live tracker — clean, and inconclusive on the
   one query no import could ever have filled.
 
+The last section is step 2's own driver (`basicly-vkh0.18`), added later: every test
+above hands the kit a reference the test authored, while `br.shadow_differential`
+builds one by spawning br — and that builder is the part a production run can get
+wrong.
+
 The stand-in br is the *reference* store, and it is genuinely independent of the
 ledger: it holds its own records, and the differential's perturbation probe is what
 proves that rather than this docstring. Nothing here spawns a process, sleeps, or reads
@@ -158,10 +163,43 @@ class _FakeBr:
         return _proc("[]")
 
     def _show(self, args: list[str]) -> subprocess.CompletedProcess[str]:
-        record = self.records.get(args[1])
+        """Every requested id, br's own way: many ids per spawn, gates on none of them.
+
+        The gate rows are withheld deliberately rather than for brevity — ``br show``
+        carries no gate field, so a reader that took them from here would be reading a
+        fact this surface does not hold and the third query would look answered.
+        """
+        wanted = [arg for arg in args[1:] if not arg.startswith("-")]
+        found = [self.records[issue] for issue in wanted if issue in self.records]
+        if not found:
+            return _proc("", stderr="Error: issue not found", returncode=1)
+        return _proc(
+            json.dumps([
+                {key: value for key, value in record.items() if key != "gates"} for record in found
+            ])
+        )
+
+    def _list(self, args: list[str]) -> subprocess.CompletedProcess[str]:
+        """The population, in br's envelope — closed records only when ``-a`` is passed.
+
+        The filter is implemented rather than ignored because it is the thing the
+        reference has to get right: without ``-a`` br answers for open records only, and
+        a reference silently missing every closed bead is the population-hiding shape
+        this repo has already paid for once.
+        """
+        issues = [
+            record
+            for record in self.records.values()
+            if "-a" in args or record["status"] != "closed"
+        ]
+        return _proc(json.dumps({"issues": issues, "total": len(issues), "has_more": False}))
+
+    def _gate_list(self, args: list[str]) -> subprocess.CompletedProcess[str]:
+        """One record's gate rows — the query no export can answer."""
+        record = self.records.get(args[2])
         if record is None:
             return _proc("", stderr="Error: issue not found", returncode=1)
-        return _proc(json.dumps([{key: value for key, value in record.items() if key != "gates"}]))
+        return _proc(json.dumps({"issue_id": args[2], "results": record["gates"]}))
 
 
 def _proc(stdout: str, *, stderr: str = "", returncode: int = 0):
@@ -747,3 +785,115 @@ def test_the_differential_reports_a_store_the_mirror_missed(
 
     assert not report.clean
     assert {item.record for item in report.disagreements} >= {"seam-0004", "seam-0005"}
+
+
+# --- the reference built from the live tracker (basicly-vkh0.18) --------------
+#
+# Every test above hands the kit a reference the test itself authored. These drive
+# `br.shadow_differential`, which builds one by spawning br — the driver §5's step 2
+# was missing, and the only part of the run that can be got wrong in production.
+
+
+def test_the_shadow_differential_reads_the_live_tracker_for_its_reference(
+    tmp_path: Path, fake_br: _FakeBr
+) -> None:
+    """The bead's deliverable, asserted through what only a live read can produce.
+
+    ``conclusive`` is the load-bearing half. The gate query is answerable from `br gate
+    list` and from nowhere else — no export carries a gate field — so a reference that
+    read a snapshot, or that took its rows from ``br show``, would leave every record
+    answering the gate query identically and the run would come back *inconclusive*.
+    It is therefore not possible to satisfy this assertion without having spawned the
+    surface the export cannot replace.
+    """
+    repo = _repo(tmp_path, br.MODE_DUAL)
+    _population(repo, with_gates=True)
+
+    report = br.shadow_differential(repo)
+
+    assert report.refusals == []
+    assert report.clean, report.summary()
+    assert report.conclusive, report.summary()
+    assert report.compared == len(fake_br.records) == 5
+
+
+def test_the_live_reference_answers_for_the_closed_records_too(
+    tmp_path: Path, fake_br: _FakeBr
+) -> None:
+    """The population is the whole tracker, not the open part of it.
+
+    `br list` reports open records only unless asked otherwise, and the population here
+    contains one closed record (``seam-0002``, closed by the loop's own ship step). A
+    reference that inherited that default would answer for four of five and the report
+    would say so, rather than the omission passing as agreement.
+    """
+    repo = _repo(tmp_path, br.MODE_DUAL)
+    _population(repo, with_gates=True)
+
+    report = br.shadow_differential(repo)
+
+    assert fake_br.records["seam-0002"]["status"] == "closed"
+    assert report.unanswered == []
+    assert report.compared == 5
+
+
+def test_the_live_reference_re_reads_the_tracker_rather_than_memoising(
+    tmp_path: Path, fake_br: _FakeBr
+) -> None:
+    """The independence probe only proves something against a source that re-reads.
+
+    `audit_reference` perturbs the owned ledger and asks the reference again; a source
+    that cached its first answer would return it unchanged and clear the probe by being
+    the *same* answer rather than an independent one. That is the one hole the kit
+    documents its audit as unable to close, so it is closed here instead — by the source
+    genuinely spawning br a second time.
+    """
+    repo = _repo(tmp_path, br.MODE_DUAL)
+    _population(repo, with_gates=True)
+    fake_br.calls.clear()
+
+    br.shadow_differential(repo)
+
+    assert [call[0] for call in fake_br.calls].count("list") == 2
+
+
+@pytest.mark.usefixtures("fake_br")
+def test_a_reference_derived_from_the_ledger_is_refused_not_reported_clean(
+    tmp_path: Path,
+) -> None:
+    """The discrimination control for the live source: perturbation catches a derivative.
+
+    Same ledger, same three queries, and a reference that folds the *owned* events
+    instead of reading br. It agrees with the owned side on every record — that is what
+    two derivatives of one snapshot do — and the report still refuses it. The pair with
+    the live run above is the evidence that the probe is doing work rather than passing
+    everything: one source moves when the ledger is perturbed and one does not.
+    """
+    repo = _repo(tmp_path, br.MODE_DUAL)
+    _population(repo, with_gates=True)
+
+    kit = br.kit(repo)
+    derived = kit.ReferenceSource(views=kit.views_from_events)
+    report = kit.run_differential(br.ledger_dir(repo), derived)
+
+    assert report.disagreements == []
+    assert [refusal.rule for refusal in report.refusals] == [kit.RULE_DERIVED_FROM_LEDGER]
+    assert not report.clean, report.summary()
+
+
+def test_the_shadow_read_writes_nothing_to_either_store(tmp_path: Path, fake_br: _FakeBr) -> None:
+    """Shadow mode is defined as read-only, so the run is held to it by the write guard.
+
+    Asserted on both stores: no br surface outside the classified reads is spawned, and
+    the owned ledger holds exactly the events the population wrote before the run.
+    """
+    repo = _repo(tmp_path, br.MODE_DUAL)
+    _population(repo, with_gates=True)
+    before = len(_ledger_events(repo))
+    fake_br.calls.clear()
+
+    br.shadow_differential(repo)
+
+    surfaces = {" ".join(_surface_words(call)) for call in fake_br.calls}
+    assert surfaces <= {"list", "show", "gate list"}
+    assert len(_ledger_events(repo)) == before

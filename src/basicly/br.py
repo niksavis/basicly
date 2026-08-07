@@ -1260,6 +1260,202 @@ def read_ranking(repo_root: Path, limit: int | None = None) -> dict:
     return payload
 
 
+# --- The shadow differential's reference side (basicly-vkh0.18) --------------
+#
+# Step 2 of the cutover in `docs/design/work-tracker.md` §5, and the step the two
+# rungs above it are licensed by. The kit's `differential` module owns the
+# comparison and the audit; what it cannot own is the reference side, because
+# reading the live tracker means spawning br and the kit may not (§4). This is
+# that side — a `views` callable, on the engine's side of the seam.
+#
+# **It reads the live tracker and never the export**, which is §5.1's rule rather
+# than a preference: `import` upstream is upsert-only and cannot express a
+# deletion, so comparing two derivatives of one lossy snapshot agrees with itself
+# and proves nothing. The kit refuses a source that declares a snapshot and
+# perturbs the ledger to catch one that secretly derives from it; the point of
+# what follows is to be a source neither check can catch, by actually being live.
+
+# Ids per `br show` spawn. Not for speed — the whole population in a single spawn
+# is measured at 0.91s for 639 records (§5's step 2) — but for portability: a
+# Windows command line is capped at 32767 characters, and a tracker large enough
+# to cross it would fail the read outright rather than answer for fewer records.
+LIVE_SHOW_BATCH = 100
+
+# What the refusal names if a surface this read spawns is ever reclassified as a
+# write. All three (`list`, `show`, `gate list`) are classified `read` today, so
+# the guard cannot fire now — which is the reason to install it now: a shadow run
+# that mutated the store it is auditing would be reporting on its own writes.
+_SHADOW_READ_ONLY = "the shadow differential"
+
+
+def _live_ids(repo_root: Path) -> list[str]:
+    """Every record id the live tracker holds, closed and deferred ones included.
+
+    ``-a`` and ``--limit 0`` are both load-bearing. `br list` reports open records
+    only and caps its result set, and on this repo's tracker that is 100 records of
+    644 (measured 2026-08-07): a reference that inherited the default would leave 544
+    reported as unanswered — or, worse, look clean on the subset it was handed. That
+    is `basicly-vkh0`'s own recorded lesson about a filter hiding a population.
+    """
+    proc = run_br(repo_root, ["list", "-a", "--json", "--limit", "0"])
+    try:
+        payload = json.loads(proc.stdout)
+    except ValueError as exc:
+        raise RuntimeError(f"br list returned no usable JSON: {exc}") from exc
+    issues = payload.get("issues") if isinstance(payload, dict) else payload
+    if not isinstance(issues, list):
+        raise RuntimeError("br list returned no issue array to read the population from")
+    return [
+        record["id"]
+        for record in issues
+        if isinstance(record, dict) and isinstance(record.get("id"), str)
+    ]
+
+
+def _live_records(repo_root: Path, ids: Sequence[str]) -> list[dict]:
+    """``br show`` for every id in *ids*, in :data:`LIVE_SHOW_BATCH`-sized spawns.
+
+    Not routed through :func:`read_record`: that seam answers for one id and, in
+    :data:`MODE_OWNED`, answers out of the owned ledger — which is the one store this
+    side may not read. The reference has to be the external tracker whatever rung the
+    repo is on, so it spawns br directly.
+    """
+    found: list[dict] = []
+    for start in range(0, len(ids), LIVE_SHOW_BATCH):
+        batch = list(ids[start : start + LIVE_SHOW_BATCH])
+        proc = run_br(repo_root, ["show", *batch, "--json"])
+        try:
+            payload = json.loads(proc.stdout)
+        except ValueError as exc:
+            raise RuntimeError(f"br show returned no usable JSON: {exc}") from exc
+        records = payload if isinstance(payload, list) else [payload]
+        found += [record for record in records if isinstance(record, dict)]
+    return found
+
+
+def _live_gate_rows(repo_root: Path, issue_id: str, kit_module: Any) -> list[Any]:
+    """One record's recorded gate results, as ``br gate list --robot`` reports them.
+
+    One spawn per record, because br answers this query for one id at a time — and it
+    is the query that makes the whole read worth its cost. A `br gate report` row is
+    visible here and **absent from the JSONL export** (measured 2026-08-06, and the kit
+    carries the measurement as ``EXPORT_CANNOT_EXPRESS``), so a snapshot-backed
+    reference is silent on exactly the third of §5's three queries where the live
+    tracker is the only witness.
+
+    `policy.gate_status` parses the same three fields for the engine's own reading.
+    What is deliberately *not* duplicated is the classification — which gates are
+    required, whose provider counts, what disagreement means — which the kit's
+    `gate_verdict` runs once over both sides of the comparison.
+    """
+    proc = run_br(repo_root, ["gate", "list", issue_id, "--robot"])
+    try:
+        payload = json.loads(proc.stdout)
+    except ValueError as exc:
+        raise RuntimeError(f"br gate list {issue_id} returned no usable JSON: {exc}") from exc
+    results = payload.get("results") if isinstance(payload, dict) else None
+    return [
+        kit_module.GateRow(
+            str(row.get("gate", "")), str(row.get("provider", "")), bool(row.get("passed"))
+        )
+        for row in (results if isinstance(results, list) else [])
+        if isinstance(row, dict)
+    ]
+
+
+def _live_views(repo_root: Path) -> dict[str, Any]:
+    """The live tracker's whole population as the kit's ``RecordView`` per record.
+
+    Narrow on purpose, and the kit's class rather than a shape of our own: everything
+    br holds that no query reads — titles, descriptions, timestamps,
+    :data:`MACHINE_PATH_FIELD` — is left out here, so an incidental difference between
+    the two stores cannot be reported as a disagreement about a verdict.
+
+    The whole read runs inside :func:`read_only`. Shadow mode is defined as the owned
+    tracker answering *read-only*, and a run that wrote to the store it is auditing
+    would be reporting on its own writes.
+    """
+    kit_module = kit(repo_root)
+    with read_only(_SHADOW_READ_ONLY):
+        ids = _live_ids(repo_root)
+        views: dict[str, Any] = {}
+        for record in _live_records(repo_root, ids):
+            issue = record.get("id")
+            if not isinstance(issue, str) or not issue:
+                continue
+            edges = [dependency_edge(dep) for dep in record.get("dependencies") or []]
+            views[issue] = kit_module.RecordView(
+                record=issue,
+                status=str(record.get("status") or ""),
+                external_ref=str(record.get("external_ref") or ""),
+                comments=tuple(export_comment_texts(record)),
+                dependencies=tuple(
+                    kit_module.Edge(target=edge[0], type=edge[1]) for edge in edges if edge
+                ),
+                gates=tuple(_live_gate_rows(repo_root, issue, kit_module)),
+            )
+    return views
+
+
+def _live_reference(repo_root: Path) -> Any:
+    """A ``ReferenceSource`` that answers out of the live tracker, and nothing else.
+
+    ``snapshot`` is left at None because no snapshot was read: the digest check has
+    nothing to match and the export refusal has nothing to fire on, which is what a
+    genuinely live source looks like to the audit.
+    """
+    kit_module = kit(repo_root)
+
+    def views(_ledger_events: object) -> dict[str, Any]:
+        # The argument is ignored, and that is the contract rather than an oversight.
+        # `audit_reference` calls this a second time with one synthetic event appended
+        # to the owned ledger, and a source whose answers move with it is a derivative
+        # and is refused. Nothing is cached between the two calls either: a memoised
+        # answer would clear the probe by being the *same* answer rather than by being
+        # an independent one, which is the one hole the kit says its audit cannot
+        # close. The cost is one extra live read per run, and it is the price of the
+        # probe meaning anything.
+        return _live_views(repo_root)
+
+    return kit_module.ReferenceSource(views=views)
+
+
+def shadow_differential(repo_root: Path, vocabulary: Mapping[str, Any] | None = None) -> Any:
+    """Run §5's step 2 for *repo_root*: the owned ledger against the live tracker.
+
+    Returns the kit's ``DifferentialReport``, whose ``clean`` and ``conclusive`` are
+    separate questions and have to be read as two: a comparison over a population where
+    every record gives one query the same answer has discriminated nothing.
+
+    Measured on this repo, 2026-08-07 — and it corrects the kit's own docstring, which
+    predicted the gate query would be the constant one here. It is not: the live tracker
+    carries a passing ``verify`` row on 331 of 643 compared records, so the query
+    discriminates and the run is **conclusive**. What it is not is clean, on those same
+    331 — no export carries a gate field, so `migrate.py` had nothing to import and the
+    owned side reads ``missing`` against br's ``passed``. Only the dual write can close
+    that, which is the direction §5 already gives; the finding is that step 2 reports it
+    as a disagreement rather than as an absence of evidence.
+
+    *vocabulary* overrides the kit's ``Vocabulary`` defaults field by field, and it is a
+    plain mapping rather than the kit's own class so the caller needs nothing out of the
+    kit: `basicly.cli` supplies the engine's *configured* names — it is the layer allowed
+    to read `basicly.config`, which this module is not (see :func:`set_mode_reader`) —
+    while every module outside this one stays clear of the owned store. An unknown key
+    raises rather than being ignored, because a name the kit does not read is a caller
+    believing it configured something.
+
+    Raises:
+        TrackerDivergenceError: the kit is not installed or will not load.
+        RuntimeError: br is absent, a read failed, or its reply was not usable JSON. A
+            hard failure and never a partial reference: a comparison run against the
+            records that happened to answer is the shape that reports clean by saying
+            less.
+    """
+    kit_module = kit(repo_root)
+    names = kit_module.Vocabulary(**dict(vocabulary or {}))
+    return kit_module.run_differential(ledger_dir(repo_root), _live_reference(repo_root), names)
+
+
 def _redact_paths(value: object) -> object:
     """Recursively redact machine-specific paths in every string inside *value*.
 

@@ -57,6 +57,7 @@ from .config import (
     CONFIG_FILE,
     CONSUMER_CI_WORKFLOW,
     DEFAULT_CONFIG_TOML,
+    ENGINE_GATE_PROVIDERS,
     LOCAL_CONFIG_FILE,
     OVERLAY_FRAGMENT_STUBS,
     VERIFY_MODES,
@@ -1896,6 +1897,65 @@ def cmd_usage(args: argparse.Namespace) -> int:
         "forecast": _cmd_usage_forecast,
     }
     return _dispatch(args, "usage_command", handlers, group="usage")
+
+
+def _differential_vocabulary(repo_root: Path) -> dict[str, Any]:
+    """The engine's own names for the things the differential's three queries read.
+
+    The kit's defaults mirror these constants and name each one, so passing them is
+    not ceremony: the run that licenses a rung of the cutover has to compare on the
+    gates this repo *configured*, and a repo that set ``[policy] required_gates``
+    would otherwise be measured against the kit's default of ``verify`` alone.
+
+    A plain mapping, because the seam takes one — this module never reaches into the
+    kit, which ``test_no_module_outside_the_seam_reads_the_owned_store`` holds it to.
+
+    Three of the kit's fields are left at its defaults, because the engine has no
+    constant to pass: ``closed_statuses``, ``blocking_types`` (`merge` spells
+    ``blocks`` inline) and ``parent_child_type``.
+    """
+    return {
+        "marker": policy.MARKER,
+        "checkpoints": tuple(CHECKPOINTS),
+        "required_gates": tuple(load_policy_config(repo_root).required_gates),
+        "engine_gate_providers": frozenset(ENGINE_GATE_PROVIDERS),
+        "worktree_ref_prefix": loop_state.WORKTREE_REF_PREFIX,
+        "known_statuses": frozenset(loop_state.KNOWN_STATUSES),
+        "dispatchable_statuses": frozenset(loop_state.DISPATCHABLE_STATUSES),
+    }
+
+
+def _cmd_tracker_shadow(_args: argparse.Namespace) -> int:
+    """Run the shadow differential and report ``clean`` and ``conclusive`` separately.
+
+    Step 2 of the cutover (`docs/design/work-tracker.md` §5). The two verdicts are
+    printed as two lines and the exit code needs both, because a single answer would
+    let the weaker question stand in for the stronger one: a comparison where every
+    record gave one query the same answer agreed about nothing, and reporting that as
+    a pass is the failure mode this whole design keeps paying for.
+
+    A refused reference is reported in the same breath as the agreement it voids —
+    ``summary()`` carries the refusal — so a run that proves nothing cannot read as a
+    run that proved something.
+    """
+    repo_root = _repo_root()
+    report = br.shadow_differential(repo_root, _differential_vocabulary(repo_root))
+    ui.say(report.summary())
+    ui.say(f"clean:      {'yes' if report.clean else 'no'}")
+    ui.say(f"conclusive: {'yes' if report.conclusive else 'no'}")
+    if report.clean and report.conclusive:
+        ui.say(
+            "The owned ledger agrees with the live tracker, and the agreement means something.",
+            style="ok",
+        )
+        return 0
+    ui.say("The next rung of the cutover is not licensed by this run.", style="warn")
+    return 1
+
+
+def cmd_tracker(args: argparse.Namespace) -> int:
+    """Dispatch the owned work tracker's cutover subcommands (shadow)."""
+    return _dispatch(args, "tracker_command", {"shadow": _cmd_tracker_shadow}, group="tracker")
 
 
 def cmd_skills_list(_args: argparse.Namespace) -> int:
@@ -4741,6 +4801,19 @@ def _add_usage_parser(subparsers: argparse._SubParsersAction) -> None:
     )
 
 
+def _add_tracker_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Register the `basicly tracker` command group — the owned tracker's cutover."""
+    tracker_parser = subparsers.add_parser(
+        "tracker",
+        help="The owned work tracker's cutover (docs/design/work-tracker.md §5)",
+    )
+    tracker_sub = tracker_parser.add_subparsers(dest="tracker_command", required=True)
+    tracker_sub.add_parser(
+        "shadow",
+        help="Compare the owned ledger against the live br, read-only (§5 step 2)",
+    )
+
+
 def _tolerate_narrow_consoles() -> None:
     """Never crash on unencodable output characters.
 
@@ -4811,6 +4884,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
     _add_usage_parser(subparsers)
 
+    _add_tracker_parser(subparsers)
+
     skills_build_parser = subparsers.add_parser(
         "skills-build",
         help="Project skills from .basicly/core/skills",
@@ -4864,7 +4939,7 @@ def _handlers() -> dict[str, Callable[[argparse.Namespace], int]]:
     substitution dispatched. A dict built at import time captures the originals and
     silently ignores the swap.
 
-    The two registries are hand-maintained lists of the same 25 names and nothing
+    The two registries are hand-maintained lists of the same 26 names and nothing
     derives one from the other, so `test_every_registered_subcommand_has_a_handler`
     pins them equal and `main` fails loudly on a name that arrives with no handler
     (basicly-tcmy.4).
@@ -4895,6 +4970,7 @@ def _handlers() -> dict[str, Callable[[argparse.Namespace], int]]:
         "runner": cmd_runner,
         "rubric": cmd_rubric,
         "usage": cmd_usage,
+        "tracker": cmd_tracker,
     }
 
 

@@ -1777,3 +1777,114 @@ def test_a_registered_subcommand_with_no_handler_fails_loudly(
         "the parser but has no handler — this is a bug in basicly, not in your invocation"
     )
     assert out == ""
+
+
+# --- the shadow differential command (basicly-vkh0.18) ------------------------
+
+KIT_REPORT = cli.br.kit(REPO_ROOT)
+
+
+def _shadow_report(**fields: object):
+    """A kit ``DifferentialReport``, the real class rather than a stand-in.
+
+    The command's whole contract is how it reads ``clean`` and ``conclusive``, and both
+    are derived properties: a hand-rolled double would let the two drift apart from the
+    definitions the flip is licensed by, which is the one thing these tests exist to
+    pin.
+    """
+    return KIT_REPORT.DifferentialReport(records=2, compared=2, **fields)
+
+
+@pytest.mark.parametrize(
+    ("fields", "verdicts"),
+    [
+        ({}, ("yes", "yes", 0)),
+        (
+            {"inconclusive": [KIT_REPORT.Inconclusive(KIT_REPORT.QUERY_GATES, "no gate rows")]},
+            ("yes", "no", 1),
+        ),
+        (
+            {
+                "disagreements": [
+                    KIT_REPORT.Disagreement("seam-0001", KIT_REPORT.QUERY_PHASE, "build", "verify")
+                ]
+            },
+            ("no", "yes", 1),
+        ),
+    ],
+    ids=["clean-and-conclusive", "clean-but-vacuous", "disagreement"],
+)
+def test_tracker_shadow_reports_clean_and_conclusive_as_two_answers(
+    fields: dict[str, object],
+    verdicts: tuple[str, str, int],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Two verdicts, two lines, and an exit code that needs both.
+
+    The middle case is the one the command exists for: the two stores agreed on every
+    record and the agreement discriminated nothing, so a single "clean" answer would
+    report the absence of evidence as evidence and license the next rung of the cutover
+    on it.
+    """
+    clean, conclusive, code = verdicts
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli.br, "shadow_differential", lambda *_a, **_kw: _shadow_report(**fields))
+
+    assert cli.main(["tracker", "shadow"]) == code
+
+    out = capsys.readouterr().out
+    assert f"clean:      {clean}" in out
+    assert f"conclusive: {conclusive}" in out
+
+
+def test_tracker_shadow_names_the_refusal_beside_the_agreement_it_voids(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A refused reference agrees with everything, so the reason has to be printed.
+
+    The report carries no disagreement here — that is what two derivatives of one lossy
+    snapshot look like — and the run still proves nothing. Reporting the agreement
+    without the refusal is precisely the outcome §5.1 says a differential must not be
+    able to produce.
+    """
+    monkeypatch.chdir(tmp_path)
+    refusal = KIT_REPORT.Refusal(KIT_REPORT.RULE_DERIVED_FROM_LEDGER, "the answers moved")
+    monkeypatch.setattr(
+        cli.br, "shadow_differential", lambda *_a, **_kw: _shadow_report(refusals=[refusal])
+    )
+
+    assert cli.main(["tracker", "shadow"]) == 1
+
+    out = capsys.readouterr().out
+    assert KIT_REPORT.RULE_DERIVED_FROM_LEDGER in out
+    assert "clean:      no" in out
+
+
+def test_tracker_shadow_compares_on_the_engines_own_vocabulary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The names the queries read are the engine's, not the kit's defaults.
+
+    The kit ships defaults that mirror these constants, so passing nothing would look
+    identical today and diverge silently the first time one of them moves — or the first
+    time a repo configures its own required gates, which is the case asserted here.
+    """
+    (tmp_path / CONFIG_FILE).write_text(
+        '[policy]\nrequired_gates = ["verify", "rubric"]\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    seen: dict[str, object] = {}
+
+    def capture(_root: Path, vocabulary: dict[str, object]):
+        seen.update(vocabulary)
+        return _shadow_report()
+
+    monkeypatch.setattr(cli.br, "shadow_differential", capture)
+
+    assert cli.main(["tracker", "shadow"]) == 0
+    assert seen["required_gates"] == ("verify", "rubric")
+    assert seen["marker"] == cli.policy.MARKER
+    assert seen["checkpoints"] == tuple(cli.CHECKPOINTS)
+    assert seen["worktree_ref_prefix"] == cli.loop_state.WORKTREE_REF_PREFIX
