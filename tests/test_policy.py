@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import ast
+import contextlib
 import inspect
 import json
 import textwrap
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -3157,3 +3159,230 @@ def test_check_pass_spend_admits_when_no_ceiling_applies() -> None:
     """An ungranted session is already human-driven; there is no budget to overrun."""
     ungranted = policy.SpendStatus(grant=None, spent_tokens=0, halted=False)
     assert policy.check_pass_spend(10_000_000, ungranted) is None
+
+
+# --- Gate types and the pre-flight write ban (basicly-m4zv.6) ----------------
+#
+# gates-and-rework-design.md §1 (the taxonomy) and §2 (a pre-flight gate is
+# read-only). The write the ban has to refuse is a *tracker* write: both incidents
+# §2 cites — a hand-recorded verify gate, an approved ship checkpoint — were br
+# writes that no command can undo.
+
+
+def test_the_classified_gates_are_the_engine_s_own_gate_names() -> None:
+    """Every key is a name some check really carries — none invented, none missed.
+
+    Two of the keys are literals in ``policy`` because the import contract forbids
+    it from importing :mod:`basicly.verify` (a sibling) or :mod:`basicly.rubrics`
+    (its senior). This test is what keeps them in step with the constants they copy
+    — renaming a gate at its own call site fails here rather than silently leaving
+    it unclassified.
+    """
+    assert set(policy.GATE_TYPE_BY_GATE) == {
+        policy.DOR_GATE,
+        policy.LINKED_WORKTREE_GATE,
+        verify.DEFAULT_GATE,
+        rubrics.RUBRIC_GATE,
+        rubrics.RUBRIC_JUDGED_GATE,
+    }
+
+
+def test_each_gate_type_classifies_at_least_one_real_gate() -> None:
+    """A four-way taxonomy that only ever names three types is a three-way one.
+
+    The abort row is the one that goes missing first: an abort gate records no
+    verdict, so nothing in a bead's gate list ever shows it.
+    """
+    assert set(policy.GATE_TYPE_BY_GATE.values()) == {
+        policy.PREFLIGHT,
+        policy.REVISION,
+        policy.ESCALATION,
+        policy.ABORT,
+    }
+
+
+def test_the_declared_types_are_the_ones_the_design_decided() -> None:
+    """§1.1 and §4.1's mapping, asserted rather than left in prose."""
+    assert policy.gate_type(policy.DOR_GATE) == policy.PREFLIGHT
+    assert policy.gate_type(verify.DEFAULT_GATE) == policy.REVISION
+    assert policy.gate_type(rubrics.RUBRIC_GATE) == policy.PREFLIGHT
+    assert policy.gate_type(rubrics.RUBRIC_JUDGED_GATE) == policy.ESCALATION
+    assert policy.gate_type(policy.LINKED_WORKTREE_GATE) == policy.ABORT
+
+
+def test_a_gate_the_engine_does_not_name_reads_as_a_revision_gate() -> None:
+    """A consumer's own ``--gate`` name still gets an answer, and a safe one.
+
+    Never pre-flight: that would promise a read-only check the engine cannot vouch
+    for, which is the exact promise the ban exists to keep.
+    """
+    assert policy.gate_type("consumer-smoke") == policy.REVISION
+
+
+def test_a_preflight_gate_refuses_a_tracker_write(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The AC: a write attempted while a pre-flight gate runs is refused.
+
+    Both funnels, because ``try_run_br`` is the soft one — soft about a missing
+    tracker, never about writing when a gate promised not to. ``br`` is taken off
+    PATH so a guard that failed to refuse would be caught returning a result
+    instead of spawning the real tracker.
+    """
+    monkeypatch.setattr(br, "which", lambda: None)
+    with policy.preflight_gate(policy.DOR_GATE):
+        for write in (["comments", "add", "i", "text"], ["close", "i"], ["gate", "report", "i"]):
+            with pytest.raises(br.TrackerWriteRefusedError):
+                br.try_run_br(tmp_path, write)
+            with pytest.raises(br.TrackerWriteRefusedError):
+                br.run_br(tmp_path, write)
+
+
+def test_the_refusal_names_the_gate_and_the_write(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A traceback has to say which gate must not have written, not only what it ran.
+
+    And it must not send the reader to the classifier for a *known* write: the
+    remedy for ``comments add`` is to stop calling it, never to file it as a read.
+    """
+    monkeypatch.setattr(br, "which", lambda: None)
+    refused = pytest.raises(br.TrackerWriteRefusedError)
+    with policy.preflight_gate(policy.DOR_GATE), refused as excinfo:
+        br.try_run_br(tmp_path, ["comments", "add", "i", "text"])
+
+    message = str(excinfo.value)
+    assert policy.DOR_GATE in message
+    assert "comments add" in message
+    assert "tracker_usage" not in message
+
+
+def test_the_refusal_survives_the_engine_s_own_tracker_error_handling(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A guard swallowed by a caller's ``except`` is a guard that does not bind.
+
+    Two dozen call sites wrap a br call in ``except RuntimeError, OSError,
+    ValueError`` and answer None — ``br.read_record`` is one — so a refusal in that
+    family would read as "the tracker had nothing to say" at exactly the places a
+    leaked write would be hardest to see. The idiom is reproduced here rather than
+    asserted against the class hierarchy, which is what the call sites actually do.
+    """
+    monkeypatch.setattr(br, "which", lambda: None)
+
+    def soft_reader() -> None:
+        try:
+            br.run_br(tmp_path, ["comments", "add", "i", "text"])
+        except RuntimeError, OSError, ValueError:
+            return None
+
+    with policy.preflight_gate(policy.DOR_GATE), pytest.raises(br.TrackerWriteRefusedError):
+        soft_reader()
+
+
+def test_a_preflight_gate_still_permits_a_read(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The control the ban must not fail: a gate that cannot read cannot decide.
+
+    With ``br`` off PATH the soft funnel answers None, so reaching that answer is
+    proof the guard let the call through rather than raising.
+    """
+    monkeypatch.setattr(br, "which", lambda: None)
+    with policy.preflight_gate(policy.DOR_GATE):
+        assert br.try_run_br(tmp_path, ["lint", "i", "--json"]) is None
+        assert br.try_run_br(tmp_path, ["show", "i", "--json"]) is None
+        assert br.try_run_br(tmp_path, ["gate", "list", "i", "--robot"]) is None
+
+
+def test_a_preflight_gate_refuses_an_unclassified_surface(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Fail-closed: ``READ_SUBCOMMANDS`` is not exhaustive, so unknown is not read.
+
+    A refusal is loud and fixed by classifying the surface — which is the one case
+    where the message says so — while a leaked write is silent and, in br,
+    permanent.
+    """
+    monkeypatch.setattr(br, "which", lambda: None)
+    refused = pytest.raises(br.TrackerWriteRefusedError)
+    with policy.preflight_gate(policy.DOR_GATE), refused as excinfo:
+        br.try_run_br(tmp_path, ["frobnicate", "i"])
+
+    assert "tracker_usage" in str(excinfo.value)
+
+
+def test_the_write_ban_lifts_when_the_gate_exits(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Including when the gate leaves by raising — a refused write must not wedge the process."""
+    monkeypatch.setattr(br, "which", lambda: None)
+    with contextlib.suppress(RuntimeError), policy.preflight_gate(policy.DOR_GATE):
+        raise RuntimeError("the gate blew up")
+
+    assert br.try_run_br(tmp_path, ["comments", "add", "i", "text"]) is None
+
+
+def test_the_write_ban_is_scoped_to_the_gate_s_own_thread(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A supervised pass runs its lanes in a thread pool, each writing its own bead.
+
+    A process-global flag would let one lane's pre-flight gate refuse another
+    lane's landing — so the guard is thread-scoped, and this is the assertion that
+    says so.
+    """
+    monkeypatch.setattr(br, "which", lambda: None)
+    with policy.preflight_gate(policy.DOR_GATE), ThreadPoolExecutor(max_workers=1) as pool:
+        other_lane = pool.submit(br.try_run_br, tmp_path, ["comments", "add", "other", "text"])
+        assert other_lane.result() is None
+
+
+def test_preflight_gate_refuses_a_gate_that_is_not_preflight() -> None:
+    """Asking for the ban on a revision gate is a category error, not a stricter setting.
+
+    ``verify`` is *supposed* to record its verdict and charge its rework; honouring
+    the request silently would break it at the first failure.
+    """
+    with pytest.raises(ValueError, match=policy.REVISION):
+        policy.preflight_gate(verify.DEFAULT_GATE)
+
+
+def test_definition_of_ready_runs_under_the_write_ban(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The rule binds a real pre-flight gate, not just an available context manager.
+
+    The fake tracker attempts a comment while answering the gate's own lint read,
+    which is what a check that recorded state instead of blocking entry looks like
+    from the inside. It goes through ``br.run_br`` — the funnel — because that is
+    the seam every write in the engine shares.
+    """
+
+    class _WritingFake(_FakeBr):
+        def __call__(self, repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
+            if args[:1] == ["lint"]:
+                br.run_br(repo_root, ["comments", "add", "i", "recorded from a pre-flight gate"])
+            return super().__call__(repo_root, args, _check=_check)
+
+    monkeypatch.setattr(br, "which", lambda: None)
+    _install(monkeypatch, _WritingFake(lint_missing=[], acceptance_criteria="given x then y"))
+
+    with pytest.raises(br.TrackerWriteRefusedError) as excinfo:
+        policy.definition_of_ready(tmp_path, "i")
+
+    # Named, so the failure cannot be confused with br simply being absent, which
+    # is the other refusal this call site can raise.
+    assert policy.DOR_GATE in str(excinfo.value)
+
+
+def test_definition_of_ready_still_answers_under_the_ban(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The control: the gate's own reads are not what the ban refuses.
+
+    Without this, a ban that refused everything would pass the test above while
+    making the Definition-of-Ready unanswerable.
+    """
+    _install(monkeypatch, _FakeBr(lint_missing=[], acceptance_criteria="given x then y"))
+    assert policy.definition_of_ready(tmp_path, "i").ready is True

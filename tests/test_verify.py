@@ -13,7 +13,7 @@ from pathlib import Path, PurePosixPath
 import pytest
 import yaml
 
-from basicly import cli, policy, usage, verify
+from basicly import br, cli, policy, usage, verify
 from basicly.config import PolicyConfig, VerifyCheck, VerifyConfig, load_verify_config
 
 
@@ -404,6 +404,34 @@ def test_linked_worktree_guard_states(linked_worktree: tuple[Path, Path], tmp_pa
     outside = tmp_path / "plain"
     outside.mkdir()
     assert verify.linked_worktree_guard(outside) is None
+
+
+def test_linked_worktree_guard_writes_nothing_to_the_tracker(
+    linked_worktree: tuple[Path, Path],
+) -> None:
+    """An abort gate halts and reports; it must not record anything on the way out.
+
+    Exercised inside a read-only section rather than by inspecting the source, so a
+    tracker write added to the guard later fails here. The guard runs immediately
+    before the record it protects (``cli`` calls it at both gate-recording sites),
+    which is exactly where a write would be invisible.
+    """
+    _, linked = linked_worktree
+    with br.read_only("the linked-worktree abort gate"):
+        assert verify.linked_worktree_guard(linked) is not None
+
+
+def test_the_linked_worktree_gate_is_classified_as_the_check_that_trips(
+    linked_worktree: tuple[Path, Path],
+) -> None:
+    """The name the taxonomy keys on has to be the name of a check that trips.
+
+    Pinning both halves in one test is the point: a classified name no check
+    implements, or a check nothing classifies, would each read as coverage.
+    """
+    _, linked = linked_worktree
+    assert verify.linked_worktree_guard(linked) is not None
+    assert policy.gate_type(policy.LINKED_WORKTREE_GATE) == policy.ABORT
 
 
 def test_linked_worktree_guard_allows_redirected_tracker(
