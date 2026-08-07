@@ -1723,12 +1723,15 @@ def _validate_lane(ctx: _Ctx, cwd: Path) -> AdvanceResult | None:
 def _hold_for_validate_decision(ctx: _Ctx, disputed: list[rubrics.CheckVerdict]) -> AdvanceResult:
     """Enqueue the disputed acceptance criteria and hold the lane (D4 amended, R4).
 
-    The item carries the failing criterion ids and the validator's evidence, so
-    whoever disposes of it can see what was claimed and on what basis without
-    re-reading the lane. ``enqueue`` is idempotent per (issue, kind, question), so
-    re-advancing a held lane re-reports the same item instead of flooding.
+    The item carries the failing criterion ids, each one's **severity**, and the
+    validator's evidence, so whoever disposes of it can see what was claimed and
+    on what basis without re-reading the lane. The severity is what makes the item
+    triageable rather than merely present: a queue that renders a MINOR note and a
+    BLOCKER identically is a queue read in arrival order (§5.4).
+    ``enqueue`` is idempotent per (issue, kind, question), so re-advancing a held
+    lane re-reports the same item instead of flooding.
     """
-    criteria = ", ".join(verdict.check_id for verdict in disputed)
+    criteria = ", ".join(f"{v.check_id} ({v.severity})" for v in disputed)
     evidence = "; ".join(f"{verdict.check_id}: {verdict.evidence}" for verdict in disputed)
     decisions.enqueue(
         ctx.repo_root,
