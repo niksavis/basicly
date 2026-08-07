@@ -1,5 +1,39 @@
 # Software factory loop — requirements
 
+## Goal
+
+**Turn basicly from a harness with one real gate into a software factory.**
+
+A deterministic state machine where every state has an entry condition, an exit gate, an assigned
+specialist agent, and a schema-validated artifact it hands to the next state — so many lanes run
+unattended in parallel, and a defect is caught at the boundary that produced it instead of at the
+end.
+
+Done looks like one sentence: **a requirement goes in, and a verified, validated, shipped change
+comes out, with zero human interventions attributable to a harness defect.**
+
+Today that sentence is false in eight places. The loop has seven phase names and one enforcing
+boundary; decompose cannot express a dependency; validation cannot fail anything; a failed lane is
+re-dispatched blind instead of repaired; and none of the seven designed personas exist.
+
+### The shape
+
+```text
+  requirements
+       |
+    INTAKE ----> CLASSIFY ----> DECOMPOSE ----> BUILD ----> VERIFY ----> VALIDATE ----> SHIP
+       |            |               |            ^  |          |            |            |
+  solution-     integrity-      plan gate        |  |      does it       did we      evidence
+   design         level        (before the       |  |       work?      build the      bound
+                 assigned       constraint)      |  |                  right thing?
+                                                 |  v
+                                              REPAIR  <-- Go / Kill / Hold / Recycle
+                                          (same worktree, briefed
+                                           with the real findings)
+
+  RETROSPECTIVE fires only on a special-cause signal, never on a single failure.
+```
+
 Status: **draft for decomposition**. Written 2026-08-07 from four parallel research passes and a
 line-by-line gap analysis of `src/basicly/`. This document is the input to its own loop: decompose
 it, build it, and dogfood the design while implementing it.
@@ -41,7 +75,9 @@ at build→verify; everything else is checkpoints and lints.
 
 | # | Decision | Rationale |
 | --- | --- | --- |
-| D1 [D] | **VERIFY and VALIDATE are two states**, each with its own agent and skills | ISO/IEC/IEEE 12207 §6.4.9 / §6.4.11 define them as separate technical processes [S]. IEEE 1012 runs V&V in parallel with development [S] |
+| D1 [D] | **VERIFY and VALIDATE are two states, run sequentially** — validate is gated on verify green (amended 2026-08-07; the original decision ran them in parallel) | Separate states: ISO/IEC/IEEE 12207 §6.4.9 / §6.4.11 define them as distinct technical processes [S]. Sequential: NASA's nominal flow gives validation a *verified* product, and parallel execution spends judged tokens validating builds verify will reject [S] |
+| D8 [D] | **EARS for acceptance criteria**, ratcheted — required for new criteria, existing beads transform when touched | EARS distinguishes trigger / state / condition / feature-gated / ubiquitous; GWT collapses all five, and that distinction is what makes a check derivable (OQ-2). **Do not bulk-transform** the 600+ existing beads |
+| D9 [D] | **Integrity level assigned by a deterministic rule over touched paths** | Scope globs are already declared and already gated. Not judgeable, therefore not gameable, and costs zero tokens |
 | D2 [D] | **Three integrity levels, keyed on blast radius** | Observable at classify time. IEEE 1012's consequence×likelihood grid needs a likelihood axis we cannot measure |
 | D3 [D] | **Four gate verbs: Go / Kill / Hold / Recycle** | Cooper's Stage-Gate [S]. Today `park` exists as a word and re-admits the lane — a verified fail-open [M] `cli.py:3922` |
 | D4 [D] | **A machine-checked handoff artifact at every state boundary** | ETVX (IBM Systems Journal 24(2), 1985) [S]: exit criteria are verifiable conditions *on work products*, which requires work products to have schemas |
@@ -70,12 +106,12 @@ contact.
 | **DECOMPOSE** | `classification` valid; depth = decompose | **plan gate** (§3.3) | Dana | `implementation-plan` |
 | **BUILD** | plan gate green **and** downstream WIP below limit | self-check green; work committed on the branch | Kai | `change-summary` |
 | **VERIFY** | `change-summary` valid | deterministic gates green **and** checks derived from this unit's acceptance criteria green | none (D4 of factory design) | `verification-evidence` |
-| **VALIDATE** | `change-summary` valid | the change exercised **as a consumer would**, against the original requirements | Vera; Remo reviews by lens | `validation-transcript` |
+| **VALIDATE** | `verification-evidence` **green** [D1 amended] | the change exercised **as a consumer would**, against the original requirements | Vera; Remo reviews by lens | `validation-transcript` |
 | **REPAIR** | verify or validate failed | Go / Kill / Hold / Recycle | Kai, repair mode | updated `change-summary` |
 | **SHIP** | verify and validate green | claims bound to evidence; post-ship action pre-declared | Tala curates | `release-record` |
 
-VERIFY and VALIDATE run in parallel [D1]. **Open question OQ-3** governs what happens to a
-validation pass when verification fails.
+VALIDATE is gated on VERIFY green [D1, amended] — sequential, not parallel. NASA's nominal flow
+gives validation a verified product, and a validation transcript from a build verify rejected is
 
 ### 3.2 Retrospective is not a lane state
 
@@ -403,10 +439,12 @@ read; pass `--forward-subagent-text`; add light mode as a second dispatch path.
 
 | # | Question | Blocks |
 | --- | --- | --- |
-| **OQ-1** | What notation for testable acceptance criteria? EARS is the candidate; nothing in the repo uses it | plan gate, verify derivation |
-| **OQ-2** | How are checks *derived* from acceptance criteria — generated tests, or a judged check with a deterministic shell? | §11 item 1 |
-| **OQ-3** | Validation passes, verification fails — what happens? NASA's nominal flow gives validation a *verified* product; parallel execution means validating a build that verify then rejects | D1 |
-| **OQ-4** | Who assigns the integrity level — Juno, a deterministic rule over touched paths, or the requester? | D2 |
+| ~~OQ-1~~ | ~~AC notation~~ — **resolved**: EARS, ratcheted (D8) | — |
+| **OQ-2** | How are checks *derived* from acceptance criteria — generated tests, or a judged check with a deterministic shell? EARS's five templates make this tractable; it is still unanswered | §11 item 1 |
+| ~~OQ-3~~ | ~~Verify fails, validate passes~~ — **resolved**: sequential, validate gated on verify green (D1 amended) | — |
+| ~~OQ-4~~ | ~~Who assigns integrity level~~ — **resolved**: deterministic path rule (D9) | — |
+| **OQ-13** | The path rule over-classifies: a one-line typo fix in `cli.py` scores L3 and earns maximum ceremony. What is the override, and who may grant it? | D9 |
+| **OQ-14** | Sequential V&V plus `max_rework = 2` means a verify failure then a validate failure exhausts the budget. Does validate failure get its own allowance? | D1 |
 | **OQ-5** | Where do handoff artifacts live? `[policy.evidence]` exists but is presence-only | D4 |
 | ~~OQ-6~~ | ~~File-size threshold~~ — **resolved**: 4,000 tokens, `SCOPE_FILE_READ_CAP` (§9.3) | — |
 | ~~OQ-7~~ | ~~Exemption list or deadline~~ — **resolved**: ratchet, first touch brings the file under cap, per-file waiver with a recorded reason (§9.3) | — |
