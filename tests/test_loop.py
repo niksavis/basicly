@@ -16,6 +16,7 @@ from types import SimpleNamespace
 import pytest
 
 from basicly import (
+    br,
     classify,
     decisions,
     decompose,
@@ -415,21 +416,31 @@ class _CeilingBr:
         self.deps: list[tuple[str, ...]] = []
         self.comments: dict[str, list[str]] = {}
 
+    @staticmethod
+    def _ok(stdout: str) -> SimpleNamespace:
+        """A successful spawn, exit status included.
+
+        The status is not optional: `br.read_record` checks it before it parses, so a
+        stand-in without one raises AttributeError inside the seam rather than serving
+        the record (basicly-tcmy.14).
+        """
+        return SimpleNamespace(stdout=stdout, stderr="", returncode=0)
+
     def __call__(self, _repo_root: Path, args: list[str], **_k) -> SimpleNamespace:
         if args[:1] == ["show"]:
-            return SimpleNamespace(stdout=json.dumps([_CEILING_ISSUE | {"id": args[1]}]))
+            return self._ok(json.dumps([_CEILING_ISSUE | {"id": args[1]}]))
         if args[:2] == ["comments", "list"]:
             texts = self.comments.get(args[2], [])
-            return SimpleNamespace(stdout=json.dumps([{"text": text} for text in texts]))
+            return self._ok(json.dumps([{"text": text} for text in texts]))
         if args[:2] == ["comments", "add"]:
             self.comments.setdefault(args[2], []).append(args[3])
-            return SimpleNamespace(stdout="{}")
+            return self._ok("{}")
         if args[:1] == ["create"]:
             self.created.append(args)
-            return SimpleNamespace(stdout=json.dumps({"id": f"new-{len(self.created)}"}))
+            return self._ok(json.dumps({"id": f"new-{len(self.created)}"}))
         if args[:2] == ["dep", "add"]:
             self.deps.append(tuple(args[2:]))
-            return SimpleNamespace(stdout="{}")
+            return self._ok("{}")
         raise AssertionError(f"unexpected br call: {args}")
 
 
@@ -457,9 +468,14 @@ def _pin_ceiling(monkeypatch: pytest.MonkeyPatch, ceiling: float) -> _CeilingBr:
             context_ceiling=ceiling,
         ),
     )
-    br = _CeilingBr()
-    monkeypatch.setattr(supervise, "_run_br", br)
-    return br
+    fake = _CeilingBr()
+    monkeypatch.setattr(supervise, "_run_br", fake)
+    # Named `fake` rather than `br` so the module stays reachable here: the record read
+    # goes through `br.read_record`, the one reader every consumer shares
+    # (basicly-tcmy.14), and leaving it unstubbed makes the finalize path see no bead
+    # and spin no follow-up.
+    monkeypatch.setattr(br, "try_run_br", fake)
+    return fake
 
 
 def _occupying(monkeypatch: pytest.MonkeyPatch, tokens: int) -> None:
@@ -1735,8 +1751,13 @@ def test_child_states_parses_parent_child_dependents(
             '{"id":"i.1","status":"open","dependency_type":"parent-child"},'
             '{"id":"x","status":"open","dependency_type":"blocks"}]}]'
         )
+        # `br.read_record` checks the exit status before it parses, so a stand-in for a
+        # successful spawn has to carry one (basicly-tcmy.14).
+        returncode = 0
 
-    monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: _Proc())
+    # `br.try_run_br`, not loop's alias: the record read goes through `br.read_record`,
+    # the one reader every consumer in the package shares.
+    monkeypatch.setattr(br, "try_run_br", lambda *_a, **_k: _Proc())
     ctx = loop._Ctx(tmp_path, "i", _state("decompose", has_children=True), CONFIG, loop.Inputs())
     assert loop._child_states(ctx) == [("i.1", "open")]
 

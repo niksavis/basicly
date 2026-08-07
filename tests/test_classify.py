@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import classify, policy
+from basicly import br, classify, policy
 from basicly.config import WORK_TYPES
 
 
@@ -49,6 +49,9 @@ class _FakeBr:
 def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
     monkeypatch.setattr(classify, "_run_br", fake)
     monkeypatch.setattr(policy, "_run_br", fake)
+    # The record read goes through `br.read_record`, the one seam every consumer shares
+    # (basicly-tcmy.14), rather than each module's alias.
+    monkeypatch.setattr(br, "try_run_br", fake)
 
 
 @pytest.mark.parametrize("work_type", WORK_TYPES)

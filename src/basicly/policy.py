@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from . import run_record
+from . import br, run_record
 from .br import run_br as _run_br
 from .config import (
     AUTONOMY_LEVELS,
@@ -111,13 +111,8 @@ def _has_acceptance_criteria(repo_root: Path, issue_id: str) -> bool:
     Best-effort: a br failure or an unexpected payload shape returns False, so a
     lookup error blocks the track rather than relaxing the gate.
     """
-    try:
-        proc = _run_br(repo_root, ["show", issue_id, "--json"])
-        data = json.loads(proc.stdout)
-    except RuntimeError, ValueError:
-        return False
-    issue = data[0] if isinstance(data, list) and data else data
-    if not isinstance(issue, dict):
+    issue = br.read_record(repo_root, issue_id)
+    if issue is None:
         return False
     value = issue.get("acceptance_criteria")
     if isinstance(value, str) and value.strip():
@@ -382,10 +377,8 @@ def _issue_is_closed(repo_root: Path, issue_id: str) -> bool:
     same test (basicly-i1s8) — sharing the reader is what keeps the two from
     drifting into two similar-looking special cases.
     """
-    proc = _run_br(repo_root, ["show", issue_id, "--json"])
-    data = json.loads(proc.stdout)
-    record = data[0] if isinstance(data, list) and data else data
-    return isinstance(record, dict) and str(record.get("status", "")) == "closed"
+    record = br.read_record(repo_root, issue_id)
+    return record is not None and str(record.get("status", "")) == "closed"
 
 
 def _rework_marker(gate: str) -> str:
@@ -1581,10 +1574,8 @@ def session_issue_ids(repo_root: Path, root_issue: str) -> tuple[str, ...]:
     seen: dict[str, None] = {root_issue: None}  # insertion-ordered BFS
     queue = [root_issue]
     while queue:
-        proc = _run_br(repo_root, ["show", queue.pop(0), "--json"])
-        data = json.loads(proc.stdout)
-        record = data[0] if isinstance(data, list) else data
-        if not isinstance(record, dict):
+        record = br.read_record(repo_root, queue.pop(0))
+        if record is None:
             continue
         for key, wanted in edges:
             for dep in record.get(key) or []:

@@ -2221,15 +2221,7 @@ def cmd_review(args: argparse.Namespace) -> int:
 
 def _issue_record(repo_root: Path, issue_id: str) -> dict[str, object] | None:
     """The br record for *issue_id*, or None when it cannot be read."""
-    proc = br.try_run_br(repo_root, ["show", issue_id, "--json"])
-    if proc is None or proc.returncode != 0:
-        return None
-    try:
-        data = json.loads(proc.stdout)
-    except json.JSONDecodeError:
-        return None
-    record = data[0] if isinstance(data, list) and data else data
-    return record if isinstance(record, dict) else None
+    return br.read_record(repo_root, issue_id)
 
 
 def _issue_work_type(repo_root: Path, issue_id: str) -> str | None:

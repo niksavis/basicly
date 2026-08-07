@@ -84,6 +84,9 @@ class _FakeBr:
 
 def _install(monkeypatch: pytest.MonkeyPatch, fake: Callable[..., _Proc]) -> None:
     monkeypatch.setattr(decompose, "_run_br", fake)
+    # The record read goes through `br.read_record`, the one seam every consumer shares
+    # (basicly-tcmy.14), rather than this module's alias.
+    monkeypatch.setattr(br, "try_run_br", fake)
 
 
 def _child(title: str, *scope: str) -> ChildSpec:

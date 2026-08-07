@@ -443,3 +443,134 @@ def test_record_text_on_stdout_cannot_outvote_the_real_error_on_stderr() -> None
         "Error: issue not found",
     )
     assert br._is_storage_contention(printed_then_failed) is False
+
+
+# --- The one record read seam (basicly-tcmy.14) -------------------------------
+
+
+class _Spawn:
+    """A `try_run_br` stand-in returning one canned result, recording what it was asked."""
+
+    def __init__(self, result: object) -> None:
+        self.result = result
+        self.calls: list[list[str]] = []
+
+    def __call__(self, _repo_root: Path, args: list[str]) -> object:
+        self.calls.append(list(args))
+        if isinstance(self.result, BaseException):
+            raise self.result
+        return self.result
+
+
+def _proc(stdout: str, returncode: int = 0) -> subprocess.CompletedProcess[str]:
+    return subprocess.CompletedProcess(["br"], returncode, stdout, "")
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        # br spells a single record two ways, and both mean the same record. Reading
+        # only one is what eleven call sites each wrote out by hand.
+        ('[{"id":"b-1","status":"open"}]', {"id": "b-1", "status": "open"}),
+        ('{"id":"b-1","status":"open"}', {"id": "b-1", "status": "open"}),
+    ],
+)
+def test_both_spellings_of_one_record_read_the_same(
+    payload: str, expected: dict, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A bare object and a one-element array are the same record."""
+    monkeypatch.setattr(br, "try_run_br", _Spawn(_proc(payload)))
+    assert br.read_record(tmp_path, "b-1") == expected
+
+
+@pytest.mark.parametrize(
+    ("name", "result"),
+    [
+        # Every route to "no usable record", each of which some call site used to
+        # answer differently: two raised, two returned None, four returned a local
+        # empty, one carried a typed absence, and one did not guard the shape at all.
+        ("br absent from PATH", None),
+        ("a non-zero exit", _proc('{"error":{"code":"ISSUE_NOT_FOUND"}}', returncode=3)),
+        ("output that is not JSON", _proc("not json at all")),
+        ("an empty array", _proc("[]")),
+        ("a JSON null", _proc("null")),
+        ("a payload that is not an object", _proc('"a string"')),
+        ("a spawn that raises RuntimeError", RuntimeError("br show failed")),
+        ("a spawn that raises OSError", OSError("no such file")),
+    ],
+)
+def test_every_absence_reads_as_none(
+    name: str, result: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One contract for every way the read comes back without a record.
+
+    The empty array is the case that matters for the flip (basicly-vkh0.19): it is the
+    natural in-process answer for "no record matched", and against the eleven hand-written
+    unwraps it split six sites raising ``IndexError`` from five taking their documented
+    absence. Here it is one answer, decided once.
+    """
+    monkeypatch.setattr(br, "try_run_br", _Spawn(result))
+    assert br.read_record(tmp_path, "b-1") is None, name
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        None,
+        _proc("[]"),
+        _proc("null"),
+        _proc("not json"),
+        RuntimeError("br show failed"),
+        OSError("no such file"),
+    ],
+)
+def test_require_record_raises_one_message_for_every_absence(
+    result: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The hard half: a caller that cannot proceed gets an exception naming the bead.
+
+    One message whatever the cause, so a caller no longer has to know whether it is
+    looking at a missing bead, a missing binary or a malformed payload to say what
+    went wrong.
+    """
+    monkeypatch.setattr(br, "try_run_br", _Spawn(result))
+    with pytest.raises(RuntimeError, match="br show b-1 returned no issue record"):
+        br.require_record(tmp_path, "b-1")
+
+
+def test_require_record_returns_the_record_when_there_is_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The control, so the refusal above is not passing because nothing ever succeeds."""
+    monkeypatch.setattr(br, "try_run_br", _Spawn(_proc('[{"id":"b-1"}]')))
+    assert br.require_record(tmp_path, "b-1") == {"id": "b-1"}
+
+
+def test_the_read_asks_br_for_json(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The argv is part of the contract: a consumer reading text would parse prose."""
+    spawn = _Spawn(_proc('[{"id":"b-1"}]'))
+    monkeypatch.setattr(br, "try_run_br", spawn)
+    br.read_record(tmp_path, "b-1")
+    assert spawn.calls == [["show", "b-1", "--json"]]
+
+
+def test_no_module_outside_the_seam_unwraps_a_record_itself() -> None:
+    """The rule this bead exists to hold, checked against the tree rather than by eye.
+
+    Eleven call sites across eight modules each wrote this expression out, in two
+    variants that disagreed on the empty-array case. `br.py` is the one place allowed to
+    know the shape; a twelfth copy anywhere else re-acquires the split, which is the same
+    reason :func:`br.dependency_edge` exists.
+
+    Matched on the unwrap *expression*, not on ``isinstance(data, list)`` alone: a plain
+    list check is an ordinary shape guard on any payload, and `policy._finding_members`
+    is one over a finding set. Banning that would be banning JSON.
+    """
+    unwrap = "data[0] if isinstance(data, list)"
+    root = Path(__file__).parent.parent / "src" / "basicly"
+    offenders = [
+        path.name
+        for path in sorted(root.glob("*.py"))
+        if path.name != "br.py" and unwrap in path.read_text(encoding="utf-8")
+    ]
+    assert offenders == []

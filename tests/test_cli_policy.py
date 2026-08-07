@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import cli, decisions, loop_state, policy
+from basicly import br, cli, decisions, loop_state, policy
 from basicly.config import PolicyConfig
 
 
@@ -580,14 +580,16 @@ def test_dor_warns_about_a_scope_that_parsed_to_nothing_without_changing_the_ver
     monkeypatch.setattr(
         policy,
         "_run_br",
-        lambda _root, args, **_kw: _Proc(
-            json.dumps({"results": [{"missing": []}]})
-            if args[:1] == ["lint"]
-            else json.dumps([{"description": "## Acceptance Criteria\n\nx"}])
-        ),
+        lambda _root, _args, **_kw: _Proc(json.dumps({"results": [{"missing": []}]})),
     )
-    record = _Proc(json.dumps([{"type": "task", "description": "## Scope\n\n- src/a.py\n"}]))
-    monkeypatch.setattr(cli.br, "try_run_br", lambda _root, _args: record)
+    # One record carrying both sections. The criteria read and the scope read are the
+    # same `br show` on the same bead, and since `br.read_record` became the one reader
+    # (basicly-tcmy.14) they resolve through one stub — so serving two different bodies
+    # from two stubs would be describing a bead that cannot exist. The entry here is a
+    # bare path, which is the defect: it parses to no globs.
+    body = "## Acceptance Criteria\n\nx\n\n## Scope\n\n- src/a.py\n"
+    record = _Proc(json.dumps([{"type": "task", "description": body}]))
+    monkeypatch.setattr(br, "try_run_br", lambda _root, _args: record)
 
     assert cli.main(["policy", "dor", "basicly-x"]) == 0
     captured = capsys.readouterr()
@@ -602,15 +604,13 @@ def test_dor_stays_quiet_when_the_scope_parsed(
     monkeypatch.setattr(
         policy,
         "_run_br",
-        lambda _root, args, **_kw: _Proc(
-            json.dumps({"results": [{"missing": []}]})
-            if args[:1] == ["lint"]
-            else json.dumps([{"description": "## Acceptance Criteria\n\nx"}])
-        ),
+        lambda _root, _args, **_kw: _Proc(json.dumps({"results": [{"missing": []}]})),
     )
-    body = f"## Scope\n\n{policy.SCOPE_LINE_EXAMPLE}\n"
+    # One record, both sections — see the sibling above. The only difference is the
+    # scope entry, which is the backticked form here, so nothing warns.
+    body = f"## Acceptance Criteria\n\nx\n\n## Scope\n\n{policy.SCOPE_LINE_EXAMPLE}\n"
     record = _Proc(json.dumps([{"type": "task", "description": body}]))
-    monkeypatch.setattr(cli.br, "try_run_br", lambda _root, _args: record)
+    monkeypatch.setattr(br, "try_run_br", lambda _root, _args: record)
 
     assert cli.main(["policy", "dor", "basicly-x"]) == 0
     assert "parsed to no globs" not in capsys.readouterr().err

@@ -890,12 +890,14 @@ def _read_class_and_scope(issue: object) -> tuple[tuple[str, tuple[str, ...]] | 
 
 def _read_bead(repo_root: Path, bead_id: str) -> tuple[tuple[str, tuple[str, ...]] | None, str]:
     """*bead_id*'s class-and-scope pair from the tracker, with the absence that explains it."""
-    try:
-        proc = _run_br(repo_root, ["show", bead_id, "--json"])
-        data = json.loads(proc.stdout)
-    except RuntimeError, ValueError, OSError:
+    # The seam's None covers every absence this used to catch by exception type — br
+    # off PATH, a non-zero exit, unparseable output, an empty or non-object payload —
+    # so the typed absence is kept while the unwrap is not spelled again
+    # (basicly-tcmy.14).
+    record = br.read_record(repo_root, bead_id)
+    if record is None:
         return None, SCOPE_UNREADABLE
-    return _read_class_and_scope(data[0] if isinstance(data, list) and data else data)
+    return _read_class_and_scope(record)
 
 
 def bead_class_and_scope(repo_root: Path, bead_id: str) -> tuple[str, tuple[str, ...]] | None:

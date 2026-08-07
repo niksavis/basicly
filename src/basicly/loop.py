@@ -41,13 +41,13 @@ own split into sub-tasks is engine-governed (the sizing governor plus
 from __future__ import annotations
 
 import contextlib
-import json
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 from . import (
+    br,
     classify,
     commit,
     decisions,
@@ -1694,9 +1694,10 @@ def _bind_worktree(ctx: _Ctx, name: str, branch: str, *, issue_id: str | None = 
 
 def _child_states(ctx: _Ctx) -> list[tuple[str, str]]:
     """Return ``(child_id, status)`` for each parent-child dependent of the node."""
-    proc = _run_br(ctx.repo_root, ["show", ctx.issue_id, "--json"])
-    data = json.loads(proc.stdout)
-    record = data[0] if isinstance(data, list) else data
+    # `require_record` rather than the raw unwrap this used to do: the old form guarded
+    # the payload shape not at all, so a non-object payload reached `record.get` and
+    # raised AttributeError — the one site of eleven with no guard (basicly-tcmy.14).
+    record = br.require_record(ctx.repo_root, ctx.issue_id)
     dependents = record.get("dependents") or []
     return [
         (str(dep["id"]), str(dep.get("status", "")))

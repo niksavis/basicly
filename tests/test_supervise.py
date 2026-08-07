@@ -25,6 +25,7 @@ from pathlib import Path
 import pytest
 
 from basicly import (
+    br,
     decisions,
     decompose,
     loop,
@@ -233,7 +234,7 @@ def test_derive_session_readopts_bound_open_children(
         "epic.1": _issue("epic.1", "in_progress", external_ref="worktree:epic-1:harness/epic-1"),
         "epic.2": _issue("epic.2", "open"),
     }
-    monkeypatch.setattr(supervise, "_run_br", _FakeBrShow(issues))
+    _install_br(monkeypatch, _FakeBrShow(issues))
     _fake_sessions(monkeypatch, {"epic-1"})
 
     state = supervise.derive_session(tmp_path, "epic")
@@ -256,7 +257,7 @@ def test_derive_session_flags_missing_worktree_and_skips_closed(
         "epic": _issue("epic", children=(("epic.1", "in_progress"), ("epic.2", "closed"))),
         "epic.1": _issue("epic.1", "in_progress", external_ref="worktree:epic-1:harness/epic-1"),
     }
-    monkeypatch.setattr(supervise, "_run_br", _FakeBrShow(issues))
+    _install_br(monkeypatch, _FakeBrShow(issues))
     _fake_sessions(monkeypatch, set())
 
     state = supervise.derive_session(tmp_path, "epic")
@@ -273,7 +274,7 @@ def test_derive_session_adopts_leaf_root_binding(
     issues = {
         "task": _issue("task", "in_progress", external_ref="worktree:task:harness/task"),
     }
-    monkeypatch.setattr(supervise, "_run_br", _FakeBrShow(issues))
+    _install_br(monkeypatch, _FakeBrShow(issues))
     _fake_sessions(monkeypatch, {"task"})
 
     state = supervise.derive_session(tmp_path, "task")
@@ -291,7 +292,7 @@ def test_derive_session_done_when_all_children_closed(
         "epic": _issue("epic", children=(("epic.1", "closed"), ("epic.2", "closed"))),
         "closed-root": _issue("closed-root", "closed"),
     }
-    monkeypatch.setattr(supervise, "_run_br", _FakeBrShow(issues))
+    _install_br(monkeypatch, _FakeBrShow(issues))
     _fake_sessions(monkeypatch, set())
 
     assert supervise.derive_session(tmp_path, "epic").done is True
@@ -318,7 +319,7 @@ def test_a_deferred_child_is_neither_sized_nor_holds_the_session_open(
         "control": _issue("control", children=(("control.1", "closed"), ("control.2", "open"))),
         "control.2": _issue("control.2", "open"),
     }
-    monkeypatch.setattr(supervise, "_run_br", _FakeBrShow(issues))
+    _install_br(monkeypatch, _FakeBrShow(issues))
     _fake_sessions(monkeypatch, set())
 
     deferred_only = supervise.derive_session(tmp_path, "epic")
@@ -379,9 +380,8 @@ def _cut_fixture(monkeypatch: pytest.MonkeyPatch) -> None:
         "other.9": _issue("other.9", "open") | {"parent": "other"},
         "unrelated": _issue("unrelated", "open"),
     }
-    monkeypatch.setattr(
-        supervise,
-        "_run_br",
+    _install_br(
+        monkeypatch,
         _FakeBrSelection(issues, {"release-v0.7.0": ("origin.1", "origin.2", "other.9")}),
     )
     _fake_sessions(monkeypatch, set())
@@ -446,9 +446,7 @@ def test_a_cut_whose_every_bead_closed_is_done_rather_than_blocked(
         "done.1": _issue("done.1", "closed") | {"parent": "origin"},
         "done.2": _issue("done.2", "closed") | {"parent": "other"},
     }
-    monkeypatch.setattr(
-        supervise, "_run_br", _FakeBrSelection(issues, {"cut": ("done.1", "done.2")})
-    )
+    _install_br(monkeypatch, _FakeBrSelection(issues, {"cut": ("done.1", "done.2")}))
     _fake_sessions(monkeypatch, set())
 
     state = supervise.derive_session(tmp_path, "release", lane_label="cut")
@@ -468,7 +466,7 @@ def test_a_selector_no_bead_carries_is_refused_not_derived_as_an_idle_session(
     carries is the same refusal as one nobody carries.
     """
     issues = {"release": _issue("release", "open")}
-    monkeypatch.setattr(supervise, "_run_br", _FakeBrSelection(issues, {"root-only": ("release",)}))
+    _install_br(monkeypatch, _FakeBrSelection(issues, {"root-only": ("release",)}))
     _fake_sessions(monkeypatch, set())
 
     with pytest.raises(supervise.LaneSelectionError, match="typo-v9"):
@@ -521,10 +519,14 @@ def _install_br(monkeypatch: pytest.MonkeyPatch, fake: object) -> None:
     """Route both br aliases build_bundle reads through to one fake.
 
     ``build_bundle`` scans found-info via supervise's alias and the lane's
-    answered decisions via decisions' own — each module's alias is the seam.
+    answered decisions via decisions' own. The record read goes through
+    ``br.read_record`` instead, the one seam every consumer in the package shares
+    (basicly-tcmy.14), so the fake is installed on the spawn *it* uses as well —
+    leaving that one out lets a record read spawn a real br mid-test.
     """
     monkeypatch.setattr(supervise, "_run_br", fake)
     monkeypatch.setattr(decisions, "_run_br", fake)
+    monkeypatch.setattr(br, "try_run_br", fake)
 
 
 def test_parse_found_info_round_trips_the_marker() -> None:
@@ -2219,21 +2221,28 @@ def _patch_collision_pass(
     )
     couplings: list[tuple[str, str]] = []
 
+    # The bounce path itself reads and writes comments (the brief, the failure
+    # signature); keep it off the real tracker. The signature history is policy's own,
+    # so its alias is a seam too.
+    fake = _FakeBr({bead: {"id": bead, "description": ""} for bead in scopes})
+    _install_br(monkeypatch, fake)
+    monkeypatch.setattr(supervise, "_try_run_br", fake)
+    monkeypatch.setattr(decisions, "_run_br", fake)
+    monkeypatch.setattr(policy, "_run_br", fake)
+
     def try_run_br(_r, args):
         # The edge exactly as `br` receives it, so its *direction* is asserted too.
         if args[:2] == ["dep", "add"]:
             couplings.append((args[2], args[3]))
+            return None
+        # Everything else delegates. `merge.br.try_run_br` used to be a seam distinct
+        # from supervise's alias, and it cannot be any more: the coupling edge and the
+        # record read both reach br through `br.try_run_br` now that `br.read_record` is
+        # the one reader (basicly-tcmy.14). Recording and delegating keeps both, where
+        # replacing the attribute silently dropped whichever was installed first.
+        return fake(_r, args)
 
     monkeypatch.setattr(supervise.merge.br, "try_run_br", try_run_br)
-    # The bounce path itself reads and writes comments (the brief, the failure
-    # signature); keep it off the real tracker. Distinct from the alias above:
-    # `merge.br.try_run_br` is the coupling-edge seam, this one is supervise's.
-    # The signature history is policy's own, so its alias is a seam too.
-    fake = _FakeBr({bead: {"id": bead, "description": ""} for bead in scopes})
-    monkeypatch.setattr(supervise, "_run_br", fake)
-    monkeypatch.setattr(supervise, "_try_run_br", fake)
-    monkeypatch.setattr(decisions, "_run_br", fake)
-    monkeypatch.setattr(policy, "_run_br", fake)
     return couplings, fake
 
 
@@ -3163,7 +3172,7 @@ def test_has_subtasks_counts_closed_subtasks_too(monkeypatch: pytest.MonkeyPatch
         "epic.1": _issue("epic.1", children=(("epic.1.1", "closed"),)),
         "epic.2": _issue("epic.2"),
     }
-    monkeypatch.setattr(supervise, "_run_br", _FakeBrShow(issues))
+    _install_br(monkeypatch, _FakeBrShow(issues))
     assert supervise._has_subtasks(Path(), "epic.1") is True
     assert supervise._has_subtasks(Path(), "epic.2") is False
 
@@ -3257,11 +3266,14 @@ def test_heartbeat_thread_keeps_the_lock_fresh_and_captures_loss(tmp_path: Path)
 def _attach_br(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
     """Route every module observe() reads br through to one fake.
 
-    Each module owns its own ``_run_br`` alias — that alias is the test seam, so
-    the fake has to be installed per module rather than in one shared place.
+    Each module owns its own ``_run_br`` alias for the subcommands it spawns directly,
+    so those are installed per module. The **record** read is no longer one of them: it
+    goes through ``br.read_record``, the one seam every consumer in the package shares
+    (basicly-tcmy.14), so the fake is installed on the spawn that uses too.
     """
     for module in (supervise, policy, decisions, loop_state):
         monkeypatch.setattr(module, "_run_br", fake)
+    monkeypatch.setattr(br, "try_run_br", fake)
 
 
 def _grant_comment(level: str, budget: int | None = None) -> str:
@@ -4102,9 +4114,13 @@ def test_admit_working_set_never_checked_a_bead_that_declares_no_scope(
     not the stubbed lookup: the conflation lived in the estimator's answer, so only a
     real scopeless record proves it is gone.
     """
+    # `br.try_run_br`, not `decompose._run_br`: the record read goes through
+    # `br.read_record` now (basicly-tcmy.14), and stubbing the module alias would leave
+    # the seam spawning a real br — which returns nothing here and reads back as
+    # SCOPE_UNREADABLE, the absence this test exists to tell SCOPE_UNDECLARED apart from.
     monkeypatch.setattr(
-        decompose,
-        "_run_br",
+        br,
+        "try_run_br",
         lambda _r, args, **_k: _Proc(
             json.dumps([
                 {"id": args[1], "issue_type": "task", "description": "## Context\n\nhand-filed"}
@@ -4382,8 +4398,12 @@ def _scope_reader(monkeypatch: pytest.MonkeyPatch, scopes: dict[str, tuple[str, 
     """Serve each lane's ``## Scope`` through the real parse chain, not a stubbed dict.
 
     The report reads scopes via ``merge.declared_scopes`` -> ``bead_class_and_scope``
-    -> ``br show``, and the recorded body is where a declaration is easy to get wrong,
-    so the fake stops at ``br`` and everything above it stays live.
+    -> ``br.read_record``, and the recorded body is where a declaration is easy to get
+    wrong, so the fake stops at ``br`` and everything above it stays live. It is
+    installed on ``br.try_run_br`` because the record read is the one seam every
+    consumer shares (basicly-tcmy.14); stubbing ``decompose``'s alias would leave the
+    seam spawning a real br, and every lane would then read as declaring no scope —
+    which is the *warn* branch, so the test would fail by warning about all three.
     """
 
     def show(_repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
@@ -4391,7 +4411,7 @@ def _scope_reader(monkeypatch: pytest.MonkeyPatch, scopes: dict[str, tuple[str, 
         body = "## Scope\n" + "\n".join(f"- `{glob}`" for glob in scopes.get(args[1], ()))
         return _Proc(json.dumps([{"id": args[1], "issue_type": "task", "description": body}]))
 
-    monkeypatch.setattr(decompose, "_run_br", show)
+    monkeypatch.setattr(br, "try_run_br", show)
 
 
 def test_the_report_warns_when_every_lane_appends_to_a_path_none_declares(

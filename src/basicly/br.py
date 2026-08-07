@@ -422,6 +422,71 @@ def dependency_edge(dep: object) -> tuple[str, str] | None:
     return dep_id, dep_type if isinstance(dep_type, str) else ""
 
 
+def read_record(repo_root: Path, issue_id: str) -> dict | None:
+    """*issue_id*'s ``br show`` record, or None when the tracker has no usable one.
+
+    The one read seam. `br.py` was already the only place that *spawns* br, but not the
+    only place that *reads* it: the unwrap below was written out at eleven call sites
+    across eight modules, and they disagreed about failure four ways — two raised, two
+    returned None, four returned a local empty, one carried a typed absence — plus one
+    (`loop._child_states`) that guarded the shape not at all and would raise
+    ``AttributeError`` on a payload that was not an object (basicly-tcmy.14).
+
+    **One contract, and it is deliberately the soft one:** None for every way the read
+    can come back without a record — br absent from PATH, a spawn that fails, a
+    non-zero exit, output that is not JSON, an empty array, or a payload that is not an
+    object. It never raises for absence. A caller that must have the record calls
+    :func:`require_record`, so the hard contract is one wrapper over this rather than a
+    second reader.
+
+    Swallowing the spawn's own errors here costs nothing that the split does not give
+    back: every caller that needs an exception gets one from
+    :func:`require_record`, with a message that names the id rather than the layer that
+    failed. `decompose._read_bead` already caught exactly this set to produce a typed
+    absence, which is the behaviour being generalised rather than invented.
+
+    Why one seam matters more than the duplication: `basicly-vkh0.19` replaces br with
+    an in-process log, and the replacement **chooses** what "not found" looks like. An
+    empty list is the natural in-process answer, and against the old eleven that choice
+    split six sites (``IndexError``) from five (their documented absence) — a behaviour
+    change introduced by the change that is supposed to be transparent. With one reader
+    the choice is made once, here.
+
+    br spells a single record two ways — a bare object, or a one-element array — so the
+    unwrap is part of the contract rather than a caller's concern, the same reason
+    :func:`dependency_edge` reads both spellings of an edge.
+    """
+    try:
+        proc = try_run_br(repo_root, ["show", issue_id, "--json"])
+    except RuntimeError, OSError:
+        return None
+    if proc is None or proc.returncode != 0:
+        return None
+    try:
+        data = json.loads(proc.stdout)
+    except ValueError:
+        return None
+    record = data[0] if isinstance(data, list) and data else data
+    return record if isinstance(record, dict) else None
+
+
+def require_record(repo_root: Path, issue_id: str) -> dict:
+    """*issue_id*'s ``br show`` record, raising when the tracker has no usable one.
+
+    The hard half of :func:`read_record`'s contract, for a caller whose work cannot
+    proceed without the record. One message for every absence, so a caller no longer has
+    to know whether it is looking at a missing bead, a missing binary or a malformed
+    payload to explain what went wrong.
+
+    Raises:
+        RuntimeError: :func:`read_record` found no usable record.
+    """
+    record = read_record(repo_root, issue_id)
+    if record is None:
+        raise RuntimeError(f"br show {issue_id} returned no issue record")
+    return record
+
+
 def _redact_paths(value: object) -> object:
     """Recursively redact machine-specific paths in every string inside *value*.
 

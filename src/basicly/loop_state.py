@@ -26,7 +26,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import policy
+from . import br, policy
 from .br import run_br as _run_br
 from .config import CHECKPOINTS, PolicyConfig, load_policy_config
 
@@ -126,12 +126,7 @@ class NodeState:
 
 def _show(repo_root: Path, issue_id: str) -> dict:
     """Return the raw ``br show --json`` record for *issue_id*."""
-    proc = _run_br(repo_root, ["show", issue_id, "--json"])
-    data = json.loads(proc.stdout)
-    record = data[0] if isinstance(data, list) else data
-    if not isinstance(record, dict):
-        raise RuntimeError(f"br show {issue_id} returned no issue record")
-    return record
+    return br.require_record(repo_root, issue_id)
 
 
 def _has_children(record: dict) -> bool:

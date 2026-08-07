@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import decisions, policy, run_record, runner
+from basicly import br, decisions, policy, run_record, runner
 from basicly.config import PolicyConfig, RunnerConfig
 
 
@@ -69,8 +69,12 @@ class _FakeBr:
 def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
     monkeypatch.setattr(decisions, "_run_br", fake)
     # invoke_decider consults D3's spend ceiling (basicly-kjc5.23), and policy
-    # reads br through its own alias — each module's alias is the seam.
+    # reads br through its own alias — each module's alias is the seam for the
+    # subcommands it spawns directly.
     monkeypatch.setattr(policy, "_run_br", fake)
+    # The record read is not one of those: it goes through `br.read_record`, the one
+    # seam every consumer in the package shares (basicly-tcmy.14).
+    monkeypatch.setattr(br, "try_run_br", fake)
 
 
 def _no_notify(monkeypatch: pytest.MonkeyPatch) -> list:

@@ -864,15 +864,8 @@ def blocking_dependencies(repo_root: Path, bead: str) -> frozenset[str]:
     serial landing, so an unreachable tracker degrades to the caller's order
     instead of refusing to land anything.
     """
-    proc = br.try_run_br(repo_root, ["show", bead, "--json"])
-    if proc is None or proc.returncode != 0:
-        return frozenset()
-    try:
-        data = json.loads(proc.stdout)
-    except json.JSONDecodeError:
-        return frozenset()
-    record = data[0] if isinstance(data, list) and data else data
-    if not isinstance(record, dict):
+    record = br.read_record(repo_root, bead)
+    if record is None:
         return frozenset()
     blocking: set[str] = set()
     for dep in record.get("dependencies") or []:

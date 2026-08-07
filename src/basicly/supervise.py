@@ -426,11 +426,7 @@ def derive_session(
     on the next tick picks up a bead labelled into the cut since (an overrun
     follow-up inherits its lane's labels) and drops one labelled out of it.
     """
-    proc = _run_br(repo_root, ["show", root_issue, "--json"])
-    data = json.loads(proc.stdout)
-    record = data[0] if isinstance(data, list) else data
-    if not isinstance(record, dict):
-        raise RuntimeError(f"br show {root_issue} returned no issue record")
+    record = br.require_record(repo_root, root_issue)
 
     if lane_label is not None:
         children = lane_selection(repo_root, lane_label, exclude=(root_issue,))
@@ -472,11 +468,8 @@ def derive_session(
 
 
 def _show_issue(repo_root: Path, issue_id: str) -> dict | None:
-    """The issue's ``br show`` record, or None on an unexpected payload shape."""
-    proc = _run_br(repo_root, ["show", issue_id, "--json"])
-    data = json.loads(proc.stdout)
-    record = data[0] if isinstance(data, list) else data
-    return record if isinstance(record, dict) else None
+    """The issue's ``br show`` record, or None when there is no usable one."""
+    return br.read_record(repo_root, issue_id)
 
 
 def _binding_of(

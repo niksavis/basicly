@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import decisions, policy, rubrics, run_record, verify
+from basicly import br, decisions, policy, rubrics, run_record, verify
 from basicly.config import (
     ENGINE_GATE_PROVIDERS,
     LOOP_PHASES,
@@ -124,6 +124,11 @@ def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
     """
     monkeypatch.setattr(policy, "_run_br", fake)
     monkeypatch.setattr(decisions, "_run_br", fake)
+    # The record read goes through `br.read_record`, the one seam every consumer shares
+    # (basicly-tcmy.14), so the fake is installed on the spawn *that* uses rather than on
+    # each module's alias. This is the reason the seam exists: one stub point instead of
+    # eleven readers to keep in step.
+    monkeypatch.setattr(br, "try_run_br", fake)
 
 
 def test_definition_of_ready(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

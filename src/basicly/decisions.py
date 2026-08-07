@@ -500,13 +500,8 @@ def intake_corpus(repo_root: Path, root_issue: str) -> str:
     derivable from these two engine-readable fields, which keeps the boundary
     checkable in decision review.
     """
-    proc = _run_br(repo_root, ["show", root_issue, "--json"])
-    try:
-        data = json.loads(proc.stdout)
-    except json.JSONDecodeError:
-        return ""
-    record = data[0] if isinstance(data, list) else data
-    if not isinstance(record, dict):
+    record = br.read_record(repo_root, root_issue)
+    if record is None:
         return ""
     parts = [str(record.get("description") or "")]
     context = record.get("agent_context")
