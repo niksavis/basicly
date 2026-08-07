@@ -12,6 +12,20 @@
 *.sh text eol=lf
 *.ps1 text eol=lf
 
+# The tracker kit's event log is byte-exact, and this rule is what keeps it so
+# (basicly-vkh0.21). Its event ids are content-derived, so a byte git rewrote on the
+# way in or out of the index is an id changed and every later id with it. The `*` rule
+# above is `text=auto`, which normalises the log; measured on git 2.43.0, a log line
+# ending CRLF lost that byte on a round trip through an `autocrlf=true` checkout, and
+# came back identical with this rule in place. Later lines win in this file, so this
+# must stay below the `*` rule.
+#
+# The glob is `events.LOG_GLOB` in `.basicly/core/kit/tracker/events.py`, which states
+# the requirement and cannot enforce it. `.scripts/kit_deployment.py` reads that
+# constant, asks git what it does with a log path, and fails naming this rule — so the
+# second spelling here cannot drift from the kit's one silently.
+events-*.jsonl -text
+
 # Treat binary files as binary (no line-ending conversion).
 *.png binary
 *.jpg binary

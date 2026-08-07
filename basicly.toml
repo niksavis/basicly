@@ -181,6 +181,24 @@ name = "kit-boundary"
 command = ["uv", "run", "python", ".basicly/core/hooks/kit-boundary.py"]
 modes = ["full"]
 
+# The kit's two deployment requirements (basicly-vkh0.21). `events.py` needs
+# `events-*.jsonl` declared `-text` or a normalising checkout rewrites a log whose ids
+# are content-derived; `snapshot.py` needs the ledger's ignore rules to cover
+# `DERIVED_PATTERNS` or a fold of the log gets committed beside it. Each was stated in a
+# docstring and nowhere else, which is the same shape as `kit-boundary` above: a closed
+# bead proves the code exists, not that anything enforces what it asks for.
+#
+# `fast` as well as `full`, unlike `kit-boundary` — that entry is `full` only because a
+# pre-commit hook already covers commit time, and this has no hook. The two questions it
+# asks git are `check-attr` and `check-ignore` on five sample paths, so commit-time cost
+# is noise beside a requirement that only bites once a ledger is live.
+#
+# `uv run python`, per `test_no_verify_check_invokes_a_bare_python_interpreter`.
+[[verify.checks]]
+name = "kit-deployment"
+command = ["uv", "run", "python", ".scripts/kit_deployment.py"]
+modes = ["fast", "full"]
+
 [[verify.checks]]
 name = "lint-imports"
 # Enforces the import-linter contracts in `.importlinter`: the engine's tier stack
