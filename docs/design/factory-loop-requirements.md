@@ -84,6 +84,13 @@ at build→verify; everything else is checkpoints and lints.
 | D5 [D] | **Repair is a mode of the implementer, not a new persona** | Roster R3 admits a persona only if it differs in tier, tools, or artifact. Repair differs in none — only in prompt |
 | D6 [D] | **Light factory / dark factory as an explicit mode split** | Capacity, not preference: one shared context window cannot hold many lanes [S] |
 | D7 [D] | **File size gated as a token ratchet with a per-file waiver**, over all `.py` | See §9.3. It is an agent-context gate, **not** a code-quality gate — the quality literature argues the other way |
+| D10 [D] | **Every acceptance criterion names its own check at plan time.** The plan gate refuses a criterion with no named check; VERIFY runs checks and judges nothing | Moves judgement to the earliest, cheapest point and makes it gateable. Removes MAST's *incorrect verification* mode (9.1%) by leaving nothing to get wrong at verify time |
+| D11 [D] | **Deterministic diff-size downgrade**: an L3 path with a small diff and no changed public signature drops to L2 | Keeps the ungameable property of D9 while reading the actual change rather than only where it lives |
+| D12 [D] | **Rework allowance is per gate**, not per unit of work — verify and validate each get their own | Matches what the counters already record; `policy.record_rework` is already keyed by gate. Needs a total ceiling so a lane cannot grind |
+| D13 [D] | **Handoff artifacts are typed events in the owned ledger** | `events.py` already declares an unused `KIND_DISPATCH`; the shape is anticipated. Artifacts inherit rotation, staleness headers and `fsck`. **Consequence: `s5li` and `u4xu` become prerequisites of §8, not parallel work** |
+| D14 [D] | **File-size waiver: recorded reason at L1/L2, approval at L3** | Reuses the level already computed. Closes the self-granted-waiver-on-a-consumer-surface hole without ceremony everywhere else |
+| D15 [D] | **Kill always requires a human**, at every integrity level | Kill is the only verb that removes a *requirement* rather than routing work. An agent that can kill what it finds hard has an exit from every difficulty |
+| D16 [D] | **The plugin is a second distribution channel**, packaging the same projected output as `basicly install` | One source of truth, two delivery shapes. Betting the primary channel on a spec with seven areas still in FUTURE_CONSIDERATIONS would be premature |
 
 ### 2.1 Risk accepted on D4
 
@@ -440,19 +447,19 @@ read; pass `--forward-subagent-text`; add light mode as a second dispatch path.
 | # | Question | Blocks |
 | --- | --- | --- |
 | ~~OQ-1~~ | ~~AC notation~~ — **resolved**: EARS, ratcheted (D8) | — |
-| **OQ-2** | How are checks *derived* from acceptance criteria — generated tests, or a judged check with a deterministic shell? EARS's five templates make this tractable; it is still unanswered | §11 item 1 |
+| ~~OQ-2~~ | ~~Deriving checks from criteria~~ — **resolved**: each criterion names its own check at plan time (D10) | — |
 | ~~OQ-3~~ | ~~Verify fails, validate passes~~ — **resolved**: sequential, validate gated on verify green (D1 amended) | — |
 | ~~OQ-4~~ | ~~Who assigns integrity level~~ — **resolved**: deterministic path rule (D9) | — |
-| **OQ-13** | The path rule over-classifies: a one-line typo fix in `cli.py` scores L3 and earns maximum ceremony. What is the override, and who may grant it? | D9 |
-| **OQ-14** | Sequential V&V plus `max_rework = 2` means a verify failure then a validate failure exhausts the budget. Does validate failure get its own allowance? | D1 |
-| **OQ-5** | Where do handoff artifacts live? `[policy.evidence]` exists but is presence-only | D4 |
+| ~~OQ-13~~ | ~~L3 over-classification~~ — **resolved**: deterministic diff-size downgrade (D11) | — |
+| ~~OQ-14~~ | ~~Rework allocation~~ — **resolved**: per-gate allowance (D12) | — |
+| ~~OQ-5~~ | ~~Artifact storage~~ — **resolved**: typed events in the owned ledger (D13) | — |
 | ~~OQ-6~~ | ~~File-size threshold~~ — **resolved**: 4,000 tokens, `SCOPE_FILE_READ_CAP` (§9.3) | — |
 | ~~OQ-7~~ | ~~Exemption list or deadline~~ — **resolved**: ratchet, first touch brings the file under cap, per-file waiver with a recorded reason (§9.3) | — |
-| **OQ-11** | Does the waiver need approval, or is a recorded reason enough? At L3 blast radius a self-granted waiver on a consumer surface is the weakest link in §9.3 | §9.3 |
+| ~~OQ-11~~ | ~~Waiver approval~~ — **resolved**: reason at L1/L2, approval at L3 (D14) | — |
 | **OQ-12** | What is a "touch" for the first-touch rule — any diff to the file, or a non-trivial one? A one-line typo fix triggering a 13× refactor is the failure mode to avoid | §9.3 |
-| **OQ-8** | Does Kill require human approval at every integrity level, or only L3? | D3 |
-| **OQ-9** | House direction on PEP 758 paren-free `except A, B:` | `python-guidelines` |
-| **OQ-10** | Does the plugin package ship the catalog, or is it a second distribution channel alongside `basicly install`? | §10 |
+| ~~OQ-8~~ | ~~Kill approval~~ — **resolved**: human at every level (D15) | — |
+| **OQ-9** | House direction on PEP 758 paren-free `except A, B:`. **Only open question left.** Recommendation: allow paren-free — the repo is 3.14-only so there is no compatibility argument, and no linter enforces either direction | `python-guidelines` |
+| ~~OQ-10~~ | ~~Plugin channel~~ — **resolved**: second channel, same projected output (D16) | — |
 
 ---
 
