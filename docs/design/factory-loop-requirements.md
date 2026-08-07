@@ -47,6 +47,7 @@ at build→verify; everything else is checkpoints and lints.
 | D4 [D] | **A machine-checked handoff artifact at every state boundary** | ETVX (IBM Systems Journal 24(2), 1985) [S]: exit criteria are verifiable conditions *on work products*, which requires work products to have schemas |
 | D5 [D] | **Repair is a mode of the implementer, not a new persona** | Roster R3 admits a persona only if it differs in tier, tools, or artifact. Repair differs in none — only in prompt |
 | D6 [D] | **Light factory / dark factory as an explicit mode split** | Capacity, not preference: one shared context window cannot hold many lanes [S] |
+| D7 [D] | **File size gated as a token ratchet with a per-file waiver**, over all `.py` | See §9.3. It is an agent-context gate, **not** a code-quality gate — the quality literature argues the other way |
 
 ### 2.1 Risk accepted on D4
 
@@ -213,7 +214,7 @@ module-length rule, and `C90` is not enabled. `cli.py` is **5,097 lines**; `src/
 | Guideline | Mechanism | Status |
 | --- | --- | --- |
 | Cyclomatic complexity | ruff `C90`, `max-complexity` | **not enabled.** Measured: **0 violations at 15, 14 at 10** [M]. Enable at 15 today — free and immediately binding — then ratchet |
-| Module length | **no ruff rule exists.** A script under `.scripts/` wired as a `[[verify.checks]]` fast entry | **the gap.** Threshold is convention, not evidence [S] — say so in the check |
+| File size | **no ruff rule exists.** A script under `.scripts/` wired as a `[[verify.checks]]` fast entry — see §9.3 | **the gap.** Nothing in the stack measures it |
 | Blind `except Exception` | ruff `BLE001` | not enabled |
 | Exception hygiene, perf, builtins shadowing | ruff `TRY`, `PERF`, `FURB`, `A`, `RET`, `TC`, `TID`, `DTZ` | not enabled |
 | Security lint over `src/` | ruff `S` | bandit runs, but scoped to `.scripts`/hooks/kit — **not `src/`** [M] |
@@ -244,6 +245,69 @@ has already spent a round. No linter can check these:
 9. **Free-threading safety** (PEP 779): stop assuming GIL atomicity. Not mechanically checkable.
 
 Test quality is **out of scope** — `test-discipline` already owns it.
+
+### 9.3 The file-size ratchet [D7]
+
+**Metric: tokens, not lines.** Lines drift with docstring density and comment ratio. Tokens are the
+unit the sizing governor already runs in (`decompose._text_tokens`), so one constant serves both.
+
+**Threshold: `SCOPE_FILE_READ_CAP = 4_000`** — an existing committed constant whose own comment
+says it is "where the whole-file band ends", i.e. the point above which an agent stops reading a
+file whole and starts reading selectively. Measured at this repo's median of 10.64 tokens/line,
+that is ≈376 lines [M].
+
+**Design:**
+
+- **Ratchet, not hard cap.** No file may cross the threshold. A file already over may only shrink.
+- **First touch brings it under** [D]. The first change to a frozen file after go-live must bring
+  that file under the cap, not merely reduce it.
+- **Per-file waiver** [D]. A module that is genuinely cohesive may exceed the cap deliberately,
+  carrying a one-line reason in the file. Waivers are themselves ratcheted — the count may not
+  grow silently — following the pattern already used for the vulture ignore list.
+- **Scope: all `.py`** [D] — `src/`, `tests/`, `.scripts/`, `.basicly/core/`.
+
+**Measured cost at go-live** [M]:
+
+```text
+src/basicly     50 files    409,323 tok   23 over cap   worst 53,095  (13x)
+tests           95 files    596,347 tok   42 over cap   worst 60,235  (15x)
+.scripts         8 files     32,009 tok    3 over cap
+.basicly/core   26 files    100,916 tok   10 over cap
+TOTAL          179 files  1,138,595 tok   78 frozen
+```
+
+Note tests are the larger half and hold the worst offender; they will **not** fall out of a `src`
+refactor as a side effect.
+
+**Justification — and what it must never claim.** This is an **agent working-set gate**. The
+support is that LLM resolve rates degrade with context length even under perfect retrieval, and
+that successful SWE-bench trajectories cluster well under the threshold [S]. Stated honestly: no
+study isolates *file size* against edit success — that is plausible mechanism, not measurement.
+
+The defect-density literature must **not** be cited in support, because it argues the other way:
+
+- Hatton 1997 (IEEE Software 14(2)) found a U-shaped curve with **mid-size components best** and
+  *very small* ones worse, faults migrating to the interfaces [S].
+- Koru et al. (Empirical Software Engineering 2008/2010) found a monotonic power law where
+  **smaller modules are proportionally more defect-prone**, with no upturn [S].
+- Ousterhout's "classitis": many shallow modules accumulate interface complexity; depth beats
+  smallness [S].
+- No style guide prescribes a file length. Tool defaults span 300–2000 — a 6.7× spread, which is
+  itself evidence nobody measured anything [S].
+
+That our 4,000-token threshold lands inside Hatton's 200–400 LOC minimum is **coincidence**. It
+must not be presented as corroboration.
+
+### 9.4 Test file naming
+
+One test file per source module, enforced by name:
+
+- `test_<module>.py` — the default.
+- `test_<module>_<aspect>.py` — when one module's tests justify a split.
+
+Measured today [M]: 48 source modules, 84 test files — 41 exact matches, 43 following the derived
+form, and every source module without an exact match is covered under a derived name. The
+convention is already emergent; the gate makes it binding.
 
 ---
 
@@ -344,8 +408,10 @@ read; pass `--forward-subagent-text`; add light mode as a second dispatch path.
 | **OQ-3** | Validation passes, verification fails — what happens? NASA's nominal flow gives validation a *verified* product; parallel execution means validating a build that verify then rejects | D1 |
 | **OQ-4** | Who assigns the integrity level — Juno, a deterministic rule over touched paths, or the requester? | D2 |
 | **OQ-5** | Where do handoff artifacts live? `[policy.evidence]` exists but is presence-only | D4 |
-| **OQ-6** | Module-length threshold. No authoritative source exists; pylint's `C0302` default of 1000 is a tool default, not evidence | §9.1 |
-| **OQ-7** | Do the seven current oversized modules get a frozen exemption list that may only shrink, or a deadline? | §9.1 |
+| ~~OQ-6~~ | ~~File-size threshold~~ — **resolved**: 4,000 tokens, `SCOPE_FILE_READ_CAP` (§9.3) | — |
+| ~~OQ-7~~ | ~~Exemption list or deadline~~ — **resolved**: ratchet, first touch brings the file under cap, per-file waiver with a recorded reason (§9.3) | — |
+| **OQ-11** | Does the waiver need approval, or is a recorded reason enough? At L3 blast radius a self-granted waiver on a consumer surface is the weakest link in §9.3 | §9.3 |
+| **OQ-12** | What is a "touch" for the first-touch rule — any diff to the file, or a non-trivial one? A one-line typo fix triggering a 13× refactor is the failure mode to avoid | §9.3 |
 | **OQ-8** | Does Kill require human approval at every integrity level, or only L3? | D3 |
 | **OQ-9** | House direction on PEP 758 paren-free `except A, B:` | `python-guidelines` |
 | **OQ-10** | Does the plugin package ship the catalog, or is it a second distribution channel alongside `basicly install`? | §10 |
