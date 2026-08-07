@@ -607,6 +607,43 @@ def test_a_derivative_the_log_no_longer_implies_is_removed_rather_than_left(
     assert [path.name for path in snapshot.derived_paths(ledger)] == [snapshot.SNAPSHOT_NAME]
 
 
+def test_a_rebuild_deletes_no_log_and_loses_no_event(tmp_path: Path) -> None:
+    """The one thing `rebuild` must never do, asserted against the deleter rather than the list.
+
+    `rebuild` unlinks every path `snapshot.derived_paths` hands it, so the truth surviving
+    rests on that function's contract that a log can never appear in it — asserted where the
+    contract is *defined* (basicly-vkh0.14). This asserts it against the **deleter**.
+
+    It is not covering an uncovered mutation, and the difference is worth stating rather than
+    implying: widening `DERIVED_PATTERNS` to swallow the log glob was measured to fail ten
+    tests in this file, because a deleted log corrupts derived output that several of them
+    compare byte for byte. What this one adds is a *diagnosis*. Those ten failures name the
+    symptom — two rebuilds disagreeing, a fold refusing — and this one names the cause, which
+    is the distinction `fsck.py`'s own docstring draws when it suppresses a consequence
+    reported beside its root.
+
+    Run on a rotated ledger on purpose, so an archive, the current file, a checkpoint and a
+    snapshot all sit in one directory. That is the arrangement in which a too-wide pattern
+    does damage; on an unrotated ledger the two sets barely overlap.
+    """
+    ledger = _seed(tmp_path / "ledger")
+    snapshot.rotate(ledger, NEXT_PERIOD)
+    _append(ledger, [events.Draft(RECORD_A, "comment", {"text": "after the boundary"})])
+    snapshot.rebuild(ledger)
+    logs = {path.name: path.read_text(encoding="utf-8") for path in events.log_paths(ledger)}
+    assert len(logs) > 1, "the control: a rotated ledger holds an archive beside the current file"
+    assert set(snapshot.derived_paths(ledger)), "the control: there is a derived set to delete"
+    before, _ = events.read_events(ledger)
+
+    fsck.rebuild(ledger)
+
+    after = {path.name: path.read_text(encoding="utf-8") for path in events.log_paths(ledger)}
+    assert after == logs, "a rebuild removed or rewrote a log file"
+    assert [event.id for event in events.canonical_order(events.read_events(ledger)[0])] == [
+        event.id for event in events.canonical_order(before)
+    ]
+
+
 def test_two_rebuilds_of_one_log_are_byte_identical(tmp_path: Path) -> None:
     """Fold determinism (§14): what lets a rebuild be compared rather than argued about."""
     ledger = _seed(tmp_path / "ledger")
