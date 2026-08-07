@@ -10,6 +10,7 @@ built against.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
@@ -17,8 +18,10 @@ import shutil
 import subprocess  # nosec B404
 import sys
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping, Sequence
 from pathlib import Path
+from types import ModuleType
+from typing import Any
 
 from basicly import redact, tracker_usage
 
@@ -304,6 +307,7 @@ def run_br(
     proc = _spawn_tolerating_transient(br_path, repo_root, args)
     if check and proc.returncode != 0:
         raise RuntimeError(f"br {' '.join(args)} failed: {(proc.stderr or proc.stdout).strip()}")
+    _mirror_write(repo_root, args, proc)
     return proc
 
 
@@ -313,7 +317,558 @@ def try_run_br(repo_root: Path, args: list[str]) -> subprocess.CompletedProcess[
     if not br_path:
         return None
     _probe_version(br_path)
-    return _spawn_tolerating_transient(br_path, repo_root, args)
+    proc = _spawn_tolerating_transient(br_path, repo_root, args)
+    _mirror_write(repo_root, args, proc)
+    return proc
+
+
+# --- The owned tracker: dual write, then the flip (basicly-vkh0.19) ----------
+#
+# Steps 3 and 4 of the cutover in `docs/design/work-tracker.md` §5. The kit under
+# `.basicly/core/kit/tracker/` is the owned store; everything below is the engine
+# side of the seam that writes to it and, once flipped, reads from it.
+#
+# **Why all of it fits in this module.** `basicly-tcmy.14` collapsed eleven
+# hand-written unwraps of `br show --json` into :func:`read_record`, and every br
+# invocation already goes through :func:`run_br`/:func:`try_run_br`. Those two facts
+# are the whole reason the flip is a change to one file rather than to eight: the
+# engine's *write* surface is one funnel and its *record read* surface is one
+# function, so mirroring and flipping are both edits to a seam rather than to
+# callers.
+
+MODE_EXTERNAL = "external"
+MODE_DUAL = "dual"
+MODE_OWNED = "owned"
+
+# The cutover ladder, in the order §5 walks it. `external` is today's behaviour;
+# `dual` writes both stores with br still authoritative for reads; `owned` is the
+# flip — reads come from the ledger and br is *still written*, because the other ten
+# subcommands the engine spawns still answer out of it (see :func:`read_record`).
+TRACKER_MODES = (MODE_EXTERNAL, MODE_DUAL, MODE_OWNED)
+DEFAULT_TRACKER_MODE = MODE_EXTERNAL
+
+# The kit's work-tracker store, relative to the repo that installed it.
+KIT_TRACKER_DIR = Path(".basicly") / "core" / "kit" / "tracker"
+
+# The ledger directory, taken off the usage ledger's own path rather than spelled a
+# second time: both artifacts live in `.basicly/ledger/`, and
+# `.scripts/kit_deployment.py` gates that directory's ignore rules against the same
+# location. A literal here could drift from either without a gate noticing.
+LEDGER_DIR = tracker_usage.LEDGER_FILE.parent
+
+# The name the kit's differential is loaded under. Fixed, and checked against
+# `sys.modules` before loading, for the reason `differential._load_migrate` gives:
+# two loads of one file give two `Event` classes and an `isinstance` against the
+# wrong one is false for the right reason.
+_KIT_MODULE_NAME = "basicly_tracker_kit_differential"
+
+# How a mirrored fact says it got here (§9.6). Distinguishes an event the dual write
+# recorded from one `migrate.py` extracted out of the export, and it is one of
+# `migrate.RESERVED_KEYS`, so it is dropped again when a record is rendered back.
+MIRROR_PROVENANCE = "dual-write"
+
+# br's writes that carry no record fact, so there is nothing to mirror. Named rather
+# than defaulted to "skip", because the default for an unrecognised write is a
+# refusal — see :func:`_mirror_drafts`.
+#
+# `sync` moves the whole store between its database and its export and `init` creates
+# the store; neither states anything about a record. The owned ledger needs no
+# equivalent of either: it *is* the export (git is its transport, §4) and
+# `events.append` creates its directory on first write.
+_UNMIRRORED_WRITES = frozenset({"init", "sync"})
+
+# `br update`'s flags, as the ledger fact each one records. Two mappings rather than
+# one because `status` has its own event kind while everything else is a `field`.
+#
+# **Deliberately only what the engine spawns** (`br update -t` in `classify`,
+# `br update --external-ref` in `loop`), plus the status flag. A flag absent here is
+# not dropped — it raises :class:`TrackerDivergenceError`, because a mirrored write that
+# silently omitted half of what br recorded is exactly the divergence this mode
+# exists to prevent, and it would be invisible until the differential ran.
+_UPDATE_FIELD_FLAGS = {
+    "-t": "issue_type",
+    "--type": "issue_type",
+    "--external-ref": "external_ref",
+}
+_UPDATE_STATUS_FLAGS = frozenset({"-s", "--status"})
+
+# `br create`'s flags, as the fields the created record carries.
+_CREATE_FIELD_FLAGS = {
+    "-t": "issue_type",
+    "--type": "issue_type",
+    "-p": "priority",
+    "--priority": "priority",
+    "-l": "labels",
+    "--label": "labels",
+    "-d": "description",
+    "--description": "description",
+    "--parent": "parent",
+}
+
+# ...and the shape each one has to be stored in, because a flag's value arrives as one
+# argv string while `br show --json` returns it typed. Not cosmetic: `supervise` reads
+# ``record["labels"]`` as a list and a stored ``"phase-6,ready"`` iterates as characters,
+# so a lane's follow-up would inherit twelve one-letter labels after the flip. Anything
+# absent here is text on both sides.
+_CREATE_FIELD_TYPES: dict[str, Callable[[str], object]] = {
+    "priority": int,
+    "labels": lambda value: [part for part in value.split(",") if part],
+}
+
+# Flags whose value is the following token, per subcommand. Needed to find the
+# positional a write is about: `br gate report` puts the issue id *last*, after four
+# or five flag/value pairs, so "the last argument" is only right by accident and
+# "every token that is not a flag" would collect `--note`'s free text as one.
+_VALUE_FLAGS: dict[str, frozenset[str]] = {
+    "create": frozenset(_CREATE_FIELD_FLAGS) | {"-a", "--assignee"},
+    "update": frozenset(_UPDATE_FIELD_FLAGS) | _UPDATE_STATUS_FLAGS,
+    "close": frozenset({"--reason"}),
+    "dep add": frozenset({"-t", "--type"}),
+    "gate report": frozenset({"--gate", "--provider", "--status", "--note", "--actor"}),
+}
+
+# `br gate report --status` spells a pass this way; anything else is a failure, which
+# is `policy.GateStatus`'s own reading of the same field.
+_GATE_PASS_STATUS = "pass"
+
+# The status br gives a record it just created, when the `--json` echo does not say.
+_CREATED_STATUS = "open"
+
+
+class TrackerDivergenceError(RuntimeError):
+    """The owned ledger did not record a write the external tracker accepted.
+
+    A hard failure on the write path, never a warning (`basicly-vkh0.19`'s first
+    acceptance criterion). The two stores are only worth running side by side while
+    they hold the same facts: a mirrored write that failed and said so in a log line
+    leaves the ledger quietly short of one event, and the *next* thing to notice is
+    the shadow differential — after however many more writes landed on top.
+
+    A subclass of ``RuntimeError`` so a caller that already handles a br failure
+    handles this one, and so the message is what `run_br` callers already print.
+    """
+
+
+# One-slot holder for the mode reader. A list rather than a rebound module global:
+# `global` is the shape a reader has to chase, and this dependency is inverted
+# already (see :func:`set_mode_reader`), so it should be obvious rather than terse.
+_mode_reader: list[Callable[[Path], str]] = []
+
+# Kit modules by resolved tracker-directory path.
+_kit_modules: dict[str, ModuleType] = {}
+
+
+def set_mode_reader(reader: Callable[[Path], str] | None) -> None:
+    """Install the function that answers which tracker mode a repo declares.
+
+    **The dependency is inverted, and an import cycle is why.** The declaration lives
+    in ``[tracker] mode`` and only :mod:`basicly.config` may read it — it owns the
+    three-layer merge over ``basicly.toml``, the gitignored overlay and the session
+    overrides, and the strict schema that refuses a key this engine cannot honour.
+    This module cannot import it: ``config`` imports ``runner``, ``runner`` imports
+    ``run_record``, and ``run_record`` imports this module, so ``br -> config`` closes
+    a genuine cycle rather than merely inverting a lint tier. So ``config`` reaches
+    down and installs its reader here, which is the same direction every other engine
+    module takes to this one.
+
+    With no reader installed the mode is :data:`DEFAULT_TRACKER_MODE`, which is the
+    behaviour this module had before the cutover existed — nothing is mirrored and
+    nothing is flipped. Every process that reaches the tracker imports ``config``
+    (``basicly.cli`` does, and it is the only entry point), and
+    ``tests/test_br_seam.py`` asserts the installation rather than assuming it.
+
+    Passing ``None`` uninstalls, which is what a test that wants the pre-cutover
+    behaviour back should do.
+    """
+    _mode_reader.clear()
+    if reader is not None:
+        _mode_reader.append(reader)
+
+
+def tracker_mode(repo_root: Path) -> str:
+    """The cutover mode *repo_root* declares, or :data:`DEFAULT_TRACKER_MODE`."""
+    if not _mode_reader:
+        return DEFAULT_TRACKER_MODE
+    return _mode_reader[0](Path(repo_root))
+
+
+def ledger_dir(repo_root: Path) -> Path:
+    """The owned ledger's directory for *repo_root*.
+
+    **One ledger per repo, never one per worktree**, which is why this goes through
+    :func:`tracker_usage.ledger_root` rather than joining onto *repo_root*. A loop
+    worktree shares the base checkout's tracker through br's ``redirect`` file; a
+    ledger that did not follow the same rule would take a lane's writes into the
+    worktree's own copy and lose every one of them at teardown, which is exactly what
+    happened to the usage spool (basicly-vkh0.8).
+    """
+    return tracker_usage.ledger_root(Path(repo_root)) / LEDGER_DIR
+
+
+def kit(repo_root: Path) -> Any:
+    """The installed kit's ``differential`` module, which carries the store under it.
+
+    The differential rather than the event log directly, for the reason it loads
+    ``migrate`` rather than ``events``: it is the module that owns every vocabulary
+    the engine has to write in the store's own terms — the ``edge`` kind, the ``gate``
+    kind and its payload keys — so reaching it through this one attribute chain
+    (``kit(root).events``, ``kit(root).migrate``) keeps a second spelling of any of
+    them impossible.
+
+    Raises:
+        TrackerDivergenceError: the kit is not installed, or will not load. A hard failure
+            rather than a degrade: a mode above ``external`` has already promised that
+            both stores hold the same facts.
+    """
+    directory = Path(repo_root) / KIT_TRACKER_DIR
+    source = directory / "differential.py"
+    # Asked of the filesystem before either cache, and that ordering is the finding:
+    # reusing an already-loaded kit is right (one `Event` class per process), but if the
+    # reuse came first then a repo with no kit installed would be answered out of some
+    # other repo's, and the mode would look enabled while writing nowhere.
+    if not source.is_file():
+        raise TrackerDivergenceError(f"the tracker kit is not installed at {directory}")
+    key = str(directory.resolve())
+    if (cached := _kit_modules.get(key)) is not None:
+        return cached
+    module = sys.modules.get(_KIT_MODULE_NAME)
+    if module is None:
+        spec = importlib.util.spec_from_file_location(_KIT_MODULE_NAME, source)
+        if spec is None or spec.loader is None:
+            raise TrackerDivergenceError(f"the tracker kit is not installed at {directory}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[_KIT_MODULE_NAME] = module
+        try:
+            spec.loader.exec_module(module)
+        except (OSError, ImportError) as exc:
+            del sys.modules[_KIT_MODULE_NAME]
+            raise TrackerDivergenceError(
+                f"the tracker kit at {directory} did not load: {exc}"
+            ) from exc
+    _kit_modules[key] = module
+    return module
+
+
+def _positionals(args: Sequence[str], value_flags: Collection[str]) -> list[str]:
+    """The positional words in *args*, with each value-taking flag's value consumed.
+
+    ``--flag=value`` carries its own value, so only the space-separated form skips the
+    next token. Anything after a flag this subcommand does not take a value for stays
+    a positional, which is what makes an unexpected argument visible to the caller
+    below rather than silently absorbed.
+    """
+    found: list[str] = []
+    skip = False
+    for arg in args:
+        if skip:
+            skip = False
+            continue
+        if arg.startswith("-"):
+            skip = "=" not in arg and arg in value_flags
+            continue
+        found.append(arg)
+    return found
+
+
+def _flag_pairs(args: Sequence[str], value_flags: Collection[str]) -> list[tuple[str, str]]:
+    """Each ``(flag, value)`` in *args*, in the order given, both spellings accepted."""
+    pairs: list[tuple[str, str]] = []
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg.startswith("-"):
+            name, sep, inline = arg.partition("=")
+            if sep:
+                pairs.append((name, inline))
+            elif name in value_flags and index + 1 < len(args):
+                pairs.append((name, args[index + 1]))
+                index += 1
+            else:
+                pairs.append((name, ""))
+        index += 1
+    return pairs
+
+
+def _payload(kit_module: Any, **fields: object) -> dict[str, object]:
+    """A mirrored event's payload, carrying how the fact got here."""
+    payload: dict[str, object] = {kit_module.migrate.PROVENANCE_KEY: MIRROR_PROVENANCE}
+    payload.update(fields)
+    return payload
+
+
+def _update_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[object]:
+    """Drafts for one ``br update``.
+
+    Every flag has to be translatable. An unrecognised one raises rather than being
+    dropped, because the alternative is a ledger that is missing precisely the field
+    somebody just added a flag for.
+    """
+    events = kit_module.events
+    positional = _positionals(args, _VALUE_FLAGS["update"])
+    if len(positional) != 2:
+        raise TrackerDivergenceError(f"br update names no single issue: {' '.join(args)}")
+    record = positional[1]
+    drafts: list[object] = []
+    for flag, value in _flag_pairs(args, _VALUE_FLAGS["update"]):
+        if flag in _UPDATE_STATUS_FLAGS:
+            drafts.append(
+                events.Draft(record, events.KIND_STATUS, _payload(kit_module, status=value))
+            )
+        elif (name := _UPDATE_FIELD_FLAGS.get(flag)) is not None:
+            drafts.append(
+                events.Draft(
+                    record,
+                    events.KIND_FIELD,
+                    _payload(kit_module, name=name, value=value),
+                )
+            )
+        else:
+            raise TrackerDivergenceError(
+                f"br update {flag} has no owned-ledger equivalent, so mirroring it would "
+                f"drop the field br just wrote; add it to br._UPDATE_FIELD_FLAGS"
+            )
+    return drafts
+
+
+def _create_drafts(kit_module: Any, args: Sequence[str], stdout: str) -> list[object]:
+    """Drafts for one ``br create``, whose record id only the reply carries.
+
+    ``--parent`` becomes a ``parent-child`` edge on the new record rather than a field:
+    that is where both stores hold it (`differential.Edge`), and it is what makes the
+    parent read as decomposed.
+    """
+    events = kit_module.events
+    try:
+        reply = json.loads(stdout)
+    except ValueError as exc:
+        raise TrackerDivergenceError(
+            f"br create replied with no JSON record, so the id it minted cannot be mirrored: {exc}"
+        ) from exc
+    record = reply.get("id") if isinstance(reply, dict) else None
+    if not isinstance(record, str) or not record:
+        raise TrackerDivergenceError("br create replied with no issue id to mirror")
+    positional = _positionals(args, _VALUE_FLAGS["create"])
+    fields: dict[str, object] = {"title": positional[1]} if len(positional) > 1 else {}
+    parent = ""
+    for flag, value in _flag_pairs(args, _VALUE_FLAGS["create"]):
+        name = _CREATE_FIELD_FLAGS.get(flag)
+        if name == "parent":
+            parent = value
+        elif name is not None:
+            fields[name] = _CREATE_FIELD_TYPES.get(name, str)(value)
+    status = reply.get("status")
+    drafts: list[object] = [
+        events.Draft(record, events.KIND_CREATED, _payload(kit_module, **fields)),
+        events.Draft(
+            record,
+            events.KIND_STATUS,
+            _payload(
+                kit_module,
+                status=status if isinstance(status, str) and status else _CREATED_STATUS,
+            ),
+        ),
+    ]
+    if parent:
+        # The kit's own name for the edge, not a fourth spelling of the string: this is
+        # exactly the value `differential.children_of` inverts the population on, so a
+        # literal here would make a mirrored parent invisible to the ready query.
+        drafts.append(
+            _edge_draft(kit_module, record, parent, kit_module.DEFAULT_VOCABULARY.parent_child_type)
+        )
+    return drafts
+
+
+def _edge_draft(kit_module: Any, record: str, target: str, edge_type: str) -> object:
+    """One dependency edge, recorded on the dependent — where both stores hold it."""
+    migrate = kit_module.migrate
+    payload = _payload(kit_module)
+    payload[migrate.EDGE_FROM] = record
+    payload[migrate.EDGE_TO] = target
+    payload[migrate.EDGE_TYPE] = edge_type
+    return kit_module.events.Draft(record, migrate.KIND_EDGE, payload)
+
+
+def _gate_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[object]:
+    """Drafts for one ``br gate report``.
+
+    **The writer `differential.KIND_GATE` was defined for.** The export carries no gate
+    field at all, so `migrate.py` had nothing to import and the third of the three
+    queries the shadow differential compares had no owned-side rows to compare — it
+    reported ``inconclusive`` on every population. This is what fills it.
+    """
+    kind = kit_module.KIND_GATE
+    positional = _positionals(args, _VALUE_FLAGS["gate report"])
+    if len(positional) != 3:
+        raise TrackerDivergenceError(f"br gate report names no single issue: {' '.join(args)}")
+    values = dict(_flag_pairs(args, _VALUE_FLAGS["gate report"]))
+    gate = values.get("--gate", "")
+    provider = values.get("--provider", "")
+    if not gate or not provider:
+        raise TrackerDivergenceError(f"br gate report names no gate and provider: {' '.join(args)}")
+    payload = _payload(kit_module)
+    payload[kit_module.GATE_NAME_KEY] = gate
+    payload[kit_module.GATE_PROVIDER_KEY] = provider
+    payload[kit_module.GATE_PASSED_KEY] = values.get("--status", "") == _GATE_PASS_STATUS
+    return [kit_module.events.Draft(positional[2], kind, payload)]
+
+
+def _close_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[object]:
+    """Drafts for one ``br close``: the status move, and only that.
+
+    The ``--reason`` is not mirrored as a comment. br records it as a field of the
+    close rather than as a comment row, so writing one would put a comment on the
+    owned side that the reference side does not hold — a difference invented by the
+    mirror rather than found by it.
+    """
+    events = kit_module.events
+    positional = _positionals(args, _VALUE_FLAGS["close"])
+    if len(positional) != 2:
+        raise TrackerDivergenceError(f"br close names no single issue: {' '.join(args)}")
+    return [events.Draft(positional[1], events.KIND_STATUS, _payload(kit_module, status="closed"))]
+
+
+def _comment_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[object]:
+    """Drafts for one ``br comments add`` — 45% of this repo's tracker traffic.
+
+    Read by position rather than through :func:`_positionals`, and that is the whole
+    point: the body is arbitrary free text, so a body beginning with ``-`` would be
+    taken for a flag and silently dropped — losing exactly the checkpoint or rework
+    marker the engine's whole policy layer is carried in.
+    """
+    events = kit_module.events
+    if len(args) != 4:
+        raise TrackerDivergenceError(
+            f"br comments add takes one issue and one body; got {len(args)} arguments"
+        )
+    payload = _payload(kit_module, text=args[3])
+    return [events.Draft(args[2], events.KIND_COMMENT, payload)]
+
+
+def _dep_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[object]:
+    """Drafts for one ``br dep add``, recorded on the dependent."""
+    positional = _positionals(args, _VALUE_FLAGS["dep add"])
+    if len(positional) != 4:
+        raise TrackerDivergenceError(f"br dep add names no single edge: {' '.join(args)}")
+    values = dict(_flag_pairs(args, _VALUE_FLAGS["dep add"]))
+    edge_type = values.get("-t") or values.get("--type") or ""
+    if not edge_type:
+        raise TrackerDivergenceError(f"br dep add names no edge type: {' '.join(args)}")
+    return [_edge_draft(kit_module, positional[2], positional[3], edge_type)]
+
+
+# The record-write surface, as the translation each one takes. A dispatch table rather
+# than a chain of comparisons so the mirrored set is *readable as a set* — it is the
+# thing a reviewer has to check against the measured surface, and a branch buried in a
+# function body is not.
+_MIRRORED_WRITES: dict[str, Callable[[Any, Sequence[str], str], list[object]]] = {
+    "close": _close_drafts,
+    "comments add": _comment_drafts,
+    "create": _create_drafts,
+    "dep add": _dep_drafts,
+    "gate report": _gate_drafts,
+    "update": _update_drafts,
+}
+
+
+def _mirror_drafts(kit_module: Any, args: Sequence[str], stdout: str) -> list[object]:
+    """The owned-ledger drafts recording the same fact *args* just wrote to br.
+
+    Empty for a read and for the two writes that state nothing about a record. Every
+    other write is translated, and one this function does not know **raises**: the
+    surface was frozen by measurement (`basicly.tracker_usage`), so a write outside it
+    is a new dependency on br that nobody decided to take, and the mirror is the only
+    place that can still see it before the two stores drift.
+
+    Raises:
+        TrackerDivergenceError: *args* is a write with no owned-ledger translation.
+    """
+    surface, _ = tracker_usage.split_invocation(list(args))
+    if tracker_usage.classify_access(surface) == "read" or surface in _UNMIRRORED_WRITES:
+        return []
+    translate = _MIRRORED_WRITES.get(surface)
+    if translate is None:
+        raise TrackerDivergenceError(
+            f"br {surface} has no owned-ledger translation, so the dual write cannot keep "
+            f"the two stores in step; add one to br._MIRRORED_WRITES, or list it in "
+            f"br._UNMIRRORED_WRITES if it states nothing about a record"
+        )
+    return translate(kit_module, args, stdout)
+
+
+def _mirror_write(
+    repo_root: Path, args: Sequence[str], proc: subprocess.CompletedProcess[str]
+) -> None:
+    """Record on the owned ledger the write br just accepted.
+
+    A no-op in :data:`MODE_EXTERNAL`, and a no-op for a call br refused — a rejected
+    write changed neither store, so mirroring it is what would create the divergence.
+
+    Every failure below is raised, never logged, and that is the acceptance criterion
+    rather than a preference: the whole value of running two stores side by side is
+    that they hold the same facts, and the *only* moment at which a missing mirror is
+    cheap to fix is before the next write lands on top of it.
+    """
+    if tracker_mode(repo_root) == MODE_EXTERNAL or proc.returncode != 0:
+        return
+    kit_module = kit(repo_root)
+    try:
+        drafts = _mirror_drafts(kit_module, args, proc.stdout or "")
+        if drafts:
+            kit_module.events.append(
+                ledger_dir(repo_root), drafts, redact=redact.redact_machine_paths
+            )
+    except TrackerDivergenceError:
+        raise
+    except (kit_module.events.LedgerError, OSError, ValueError) as exc:
+        raise TrackerDivergenceError(
+            f"br {' '.join(args)} landed on the external tracker and not on the owned ledger: {exc}"
+        ) from exc
+
+
+def owned_record(repo_root: Path, issue_id: str) -> dict | None:
+    """*issue_id* as the owned ledger holds it, in ``br show --json``'s shape.
+
+    The flipped half of :func:`read_record`, and it keeps that function's contract
+    rather than inventing one: None for every way the read comes back without a
+    record, never an exception.
+
+    **A tombstoned record reads as absent**, which is not a detail. The owned store
+    expresses a deletion by keeping the record and flagging it (`events.py`), and the
+    live tracker expresses the same deletion by not returning the record at all. A
+    reader that saw the tombstoned record would hand out work on a bead somebody
+    deleted — the defect `differential.is_ready` names — so the two stores are made to
+    spell absence the same way here, at the seam, once.
+
+    Two passes over one event list, and the second is not redundancy: the fold is the
+    authority for status, fields and comments, while `events.py` has no handler for the
+    ``edge`` and ``gate`` kinds at all, so `differential.views_from_events` is the one
+    reader of those. Duplicating either here is the drift the kit's own loaders exist
+    to prevent.
+    """
+    try:
+        kit_module = kit(repo_root)
+        found = kit_module.read_ledger(ledger_dir(repo_root))
+        # Not named `folded`: `.scripts/wired_or_deleted.py` counts an identifier
+        # anywhere outside `tests/` as a read of a same-named record field, so a local
+        # by that name silently retires the suppression on
+        # `basicly.supervise.DispatchBundle.folded` and turns that gate red here.
+        ledger_fold = kit_module.events.fold(found)
+        state = ledger_fold.records.get(issue_id)
+        if state is None or state.tombstoned:
+            return None
+        view = kit_module.views_from_events(found).get(issue_id)
+    except TrackerDivergenceError, OSError, ValueError:
+        return None
+    reserved = kit_module.migrate.RESERVED_KEYS
+    record: dict = {key: value for key, value in state.fields.items() if key not in reserved}
+    record["id"] = issue_id
+    record["status"] = state.status or ""
+    record["comments"] = [{"text": text} for text in state.comments]
+    record["dependencies"] = [
+        {"id": edge.target, "dependency_type": edge.type}
+        for edge in (view.dependencies if view is not None else ())
+    ]
+    return record
 
 
 # --- Export scrubbing (basicly-vkh0.5) --------------------------------------
@@ -455,7 +1010,23 @@ def read_record(repo_root: Path, issue_id: str) -> dict | None:
     br spells a single record two ways — a bare object, or a one-element array — so the
     unwrap is part of the contract rather than a caller's concern, the same reason
     :func:`dependency_edge` reads both spellings of an edge.
+
+    **The flip lands here and nowhere else** (`basicly-vkh0.19`). In
+    :data:`MODE_OWNED` the record comes from :func:`owned_record` instead of from a
+    spawn, and the contract above is unchanged — the same six absences answer None,
+    and :func:`require_record` still raises one message naming the bead. That the
+    choice of what "not found" means was already made once, here, is the whole reason
+    the flip is not eleven decisions.
+
+    What is deliberately *not* flipped: the other ten subcommands the engine spawns.
+    `comments list`, `gate list`, `blocked`, `list`, `lint`, `dep cycles` and
+    `scheduler` are each read at their own call site with their own payload shape —
+    they are not behind a seam, so flipping them would mean rewriting callers, which
+    is the thing this bead is required not to do. That is why the external tracker is
+    still written in :data:`MODE_OWNED` rather than merely tolerated.
     """
+    if tracker_mode(repo_root) == MODE_OWNED:
+        return owned_record(repo_root, issue_id)
     try:
         proc = try_run_br(repo_root, ["show", issue_id, "--json"])
     except RuntimeError, OSError:
