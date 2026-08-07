@@ -28,6 +28,11 @@
 > **How to read this document**: each numbered Part opens with a short **Summary**
 > you can scan alone to get the full picture, followed by **Details** you only need
 > when implementing or debugging that part. Skip straight to the Part you need.
+>
+> **This is the reference quadrant, not the entry point.** A consumer starting from
+> `basicly install` wants [`docs/tutorial/first-loop.md`](../tutorial/first-loop.md)
+> and then [`docs/how-to/`](../how-to/); §13.1 records how that layer relates to
+> this one.
 
 ## 0) Idea
 
@@ -1537,6 +1542,41 @@ dependency.
 
 ## 13) References
 
+### 13.1 The documentation layer
+
+**Summary**: this file is the _reference_ quadrant and nothing else. A reference
+answers "what is it and how is it specified"; it cannot also be the page that
+gets a new consumer from `basicly install` to a first shipped unit, and trying to
+make it both is what left that path missing. The four quadrants are separate
+files with separate jobs:
+
+| Quadrant | Where | Job | Written for |
+| --- | --- | --- | --- |
+| Tutorial | [`docs/tutorial/first-loop.md`](../tutorial/first-loop.md) | one guaranteed-success path, install → shipped bead, no options offered | a consumer on day one |
+| How-to | [`docs/how-to/`](../how-to/) | the recurring operations, one page per task | a consumer with a job to do |
+| Reference | this file, plus [`CONTRIBUTING.md`](../../CONTRIBUTING.md) | the system as specified | anyone implementing or debugging |
+| Explanation | [`docs/design/`](../design/), [`docs/research/`](../research/) | why one question was settled the way it was | anyone changing a decision |
+
+Three rules keep the layer from rotting into a second, competing account of the
+system:
+
+1. **A tutorial command is executed before it is written.** Every command and
+   every quoted output in the tutorial was run against a fresh repo. A
+   walkthrough is the one surface where an untested step costs the reader the
+   whole session, because they have no model yet to notice it is wrong.
+2. **A how-to states the operation and its failure text, not the design.** Where
+   it needs a reason, it links to the section here that owns it. Duplicated
+   rationale is what goes stale first.
+3. **Where they disagree with this file, this file wins** — same rule as §15's
+   rendered copies. The tutorial and the how-tos are consumer-facing renderings
+   of §§4, 6, 9 and 12, not independent sources.
+
+The current pages: the tutorial, and how-tos for customizing the catalog,
+wiring the verify gate, unblocking a refused commit, upgrading and drift,
+running parallel lanes, and resuming a track.
+
+### 13.2 External references
+
 - pre-commit: <https://pre-commit.com/>
 - Trunk Code Quality: <https://docs.trunk.io/code-quality/overview>
 - MegaLinter: <https://github.com/oxsecurity/megalinter>
@@ -1772,7 +1812,7 @@ Pillar 01 — **guidance**:
 | Deterministic lexical routing evals — rank-1 rate in CI, no embeddings | `building` | §14.4, [`catalog-efficacy`](../design/catalog-efficacy-design.md) |
 | An eval case file per catalog entry, enforced as a structural failure | `building` | §14.4 |
 | Relieve the always-on baseline by scoping what is conditional | `building` | §7, [`steering-surfaces`](../design/steering-surfaces-design.md) |
-| Tutorial and how-to layer, so a new consumer has a path from install to first shipped unit | `building` | Diátaxis gap, plan Phase 3 |
+| Tutorial and how-to layer, so a new consumer has a path from install to first shipped unit | `shipped` | §13.1 — the tutorial was executed end to end on a fresh repo before it was written |
 | Whether an individual entry changes behaviour, and which baseline rules bind while an agent works | `researching` | §14.4 — recall measured 2026-07-26; adherence still open |
 | Cursor as a target; a native Codex scoped-rules renderer | `deferred` | §11 |
 

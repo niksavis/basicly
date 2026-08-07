@@ -167,6 +167,30 @@ work graph.
 The full design — directory contract, catalog model, verification pipeline —
 lives in [`docs/architecture/architecture.md`](docs/architecture/architecture.md).
 
+## Documentation
+
+Start with the tutorial if you have just installed; it is the only page that
+assumes nothing:
+
+- **[Tutorial — from install to your first shipped bead](docs/tutorial/first-loop.md)**
+  — a walkthrough on a scratch repo, no agent spend: file a bead, build it in its
+  own worktree, land it, close it.
+
+Task-focused guides for the recurring operations:
+
+| How to | Covers |
+| --- | --- |
+| [Customize the guidance your agents read](docs/how-to/customize-the-catalog.md) | overlay fragments, path-scoped rules, what never to hand-edit |
+| [Wire up the verify gate](docs/how-to/wire-up-the-verify-gate.md) | declare your checks; an empty gate passes vacuously |
+| [Unblock a commit a hook refused](docs/how-to/unblock-a-commit.md) | the refusals you will actually meet, and the one-line fixes |
+| [Upgrade, check drift, uninstall](docs/how-to/upgrade-and-check-drift.md) | re-running install *is* the upgrade |
+| [Run several lanes in parallel](docs/how-to/run-parallel-lanes.md) | decompose, preflight, grants, the serial merge queue |
+| [Resume or hand over a track](docs/how-to/resume-a-track.md) | after a crash, or onto a different agent family |
+
+Reference: [`docs/architecture/architecture.md`](docs/architecture/architecture.md)
+for the system, [`CONTRIBUTING.md`](CONTRIBUTING.md) for developing basicly
+itself.
+
 ## Everyday commands
 
 Day-to-day use needs nothing beyond `install` above. The scaffolded VS Code
@@ -195,7 +219,7 @@ capability sits under the pillar it belongs to, grouped by what it currently is:
 
 | Pillar | `✓` shipped | `▶` building | `◇` designed · `?` researching |
 | --- | --- | --- | --- |
-| **01 · guidance** | one catalog → 3 agent families<br>drift gate in CI<br>path-scoped rules tier<br>invocation axis per entry<br>model tiers · committed model map | lexical routing evals<br>an eval case per entry<br>always-on baseline relief<br>tutorial and how-to layer | `?` do entries change behaviour |
+| **01 · guidance** | one catalog → 3 agent families<br>drift gate in CI<br>path-scoped rules tier<br>invocation axis per entry<br>model tiers · committed model map<br>tutorial and how-to layer | lexical routing evals<br>an eval case per entry<br>always-on baseline relief | `?` do entries change behaviour |
 | **02 · gates** | git hooks · commit · push<br>agent hooks · Claude · Copilot<br>verify pipeline · 3 modes | gate taxonomy by type<br>severity on judged output<br>rework convergence check<br>install reports its tier | — |
 | **03 · the loop** | single-track loop<br>worktree isolation<br>parallel lanes · merge queue<br>autonomy grants · spend cap<br>release automation<br>scope sized by what a lane reads<br>measured context per dispatch | per-model spend forecast<br>unattended multi-lane run | `◇` a named role per judgment step<br>`?` cost per landed package<br>`?` deterministic AST localisation |
 | **04 · the work graph** | issues · deps · gates<br>phase derived from state<br>atomic shared-export publish | dispatch score recorded | `◇` owned in-process event log<br>`◇` provenance on every edge<br>`◇` fsck and rebuild |

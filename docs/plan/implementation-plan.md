@@ -565,8 +565,10 @@ Rules any release must honour. Each exists because breaking it cost a session or
 
 Owner rule: **the code is the authority, `architecture.md` is the human-readable summary, and every
 other document under `docs/` is temporary** — deleted once its design is code and its surviving
-rules are in architecture. This register is what makes the rule enforceable: if a document is not
-listed here it should not exist.
+rules are in architecture. The one exception is the consumer-facing layer (`tutorial/`, `how-to/`):
+it documents shipped behaviour for someone who does not read this repo's code, so it is corrected
+against the code rather than deleted. This register is what makes the rule enforceable: if a
+document is not listed here it should not exist.
 
 `Live` means it specifies work not yet built, so deleting it loses a requirement. `Deletable` means
 its design is implemented and only the listed precondition stands between it and deletion.
@@ -575,6 +577,8 @@ its design is implemented and only the listed precondition stands between it and
 | --- | --- | --- |
 | `architecture/architecture.md` | **Authoritative** | Never deleted. Corrected against the code whenever the two disagree. |
 | `plan/implementation-plan.md` | **Authoritative** | This file. Deleted when `v1.0.0` ships and the ladder is spent. |
+| `tutorial/first-loop.md` | **Consumer-facing** | Never deleted while `basicly install` ships. Re-executed against a fresh repo whenever a command or its output changes (`imnu.2`). |
+| `how-to/customize-the-catalog.md`, `how-to/wire-up-the-verify-gate.md`, `how-to/unblock-a-commit.md`, `how-to/upgrade-and-check-drift.md`, `how-to/run-parallel-lanes.md`, `how-to/resume-a-track.md` | **Consumer-facing** | One page per recurring operation; a page goes when its operation does. Rationale stays in architecture — a how-to that starts explaining *why* is drifting into the reference (`imnu.2`). |
 | `design/work-tracker.md` | **Live** | `v0.8.0` ships. Five inbound references from `br.py`, `cli.py`, `tracker_surface.py`; it is the only record of what the replacement must be, including the requirements register. |
 | `design/agent-roster-design.md` | **Live** | `v0.10.0` ships the roster. Referenced from `.basicly/core/models/README.md`. |
 | `design/factory-design.md` | Deletable after `kjc5.13` | Absorb D1–D10 into architecture, then delete. `commit.py` names it; remove that reference first. |
