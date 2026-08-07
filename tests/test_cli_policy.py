@@ -39,6 +39,11 @@ class _FakeBr:
             # An open, childless session root — enough for active_grant's
             # expiry check and the grant-approval session walk.
             return _Proc(json.dumps([{"status": "open", "dependents": []}]))
+        if args[:1] == ["update"]:
+            # An answered `park` defers the lane (basicly-u2hl.3). Accepted rather
+            # than asserted on here: what that write has to achieve belongs with the
+            # gate verbs in `test_cli_gate_verbs.py`.
+            return _Proc("")
         raise AssertionError(f"unexpected br call: {args}")
 
 
@@ -426,7 +431,12 @@ def test_a_retry_answer_may_carry_a_rationale(
 def test_answering_with_park_grants_nothing(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Only one of the three offered choices extends the budget."""
+    """Only one of the three offered choices extends the budget.
+
+    ``park`` does now carry out a route of its own — it defers the lane
+    (``tests/test_cli_gate_verbs.py``) — but it is still not the one that buys
+    another attempt, which is what this asserts.
+    """
     _install_decisions_fake(monkeypatch)
     item = _escalate()
     assert cli.main(["loop", "answer", item.decision_id, "park", "--by", "niksa"]) == 0
