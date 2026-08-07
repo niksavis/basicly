@@ -2784,7 +2784,15 @@ def _judged_no_lane(monkeypatch: pytest.MonkeyPatch, answer: str = rubrics.NO) -
         loop.rubrics,
         "evaluate",
         lambda *_a, **_k: [
-            rubrics.CheckVerdict("acceptance", rubrics.JUDGED, answer, "criterion 2 unevidenced")
+            rubrics.CheckVerdict(
+                "acceptance",
+                rubrics.JUDGED,
+                answer,
+                "criterion 2 unevidenced",
+                # Only a judged NO is a finding, and only a finding carries a
+                # severity — the record refuses the other combinations outright.
+                rubrics.BLOCKER if answer == rubrics.NO else "",
+            )
         ],
     )
     monkeypatch.setattr(loop.rubrics, "report_gate", lambda *_a, **_k: (True, "ok"))
@@ -2815,7 +2823,9 @@ def test_judged_no_queues_a_decision_and_holds_the_lane(
     assert len(queued) == 1
     issue, kind, question, detail = queued[0]
     assert (issue, kind) == ("i", "validate")
-    assert "acceptance" in question
+    # The severity rides onto the queued item: a queue that renders a MINOR and a
+    # BLOCKER identically is a queue disposed of in arrival order.
+    assert "acceptance (BLOCKER)" in question
     assert detail == "acceptance: criterion 2 unevidenced"
     assert merged == []  # the lane holds: it neither lands nor bounces
     assert result.blocked and result.action == "decision"

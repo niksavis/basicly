@@ -24,14 +24,15 @@ from __future__ import annotations
 
 import re
 import shlex
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 
-from . import br, run_record, runner, verify
+from . import br, review, run_record, runner, verify
 from .catalog import bundled_catalog_root
-from .config import RUBRIC_GATE_PROVIDER, VerifyCheck, load_runner_config
+from .config import RUBRIC_GATE_PROVIDER, RunnerConfig, VerifyCheck, load_runner_config
 
 RUBRICS_DIRNAME = "rubrics"
 RUBRIC_GLOB = "*.rubric.yaml"
@@ -75,6 +76,20 @@ GATE_PROVIDER = RUBRIC_GATE_PROVIDER
 YES = "yes"
 NO = "no"
 UNKNOWN = "unknown"
+
+# Severity vocabulary for a judged finding (gates-and-rework-design.md §5.4).
+# Deliberately small: two named classes is gsd-core's choice and three is ours
+# only because §4.3 needs a class explicitly excluded from the rework loop.
+BLOCKER = "BLOCKER"  # the goal is not achieved unless this is fixed
+IMPORTANT = "IMPORTANT"  # fix before landing
+MINOR = "MINOR"  # record, do not loop
+SEVERITIES = (BLOCKER, IMPORTANT, MINOR)
+
+# How many times the judge is asked. A malformed reply is rejected and
+# re-requested exactly once, the way unparseable JSON would be; a second
+# violation is an agent that cannot meet the contract, and asking a third time
+# spends tokens to learn the same thing.
+JUDGE_ATTEMPTS = 2
 
 
 @dataclass(frozen=True)
@@ -202,14 +217,55 @@ def select_rubrics(rubrics: list[Rubric], work_type: str) -> list[Rubric]:
 # --- Evaluation (deterministic first, judged second) ------------------------
 
 
+class JudgedSchemaError(ValueError):
+    """Judged output that violates the verdict contract (§5.4).
+
+    A schema violation, not a quality complaint: the engine rejects and
+    re-requests the reply exactly as it would reject unparseable JSON, rather
+    than accepting a finding it cannot classify and noting the gap in a string
+    nothing reads.
+    """
+
+    def __init__(self, violations: Sequence[str]) -> None:
+        """Reject the reply, naming every violation so one re-request can fix all of them."""
+        self.violations = tuple(violations)
+        super().__init__("judged output rejected: " + "; ".join(self.violations))
+
+
 @dataclass(frozen=True)
 class CheckVerdict:
-    """The outcome of evaluating one check: yes/no/unknown with evidence."""
+    """The outcome of evaluating one check: yes/no/unknown with evidence.
+
+    A judged ``NO`` is a *finding*, and §5.4 makes its severity a required field
+    — so the invariant lives on the record itself rather than at whichever call
+    site happens to build one. There is no path to a severity-less judged
+    finding: it cannot be parsed, constructed, or recorded.
+
+    The other three shapes carry no severity. A ``YES`` and an ``UNKNOWN`` report
+    no finding, so there is nothing to classify, and a deterministic ``NO`` is a
+    test failure whose consequence comes from its gate's type, not from a model's
+    opinion of how bad it is.
+    """
 
     check_id: str
     kind: str
     answer: str  # YES | NO | UNKNOWN
     evidence: str = ""
+    severity: str = ""  # one of SEVERITIES; required on (and only on) a judged NO
+
+    def __post_init__(self) -> None:
+        """Enforce §5.4 structurally: a judged finding carries a severity, nothing else does."""
+        if self.kind == JUDGED and self.answer == NO:
+            if self.severity not in SEVERITIES:
+                raise JudgedSchemaError([
+                    f"{self.check_id}: a judged 'no' is a finding and needs a severity "
+                    f"({'/'.join(SEVERITIES)}); got {self.severity or 'none'}"
+                ])
+        elif self.severity:
+            raise JudgedSchemaError([
+                f"{self.check_id}: only a judged 'no' carries a severity; "
+                f"got {self.severity!r} on a {self.kind} {self.answer}"
+            ])
 
 
 def evaluate_deterministic(check: RubricCheck, repo_root: Path) -> CheckVerdict:
@@ -230,44 +286,93 @@ def evaluate_deterministic(check: RubricCheck, repo_root: Path) -> CheckVerdict:
 
 
 def build_judge_prompt(issue_id: str, rubric: Rubric, checks: list[RubricCheck]) -> str:
-    """Assemble the yes/no prompt an agent answers for the judged checks."""
+    """Assemble the yes/no prompt an agent answers for the judged checks.
+
+    The severity vocabulary is spelled out with what each class *means*, because
+    the contract is enforced (§5.4): a ``no`` without one is rejected and
+    re-requested, so a prompt that left the vocabulary implicit would buy a
+    guaranteed second dispatch.
+
+    Linted before it is returned, like every other reviewer bundle
+    (:func:`basicly.review.reject_pre_judging`) — a rubric's ``question`` is
+    catalog content, and a check that told the judge what not to find would
+    otherwise reach the agent as an instruction.
+    """
     lines = [
         f"You are evaluating the committed work for issue {issue_id} against the "
         f"'{rubric.id}' behavioral rubric.",
         "Inspect the repository's changes and answer each check below.",
-        "Reply with one line per check, in EXACTLY this format:",
-        "    <check-id>: yes|no - <one concise sentence of evidence>",
+        "Reply with one line per check, in EXACTLY one of these two formats:",
+        "    <check-id>: yes - <one concise sentence of evidence>",
+        "    <check-id>: no - <SEVERITY> - <one concise sentence of evidence>",
+        "",
+        "A 'no' is a finding and MUST carry a severity. Use exactly one of:",
+        f"    {BLOCKER} - the goal is not achieved unless this is fixed",
+        f"    {IMPORTANT} - fix before landing",
+        f"    {MINOR} - record it, but it is not worth another round",
+        "A 'no' with no severity is not a valid answer; it is rejected unread.",
         "",
         "Checks:",
         *[f"- {check.id}: {check.question}" for check in checks],
         "",
     ]
-    return "\n".join(lines)
+    prompt = "\n".join(lines)
+    review.reject_pre_judging(prompt)
+    return prompt
 
 
-_JUDGED_LINE = re.compile(r"\s*([A-Za-z0-9_-]+)\s*:\s*(yes|no)\b[ \t]*[-—:]?\s*(.*)", re.IGNORECASE)
+def rerequest_judge_prompt(prompt: str, rejected: JudgedSchemaError) -> str:
+    """The re-request: the original prompt plus what was wrong with the last reply."""
+    return (
+        f"{prompt}\nYour previous reply was rejected as malformed and none of it was "
+        f"read: {'; '.join(rejected.violations)}. Answer again in the exact format above."
+    )
+
+
+# The severity token is recognised only when a separator follows it, so evidence
+# that merely opens with the word ("no - MINOR issue in the helper") keeps its
+# first word instead of having it silently reclassified as the severity field.
+_JUDGED_LINE = re.compile(
+    r"\s*([A-Za-z0-9_-]+)\s*:\s*(yes|no)\b[ \t]*[-—:]?[ \t]*"
+    r"(?:(BLOCKER|IMPORTANT|MINOR)[ \t]*(?:[-—:][ \t]*|$))?"
+    r"(.*)",
+    re.IGNORECASE,
+)
 
 
 def parse_judged(stdout: str, checks: list[RubricCheck]) -> list[CheckVerdict]:
-    """Parse the agent's ``<id>: yes|no - evidence`` lines into verdicts.
+    """Parse the agent's answer lines into verdicts, or reject the whole reply.
 
     A check with no parseable answer is ``UNKNOWN`` (advisory — a judged verdict
-    is never treated as a hard failure; see :func:`gate_status`).
+    is never treated as a hard failure; see :func:`gate_status`). A check the
+    agent *did* answer ``no`` for without a severity is different in kind: the
+    contract was violated rather than unmet, so this raises
+    :class:`JudgedSchemaError` listing every violation at once, and the caller
+    re-requests (§5.4). Silence is an absence of judgment; a severity-less
+    finding is malformed output.
 
     Takes the agent's *own* text: a metered dispatch wraps that in a usage
     envelope whose lines all start with ``{``, and none of them match the answer
     pattern, so the caller unwraps it first with
     :func:`basicly.runner.result_text` (basicly-gczc).
     """
-    answered: dict[str, tuple[str, str]] = {}
+    answered: dict[str, tuple[str, str, str]] = {}
     for line in stdout.splitlines():
         match = _JUDGED_LINE.match(line)
         if match:
-            answered[match.group(1)] = (match.group(2).lower(), match.group(3).strip())
+            severity = (match.group(3) or "").upper()
+            answered[match.group(1)] = (match.group(2).lower(), severity, match.group(4).strip())
+    violations = [
+        f"{check.id}: answered 'no' with no severity ({'/'.join(SEVERITIES)})"
+        for check in checks
+        if answered.get(check.id, ("", "", ""))[:2] == (NO, "")
+    ]
+    if violations:
+        raise JudgedSchemaError(violations)
     verdicts: list[CheckVerdict] = []
     for check in checks:
-        answer, evidence = answered.get(check.id, (UNKNOWN, "no parseable answer"))
-        verdicts.append(CheckVerdict(check.id, JUDGED, answer, evidence))
+        answer, severity, evidence = answered.get(check.id, (UNKNOWN, "", "no parseable answer"))
+        verdicts.append(CheckVerdict(check.id, JUDGED, answer, evidence, severity))
     return verdicts
 
 
@@ -276,9 +381,31 @@ def evaluate(
 ) -> list[CheckVerdict]:
     """Evaluate every check in *rubric*: deterministic by command, judged by agent.
 
-    Judged checks dispatch one prompt through the agent-agnostic runner; when no
+    Judged checks go through the agent-agnostic runner (:func:`_judge`); when no
     agent CLI is available (a handoff) they resolve to UNKNOWN so the caller can
     surface them for a human, never silently passing or failing.
+
+    A timed-out judge resolves every judged check to UNKNOWN rather than NO: no
+    agent answered, and inventing a failure would enqueue a dispute nobody made.
+    A reply the severity contract rejects (§5.4) resolves the same way once the
+    re-request is also refused.
+    """
+    verdicts = [
+        evaluate_deterministic(check, repo_root)
+        for check in rubric.checks
+        if check.kind == DETERMINISTIC
+    ]
+    if any(check.kind == JUDGED for check in rubric.checks):
+        config = load_runner_config(repo_root)
+        spec = runner.select_runner(config.specs, runner_name or config.default)
+        verdicts += _judge(issue_id, rubric, repo_root, spec, config)
+    return verdicts
+
+
+def _dispatch_judge(
+    issue_id: str, repo_root: Path, spec: runner.RunnerSpec, prompt: str, timeout: float
+) -> runner.RunResult:
+    """Run one judge dispatch and record it — every attempt, not just the first.
 
     The judged dispatch obeys ``[runner] runner_timeout`` and writes a run-record
     like every other dispatch (basicly-kjc5.31): a hung judge used to hang the
@@ -286,7 +413,10 @@ def evaluate(
     ``capture_usage`` so the record carries the adapter's own numbers rather than
     the flagged chars/4 estimate — which
     :func:`basicly.policy.session_spend` counts as an *unmeterable* dispatch, and
-    one of those zeroes the grant's remaining budget (basicly-gczc).
+    one of those zeroes the grant's remaining budget (basicly-gczc). That is also
+    why a re-requested judge comes back through here rather than calling the
+    runner directly: a retry that skipped the record would halt the very session
+    it was added to rescue.
 
     That flag switches some adapters' stdout to a usage envelope
     :func:`parse_judged` cannot read, which is why it stayed unset until the
@@ -295,44 +425,64 @@ def evaluate(
     codex arms keep their reply *and* their measurement. copilot needed neither —
     it measures out of band from its own session store (basicly-2rn9) and its
     stdout was plain text all along.
-
-    A timed-out judge resolves every judged check to UNKNOWN rather than NO: no
-    agent answered, and inventing a failure would enqueue a dispute nobody made.
     """
-    verdicts = [
-        evaluate_deterministic(check, repo_root)
-        for check in rubric.checks
-        if check.kind == DETERMINISTIC
-    ]
+    # The judge is a read-only helper: it queues on the best-effort remainder
+    # rather than taking a slot a lane or the decider is reserved.
+    with runner.process_budget().slot(runner.HELPER):
+        result = runner.run(spec, prompt, repo_root, capture_usage=True, timeout=timeout)
+    runner.record_dispatch(
+        repo_root,
+        issue_id,
+        spec,
+        result,
+        prompt=prompt,
+        phase=run_record.VALIDATE_PHASE,
+    )
+    return result
+
+
+def _judge(
+    issue_id: str,
+    rubric: Rubric,
+    repo_root: Path,
+    spec: runner.RunnerSpec,
+    config: RunnerConfig,
+) -> list[CheckVerdict]:
+    """Ask the judge, rejecting and re-requesting a reply that breaks the contract.
+
+    Three outcomes, all of them UNKNOWN-safe: a parseable reply becomes verdicts;
+    a handoff or timeout resolves to UNKNOWN because no agent answered; and a
+    reply :func:`parse_judged` rejects is re-requested once with the violation
+    named, then resolves to UNKNOWN if the second reply is malformed too.
+
+    UNKNOWN is the right floor for a rejection as well as for silence. Inventing
+    a NO would enqueue a dispute the agent never made, and accepting the
+    unclassifiable finding is exactly the "complain about it" behaviour §5.4
+    replaces — so the rejection survives on the verdict's evidence, where the
+    gate record and the operator can both see it, rather than as a verdict.
+    """
     judged = [check for check in rubric.checks if check.kind == JUDGED]
-    if judged:
-        config = load_runner_config(repo_root)
-        spec = runner.select_runner(config.specs, runner_name or config.default)
-        prompt = build_judge_prompt(issue_id, rubric, judged)
-        # The judge is a read-only helper: it queues on the best-effort remainder
-        # rather than taking a slot a lane or the decider is reserved.
-        with runner.process_budget().slot(runner.HELPER):
-            result = runner.run(
-                spec, prompt, repo_root, capture_usage=True, timeout=config.runner_timeout
-            )
-        runner.record_dispatch(
-            repo_root,
-            issue_id,
-            spec,
-            result,
-            prompt=prompt,
-            phase=run_record.VALIDATE_PHASE,
-        )
+    timeout = config.runner_timeout
+    prompt = build_judge_prompt(issue_id, rubric, judged)
+    attempt_prompt, rejection = prompt, ""
+    for _attempt in range(JUDGE_ATTEMPTS):
+        result = _dispatch_judge(issue_id, repo_root, spec, attempt_prompt, timeout)
         if result.handoff or result.timed_out:
             why = (
-                f"timed out after {config.runner_timeout:.0f}s — judge manually"
+                f"timed out after {timeout:.0f}s — judge manually"
                 if result.timed_out
                 else "handoff: no agent CLI — judge manually"
             )
-            verdicts += [CheckVerdict(check.id, JUDGED, UNKNOWN, why) for check in judged]
-        else:
-            verdicts += parse_judged(runner.result_text(spec, result.stdout), judged)
-    return verdicts
+            return [CheckVerdict(check.id, JUDGED, UNKNOWN, why) for check in judged]
+        try:
+            return parse_judged(runner.result_text(spec, result.stdout), judged)
+        except JudgedSchemaError as exc:
+            rejection = "; ".join(exc.violations)
+            attempt_prompt = rerequest_judge_prompt(prompt, exc)
+    return [
+        CheckVerdict(check.id, JUDGED, UNKNOWN, f"reply rejected as malformed: {rejection}")
+        for check in judged
+    ]
 
 
 def gate_status(verdicts: list[CheckVerdict]) -> str:
@@ -418,7 +568,16 @@ def report_gate(repo_root: Path, issue_id: str, verdicts: list[CheckVerdict]) ->
     judged = [v for v in verdicts if v.kind == JUDGED]
 
     def detail(subset: list[CheckVerdict]) -> str:
-        return ", ".join(f"{v.check_id}={v.answer}" for v in subset) or "no checks"
+        # The severity rides onto the record with the answer. A gate note reading
+        # only "j=no" makes a MINOR and a BLOCKER indistinguishable to whoever
+        # disposes of the decision, which is the whole point of requiring it.
+        return (
+            ", ".join(
+                f"{v.check_id}={v.answer}" + (f" ({v.severity})" if v.severity else "")
+                for v in subset
+            )
+            or "no checks"
+        )
 
     preflight_ok, preflight_msg = _report_one(
         repo_root,

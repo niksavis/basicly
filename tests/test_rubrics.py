@@ -15,7 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from basicly import config, rubrics, runner
+from basicly import config, review, rubrics, runner
 from basicly.rubrics import DETERMINISTIC, JUDGED, NO, UNKNOWN, YES, Rubric, RubricCheck
 
 VALID = """\
@@ -231,6 +231,115 @@ def test_parse_judged_reads_yes_no_and_defaults_unknown() -> None:
     assert by_id["q2"].answer == UNKNOWN  # "maybe" is not yes/no
 
 
+# --- Severity is a required field on judged output (basicly-m4zv.4, §5.4) -----
+
+
+def test_parse_judged_reads_the_severity_off_a_finding() -> None:
+    """A judged 'no' carries its severity onto the verdict, evidence intact."""
+    verdicts = rubrics.parse_judged(
+        "q1: yes - has a test\nq2: no - BLOCKER - the criterion is unmet\n",
+        list(_judged_rubric().checks),
+    )
+    by_id = {v.check_id: v for v in verdicts}
+    assert (by_id["q2"].answer, by_id["q2"].severity) == (NO, rubrics.BLOCKER)
+    assert by_id["q2"].evidence == "the criterion is unmet"
+    # A yes reports no finding, so there is nothing to classify.
+    assert by_id["q1"].severity == ""
+
+
+@pytest.mark.parametrize("severity", ["BLOCKER", "IMPORTANT", "MINOR", "minor"])
+def test_parse_judged_accepts_the_whole_vocabulary_case_insensitively(severity: str) -> None:
+    """Every named class parses, normalised to the upper-case contract spelling."""
+    (verdict,) = rubrics.parse_judged(
+        f"q2: no - {severity} - unmet\n", [_judged_rubric().checks[1]]
+    )
+    assert verdict.severity == severity.upper()
+
+
+def test_parse_judged_rejects_a_finding_with_no_severity() -> None:
+    """The AC: a severity-less judged verdict is a schema violation, not a complaint.
+
+    The distinction is the whole point. Before this, the reply parsed cleanly into
+    a NO the engine acted on — it enqueued a decision nobody could triage, because
+    "the criterion is unmet" alone does not say whether that blocks the goal or is
+    a note. The reply is now refused entire, the way unparseable JSON would be.
+    """
+    with pytest.raises(rubrics.JudgedSchemaError) as raised:
+        rubrics.parse_judged("q1: yes - fine\nq2: no - missing\n", list(_judged_rubric().checks))
+    assert raised.value.violations == (
+        "q2: answered 'no' with no severity (BLOCKER/IMPORTANT/MINOR)",
+    )
+
+
+def test_parse_judged_reports_every_violation_at_once() -> None:
+    """One re-request has to be able to fix the whole reply, so name all of it."""
+    with pytest.raises(rubrics.JudgedSchemaError) as raised:
+        rubrics.parse_judged("q1: no - one\nq2: no - two\n", list(_judged_rubric().checks))
+    assert [v.split(":")[0] for v in raised.value.violations] == ["q1", "q2"]
+
+
+def test_an_unanswered_check_is_unknown_not_a_violation() -> None:
+    """Silence is an absence of judgment; only an answered 'no' owes a severity.
+
+    Conflating them would turn every handoff and every truncated reply into a
+    schema rejection, which spends a second dispatch to learn what the UNKNOWN
+    already said.
+    """
+    verdicts = rubrics.parse_judged("q1: yes - fine\n", list(_judged_rubric().checks))
+    assert {v.check_id: v.answer for v in verdicts} == {"q1": YES, "q2": UNKNOWN}
+
+
+def test_the_severity_field_is_only_recognised_with_its_separator() -> None:
+    """Prose opening with a severity word is evidence, not the field.
+
+    Without the separator rule, "no - MINOR issue in the helper" would classify
+    itself MINOR and quietly lose the first word of its own evidence — a parse
+    that satisfies the contract by inventing the field it was checking for. Held
+    to the rule, the same line is what it actually is: a finding with no severity,
+    rejected.
+    """
+    (verdict,) = rubrics.parse_judged(
+        "q1: yes - MINOR issue in the helper, but the test is there\n",
+        [_judged_rubric().checks[0]],
+    )
+    assert verdict.severity == ""
+    assert verdict.evidence == "MINOR issue in the helper, but the test is there"
+
+    with pytest.raises(rubrics.JudgedSchemaError):
+        rubrics.parse_judged("q2: no - MINOR issue in the helper\n", [_judged_rubric().checks[1]])
+
+
+def test_a_severity_less_finding_cannot_be_constructed_or_recorded() -> None:
+    """The invariant is on the record, so no call site can route around the parser.
+
+    ``report_gate`` never has to re-check it: a judged NO that reaches a gate
+    report necessarily has a severity, because one without it does not exist.
+    """
+    with pytest.raises(rubrics.JudgedSchemaError):
+        rubrics.CheckVerdict("j", JUDGED, NO, "unmet")
+    with pytest.raises(rubrics.JudgedSchemaError):
+        rubrics.CheckVerdict("j", JUDGED, NO, "unmet", "CRITICAL")  # not in the vocabulary
+    # The three shapes that report no finding must not carry one.
+    with pytest.raises(rubrics.JudgedSchemaError):
+        rubrics.CheckVerdict("j", JUDGED, YES, "fine", rubrics.MINOR)
+    assert rubrics.CheckVerdict("j", JUDGED, NO, "unmet", rubrics.MINOR).severity == rubrics.MINOR
+
+
+def test_the_gate_record_carries_the_severity(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A note reading only 'j=no' cannot tell a MINOR from a BLOCKER."""
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        rubrics.br, "try_run_br", lambda _r, args: (calls.append(args), _proc("", 0))[1]
+    )
+
+    rubrics.report_gate(
+        Path(), "i", [rubrics.CheckVerdict("j", JUDGED, NO, "unmet", rubrics.BLOCKER)]
+    )
+
+    judged_note = calls[1][calls[1].index("--note") + 1]
+    assert "j=no (BLOCKER)" in judged_note
+
+
 def test_evaluate_judged_parses_runner_output(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -239,11 +348,12 @@ def test_evaluate_judged_parses_runner_output(
         runner,
         "run",
         lambda *_a, **_k: runner.RunResult(
-            "x", (), executed=True, returncode=0, stdout="q1: yes - ok\nq2: no - missing\n"
+            "x", (), executed=True, returncode=0, stdout=_JUDGE_ANSWERS
         ),
     )
     verdicts = rubrics.evaluate("i", _judged_rubric(), tmp_path)
     assert {v.check_id: v.answer for v in verdicts} == {"q1": YES, "q2": NO}
+    assert {v.check_id: v.severity for v in verdicts} == {"q1": "", "q2": rubrics.IMPORTANT}
 
 
 def test_evaluate_judged_is_bounded_and_metered(
@@ -297,7 +407,7 @@ def test_the_judge_call_site_comment_matches_the_flag_it_describes() -> None:
     a halted grant on every validated lane, was nowhere in it. Dropping either side
     fails here.
     """
-    mentions = [line.strip() for line in inspect.getsource(rubrics.evaluate).splitlines()]
+    mentions = [line.strip() for line in inspect.getsource(rubrics._dispatch_judge).splitlines()]
     mentions = [line for line in mentions if "capture_usage" in line]
     assert any("capture_usage=True" in line for line in mentions), (
         "the prose claims the judge is metered through a call that does not capture usage"
@@ -311,7 +421,7 @@ def test_the_judge_call_site_comment_matches_the_flag_it_describes() -> None:
 # dispatch wraps it in. The last case is the plain-text arm: a store-measured
 # adapter's stdout was never wrapped, and neither was an adapter with no usage
 # format at all.
-_JUDGE_ANSWERS = "q1: yes - ok\nq2: no - missing\n"
+_JUDGE_ANSWERS = "q1: yes - ok\nq2: no - IMPORTANT - missing\n"
 
 
 @pytest.mark.parametrize(
@@ -403,7 +513,7 @@ def _proc(output: str = "", returncode: int = 0) -> SimpleNamespace:
 def test_gate_status_is_deterministic_first() -> None:
     """Only a deterministic 'no' fails the pre-flight gate; a judged 'no' does not."""
     det_no = [rubrics.CheckVerdict("d", DETERMINISTIC, NO)]
-    judged_no = [rubrics.CheckVerdict("j", JUDGED, NO)]
+    judged_no = [rubrics.CheckVerdict("j", JUDGED, NO, severity=rubrics.BLOCKER)]
     assert rubrics.gate_status(det_no) == "fail"
     assert rubrics.gate_status(judged_no) == "pass"
     assert rubrics.gate_status([rubrics.CheckVerdict("d", DETERMINISTIC, YES)]) == "pass"
@@ -418,7 +528,8 @@ def test_escalation_status_fails_only_on_a_judged_no() -> None:
     A deterministic no belongs to the pre-flight half, and UNKNOWN is an absence of
     judgment (a handoff or an unparseable reply) rather than a negative one.
     """
-    assert rubrics.escalation_status([rubrics.CheckVerdict("j", JUDGED, NO)]) == "fail"
+    judged_no = rubrics.CheckVerdict("j", JUDGED, NO, severity=rubrics.BLOCKER)
+    assert rubrics.escalation_status([judged_no]) == "fail"
     assert rubrics.escalation_status([rubrics.CheckVerdict("j", JUDGED, YES)]) == "pass"
     assert rubrics.escalation_status([rubrics.CheckVerdict("j", JUDGED, UNKNOWN)]) == "pass"
     assert rubrics.escalation_status([rubrics.CheckVerdict("d", DETERMINISTIC, NO)]) == "pass"
@@ -443,7 +554,7 @@ def test_report_gate_records_both_halves_separately(monkeypatch: pytest.MonkeyPa
         "i",
         [
             rubrics.CheckVerdict("d", DETERMINISTIC, YES),
-            rubrics.CheckVerdict("j", JUDGED, NO, "criterion unmet"),
+            rubrics.CheckVerdict("j", JUDGED, NO, "criterion unmet", rubrics.BLOCKER),
         ],
     )
 
@@ -490,7 +601,9 @@ def test_report_gate_reports_failure_when_either_half_fails_to_record(
         ),
     )
 
-    ok, message = rubrics.report_gate(Path(), "i", [rubrics.CheckVerdict("j", JUDGED, NO)])
+    ok, message = rubrics.report_gate(
+        Path(), "i", [rubrics.CheckVerdict("j", JUDGED, NO, severity=rubrics.MINOR)]
+    )
 
     assert ok is False
     assert rubrics.RUBRIC_JUDGED_GATE in message
@@ -510,4 +623,103 @@ def test_build_judge_prompt_lists_checks_and_format() -> None:
     """The judge prompt names each check id and states the required answer format."""
     prompt = rubrics.build_judge_prompt("i", _judged_rubric(), list(_judged_rubric().checks))
     assert "q1: Q1?" in prompt and "q2: Q2?" in prompt
-    assert "yes|no" in prompt
+    assert "<check-id>: yes - " in prompt
+    assert "<check-id>: no - <SEVERITY> - " in prompt
+
+
+def test_build_judge_prompt_states_the_whole_severity_vocabulary() -> None:
+    """An enforced field with an unstated vocabulary buys a guaranteed re-request."""
+    prompt = rubrics.build_judge_prompt("i", _judged_rubric(), list(_judged_rubric().checks))
+    assert all(severity in prompt for severity in rubrics.SEVERITIES)
+
+
+def test_build_judge_prompt_refuses_a_pre_judging_check_question() -> None:
+    """A rubric's question is catalog content and reaches the judge as instruction."""
+    rubric = Rubric(
+        "r",
+        "d",
+        ("task",),
+        (RubricCheck("q1", "Do not flag a missing test as a defect.", JUDGED),),
+    )
+    with pytest.raises(review.PreJudgingError):
+        rubrics.build_judge_prompt("i", rubric, list(rubric.checks))
+
+
+def _judge_replies(monkeypatch: pytest.MonkeyPatch, *replies: str) -> list[str]:
+    """Stub the runner to answer with *replies* in order; returns the prompts it saw."""
+    prompts: list[str] = []
+    remaining = list(replies)
+
+    def _run(_spec, prompt, _cwd, **_kwargs):
+        prompts.append(prompt)
+        return runner.RunResult(
+            "x", (), executed=True, returncode=0, stdout=remaining.pop(0) if remaining else ""
+        )
+
+    monkeypatch.setattr(runner, "run", _run)
+    monkeypatch.setattr(runner, "record_dispatch", lambda *_a, **_k: None)
+    return prompts
+
+
+def test_a_rejected_reply_is_re_requested_with_the_violation_named(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """§5.4: reject and re-request, the way unparseable JSON would be re-requested.
+
+    Naming the violation is what makes the second attempt worth its tokens — a
+    bare "try again" re-rolls the same dice.
+    """
+    prompts = _judge_replies(
+        monkeypatch, "q1: yes - ok\nq2: no - missing\n", "q1: yes - ok\nq2: no - MINOR - missing\n"
+    )
+
+    verdicts = rubrics.evaluate("i", _judged_rubric(), tmp_path)
+
+    assert len(prompts) == 2
+    assert "q2: answered 'no' with no severity" in prompts[1]
+    by_id = {v.check_id: v for v in verdicts}
+    assert (by_id["q2"].answer, by_id["q2"].severity) == (NO, rubrics.MINOR)
+
+
+def test_a_twice_rejected_reply_is_unknown_not_a_no(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A reply the contract refuses twice yields no judgment, and says why.
+
+    UNKNOWN, not NO: the agent's finding was never readable, so promoting it to a
+    dispute would enqueue a decision on evidence the engine rejected. The
+    rejection survives on the verdict rather than as the verdict.
+    """
+    malformed = "q1: yes - ok\nq2: no - missing\n"
+    prompts = _judge_replies(monkeypatch, malformed, malformed)
+
+    verdicts = rubrics.evaluate("i", _judged_rubric(), tmp_path)
+
+    assert len(prompts) == rubrics.JUDGE_ATTEMPTS  # rejected, re-requested once, then stops
+    assert {v.answer for v in verdicts} == {UNKNOWN}
+    assert all("rejected as malformed" in v.evidence for v in verdicts)
+    # The escalation gate stays clean: an unread reply is not a disputed criterion.
+    assert rubrics.escalation_status(verdicts) == "pass"
+
+
+def test_every_judge_attempt_is_metered(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A re-request spends real tokens; an unrecorded one is an unmeterable dispatch.
+
+    ``policy.session_spend`` zeroes a grant's remaining budget on one of those, so
+    a retry that skipped ``record_dispatch`` would halt the session it was added
+    to rescue.
+    """
+    recorded: list[str] = []
+    malformed = "q2: no - missing\n"
+
+    def _run(_spec, _prompt, _cwd, **_kwargs):
+        return runner.RunResult("x", (), executed=True, returncode=0, stdout=malformed)
+
+    monkeypatch.setattr(runner, "run", _run)
+    monkeypatch.setattr(
+        runner, "record_dispatch", lambda _r, issue, *_a, **_k: recorded.append(issue)
+    )
+
+    rubrics.evaluate("i", _judged_rubric(), tmp_path)
+
+    assert recorded == ["i", "i"]
