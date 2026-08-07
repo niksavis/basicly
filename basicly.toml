@@ -18,31 +18,6 @@ manifest = ".basicly/generated-manifest.json"
 [catalog]
 technologies = ["python", "node"]
 
-# Which step of the work-tracker cutover this repo is on (basicly-vkh0.19,
-# docs/design/work-tracker.md §5). Three values, and each is a rung:
-#
-#   external  br is the only store. The pre-cutover behaviour, and what a consumer
-#             who has never installed the kit's tracker gets.
-#   dual      Every write the engine makes through the br seam is recorded on the
-#             owned event log under `.basicly/ledger/` as well. br stays
-#             authoritative for every read. A write the ledger cannot record fails
-#             the command — the two stores are only worth running side by side
-#             while they hold the same facts.
-#   owned     The flip. `br.read_record` — the one record-read seam — answers out of
-#             the ledger; br is *still written*, because the other ten subcommands
-#             the engine spawns still read out of it.
-#
-# **This repo is on `external`, and the rung above it is not a config edit.** Step 1
-# of §5 is the import, and it has not been run here: `.basicly/ledger/` holds the
-# usage ledger and the surface inventory but no `events-*.jsonl`. Setting `dual`
-# against an empty ledger records only what happens *next*, and setting `owned`
-# against one would read every existing bead as deleted. The order is: run
-# `.basicly/core/kit/tracker/migrate.py` over `.beads/issues.jsonl` and commit the
-# log, then `dual`, then run the shadow differential and read `clean` **and**
-# `conclusive` off it, then `owned`.
-[tracker]
-mode = "external"
-
 # Sibling git-worktree isolation for harness tracks.
 [worktree]
 # Branch new harness/<name> worktrees fork from. Empty = the current branch.
