@@ -159,10 +159,18 @@ BASELINE: frozenset[str] = frozenset({
     "command:status",
     "command:usage forecast",
     "command:usage tracker",
-    # Record fields read only by their own module or by a test (44). Was 45:
+    # Record fields read only by their own module or by a test (43). Was 45:
     # `RunRecord.config_overrides` acquired a consumer when `tuning` began reading the
     # ledger — it reads the field's value back out of the record JSON as
     # `entry["config_overrides"]` (basicly-3ifz.1).
+    #
+    # `CreatedChild.depends_on` went for the *other* reason, and it is the masking
+    # hazard rather than a consumer: the plan gate gave `ChildSpec` a `depends_on`
+    # field that `decompose` reads by name, and the index matches bare names, so the
+    # finding stopped reproducing without the record field acquiring a reader
+    # (basicly-u2hl.1). The entry is removed because a baseline may only hold findings
+    # that still reproduce; what it cost is the ability to detect this one at all,
+    # which is the same trade `CostRollup.dispatches` documents from the other side.
     #
     # `CostRollup.dispatches` stays: it still has none. Retiring it in the same pass was
     # the masking hazard this module documents above — `tuning` had declared its own
@@ -178,7 +186,6 @@ BASELINE: frozenset[str] = frozenset({
     "record-field:basicly.decompose.CollapsingPath.groups_without",
     "record-field:basicly.decompose.CollapsingPath.neutralized",
     "record-field:basicly.decompose.CostEstimate.overhead_tokens",
-    "record-field:basicly.decompose.CreatedChild.depends_on",
     "record-field:basicly.health.AgentHealth.rework_beads",
     "record-field:basicly.health.AgentDrift.baseline_runs",
     "record-field:basicly.health.AgentDrift.recent_runs",

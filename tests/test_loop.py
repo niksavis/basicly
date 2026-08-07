@@ -1078,6 +1078,12 @@ _PLAN = {
             "title": "parse the header",
             "acceptance": ["given a header when parsed then the fields land"],
             "scope": ["src/header/**"],
+            # The plan gate's minimum (basicly-u2hl.1): a proposal missing any of the
+            # three is refused before the loop reaches the governor, which is what
+            # `test_a_plan_missing_a_gate_field_falls_back_to_the_block` pins.
+            "depends_on": [],
+            "budget_tokens": 40000,
+            "integrity": "L2",
         }
     ]
 }
@@ -1106,6 +1112,9 @@ def test_classify_proposes_the_child_plan_under_a_grant(
             "parse the header",
             ("given a header when parsed then the fields land",),
             ("src/header/**",),
+            depends_on=(),
+            budget_tokens=40_000,
+            integrity="L2",
         ),
     )
     assert result.to_phase == "decompose" and result.action == "decomposed"
@@ -1134,6 +1143,31 @@ def test_a_plan_failing_the_schema_falls_back_to_the_block(
     assert "'scope'" in result.detail
 
 
+def test_a_proposal_missing_a_plan_gate_field_blocks_rather_than_crashes(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The plan gate refuses a proposal here too, and refusing must reach a human.
+
+    The gate raises :class:`plan_gate.PlanGateError`, and this is what makes that a
+    ``ValueError``: the loop's fall-back catches ``ValueError`` around the plan load,
+    so a new exception type would propagate out of ``advance`` and take the run down
+    instead of queueing the decision (basicly-u2hl.1).
+    """
+    _feature_at_classify(at, monkeypatch)
+    _delegated(monkeypatch)
+    proposed = json.loads(json.dumps(_PLAN))
+    del proposed["children"][0]["integrity"]
+    _proposer(monkeypatch, json.dumps(proposed))
+    monkeypatch.setattr(
+        decompose, "decompose", lambda *_a: pytest.fail("an ungated plan must not be recorded")
+    )
+
+    result = _advance(tmp_path)
+
+    assert result.blocked and result.needs_input == "children"
+    assert "integrity" in result.detail
+
+
 def test_a_plan_under_the_working_set_floor_falls_back_to_the_block(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -1149,7 +1183,18 @@ def test_a_plan_under_the_working_set_floor_falls_back_to_the_block(
     tiny = tmp_path / "src" / "tiny.py"
     tiny.parent.mkdir(parents=True)
     tiny.write_text("x = 1\n", encoding="utf-8")
-    plan = {"children": [{"title": "t", "acceptance": ["a"], "scope": ["src/tiny.py"]}]}
+    plan = {
+        "children": [
+            {
+                "title": "t",
+                "acceptance": ["a"],
+                "scope": ["src/tiny.py"],
+                "depends_on": [],
+                "budget_tokens": 40000,
+                "integrity": "L2",
+            }
+        ]
+    }
     _proposer(monkeypatch, json.dumps(plan))
     monkeypatch.setattr(
         decompose, "decompose", lambda *_a: pytest.fail("a refused plan must not be recorded")

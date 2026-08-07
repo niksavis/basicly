@@ -89,8 +89,15 @@ def _install(monkeypatch: pytest.MonkeyPatch, fake: Callable[..., _Proc]) -> Non
     monkeypatch.setattr(br, "try_run_br", fake)
 
 
+# The three fields the plan gate requires of every child (basicly-u2hl.1). Spread into
+# every spec these tests build, so a fixture stays a fixture for what it is *about*
+# rather than re-stating the gate's minimum in twenty places. What the gate does with
+# them is tested in `test_plan_gate.py`, not here.
+_GATED = {"depends_on": (), "budget_tokens": 40_000, "integrity": "L2"}
+
+
 def _child(title: str, *scope: str) -> ChildSpec:
-    return ChildSpec(title=title, acceptance=("does the thing",), scope=scope or (title,))
+    return ChildSpec(title=title, acceptance=("does the thing",), scope=scope or (title,), **_GATED)
 
 
 # --- Deterministic glob overlap ---------------------------------------------
@@ -162,6 +169,7 @@ def _manifest_plan(*, shared: bool) -> tuple[ChildSpec, ...]:
             acceptance=("does the thing",),
             scope=(f"src/{name}.py", "pyproject.toml"),
             shared=("pyproject.toml",) if shared else (),
+            **_GATED,
         )
         for name in ("a", "b", "c", "d")
     )
@@ -375,21 +383,30 @@ def test_the_preview_groups_a_plan_against_the_same_configured_paths() -> None:
 
 def test_load_plan_text_json_and_toml_agree() -> None:
     """The same plan in JSON and TOML parses to identical child specs."""
-    child = {"title": "t", "acceptance": ["ac"], "scope": ["src/x.py"], "type": "bug"}
+    child = {
+        "title": "t",
+        "acceptance": ["ac"],
+        "scope": ["src/x.py"],
+        "type": "bug",
+        **_GATED_JSON,
+    }
     json_children = decompose.load_plan_text(json.dumps({"children": [child]}), "json")
     toml_children = decompose.load_plan_text(
-        '[[children]]\ntitle = "t"\nacceptance = ["ac"]\nscope = ["src/x.py"]\ntype = "bug"\n',
+        '[[children]]\ntitle = "t"\nacceptance = ["ac"]\nscope = ["src/x.py"]\ntype = "bug"\n'
+        + _GATED_TOML,
         "toml",
     )
     assert json_children == toml_children
-    assert json_children[0] == ChildSpec("t", ("ac",), ("src/x.py",), "bug")
+    assert json_children[0] == ChildSpec("t", ("ac",), ("src/x.py",), "bug", **_GATED)
 
 
 def test_load_plan_file_detects_format_by_suffix(tmp_path: Path) -> None:
     """A .toml plan file is parsed as TOML."""
     plan = tmp_path / "plan.toml"
-    plan.write_text('[[children]]\ntitle = "t"\nacceptance = ["ac"]\nscope = ["s"]\n', "utf-8")
-    assert decompose.load_plan_file(plan) == (ChildSpec("t", ("ac",), ("s",)),)
+    plan.write_text(
+        '[[children]]\ntitle = "t"\nacceptance = ["ac"]\nscope = ["s"]\n' + _GATED_TOML, "utf-8"
+    )
+    assert decompose.load_plan_file(plan) == (ChildSpec("t", ("ac",), ("s",), **_GATED),)
 
 
 def test_parse_children_rejects_empty() -> None:
@@ -411,7 +428,26 @@ def test_parse_children_requires_acceptance() -> None:
 
 
 def _one_child(**extra: object) -> dict[str, object]:
-    return {"children": [{"title": "t", "acceptance": ["ac"], "scope": ["src/x.py"], **extra}]}
+    return {
+        "children": [
+            {
+                "title": "t",
+                "acceptance": ["ac"],
+                "scope": ["src/x.py"],
+                "depends_on": [],
+                "budget_tokens": 40_000,
+                "integrity": "L2",
+                **extra,
+            }
+        ]
+    }
+
+
+# The three gate-required fields as a plan document spells them, for the format tests
+# that compare JSON against TOML — each needs the pair to be the same plan, and the
+# gate refuses the plan without them.
+_GATED_JSON = {"depends_on": [], "budget_tokens": 40000, "integrity": "L2"}
+_GATED_TOML = 'depends_on = []\nbudget_tokens = 40000\nintegrity = "L2"\n'
 
 
 @pytest.mark.parametrize("shared", [None, []], ids=["absent", "empty"])
@@ -447,12 +483,17 @@ def test_parse_children_rejects_a_malformed_shared_list() -> None:
 
 def test_load_plan_text_reads_shared_in_json_and_toml() -> None:
     """Both plan formats carry the shared declaration onto the spec identically."""
-    child = {"title": "t", "acceptance": ["ac"], "scope": ["src/x.py", "pyproject.toml"]}
+    child = {
+        "title": "t",
+        "acceptance": ["ac"],
+        "scope": ["src/x.py", "pyproject.toml"],
+        **_GATED_JSON,
+    }
     child["shared"] = ["pyproject.toml"]
     from_json = decompose.load_plan_text(json.dumps({"children": [child]}), "json")
     from_toml = decompose.load_plan_text(
         '[[children]]\ntitle = "t"\nacceptance = ["ac"]\n'
-        'scope = ["src/x.py", "pyproject.toml"]\nshared = ["pyproject.toml"]\n',
+        'scope = ["src/x.py", "pyproject.toml"]\nshared = ["pyproject.toml"]\n' + _GATED_TOML,
         "toml",
     )
     assert from_json == from_toml
@@ -916,10 +957,17 @@ def test_child_body_carries_the_sections_the_childs_own_type_requires() -> None:
     The body used to hard-code the ``task`` section set, so a plan that typed a
     child ``bug`` produced a child the DoR gate then refused (basicly-kjc5.44).
     """
-    bug = ChildSpec(title="b", acceptance=("given x then y",), scope=("src/a.py",), type="bug")
+    bug = ChildSpec(
+        title="b", acceptance=("given x then y",), scope=("src/a.py",), type="bug", **_GATED
+    )
     body = decompose._child_body(bug)
     headings = [line for line in body.splitlines() if line.startswith("## ")]
-    assert headings == ["## Steps to Reproduce", "## Acceptance Criteria", "## Scope"]
+    assert headings == [
+        "## Steps to Reproduce",
+        "## Acceptance Criteria",
+        "## Scope",
+        "## Plan",
+    ]
     # The supplied content survives; only the unfilled section carries a placeholder.
     assert "- given x then y" in body
     assert decompose.parse_scope_section(body) == ("src/a.py",)

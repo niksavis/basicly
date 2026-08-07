@@ -53,7 +53,7 @@ from collections.abc import Iterable
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
-from . import br, policy, run_record, runner
+from . import br, plan_gate, policy, run_record, runner
 from .br import run_br as _run_br
 from .config import (
     DEFAULT_BUILD_FACTOR,
@@ -81,22 +81,39 @@ class ChildSpec:
     # :func:`_parse_shared`). Trailing and defaulted so every plan written before
     # the field existed keeps meaning exactly what it meant: own everything.
     shared: tuple[str, ...] = ()
+    # The three fields the plan gate requires and this module records, each defaulting
+    # to *absent* rather than to a value. ``None`` is the only honest default: an
+    # invented budget or a guessed integrity level would pass the gate while meaning
+    # nothing, and a dependency list defaulted to ``()`` would claim the plan declared
+    # "nothing blocks this" when it declared nothing at all. Declared-empty is ``()``.
+    depends_on: tuple[str, ...] | None = None
+    budget_tokens: int | None = None
+    integrity: str | None = None
 
 
 def parse_children(data: object) -> tuple[ChildSpec, ...]:
     """Validate a parsed plan document into child specs.
 
-    Expects ``{"children": [ {title, acceptance, scope, shared?, type?}, ... ]}``.
-    Raises ``ValueError`` on any malformed entry rather than silently dropping a
-    track — a lost child would be built by nobody. A child must declare a non-empty
-    scope so parallel-safety is computable; refusing to guess is the whole point.
+    Expects ``{"children": [ {title, acceptance, scope, depends_on, budget_tokens,
+    integrity, shared?, type?}, ... ]}``. Raises ``ValueError`` on any malformed entry
+    rather than silently dropping a track — a lost child would be built by nobody.
+
+    Two validations, in this order and deliberately not merged. Per entry, the *shape*:
+    a field that is present must be the right type, and an entry that is wrong about
+    that is wrong about itself, so it raises where it is read. Then the whole plan goes
+    through :func:`plan_gate.require_plan`, which is where *absence* is judged — it can
+    name every missing field across every child at once, where a per-entry raise would
+    surface them one dispatch at a time. :class:`plan_gate.PlanGateError` is a
+    ``ValueError``, so a caller that already handled a schema refusal handles this one.
     """
     if not isinstance(data, dict):
         raise ValueError(f"plan must be a table with a 'children' list, got {type(data).__name__}")
     raw_children = data.get("children")
     if not (isinstance(raw_children, list) and raw_children):
         raise ValueError("plan needs a non-empty 'children' list")
-    return tuple(_parse_child(entry, index) for index, entry in enumerate(raw_children))
+    children = tuple(_parse_child(entry, index) for index, entry in enumerate(raw_children))
+    plan_gate.require_plan(children)
+    return children
 
 
 def _parse_child(entry: object, index: int) -> ChildSpec:
@@ -121,7 +138,48 @@ def _parse_child(entry: object, index: int) -> ChildSpec:
         scope=scope,
         type=child_type.strip(),
         shared=_parse_shared(entry.get("shared"), scope, where),
+        depends_on=_parse_depends_on(entry.get("depends_on"), where),
+        budget_tokens=_parse_budget(entry.get("budget_tokens"), where),
+        integrity=_parse_integrity(entry.get("integrity"), where),
     )
+
+
+def _parse_depends_on(value: object, where: str) -> tuple[str, ...] | None:
+    """A child's declared dependency list: titles of siblings that must land first.
+
+    Sibling *titles*, not issue ids, because the plan is written before anything is
+    recorded and an id does not exist yet. :func:`decompose` resolves them once the
+    children are created. An empty list is a declaration ("nothing blocks this") and
+    is kept distinct from the key being absent, which the plan gate refuses.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise ValueError(f"{where} 'depends_on' must be a list of sibling titles")
+    entries: list[str] = []
+    for item in value:
+        if not (isinstance(item, str) and item.strip()):
+            raise ValueError(f"{where} 'depends_on' entries must be non-empty strings")
+        entries.append(item.strip())
+    return tuple(entries)
+
+
+def _parse_budget(value: object, where: str) -> int | None:
+    """A child's declared token budget. ``bool`` is rejected: ``True`` is not 1 token."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{where} 'budget_tokens' must be a whole number of tokens")
+    return value
+
+
+def _parse_integrity(value: object, where: str) -> str | None:
+    """A child's declared integrity level, one of :data:`plan_gate.INTEGRITY_LEVELS`."""
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{where} 'integrity' must be a non-empty string")
+    return value.strip()
 
 
 def _string_list(value: object, where: str) -> tuple[str, ...]:
@@ -542,9 +600,9 @@ def collapse_note(collapsing: tuple[CollapsingPath, ...]) -> str:
 # its size is context every lane pays before reading any scope material.
 INSTRUCTIONS_FILE = "AGENTS.md"
 
-# One scope-glob line as _child_body records it under "## Scope".
-_SCOPE_LINE = re.compile(r"^- `([^`]+)`$")
-_SCOPE_HEADING = "## Scope"
+# The heading _child_body records scope globs under; the line form itself belongs to
+# plan_gate, which reads every recorded section.
+_SCOPE_HEADING = plan_gate.SCOPE_HEADING
 
 
 def _text_tokens(text: str) -> int:
@@ -790,19 +848,13 @@ def estimate_cost(
 
 
 def parse_scope_section(description: str) -> tuple[str, ...]:
-    """The scope globs recorded under a ``## Scope`` heading, as _child_body writes them."""
-    scope: list[str] = []
-    in_scope = False
-    for line in description.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("## "):
-            in_scope = stripped == _SCOPE_HEADING
-            continue
-        if in_scope:
-            match = _SCOPE_LINE.match(stripped)
-            if match:
-                scope.append(match.group(1))
-    return tuple(scope)
+    """The scope globs recorded under a ``## Scope`` heading, as _child_body writes them.
+
+    Delegates the reading to :func:`plan_gate.backticked_entries`, so the section
+    reader the build entry predicate uses and the one every sizing and merge gate uses
+    are the same code — two readers of one recorded form is how the form drifts.
+    """
+    return plan_gate.backticked_entries(description, _SCOPE_HEADING)
 
 
 def unparsed_scope_warning(description: str) -> str | None:
@@ -1934,12 +1986,26 @@ def _child_body(spec: ChildSpec) -> str:
     deliberate trade: the placeholder satisfies the gate structurally, so the
     fan-out proceeds and the bead says out loud what is still owed, where omitting
     the heading would instead wedge the child before anyone could supply it.
+
+    The ``## Plan`` section records the three fields the plan gate added, so a lane
+    dispatched later can be held to the plan it was decomposed under
+    (:func:`plan_gate.build_entry_verdict`). Without it the fields would live only in
+    the plan document, which nothing keeps once the children exist.
     """
     return policy.compose_body(
         spec.type,
         {
             "## Acceptance Criteria": "\n".join(f"- {item}" for item in spec.acceptance),
-            "## Scope": "\n".join(f"- `{glob}`" for glob in spec.scope),
+            plan_gate.SCOPE_HEADING: "\n".join(f"- `{glob}`" for glob in spec.scope),
+            # :func:`decompose` gates before it records, so these are never absent on
+            # the real path. The fall-backs record an *empty* value rather than a
+            # plausible one, so a spec that reached here ungated is refused again by
+            # the entry predicate instead of looking declared.
+            plan_gate.PLAN_HEADING: plan_gate.render_plan_section(
+                spec.depends_on or (),
+                spec.budget_tokens or 0,
+                spec.integrity or "",
+            ),
         },
     )
 
@@ -2025,20 +2091,33 @@ def _assert_no_new_cycles(repo_root: Path, created_ids: set[str]) -> None:
 
 
 def decompose(repo_root: Path, feature_id: str, children: tuple[ChildSpec, ...]) -> DecomposeResult:
-    """Create child issues under *feature_id* and wire the computed serial chains.
+    """Create child issues under *feature_id* and wire the declared and computed graphs.
 
-    The sizing governor runs first (D8): every child's context cost must land
-    inside the configured working-set band or the whole plan is refused before
-    anything is recorded. Each child is then created with acceptance criteria
-    (so DoR passes) and the parent's labels (so it stays in the parent's phase),
-    and any two children that :func:`serializes` are chained by a ``blocks`` edge in
-    declared order. The resulting graph is checked for cycles before the result —
-    carrying the parallel groups, the serial order, and the paths that were
-    load-bearing for the grouping — is returned.
+    The plan gate runs first and the sizing governor second, both before anything is
+    recorded: a plan missing a field, or whose declared dependencies contain a cycle,
+    is refused with no issue created, because a half-recorded decomposition is worse
+    than none — the children exist, nothing owns un-creating them, and the next run
+    creates a second set.
+
+    Two sources of ``blocks`` edges, unioned:
+
+    * **declared** — what the plan says must land first, resolved from sibling titles
+      to the ids just created. This is ordering the scopes cannot express: B needing
+      A's decision is invisible to a glob comparison when the two touch no common
+      file, and before this existed the graph simply did not carry it.
+    * **computed** — the serial chain within a scope-overlap group, which is a
+      parallel-*safety* fact rather than an ordering one.
+
+    Each child is created with acceptance criteria (so DoR passes), its recorded
+    ``## Plan`` section, and the parent's labels (so it stays in the parent's phase).
+    The resulting graph is checked for cycles before the result — carrying the parallel
+    groups, the serial order, and the paths that were load-bearing for the grouping —
+    is returned.
     """
     if not children:
         raise ValueError("decompose needs at least one child spec")
 
+    plan_gate.require_plan(children)
     govern_working_set(repo_root, children, feature_id=feature_id)
     contended = append_only_paths(repo_root)
     groups = group_children(children, contended)
@@ -2046,15 +2125,21 @@ def decompose(repo_root: Path, feature_id: str, children: tuple[ChildSpec, ...])
 
     inherited = feature_labels(repo_root, feature_id)
     issue_ids = [_create_child(repo_root, feature_id, spec, inherited) for spec in children]
+    by_title = {spec.title: issue_ids[index] for index, spec in enumerate(children)}
 
     created: list[CreatedChild] = []
     for index, spec in enumerate(children):
         pred = predecessors[index]
-        depends_on: tuple[str, ...] = ()
+        # Declared first so the graph reads in the plan's own order; the computed
+        # chain then adds only what it did not already say. dict.fromkeys dedupes a
+        # declared edge that the scope chain would have drawn anyway, without which
+        # the same pair would be added twice.
+        wanted = [by_title[dep] for dep in (spec.depends_on or ())]
         if pred is not None:
-            pred_id = issue_ids[pred]
-            _run_br(repo_root, ["dep", "add", issue_ids[index], pred_id, "-t", "blocks"])
-            depends_on = (pred_id,)
+            wanted.append(issue_ids[pred])
+        depends_on = tuple(dict.fromkeys(wanted))
+        for dep_id in depends_on:
+            _run_br(repo_root, ["dep", "add", issue_ids[index], dep_id, "-t", "blocks"])
         created.append(CreatedChild(issue_ids[index], spec, groups[index], depends_on))
 
     _assert_no_new_cycles(repo_root, set(issue_ids))

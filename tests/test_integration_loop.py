@@ -82,6 +82,11 @@ needs_br = pytest.mark.skipif(
     br.which() is None, reason="the beads tracker (br) is not installed on this machine"
 )
 
+# The three fields the plan gate requires of every child (basicly-u2hl.1). These tests
+# are about the lane's run order, so each sub-task declares the minimum and no
+# dependency — the ordering under test is the one scope overlap derives.
+_GATED = {"depends_on": (), "budget_tokens": 40_000, "integrity": "L2"}
+
 # A verify check the test can make fail on demand, so a red landing is a real
 # subprocess verdict rather than a patched return value. Uses the running
 # interpreter (as_posix so a Windows path survives TOML) and nothing else.
@@ -400,8 +405,15 @@ def test_a_lane_runs_its_sub_tasks_in_sequence_then_integrates(harness_repo: Pat
     tree = Path(session.worktree_path)
 
     plan = (
-        ChildSpec("tokenize the input", ("Given input when tokenized then tokens",), ("app.txt",)),
-        ChildSpec("parse the tokens", ("Given tokens when parsed then a tree",), ("app.txt",)),
+        ChildSpec(
+            "tokenize the input",
+            ("Given input when tokenized then tokens",),
+            ("app.txt",),
+            **_GATED,
+        ),
+        ChildSpec(
+            "parse the tokens", ("Given tokens when parsed then a tree",), ("app.txt",), **_GATED
+        ),
     )
     recorded = loop.advance(repo, lane, inputs=loop.Inputs(children=plan))
     assert recorded.blocked
@@ -456,7 +468,7 @@ def test_a_sub_task_is_not_closed_by_a_sibling_whose_id_extends_it(harness_repo:
     tree = Path(session.worktree_path)
 
     plan = tuple(
-        ChildSpec(f"step {n}", (f"Given step {n} when run then done",), ("app.txt",))
+        ChildSpec(f"step {n}", (f"Given step {n} when run then done",), ("app.txt",), **_GATED)
         for n in range(1, 11)
     )
     loop.advance(repo, lane, inputs=loop.Inputs(children=plan))

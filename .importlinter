@@ -27,7 +27,7 @@ layers =
     commit | merge
     classify | decompose | loop_state | rubrics
     decisions
-    policy | tuning | verify
+    plan_gate | policy | tuning | verify
     config | worktree
     claude_settings | runner
     agents | catalog_verify | fleet | hooks | loader | models | permissions | planner | renderers | skills | state

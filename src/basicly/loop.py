@@ -56,6 +56,7 @@ from . import (
     loop_state,
     merge,
     needs_input,
+    plan_gate,
     policy,
     rubrics,
     run_record,
@@ -651,6 +652,17 @@ def _dispatch_refused(ctx: _Ctx, name: str) -> AdvanceResult | None:
             f"dispatch refused before it started: {spend.detail}",
             needs_input="grant",
         )
+    # The plan gate, on entry to BUILD rather than on exit from DECOMPOSE: inspection
+    # belongs before the expensive stage, and BUILD is where nearly all the tokens go.
+    #
+    # Ratcheted with the rest of the plan fields, so it sits *after* the grant check
+    # rather than before it: a granted dispatch is a factory lane, whose bead decompose
+    # wrote a `## Plan` section for. A hand-filed bead driven with no session root keeps
+    # the behaviour it has always had, which is what stops this refusing the 600-odd
+    # beads that predate the section instead of gating the work that comes after it.
+    entry = plan_gate.build_entry_verdict(ctx.repo_root, ctx.issue_id)
+    if not entry.admitted:
+        return _blocked(ctx, entry.reason, needs_input="plan")
     sizing = load_sizing_config(ctx.repo_root)
     admission = supervise.admit_working_set(ctx.repo_root, ctx.issue_id, sizing)
     queued = supervise.escalate_working_set(ctx.repo_root, admission)
