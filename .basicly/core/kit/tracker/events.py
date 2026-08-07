@@ -573,13 +573,34 @@ _HANDLERS: dict[str, Callable[[RecordState, Mapping[str, object]], None]] = {
 KNOWN_KINDS = frozenset(_HANDLERS) | {KIND_DISPATCH}
 
 
-def fold(events: Iterable[Event]) -> FoldResult:
+def _resumed(state: RecordState) -> RecordState:
+    """A copy of *state*, so folding onto a checkpoint never mutates the caller's records."""
+    return RecordState(
+        record=state.record,
+        status=state.status,
+        fields=dict(state.fields),
+        comments=list(state.comments),
+        tombstoned=state.tombstoned,
+        totals=state.totals,
+        max_seq=state.max_seq,
+    )
+
+
+def fold(events: Iterable[Event], *, seed: Mapping[str, RecordState] | None = None) -> FoldResult:
     """Fold *events* into per-item state, in canonical order.
 
     The sort is the contract: the result is a function of the event **set**, so a shuffled
     log, a reversed log and a log a union merge concatenated in an arbitrary side-order all
     fold to the same state. An unknown kind is counted and reported, never folded and never
     an error.
+
+    *seed* resumes the fold from state somebody already folded — the rotation checkpoint
+    (`snapshot.py`, basicly-vkh0.14), so steady state folds a checkpoint plus the current
+    file instead of the whole archive. It exists so there is **one** fold rather than a
+    second implementation that applies an event to an existing state; the seed is copied,
+    never mutated. It carries one limitation the from-scratch fold does not: a seeded item's
+    already-claimed sequence numbers are not in the checkpoint, so a fork straddling the
+    boundary is invisible here and only a full-history fold reports it.
 
     Raises:
         InvalidEventError: a **known** kind carries a payload it cannot mean — a ``field``
@@ -589,6 +610,8 @@ def fold(events: Iterable[Event]) -> FoldResult:
     """
     collected = list(events)
     result = FoldResult()
+    if seed is not None:
+        result.records = {name: _resumed(state) for name, state in seed.items()}
     counts: dict[str, int] = {}
     for event in collected:
         counts[event.id] = counts.get(event.id, 0) + 1
