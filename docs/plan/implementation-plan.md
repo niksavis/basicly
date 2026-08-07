@@ -78,7 +78,7 @@ commit, because every hand-written copy of them was stale within days:
 | Measure | Value |
 | --- | --- |
 | Engine modules (`src/basicly/*.py`) | 43 |
-| Test files | 80 |
+| Test files | 81 |
 | `[[verify.checks]]` declared | 19 |
 | …of which run in `--mode fast` | 14 |
 | …of which run in `--mode full` | 18 |

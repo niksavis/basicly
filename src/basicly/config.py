@@ -6,7 +6,7 @@ import tomllib
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from . import __version__, permissions, session
+from . import __version__, br, permissions, session
 from .models import ModelResolutionError
 from .runner import (
     AGENT_TIER,
@@ -714,6 +714,9 @@ CONFIG_SCHEMA: dict[str, _Table] = {
         tables={"context_windows": _OPEN_TABLE},
         arrays={"agents": _RUNNER_AGENT_TABLE},
     ),
+    # Which step of the work-tracker cutover this repo is on (basicly-vkh0.19).
+    # Read by :func:`load_tracker_mode` and acted on inside `basicly.br`.
+    "tracker": _Table(keys=frozenset({"mode"})),
     # Read by .basicly/core/hooks/internal-info-scan.py, never by this module: the
     # denylist is machine-local by design, so the only file it can live in is the
     # gitignored overlay this schema also governs.
@@ -858,6 +861,44 @@ def _harness_section(repo_root: Path, name: str) -> dict:
             merged.update(section)
     merged.update(session.overrides_for(name))
     return merged
+
+
+def load_tracker_mode(repo_root: Path) -> str:
+    """Which step of the work-tracker cutover ``[tracker] mode`` declares.
+
+    The ladder is `docs/design/work-tracker.md` §5 and its values are
+    :data:`basicly.br.TRACKER_MODES`; the module that acts on the answer owns the
+    vocabulary, so there is one spelling of ``dual`` in the engine.
+
+    Absent means :data:`basicly.br.DEFAULT_TRACKER_MODE` — the pre-cutover behaviour,
+    which is what a consumer who has never heard of the owned tracker must get.
+
+    An unrecognised value is refused rather than defaulted, for the reason
+    :data:`CONFIG_SCHEMA` refuses an unrecognised *name*: a mode the engine cannot
+    honour leaves the file stating one behaviour and the engine performing another,
+    and here the two behaviours differ in which store answers a read.
+
+    Raises:
+        ValueError: ``mode`` is set to something outside :data:`basicly.br.TRACKER_MODES`.
+    """
+    mode = _harness_section(repo_root, "tracker").get("mode")
+    if mode is None:
+        return br.DEFAULT_TRACKER_MODE
+    if mode not in br.TRACKER_MODES:
+        raise ValueError(
+            f"[tracker] mode = {mode!r} is not one of {', '.join(br.TRACKER_MODES)}; "
+            f"the work-tracker cutover has no other step (docs/design/work-tracker.md §5)"
+        )
+    return mode
+
+
+# The engine's answer to "which store is authoritative" is installed into the seam
+# that acts on it, rather than imported by it. `basicly.br` cannot import this module:
+# `config -> runner -> run_record -> br` already runs the other way, so the import
+# would close a cycle. :func:`basicly.br.set_mode_reader` documents the inversion; this
+# is the one line that performs it, and `tests/test_br_seam.py` asserts that importing
+# this module is what puts the seam in a repo's declared mode.
+br.set_mode_reader(load_tracker_mode)
 
 
 @dataclass(frozen=True)

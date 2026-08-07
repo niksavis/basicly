@@ -554,6 +554,44 @@ def test_the_read_asks_br_for_json(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     assert spawn.calls == [["show", "b-1", "--json"]]
 
 
+# --- the cutover is inert until it is declared (basicly-vkh0.19) --------------
+
+
+def test_a_repo_that_declares_no_mode_never_touches_the_owned_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The riskiest property of the dual write is that it changes nothing by default.
+
+    A consumer clone has no ``[tracker]`` section and no kit tracker installed, so
+    every br call must behave exactly as it did before the cutover existed — no ledger
+    directory created in somebody else's tree, and no kit import attempted. Asserted by
+    making the kit loader fail the test if it is reached at all, which is stronger than
+    checking that no file appeared.
+    """
+    monkeypatch.setattr(br, "which", lambda: "/usr/bin/br")
+    monkeypatch.setattr(br, "_probed_paths", {"/usr/bin/br"})
+    monkeypatch.setattr(br.subprocess, "run", lambda _cmd, **_kw: _proc("", 0))
+    monkeypatch.setattr(br, "kit", lambda _root: pytest.fail("the kit must not be loaded"))
+
+    br.run_br(tmp_path, ["comments", "add", "b-1", "a note"])
+    br.try_run_br(tmp_path, ["sync", "--merge"])
+
+    assert br.tracker_mode(tmp_path) == br.MODE_EXTERNAL
+    assert not (tmp_path / ".basicly").exists()
+
+
+def test_the_read_seam_still_spawns_br_before_the_flip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`read_record`'s default path is unchanged: the flip is a declared mode, not a drift."""
+    spawn = _Spawn(_proc('[{"id":"b-1"}]'))
+    monkeypatch.setattr(br, "try_run_br", spawn)
+    monkeypatch.setattr(br, "owned_record", lambda *_a: pytest.fail("must not read the ledger"))
+
+    assert br.read_record(tmp_path, "b-1") == {"id": "b-1"}
+    assert spawn.calls == [["show", "b-1", "--json"]]
+
+
 def test_no_module_outside_the_seam_unwraps_a_record_itself() -> None:
     """The rule this bead exists to hold, checked against the tree rather than by eye.
 
