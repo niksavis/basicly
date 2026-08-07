@@ -751,7 +751,11 @@ class DispatchBundle:
 
 
 def build_bundle(
-    repo_root: Path, issue_id: str, *, known_ids: frozenset[str] = frozenset()
+    repo_root: Path,
+    issue_id: str,
+    *,
+    known_ids: frozenset[str] = frozenset(),
+    cwd: Path | None = None,
 ) -> DispatchBundle:
     """Assemble *issue_id*'s dispatch bundle from ``br`` state right now.
 
@@ -761,6 +765,19 @@ def build_bundle(
     the lane's declared ``## Scope``. Because assembly happens at dispatch time,
     a record published while earlier lanes ran is naturally visible to every
     later dispatch, and never to one already in flight (D6).
+
+    Given the lane's worktree in *cwd*, a repair brief left there by a failed gate
+    replaces the base prompt with :func:`loop.repair_prompt` (D5). That is the
+    whole of "supervised rework repairs rather than rebuilds": the dispatch runs in
+    the same worktree it always did, but it now starts from the gate's own
+    findings instead of the fixed text that sent the first run at the requirement.
+    The cross-lane records and answers still fold in — they are facts about the
+    work, and a repair run is as entitled to them as a build.
+
+    The brief is carried in the prompt and nowhere else, deliberately: a
+    ``repair`` flag on this record would be read only by the module that set it,
+    and the prompt is already what every consumer of a dispatch — the runner, the
+    recorded dispatch inputs, an operator reading the telemetry — actually sees.
     """
     record = _show_issue(repo_root, issue_id) or {}
     scope = decompose.parse_scope_section(str(record.get("description") or ""))
@@ -770,7 +787,8 @@ def build_bundle(
     # Newest-last comment order; under the cap, keep the most recent records —
     # they reflect the latest graph and landed work.
     folded = tuple(matching[-_MAX_FOLDED_RECORDS:])
-    prompt = loop.dispatch_prompt(issue_id)
+    repair = loop.take_repair_brief(cwd) if cwd is not None else None
+    prompt = loop.repair_prompt(repair) if repair is not None else loop.dispatch_prompt(issue_id)
     if folded:
         lines = []
         for info in folded:
@@ -2779,8 +2797,12 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
     # fact; a failure after the process is up would be mislabelled, which is why the
     # region stops at `runner.run` and the recorded run below sits outside it.
     try:
-        bundle = build_bundle(repo_root, lane.issue_id, known_ids=known)
+        # The lane's existing worktree, and the only one this dispatch ever runs
+        # in — a rework round re-enters here rather than provisioning a fresh tree,
+        # so handing it to the bundle is what lets a failed gate's brief reach the
+        # run that has to fix it (basicly-u2hl.4).
         cwd = Path(record.worktree_path)
+        bundle = build_bundle(repo_root, lane.issue_id, known_ids=known, cwd=cwd)
         runner_config = load_runner_config(repo_root)
         # A lane draws on the reserved lane slots, so it never waits behind a helper
         # (component 8, basicly-kjc5.11). The watchdog only *flags* a wedge
@@ -4019,7 +4041,13 @@ def _land_green(
     invalidated = _invalidated_by(repo_root, session, outcome.issue_id, landed)
     if invalidated:
         return _preempt_lane(repo_root, outcome.issue_id, invalidated)
-    landing = loop.advance(repo_root, outcome.issue_id)
+    # ``repair_dispatch=False``: a red gate here leaves its brief for the next
+    # pass's ``_dispatch_lane`` to run, rather than having the landing spawn an
+    # agent of its own (basicly-u2hl.4). A dispatch from inside the landing would
+    # sit outside the spend bound, the stall watchdog and the stream meter that
+    # every supervised run is metered by, and it would run while the pass still
+    # holds lanes waiting to land.
+    landing = loop.advance(repo_root, outcome.issue_id, repair_dispatch=False)
     if landing.blocked:
         return _route_blocked_landing(repo_root, outcome, landing, collisions)
     approval = policy.approve_checkpoint_guarded(

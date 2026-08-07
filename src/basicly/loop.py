@@ -162,6 +162,12 @@ class _Ctx:
     # one (``loop run --root``). None leaves the dispatch cost gates inert, which is
     # what every caller that never had a session root already got (basicly-1th1).
     grant_root: str | None = None
+    # Whether this driver wants the build phase to spend a repair dispatch itself
+    # (basicly-u2hl.4). True for the interactive path, which has no other dispatch
+    # step; False for the supervisor, whose landing pass must not spawn an agent —
+    # it dispatches the repair from ``supervise._dispatch_lane`` instead, under the
+    # spend gate, the watchdog and the stream meter that only exist there.
+    repair_dispatch: bool = True
 
 
 def _blocked(  # noqa: PLR0913 — one keyword per block shape, all mutually exclusive
@@ -321,11 +327,19 @@ def _on_build(ctx: _Ctx) -> AdvanceResult:
     A node whose package was split into sub-task beads is a lane (D7): its
     sub-tasks run in sequence inside this one worktree before it may land. A plain
     leaf has no sub-tasks and lands whatever its own dispatch committed.
+
+    A gate that went red last advance left a repair brief in that same worktree,
+    and repairing is what the node owes before anything else: re-running the
+    landing without it would re-derive the verdict already on the bead, and
+    running the next sub-task would build on a step a gate rejected.
     """
     if ctx.state.worktree is None:
         return _blocked(ctx, "build phase without a bound worktree")
     if ctx.inputs.children and not ctx.state.has_children:
         return _decompose_lane(ctx, ctx.inputs.children)
+    repaired = _repair_in_place(ctx, ctx.state.worktree)
+    if repaired is not None:
+        return repaired
     if ctx.state.has_children:
         return _run_lane(ctx, ctx.state.worktree)
     return _verify_and_land(ctx, ctx.state.worktree.name)
@@ -660,12 +674,14 @@ class _Dispatch:
     timeout: float
 
 
-def _run_agent(ctx: _Ctx, issue_id: str, cwd: Path) -> _Dispatch:
+def _run_agent(ctx: _Ctx, issue_id: str, cwd: Path, *, prompt: str | None = None) -> _Dispatch:
     """Dispatch *issue_id*'s prompt through the configured runner in *cwd*, recorded.
 
     The prompt is assembled per dispatch, so a lane's sequential sub-tasks each
     start from a fresh context that already sees the commits their predecessors
-    made (D6/D7).
+    made (D6/D7). *prompt* overrides it for the one dispatch that is not a build:
+    a repair run, which is briefed with the gate that rejected the work rather
+    than with the requirement (:func:`repair_prompt`, D5).
 
     The sizing is measured *before* the agent runs and recorded with the dispatch
     (basicly-kjc5.30, basicly-jr0l.34). The scope read-cost is the denominator of
@@ -676,7 +692,7 @@ def _run_agent(ctx: _Ctx, issue_id: str, cwd: Path) -> _Dispatch:
     """
     config = load_runner_config(ctx.repo_root)
     spec = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
-    prompt = dispatch_prompt(issue_id)
+    prompt = prompt if prompt is not None else dispatch_prompt(issue_id)
     sizing = sizing_at_dispatch(ctx.repo_root, issue_id)
     # A sub-task runner is the lane's own write agent (D7), so it draws on the
     # lane reservation like any lane dispatch (component 8, basicly-kjc5.11).
@@ -821,6 +837,262 @@ def dispatch_prompt(issue_id: str) -> str:
         '{"fact": "<the missing fact>", "detail": "<what you tried>"} and stop '
         "without committing a guess — the loop will block and surface it."
     )
+
+
+# --- Repair in place: the failing gate briefs the run that fixes it (u2hl.4) -
+#
+# Two measured gaps, one mechanism (docs/design/factory-loop-requirements.md §1):
+# supervised rework dispatched a *fresh* run, and the prompt it dispatched was
+# :func:`dispatch_prompt` — the same fixed text the lane started from, carrying
+# nothing about what had just failed. So the repair run re-derived the work from
+# the tracker and re-discovered the defect at the same gate, if at all.
+#
+# D5 makes repair a **mode of the implementer**, not a persona: same bead, same
+# worktree, a different brief. The brief is written where the failure is seen
+# (:func:`_rework`, the one funnel every finding-reporting gate passes through)
+# and read where the next run starts — by ``_on_build`` on the interactive path
+# and by ``supervise.build_bundle`` on the supervised one, so neither driver has
+# a way to dispatch a blind rework.
+#
+# It lives in the lane's own worktree under the self-ignored usage dir (the
+# needs-input sentinel's convention, basicly-o774): bound to the tree it
+# describes, never in a commit, and consumed on read so a stale brief cannot
+# re-fire against a gate that has since passed.
+
+# The brief a failed gate leaves for the run that repairs it, relative to the
+# worktree root.
+REPAIR_BRIEF_FILE = Path(".basicly/usage/repair-brief.json")
+
+# The gates whose failure a repair run can act on: the two that judge the lane's
+# own diff. The merge gate is not one of them — a collision is not a defect in
+# the work, and ``supervise._bounce_lane`` briefs its owner from the conflicting
+# paths instead. A landing that failed on its *verify* gate is admitted through
+# :data:`_LANDING_VERIFY_FAILED`, because that one is a red gate on this diff
+# whatever the record happens to be keyed under.
+REPAIR_GATES = (verify.DEFAULT_GATE, rubrics.RUBRIC_GATE)
+
+# The landing status that is a red verify rather than a collision or a state
+# (``merge.MergeResult.status``).
+_LANDING_VERIFY_FAILED = "verify-failed"
+
+# Bounds on what one brief may carry into a prompt. A gate's output is unbounded
+# — a failing suite can print megabytes — and a prompt that does not fit is a
+# repair that never starts, so the tail of each check's output is kept (a failure
+# reports at the end) and the number of checks is capped.
+MAX_REPAIR_EVIDENCE = 5
+MAX_REPAIR_OUTPUT_CHARS = 2000
+
+
+@dataclass(frozen=True)
+class GateEvidence:
+    """One failing check as the gate itself reported it: name, command, output."""
+
+    check: str
+    command: str = ""
+    output: str = ""
+
+
+@dataclass(frozen=True)
+class RepairBrief:
+    """What a failed gate reported, in the shape a repair dispatch is briefed with.
+
+    *issue_id* is the bead the failure is attributed to, which is not always the
+    node holding the worktree: a lane's sub-task fails on its own record and is
+    repaired in the lane's tree.
+    """
+
+    issue_id: str
+    gate: str
+    reason: str
+    findings: tuple[str, ...] = ()
+    evidence: tuple[GateEvidence, ...] = ()
+
+    def as_dict(self) -> dict[str, object]:
+        """The JSON shape written to the worktree."""
+        return {
+            "issue_id": self.issue_id,
+            "gate": self.gate,
+            "reason": self.reason,
+            "findings": list(self.findings),
+            "evidence": [
+                {"check": e.check, "command": e.command, "output": e.output} for e in self.evidence
+            ],
+        }
+
+
+def _parse_repair_brief(data: object) -> RepairBrief | None:
+    """The brief *data* describes, or None when it is not a well-formed one.
+
+    Tolerant in the same way and for the same reason as the needs-input sentinel:
+    a garbled brief costs one un-briefed dispatch, where raising would fail the
+    build phase on a file that is by construction advisory.
+    """
+    if not isinstance(data, dict):
+        return None
+    issue_id, gate = data.get("issue_id"), data.get("gate")
+    if not isinstance(issue_id, str) or not issue_id.strip():
+        return None
+    if not isinstance(gate, str) or not gate.strip():
+        return None
+    reason = data.get("reason")
+    raw_findings = data.get("findings")
+    findings = (
+        tuple(f for f in raw_findings if isinstance(f, str) and f.strip())
+        if isinstance(raw_findings, list)
+        else ()
+    )
+    raw_evidence = data.get("evidence")
+    evidence = (
+        tuple(
+            GateEvidence(
+                str(e.get("check", "")), str(e.get("command", "")), str(e.get("output", ""))
+            )
+            for e in raw_evidence
+            if isinstance(e, dict) and str(e.get("check", "")).strip()
+        )
+        if isinstance(raw_evidence, list)
+        else ()
+    )
+    return RepairBrief(
+        issue_id=issue_id.strip(),
+        gate=gate.strip(),
+        reason=reason.strip() if isinstance(reason, str) else "",
+        findings=findings,
+        evidence=evidence,
+    )
+
+
+def write_repair_brief(cwd: Path, brief: RepairBrief) -> bool:
+    """Leave *brief* in worktree *cwd* for its next dispatch; True when written.
+
+    Never creates the worktree, only the usage dir inside an existing one: a
+    binding whose tree is gone gets no brief rather than a directory nothing will
+    ever read, and the caller is a gate-failure path that must not acquire a
+    second way to fall over — so an unwritable tree simply yields False and the
+    next dispatch is the un-briefed one it was before.
+    """
+    if not cwd.is_dir():
+        return False
+    path = cwd / REPAIR_BRIEF_FILE
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(brief.as_dict(), indent=2) + "\n", encoding="utf-8")
+    except OSError:
+        return False
+    return True
+
+
+def take_repair_brief(cwd: Path) -> RepairBrief | None:
+    """Read and consume the repair brief in worktree *cwd*, if a gate left one.
+
+    Consumed on presence, valid or not, for the sentinel's reason: a brief
+    describes one failed round, so leaving it would brief a second run about a
+    gate the first may already have fixed.
+    """
+    path = cwd / REPAIR_BRIEF_FILE
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    with contextlib.suppress(OSError):
+        path.unlink()
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    return _parse_repair_brief(data)
+
+
+def _clip_output(text: str) -> str:
+    """The tail of *text* under :data:`MAX_REPAIR_OUTPUT_CHARS`, marked when cut."""
+    text = text.strip()
+    if len(text) <= MAX_REPAIR_OUTPUT_CHARS:
+        return text
+    return "…(earlier output cut)…\n" + text[-MAX_REPAIR_OUTPUT_CHARS:]
+
+
+def verify_evidence(report: verify.VerifyReport, cwd: Path, mode: str) -> tuple[GateEvidence, ...]:
+    """The failing checks of *report*, each with the command it ran and its output.
+
+    The output is collected by re-running exactly the checks that failed with
+    capture on — :func:`verify.rerun_failures`, the same call the landing gate
+    already makes for its unreliable-gate test, and evidence rather than a retry:
+    nothing in the tree, the config or the command line differs between the two
+    runs. It is paid for only where a gate has already failed and the loop is
+    about to spend an agent dispatch on it, which costs orders of magnitude more
+    than re-running the checks.
+
+    A check that passes on the re-run still contributes its (empty) output rather
+    than being dropped. Whether a failure reproduces is the landing gate's verdict
+    to make, and a brief that quietly omitted a finding would under-report what
+    the repair has to fix.
+    """
+    failures = sorted(set(report.failures))[:MAX_REPAIR_EVIDENCE]
+    if not failures:
+        return ()
+    commands: dict[str, str] = {}
+    with contextlib.suppress(OSError, ValueError):
+        commands = {
+            check.name: " ".join(check.command)
+            for check in verify.load_verify_config(cwd).for_mode(mode)
+        }
+    outputs: dict[str, str] = {}
+    with contextlib.suppress(OSError, ValueError):
+        rerun = verify.rerun_failures(report, cwd, mode, capture=True)
+        outputs = {r.name: (r.output or r.detail) for r in rerun.results}
+    return tuple(
+        GateEvidence(name, commands.get(name, ""), _clip_output(outputs.get(name, "")))
+        for name in failures
+    )
+
+
+def repair_prompt(brief: RepairBrief) -> str:
+    """The dispatch prompt for a repair run: fix what the gate reported, in place.
+
+    Deliberately not :func:`dispatch_prompt` with a note appended. A build prompt
+    tells the agent to read the requirement and implement it, which on a repair is
+    the wrong instruction twice over: the work exists and is committed on this
+    branch, and one named gate rejected it. What the run needs is the gate, its
+    command and its output — the three things the fixed text carried none of — and
+    an explicit refusal of the two moves that turn a repair back into a build:
+    re-planning the work, and starting somewhere else.
+    """
+    lines = [
+        f"You are in the existing git worktree for the tracked issue {brief.issue_id}. "
+        "The work is already committed on this branch and a gate rejected it. Repair "
+        "it here, in this worktree: do not re-plan the work, do not start a new "
+        "branch or worktree, and do not revert the commits already on it.",
+        "",
+        f"Gate: {brief.gate}",
+    ]
+    if brief.reason:
+        lines.append(f"Verdict: {brief.reason}")
+    if brief.findings:
+        lines += ["", "What the gate reported:", *(f"- {finding}" for finding in brief.findings)]
+    for item in brief.evidence:
+        if not item.command and not item.output:
+            # The check's name is already in the findings, so an entry the gate
+            # gave neither a command nor an output for would add a bare heading
+            # and no fact — measured against this repo's own config, where a
+            # check that runs in another mode resolves to exactly that.
+            continue
+        header = f"Check {item.check}"
+        if item.command:
+            header += f" — command: {item.command}"
+        lines += ["", header]
+        if item.output:
+            lines += ["", "```", item.output, "```"]
+    lines += [
+        "",
+        "Fix the cause the gate names and re-run its command until it passes, then "
+        f"commit the fix on this branch referencing {brief.issue_id}. Do not merge, "
+        "push, or close the issue — the harness loop lands and ships it.",
+        "If you exhaust your ability to resolve a required fact, do NOT guess: write "
+        f"{needs_input.SENTINEL_FILE.as_posix()} as "
+        '{"fact": "<the missing fact>", "detail": "<what you tried>"} and stop '
+        "without committing a guess — the loop will block and surface it.",
+    ]
+    return "\n".join(lines)
 
 
 # --- Delegated proposals: originating a phase's input (basicly-u6jq.2) -------
@@ -1440,6 +1712,7 @@ def _verify_and_land(
             f"merge failed: {result.detail}",
             landing=result,
             findings=_landing_findings(result),
+            evidence=_landing_evidence(result, mode),
         )
     return _record_verify(ctx, result.detail, verify_mode=mode)
 
@@ -1469,6 +1742,74 @@ def _landing_findings(result: merge.MergeResult) -> tuple[str, ...]:
     if result.conflicted:
         return ()
     return (f"status={result.status}", result.detail)
+
+
+def _landing_evidence(result: merge.MergeResult, mode: str) -> tuple[GateEvidence, ...]:
+    """How to reproduce a landing's red verify, for the repair brief (pure).
+
+    Only the command, not the output. The landing gate ran the checks inside the
+    worktree and captured their output for its unreliable-gate test, but that
+    report does not survive on :class:`merge.MergeResult` — the same limit
+    :func:`_landing_findings` records, and widening it is merge's contract to
+    change, not a string this function should guess at. So the brief carries the
+    gate's own rendering of *which* checks failed (in the findings) and the one
+    command that reproduces them, which is what a repair run needs to get to the
+    output itself.
+
+    Nothing for any other status: a collision, a stale branch or an uncommitted
+    worktree is not a check a repair run can re-run.
+    """
+    if result.status != _LANDING_VERIFY_FAILED:
+        return ()
+    return (GateEvidence(check=f"verify {mode}", command=f"basicly verify --mode {mode}"),)
+
+
+def _repair_in_place(ctx: _Ctx, binding: loop_state.WorktreeBinding) -> AdvanceResult | None:
+    """Dispatch a repair run in the bound worktree when a gate left a brief, else None.
+
+    The worktree is the one already bound to the node — the brief was written into
+    it and is read out of it — so there is no path from here to
+    ``worktree.create``. That is the whole substance of repair *in place*: the diff
+    a gate rejected, the branch it sits on and the run that fixes it are the same
+    tree, and the run starts knowing what failed instead of re-deriving the work
+    from the tracker (D5).
+
+    Inert for a driver that dispatches elsewhere (``ctx.repair_dispatch``): under
+    the supervisor this function's caller is a *landing* pass, and a landing that
+    spawned an agent would run it outside the spend gate, the stall watchdog and
+    the stream meter that only exist in ``supervise._dispatch_lane``. The brief is
+    left where that dispatch reads it instead.
+
+    The brief is consumed on read, so a repair that itself fails leaves a fresh one
+    through :func:`_rework` and a repair the gate then accepts leaves none — the
+    loop is bounded by the same per-gate cap and total ceiling as any other rework
+    round, and this adds no cycle of its own.
+    """
+    if not ctx.repair_dispatch:
+        return None
+    session = _bound_session(ctx, binding)
+    if session is None:
+        return None
+    cwd = Path(session.worktree_path)
+    brief = take_repair_brief(cwd)
+    if brief is None:
+        return None
+    where = f"worktree {binding.name!r}"
+    dispatch = _run_agent(ctx, brief.issue_id, cwd, prompt=repair_prompt(brief))
+    if dispatch.result.handoff:
+        return _blocked(
+            ctx,
+            f"repair for gate {brief.gate!r} handed to the driving agent in {where}; "
+            "awaiting its work",
+        )
+    held = _runner_block(ctx, dispatch, issue_id=brief.issue_id, target=where)
+    if held is not None:
+        return held
+    return _blocked(
+        ctx,
+        f"runner {dispatch.spec.name!r} repaired {brief.issue_id} in place against gate "
+        f"{brief.gate!r} in {where}; advance again to re-run the gate",
+    )
 
 
 # --- Lane mini-loop: sequential sub-tasks in one worktree (basicly-kjc5.9) ----
@@ -1596,6 +1937,7 @@ def _run_subtask(
             f"{where}: verify {_SUBTASK_VERIFY_MODE} failed: {', '.join(report.failures)}",
             issue_id=subtask_id,
             findings=report.failures,
+            evidence=verify_evidence(report, cwd, _SUBTASK_VERIFY_MODE),
         )
     _run_br(
         ctx.repo_root,
@@ -1713,11 +2055,30 @@ def _validate_lane(ctx: _Ctx, cwd: Path) -> AdvanceResult | None:
             rubrics.RUBRIC_GATE,
             f"lane validate failed: {', '.join(failed)}",
             findings=failed,
+            evidence=_rubric_evidence(verdicts),
         )
     disputed = rubrics.judged_failures(verdicts)
     if disputed:
         return _hold_for_validate_decision(ctx, disputed)
     return None
+
+
+def _rubric_evidence(verdicts: Sequence[rubrics.CheckVerdict]) -> tuple[GateEvidence, ...]:
+    """The deterministic ``no`` verdicts as repair evidence (pure).
+
+    The judged half is deliberately left out. A judged ``no`` is a decision, not a
+    test failure — it holds the lane on the queue rather than spending a rework
+    attempt (D4 amended) — so briefing a repair with it would have an agent act on
+    a finding a human has not yet accepted.
+
+    A rubric check carries no command of its own: its evidence *is* what the
+    evaluator observed, which is what the repair has to act on.
+    """
+    return tuple(
+        GateEvidence(check=verdict.check_id, output=_clip_output(verdict.evidence))
+        for verdict in verdicts
+        if verdict.kind == rubrics.DETERMINISTIC and verdict.answer == rubrics.NO
+    )[:MAX_REPAIR_EVIDENCE]
 
 
 def _hold_for_validate_decision(ctx: _Ctx, disputed: list[rubrics.CheckVerdict]) -> AdvanceResult:
@@ -1805,6 +2166,51 @@ def _record_verify(ctx: _Ctx, detail: str, *, verify_mode: str | None = None) ->
     return _moved(ctx, "verify", "merged", detail)
 
 
+# A lane's total rework budget, as a multiple of one gate's (D12). The per-gate
+# allowance is what the counters already record and what D12 keeps; without a
+# total, a node whose verify, validate and merge gates each go red spends
+# ``max_rework`` once per gate and reaches no cap at all — the compounding D12
+# names as the thing a ceiling has to stop.
+#
+# The factor is 2 rather than 1 so the total is never *stricter* than the per-gate
+# cap it bounds: one gate may still spend its whole allowance and a second may
+# still fail, which is the ordinary shape of a lane that is converging. It is
+# derived from ``max_rework`` rather than configured separately because a repo
+# that widens the per-gate budget means the lane's budget too, and a second knob
+# would let the two disagree.
+LANE_REWORK_CEILING_FACTOR = 2
+
+
+def lane_rework_ceiling(config: PolicyConfig) -> int:
+    """The total rework attempts a lane may spend across all of its gates."""
+    return config.max_rework * LANE_REWORK_CEILING_FACTOR
+
+
+def lane_rework_spent(repo_root: Path, issue_id: str, config: PolicyConfig) -> int | None:
+    """Attempts charged to *issue_id* across every gate; None when unreadable.
+
+    *Charged*, not recorded: an allowance an operator granted for an answered
+    ``retry`` lowers the total exactly as it lowers the per-gate count, so the one
+    lever that authorises a further attempt still works against the ceiling. A
+    ceiling no answer could ever lift would wedge the lane with nothing to do but
+    abandon it.
+
+    The gates summed are the consumer's required ones — it may name its own — plus
+    the three the engine charges itself, none of which has to appear in that list
+    to fire.
+
+    None rather than a raise when the tracker refuses. This is called from inside a
+    gate-failure path, where the per-gate cap is already bounding the loop; letting
+    a tracker hiccup turn a bounded rework into a crash would cost more than the
+    delayed ceiling, which the next attempt re-checks anyway.
+    """
+    gates = dict.fromkeys((*config.required_gates, *REPAIR_GATES, merge.MERGE_GATE))
+    try:
+        return sum(policy.rework_charged(repo_root, issue_id, gate) for gate in gates)
+    except RuntimeError, OSError, ValueError:
+        return None
+
+
 def _rework(  # noqa: PLR0913 — one parameter per recorded fact
     ctx: _Ctx,
     gate: str,
@@ -1813,6 +2219,7 @@ def _rework(  # noqa: PLR0913 — one parameter per recorded fact
     issue_id: str | None = None,
     landing: merge.MergeResult | None = None,
     findings: Sequence[str] = (),
+    evidence: Sequence[GateEvidence] = (),
 ) -> AdvanceResult:
     """Record a rework attempt for *gate* and block, escalating at the cap.
 
@@ -1835,6 +2242,14 @@ def _rework(  # noqa: PLR0913 — one parameter per recorded fact
     threshold is stricter, and :func:`supervise._bounce_lane` records and judges
     it at the bounce — where the refund and the graph edge are. Recording it here
     too would compare each round against itself and refund twice.
+
+    *evidence* is the same round rendered for whoever has to fix it — the failing
+    check's command and its output. It is carried separately from *findings*
+    because the two have different jobs: a finding is a comparable member of a set
+    the convergence test judges, evidence is the text a repair run is briefed with
+    and is deliberately not compared. Given a repairable gate and an allowance
+    still to spend, both are left in the lane's worktree as a
+    :class:`RepairBrief` for its next dispatch (D5).
     """
     target = issue_id or ctx.issue_id
     attempts = policy.record_rework(ctx.repo_root, target, gate)
@@ -1853,7 +2268,11 @@ def _rework(  # noqa: PLR0913 — one parameter per recorded fact
             # round — and then this sentence is what the human triaging the queue
             # item needs in order to see that a re-dispatch would learn nothing.
             reason = f"{reason}; warning: {convergence.detail}"
+    capped = _lane_ceiling_block(ctx, target, gate, reason, landing)
+    if capped is not None:
+        return capped
     action = "escalated" if attempts >= ctx.config.max_rework else "blocked"
+    suffix = ""
     if action == "escalated":
         decisions.enqueue(
             ctx.repo_root,
@@ -1862,12 +2281,119 @@ def _rework(  # noqa: PLR0913 — one parameter per recorded fact
             policy.rework_escalation_question(gate),
             reason,
         )
+    else:
+        # The allowance is not exhausted, so this round is going to be retried —
+        # and this is the only place that holds what the gate actually reported.
+        suffix = _brief_repair(ctx, target, gate, reason, findings, evidence, landing)
     return _blocked(
         ctx,
-        f"{reason} (rework {attempts}/{ctx.config.max_rework})",
+        f"{reason} (rework {attempts}/{ctx.config.max_rework}){suffix}",
         action=action,
         landing=landing,
     )
+
+
+def _lane_ceiling_block(
+    ctx: _Ctx,
+    target: str,
+    gate: str,
+    reason: str,
+    landing: merge.MergeResult | None,
+) -> AdvanceResult | None:
+    """Escalate when the lane's total rework across gates hits the ceiling, else None.
+
+    D12 keeps the allowance per gate, which is what the counters record and what
+    lets one bad sub-task escalate without spending the lane's whole budget. The
+    cost of that is compounding: nothing bounded a lane whose verify, validate and
+    merge gates each failed ``max_rework`` times, because no single counter ever
+    reached its cap. This is that bound, and it is checked after the convergence
+    verdict so a non-converging round still gets its refund first — a round the
+    lane was not charged for must not be the round that trips the total.
+
+    It escalates rather than blocking, for the reason the per-gate cap does: what
+    is left is a judgment call, and the queue is the one surface for those.
+
+    Keyed on *target*, so it bounds whichever record is being charged — a lane, or
+    a sub-task bounded on its own record. That is the same attribution the per-gate
+    counter uses, and using a different one here would let a sub-task's failures
+    escalate the lane it happens to sit in.
+    """
+    ceiling = lane_rework_ceiling(ctx.config)
+    spent = lane_rework_spent(ctx.repo_root, target, ctx.config)
+    if spent is None or spent < ceiling:
+        return None
+    stop = (
+        f"the lane has spent {spent} rework attempt(s) across its gates, at the total "
+        f"ceiling of {ceiling} ({ctx.config.max_rework} per gate x "
+        f"{LANE_REWORK_CEILING_FACTOR}); per-gate allowances stop compounding here — "
+        "re-scope it, fix it by hand, or drop it"
+    )
+    decisions.enqueue(
+        ctx.repo_root,
+        target,
+        policy.REWORK_ESCALATION_KIND,
+        policy.rework_escalation_question(gate),
+        f"{reason}; {stop}",
+    )
+    return _blocked(
+        ctx,
+        f"{reason}; {stop} (rework {spent}/{ceiling} total)",
+        action="escalated",
+        landing=landing,
+    )
+
+
+def _brief_repair(  # noqa: PLR0913 — one parameter per recorded fact
+    ctx: _Ctx,
+    target: str,
+    gate: str,
+    reason: str,
+    findings: Sequence[str],
+    evidence: Sequence[GateEvidence],
+    landing: merge.MergeResult | None,
+) -> str:
+    """Leave the repair brief in the lane's worktree; the detail suffix, or empty.
+
+    Only for a gate a repair run can act on (:data:`REPAIR_GATES`, plus a landing
+    that failed on its verify gate) and only while the allowance is unspent — an
+    escalated round is a human's to dispose of, and briefing a dispatch that is not
+    going to happen would leave a stale file for whatever runs next.
+
+    Written into the worktree already bound to the node, never a fresh one: the
+    brief is how "repair in place" is carried out, so it cannot be produced without
+    the tree the failing diff is in.
+    """
+    repairable = gate in REPAIR_GATES or (
+        landing is not None and landing.status == _LANDING_VERIFY_FAILED
+    )
+    if not repairable or ctx.state.worktree is None:
+        return ""
+    session = _bound_session(ctx, ctx.state.worktree)
+    if session is None:
+        return ""
+    brief = RepairBrief(
+        issue_id=target,
+        gate=gate,
+        reason=reason,
+        findings=tuple(findings),
+        evidence=tuple(evidence)[:MAX_REPAIR_EVIDENCE],
+    )
+    if not write_repair_brief(Path(session.worktree_path), brief):
+        return ""
+    return f"; briefed a repair for gate {gate!r} in worktree {ctx.state.worktree.name!r}"
+
+
+def _bound_session(ctx: _Ctx, binding: loop_state.WorktreeBinding) -> worktree.Session | None:
+    """The session record for the node's bound worktree, or None when unreadable.
+
+    Tolerant because both callers are optional paths — leaving a brief and reading
+    one — and a binding whose tree or record is gone is already reported, loudly,
+    by the landing (:func:`stale_binding_verdict`).
+    """
+    try:
+        return worktree.load_session(binding.name, ctx.repo_root)
+    except RuntimeError, OSError, ValueError:
+        return None
 
 
 def _escalate_stalled_rework(
@@ -2025,19 +2551,25 @@ _HANDLERS = {
 }
 
 
-def advance(
+def advance(  # noqa: PLR0913 — one keyword per independent driver choice
     repo_root: Path,
     issue_id: str,
     *,
     config: PolicyConfig | None = None,
     inputs: Inputs | None = None,
     grant_root: str | None = None,
+    repair_dispatch: bool = True,
 ) -> AdvanceResult:
     """Advance *issue_id* one loop phase, resuming from its ``br`` state.
 
     Reads the current phase from the tracker, dispatches to the phase handler,
     and returns the transition outcome. Blocks (rather than raising) when an
     input is missing or a checkpoint/gate is not yet satisfied.
+
+    *repair_dispatch* is the one thing a driver may switch off: a caller that
+    dispatches agents itself (the supervisor) leaves the repair brief for its own
+    dispatch step rather than having the build phase spawn a run inside a landing
+    pass (:func:`_repair_in_place`).
     """
     config = config or load_policy_config(repo_root)
     inputs = inputs or Inputs()
@@ -2045,7 +2577,7 @@ def advance(
     if state.phase == "done":
         return AdvanceResult(issue_id, "done", "done", "done", "already shipped")
 
-    ctx = _Ctx(repo_root, issue_id, state, config, inputs, grant_root)
+    ctx = _Ctx(repo_root, issue_id, state, config, inputs, grant_root, repair_dispatch)
     if state.phase in _BASE_CHECKOUT_PHASES and worktree.is_linked_checkout(repo_root):
         return _blocked(
             ctx,
