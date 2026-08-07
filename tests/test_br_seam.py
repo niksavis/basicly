@@ -40,7 +40,8 @@ from typing import Any
 
 import pytest
 
-from basicly import br, config, tracker_usage
+from basicly import br, config, policy, run_record, tracker_usage
+from basicly.config import PolicyConfig
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 KIT_SOURCE = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker"
@@ -554,19 +555,26 @@ def test_the_flip_reads_the_record_out_of_the_owned_ledger(
 
 
 def test_the_flip_still_writes_the_external_tracker(tmp_path: Path, fake_br: _FakeBr) -> None:
-    """`owned` flips the *record read* and nothing else.
+    """`owned` flips the *record read* and the markers, and nothing else.
 
-    Nine of the eleven subcommands the engine spawns — ``comments list``, ``gate list``,
-    ``blocked``, ``list``, ``lint``, ``dep cycles`` — are read at their own call site with
-    their own payload shape, so they still answer out of br. Stopping the writes would
-    break every one of them. (``scheduler`` was the tenth until basicly-vkh0.20 put it
-    behind ``br.read_ranking``.)
+    The subcommands still read at their own call site with their own payload shape —
+    ``gate list``, ``blocked``, ``list``, ``lint``, ``dep cycles``, and the two
+    ``comments list`` spawns basicly-s5li left behind in `decompose` and `supervise` —
+    still answer out of br. Stopping the writes would break every one of them.
+    (``scheduler`` was on that list until basicly-vkh0.20 put it behind
+    ``br.read_ranking``.)
+
+    A raw ``comments add`` through the funnel is deliberately still both-stores: the
+    seam is what stops spawning, not the funnel underneath it, which is what keeps
+    those two remaining callers reading their own writes.
     """
     repo = _repo(tmp_path, br.MODE_OWNED)
     br.run_br(repo, ["create", "a bead", "-t", "task", "--json"])
-    br.run_br(repo, ["comments", "add", "seam-0001", "[harness-policy] note"])
+    br.run_br(repo, ["comments", "add", "seam-0001", "[harness-info] a call site's own"])
 
-    assert fake_br.records["seam-0001"]["comments"] == [{"text": "[harness-policy] note"}]
+    assert fake_br.records["seam-0001"]["comments"] == [
+        {"text": "[harness-info] a call site's own"}
+    ]
     assert _kinds(repo, "seam-0001")[-1] == br.kit(repo).events.KIND_COMMENT
 
 
@@ -644,6 +652,234 @@ def test_no_module_outside_the_seam_reads_the_owned_store() -> None:
         if name in path.read_text(encoding="utf-8")
     )
     assert offenders == []
+
+
+# --- step 5: the harness markers, carried without br (basicly-s5li) -----------
+#
+# The criterion is a *negative* about br plus a *positive* about the ledger, and both
+# halves need saying: the engine records a checkpoint approval, a gate record, a grant,
+# a rework counter and a dispatch record, reads every one of them back, and does it with
+# br absent from PATH. So the fixture below does not merely un-install br — it makes a
+# spawn fail the test, because "br was absent and the code silently degraded to writing
+# nothing" would satisfy a weaker assertion and is exactly the failure mode this seam
+# could have.
+
+
+@pytest.fixture
+def no_br(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No br on PATH, and a spawn is a failure rather than a fallback."""
+    monkeypatch.setattr(br, "which", lambda: None)
+
+    def refuse(cmd: list[str], **_kwargs: object) -> None:
+        pytest.fail(f"the engine spawned a process after the flip: {cmd}")
+
+    monkeypatch.setattr(br.subprocess, "run", refuse)
+
+
+def _run(seed: str, *, tokens: int) -> run_record.RunRecord:
+    """One dispatch record, keyed on *seed* so two dispatches can be told apart."""
+    return run_record.RunRecord(
+        agent="claude",
+        outcome="EXECUTED",
+        returncode=0,
+        duration_s=1.0,
+        command=("claude", "-p", "<prompt>"),
+        timestamp="2026-08-07T00:00:00+00:00",
+        tokens=tokens,
+        prompt_sha256=seed * 64,
+        phase="build",
+    )
+
+
+def _owned_repo(tmp_path: Path, *records: str) -> Path:
+    """A flipped checkout whose ledger already holds *records*, open.
+
+    Seeded through the kit rather than through `br create`, because a repo that has to
+    spawn br to acquire its own records could not be the subject of a test about br
+    being absent.
+    """
+    repo = _repo(tmp_path, br.MODE_OWNED)
+    kit = br.kit(repo)
+    kit.events.append(
+        br.ledger_dir(repo),
+        [
+            kit.events.Draft(record, kit.events.KIND_STATUS, {"status": "open"})
+            for record in records
+        ],
+    )
+    return repo
+
+
+@pytest.mark.usefixtures("no_br")
+def test_the_engine_carries_every_marker_family_with_br_absent(tmp_path: Path) -> None:
+    """The acceptance criterion, driven through the engine's own API rather than the seam.
+
+    Each family is written and then read back by the function the loop actually calls —
+    `approve_checkpoint`/`checkpoint_approved`, `spend_gate_override`/`gate_override_spent`
+    and `record_unreliable_gate`/`unreliable_gate_events`, `issue_grant_guarded`/
+    `active_grant`, `record_rework`/`rework_charged`, `record_marker`/`tracker_history`.
+    Going through `policy` and `run_record` rather than through `br.add_comment` is the
+    point: what has to survive the flip is the engine, and a seam-level round trip would
+    pass while a caller still spawned br at its own call site.
+
+    Two beads rather than one, because the dispatch record is read back through the
+    *whole-tracker* query: keyed wrong, one bead's history reads as every bead's and the
+    per-bead assertion below would not notice.
+    """
+    repo = _owned_repo(tmp_path, "seam-0001", "seam-0002")
+    config = PolicyConfig(required_gates=("verify",), max_rework=2, autonomy="L3")
+
+    policy.approve_checkpoint(repo, "seam-0001", "ship")
+    assert policy.spend_gate_override(repo, "seam-0001", "verify") is True
+    policy.record_unreliable_gate(repo, "seam-0001", "verify", "passed unchanged")
+    grant = policy.issue_grant_guarded(repo, "seam-0001", "L3", 8_000_000, config, interactive=True)
+    charged = policy.record_rework(repo, "seam-0001", "verify")
+    ident = run_record.record_marker(repo, "seam-0001", _run("a", tokens=1234))
+    other = run_record.record_marker(repo, "seam-0002", _run("c", tokens=99))
+
+    assert policy.checkpoint_approved(repo, "seam-0001", "ship") is True
+    assert policy.gate_override_spent(repo, "seam-0001", "verify") is True
+    assert policy.unreliable_gate_events(repo, "seam-0001", "verify") == 1
+    assert grant.status == "approved"
+    active = policy.active_grant(repo, "seam-0001")
+    assert active is not None
+    assert (active.level, active.token_budget) == ("L3", 8_000_000)
+    assert charged == 1
+    assert policy.rework_charged(repo, "seam-0001", "verify") == 1
+    assert ident is not None and other is not None
+    history = run_record.tracker_history(repo)
+    assert [entry["tokens"] for entry in history["seam-0001"]] == [1234]
+    assert [entry["tokens"] for entry in history["seam-0002"]] == [99]
+    # The families do not bleed into each other: seam-0002 carries only its dispatch.
+    assert policy.checkpoint_approved(repo, "seam-0002", "ship") is False
+
+
+@pytest.mark.usefixtures("no_br")
+def test_a_second_dispatch_record_is_told_from_the_first_without_br(tmp_path: Path) -> None:
+    """The dispatch record's idempotency read is the seam's, not br's.
+
+    `record_marker` derives its id from the prompt and phase and then asks the tracker
+    which ids are already recorded, so a re-dispatch is a *second* entry rather than a
+    duplicate of the first. That read used to be a `comments list` spawn; if it came back
+    empty after the flip the two dispatches would collapse into one id and the attempt
+    count — what rework is charged against — would silently understate itself.
+    """
+    repo = _owned_repo(tmp_path, "seam-0001")
+    record = _run("b", tokens=10)
+
+    first = run_record.record_marker(repo, "seam-0001", record)
+    second = run_record.record_marker(repo, "seam-0001", record)
+
+    assert first != second
+    assert len(run_record.tracker_history(repo)["seam-0001"]) == 2
+
+
+@pytest.mark.usefixtures("no_br")
+def test_the_marker_stamp_survives_the_flip_so_a_wait_stays_measurable(tmp_path: Path) -> None:
+    """The wait clock reads the *tracker's* stamp, and both stores have to supply one.
+
+    br stamps a comment ``created_at``; the owned ledger stamps the event ``ts``. The
+    seam renders one into the other, and this is the assertion that it is a real,
+    parseable stamp rather than an empty string — an unparseable start is recorded as no
+    wait at all (`policy.record_wait`), so the whole human-wait rollup would go quietly
+    to zero without ever failing.
+    """
+    repo = _owned_repo(tmp_path, "seam-0001")
+
+    wait_id = policy.record_wait_request(repo, "seam-0001", "ship")
+    assert wait_id is not None
+    event = policy.record_checkpoint_wait(repo, "seam-0001", "ship", by="human", delegated=False)
+
+    assert event is not None
+    assert event.wait_id == wait_id
+    assert event.requested_at  # the ledger's own stamp, not the reader's clock
+    assert policy.wait_events(repo, "seam-0001")[0].wait_id == wait_id
+
+
+def test_the_flip_stops_spawning_br_for_a_marker(tmp_path: Path, fake_br: _FakeBr) -> None:
+    """The negative half, asserted against a br that *is* available.
+
+    `no_br` proves the engine works without br; this proves it does not use br when br is
+    there — which is the claim that makes the 45% of tracker traffic measured on this
+    repo actually go away rather than merely become optional.
+    """
+    repo = _owned_repo(tmp_path, "seam-0001")
+
+    br.add_comment(repo, "seam-0001", "[harness-policy] checkpoint=ship approved")
+
+    assert [call for call in fake_br.calls if call[:2] == ["comments", "add"]] == []
+    assert [row["text"] for row in br.read_comments(repo, "seam-0001")] == [
+        "[harness-policy] checkpoint=ship approved"
+    ]
+
+
+def test_a_marker_write_is_still_refused_inside_a_read_only_section(tmp_path: Path) -> None:
+    """The read-only guard survives the flip, and is checked at the seam rather than below.
+
+    Its two recorded incidents were both tracker writes a pre-flight gate should not have
+    made, and neither store can delete a comment once recorded — so a flip that moved the
+    write out from under `run_br` would have removed the guard along with the spawn. This
+    is the assertion that it did not: nothing here installs a br at all, so the only place
+    left to refuse is :func:`basicly.br.add_comment` itself.
+    """
+    repo = _owned_repo(tmp_path, "seam-0001")
+
+    with br.read_only("a pre-flight gate"), pytest.raises(br.TrackerWriteRefusedError) as excinfo:
+        br.add_comment(repo, "seam-0001", "[harness-policy] recorded from a gate")
+
+    assert "a pre-flight gate" in str(excinfo.value)
+    assert br.read_comments(repo, "seam-0001") == []
+
+
+def test_the_soft_marker_write_is_refused_too(tmp_path: Path) -> None:
+    """Soft means "tolerates a store that cannot answer", never "tolerates the ban".
+
+    The dispatch record and the spend rollup both write through the soft entry point, and
+    both run inside the loop's gates — a refusal swallowed into ``False`` there would read
+    as "the tracker was busy" and the gate's promise would be broken silently.
+    """
+    repo = _owned_repo(tmp_path, "seam-0001")
+
+    with br.read_only("a pre-flight gate"), pytest.raises(br.TrackerWriteRefusedError):
+        br.try_add_comment(repo, "seam-0001", "[harness-run] id=x phase=build")
+
+
+@pytest.mark.usefixtures("no_br")
+def test_a_tombstoned_records_markers_read_as_absent(tmp_path: Path) -> None:
+    """Same rule as :func:`basicly.br.owned_record`, at the marker read.
+
+    A deleted bead's rework counter must not still be charging: the two stores spell
+    absence differently and the seam is where they are made to agree, once.
+    """
+    repo = _owned_repo(tmp_path, "seam-0001")
+    br.add_comment(repo, "seam-0001", "[harness-policy] rework gate=verify")
+    kit = br.kit(repo)
+    kit.events.append(
+        br.ledger_dir(repo), [kit.events.Draft("seam-0001", kit.events.KIND_TOMBSTONE, {})]
+    )
+
+    assert br.read_comments(repo, "seam-0001") == []
+    assert br.all_comment_texts(repo) == {}
+
+
+@pytest.mark.usefixtures("no_br")
+def test_a_counter_refuses_to_read_a_store_that_cannot_answer(tmp_path: Path) -> None:
+    """A tracker that will not load must not read as "no markers recorded".
+
+    Every family behind :func:`basicly.br.read_comments` is a counter or a refusal, so the
+    fail-open direction is the dangerous one: an unreadable store answering ``[]`` reads
+    as zero rework attempts charged and nothing blocking, and the loop advances past the
+    gate the marker existed to hold. The soft reader is the one allowed to answer empty,
+    and it is asserted here beside the hard one so the split is a comparison.
+    """
+    repo = _repo(tmp_path, br.MODE_OWNED)
+    for source in (repo / br.KIT_TRACKER_DIR).glob("*.py"):
+        source.unlink()
+
+    with pytest.raises(RuntimeError):
+        br.read_comments(repo, "seam-0001")
+    assert br.try_read_comments(repo, "seam-0001") == []
+    assert br.all_comment_texts(repo) == {}
 
 
 # --- the shadow differential, run against the store the dual write filled -----

@@ -116,20 +116,23 @@ CONFIG = PolicyConfig(required_gates=("verify",), max_rework=2)
 
 
 def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
-    """Route both modules' tracker access at *fake*, sharing one comment list.
+    """Route every module's tracker access at *fake*, sharing one comment list.
 
-    ``decisions`` as well as ``policy``, because approving a checkpoint now settles the
-    queue item behind it (basicly-jr0l.24) through ``decisions``' own ``_run_br``.
-    Leaving that one unpatched spawned a real br per approval test, and the settle's
-    best-effort suppression swallowed the failure — so the new behaviour would have been
-    silently inert in every test that exercised it.
+    ``decisions`` used to need its own stub here, because approving a checkpoint settles
+    the queue item behind it (basicly-jr0l.24) and its alias was a second spawn point;
+    leaving it unpatched spawned a real br per approval test, and the settle's
+    best-effort suppression swallowed the failure. It no longer has one — its markers go
+    through `br.add_comment`/`br.read_comments` (basicly-s5li), which is the same
+    collapse `br.read_record` made and the reason the two funnels below are the whole
+    installation.
     """
     monkeypatch.setattr(policy, "_run_br", fake)
-    monkeypatch.setattr(decisions, "_run_br", fake)
-    # The record read goes through `br.read_record`, the one seam every consumer shares
-    # (basicly-tcmy.14), so the fake is installed on the spawn *that* uses rather than on
-    # each module's alias. This is the reason the seam exists: one stub point instead of
-    # eleven readers to keep in step.
+    # The record read goes through `br.read_record` and the marker read and write through
+    # `br.read_comments`/`br.add_comment` — the seams every consumer shares
+    # (basicly-tcmy.14, basicly-s5li), so the fake is installed on the spawns *those* use
+    # rather than on each module's alias. This is the reason the seams exist: one stub
+    # point instead of eleven readers to keep in step.
+    monkeypatch.setattr(br, "run_br", fake)
     monkeypatch.setattr(br, "try_run_br", fake)
 
 
@@ -3355,14 +3358,15 @@ def test_definition_of_ready_runs_under_the_write_ban(
 
     The fake tracker attempts a comment while answering the gate's own lint read,
     which is what a check that recorded state instead of blocking entry looks like
-    from the inside. It goes through ``br.run_br`` — the funnel — because that is
-    the seam every write in the engine shares.
+    from the inside. It goes through ``br.add_comment`` — the marker seam — because
+    that is where a real gate's write would go after basicly-s5li, and because the
+    refusal has to hold on the rung where that seam never reaches ``run_br`` at all.
     """
 
     class _WritingFake(_FakeBr):
         def __call__(self, repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
             if args[:1] == ["lint"]:
-                br.run_br(repo_root, ["comments", "add", "i", "recorded from a pre-flight gate"])
+                br.add_comment(repo_root, "i", "recorded from a pre-flight gate")
             return super().__call__(repo_root, args, _check=_check)
 
     monkeypatch.setattr(br, "which", lambda: None)

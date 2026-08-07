@@ -45,7 +45,11 @@ class _FakeBr:
 @pytest.fixture(autouse=True)
 def _isolate(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(policy, "_run_br", _FakeBr())
+    fake = _FakeBr()
+    monkeypatch.setattr(policy, "_run_br", fake)
+    # The marker traffic left policy's alias for `br.add_comment`/`br.read_comments`
+    # (basicly-s5li); both funnel through `br.run_br` on this rung.
+    monkeypatch.setattr(br, "run_br", fake)
 
 
 def _no_tty(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -139,6 +143,9 @@ def test_ship_challenge_names_the_precondition_the_grant_declined_on(
     monkeypatch.setattr(policy, "_new_code", lambda: "cafe1234")
     fake = _GrantedBr()
     monkeypatch.setattr(policy, "_run_br", fake)
+    # Both seams, or the grant marker below lands on this fake's comment list while
+    # `br.read_comments` still answers out of the fixture's — one store per read.
+    monkeypatch.setattr(br, "run_br", fake)
     fake.comments.append("[harness-policy] grant level=L3 budget=1000000")
 
     assert cli.main(["policy", "checkpoint", "basicly-x", "ship", "--approve"]) == 1
@@ -343,7 +350,8 @@ def test_grant_issue_refused_at_default_ceiling(
 
 def _install_decisions_fake(monkeypatch: pytest.MonkeyPatch) -> None:
     # Reuse the fixture-installed checkpoint fake: it serves comments and show.
-    monkeypatch.setattr(decisions, "_run_br", policy._run_br)
+    # `decisions` has no alias of its own — every call it makes is a marker, so the
+    # fixture's `br.run_br` stub already covers it (basicly-s5li).
     monkeypatch.setattr(loop_state, "_run_br", policy._run_br)
 
 

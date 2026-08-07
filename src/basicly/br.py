@@ -997,6 +997,262 @@ def owned_record(repo_root: Path, issue_id: str) -> dict | None:
     return record
 
 
+# --- Harness markers, carried natively (basicly-s5li) ------------------------
+#
+# Step 5 of the cutover in `docs/design/work-tracker.md` §5, and the step that
+# actually removes br from the engine. `comments` is the largest remaining
+# dependency — 26 of the engine's 55 `_run_br` call sites and 45% of all recorded
+# br traffic — and measured over the live tracker on 2026-08-07, **89% of it
+# (1646 of 1834 comments) is `[harness-*]` markers**: checkpoint approvals,
+# grants, gate records, rework counters, needs-input, the human-wait clock,
+# dispatch records and spend rollups, all using a beads comment purely as
+# transport. That is what the plan's standing constraint anticipated when it said
+# to land evidence as markers "a format we own, which migrates with us".
+#
+# So this is not a data migration — the step-1 import already wrote 1831 comment
+# events into the ledger. It is a seam change, and it takes the shape the two
+# rungs above it took: four functions here, and the callers keep their contracts.
+#
+# **The 188 human comments are deliberately out of scope.** A human writing prose
+# on a bead runs br directly, and the engine never spawns that. Removing the
+# engine's dependency does not require removing the human's, and conflating them
+# is how this grows into the general-purpose tracker §2 declines to build.
+#
+# **What a caller must not conclude from `owned`:** the marker families this seam
+# carries stop reaching the external tracker, so a `br comments list` run by hand
+# no longer shows them and the shadow differential's comment query diverges by
+# construction. That is the point of no return §5 step 4 names, and it is why the
+# differential (step 2) is run on `dual`, before this. The two surfaces still
+# spawning `comments` at their own call site — `decompose`'s sizing markers and
+# `supervise`'s found-info records — are each internally consistent, writing and
+# reading the same store; retiring them is basicly-wpc8's.
+
+# How a marker the engine wrote itself says it got here. Distinguishes a native
+# write from one the dual write mirrored (:data:`MIRROR_PROVENANCE`) and from one
+# `migrate.py` extracted out of the export, and it is one of
+# `migrate.RESERVED_KEYS`, so it is dropped again when a record is rendered back.
+OWNED_PROVENANCE = "engine"
+
+# The two keys a comment row carries, in br's spelling. The owned ledger holds the
+# body under the same ``text`` key (`events.KIND_COMMENT`) and the stamp as the
+# event's ``ts``, so the rendering below is a rename of one field rather than a
+# second shape for a caller to learn.
+COMMENT_TEXT_KEY = "text"
+COMMENT_STAMP_KEY = "created_at"
+
+
+def _comments_add_argv(issue_id: str, body: str) -> list[str]:
+    """The br invocation one marker write is, whichever store ends up taking it.
+
+    Built even on the owned path, because it is what :func:`_refuse_write_in_read_only`
+    classifies: a gate that promised to write nothing must be refused for the *fact* it
+    is about to record, not for which store happens to be authoritative this week.
+    """
+    return ["comments", "add", issue_id, body]
+
+
+def _append_owned_comment(repo_root: Path, issue_id: str, body: str) -> None:
+    """Record *body* on *issue_id* as a ledger ``comment`` event, and nothing else.
+
+    The owned half of :func:`add_comment`. Every failure becomes a
+    :class:`TrackerDivergenceError` — a ``RuntimeError``, so a caller that already
+    handles a br failure handles this one unchanged, which is what makes the flip
+    invisible at the call site. The read-only refusal is the caller's; see
+    :func:`add_comment`.
+
+    Raises:
+        TrackerDivergenceError: the kit is not installed, or the append failed.
+    """
+    kit_module = kit(repo_root)
+    payload = {
+        kit_module.migrate.PROVENANCE_KEY: OWNED_PROVENANCE,
+        COMMENT_TEXT_KEY: body,
+    }
+    draft = kit_module.events.Draft(issue_id, kit_module.events.KIND_COMMENT, payload)
+    try:
+        kit_module.events.append(ledger_dir(repo_root), [draft], redact=redact.redact_machine_paths)
+    except (kit_module.events.LedgerError, OSError, ValueError) as exc:
+        raise TrackerDivergenceError(
+            f"the marker on {issue_id} did not reach the owned ledger: {exc}"
+        ) from exc
+
+
+def _owned_comment_rows(repo_root: Path) -> dict[str, list[dict]]:
+    """Every record's comments, keyed by record, each row in ``br comments list``'s shape.
+
+    Canonical order — ``(record, seq, id)`` — rather than file order, so the rows come
+    back oldest-first however the log was concatenated. Both readers depend on that:
+    `decisions` documents its per-bead read as oldest-first, and `policy`'s wait clock
+    takes the *first* stamp it sees for a request.
+
+    **A tombstoned record answers empty**, the same rule and for the same reason as
+    :func:`owned_record`: the two stores spell a deletion differently, and a reader that
+    served a deleted bead's markers would count rework on work somebody removed.
+    """
+    kit_module = kit(repo_root)
+    found = kit_module.read_ledger(ledger_dir(repo_root))
+    ledger_fold = kit_module.events.fold(found)
+    rows: dict[str, list[dict]] = {}
+    for event in kit_module.events.canonical_order(found):
+        if event.kind != kit_module.events.KIND_COMMENT:
+            continue
+        state = ledger_fold.records.get(event.record)
+        if state is not None and state.tombstoned:
+            continue
+        text = event.payload.get(COMMENT_TEXT_KEY)
+        if not isinstance(text, str):
+            continue
+        rows.setdefault(event.record, []).append({
+            COMMENT_TEXT_KEY: text,
+            COMMENT_STAMP_KEY: event.ts,
+        })
+    return rows
+
+
+def _br_comment_rows(stdout: str, issue_id: str) -> list[dict]:
+    """``br comments list --json``'s reply as rows, raising when it is not usable.
+
+    Raises rather than answering empty, which is the opposite of what two of the three
+    callers used to do on their own. It is the safe direction here and the choice is
+    made once: every marker family this reads is a *counter* or a *refusal* — rework
+    attempts against a cap, an unanswered needs-input, an open checkpoint — so an
+    unreadable tracker that answers "no markers" reads as "nothing is blocking" and the
+    loop advances past exactly the gate the marker existed to hold. :func:`try_read_comments`
+    is the soft contract, for the evidence readers where an empty answer is honest.
+
+    Raises:
+        RuntimeError: the reply was not a JSON array of rows.
+    """
+    try:
+        payload = json.loads(stdout)
+    except ValueError as exc:
+        raise RuntimeError(f"br comments list {issue_id} returned no usable JSON: {exc}") from exc
+    if not isinstance(payload, list):
+        raise RuntimeError(
+            f"br comments list {issue_id} returned {type(payload).__name__}, not an array"
+        )
+    return [row for row in payload if isinstance(row, dict)]
+
+
+def add_comment(repo_root: Path, issue_id: str, body: str) -> None:
+    """Record one harness marker on *issue_id*, in whichever store is authoritative.
+
+    The marker write seam. In :data:`MODE_OWNED` the fact lands in the ledger and br is
+    **not spawned**; on the rungs below it goes to br, and :func:`_mirror_write` keeps
+    the ledger in step exactly as before.
+
+    Raises:
+        TrackerWriteRefusedError: a :func:`read_only` section is active. Refused **here**,
+            at the seam, rather than only inside :func:`run_br`: a recorded comment cannot
+            be deleted from either store, and on the owned path there is no br call to
+            inherit the guard from. Checking it once at the entry point means the refusal
+            is a property of the fact being recorded rather than of which store is
+            authoritative this week — which is also what keeps it enforced on a rung where
+            the funnel below is stubbed out. Re-checked by :func:`run_br` on the external
+            path, and a second identical refusal costs nothing.
+        RuntimeError: the write did not land. :class:`TrackerDivergenceError` on the owned
+            path, br's own failure below it; both are ``RuntimeError``, which is what the
+            callers already catch.
+    """
+    _refuse_write_in_read_only(_comments_add_argv(issue_id, body))
+    if tracker_mode(repo_root) == MODE_OWNED:
+        _append_owned_comment(repo_root, issue_id, body)
+        return
+    run_br(repo_root, _comments_add_argv(issue_id, body))
+
+
+def try_add_comment(repo_root: Path, issue_id: str, body: str) -> bool:
+    """:func:`add_comment` for a caller that tolerates the write not landing.
+
+    False when nothing was recorded. Soft here means "tolerates a store that cannot
+    answer", never "tolerates writing when a gate promised not to" — the read-only
+    refusal is raised before either store is reached and is deliberately outside the
+    caught set, which is the same split :func:`try_run_br` makes.
+    """
+    _refuse_write_in_read_only(_comments_add_argv(issue_id, body))
+    if tracker_mode(repo_root) != MODE_OWNED:
+        proc = try_run_br(repo_root, _comments_add_argv(issue_id, body))
+        return proc is not None and proc.returncode == 0
+    try:
+        _append_owned_comment(repo_root, issue_id, body)
+    except TrackerDivergenceError:
+        return False
+    return True
+
+
+def read_comments(repo_root: Path, issue_id: str) -> list[dict]:
+    """*issue_id*'s comments, oldest-first, each row carrying ``text`` and ``created_at``.
+
+    The marker read seam, and the hard half of its contract: a store that cannot answer
+    raises rather than reporting an empty history. See :func:`_br_comment_rows` for why
+    that direction rather than the other.
+
+    One shape from both stores, for the reason :func:`owned_record` renders into
+    ``br show``'s: the caller then parses one thing, so the flip is a change of source and
+    not of contract. The stamp is the tracker's own in both — br's ``created_at``, the
+    ledger's event ``ts`` — which is what keeps `policy`'s wait clock measuring an
+    interval that outlives the process that opened it.
+
+    Raises:
+        RuntimeError: br is absent or failed, its reply was not usable, or the kit will
+            not load.
+    """
+    if tracker_mode(repo_root) == MODE_OWNED:
+        return _owned_comment_rows(repo_root).get(issue_id, [])
+    proc = run_br(repo_root, ["comments", "list", issue_id, "--json"])
+    return _br_comment_rows(proc.stdout, issue_id)
+
+
+def try_read_comments(repo_root: Path, issue_id: str) -> list[dict]:
+    """:func:`read_comments` for an evidence reader; ``[]`` when the store cannot answer.
+
+    The soft contract, and it is soft on purpose only where an empty answer is honest:
+    its callers deduplicate a dispatch or a spend rollup, so "no markers recorded" and
+    "the tracker did not answer" both correctly mean *write one now*. A counter or a
+    refusal must not read this — it must use :func:`read_comments` and fail loudly.
+    """
+    if tracker_mode(repo_root) != MODE_OWNED:
+        proc = try_run_br(repo_root, ["comments", "list", issue_id, "--json"])
+        if proc is None or proc.returncode != 0:
+            return []
+        try:
+            return _br_comment_rows(proc.stdout, issue_id)
+        except RuntimeError:
+            return []
+    try:
+        return _owned_comment_rows(repo_root).get(issue_id, [])
+    except TrackerDivergenceError, OSError, ValueError:
+        return []
+
+
+def all_comment_texts(repo_root: Path) -> dict[str, list[str]]:
+    """Every record's comment bodies, keyed by record id — the whole-tracker marker read.
+
+    The travelling read (D11): what a fresh clone can answer with no tracker binary and
+    no local state, because both stores commit their own artifact — br the JSONL export,
+    the owned ledger its event logs. That is what makes a teammate's dispatch history and
+    the cost-per-landed-package rollup readable at all.
+
+    In :data:`MODE_OWNED` it folds the ledger; otherwise it reads the committed export, in
+    file order. Best-effort in both directions, matching :func:`export_records`: every
+    consumer here is evidence or telemetry, never a gate.
+    """
+    if tracker_mode(repo_root) == MODE_OWNED:
+        try:
+            rows = _owned_comment_rows(repo_root)
+        except TrackerDivergenceError, OSError, ValueError:
+            return {}
+        return {
+            record: [str(row[COMMENT_TEXT_KEY]) for row in found] for record, found in rows.items()
+        }
+    texts: dict[str, list[str]] = {}
+    for record in export_records(repo_root):
+        found = export_comment_texts(record)
+        if found:
+            texts[str(record["id"])] = found
+    return texts
+
+
 # --- Export scrubbing (basicly-vkh0.5) --------------------------------------
 
 # br stamps every record it writes with the absolute canonical path of the
@@ -1145,13 +1401,15 @@ def read_record(repo_root: Path, issue_id: str) -> dict | None:
     the flip is not eleven decisions.
 
     What is deliberately *not* flipped: the other subcommands the engine spawns.
-    `comments list`, `gate list`, `blocked`, `list`, `lint` and `dep cycles` are each
-    read at their own call site with their own payload shape — they are not behind a
-    seam, so flipping them would mean rewriting callers, which is the thing this bead
-    is required not to do. That is why the external tracker is still written in
-    :data:`MODE_OWNED` rather than merely tolerated. `scheduler` was on that list until
-    basicly-vkh0.20 gave it a seam of its own (:func:`read_ranking`), which is the shape
-    the remaining nine would each need.
+    `gate list`, `blocked`, `list`, `lint` and `dep cycles` are each read at their own
+    call site with their own payload shape — they are not behind a seam, so flipping them
+    would mean rewriting callers, which is the thing this bead is required not to do.
+    That is why the external tracker is still written in :data:`MODE_OWNED` rather than
+    merely tolerated. `scheduler` was on that list until basicly-vkh0.20 gave it a seam of
+    its own (:func:`read_ranking`), and `comments` until basicly-s5li gave it
+    :func:`read_comments`/:func:`add_comment` — which is the shape the rest would each
+    need. Two `comments list` spawns remain outside that seam (`decompose`'s sizing
+    markers, `supervise`'s found-info records) and are basicly-wpc8's.
     """
     if tracker_mode(repo_root) == MODE_OWNED:
         return owned_record(repo_root, issue_id)

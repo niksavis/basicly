@@ -495,19 +495,15 @@ def marker_id(bead_id: str, prompt_sha256: str, phase: str, attempt: int = 1) ->
 
 
 def _recorded_marker_ids(repo_root: Path, bead_id: str, marker: str = MARKER) -> set[str]:
-    """Marker ids already recorded on *bead_id*; empty when br cannot answer."""
-    proc = br.try_run_br(repo_root, ["comments", "list", bead_id, "--json"])
-    if proc is None or proc.returncode != 0:
-        return set()
-    try:
-        comments = json.loads(proc.stdout)
-    except json.JSONDecodeError:
-        return set()
-    if not isinstance(comments, list):
-        return set()
+    """Marker ids already recorded on *bead_id*; empty when the tracker cannot answer.
+
+    Soft on purpose, and safely so: both callers use it to avoid writing a *second*
+    copy of an idempotent record, so "no markers" and "no answer" both correctly mean
+    write one now. A counter reads :func:`basicly.br.read_comments` instead.
+    """
     found: set[str] = set()
-    for comment in comments:
-        text = comment.get("text", "") if isinstance(comment, dict) else ""
+    for comment in br.try_read_comments(repo_root, bead_id):
+        text = str(comment.get("text", ""))
         for line in text.splitlines():
             if line.startswith(f"{marker} id="):
                 found.add(line[len(f"{marker} id=") :].split()[0])
@@ -534,7 +530,7 @@ def record_marker(repo_root: Path, bead_id: str, run_record: RunRecord) -> str |
     ident = marker_id(bead_id, run_record.prompt_sha256, phase, attempt)
     payload = {k: v for k, v in asdict(run_record).items() if v not in (None, (), [])}
     body = f"{MARKER} id={ident} phase={phase}\n{json.dumps(payload, sort_keys=True)}"
-    if br.try_run_br(repo_root, ["comments", "add", bead_id, body]) is None:
+    if not br.try_add_comment(repo_root, bead_id, body):
         return None
     return ident
 
@@ -565,15 +561,19 @@ def tracker_history(repo_root: Path) -> dict[str, list[dict]]:
 
     The travelling twin of :func:`load_run_records`: ``.basicly/usage/`` is
     self-ignored and never leaves the machine that wrote it, while every dispatch
-    also writes a ``[harness-run]`` marker and comments are exported. So this is
-    the same telemetry as seen by a fresh clone — no br invocation, no local
-    usage file (D10/D11).
+    also writes a ``[harness-run]`` marker and both stores commit their own
+    artifact. So this is the same telemetry as seen by a fresh clone — no br
+    invocation, no local usage file (D10/D11).
+
+    Which store answers is :func:`basicly.br.all_comment_texts`'s to decide. It has
+    to be the same one :func:`record_marker` writes to, or a dispatch would record
+    into the ledger and be counted out of the export (basicly-s5li).
     """
     history: dict[str, list[dict]] = {}
-    for record in br.export_records(repo_root):
-        payloads = marker_payloads(br.export_comment_texts(record))
+    for bead_id, texts in br.all_comment_texts(repo_root).items():
+        payloads = marker_payloads(texts)
         if payloads:
-            history[str(record["id"])] = payloads
+            history[bead_id] = payloads
     return history
 
 
@@ -720,8 +720,7 @@ def record_cost_marker(  # noqa: PLR0913
         "actual": asdict(actual),
     }
     body = f"{COST_MARKER} id={ident}\n{json.dumps(payload, sort_keys=True)}"
-    proc = br.try_run_br(repo_root, ["comments", "add", bead_id, body])
-    if proc is None or proc.returncode != 0:
+    if not br.try_add_comment(repo_root, bead_id, body):
         return None
     return ident
 
@@ -744,17 +743,17 @@ class LandedCost:
 
 
 def landed_package_cost(repo_root: Path) -> LandedCost:
-    """Aggregate every ``[harness-cost]`` rollup in the committed tracker export.
+    """Aggregate every ``[harness-cost]`` rollup the committed tracker records.
 
     The cost-per-landed-package unit, computable from the tracker alone: the
     marker is written only at ship, so one marker is one landed package. A fresh
     clone with no ``.basicly/usage/`` answers this as fully as the machine that
-    ran the work.
+    ran the work — out of whichever store :func:`record_cost_marker` wrote to.
     """
     packages = 0
     actuals: list[dict] = []
-    for record in br.export_records(repo_root):
-        rollups = marker_payloads(br.export_comment_texts(record), COST_MARKER)
+    for texts in br.all_comment_texts(repo_root).values():
+        rollups = marker_payloads(texts, COST_MARKER)
         if not rollups:
             continue
         # One marker is one landed package even when its payload is malformed —

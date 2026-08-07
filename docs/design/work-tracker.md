@@ -604,6 +604,23 @@ working the whole time.
 3. **Dual-write** for one release, with the old tracker still authoritative.
 4. **Flip** the source of truth once the differential test is clean and the telemetry (§6) shows
    no unimplemented surface in use.
+5. **Carry the harness markers natively**, which is the step that actually removes `br` from
+   the engine rather than merely making it non-authoritative. Landed 2026-08-07
+   (`basicly-s5li`): `comments` was 26 of the engine's 55 `_run_br` call sites and 45% of all
+   recorded tracker traffic (§3.0), and 1646 of the live tracker's 1834 comments — **89%** —
+   are `[harness-*]` markers using a beads comment purely as transport. In `owned` those
+   families are written and read as `comment` events through `br.add_comment` /
+   `br.read_comments` / `br.all_comment_texts`, and no `br` is spawned for them at all. The
+   188 human comments are deliberately untouched: a human writing prose runs `br` directly and
+   the engine never spawns that, so removing the engine's dependency does not require removing
+   theirs (§15). Two `comments list` spawns remain at their own call site — `decompose`'s
+   sizing markers and `supervise`'s found-info records — each internally consistent, and
+   retiring them is `basicly-wpc8`'s.
+
+   **This is the point of no return for the comment query.** After it, the marker families no
+   longer reach the external tracker, so `br comments list` run by hand does not show them and
+   the step-2 differential's comment comparison diverges by construction. Step 2 is therefore
+   run on `dual`, before this — which is the order §5 already gives.
 
 ### 5.1 Three risks the 2026-07-26 review found in step 1
 
