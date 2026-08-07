@@ -122,7 +122,7 @@ dependency clusters a cut draws from (§14). Rows are in shipping order.
 | --- | --- | --- |
 | ~~**`v0.7.0`**~~ | **SHIPPED 2026-08-06.** Trustworthy factory. 19 beads closed over two sessions. **Exit criterion 5 was not met** — see §5.1. `basicly-yc0x`. | shipped |
 | **`v0.7.1`** | **End the shared-anchor collision class**, and carry the unattended-run proof `v0.7.0` could not. `4746` (a changelog fragment per lane, so collision is impossible by construction), `bdd4` (dispatch a bounced lane to resolve its conflict rather than replaying the rebase), `3f76` (design docs stop carrying bead-id lists), `m4zv.5` (a stalled rework round escalates without spending the cap). A patch, not a minor, **only if** a curated `[Unreleased]` body keeps working alongside fragments. | 1–2 sessions |
-| **`v0.8.0`** | **Own the work graph.** The `br` replacement: event log → kit → cutover behind the `br.py` seam. Removes `br` from the consumer floor, which is the single biggest `1.0.0` blocker. Plus streaming telemetry (`wctc`, `jr0l.66`), which turns the context ceiling from a post-hoc diagnosis into a preventive guard and makes the grant's spend ceiling bind *within* a pass. `basicly-vkh0`. | 5–8 sessions |
+| **`v0.8.0`** | **Own the work graph — the store, not yet the floor.** The owned event log exists and is checkable: provenance, ids, snapshot with rotation, `fsck`/`rebuild`, import with tombstones, a shadow differential that refuses a self-agreeing comparison, and a `[tracker] mode` rung that flips the one record-read seam. **It does not remove `br` from the consumer floor**, and the row said it did until 2026-08-07 — measured at `MODE_OWNED` with no `br` on PATH, `gate list` and `lint` still raise "the harness requires the beads tracker", because `.19` flips `read_record` alone and 44 further spawn sites remain, 26 of them `comments`. That claim moves to `v1.0.0`, where the fresh-consumer acceptance test makes it falsifiable instead of asserted (`basicly-vkh0.22`). Plus streaming telemetry (`wctc`, `jr0l.66`). `basicly-vkh0`. | 5–8 sessions |
 | **`v0.9.0`** | **Evidence, gates, docs.** Cost per landed package (`7bur`), AST localisation (`agzx.2`), the Phase 2 deterministic gates (`m4zv.2`–`.6`) built against the owned tracker, the D4 amendment, the tutorial layer (`imnu.2`), the install capability tier (`imnu.3`), the ceremony threshold (`imnu.5`), parameter learning (`3ifz`). | 6–9 sessions |
 | **`v0.10.0`** | **The judgment layer and always-on relief.** The roster (`s2xf`), gated on `7bur`'s numbers by construction; the Phase 4 authoring pass and the empty-glob check (`a3ab.1`–`.3`). | 5–8 sessions |
 | **`v1.0.0`** | **Stabilize and declare.** Surface audit and semver freeze, the breaking-marker gate, the fresh-consumer acceptance test. `1.0` is a promise, so the last release proves the promise instead of adding capability. | 3–5 sessions |
@@ -325,9 +325,21 @@ we already understand.
 `basicly-vkh0`, P0. The tracker *is* the harness's state, so every guarantee in §2 is downstream of
 it, and it is currently an unowned external binary in the critical path whose licence carries a
 rider restricting a class of users. Twelve distinct defects on the epic have already been paid for
-in diagnosis time; the clock defect alone consumed two tracks of workaround. `br.run_br` raises at
-`br.py:300-302` when the binary is absent and `basicly install` does not install it, so a `1.0.0`
-declared before this lands would freeze a contract the roadmap already voids.
+in diagnosis time; the clock defect alone consumed two tracks of workaround. `br.run_br` raises
+when the binary is absent and `basicly install` does not install it, so a `1.0.0` declared before
+that changes would freeze a contract the roadmap already voids.
+
+**That condition is still standing after `v0.8.0`, and this section used to imply otherwise.**
+`vkh0.19` flips `br.read_record` and nothing else, deliberately — the other subcommands are each
+read at their own call site with their own payload shape, and rewriting callers was the one thing
+that bead was required not to do. Measured 2026-08-07 at `MODE_OWNED` with `br.which` returning
+None, so an empty ledger cannot be the cause: `policy.gate_status` and `policy.definition_of_ready`
+both raise `br is not on PATH; the harness requires the beads tracker`. 44 typed spawn sites remain
+— `comments` 26, `dep` 5, `update` 3, `sync` 2, and one each of `where`, `lint`, `init`, `gate`,
+`close`, `blocked` — and `comments` is the carrier for every checkpoint, gate marker, grant and
+rework record, so it is the load-bearing half rather than the tail. `basicly-vkh0.22` holds the
+measurement and the decision; the claim is carried to `v1.0.0`'s acceptance test (§9), which
+exercises a consumer with no `br` rather than asserting the binary is gone.
 
 **Decompose first** — the build has no beads yet. Order:
 
