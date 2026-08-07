@@ -413,8 +413,16 @@ zero token cost:
 - **`m4zv.3` an eval case per catalog entry**, enforced as a Tier-1 failure, colocated with the
   source and scaffolded from `catalog new`. Stage by *adding* entries to the enforced set, never by
   lowering a threshold. This raises the cost of adding an entry, which is the intended brake on
-  accretion. Recount the entry set first (`v0vt`): 32 skill sources project to 29 skills, and which
-  filter accounts for the gap is untraced.
+  accretion. **The entry set is now counted** (`v0vt`, 2026-08-07): **35 skill sources** — 29
+  model-invoked, 6 user-invoked — project to **30 skills in each root** (27 model, 3 user). The
+  five that project nowhere each declare a `technologies` gate naming their own environment
+  (`tool-starship`, `tool-tmux`, `tool-wezterm`, `tool-zsh`, `wsl`) against this repo's
+  `["python", "node"]`; confirmed by adding `tmux` and watching `tool-tmux` project, then prune on
+  restore. Nothing is silently dropped. **So decide which set `m4zv.3` enforces**: the routing eval
+  gates **29 model-invoked *sources***, of which only 27 are projected here — its near-miss list
+  names `wsl` and `tool-tmux`, neither of which exists in this repo's `.claude/skills/`. Enforcing
+  over sources is defensible for a distributed catalog, but it must be stated, because "an eval case
+  per catalog entry" reads as the projected set and is 3 entries smaller.
 - **`m4zv.4` severity as a required field** on judged output — `BLOCKER` / `IMPORTANT` / `MINOR` —
   rejected as a schema violation rather than complained about, plus the **no-pre-judging lint**:
   refuse to emit a reviewer bundle containing a finding-suppressing directive.
