@@ -379,7 +379,18 @@ five-lane fan-out.
 
 ## 7. `v0.9.0` — evidence, gates, docs
 
-**The numbers first.** `7bur` (cost per landed package) is the hub: it gates `4t9z` by an existing
+**Status, 2026-08-07.** The deterministic-gate row is **shipped**: `m4zv.2`, `.4` and `.6` landed
+this release and `.5` landed in `v0.7.1`, so four of the five are closed and only `m4zv.3` remains
+(blocked behind `v0vt`). The D4 prerequisite named below is **already satisfied** — `imnu.1` is
+closed. Ready and unblocked: `imnu.2`, `imnu.3`, `imnu.5`, `3ifz`.
+
+**The numbers are blocked, so do not start here.** `7bur` cannot begin: its one open blocker is
+the `u6jq` epic, whose remaining child `u6jq.1` is itself blocked on `69az`. The chain is
+`69az → u6jq.1 → u6jq → 7bur → agzx.2, 4t9z, s2xf → kjc5`, so **`69az` is the unblocking
+action for this whole section**, not `7bur`. `agzx.2` sits behind `7bur` and inherits the wait.
+(Note `kjc5` is `7bur`'s *parent*, not a blocker — a child does not wait on its epic.)
+
+**What `7bur` is for, once reachable.** It is the hub: it gates `4t9z` by an existing
 edge and four design decisions defer to it — the roster's tier table, eval scale, the localisation
 question, and prefix-stable dispatch bundles. Its hard constraint: **the eval must not cost more
 than the thing it measures** — cheap models on the arms, the strong model only for judging. Label
@@ -416,10 +427,11 @@ zero token cost:
   enforce that **a pre-flight gate writes nothing**; our two worst recorded incidents were both
   checks that recorded state where they should have blocked entry.
 
-**Prerequisite for `m4zv.4`/`.5`: the D4 amendment** must land in architecture first — validate is a
-**composite**, a deterministic pre-flight component that can fail the lane plus a judged escalation
-component that enqueues a decision. This keeps "no persona passes a required gate" intact while
-giving the required gate teeth. Small; do it first.
+**Prerequisite for `m4zv.4`/`.5`: the D4 amendment — satisfied, nothing to do first.** `imnu.1`
+closed, so architecture already records validate as a **composite**: a deterministic pre-flight
+component that can fail the lane plus a judged escalation component that enqueues a decision. This
+keeps "no persona passes a required gate" intact while giving the required gate teeth. Build
+against the shipped shape.
 
 **The docs debt.** `imnu.2` (a tutorial and how-to layer — `docs/` has no "your first loop"
 walkthrough, which is an adoption blocker for a distribution meant to be installed by other
