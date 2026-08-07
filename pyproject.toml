@@ -110,6 +110,112 @@ ignore_names = [
   "window_violations",
 ]
 
+# Module-size ratchet (basicly-u2hl.5). The gate is `.scripts/check_module_size.py`, wired
+# as the `module-size` [[verify.checks]] entry; the cap is `decompose.SCOPE_FILE_READ_CAP`
+# and is imported, never respelled. Read that script's docstring for why tokens and why
+# 4,000 — the short form is that it is an agent working-set gate, not a defect-density
+# claim, and `docs/design/factory-loop-requirements.md` section 9.3 says which literature
+# must not be cited in its support.
+#
+# `waiver_count` is the number of modules carrying a column-0 `module-size-waiver:` comment.
+# It is here for the same reason [tool.vulture]'s ignore list is: a suppression nobody
+# counts becomes a blanket exemption. The gate fails when the count and the tree disagree in
+# either direction, so a waiver can be added, but only in a diff that also raises this
+# number, and removing the last waiver forces it back down.
+[tool.module_size]
+waiver_count = 0
+
+# The 79 modules that were already over the cap when the gate landed (2026-08-08), each at
+# its measured go-live token count. A module in this list may only shrink; an entry that
+# reaches the cap is deleted rather than lowered, because leaving it licenses regrowth back
+# to the number below. **The list is closed** — nothing is ever added, which is what makes
+# the total a debt that only falls. Nothing enforces that except the diff, and deliberately:
+# an added entry here is a line a reviewer reads, which is exactly what a waiver buried in a
+# 5,000-line module is not, and why the waiver count gets a ratchet and this list does not.
+#
+# Tests are 43 of the 79 and hold the worst offender, so they will not come down as a side
+# effect of refactoring `src/`.
+[tool.module_size.frozen]
+".basicly/core/hooks/tool-usage.py" = 4401
+".basicly/core/kit/tier_resolver.py" = 6294
+".basicly/core/kit/tracker/differential.py" = 10859
+".basicly/core/kit/tracker/events.py" = 12371
+".basicly/core/kit/tracker/fsck.py" = 8482
+".basicly/core/kit/tracker/ids.py" = 4453
+".basicly/core/kit/tracker/migrate.py" = 7565
+".basicly/core/kit/tracker/provenance.py" = 7210
+".basicly/core/kit/tracker/scheduler.py" = 4289
+".basicly/core/kit/tracker/snapshot.py" = 10430
+".scripts/docs_claims.py" = 5634
+".scripts/generate_model_map.py" = 7519
+".scripts/wired_or_deleted.py" = 6627
+"src/basicly/agents.py" = 6954
+"src/basicly/br.py" = 22944
+"src/basicly/catalog_lint.py" = 6295
+"src/basicly/catalog_routing.py" = 4946
+"src/basicly/cli.py" = 54903
+"src/basicly/commit.py" = 6554
+"src/basicly/config.py" = 24375
+"src/basicly/decisions.py" = 7592
+"src/basicly/decompose.py" = 24619
+"src/basicly/hooks.py" = 7179
+"src/basicly/loop.py" = 31782
+"src/basicly/merge.py" = 15494
+"src/basicly/policy.py" = 32626
+"src/basicly/release.py" = 9979
+"src/basicly/rubrics.py" = 6705
+"src/basicly/run_record.py" = 13907
+"src/basicly/runner.py" = 31211
+"src/basicly/skills.py" = 5771
+"src/basicly/supervise.py" = 48006
+"src/basicly/tracker_usage.py" = 5372
+"src/basicly/tuning.py" = 8399
+"src/basicly/verify.py" = 5509
+"src/basicly/worktree.py" = 5521
+"tests/test_agents.py" = 7175
+"tests/test_br_adapter.py" = 6393
+"tests/test_br_seam.py" = 12383
+"tests/test_catalog_lint.py" = 6633
+"tests/test_cli.py" = 20826
+"tests/test_cli_loop.py" = 13517
+"tests/test_cli_policy.py" = 7167
+"tests/test_commit.py" = 6655
+"tests/test_config.py" = 18193
+"tests/test_decisions.py" = 11839
+"tests/test_decompose.py" = 28992
+"tests/test_docs_claims.py" = 4088
+"tests/test_hooks.py" = 6581
+"tests/test_integration_loop.py" = 11146
+"tests/test_kit_claude_hook.py" = 4706
+"tests/test_kit_deployment.py" = 5045
+"tests/test_kit_install.py" = 5600
+"tests/test_kit_resolver.py" = 6946
+"tests/test_kit_tracker_differential.py" = 7256
+"tests/test_kit_tracker_events.py" = 11619
+"tests/test_kit_tracker_fsck.py" = 8323
+"tests/test_kit_tracker_ids.py" = 5923
+"tests/test_kit_tracker_migrate.py" = 9323
+"tests/test_kit_tracker_provenance.py" = 7734
+"tests/test_kit_tracker_scheduler.py" = 4198
+"tests/test_kit_tracker_snapshot.py" = 9199
+"tests/test_loop.py" = 38898
+"tests/test_loop_repair.py" = 4355
+"tests/test_loop_state.py" = 4977
+"tests/test_merge.py" = 19808
+"tests/test_model_map.py" = 6814
+"tests/test_policy.py" = 35692
+"tests/test_release.py" = 9842
+"tests/test_rubrics.py" = 7493
+"tests/test_run_record.py" = 10908
+"tests/test_runner.py" = 36799
+"tests/test_skills.py" = 5165
+"tests/test_supervise.py" = 60275
+"tests/test_tracker_requirements.py" = 7912
+"tests/test_tracker_usage.py" = 4664
+"tests/test_tuning.py" = 4170
+"tests/test_verify.py" = 15763
+"tests/test_worktree.py" = 6068
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/basicly"]
 exclude = ["**/__pycache__", "**/*.pyc"]
