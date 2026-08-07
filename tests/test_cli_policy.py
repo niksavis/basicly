@@ -284,6 +284,34 @@ def test_grant_issuance_states_how_many_beads_it_covers(
     assert "covers 24 beads" in capsys.readouterr().out
 
 
+def test_the_ledger_tells_approving_a_checkpoint_from_originating_a_proposal(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An operator must not be able to read autonomy the engine lacks (basicly-u6jq.2).
+
+    ``delegable: classify, decompose, ship`` reads as "the loop classifies and
+    decomposes for you". It only ever meant the checkpoint approval; L1 is the
+    level where the difference is visible on one line — it approves the decompose
+    checkpoint and originates nothing.
+    """
+    _tty(monkeypatch)
+    _allow_autonomy(monkeypatch, "L3")
+
+    assert cli.main(["policy", "grant", "root", "--level", "L1"]) == 0
+    capsys.readouterr()
+    assert cli.main(["policy", "grant", "root"]) == 0
+    out = capsys.readouterr().out
+    assert "approves checkpoints: decompose" in out
+    assert "originates proposals: (nothing)" in out
+
+    assert cli.main(["policy", "grant", "root", "--level", "L3", "--token-budget", "5000"]) == 0
+    capsys.readouterr()
+    assert cli.main(["policy", "grant", "root"]) == 0
+    out = capsys.readouterr().out
+    assert "approves checkpoints: classify, decompose, ship" in out
+    assert "originates proposals: work_type, children" in out
+
+
 def test_grant_issue_non_interactive_challenges(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

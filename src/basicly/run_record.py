@@ -74,6 +74,7 @@ BUILD_PHASE = "build"  # loop._run_agent — the interactive path
 LANE_PHASE = "lane"  # supervise._dispatch_lane — the supervised path
 VALIDATE_PHASE = "validate"  # rubrics — a read-only judge
 DECIDE_PHASE = "decide"  # decisions — the decider answering a queued item
+PROPOSE_PHASE = "propose"  # loop._run_proposer — originating a phase's input
 
 # The dispatches that are an agent doing a node's work. One definition, read by
 # both the unsizeable-lane bound and the spend calibration, so the two can no

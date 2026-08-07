@@ -867,6 +867,315 @@ def test_classify_feature_names_a_collapsing_path_in_the_advance_detail(
     assert "uv.lock" not in result.detail
 
 
+# --- delegated proposals (basicly-u6jq.2) ------------------------------------
+#
+# Both inputs the loop could not originate. The gate at each was never skipped —
+# it was that nothing produced what the gate wanted, so a granted session still
+# waited on a human to *request* the phase, and an undecomposed epic sat P0 and
+# undispatchable for sessions. What these pin is the whole contract: the grant
+# decides whether an agent is asked, the engine validates what comes back against
+# the schema and the working-set band `basicly decompose` already enforces, and
+# every refusal lands back on the block that was the only behaviour before.
+
+
+def _proposer(monkeypatch: pytest.MonkeyPatch, stdout: str, **spec_kw) -> dict:
+    """Pin a confinable headless runner replying *stdout*; return what it was handed.
+
+    No ``usage_format``, so *stdout* is the reply verbatim (the store-measured arm);
+    ``deny_style`` is what makes the fake confinable at all — without one the
+    proposer refuses to dispatch it, which has its own test below.
+    """
+    calls: dict = {}
+    spec = runner.RunnerSpec(
+        "fake",
+        runner.HEADLESS,
+        ("fake", runner.PROMPT_PLACEHOLDER),
+        deny_style=runner.DENY_TOOL_FLAG,
+        **spec_kw,
+    )
+    monkeypatch.setattr(
+        loop, "load_runner_config", lambda *_a: RunnerConfig(specs=(spec,), default="fake")
+    )
+
+    def _run(dispatched, prompt, cwd, **kwargs):
+        calls["spec"], calls["prompt"], calls["cwd"] = dispatched, prompt, cwd
+        calls["kwargs"] = kwargs
+        return runner.RunResult("fake", ("fake",), executed=True, returncode=0, stdout=stdout)
+
+    monkeypatch.setattr(runner, "run", _run)
+    return calls
+
+
+def _delegated(monkeypatch: pytest.MonkeyPatch, level: str = "L3") -> None:
+    """Let the grant delegate every proposal kind, and give the bead a requirement."""
+    monkeypatch.setattr(
+        policy, "proposal_delegated", lambda *_a, **_k: policy.ProposalGrant(True, level=level)
+    )
+    monkeypatch.setattr(decisions, "intake_corpus", lambda *_a: "Ship the parser.")
+
+
+def test_intake_proposes_the_work_type_under_a_grant(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The loop originates the work type instead of waiting to be handed one."""
+    at(_state("intake"))
+    _delegated(monkeypatch)
+    _proposer(monkeypatch, json.dumps({"work_type": "epic", "rationale": "it decomposes"}))
+    recorded = {}
+
+    def _classify(_r, _i, wt):
+        recorded["wt"] = wt
+        return classify.ClassifyResult("i", wt, DoRResult(True, ()))
+
+    monkeypatch.setattr(classify, "classify", _classify)
+
+    result = _advance(tmp_path)
+
+    assert recorded["wt"] == "epic"
+    assert result.blocked and result.checkpoint == "classify"
+    assert "proposed under the L3 grant" in result.detail
+
+
+def test_intake_falls_back_to_the_block_when_no_grant_delegates_it(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """L0/L1 keeps today's human-supplied behaviour, and says a grant was consulted."""
+    at(_state("intake"))
+    _never_runs(monkeypatch)
+    monkeypatch.setattr(
+        policy,
+        "proposal_delegated",
+        lambda *_a, **_k: policy.ProposalGrant(
+            False, "the active L1 grant on i approves the checkpoint but does not originate it"
+        ),
+    )
+
+    result = _advance(tmp_path)
+
+    assert result.blocked and result.needs_input == "work_type"
+    assert "classify needs an agent-proposed work type" in result.detail
+    assert "does not originate it" in result.detail
+
+
+def test_an_unreadable_grant_ledger_blocks_rather_than_failing_the_advance(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A tracker that will not answer is not authority to act — and not a crash either.
+
+    The proposer is optional machinery on top of a block that already existed, so
+    an unreadable ledger has to fall back to that block. `br` raises here because
+    nothing initialized a tracker under tmp_path, which is the real failure.
+    """
+    at(_state("intake"))
+    _never_runs(monkeypatch)
+
+    result = _advance(tmp_path)
+
+    assert result.blocked and result.needs_input == "work_type"
+    assert "grant ledger could not be read" in result.detail
+
+
+def test_an_invalid_proposed_work_type_never_reaches_the_tracker(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A proposal outside the fixed br set falls back rather than being recorded."""
+    at(_state("intake"))
+    _delegated(monkeypatch)
+    _proposer(monkeypatch, json.dumps({"work_type": "banana"}))
+    monkeypatch.setattr(
+        classify, "classify", lambda *_a: pytest.fail("an invalid type must not be recorded")
+    )
+
+    result = _advance(tmp_path)
+
+    assert result.blocked and result.needs_input == "work_type"
+    assert "'banana' is not one of" in result.detail
+
+
+def test_an_unparseable_proposal_falls_back_to_the_block(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Fail-closed: a reply that is not the contract proposed nothing."""
+    at(_state("intake"))
+    _delegated(monkeypatch)
+    _proposer(monkeypatch, "I think this is probably an epic, but let me check.")
+
+    result = _advance(tmp_path)
+
+    assert result.blocked and result.needs_input == "work_type"
+
+
+def test_the_proposer_dispatch_is_confined_and_metered(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Confined like the decider, metered like every other dispatch.
+
+    Unmetered is not merely untidy: an estimated record counts as an *unmeterable*
+    dispatch, which zeroes the remaining budget and halts the whole grant
+    (basicly-gczc). And an unconfined proposer holding a write tool can record its
+    own answer around the contract it was given.
+    """
+    at(_state("intake"))
+    _delegated(monkeypatch)
+    calls = _proposer(monkeypatch, json.dumps({"work_type": "task"}))
+    monkeypatch.setattr(
+        classify,
+        "classify",
+        lambda _r, _i, wt: classify.ClassifyResult("i", wt, DoRResult(True, ())),
+    )
+
+    _advance(tmp_path)
+
+    assert calls["kwargs"]["capture_usage"] is True
+    assert calls["spec"].deny_tools, "the dispatched spec carries the confinement overlay"
+    assert calls["cwd"] == tmp_path
+    assert "Ship the parser." in calls["prompt"], "bounded to the bead's own requirement"
+    records = run_record.dispatch_history(tmp_path).get("i", [])
+    assert [r.get("phase") for r in records] == [run_record.PROPOSE_PHASE]
+
+
+def test_an_unconfinable_runner_never_dispatches_a_proposer(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No confinement overlay, no dispatch — D3's drop-to-human stance, not a guess."""
+    at(_state("intake"))
+    _delegated(monkeypatch)
+    _never_runs(monkeypatch)
+    bare = runner.RunnerSpec("bare", runner.HEADLESS, ("bare", runner.PROMPT_PLACEHOLDER))
+    monkeypatch.setattr(
+        loop, "load_runner_config", lambda *_a: RunnerConfig(specs=(bare,), default="bare")
+    )
+
+    result = _advance(tmp_path)
+
+    assert result.blocked and result.needs_input == "work_type"
+    assert "no known tool-confinement overlay" in result.detail
+
+
+def test_a_manual_handoff_runner_proposes_nothing(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A handoff runner has no argv and executes nothing, so it cannot originate an input."""
+    at(_state("intake"))
+    _delegated(monkeypatch)
+    _never_runs(monkeypatch)
+    _pin_runner(monkeypatch, "manual")
+
+    result = _advance(tmp_path)
+
+    assert result.blocked and result.needs_input == "work_type"
+    assert "manual handoff" in result.detail
+
+
+def _feature_at_classify(at, monkeypatch: pytest.MonkeyPatch) -> None:
+    at(_state("classify", issue_type="feature"))
+    monkeypatch.setattr(policy, "definition_of_ready", lambda *_a: DoRResult(True, ()))
+
+
+_PLAN = {
+    "children": [
+        {
+            "title": "parse the header",
+            "acceptance": ["given a header when parsed then the fields land"],
+            "scope": ["src/header/**"],
+        }
+    ]
+}
+
+
+def test_classify_proposes_the_child_plan_under_a_grant(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The decompose input the loop could not originate — the stall this bead is about."""
+    _feature_at_classify(at, monkeypatch)
+    _delegated(monkeypatch)
+    _proposer(monkeypatch, json.dumps(_PLAN))
+    planned = {}
+
+    def _decompose(_r, feature_id, children):
+        planned["feature"], planned["children"] = feature_id, children
+        return decompose.DecomposeResult("i", (), (("i.1",),))
+
+    monkeypatch.setattr(decompose, "decompose", _decompose)
+
+    result = _advance(tmp_path)
+
+    assert planned["feature"] == "i"
+    assert planned["children"] == (
+        decompose.ChildSpec(
+            "parse the header",
+            ("given a header when parsed then the fields land",),
+            ("src/header/**",),
+        ),
+    )
+    assert result.to_phase == "decompose" and result.action == "decomposed"
+    assert "proposed under the L3 grant" in result.detail
+
+
+def test_a_plan_failing_the_schema_falls_back_to_the_block(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The same schema `basicly decompose` enforces: a child with no scope is refused.
+
+    A scope is what makes parallel-safety computable, so refusing to guess one is
+    the whole point — and a proposer is exactly the caller that would guess.
+    """
+    _feature_at_classify(at, monkeypatch)
+    _delegated(monkeypatch)
+    _proposer(monkeypatch, json.dumps({"children": [{"title": "t", "acceptance": ["a"]}]}))
+    monkeypatch.setattr(
+        decompose, "decompose", lambda *_a: pytest.fail("an invalid plan must not be recorded")
+    )
+
+    result = _advance(tmp_path)
+
+    assert result.blocked and result.needs_input == "children"
+    assert "failed the plan schema" in result.detail
+    assert "'scope'" in result.detail
+
+
+def test_a_plan_under_the_working_set_floor_falls_back_to_the_block(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The governor that refused a hand-authored plan refuses a proposed one identically.
+
+    Measured against the real estimator, not a stubbed verdict: the child declares
+    a scope that exists and is tiny, so the floor is what refuses it — the same
+    refusal a hand-authored plan for basicly-vkh0 took on 2026-08-06 at 4794
+    tokens against a floor of 8000.
+    """
+    _feature_at_classify(at, monkeypatch)
+    _delegated(monkeypatch)
+    tiny = tmp_path / "src" / "tiny.py"
+    tiny.parent.mkdir(parents=True)
+    tiny.write_text("x = 1\n", encoding="utf-8")
+    plan = {"children": [{"title": "t", "acceptance": ["a"], "scope": ["src/tiny.py"]}]}
+    _proposer(monkeypatch, json.dumps(plan))
+    monkeypatch.setattr(
+        decompose, "decompose", lambda *_a: pytest.fail("a refused plan must not be recorded")
+    )
+
+    result = _advance(tmp_path)
+
+    assert result.blocked and result.needs_input == "children"
+    assert "sizing governor refused the proposed plan" in result.detail
+    assert "below working_set_min 8000" in result.detail
+
+
+def test_the_child_plan_prompt_states_the_band_the_engine_will_measure_against() -> None:
+    """A proposer that cannot see the floor splits until every child is under it."""
+    sizing = SizingConfig(
+        working_set_min=9_000,
+        working_set_max=70_000,
+        build_factors={},
+        calibration_min_samples=10,
+        calibration_window=50,
+    )
+    prompt = loop.child_plan_prompt("i", "Ship the parser.", sizing)
+    assert "9000-70000" in prompt
+    assert "Ship the parser." in prompt
+
+
 # --- decompose --------------------------------------------------------------
 
 

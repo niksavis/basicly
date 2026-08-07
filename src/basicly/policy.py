@@ -1237,8 +1237,10 @@ def _settle_checkpoint_queue(repo_root: Path, issue_id: str, name: str, *, by: s
 # Grants expire with the session (the root issue closing) and are revoked by a
 # later marker; the last grant/revocation in comment order wins.
 
-# Checkpoints each level may delegate. Ship additionally requires the
-# lights-out preconditions (deterministic, checked at approval time).
+# Checkpoints each level may delegate — the *approval* over an input, never the
+# input itself; :data:`PROPOSAL_COVERAGE` below is the other half. Ship
+# additionally requires the lights-out preconditions (deterministic, checked at
+# approval time).
 GRANT_COVERAGE: dict[str, tuple[str, ...]] = {
     "L0": (),
     "L1": ("decompose",),
@@ -1533,6 +1535,83 @@ def _grant_approval(
         "",
         f"grant:{grant.level}",
     )
+
+
+# --- Delegated proposals: originating an input, not approving it (u6jq.2) ----
+#
+# Two distinct gates sit at classify and decompose, not one: *producing* the work
+# type or the child plan, and *approving* the checkpoint over what was produced.
+# :data:`GRANT_COVERAGE` only ever delegated the second, so a granted session
+# still stopped dead at the first — the loop had no way to originate either input
+# and every one of them arrived from outside (``loop advance --work-type``,
+# ``--children``, ``basicly decompose --plan``). An undecomposed epic is then both
+# unworkable and invisible to a supervised fan-out, which fans out over
+# dependents it has none of.
+#
+# So the ladder is drawn again for the production half, one level stricter than
+# the approval half: L1 may approve a decompose checkpoint but may not originate
+# the plan it approves, because L2 is where D3 starts delegating judgment at all.
+
+# The proposal kinds each level may originate.
+PROPOSAL_COVERAGE: dict[str, tuple[str, ...]] = {
+    "L0": (),
+    "L1": (),
+    "L2": ("work_type", "children"),
+    "L3": ("work_type", "children"),
+}
+
+
+@dataclass(frozen=True)
+class ProposalGrant:
+    """Whether the grant may originate one proposal, and why not when it may not."""
+
+    allowed: bool
+    # Why the delegation was declined, for the caller to carry on its fallback
+    # block — the operator's only way to see a grant was consulted at all. Empty
+    # when allowed.
+    reason: str = ""
+    # The level that allowed it, for attribution on the recorded step.
+    level: str = ""
+
+
+def proposal_delegated(repo_root: Path, issue_id: str, kind: str, root_issue: str) -> ProposalGrant:
+    """Whether *root_issue*'s grant lets the loop originate *kind* for *issue_id*.
+
+    The same four guards a delegated checkpoint approval passes
+    (:func:`_grant_approval`), against :data:`PROPOSAL_COVERAGE` instead of
+    :data:`GRANT_COVERAGE`: there must be a live grant, its level must cover this
+    proposal kind, the issue must be inside that grant's own session, and the
+    session must not have reached D3's spend halt.
+
+    A pure read — unlike :func:`_grant_approval` it records nothing, because a
+    proposal is not yet a decision. What the proposer comes back with still has to
+    pass the plan schema and the working-set governor before anything is written,
+    so this decides only whether an agent may be *asked*.
+    """
+    if kind not in PROPOSAL_COVERAGE["L3"]:
+        raise ValueError(
+            f"unknown proposal kind {kind!r}; expected one of {list(PROPOSAL_COVERAGE['L3'])}"
+        )
+    grant = active_grant(repo_root, root_issue)
+    if grant is None:
+        return ProposalGrant(False, f"no active grant on {root_issue} to delegate it under")
+    if kind not in PROPOSAL_COVERAGE.get(grant.level, ()):
+        return ProposalGrant(
+            False,
+            f"the active {grant.level} grant on {root_issue} approves the checkpoint but does "
+            f"not originate the {kind} proposal",
+        )
+    session_ids = session_issue_ids(repo_root, root_issue)
+    if issue_id not in session_ids:
+        return ProposalGrant(
+            False,
+            f"the active {grant.level} grant on {root_issue} does not cover {issue_id}: "
+            "it is not in that session's issue tree",
+        )
+    spend = spend_status(repo_root, root_issue, grant=grant, ids=session_ids)
+    if spend.halted:
+        return ProposalGrant(False, _grant_declined(grant, f"the {kind} proposal", (spend.detail,)))
+    return ProposalGrant(True, level=grant.level)
 
 
 # --- Session accounting for grants: spend, needs-input, preconditions --------

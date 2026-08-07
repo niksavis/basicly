@@ -996,6 +996,91 @@ def test_grant_delegates_only_covered_checkpoints(
     assert not policy.checkpoint_approved(tmp_path, "i", "ship")
 
 
+# --- delegated proposals (basicly-u6jq.2) ------------------------------------
+
+
+def test_a_grant_that_approves_the_checkpoint_may_not_originate_the_proposal(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The two gates, told apart at the level that has exactly one of them.
+
+    An L1 grant approves the decompose *checkpoint* and always could; what it may
+    not do is originate the child plan that checkpoint approves. Reading the first
+    as the second is what let an operator conclude the factory was autonomous at a
+    phase whose input nothing produced.
+    """
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    fake.comments.append("[harness-policy] grant level=L1")
+
+    approval = policy.approve_checkpoint_guarded(tmp_path, "i", "decompose", interactive=False)
+    proposal = policy.proposal_delegated(tmp_path, "i", "children", "i")
+
+    assert approval.status == "approved"
+    assert not proposal.allowed
+    assert "approves the checkpoint but does not originate" in proposal.reason
+
+
+def test_l2_originates_both_proposals(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """L2 is where D3 starts delegating judgment, so it is where a proposer may run."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    fake.comments.append("[harness-policy] grant level=L2 budget=100000")
+
+    for kind in ("work_type", "children"):
+        verdict = policy.proposal_delegated(tmp_path, "i", kind, "i")
+        assert verdict.allowed and verdict.level == "L2"
+
+
+def test_no_grant_originates_nothing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """The safe state, and it says a ledger was consulted rather than staying bare."""
+    _install(monkeypatch, _FakeBr())
+
+    verdict = policy.proposal_delegated(tmp_path, "i", "work_type", "root")
+
+    assert not verdict.allowed and "no active grant on root" in verdict.reason
+
+
+def test_a_spend_halted_grant_originates_nothing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """D3's one halt predicate reaches the proposer too — a proposal costs real tokens."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    fake.comments.append("[harness-policy] grant level=L2 budget=100")
+    entry = run_record.build_record(
+        agent="t", handoff=False, returncode=0, duration_s=1.0, command=("t",), tokens=150
+    )
+    run_record.record(tmp_path, "root", entry)
+
+    verdict = policy.proposal_delegated(tmp_path, "root", "children", "root")
+
+    assert not verdict.allowed
+    assert "150/100 tokens" in verdict.reason
+
+
+def test_a_grant_originates_nothing_outside_its_own_session(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Same session boundary a delegated approval holds: a caller names the root."""
+    fake = _FakeBr(records={"root": {"status": "open", "dependents": []}})
+    _install(monkeypatch, fake)
+    fake.comments.append("[harness-policy] grant level=L3 budget=100000")
+
+    verdict = policy.proposal_delegated(tmp_path, "stranger", "children", "root")
+
+    assert not verdict.allowed
+    assert "not in that session's issue tree" in verdict.reason
+
+
+def test_an_unknown_proposal_kind_is_loud(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A typo must not read as "this level declines it" — that would be silently inert."""
+    _install(monkeypatch, _FakeBr())
+
+    with pytest.raises(ValueError, match="unknown proposal kind"):
+        policy.proposal_delegated(tmp_path, "i", "work-type", "i")
+
+
 def test_grant_spend_halt_drops_delegation_to_human(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
