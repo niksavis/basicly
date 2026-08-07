@@ -11,9 +11,12 @@ loop *phase* from that recorded evidence.
 Phase derivation is a reconstruction from what ``br`` records, not a transition
 engine — the state machine (onb.6.3) owns advancement. Gate/checkpoint/rework
 reads are delegated to the policy engine (onb.3) so the block-vs-advise rules
-live in exactly one place. The ready and blocked sets come straight from ``br``
-(``br scheduler``/``br ready``/``br blocked``); scheduling is ``br``'s job, not
-ours (§12.3).
+live in exactly one place. The ready and blocked sets come from the tracker
+rather than being recomputed here — the blocked set straight from ``br blocked``,
+and the ranked ready set through ``br.read_ranking``, the seam that answers out of
+``br scheduler`` or out of the owned scorer depending on how far the cutover has
+reached (basicly-vkh0.20). §12.3's rule survives the flip in the form that
+mattered: ranking is the tracker's job and this module only reads the answer.
 
 Inherited ``agent_context`` is surfaced when present and simply reads as
 ``None`` when the tracker has ``inherited_context`` disabled — its absence is a
@@ -230,28 +233,32 @@ def read_node_state(
 
 @dataclass(frozen=True)
 class RankedNode:
-    """A ready issue with its ``br scheduler`` rank and explainable score."""
+    """A ready issue with its scheduler rank and explainable score."""
 
     rank: int
     score: int
     issue_id: str
     title: str
-    # br's own pre-evidence ordering. Kept because the two diverge exactly when
-    # evidence weighting mattered, and a recorded score is only interpretable
-    # against the order it changed (basicly-vkh0.3).
+    # The scorer's pre-evidence ordering. Kept because br's two diverge exactly
+    # when evidence weighting mattered, and a recorded score is only interpretable
+    # against the order it changed (basicly-vkh0.3). The owned scorer has no such
+    # split — its score *is* the ordering — so it reports the two equal, which is
+    # a fact about that policy and readable as one against `Ranking.schema`.
     fallback_rank: int = 0
 
 
 @dataclass(frozen=True)
 class Ranking:
-    """One ``br scheduler`` answer: its nodes plus the policy that produced them.
+    """One scheduler answer: its nodes plus the policy that produced them.
 
     The envelope matters as much as the ranks. D9 requires dispatch inputs to be
     reproducible, and a bare rank is not — it means nothing without the scoring
-    policy behind it. ``br scheduler`` is explicitly versioned
-    (``schema: br.scheduler.v1``) and states its own tie-break sort, so carrying
-    those two strings is what makes a recorded rank interpretable later
-    (basicly-vkh0.3).
+    policy behind it. Both scorers are explicitly versioned and state their own
+    sort, so carrying those two strings is what makes a recorded rank
+    interpretable later (basicly-vkh0.3) — and, since the cutover, what says
+    *which* scorer produced it: ``br.scheduler.v1`` ranks on
+    ``priority ASC, created_at ASC, id ASC``, while ``basicly.scheduler.v1`` drops
+    the age term for ``priority ASC, dependents DESC, id ASC`` (basicly-vkh0.20).
     """
 
     nodes: tuple[RankedNode, ...]
@@ -264,12 +271,14 @@ class Ranking:
 
 
 def ready_ranking(repo_root: Path, limit: int | None = None) -> Ranking:
-    """The ready set ranked by ``br scheduler``, with its policy envelope."""
-    args = ["scheduler", "--json"]
-    if limit is not None:
-        args += ["--limit", str(limit)]
-    proc = _run_br(repo_root, args)
-    payload = json.loads(proc.stdout)
+    """The ready set ranked by whichever scorer the repo is flipped to.
+
+    One parser over one payload shape. Which store answers is `basicly.br`'s
+    business and not this module's — ``br.read_ranking`` is the seam, the way
+    ``br.read_record`` is for a record, so the cutover stays in the module that
+    owns it rather than putting a mode branch here (basicly-vkh0.19, .20).
+    """
+    payload = br.read_ranking(repo_root, limit)
     fallback = payload.get("fallback_policy")
     return Ranking(
         nodes=tuple(
@@ -290,7 +299,7 @@ def ready_ranking(repo_root: Path, limit: int | None = None) -> Ranking:
 
 
 def ready_ranked(repo_root: Path, limit: int | None = None) -> tuple[RankedNode, ...]:
-    """Return the ready issues ranked by ``br scheduler`` (highest priority first)."""
+    """Return the ready issues ranked by the scheduler (highest priority first)."""
     return ready_ranking(repo_root, limit).nodes
 
 

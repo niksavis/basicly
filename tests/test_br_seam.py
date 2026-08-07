@@ -518,10 +518,11 @@ def test_the_flip_reads_the_record_out_of_the_owned_ledger(
 def test_the_flip_still_writes_the_external_tracker(tmp_path: Path, fake_br: _FakeBr) -> None:
     """`owned` flips the *record read* and nothing else.
 
-    Ten of the eleven subcommands the engine spawns — ``comments list``, ``gate list``,
-    ``blocked``, ``list``, ``lint``, ``dep cycles``, ``scheduler`` — are read at their own
-    call site with their own payload shape, so they still answer out of br. Stopping the
-    writes would break every one of them.
+    Nine of the eleven subcommands the engine spawns — ``comments list``, ``gate list``,
+    ``blocked``, ``list``, ``lint``, ``dep cycles`` — are read at their own call site with
+    their own payload shape, so they still answer out of br. Stopping the writes would
+    break every one of them. (``scheduler`` was the tenth until basicly-vkh0.20 put it
+    behind ``br.read_ranking``.)
     """
     repo = _repo(tmp_path, br.MODE_OWNED)
     br.run_br(repo, ["create", "a bead", "-t", "task", "--json"])

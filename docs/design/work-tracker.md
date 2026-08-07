@@ -858,6 +858,17 @@ Two consequences:
   **descending dependent count** (unblock the most work first — the critical path), then id as
   the final deterministic tie-break. Every term is a pure function of the graph.
 
+  **Landed 2026-08-07 (`basicly-vkh0.20`)**, as `kit/tracker/scheduler.py` behind
+  `br.read_ranking` — the ranking's own seam, the shape `read_record` has for a record. It
+  emits `schema: basicly.scheduler.v1` and the sort above, so a marker recorded under the
+  owned scorer is distinguishable from one recorded under `br.scheduler.v1`. Two decisions the
+  ordering above did not settle, both made in the module and testable there: the dependent
+  count is over **blocking edges to still-live dependents** only, since a `related` dependent
+  was never waiting and a closed one is work already done; and the score packs both terms into
+  one integer that `explain()` decodes, so a recorded score stays readable without the graph
+  that produced it. Age-freedom is structural rather than disciplinary — the ranking's input
+  type carries no timestamp, though the ledger it is folded from does.
+
 ### 9.3 Concurrency — single writer per ledger
 
 Answered by §8, and after the 2026-07-28 topology decision the answer carries no exception: one
