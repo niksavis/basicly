@@ -356,11 +356,20 @@ KIT_TRACKER_DIR = Path(".basicly") / "core" / "kit" / "tracker"
 # location. A literal here could drift from either without a gate noticing.
 LEDGER_DIR = tracker_usage.LEDGER_FILE.parent
 
-# The name the kit's differential is loaded under. Fixed, and checked against
-# `sys.modules` before loading, for the reason `differential._load_migrate` gives:
-# two loads of one file give two `Event` classes and an `isinstance` against the
-# wrong one is false for the right reason.
-_KIT_MODULE_NAME = "basicly_tracker_kit_differential"
+# The prefix a kit module is loaded under. Fixed, and checked against `sys.modules`
+# before loading, for the reason `differential._load_migrate` gives: two loads of one
+# file give two `Event` classes and an `isinstance` against the wrong one is false for
+# the right reason. The kit's own sibling loaders follow the same convention
+# (`basicly_tracker_kit_migrate`, `..._ids`, `..._differential`), so a module the kit
+# loads for itself and one the engine loads here are the same object.
+_KIT_MODULE_PREFIX = "basicly_tracker_kit_"
+
+# The kit module :func:`kit` answers with when a caller names none — the differential,
+# which carries `events` and `migrate` under it.
+DEFAULT_KIT_MODULE = "differential"
+
+# The kit module that owns the ranking (basicly-vkh0.20).
+SCHEDULER_KIT_MODULE = "scheduler"
 
 # How a mirrored fact says it got here (§9.6). Distinguishes an event the dual write
 # recorded from one `migrate.py` extracted out of the export, and it is one of
@@ -454,8 +463,8 @@ class TrackerDivergenceError(RuntimeError):
 # already (see :func:`set_mode_reader`), so it should be obvious rather than terse.
 _mode_reader: list[Callable[[Path], str]] = []
 
-# Kit modules by resolved tracker-directory path.
-_kit_modules: dict[str, ModuleType] = {}
+# Kit modules by (resolved tracker-directory path, module name).
+_kit_modules: dict[tuple[str, str], ModuleType] = {}
 
 
 def set_mode_reader(reader: Callable[[Path], str] | None) -> None:
@@ -505,8 +514,8 @@ def ledger_dir(repo_root: Path) -> Path:
     return tracker_usage.ledger_root(Path(repo_root)) / LEDGER_DIR
 
 
-def kit(repo_root: Path) -> Any:
-    """The installed kit's ``differential`` module, which carries the store under it.
+def kit(repo_root: Path, module_name: str = DEFAULT_KIT_MODULE) -> Any:
+    """The installed kit's *module_name*; by default ``differential``.
 
     The differential rather than the event log directly, for the reason it loads
     ``migrate`` rather than ``events``: it is the module that owns every vocabulary
@@ -515,33 +524,40 @@ def kit(repo_root: Path) -> Any:
     (``kit(root).events``, ``kit(root).migrate``) keeps a second spelling of any of
     them impossible.
 
+    A kit module that is not reachable that way is named instead — the scheduler
+    (basicly-vkh0.20) is the first, because it sits *beside* the differential rather
+    than under it. It loads its own sibling under the same fixed ``sys.modules`` name
+    this function uses, which is what keeps one `RecordView` class in the process
+    however the two are reached.
+
     Raises:
-        TrackerDivergenceError: the kit is not installed, or will not load. A hard failure
-            rather than a degrade: a mode above ``external`` has already promised that
-            both stores hold the same facts.
+        TrackerDivergenceError: the module is not installed, or will not load. A hard
+            failure rather than a degrade: a mode above ``external`` has already promised
+            that both stores hold the same facts.
     """
     directory = Path(repo_root) / KIT_TRACKER_DIR
-    source = directory / "differential.py"
+    source = directory / f"{module_name}.py"
     # Asked of the filesystem before either cache, and that ordering is the finding:
     # reusing an already-loaded kit is right (one `Event` class per process), but if the
     # reuse came first then a repo with no kit installed would be answered out of some
     # other repo's, and the mode would look enabled while writing nowhere.
     if not source.is_file():
         raise TrackerDivergenceError(f"the tracker kit is not installed at {directory}")
-    key = str(directory.resolve())
+    key = (str(directory.resolve()), module_name)
     if (cached := _kit_modules.get(key)) is not None:
         return cached
-    module = sys.modules.get(_KIT_MODULE_NAME)
+    loaded_as = _KIT_MODULE_PREFIX + module_name
+    module = sys.modules.get(loaded_as)
     if module is None:
-        spec = importlib.util.spec_from_file_location(_KIT_MODULE_NAME, source)
+        spec = importlib.util.spec_from_file_location(loaded_as, source)
         if spec is None or spec.loader is None:
             raise TrackerDivergenceError(f"the tracker kit is not installed at {directory}")
         module = importlib.util.module_from_spec(spec)
-        sys.modules[_KIT_MODULE_NAME] = module
+        sys.modules[loaded_as] = module
         try:
             spec.loader.exec_module(module)
         except (OSError, ImportError) as exc:
-            del sys.modules[_KIT_MODULE_NAME]
+            del sys.modules[loaded_as]
             raise TrackerDivergenceError(
                 f"the tracker kit at {directory} did not load: {exc}"
             ) from exc
@@ -1018,12 +1034,14 @@ def read_record(repo_root: Path, issue_id: str) -> dict | None:
     choice of what "not found" means was already made once, here, is the whole reason
     the flip is not eleven decisions.
 
-    What is deliberately *not* flipped: the other ten subcommands the engine spawns.
-    `comments list`, `gate list`, `blocked`, `list`, `lint`, `dep cycles` and
-    `scheduler` are each read at their own call site with their own payload shape —
-    they are not behind a seam, so flipping them would mean rewriting callers, which
-    is the thing this bead is required not to do. That is why the external tracker is
-    still written in :data:`MODE_OWNED` rather than merely tolerated.
+    What is deliberately *not* flipped: the other subcommands the engine spawns.
+    `comments list`, `gate list`, `blocked`, `list`, `lint` and `dep cycles` are each
+    read at their own call site with their own payload shape — they are not behind a
+    seam, so flipping them would mean rewriting callers, which is the thing this bead
+    is required not to do. That is why the external tracker is still written in
+    :data:`MODE_OWNED` rather than merely tolerated. `scheduler` was on that list until
+    basicly-vkh0.20 gave it a seam of its own (:func:`read_ranking`), which is the shape
+    the remaining nine would each need.
     """
     if tracker_mode(repo_root) == MODE_OWNED:
         return owned_record(repo_root, issue_id)
@@ -1056,6 +1074,80 @@ def require_record(repo_root: Path, issue_id: str) -> dict:
     if record is None:
         raise RuntimeError(f"br show {issue_id} returned no issue record")
     return record
+
+
+def owned_ranking(repo_root: Path, limit: int | None = None) -> dict:
+    """The owned scheduler's answer for *repo_root*, in ``br scheduler --json``'s shape.
+
+    The flipped half of :func:`read_ranking` (basicly-vkh0.20). Rendered into br's payload
+    shape for the same reason :func:`owned_record` is rendered into ``br show``'s: the
+    caller then has one parser rather than one per store, so the flip is a change of source
+    and not of contract.
+
+    Two fields of that shape mean something different on this side, and both are stated
+    rather than papered over. ``fallback_rank`` equals the rank, because the owned ordering
+    has no evidence-weighted pass above it that a fallback could differ from — br's two
+    diverge exactly when its scoring evidence moved a node, and here the score *is* the
+    ordering. And ``schema`` reads ``basicly.scheduler.v1`` rather than ``br.scheduler.v1``,
+    which is what lets a marker recorded before the flip be told from one recorded after it.
+
+    Unlike :func:`owned_record` this **raises** rather than degrading to an empty answer. An
+    absent record is an ordinary fact a caller handles; an empty ranking is
+    indistinguishable from "no work is ready", so a kit that would not load would stall the
+    loop silently instead of failing.
+
+    Raises:
+        TrackerDivergenceError: the kit is not installed or will not load.
+    """
+    scheduler = kit(repo_root, SCHEDULER_KIT_MODULE)
+    answer = scheduler.ranking(ledger_dir(repo_root), limit=limit)
+    return {
+        "schema": answer.schema,
+        "fallback_policy": {"sort": answer.sort},
+        "recommendations": [
+            {
+                "rank": entry.rank,
+                "fallback_rank": entry.rank,
+                "score": entry.score,
+                "issue": {"id": entry.record, "title": entry.title},
+            }
+            for entry in answer.records
+        ],
+    }
+
+
+def read_ranking(repo_root: Path, limit: int | None = None) -> dict:
+    """The ranked ready set for *repo_root*, as the scheduler payload its caller parses.
+
+    The ranking read's one seam, and the second thing the cutover flips
+    (basicly-vkh0.20). It exists for the reason ``tests/test_br_seam.py`` guards: a caller
+    that branched on :func:`tracker_mode` itself, or reached into the ledger, would scatter
+    the cutover across the modules `basicly-tcmy.14` spent its whole budget collapsing.
+
+    The payload is br's own — a ``schema``, a ``fallback_policy`` and a list of
+    ``recommendations`` — from whichever store answers, so `basicly.loop_state` parses one
+    shape. In :data:`MODE_OWNED` that shape is rendered by :func:`owned_ranking`; otherwise
+    it is br's, parsed here and not at the caller.
+
+    Raises:
+        RuntimeError: br could not be run, or its reply was not a JSON object. Unchanged in
+            direction from when this spawn lived at the call site: an unrankable ready set
+            is a stop, never an empty list, because an empty list reads as "nothing to do"
+            and the loop would idle instead of reporting.
+    """
+    if tracker_mode(repo_root) == MODE_OWNED:
+        return owned_ranking(repo_root, limit)
+    args = ["scheduler", "--json"]
+    if limit is not None:
+        args += ["--limit", str(limit)]
+    proc = run_br(repo_root, args)
+    try:
+        payload = json.loads(proc.stdout)
+    except ValueError as exc:
+        raise RuntimeError(f"br scheduler returned no usable JSON: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"br scheduler returned {type(payload).__name__}, not an object")
+    return payload
 
 
 def _redact_paths(value: object) -> object:

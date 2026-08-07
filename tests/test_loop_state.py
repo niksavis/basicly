@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,13 @@ from basicly.loop_state import WorktreeBinding
 from basicly.policy import GateStatus
 
 CONFIG = PolicyConfig(required_gates=("verify",), max_rework=2)
+
+REPO_ROOT = Path(__file__).parent.parent
+KIT_SOURCE = REPO_ROOT / br.KIT_TRACKER_DIR
+
+# Injected rather than read, per this repo's platform-hermetic rule: the ledger's only
+# wall clock is this argument, and the ranking under test must not read it at all.
+CLOCK = 1_000_000_000.0
 
 
 class _Proc:
@@ -81,6 +89,9 @@ def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
     # rather than on each module's alias. `_Proc` already carries a returncode,
     # which is what the seam checks before parsing.
     monkeypatch.setattr(br, "try_run_br", fake)
+    # The ranking read is behind its own seam for the same reason (`br.read_ranking`,
+    # basicly-vkh0.20), and that one spawns through `run_br`.
+    monkeypatch.setattr(br, "run_br", fake)
 
 
 def _gate_status(*, can_advance: bool) -> GateStatus:
@@ -349,3 +360,105 @@ def test_blocked_ids_parses_blocked_list(monkeypatch: pytest.MonkeyPatch, tmp_pa
     """blocked_ids returns just the ids of blocked issues."""
     _install(monkeypatch, _FakeBr(blocked=[{"id": "x"}, {"id": "y"}]))
     assert loop_state.blocked_ids(tmp_path) == ("x", "y")
+
+
+# --- the ranking read, flipped to the owned scorer (basicly-vkh0.20) --------
+
+
+def _owned_repo(tmp_path: Path) -> Path:
+    """A checkout with the tracker kit installed and ``[tracker] mode`` flipped to owned."""
+    kit_dir = tmp_path / br.KIT_TRACKER_DIR
+    kit_dir.mkdir(parents=True)
+    for source in sorted(KIT_SOURCE.glob("*.py")):
+        shutil.copy2(source, kit_dir / source.name)
+    (tmp_path / "basicly.toml").write_text(
+        f'[tracker]\nmode = "{br.MODE_OWNED}"\n', encoding="utf-8"
+    )
+    return tmp_path
+
+
+def _seed_ledger(repo: Path) -> None:
+    """Three beads: a critical one blocking a second, and an ordinary third.
+
+    Enough graph for both ranking terms to move — the blocked bead is refused, and the
+    one it waits on leads on priority *and* on the dependent it releases.
+    """
+    kit = br.kit(repo)
+    events, edge = kit.events, kit.migrate
+    kit.events.append(
+        br.ledger_dir(repo),
+        [
+            events.Draft("rank-aa01", events.KIND_CREATED, {"title": "critical", "priority": 0}),
+            events.Draft("rank-aa01", events.KIND_STATUS, {"status": "open"}),
+            events.Draft("rank-bb02", events.KIND_CREATED, {"title": "waiting", "priority": 0}),
+            events.Draft("rank-bb02", events.KIND_STATUS, {"status": "open"}),
+            events.Draft(
+                "rank-bb02",
+                edge.KIND_EDGE,
+                {edge.EDGE_TO: "rank-aa01", edge.EDGE_TYPE: "blocks"},
+            ),
+            events.Draft("rank-cc03", events.KIND_CREATED, {"title": "ordinary", "priority": 2}),
+            events.Draft("rank-cc03", events.KIND_STATUS, {"status": "open"}),
+        ],
+        clock=lambda: CLOCK,
+    )
+
+
+def test_ready_ranking_reads_the_owned_scorer_after_the_flip(tmp_path: Path) -> None:
+    """The bead's second criterion: the read site takes score *and* rank from the kit.
+
+    No br stand-in is installed, so a read that still spawned ``br scheduler`` would fail
+    outright rather than pass on a fake — which is the discrimination this test needs.
+    """
+    repo = _owned_repo(tmp_path)
+    _seed_ledger(repo)
+    scheduler = br.kit(repo, br.SCHEDULER_KIT_MODULE)
+
+    ranking = loop_state.ready_ranking(repo)
+
+    assert ranking.schema == scheduler.SCHEMA
+    assert ranking.fallback_sort == scheduler.SORT
+    # `rank-bb02` waits on an open blocker, so it is not in the ready set at all.
+    assert [node.issue_id for node in ranking.nodes] == ["rank-aa01", "rank-cc03"]
+    assert [node.title for node in ranking.nodes] == ["critical", "ordinary"]
+
+
+def test_a_ranking_from_the_owned_scorer_stays_explainable(tmp_path: Path) -> None:
+    """A recorded score still decodes into the terms behind it — evidence, not an integer.
+
+    This is what `run_record`'s ``scheduler_score``/``scheduler_policy`` pair is for: the
+    schema names the scorer and the scorer turns the score back into "P0, one dependent".
+    """
+    repo = _owned_repo(tmp_path)
+    _seed_ledger(repo)
+    scheduler = br.kit(repo, br.SCHEDULER_KIT_MODULE)
+
+    leader = loop_state.ready_ranking(repo).nodes[0]
+
+    assert scheduler.explain(leader.score) == scheduler.ScoreTerms(priority=0, dependents=1)
+    # The owned scorer has no evidence-weighted pass above its ordering, so the two ranks
+    # it reports are equal by construction rather than by coincidence.
+    assert leader.fallback_rank == leader.rank == 1
+
+
+def test_the_owned_ranking_honours_a_limit(tmp_path: Path) -> None:
+    """The limit reaches the kit rather than being dropped at the seam."""
+    repo = _owned_repo(tmp_path)
+    _seed_ledger(repo)
+
+    assert [node.issue_id for node in loop_state.ready_ranked(repo, limit=1)] == ["rank-aa01"]
+
+
+def test_a_flipped_repo_without_the_kit_stops_rather_than_reading_as_no_work(
+    tmp_path: Path,
+) -> None:
+    """An empty answer would read as "nothing is ready" and idle the loop silently.
+
+    The opposite call to `br.owned_record`'s, and deliberately so: an absent *record* is an
+    ordinary fact, while an absent *ranking* is indistinguishable from a quiet backlog.
+    """
+    (tmp_path / "basicly.toml").write_text(
+        f'[tracker]\nmode = "{br.MODE_OWNED}"\n', encoding="utf-8"
+    )
+    with pytest.raises(br.TrackerDivergenceError, match="not installed"):
+        loop_state.ready_ranking(tmp_path)
