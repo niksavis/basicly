@@ -52,6 +52,21 @@ basicly.local.toml
 # Node.js
 node_modules/
 # package.json and package-lock.json are tracked to pin markdownlint-cli2.
+# The tracker kit's derived files (basicly-vkh0.21). `.basicly/ledger/` is otherwise a
+# *committed* directory — `tracker-surface.json` and `tracker-usage.jsonl` are tracked —
+# so these are named individually rather than ignoring the directory: the event log that
+# lands beside them is the truth and must stay tracked. An ignore rule that swallowed the
+# log would delete the truth to save a cache.
+#
+# Both are folds of the log that anybody may delete
+# (`.basicly/core/kit/tracker/snapshot.py`). Committing one recreates the dual-store
+# failure the event log exists to escape: two branches each rebuild it, and a record
+# changed on both sides is a same-line conflict git cannot union-merge. The patterns are
+# `snapshot.DERIVED_PATTERNS`; `.scripts/kit_deployment.py` reads that tuple and fails
+# naming whichever rule is missing here.
+.basicly/ledger/snapshot.jsonl
+.basicly/ledger/checkpoint-*.jsonl
+
 # br doctor per-run artifacts
 .doctor/
 

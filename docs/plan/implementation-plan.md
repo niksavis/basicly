@@ -78,10 +78,10 @@ commit, because every hand-written copy of them was stale within days:
 | Measure | Value |
 | --- | --- |
 | Engine modules (`src/basicly/*.py`) | 43 |
-| Test files | 79 |
-| `[[verify.checks]]` declared | 18 |
-| …of which run in `--mode fast` | 13 |
-| …of which run in `--mode full` | 17 |
+| Test files | 80 |
+| `[[verify.checks]]` declared | 19 |
+| …of which run in `--mode fast` | 14 |
+| …of which run in `--mode full` | 18 |
 | …of which run in `--mode staged` | 3 |
 
 <!-- docs-claims:end plan-current-state -->
