@@ -1667,9 +1667,12 @@ currently an unowned external binary in the critical path. The target is pure
 Python inside this package, with an **append-only event log as the truth** and every
 other file derived and disposable; a record's state is a fold over its events, so
 history lives in the data rather than depending on git history surviving a squash or
-a shallow clone. Measured motivation: an in-process read is ~175× cheaper than one
-external CLI invocation, because process spawn dominates everything the tracker
-actually does.
+a shallow clone. The motivation is **ownership, not speed**: re-measured 2026-08-07
+against the live 642-record ledger, a single-record in-process read is ~15× cheaper
+than the median external CLI call and a full fold ~1.9× — real but modest, and the
+fold ratio narrows as the ledger grows. An earlier "~175×" here compared a p95 CLI
+call against a single-record read of a much smaller ledger; `work-tracker.md` §10
+carries the corrected table (`basicly-rxc1`).
 
 Two constraints are recorded because they are easy to lose: a **clean-room
 boundary** applies (the licence of the binary we currently depend on carries a rider

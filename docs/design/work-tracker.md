@@ -44,7 +44,7 @@ Stated by the owner, plus what the harness's own use has demonstrated:
 | --- | --- |
 | **Lives in the repo** | State is committed, diffable, and travels with a clone; no server, no daemon, no external DB |
 | **Cross-repo** | One writer per repo ledger and no shared artifact; foreign work is *offered* by a self-write in the announcer's ledger and taken by a self-write in the target's, with read-only access across the boundary (§8) |
-| **Fast** | The loop makes many reads per advance, so per-read cost multiplies. Measured baseline and targets in §10 — an in-process read is ~175× cheaper than one external CLI call |
+| **Fast** | The loop makes many reads per advance, so per-read cost multiplies. Measured baseline and targets in §10 — a single-record in-process read is ~15× cheaper than the median external CLI call, and a full fold ~1.9×. Modest, not decisive: speed is a benefit here, never the argument (§10) |
 | **Upgradable** | Every event carries a schema version; unknown fields are preserved on read-modify-write, never dropped. A newer writer's events stay readable by an older reader |
 | **Maintainable** | Owned by the same toolchain as the rest of `basicly`; no second language, no separate release train |
 | **Auditable** | Every state change attributable and reconstructible from the ledger *itself*, not only from git history — a squash or shallow clone must not destroy the trail |
@@ -1007,19 +1007,34 @@ confirming an `INFERRED` edge is a new event promoting it to `EXTRACTED` rather 
 
 ## 10. Speed and scaling — measured, not assumed
 
-Measured 2026-07-25 against the live 749 KB / 332-record ledger:
+Re-measured 2026-08-07 against the live 2.30 MB / 642-record ledger, from this repo's own
+committed call ledger (1,420 recorded engine calls to `br`, 50.4 s in total):
 
 | Operation | Cost |
 | --- | --- |
-| One external CLI read (`br show --json`) | **113 ms** |
-| Full ledger parse in-process (Python, 749 KB) | **3.0 ms** |
-| Single record, scan + parse in-process | **0.64 ms** |
+| One external CLI read (`br show --json`), **median** | **14.2 ms** |
+| …the same call at **p95** | **110.3 ms** |
+| Full ledger parse in-process (Python, 2.30 MB) | **7.4 ms** |
+| Single record, scan + parse in-process | **0.94 ms** |
 
-The decisive number is the ratio: **an in-process read is ~175× cheaper than one CLI
-invocation**, because process spawn dominates everything the tracker actually does. A `loop
-advance` makes many tracker reads, so today's per-advance cost is mostly `N × 113 ms` of process
-startup. That is the strongest performance argument for owning this, and it does not depend on
-our implementation being clever — merely on it being in-process.
+**This section previously cited 113 ms as the cost of a CLI read and concluded an in-process
+read was "~175× cheaper". Both numbers were wrong, and the correction matters because speed is
+one of the stated arguments for owning this** (`basicly-rxc1`). 113 ms is not the typical call;
+it is approximately the **p95**. The median is 14.2 ms. And the 175× ratio compared that p95
+against a *single-record* read of a ledger a third of today's size — the slow end of one
+distribution against the fast end of another.
+
+Held to one comparison at a time: a full fold is **~1.9× cheaper** than the median CLI call
+(14.2 vs 7.4 ms), and a single-record read is ~15× cheaper (14.2 vs 0.94 ms). A fold is
+O(events) while a spawn is roughly constant, so the fold ratio *narrows* as the ledger grows
+unless §4.6's carried aggregate keeps the common query off the fold — which is exactly what it
+is for.
+
+**The performance argument is therefore real but modest, and it is not why this is being
+built.** The arguments that carry the release are untouched and sufficient on their own:
+ownership of the harness's own state (§1), the licence rider restricting a class of users, and
+the twelve paid-for defects carried as R1–R8. Correcting the number removes a bad reason for a
+good decision rather than the decision.
 
 **Where the naive design breaks.** Record cost is ~2.3 KB, and parsing is linear at ~4 ms/MB.
 Extrapolating: 10k records ≈ 23 MB ≈ ~90 ms for a full fold, which is the point at which
