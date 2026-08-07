@@ -33,6 +33,15 @@ class _FakeBr:
         self.acceptance_criteria = acceptance_criteria
         self.recorded_type: str | None = None
         self.calls: list[list[str]] = []
+        self.comments: list[str] = []
+
+    def read_comments(self, _repo_root: Path, _issue_id: str) -> list[dict]:
+        """Stands in for ``br.read_comments`` — the classification marker's read side."""
+        return [{"text": text} for text in self.comments]
+
+    def add_comment(self, _repo_root: Path, _issue_id: str, body: str) -> None:
+        """Stands in for ``br.add_comment`` — the classification marker's write side."""
+        self.comments.append(body)
 
     def __call__(self, _repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
         self.calls.append(args)
@@ -52,6 +61,10 @@ def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
     # The record read goes through `br.read_record`, the one seam every consumer shares
     # (basicly-tcmy.14), rather than each module's alias.
     monkeypatch.setattr(br, "try_run_br", fake)
+    # The `[harness-classification]` marker reads and writes comments; both go
+    # through classify's own aliases so the fake answers them the same way.
+    monkeypatch.setattr(classify, "_read_comments", fake.read_comments)
+    monkeypatch.setattr(classify, "_add_comment", fake.add_comment)
 
 
 @pytest.mark.parametrize("work_type", WORK_TYPES)
@@ -98,3 +111,47 @@ def test_classify_reports_not_ready_dor(monkeypatch: pytest.MonkeyPatch, tmp_pat
     assert result.work_type == "feature"  # type is still recorded
     assert result.can_leave_classify is False
     assert result.dor.missing == ("## Acceptance Criteria",)
+
+
+def test_classify_assigns_and_records_the_integrity_level(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The level is assigned from the declared scope and persisted as a marker.
+
+    Written as a `[harness-classification]` comment rather than a tracker field:
+    the loop's schema is still being replaced, so evidence lands in a format this
+    repo owns and that travels with a clone.
+    """
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    result = classify.classify(tmp_path, "i", "task", ("src/basicly/cli.py",))
+    assert result.level == "L3"
+    assert len(fake.comments) == 1
+    body = fake.comments[0]
+    assert body.startswith(f"{classify.CLASSIFICATION_MARKER} level=L3 rule=cli-surface")
+    assert "gates=full,validate-as-consumer,evidence-binding" in body
+    assert "tier=maximum" in body
+    assert "rework=2" in body
+    assert "ship=human" in body
+
+
+def test_classify_records_the_classification_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Classify re-runs until its checkpoint is approved; the marker must not stack."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    classify.classify(tmp_path, "i", "task", ("src/basicly/loop.py",))
+    classify.classify(tmp_path, "i", "task", ("src/basicly/loop.py",))
+    assert len(fake.comments) == 1
+
+
+def test_classify_without_a_scope_still_assigns_a_level(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A hand-filed bead declares no scope: it resolves, and the record says so."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    result = classify.classify(tmp_path, "i", "task")
+    assert result.level == "L2"
+    assert "reason=no scope declared" in fake.comments[0]
