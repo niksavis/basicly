@@ -690,6 +690,67 @@ def answer_lands_anyway(answer: str) -> bool:
     return _LAND_ANYWAY_RE.match(answer) is not None
 
 
+# --- Hold and Kill: the two gate verbs nothing carried out (D3) --------------
+#
+# Go and Recycle the engine already has — the advance, and an answered ``retry``
+# via :func:`grant_rework_allowance`. The other two were words. Every rework
+# escalation offers ``park`` and no answer did anything with it, so the lane
+# stayed dispatchable and the next supervised pass re-ran the work the operator
+# had just stopped; ``kill`` had no surface at all.
+#
+# What was *not* wrong is the status vocabulary, which is where the requirements
+# document's §5 first put the blame: ``deferred`` is already outside
+# :data:`loop_state.DISPATCHABLE_STATUSES`, and ``supervise.ready_lanes`` already
+# refuses a lane on it. The missing half is the two writes below.
+
+# The status a held lane takes. Named rather than inlined at the ``br update``
+# because the entire effect of Hold is that ``loop_state.is_dispatchable`` refuses
+# this one string — a reader of either side should land on the other.
+HELD_STATUS = "deferred"
+
+_HOLD_MARKER = f"{MARKER} hold"
+_KILL_MARKER = f"{MARKER} kill"
+
+# The answer that chooses ``park`` over the other routes an escalation offers.
+# Anchored on the leading token so a rationale may follow ("park - the upstream
+# fix lands next week"), exactly as ``retry`` and ``land anyway`` are, and living
+# beside the questions for the reason given above
+# :func:`rework_escalation_question`. ``hold`` is accepted too: the queue asks
+# "or park?" but D3 and anyone reading it call the verb Hold, and an operator
+# should not have to know which of the two synonyms the engine matches on.
+_HOLD_ANSWER_RE = re.compile(r"^\s*(?:park|hold)\b", re.IGNORECASE)
+
+
+def answer_holds(answer: str) -> bool:
+    """True when *answer* chooses ``park`` on an escalation that offers it."""
+    return _HOLD_ANSWER_RE.match(answer) is not None
+
+
+def hold_lane(repo_root: Path, issue_id: str, reason: str, gate: str | None = None) -> None:
+    """Park *issue_id*: record *reason*, then take it out of the dispatch set.
+
+    Two writes, deliberately in this order. The reason first, because of the two
+    partial states a failure between them can leave, enforcement-without-a-record
+    is the worse one: a bead dispatch silently refuses with nothing on it saying
+    why reads as a tracker glitch, while a record whose status write did not land
+    re-dispatches and is visible on the very next pass.
+
+    *gate* names the gate whose escalation was answered, when the question carried
+    one — the tracker-storage and merge-contention escalations
+    (``supervise._capped_dispatch``) do not, and a lane held from one of those is
+    held for the same reason and by the same authority.
+    """
+    named = f"gate={gate} " if gate else ""
+    _add_comment(repo_root, issue_id, f"{_HOLD_MARKER} {named}{reason}".rstrip())
+    _run_br(repo_root, ["update", issue_id, "--status", HELD_STATUS])
+
+
+# Kill's own half of this section is :func:`authorize_kill` / :func:`kill_lane`,
+# which live below the interactive-confirmation gate they are built on rather than
+# here beside Hold — the code they mint does not exist yet at this point in the
+# module.
+
+
 # --- Is the rework loop converging? (basicly-m4zv.5) -------------------------
 
 # What one rework round achieved, judged by comparing the failing gate's open
@@ -1329,6 +1390,66 @@ def _settle_checkpoint_queue(repo_root: Path, issue_id: str, name: str, *, by: s
 
     with contextlib.suppress(RuntimeError, OSError, ValueError):
         decisions.settle_checkpoint(repo_root, issue_id, name, by=by)
+
+
+# --- Kill (D3, D15): the gate verb that removes a requirement -----------------
+#
+# The other half of the Hold/Kill section above :func:`answer_holds`; it sits here
+# because it is built on the one-time-code gate immediately above, which does not
+# exist yet where its sibling does.
+
+# The confirm-code key a kill is minted under. Deliberately *not* a member of
+# :data:`CHECKPOINTS`: it borrows the one-time-code mechanism and nothing else —
+# there is no checkpoint marker to record, no phase it advances, and no grant
+# level that may cover it.
+KILL_CONFIRM_NAME = "kill"
+
+
+def authorize_kill(repo_root: Path, issue_id: str, *, confirm: str | None = None) -> ApprovalResult:
+    """Gate a kill of *issue_id* on a one-time confirm code, and write nothing.
+
+    Kill is the only verb that removes a *requirement* rather than routing work,
+    so D15 puts a human on it at every integrity level. That is stricter than
+    checkpoint approval in both directions it can be: no autonomy grant is
+    consulted, and an interactive TTY is no substitute either — the code is always
+    required, so the deliberate second step cannot be satisfied by whatever
+    terminal a lane agent happened to inherit. An agent that can kill what it
+    finds hard has an exit from every difficulty, and a TTY is not evidence a
+    human chose this one.
+
+    With no *confirm* the caller gets a ``challenge`` carrying a fresh code **and
+    nothing is written**: the bead is not closed, no reason is recorded, and a
+    caller that ignores the challenge and re-runs bare is challenged again. A
+    matching, unexpired code returns ``approved``; anything else is ``rejected``.
+
+    Authorization only, so the caller can order the destructive half — the
+    worktree teardown — *before* :func:`kill_lane` closes the bead. This module
+    never touches the filesystem, and one function doing both could not leave room
+    between them for the step that has to go there.
+    """
+    if confirm is None:
+        return ApprovalResult(
+            "challenge", code=_issue_confirm_code(repo_root, issue_id, KILL_CONFIRM_NAME)
+        )
+    if _consume_confirm_code(repo_root, issue_id, KILL_CONFIRM_NAME, confirm):
+        return ApprovalResult("approved")
+    return ApprovalResult("rejected", detail="invalid or expired confirm code")
+
+
+def kill_lane(repo_root: Path, issue_id: str, reason: str) -> None:
+    """Record *reason* on *issue_id* and close it as won't-do-this-way.
+
+    The marker first and the close second, for the reason ``loop._on_ship`` writes
+    its rollup before its close: a comment marker is the carrier that travels with
+    the clone, and the only account of why a requirement was dropped must not
+    depend on what the closing flush happened to pick up. The close reason repeats
+    it so ``br list`` shows it without a comment read.
+
+    Call only behind an ``approved`` :func:`authorize_kill` — this is the write,
+    not the gate.
+    """
+    _add_comment(repo_root, issue_id, f"{_KILL_MARKER} {reason}")
+    _run_br(repo_root, ["close", issue_id, "--reason", f"killed: {reason}"])
 
 
 # --- Autonomy grants: session-scoped ledger (basicly-kjc5.3, design D3) ------

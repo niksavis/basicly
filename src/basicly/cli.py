@@ -2677,10 +2677,14 @@ def _print_challenge(
     return 1
 
 
+def _meaning_block(lines: tuple[str, ...] | None) -> str | None:
+    """Indent *lines* into the block :func:`_print_challenge` takes as its *meaning*."""
+    return "".join(f"  {line}\n" for line in lines) if lines else None
+
+
 def _checkpoint_meaning(name: str) -> str | None:
     """The indented "what approving does" block for checkpoint *name*, if known."""
-    lines = _CHECKPOINT_MEANING.get(name)
-    return "".join(f"  {line}\n" for line in lines) if lines else None
+    return _meaning_block(_CHECKPOINT_MEANING.get(name))
 
 
 def _approve_checkpoint(repo_root: Path, args: argparse.Namespace) -> int:
@@ -3057,6 +3061,7 @@ def cmd_loop(args: argparse.Namespace) -> int:
         "decisions": _cmd_loop_decisions,
         "answer": _cmd_loop_answer,
         "decide": _cmd_loop_decide,
+        "kill": _cmd_loop_kill,
         "watch": _cmd_loop_watch,
     }
     return _dispatch(args, "loop_command", handlers, group="loop")
@@ -3947,6 +3952,43 @@ def _carry_out_rework_retry(repo_root: Path, item: decisions.DecisionItem) -> st
     return f"granted one further attempt on gate '{gate}' (rework now {charged}/{cap})"
 
 
+def _carry_out_rework_hold(repo_root: Path, item: decisions.DecisionItem) -> str | None:
+    """Park the lane when *item* is an escalation answered ``park`` (D3's Hold).
+
+    :func:`_carry_out_rework_retry`'s sibling, and the same defect one verb over:
+    every escalation this engine raises offers ``park`` as a route and nothing
+    anywhere took it, so an operator who parked a lane watched the next supervised
+    pass dispatch it again. The requirements document read that as a status
+    fail-open — ``park`` "re-admits the lane" — which it is not: ``deferred`` is
+    already outside ``loop_state.DISPATCHABLE_STATUSES`` and
+    ``supervise.ready_lanes`` already refuses on it. The missing half was here.
+
+    Every escalation kind, not only the rework cap, because ``park`` is offered by
+    all three question shapes ``supervise._capped_dispatch`` raises and the answer
+    means the same thing in each. The gate is recorded when the question names one.
+
+    Refused for a delegated answer, like ``land anyway``. A deferred child leaves
+    the open-child set, so it stops holding its parent open: a model that could
+    park its own lane could drop a requirement and let the package close over the
+    hole — the same authority D15 keeps human for Kill.
+    """
+    if item.kind != policy.REWORK_ESCALATION_KIND:
+        return None
+    if not policy.answer_holds(item.answer or ""):
+        return None
+    if (item.answered_by or "").startswith(decisions.DECIDER_BY_PREFIX):
+        return (
+            f"note: a delegated answer does not park {item.issue_id} — a human must "
+            "park it, or answer with a route that keeps the work"
+        )
+    gate = policy.gate_from_rework_escalation(item.question)
+    policy.hold_lane(repo_root, item.issue_id, item.answer or "", gate=gate)
+    return (
+        f"parked {item.issue_id}: status {policy.HELD_STATUS} with the reason recorded — "
+        "dispatch refuses it until a human reopens it"
+    )
+
+
 def _announce_land_anyway(item: decisions.DecisionItem) -> str | None:
     """Say what an answered `land anyway` will do, or that it will do nothing.
 
@@ -3987,8 +4029,95 @@ def _cmd_loop_answer(args: argparse.Namespace) -> int:
     print(f"answered {item.decision_id} by {by}")
     if granted := _carry_out_rework_retry(repo_root, item):
         print(granted)
+    if parked := _carry_out_rework_hold(repo_root, item):
+        print(parked)
     if note := _announce_land_anyway(item):
         print(note)
+    return 0
+
+
+# What killing does, stated at the prompt the way :data:`_CHECKPOINT_MEANING`
+# states what approving does. The protocol asks the driver to "say what this
+# does", and Kill is the one verb where the answer is that a requirement stops
+# existing — so the prompt says it, and says what happens to the code.
+_KILL_MEANING = (
+    "Killing closes this bead as won't-do-this-way. The requirement is dropped:",
+    "nothing re-dispatches it, and it stops holding its parent open — the package",
+    "can now close without it. There is no un-kill; re-opening means a new bead.",
+    "Its worktree is torn down. Committed work is left on the harness branch, and",
+    "--discard deletes that branch and any uncommitted changes with it.",
+)
+
+
+def _tear_down_killed_lane(
+    repo_root: Path, binding: loop_state.WorktreeBinding | None, *, discard: bool
+) -> str | None:
+    """Remove the killed lane's worktree; the refusal text when it still holds work.
+
+    A bead with no *binding* never provisioned a worktree, which is not an error —
+    Kill reaches a lane at any phase, including one that never built.
+
+    Without *discard* the teardown keeps everything that could still be wanted:
+    ``worktree.cleanup`` refuses on uncommitted changes and leaves an unmerged
+    branch in place with a note. So a killed lane's committed work stays
+    recoverable from its ``harness/`` branch rather than being deleted by a verb
+    whose whole meaning is "not this way" — the requirement is dropped, the
+    evidence of the attempt is not. ``--discard`` is the deliberate opposite.
+
+    ``SystemExit`` is caught rather than left to ``main``, which handles
+    ``Exception`` and so would let this one out as a bare non-zero exit with the
+    bead half-killed and nothing said about why.
+    """
+    if binding is None:
+        return None
+    try:
+        worktree.cleanup(binding.name, force=discard, repo_root=repo_root)
+    except SystemExit as exc:
+        return f"{exc}\n  Re-run with --discard to abandon them (a fresh confirm code is minted)."
+    return None
+
+
+def _cmd_loop_kill(args: argparse.Namespace) -> int:
+    """Kill a lane: tear its worktree down and close it won't-do-this-way (D3, D15).
+
+    Ordered so no failure can close a bead that still holds a live lane: authorize,
+    tear the worktree down, then record the reason and close. A teardown that
+    refuses therefore leaves the bead open with the confirm code already spent —
+    one re-run and one new challenge — where the other order leaves a closed bead
+    bound to a worktree the loop can no longer reach, which has no route back.
+
+    Everything that can refuse without human judgment refuses *before* the
+    challenge, so a kill that was never going to be accepted does not cost a code
+    relay first: a blank reason, and a bead the tracker cannot produce a record for
+    (a typo'd id would otherwise consume the code and then fail on the read).
+    """
+    repo_root = _repo_root()
+    if not args.reason.strip():
+        print(
+            f"kill: REFUSED ({args.issue}) - --reason must say why this work is not "
+            "being done; it is the only record left once the bead closes",
+            file=sys.stderr,
+        )
+        return 1
+    binding = loop_state.parse_worktree_ref(
+        br.require_record(repo_root, args.issue).get("external_ref")
+    )
+    result = policy.authorize_kill(repo_root, args.issue, confirm=args.confirm)
+    if result.status == "challenge":
+        rerun = (
+            f"basicly loop kill {args.issue} --reason {shlex.quote(args.reason)}"
+            + (" --discard" if args.discard else "")
+            + f" --confirm {result.code}"
+        )
+        return _print_challenge("kill", args.issue, rerun, _meaning_block(_KILL_MEANING))
+    if result.status != "approved":
+        print(f"kill: REFUSED ({args.issue}) - {result.detail}", file=sys.stderr)
+        return 1
+    if held := _tear_down_killed_lane(repo_root, binding, discard=args.discard):
+        print(f"kill: REFUSED ({args.issue}) - {held}", file=sys.stderr)
+        return 1
+    policy.kill_lane(repo_root, args.issue, args.reason)
+    print(f"kill: CLOSED {args.issue} - {args.reason}")
     return 0
 
 
@@ -4776,6 +4905,26 @@ def _add_loop_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     l_dcd.add_argument("decision_id", help="Decision id as printed by loop decisions")
     l_dcd.add_argument("--root", required=True, help="Session root issue (the intake corpus)")
+    l_kill = loop_sub.add_parser(
+        "kill",
+        help="Kill a lane: close it won't-do-this-way with a recorded reason and "
+        "tear its worktree down (always gated on a human confirm code)",
+    )
+    l_kill.add_argument("issue", help="The lane to kill")
+    l_kill.add_argument(
+        "--reason", required=True, help="Why this work is not being done (recorded on the bead)"
+    )
+    l_kill.add_argument(
+        "--confirm",
+        metavar="CODE",
+        help="One-time confirm code relayed by a human; without it the kill refuses, mints one",
+    )
+    l_kill.add_argument(
+        "--discard",
+        action="store_true",
+        help="Also discard the lane's uncommitted changes and delete its unmerged "
+        "branch; without this the teardown keeps both",
+    )
     l_watch = loop_sub.add_parser("watch", help="Poll and print newly pending decisions")
     l_watch.add_argument("issue", help="Session root issue")
     l_watch.add_argument("--interval", type=float, default=15.0, help="Poll seconds")

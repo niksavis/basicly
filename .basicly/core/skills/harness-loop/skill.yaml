@@ -334,6 +334,33 @@ instructions: |
   Any track can escalate a tier (carry work forward, re-hit only the decompose
   checkpoint) without restarting.
 
+  ### The four routes out of an escalation
+
+  An escalation offers a route and the engine acts on the answer's **leading token**,
+  so a rationale may follow it (`"park - the upstream fix lands next week"`):
+
+  | Answer | What the engine does |
+  | --- | --- |
+  | `retry` | grants exactly one further attempt on that gate (additive, never a reset). A delegated answer does **not** grant — extending the budget that bounds a model's own retries is not a call it makes for itself |
+  | `re-dispatch` | nothing here; the supervisor re-runs the lane on the next pass |
+  | `park` (or `hold`) | sets the lane `deferred` and records the reason, so `is_dispatchable` refuses it and it stops holding its parent open. Human-only, for that second reason |
+  | `land anyway` | on an unreliable-gate escalation only: the *next landing* skips that gate once. Human-only |
+
+  Answer with `basicly loop answer <decision-id> "<route> - <why>"`; the command prints
+  what it carried out, so an answer that changed nothing is visible as such.
+
+  **Kill** is the fourth verb and is not an answer — it removes a requirement rather
+  than routing work, so it has its own command and always needs a human:
+
+  ```sh
+  basicly loop kill <id> --reason "<why this work is not being done>"
+  ```
+
+  Run bare first: it refuses, mints a one-time code, and writes nothing. Relay the
+  reprinted command to complete it — no autonomy grant and no TTY substitutes. It tears
+  the worktree down and closes the bead; committed work is left on the `harness/` branch
+  unless `--discard` is passed, which deletes that branch too. There is no un-kill.
+
   ## Ship and retro
 
   Ship tears down the worktree and closes the issue. It does **not** merge — the

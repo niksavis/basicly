@@ -79,7 +79,7 @@ at build→verify; everything else is checkpoints and lints.
 | D8 [D] | **EARS for acceptance criteria**, ratcheted — required for new criteria, existing beads transform when touched | EARS distinguishes trigger / state / condition / feature-gated / ubiquitous; GWT collapses all five, and that distinction is what makes a check derivable (OQ-2). **Do not bulk-transform** the 600+ existing beads |
 | D9 [D] | **Integrity level assigned by a deterministic rule over touched paths** | Scope globs are already declared and already gated. Not judgeable, therefore not gameable, and costs zero tokens |
 | D2 [D] | **Three integrity levels, keyed on blast radius** | Observable at classify time. IEEE 1012's consequence×likelihood grid needs a likelihood axis we cannot measure |
-| D3 [D] | **Four gate verbs: Go / Kill / Hold / Recycle** | Cooper's Stage-Gate [S]. Today `park` exists as a word and re-admits the lane — a verified fail-open [M] `cli.py:3922` |
+| D3 [D] | **Four gate verbs: Go / Kill / Hold / Recycle** | Cooper's Stage-Gate [S]. As written, `park` was a word every escalation offered and no answer carried out; the original rationale mis-cited that as a status fail-open at `cli.py:3922` — corrected 2026-08-08, see §5 |
 | D4 [D] | **A machine-checked handoff artifact at every state boundary** | ETVX (IBM Systems Journal 24(2), 1985) [S]: exit criteria are verifiable conditions *on work products*, which requires work products to have schemas |
 | D5 [D] | **Repair is a mode of the implementer, not a new persona** | Roster R3 admits a persona only if it differs in tier, tools, or artifact. Repair differs in none — only in prompt |
 | D6 [D] | **Light factory / dark factory as an explicit mode split** | Capacity, not preference: one shared context window cannot hold many lanes [S] |
@@ -178,8 +178,34 @@ variance [S]. Level decides whether a unit of work earns the factory at all.
 | --- | --- | --- |
 | **Go** | gate green, advance | exists |
 | **Recycle** | bounded rework, same worktree | exists (`retry`) |
-| **Hold** | park pending a dependency; lane **not** re-admitted to dispatch | **word exists, does the opposite** [M] |
+| **Hold** | park pending a dependency; lane **not** re-admitted to dispatch | **word exists, nothing carries it out** [M] — corrected below |
 | **Kill** | close as won't-do-this-way with a recorded reason; worktree torn down | does not exist |
+
+**Correction, 2026-08-08** [M]. This table and D3 first recorded Hold as a
+fail-open — "the word exists and does the opposite", re-admitting a parked lane to
+dispatch, cited at `cli.py:3922`. **That diagnosis was wrong, and it aimed the fix
+at the wrong layer.** The status vocabulary was never the problem: `deferred` is
+excluded from `DISPATCHABLE_STATUSES` (`loop_state.py:69`, with the exclusion
+argued in the comment above it), `loop_state.is_dispatchable` refuses it,
+`supervise.ready_lanes` declines to hand such a lane a runner
+(`supervise.py:1823`), and `SessionState.open_children` drops it — so a held lane
+was never re-admitted to anything.
+
+The real gap was one layer up: **no answer carried the verb out.** Every escalation
+`supervise._capped_dispatch` raises offers `park` as a route, and the answer path
+matched `retry` and `land anyway` and nothing else — so an operator who answered
+`park` changed no status, and the next supervised pass dispatched the lane again.
+Hold was a missing *write*, not a wrong *status*. Kill was the same shape one verb
+over: the vocabulary can close a bead, and what was absent was a surface, the human
+gate D15 requires, and a teardown.
+
+Both writes now exist (basicly-u2hl.3): an answered `park` defers the lane and
+records the reason (`cli._carry_out_rework_hold` → `policy.hold_lane`), and
+`basicly loop kill` tears the worktree down and closes the bead behind a one-time
+confirm code no grant and no TTY can substitute for (`policy.authorize_kill` →
+`policy.kill_lane`). The rows above are left as written, with this correction under
+them, because the wrong claim is the more useful record: it is the one that shows a
+gap analysis can name the right defect and the wrong cause in the same sentence.
 
 Kill addresses the largest single documented failure mode in multi-agent systems: **step
 repetition at 15.7%** [S] MAST, arXiv 2503.13657, 1,600+ annotated traces, κ=0.88. When the only
