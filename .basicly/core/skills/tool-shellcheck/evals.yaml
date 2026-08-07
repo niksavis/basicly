@@ -1,0 +1,14 @@
+# Tier-2 routing evidence for `tool-shellcheck` (docs/design/catalog-efficacy-design.md §6).
+# Prompts paraphrase how a user actually asks; copying the description in would
+# game the eval. A failure here means fix the description, not the prompt.
+schema_version: 1
+trigger:
+  positive:
+    - prompt: "check this bash script for quoting bugs"
+    - prompt: "is this script portable across shells"
+    - prompt: "statically analyze the shell I just wrote"
+  negative:
+    - prompt: "catch misspellings in the comments"
+      owner: tool-typos
+    - prompt: "write a cross-platform subprocess call"
+      owner: python

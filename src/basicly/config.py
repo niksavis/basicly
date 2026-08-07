@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tomllib
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -677,7 +678,7 @@ CONFIG_SCHEMA: dict[str, _Table] = {
     "paths": _Table(
         keys=frozenset({"core_fragments", "overlay_fragments", "targets", "templates", "manifest"})
     ),
-    "catalog": _Table(keys=frozenset({"technologies"})),
+    "catalog": _Table(keys=frozenset({"technologies", "rank1_floor", "rank1_floor_high_water"})),
     "worktree": _Table(
         keys=frozenset({
             "base_branch",
@@ -1375,6 +1376,42 @@ def load_technology_selection(repo_root: Path) -> frozenset[str] | None:
             f"(allowed: {', '.join(sorted(TECHNOLOGIES))})"
         )
     return selection
+
+
+def _rate(section: Mapping[str, object], key: str) -> float | None:
+    """A ``[catalog]`` rate key as a float in [0, 1], or None when absent.
+
+    Strict rather than defaulting, on the same grounds as every other key in
+    this file: a rank-1 floor that silently reads as 0 because it was written
+    ``"0.8"`` is a gate that passes on any catalog at all, and a gate that
+    cannot fail is indistinguishable from one that was deleted.
+    """
+    if key not in section:
+        return None
+    value = section[key]
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError(f"[catalog] {key} must be a number between 0 and 1")
+    if not 0.0 <= value <= 1.0:
+        raise ValueError(f"[catalog] {key} must be between 0 and 1 (got {value})")
+    return float(value)
+
+
+def load_routing_floor(repo_root: Path) -> tuple[float | None, float | None]:
+    """Load ``[catalog] rank1_floor`` and its high-water mark from basicly.toml.
+
+    Returns ``(floor, high_water)``, either of which is ``None`` when
+    undeclared. The pair exists so the floor can be *ratcheted*: `catalog lint`
+    refuses a floor below the high-water mark, which makes lowering a threshold
+    to green a regression a diff that says what it is instead of one that reads
+    like maintenance (docs/design/catalog-efficacy-design.md §3.2).
+    """
+    data = _validated_documents(repo_root).get(CONFIG_FILE)
+    if data is None:
+        return None, None
+    section = data.get("catalog", {})
+    if not isinstance(section, dict):
+        return None, None
+    return _rate(section, "rank1_floor"), _rate(section, "rank1_floor_high_water")
 
 
 def record_technology_selection(repo_root: Path, technologies: list[str]) -> None:

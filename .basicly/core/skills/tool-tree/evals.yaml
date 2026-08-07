@@ -1,0 +1,14 @@
+# Tier-2 routing evidence for `tool-tree` (docs/design/catalog-efficacy-design.md §6).
+# Prompts paraphrase how a user actually asks; copying the description in would
+# game the eval. A failure here means fix the description, not the prompt.
+schema_version: 1
+trigger:
+  positive:
+    - prompt: "show me the project structure at a glance"
+    - prompt: "summarize the directory hierarchy compactly"
+    - prompt: "print the folder layout of this package"
+  negative:
+    - prompt: "find the files whose name matches this pattern"
+      owner: tool-fd
+    - prompt: "search the contents of those files"
+      owner: tool-ripgrep

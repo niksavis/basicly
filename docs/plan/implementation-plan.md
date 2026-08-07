@@ -77,8 +77,8 @@ commit, because every hand-written copy of them was stale within days:
 
 | Measure | Value |
 | --- | --- |
-| Engine modules (`src/basicly/*.py`) | 43 |
-| Test files | 82 |
+| Engine modules (`src/basicly/*.py`) | 44 |
+| Test files | 83 |
 | `[[verify.checks]]` declared | 19 |
 | …of which run in `--mode fast` | 14 |
 | …of which run in `--mode full` | 18 |
@@ -579,10 +579,11 @@ Each blocks something and none can be derived from the code.
 1. **The ceremony threshold's written form** (`imnu.5`, `v0.9.0`). The loop is mandated for
    "non-trivial work", which is the agent's judgment call, so the rule is unenforceable. Needs a
    written threshold **and** a named lightweight path below it that skips ceremony but never hooks.
-2. **Tier-2's rank-1 floor** (`m4zv.2`, `v0.9.0`) — deliberately not guessable before the baseline
-   is measured.
 
-Resolved and recorded so they are not reopened: `v1.0.0`'s meaning (§2); the clean-room boundary
+Resolved and recorded so they are not reopened: **Tier-2's rank-1 floor** (`m4zv.2`, discharged
+2026-08-07) — `[catalog] rank1_floor = 0.85` against a measured baseline of 80/87 = 92.0%, with
+`rank1_floor_high_water` starting equal so a later lowering is a visible act; the rationale is in
+`basicly.toml` beside the value; `v1.0.0`'s meaning (§2); the clean-room boundary
 (`qk6y`, discharged); declarative YAML phases are **rejected**, not deferred — the
 `verified`/landed invariant cannot move into data without leaving the type checker, the test suite
 and code review behind, and no consumer has asked; the github.com Copilot surface question is a

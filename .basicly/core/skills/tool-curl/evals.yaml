@@ -1,0 +1,14 @@
+# Tier-2 routing evidence for `tool-curl` (docs/design/catalog-efficacy-design.md §6).
+# Prompts paraphrase how a user actually asks; copying the description in would
+# game the eval. A failure here means fix the description, not the prompt.
+schema_version: 1
+trigger:
+  positive:
+    - prompt: "inspect the response headers from this endpoint"
+    - prompt: "debug why this webhook keeps redirecting"
+    - prompt: "send a raw request body at the protocol level"
+  negative:
+    - prompt: "resume this download if it drops"
+      owner: tool-wget
+    - prompt: "pull one field out of the json body"
+      owner: tool-jq

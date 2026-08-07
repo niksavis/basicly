@@ -1,6 +1,6 @@
 """Catalog source lint — the deterministic gate that keeps the YAML contract.
 
-Enforces eight invariants across the managed core catalog so the double-load fix
+Enforces nine invariants across the managed core catalog so the double-load fix
 and the single-extension decision cannot regress (architecture §4.2):
 
 1. No discoverable-name *sources*: no ``SKILL.md`` under ``core/skills``, no
@@ -20,6 +20,9 @@ and the single-extension decision cannot regress (architecture §4.2):
 7. Agent Skills spec naming/size constraints JSON Schema cannot express.
 8. Invocation axis (basicly-m4zv.1): every skill declares ``model`` or ``user``,
    and only a model-invoked entry carries a description.
+9. Tier-2 routing (basicly-m4zv.2): the eval cases colocated with each
+   model-invoked entry route to their owner, no two descriptions collide, and
+   the rank-1 rate clears a floor this gate refuses to lower.
 
 ``README.md`` and other documentation files are not sources and are left alone.
 """
@@ -28,13 +31,14 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
-from . import agents, rubrics, skills
+from . import agents, catalog_routing, config, rubrics, skills
 from .schema import MODEL_TIERS, TECHNOLOGIES
 
 # Agent Skills spec (https://agentskills.io/specification) name rule: 1-64 chars,
@@ -261,6 +265,9 @@ def lint_catalog(repo_root: Path) -> list[str]:
     # 8. invocation axis: the description/invocation pairing (basicly-m4zv.1)
     violations.extend(_check_invocation_axis(repo_root))
 
+    # 9. Tier-2 routing evals over the model-invoked set (basicly-m4zv.2)
+    violations.extend(routing_outcome(repo_root).violations)
+
     return violations
 
 
@@ -346,14 +353,141 @@ def _check_invocation_axis(repo_root: Path) -> list[str]:
     return violations
 
 
+@dataclass(frozen=True)
+class RoutingOutcome:
+    """One Tier-2 run over a repo's catalog: the metric, its floor, and findings."""
+
+    report: catalog_routing.RoutingReport
+    floor: float | None
+    violations: tuple[str, ...]
+    warnings: tuple[str, ...]
+
+    def summary(self) -> str:
+        """The one-line CI metric: rank-1 rate against the floor it must clear.
+
+        A rate printed without the threshold beside it is a number, not a
+        metric: the reader cannot tell a pass from a near miss, and nobody can
+        judge how much headroom a raise would spend.
+        """
+        against = f"floor {self.floor:.1%}" if self.floor is not None else "no floor declared"
+        return (
+            f"routing: rank-1 rate {self.report.rank1_hits}/{self.report.positives} "
+            f"= {self.report.rank1_rate:.1%} ({against})"
+        )
+
+
+def _model_invoked_descriptions(repo_root: Path) -> dict[str, str]:
+    """Slug -> description for every model-invoked skill source.
+
+    The whole authored set, deliberately *not* filtered by ``[catalog]
+    technologies``. Routing quality is a property of the catalog this repo
+    ships to every consumer, so a technology this repo happens not to select
+    would otherwise ship with an unchecked description — and a gate whose
+    verdict depends on the running repo's configuration is not the
+    reproducible measurement §3.3 asks for.
+    """
+    descriptions: dict[str, str] = {}
+    for path in sorted((repo_root / SKILLS_DIR).glob("*/skill.yaml")):
+        data = _load_skill_data(path)
+        if data is None:
+            continue
+        description = data.get("description")
+        if data.get("invocation") == skills.MODEL_INVOKED and isinstance(description, str):
+            descriptions[path.parent.name] = description
+    return descriptions
+
+
+def _load_eval_cases(
+    repo_root: Path, ranked: set[str]
+) -> tuple[list[catalog_routing.PositiveCase], list[catalog_routing.NegativeCase], list[str]]:
+    """Load and validate every ``evals.yaml`` present under the skill sources.
+
+    A *missing* case file is not reported here — making one a Tier-1 failure is
+    basicly-m4zv.3's job, and failing on it now would red the gate for every
+    entry before the corpus exists. A file that *is* present must be complete:
+    an eval nobody can trust is worse than none, because it reads as coverage.
+    """
+    positives: list[catalog_routing.PositiveCase] = []
+    negatives: list[catalog_routing.NegativeCase] = []
+    violations: list[str] = []
+    sources = sorted((repo_root / SKILLS_DIR).glob(f"*/{skills.EVAL_SOURCE_FILE}"))
+    if not sources:
+        return positives, negatives, violations
+    validator = _validator(repo_root, "evals.schema.json")
+    for path in sources:
+        slug = path.parent.name
+        rel = _rel(path, repo_root)
+        schema_errors = _validate(path, validator, repo_root)
+        if schema_errors:
+            violations.extend(schema_errors)
+            continue
+        if slug not in ranked:
+            violations.append(
+                f"{rel}: '{slug}' is not a model-invoked entry, so nothing can route to it — "
+                "a user-invoked entry carries no description and needs no routing evidence"
+            )
+            continue
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        entry_positives, entry_negatives = catalog_routing.entry_cases(slug, data)
+        positives.extend(entry_positives)
+        for negative in entry_negatives:
+            if negative.owner == slug:
+                violations.append(
+                    f"{rel}: negative prompt {negative.prompt!r} names '{slug}' as its own "
+                    "owner — a negative belongs to a different entry, or it asserts nothing"
+                )
+                continue
+            if negative.owner not in ranked:
+                violations.append(
+                    f"{rel}: negative prompt {negative.prompt!r} names owner "
+                    f"'{negative.owner}', which is not a model-invoked catalog entry"
+                )
+                continue
+            negatives.append(negative)
+    return positives, negatives, violations
+
+
+def routing_outcome(repo_root: Path) -> RoutingOutcome:
+    """Run the Tier-2 routing eval over ``repo_root``'s catalog (basicly-m4zv.2).
+
+    Three assertions plus the CI metric: positive prompts rank their owner in
+    top-k, negative prompts are outranked by their declared owner, no
+    description pair collides, and the rank-1 rate clears a floor that may be
+    raised but never lowered.
+    """
+    descriptions = _model_invoked_descriptions(repo_root)
+    positives, negatives, violations = _load_eval_cases(repo_root, set(descriptions))
+    report = catalog_routing.evaluate(descriptions, positives, negatives)
+    try:
+        floor, high_water = config.load_routing_floor(repo_root)
+    except ValueError as exc:
+        return RoutingOutcome(report, None, (*violations, *report.failures, str(exc)), ())
+    # The floor gate activates with the corpus. A catalog with no eval cases has
+    # no rank-1 rate to defend, and demanding a floor for a rate nobody can
+    # measure would fail a freshly installed consumer on arithmetic over an
+    # empty set. Making the corpus itself mandatory is basicly-m4zv.3's job.
+    floor_findings = (
+        catalog_routing.floor_violations(report.rank1_rate, floor, high_water)
+        if report.positives
+        else []
+    )
+    return RoutingOutcome(
+        report=report,
+        floor=floor,
+        violations=(*violations, *report.failures, *floor_findings),
+        warnings=report.collision_warnings,
+    )
+
+
 def skill_warnings(repo_root: Path) -> list[str]:
     """Return non-blocking Agent Skills progressive-disclosure advisories.
 
-    Advisory (never fails the gate): a SKILL.md body over ~500 lines, or a file
-    reference more than one level deep — both are spec *recommendations*, so they
-    are surfaced as warnings rather than hard lint violations.
+    Advisory (never fails the gate): a SKILL.md body over ~500 lines, a file
+    reference more than one level deep — both are spec *recommendations* — and a
+    description pair over the Tier-2 collision *warning* line, which is the
+    early sign of the drift the error ceiling later refuses.
     """
-    warnings: list[str] = []
+    warnings: list[str] = list(routing_outcome(repo_root).warnings)
     for path in sorted((repo_root / SKILLS_DIR).glob("*/skill.yaml")):
         data = _load_skill_data(path)
         if data is None:

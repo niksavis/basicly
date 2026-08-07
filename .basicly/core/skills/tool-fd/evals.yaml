@@ -1,0 +1,14 @@
+# Tier-2 routing evidence for `tool-fd` (docs/design/catalog-efficacy-design.md §6).
+# Prompts paraphrase how a user actually asks; copying the description in would
+# game the eval. A failure here means fix the description, not the prompt.
+schema_version: 1
+trigger:
+  positive:
+    - prompt: "list every file whose name matches this pattern"
+    - prompt: "locate where a file lives without wrestling with find syntax"
+    - prompt: "find the path to a file when I only know part of its name"
+  negative:
+    - prompt: "search inside those files for this text"
+      owner: tool-ripgrep
+    - prompt: "show me the directory layout at a glance"
+      owner: tool-tree

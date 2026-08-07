@@ -18,6 +18,29 @@ manifest = ".basicly/generated-manifest.json"
 [catalog]
 technologies = ["python", "node"]
 
+# The Tier-2 routing floor (basicly-m4zv.2, docs/design/catalog-efficacy-design.md
+# §3.2). `basicly catalog lint` ranks every entry's positive eval prompts against
+# the whole model-invoked description corpus with stemmed TF-IDF and reports the
+# share whose owner ranked *first*; below this floor the gate fails.
+#
+# Owner decision 2026-08-07, against a measured baseline of 80/87 = 92.0%. One
+# positive losing rank 1 costs 1/87 = 1.15 points, so 0.85 (needs >= 74/87)
+# absorbs 6 regressions: CI reddens on a trend rather than on a single
+# description edit. 0.90 was rejected because one miss of slack against the
+# near-tied tool-skill pairs would redden CI on unrelated edits and train people
+# to lower the floor; 0.80 was rejected because the 10 regressions it absorbs
+# exceed the 7 positives that already reach top-k without reaching rank 1, so
+# every current near-tie could regress and the gate would still pass.
+#
+# `rank1_floor_high_water` is the ratchet, and the two start equal on purpose.
+# The lint refuses a floor below the high-water mark, so raising the floor is a
+# one-line edit while lowering it has to lower the record too — which turns a
+# change that reads like maintenance into a diff that states what it is.
+# Lowering a floor is the same act as deleting the test: fix the description the
+# eval is failing on instead.
+rank1_floor = 0.85
+rank1_floor_high_water = 0.85
+
 # Which step of the work-tracker cutover this repo is on (basicly-vkh0.19,
 # docs/design/work-tracker.md §5). Three values, and each is a rung:
 #

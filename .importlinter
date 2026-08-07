@@ -33,7 +33,7 @@ layers =
     agents | catalog_verify | fleet | hooks | loader | models | permissions | planner | renderers | skills | state
     run_record
     br
-    catalog | needs_input | projection | redact | review | schema | session | tracker_surface | tracker_usage | ui | usage
+    catalog | catalog_routing | needs_input | projection | redact | review | schema | session | tracker_surface | tracker_usage | ui | usage
 # Two cycles survive as function-level imports carrying `# noqa: PLC0415`; the
 # top-level direction is the one the tiers encode. Listing them here is not a
 # weakening: `unmatched_ignore_imports_alerting` defaults to `error`, so when a cycle

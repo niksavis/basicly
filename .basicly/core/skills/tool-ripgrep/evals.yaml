@@ -1,0 +1,14 @@
+# Tier-2 routing evidence for `tool-ripgrep` (docs/design/catalog-efficacy-design.md §6).
+# Prompts paraphrase how a user actually asks; copying the description in would
+# game the eval. A failure here means fix the description, not the prompt.
+schema_version: 1
+trigger:
+  positive:
+    - prompt: "grep the whole repo for this string"
+    - prompt: "where is this symbol referenced"
+    - prompt: "search every file for a regex quickly"
+  negative:
+    - prompt: "list the files whose names match this glob"
+      owner: tool-fd
+    - prompt: "match this pattern by its syntax tree instead"
+      owner: tool-ast-grep
