@@ -366,6 +366,26 @@ command = ["uv", "run", "python", ".scripts/docs_claims.py", "--check"]
 fix_command = ["uv", "run", "python", ".scripts/docs_claims.py", "--fix"]
 modes = ["fast", "full"]
 
+# Module size, as a token ratchet (basicly-u2hl.5). No ruff rule measures module length, so
+# nothing in this stack noticed `cli.py` reaching 53,095 tokens — the owner's stated pain,
+# and invisible to every green gate. The cap is `decompose.SCOPE_FILE_READ_CAP`, imported
+# rather than respelled, so the size a lane is refused at is the size the sizing governor
+# budgets with. `[tool.module_size]` in pyproject.toml holds the ratchet: the 78 modules
+# already over the cap, each at its go-live count, plus the waiver count.
+#
+# A repo-local script rather than a CLI subcommand pair, on the same grounds as `docs-claims`
+# and `wired-or-deleted`: the debt being ratcheted is basicly's own, and a consumer's cap
+# would be its own decision with its own frozen list. `uv run python`, not a bare `python`,
+# per the note above this file's `docs-claims` entry.
+#
+# No `fix_command`. Splitting a module is the repair and it is a judgment — extracting
+# `_part1()`/`_part2()` satisfies a size gate and makes the code worse — so there is nothing
+# mechanical to apply. Reading 179 files is the whole cost, which is why it is `fast` too.
+[[verify.checks]]
+name = "module-size"
+command = ["uv", "run", "python", ".scripts/check_module_size.py"]
+modes = ["fast", "full"]
+
 # Loop gate/checkpoint policy: which gates block advancement and the rework cap.
 [policy]
 # Gate names (from [verify] / br gate report) that MUST pass to advance. Any
