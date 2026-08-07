@@ -6,6 +6,337 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.8.0 - 2026-08-07
+
+Delta: v0.7.1..v0.8.0
+
+### Added
+
+- **`basicly loop supervise --label LABEL` fans a pass out over the beads carrying a label,
+  instead of the root's parent-child children.** A release cut is assembled from work that
+  already exists, and `br` permits exactly one parent, so every bead in a cut already has an
+  epic of origin. Parent-child fan-out therefore could not express a release at all: the root
+  could gate the work as `blocks` dependencies — enough for the autonomy grant, which walks
+  both edge kinds — and still seed none of it, because seeding walks descent only. A cut drawn
+  from existing epics could not be one pass.
+
+  With `--label`, membership is a tracker query rather than a graph edge. The root keeps the
+  three jobs it is genuinely good for — anchoring the grant, the singleton lock and the
+  decision queue — and stops being the thing that decides which beads are in. Nothing is
+  re-parented, so a bead's epic of origin survives being included in a cut, and the same bead
+  can appear in a later cut under a different label.
+
+  This is the selector `[policy] phase-*` labels and `br list --label` already implied: phase
+  membership has been a label since the plan stopped listing bead ids, and this makes the
+  supervisor read membership the same way (`basicly-1lpo`).
+
+- **The append-only event log the owned tracker is built on.**
+  `.basicly/core/kit/tracker/events.py` is the store the rest of the kit derives from: a
+  record's state is a **fold over its events**, so history lives in the data rather than
+  depending on git history surviving a squash or a shallow clone, and everything else — the
+  snapshot, any index — is derived and disposable.
+
+  The fold is a function of the event **set**, not of file order: a shuffled log, a
+  concatenated one, or the same events split across files all fold to the same state, which
+  is what makes a union merge safe. Event ids are content-derived, so a duplicate arriving
+  from a merge cannot change the result. Sequence numbers from the single writer give total
+  order.
+
+  **A wall-clock timestamp is evidence and nothing branches on it.** That is the rule, not a
+  preference: the clock defect this kit exists partly to escape cost two tracks of
+  workaround, and the log's own ordering must not inherit it.
+
+  An unknown event kind is **counted and reported, never folded and never an error**, so an
+  older reader meeting a newer ledger degrades rather than refusing. A *known* kind carrying
+  a payload it cannot mean is refused, because silently skipping it would fold a record to a
+  state no event ever wrote (`basicly-vkh0.11`).
+
+- **Opaque record ids sized against a declared collision probability, and derived ids for
+  evidence.** `.basicly/core/kit/tracker/ids.py` mints a record id from an explicit
+  collision budget rather than from a guess at how long is long enough: the length follows
+  from the birthday paradox against a stated maximum probability, and it is **adaptive** —
+  which is safe precisely because existing ids never change.
+
+  An id is opaque. Nothing in the harness may parse one to recover meaning from its text,
+  because an id whose characters carry information is an id that cannot be reissued, and a
+  prefix-anchored gate has already truncated a slug-shaped one.
+
+  Evidence ids are **derived from content** instead of minted, so the same fact recorded
+  twice is the same id and an idempotent write is idempotent by construction rather than by
+  a caller remembering to check (`basicly-vkh0.12`).
+
+- **The owned tracker's record snapshot: a fold you can keep, and prove stale without
+  folding.** `.basicly/core/kit/tracker/snapshot.py` derives every record's state from
+  the event log and writes it as a local, gitignored artifact anybody may delete. Its
+  first line carries the log's tip event id and line count, so a reader dates the
+  snapshot by *scanning* — counting newlines and decoding one line — instead of folding.
+
+  Two details are what make that safe rather than merely fast. The recorded id is the
+  log's **tip**, the last line of the last file, not the canonical maximum: canonical
+  order sorts by record then sequence, so its maximum is the highest *record id*'s last
+  event, which no cheap read can find. And the scan is taken **before** the fold, never
+  after — scan-first under-reports and reads as stale, while scan-second would claim to
+  have folded a line it never saw and read as *fresh*. The invariant is one-directional:
+  a cheap check may say stale when it is fresh, and may never say fresh when it is stale.
+
+  Rotation is by period and **archives everything, pruning nothing**, because folding the
+  whole history is a requirement. It writes one new empty file whose name sorts last,
+  which is all the append target looks at, and publishes a checkpoint carrying every
+  item's totals — including an item idle since before the boundary, which is what bounds
+  steady state to one checkpoint plus the current file. The period is an argument, never
+  a clock read.
+
+  Nothing repairs a derivative: an unparseable snapshot or checkpoint is replaced from the
+  log, because a repaired cache is a second source of truth wearing a green tick
+  (`basicly-vkh0.14`).
+
+- **`fsck` and `rebuild` make "the log is the truth" a claim you can check.** Without a
+  check that folds the whole log and reports what it finds, and a rebuild that regenerates
+  every derivative from the log alone, that sentence is untestable. Both now exist in
+  `.basicly/core/kit/tracker/fsck.py`, and the report sorts its findings by **what fixes
+  them** rather than only saying *bad*:
+
+  - a defect in the **log** — `rebuild` cannot touch it, because repair is by appending a
+    corrective event and never by editing a line, or the checker quietly becomes an editor;
+  - a **derivative** that disagrees with the log it claims to summarise — fixed by
+    replacement;
+  - a **warning** for an event kind this version folds no state for, never a failure, so an
+    old reader meeting a newer ledger does not report false corruption.
+
+  A *stale* derivative is deliberately not a finding: every reader regenerates on a stale
+  read, so lagging is the design working. The case that matters is the one the cheap check
+  cannot reach — a derivative whose header agrees with the log and whose **body** does not
+  — so that is the one place a fold is spent on a derived file.
+
+  Two findings are suppressed rather than reported, both for one reason: a forked record's
+  carried totals are void until a fold restates them, so a totals disagreement there is the
+  fork's consequence, not a second defect. Reporting the consequence beside the cause is how
+  a report of eleven findings hides its one root (`basicly-vkh0.15`).
+
+- **A `kit-boundary` gate that can actually see the kit tree.** The portable kit under
+  `.basicly/core/kit` has one structural rule — the engine imports the kit; the kit imports
+  nothing, and never reads basicly's config loader, logging, session state or policy module.
+  `docs/design/work-tracker.md` §4 named `lint-imports` as the enforcement for it. That was
+  unenforceable rather than merely unimplemented: import-linter analyses the `basicly`
+  package, and the kit is flat modules with no `__init__.py`, outside it and not on
+  `sys.path`, so the tool never opens a kit file. Measured, not argued —
+  `test_import_linter_cannot_see_a_kit_violation` seeds `import basicly.config` into a kit
+  and records `lint-imports` reporting `2 kept, 0 broken` while the new gate fails on the
+  same line.
+
+  `.basicly/core/hooks/kit-boundary.py` parses every kit module and reports four routes back
+  into the engine: a static import, a dynamic one (`importlib.import_module`, `find_spec`,
+  `__import__`), a path into the engine's source tree, and a read of `basicly.toml` or of a
+  `.basicly/` directory outside the kit's own `.basicly/core`. Path expressions are folded
+  first, so `Path(".basicly") / "usage"` is seen. It is wired twice on purpose: as a
+  `[[verify.checks]]` entry in `--mode full`, which is what CI runs, and as a `pre-commit`
+  hook — the wiring that ships with the kit, so a consumer repo gates the boundary at commit
+  time without declaring anything (`basicly-vkh0.16`).
+
+- **The existing tracker imports into the owned log, with deletion as a first-class event.**
+  `.basicly/core/kit/tracker/migrate.py` reads a `br` JSONL export and writes the events it
+  implies, stamping every one with its provenance and the source snapshot's name, and each
+  `created` event with the export's sha256 — so a later reader can say which snapshot a
+  record arrived from. That digest is what the shadow differential's sharpest refusal checks.
+
+  **An upsert-only export cannot express a deletion**, which is why tombstones are a
+  first-class concern rather than a detail. A record the snapshot merely omits is *reported
+  as absent*, never deleted; a deletion has to be **stated** by the caller, and it becomes a
+  `tombstone` event carrying the same provenance as any other. A tombstone is refused for a
+  record the snapshot still asserts, so a deletion arrives as a later import whose text no
+  longer carries it.
+
+  A record the log already holds is not created again, and a divergence between what the log
+  holds and what the snapshot says is reported rather than overwritten — the import is a
+  translation, not an authority (`basicly-vkh0.17`).
+
+- **A shadow differential that refuses to compare the owned tracker against a copy of
+  itself.** The owned event log answers the three queries the loop advances on — phase
+  derivation, the ready set, gate status — and those answers are compared record by record
+  against the tracker still authoritative for them.
+
+  The load-bearing half is the **refusal**. The comparison must run against the live
+  tracker and never against a re-import of its own export, because two derivatives of one
+  lossy snapshot agree with each other and prove nothing — and the failure mode is a
+  *clean report*, so it has to be something the harness declines to run without. The
+  reference side is therefore audited rather than trusted, on three routes: the sha256 of
+  the bytes it read against the digest the import recorded; any export at all, on the
+  measured ground that a `br gate report` row is visible to `br gate list` and **absent
+  from the JSONL export entirely**; and a perturbation probe for a source that declares no
+  snapshot, which a genuinely live source ignores and so cannot false-fire.
+
+  `clean` and `conclusive` are separate properties, and a caller cannot get the second by
+  asking for the first. A comparison over a population where every record gives the same
+  answer has discriminated nothing, which is not hypothetical: before the dual write, every
+  bead reported zero gate rows, so that query was constant and a report saying only *clean*
+  would have been reporting the absence of evidence as agreement.
+
+  Both sides supply the same view type and the verdicts are derived **once** for both, so a
+  disagreement is about a fact rather than about two copies of a rule (`basicly-vkh0.18`).
+
+- **`[tracker] mode` puts the br seam on a rung of the work-tracker cutover: `external`,
+  `dual`, or `owned`.** `dual` mirrors every write the engine makes through
+  `basicly.br` onto the kit's owned event log under `.basicly/ledger/`, with `br` still
+  authoritative for reads. `owned` flips `br.read_record` — the one record-read seam — to
+  answer out of that log, while `br` is still written, because the other ten subcommands
+  the engine spawns still read out of it. Repos that declare nothing keep the pre-cutover
+  behaviour exactly: no ledger is created and the kit is never loaded.
+
+  A write the ledger cannot record **fails the command** rather than warning. Two stores
+  are only worth running side by side while they hold the same facts, and the moment a
+  missing mirror is cheap to fix is before the next write lands on top of it — so a br
+  write with no owned-ledger translation, an `update` flag with no mapped field, and a
+  ledger that refuses the append are all errors at the call site.
+
+  The dual write is also the writer `differential.KIND_GATE` was defined for. The JSONL
+  export carries no gate field at all, so the import step had nothing to load and the
+  shadow differential reported *inconclusive* on the gate query for every population it
+  could build — clean, and unable to say that clean meant anything. With `gate report`
+  mirrored, a run over a population built through the seam comes back clean **and**
+  conclusive, which is the condition `docs/design/work-tracker.md` §5 step 4 licenses the
+  flip on (`basicly-vkh0.19`).
+
+- **The owned scheduler ranks the ready set with a pure score that reads no clock.** A repo
+  on `[tracker] mode = "owned"` now takes its dispatch order from the kit's
+  `tracker/scheduler.py` instead of `br scheduler`, through `br.read_ranking` — the
+  ranking's own seam, the shape `br.read_record` already has for a record. The ordering is
+  `priority ASC, dependents DESC, id ASC` over the ready set: `br`'s fallback policy sorted
+  by `created_at`, which made dispatch order depend on when a ledger happened to be written
+  rather than on the graph. Nothing on the ranking's input carries a timestamp, so the same
+  work graph ranks identically however long it has been sitting there (`basicly-vkh0.20`).
+
+  The score is one integer holding both terms, and `scheduler.explain()` decodes it back
+  into "P0, three dependents" — so a dispatch marker recorded months ago stays readable
+  without the graph it was computed over. Each answer names the policy that produced it
+  (`schema: basicly.scheduler.v1`), which is what tells a rank recorded under the owned
+  scorer from one recorded under `br.scheduler.v1`.
+
+  Two things a consumer will notice if they flip. The dependent count is over **blocking
+  edges to still-live dependents** only, so a `related` dependent and a closed one both
+  count for nothing. And the owned ranking has an opinion where `br` had none: `br scheduler`
+  recommends only unclaimed work, while this ranks every ready record, `in_progress`
+  included. Repos on `external` or `dual` are unaffected — `br scheduler` still answers, with
+  its own schema and sort recorded exactly as before.
+
+- **A new `kit-deployment` gate enforces the two host rules the tracker kit needs, instead
+  of stating them in a docstring.** Both were required in prose and satisfied nowhere:
+
+  - the event log must be declared `-text`, or a normalising checkout rewrites bytes whose
+    event ids are **content-derived** — so a rewritten byte is a changed id, and every later
+    id with it;
+  - the ledger's derived files must be ignored, or a fold of the log gets committed beside
+    it and recreates the dual-store failure the event log exists to escape.
+
+  The gate reads the log glob and the derived-file patterns off the host's own kit rather
+  than spelling them a second time, asks **git** what it does with sample paths
+  (`check-attr`, `check-ignore`, `ls-files`) rather than reading the config text, and fails
+  naming the rule the host lacks and the exact line to add. `--repo` points it at any
+  checkout, so a consumer can check its own.
+
+  This repo's ignore rules name the two derived files individually rather than ignoring the
+  ledger directory: `.basicly/ledger/` is a *committed* directory, and a rule that swallowed
+  the log would delete the truth to save a cache (`basicly-vkh0.21`).
+
+### Changed
+
+- **A lane is now bounded by what it spends and whether it is alive, not by the clock.**
+  `[runner] runner_timeout` was the only terminal bound the engine had, and it is the one
+  signal that says nothing about whether work is happening — so it had been calibrated
+  inside the upper tail of real work, killing lanes that were fine: the longest
+  *successful* lane on this repo's ledger ran 1712s against an 1800s cap, 95.1% of it,
+  with 10 of 68 successes finishing past 80%. Two bounds replace it, both read off the
+  per-turn event stream every metered dispatch already emits (`basicly-rupz`). A new
+  `[runner] quiet_after` (default 1800s) kills a dispatch whose stream has gone silent,
+  which is proof of a wedge in a way an unchanged worktree never was — an agent thinking,
+  or waiting on a long test run, writes no file but still emits. And the D3 grant ceiling
+  now binds *during* a dispatch rather than only between passes: `spend_status` was read
+  before a pass and written after it with nothing in between, which is how a 20,000,000
+  token grant was overshot to 22,164,783 by lanes that were still in flight when the check
+  ran. `runner_timeout` stays, terminal, moved back to its 3600s default and demoted to a
+  backstop for what neither new bound can see — a process that hangs holding the pipe, or
+  a stream that stops while the process does not exit. A killed lane's run record now names
+  which bound stopped it, so `quiet_after` — declared without a measurement, because until
+  now the stream was paid for and discarded — can finally be calibrated against evidence
+  rather than re-declared (`basicly-lpsf`).
+
+- **A bead is read through one seam with one absence contract.** `basicly.br` was already
+  the only place that *spawns* `br`, but not the only place that *reads* it: the
+  single-record unwrap was written out at **eleven call sites across eight modules**, and
+  they disagreed about failure four ways — two raised, two returned `None`, four returned a
+  local empty, one carried a typed absence. A twelfth site guarded the payload shape not at
+  all and would have raised `AttributeError` on a non-object payload.
+
+  Now there are two functions and one rule. `br.read_record` returns the record or `None`
+  for every way a read comes back without one — `br` absent, a spawn that raises, a non-zero
+  exit, output that is not JSON, an empty array, a payload that is not an object.
+  `br.require_record` is the hard half and raises **one** message naming the bead, so a
+  caller no longer has to know whether it is looking at a missing bead, a missing binary or
+  a malformed payload to say what went wrong.
+
+  A tree guard fails the build if any module outside `basicly.br` writes the unwrap again —
+  the same reason one reader exists for both of `br`'s dependency spellings. It matches the
+  unwrap *expression* rather than any list check, because a plain shape guard on JSON is not
+  the defect.
+
+  This is what made the tracker cutover a change to one function instead of eleven
+  decisions: the replacement chooses what "not found" means, and an empty list is the
+  natural in-process answer — which against the old eleven would have split six sites from
+  five, at runtime, across eight modules (`basicly-tcmy.14`).
+
+- **`br` is still required. This release owns the work *store*, not yet the floor.**
+  The kit's append-only event log is complete and checkable — provenance on every
+  edge, collision-budgeted ids, a derived snapshot with rotation and a staleness
+  header, `fsck` and `rebuild`, import with tombstones, and a shadow differential
+  that refuses a comparison against a re-import of its own export. `[tracker] mode`
+  puts a repo on a rung of the cutover.
+
+  What it does **not** do is remove the `br` binary from what a consumer needs
+  installed, and an earlier draft of the roadmap said it did. `owned` flips
+  `br.read_record` — one seam — while 44 further spawn sites remain, 26 of them
+  `comments`, which is the carrier for every checkpoint, gate marker, grant and
+  rework record. Measured with no `br` on `PATH` and the flip forced on:
+  `policy.gate_status` and `policy.definition_of_ready` both still raise
+  `br is not on PATH; the harness requires the beads tracker`.
+
+  So install `br` as before. The claim that you will not need to is carried to
+  `v1.0.0`, whose acceptance test drives a fresh consumer repo with no `br`
+  through one unit of work to a landed commit — a test that can fail, rather than
+  a sentence in release notes that cannot (`basicly-vkh0.22`).
+
+### Fixed
+
+- **The tracker design's speed argument quoted a p95 as a typical call, overstating the
+  advantage of owning the tracker by ~90×.** It cited 113 ms for one `br` CLI read and
+  concluded an in-process read was "~175× cheaper". Both numbers were wrong.
+
+  Re-measured from this repo's own committed call ledger — 1,420 recorded engine calls to
+  `br` — the median is **14.2 ms** and 113 ms is approximately the **p95**. And the 175×
+  ratio compared that p95 against a *single-record* read of a ledger a third of today's
+  size: the slow end of one distribution against the fast end of another.
+
+  Held to one comparison at a time, against the live 2.30 MB / 642-record ledger: a full
+  fold is **~1.9×** cheaper than the median call, and a single-record read **~15×**. A fold
+  is O(events) while a spawn is roughly constant, so the fold ratio *narrows* as the ledger
+  grows unless the carried aggregate keeps the common query off the fold.
+
+  This mattered because speed is one of the stated arguments for owning the tracker, and a
+  175× claim justifies a release where a 1.9× claim does not. The arguments that do carry it
+  are untouched: ownership of the harness's own state, the licence rider restricting a class
+  of users, and twelve paid-for defects carried as requirements. The correction removes a bad
+  reason for a good decision. The same figure was stale in `architecture.md`, which the bead
+  had not named and which outlives the design document (`basicly-rxc1`).
+
+- **A lane killed by `[runner] runner_timeout` no longer loses its work.** The kill
+  takes the agent out before its last step, which is the commit — so the harness now
+  commits whatever the worktree holds and lets the landing judge that diff, because a
+  timeout is the harness's own decision and is not evidence against the change. The
+  three killed runs on this repo's ledger discarded 47.8M tokens of it, nine tenths of
+  everything ever paid for work that did not land, one of them a finished change that
+  passed every check when it was committed by hand. Judged, never trusted: a red gate
+  reworks the lane with real findings where an uncommitted tree could only produce
+  "not-ready" and a second full dispatch, and the stall decision item is still queued
+  either way, so a timeout stays visible to a human (`basicly-yvx9`).
+
 ## v0.7.1 - 2026-08-06
 
 Delta: v0.7.0..v0.7.1

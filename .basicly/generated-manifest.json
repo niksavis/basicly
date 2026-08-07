@@ -1,9 +1,9 @@
 {
   "version": "1",
-  "generated_at": "2026-08-06T14:13:49.604128+00:00",
+  "generated_at": "2026-08-07T10:01:05.938207+00:00",
   "outputs": {
     ".claude/CLAUDE.md": {
-      "hash": "sha256:9684d8f1ffc3406fa74a59908d078f6b4c3bf822c01cdb0c41d23de87fb8da38",
+      "hash": "sha256:b5bc9e6373a7ce0587c6eccbed371923ada0fa04661932883e8f13764b5ad042",
       "source_fragments": [
         "require-explicit-confirmation",
         "knowledge-priming",
@@ -26,25 +26,25 @@
       ]
     },
     ".claude/rules/model-tier-routing.md": {
-      "hash": "sha256:29b4a9d7e1e93219782197d964be608e1b786e19bf9ee7ac9aa05684cf69913d",
+      "hash": "sha256:cd004e72178735ee5fce62d02fe3381b04903d179b2966b5d643c34a0c1e7835",
       "source_fragments": [
         "model-tier-routing"
       ]
     },
     ".claude/rules/external-review.md": {
-      "hash": "sha256:307c9ce7c5f9278bd47c8e5d8f39577e6da725df99e58797690cda1ba1e0670a",
+      "hash": "sha256:57b0e3bca476f1c19281454476f7367cc96da34f44f508dfb139fe1bd34420f2",
       "source_fragments": [
         "external-review"
       ]
     },
     ".claude/rules/platform-hermetic-tests.md": {
-      "hash": "sha256:69bbcbed8fbd0b0fdaa16b435a96e2419c8945464529a9d89c2f74efd440d684",
+      "hash": "sha256:8106a621b151c1da9e9fc29abba3af8a3afa9ac6e2fd7a13430162e28db4c0f7",
       "source_fragments": [
         "platform-hermetic-tests"
       ]
     },
     "AGENTS.md": {
-      "hash": "sha256:0d359677043083fc4c812cb828c399ae3b67428c81eac4cfed2d042dbae29ac1",
+      "hash": "sha256:b7a2a791b0ef34a89cf2e1948d44090aa307ac9390ae5b7907ca50f602942297",
       "source_fragments": [
         "require-explicit-confirmation",
         "knowledge-priming",
@@ -69,7 +69,7 @@
       ]
     },
     ".github/copilot-instructions.md": {
-      "hash": "sha256:eb8b3f9bceb4d0759fd3fd98ad15870b76e36a8f79f9890cba307846d86f43c6",
+      "hash": "sha256:52bf44694df13ef0ec8d1f40af8e051211dd3ad5c60fe89c1c384b3d8c1121eb",
       "source_fragments": [
         "require-explicit-confirmation",
         "knowledge-priming",
