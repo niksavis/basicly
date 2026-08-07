@@ -96,7 +96,7 @@ class Dispatch:
     attempt: int = 0
 
 
-def dispatches(repo_root: Path) -> tuple[Dispatch, ...]:
+def read_dispatches(repo_root: Path) -> tuple[Dispatch, ...]:
     """Every known dispatch, deduplicated across both corpora and source-labelled.
 
     :func:`run_record.dispatch_history` already unions the two, but it discards which
@@ -229,8 +229,12 @@ class TuningReport:
     """Every governed parameter, advised from the dispatch ledger. Writes nothing."""
 
     parameters: tuple[ParameterTuning, ...]
-    # The whole corpus this report read, before any parameter filtered it.
-    dispatches: int
+    # The whole corpus this report read, before any parameter filtered it. Named for
+    # the reading rather than `dispatches`, which `wired-or-deleted` and `vulture` both
+    # match by bare name: a field called `dispatches` here reports a consumer for
+    # `run_record.CostRollup.dispatches`, which has none, and retires its genuine
+    # suppression (the masking hazard `.scripts/wired_or_deleted.py` names).
+    dispatches_read: int
     sources: dict[str, int]
     min_samples: int
     window: int
@@ -766,7 +770,7 @@ def tuning_report(repo_root: Path) -> TuningReport:
         sizing=sizing,
         worktree=config.load_worktree_config(repo_root),
     )
-    corpus = dispatches(repo_root)
+    corpus = read_dispatches(repo_root)
     return TuningReport(
         parameters=tuple(
             _tune_parameter(
@@ -777,7 +781,7 @@ def tuning_report(repo_root: Path) -> TuningReport:
             )
             for spec in specs
         ),
-        dispatches=len(corpus),
+        dispatches_read=len(corpus),
         sources=_census(dispatch.source for dispatch in corpus),
         min_samples=sizing.calibration_min_samples,
         window=sizing.calibration_window,

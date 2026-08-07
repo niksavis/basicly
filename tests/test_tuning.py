@@ -77,7 +77,7 @@ def test_every_governed_parameter_is_listed_on_an_empty_corpus(tmp_path: Path) -
     """
     report = tuning.tuning_report(tmp_path)
 
-    assert report.dispatches == 0
+    assert report.dispatches_read == 0
     assert report.parameters, "an empty corpus must still enumerate the governed set"
     for parameter in report.parameters:
         assert parameter.samples == 0, parameter.key
@@ -194,7 +194,7 @@ def test_both_corpora_are_read_and_each_sample_names_its_source(tmp_path: Path) 
     report = tuning.tuning_report(tmp_path)
 
     # Three dispatches, not four: the shared one is one sample, labelled `both`.
-    assert report.dispatches == 3
+    assert report.dispatches_read == 3
     assert report.sources == {tuning.BOTH: 1, tuning.LOCAL: 1, tuning.TRACKER: 1}
     parameter = _parameter(report, "runner.runner_timeout")
     assert parameter.sources == {tuning.BOTH: 1, tuning.LOCAL: 1, tuning.TRACKER: 1}
@@ -225,7 +225,7 @@ def test_the_report_writes_nothing(tmp_path: Path) -> None:
 
     report = tuning.tuning_report(tmp_path)
 
-    assert report.dispatches == 2, "the report must have really read the corpus"
+    assert report.dispatches_read == 2, "the report must have really read the corpus"
     assert _tree_digest(tmp_path) == before
 
 
@@ -304,7 +304,7 @@ def test_a_helper_dispatch_is_not_a_lane_sample(tmp_path: Path, phase: str | Non
 
     report = tuning.tuning_report(tmp_path)
 
-    assert report.dispatches == 1, "the dispatch is read; it just is not evidence"
+    assert report.dispatches_read == 1, "the dispatch is read; it just is not evidence"
     assert _parameter(report, "runner.runner_timeout").samples == 0
 
 
@@ -412,7 +412,7 @@ def test_a_dispatch_with_no_timestamp_is_dropped(tmp_path: Path) -> None:
         },
     )
 
-    assert tuning.tuning_report(tmp_path).dispatches == 1
+    assert tuning.tuning_report(tmp_path).dispatches_read == 1
 
 
 def test_a_corrupt_corpus_reads_as_no_evidence(tmp_path: Path) -> None:
@@ -425,7 +425,7 @@ def test_a_corrupt_corpus_reads_as_no_evidence(tmp_path: Path) -> None:
 
     report = tuning.tuning_report(tmp_path)
 
-    assert report.dispatches == 0
+    assert report.dispatches_read == 0
     assert all(parameter.recommendation is None for parameter in report.parameters)
 
 

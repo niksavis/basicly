@@ -1880,7 +1880,7 @@ def _cmd_usage_tuning(_args: argparse.Namespace) -> int:
     """
     report = tuning.tuning_report(_repo_root())
     ui.table(
-        f"Advisory parameter tuning ({report.dispatches} dispatch(es) read: "
+        f"Advisory parameter tuning ({report.dispatches_read} dispatch(es) read: "
         f"{_census_text(report.sources)})",
         ["parameter", "in force", "samples", "source", "outcomes", "recommendation"],
         [
