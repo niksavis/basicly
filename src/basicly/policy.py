@@ -15,6 +15,11 @@ gate history. The block-vs-advise policy lives here; ``br`` only stores verdicts
 Two things block an advance, and they answer different questions:
 :func:`gate_status` asks whether the required gates passed, and
 :func:`evidence_status` asks whether the phase has an artifact to point at.
+
+Every gate the engine names declares one of four failure behaviours — pre-flight,
+revision, escalation, abort — so "what happens when this fails" is a property of
+the gate rather than a decision re-taken at its call site, and a gate typed
+:data:`PREFLIGHT` runs with the tracker refused to it (:func:`preflight_gate`).
 """
 
 from __future__ import annotations
@@ -45,6 +50,99 @@ from .config import (
 # Prefix for the harness's own comment markers, so they are both machine-parseable
 # and obvious to a human reading the issue's comments.
 MARKER = "[harness-policy]"
+
+
+# --- Gate types (gates-and-rework-design.md §1) ------------------------------
+#
+# The four behaviours a gate can have when it fails. Naming them is what makes
+# "what happens when this fails" a property of the gate rather than a decision
+# re-taken at each call site — and §1.1's mapping found all four already in use
+# here, unnamed, so this documents existing behaviour more than it adds any.
+
+PREFLIGHT = "pre-flight"  # blocks entry; no partial work created
+REVISION = "revision"  # evaluates produced output, loops back under a cap
+ESCALATION = "escalation"  # surfaces an unresolvable issue for a human decision
+ABORT = "abort"  # halts to prevent damage or waste, preserving state
+
+# The two gates the engine has that never reach ``br gate report``, so the
+# taxonomy is where their names live. An abort gate records no verdict by
+# definition, and a pre-flight gate that refuses records nothing either — which is
+# why neither could be keyed off a name the tracker already carries.
+DOR_GATE = "dor"  # blocks the classify->decompose advance
+LINKED_WORKTREE_GATE = "linked-worktree"  # basicly.verify.linked_worktree_guard
+
+# Every gate the engine names, and its type. The three recorded ones are keyed by
+# the exact name they carry in ``br gate report``, so a reader of a bead's gate
+# list can look one up.
+#
+# Spelled as literals rather than imported. ``verify`` is
+# :data:`basicly.verify.DEFAULT_GATE` and the two rubric halves are
+# :data:`basicly.rubrics.RUBRIC_GATE` / :data:`RUBRIC_JUDGED_GATE`, but the import
+# contract (`.importlinter`) makes :mod:`basicly.verify` this module's sibling and
+# :mod:`basicly.rubrics` its senior, so neither can be imported from here. A test
+# pins the keys to those constants, which is how the other set this module cannot
+# import (``_TYPE_SECTIONS``) is kept in step.
+#
+# Bounded to the gates the engine gives a *name*. The rest of §1.1's mapping — the
+# commit-msg and secret-scan hooks, the projection checks, the ship preconditions,
+# a landing refusing an uncommitted checkout — are hooks and driver refusals with
+# nothing to key on, so inventing a name for each would put strings here that no
+# code could be held to. They stay classified in the design table.
+GATE_TYPE_BY_GATE: dict[str, str] = {
+    DOR_GATE: PREFLIGHT,
+    # Deterministic checks over produced output, bounced back to the lane that
+    # produced it under ``max_rework``.
+    "verify": REVISION,
+    # The pre-flight half of the validate composite (§4.1, basicly-imnu.1).
+    "rubric": PREFLIGHT,
+    # The escalation half: it records an honest fail and enqueues a decision
+    # instead of failing the lane, which is why it must stay out of
+    # ``[policy] required_gates``.
+    "rubric-judged": ESCALATION,
+    # :func:`basicly.verify.linked_worktree_guard`: recording from an unredirected
+    # linked worktree would lose the gate at landing, so the check halts the record
+    # and reports the remedy rather than looping or enqueuing.
+    LINKED_WORKTREE_GATE: ABORT,
+}
+
+
+def gate_type(gate: str) -> str:
+    """The failure behaviour declared for *gate*.
+
+    One of :data:`PREFLIGHT`, :data:`REVISION`, :data:`ESCALATION`, :data:`ABORT`.
+
+    A gate this engine does not name is a consumer's own, recorded through
+    ``basicly verify --issue <id> --gate <name>``: that runs after work is
+    produced, which is exactly §1's test for a revision gate. Defaulting rather
+    than refusing is deliberate, and the default is the only safe one — reading an
+    unknown gate as :data:`PREFLIGHT` would promise a caller a read-only check the
+    engine cannot vouch for, and as :data:`ESCALATION` would say its failures do
+    not block when they do.
+    """
+    return GATE_TYPE_BY_GATE.get(gate, REVISION)
+
+
+def preflight_gate(gate: str) -> contextlib.AbstractContextManager[None]:
+    """Run *gate*'s check with the tracker refused to it (§2).
+
+    A pre-flight gate reads the world, returns a verdict, and writes nothing. Any
+    ``br`` write attempted inside the block raises
+    :class:`basicly.br.TrackerWriteRefusedError` — including one from a module this
+    engine calls, since the guard sits on br's own funnel rather than on a caller.
+
+    Raises:
+        ValueError: *gate* is not typed :data:`PREFLIGHT`. Asking for the guard on
+            a revision gate is a category error, not a stricter setting: that gate
+            is *supposed* to record its verdict and charge its rework, so silently
+            honouring the request would break it at the first failure.
+    """
+    declared = gate_type(gate)
+    if declared != PREFLIGHT:
+        raise ValueError(
+            f"gate {gate!r} is typed {declared}, not {PREFLIGHT}; only a pre-flight "
+            "gate is read-only (gates-and-rework-design.md §1)"
+        )
+    return br.read_only(f"pre-flight gate {gate}")
 
 
 # --- Definition of Ready ----------------------------------------------------
@@ -88,15 +186,20 @@ def definition_of_ready(repo_root: Path, issue_id: str) -> DoRResult:
     section (basicly-58iu) — but never their absence. Every other missing
     template section (e.g. a bug's Steps to Reproduce) stays body-checked and
     still blocks.
+
+    Runs under :func:`preflight_gate`, so the two reads below are all it *can* do:
+    this gate blocks the classify->decompose advance and creates nothing, and §2's
+    rule is enforced rather than merely documented.
     """
-    proc = _run_br(repo_root, ["lint", issue_id, "--json"])
-    results = json.loads(proc.stdout).get("results", [])
-    missing = tuple(results[0].get("missing", [])) if results else ()
-    if _has_acceptance_criteria(repo_root, issue_id):
-        missing = tuple(m for m in missing if m != _ACCEPTANCE_CRITERIA_SECTION)
-    elif _ACCEPTANCE_CRITERIA_SECTION not in missing:
-        # lint did not ask for them (a chore) and they are absent — require them.
-        missing = (*missing, _ACCEPTANCE_CRITERIA_SECTION)
+    with preflight_gate(DOR_GATE):
+        proc = _run_br(repo_root, ["lint", issue_id, "--json"])
+        results = json.loads(proc.stdout).get("results", [])
+        missing = tuple(results[0].get("missing", [])) if results else ()
+        if _has_acceptance_criteria(repo_root, issue_id):
+            missing = tuple(m for m in missing if m != _ACCEPTANCE_CRITERIA_SECTION)
+        elif _ACCEPTANCE_CRITERIA_SECTION not in missing:
+            # lint did not ask for them (a chore) and they are absent — require them.
+            missing = (*missing, _ACCEPTANCE_CRITERIA_SECTION)
     return DoRResult(ready=not missing, missing=missing)
 
 

@@ -10,6 +10,8 @@ built against.
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import importlib.util
 import json
 import os
@@ -18,7 +20,7 @@ import shutil
 import subprocess  # nosec B404
 import sys
 import time
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -296,10 +298,109 @@ def _spawn_tolerating_transient(
         attempt += 1
 
 
+# --- Read-only sections (gates-and-rework-design.md §2) ----------------------
+#
+# A pre-flight gate reads the world, returns a verdict, and writes nothing. The
+# rule earns enforcement here, at the funnel, rather than at each gate's call
+# site: both of the incidents behind it were *tracker* writes — a hand-recorded
+# verify gate that shipped a bead with its code stranded unmerged, and an approved
+# ship checkpoint that wedged phase derivation with no un-approve path — and br
+# comments and gate results cannot be deleted, so a write that should have been a
+# refusal is unrecoverable. A gate that cannot reach this function cannot leave
+# the tracker in a state no command can undo.
+#
+# The guard covers the tracker only, which is the boundary the rule needs and no
+# more. The engine's other writes during a check — the verify run artifact and the
+# usage ledger under `.basicly/usage/` — are self-ignored, rewritten by every run,
+# and undone by deleting the file; neither can strand a bead.
+#
+# :func:`basicly.policy.preflight_gate` is the typed entry point. This is the
+# mechanism it installs, and it lives here because :mod:`basicly.policy` sits
+# above this module in the import contract while every other write path
+# (:mod:`basicly.verify`, :mod:`basicly.rubrics`, :mod:`basicly.decisions`) is a
+# sibling of it or higher — the funnel is the one place all of them pass through.
+
+
+class TrackerWriteRefusedError(Exception):
+    """A tracker write was attempted inside a read-only section.
+
+    Deliberately **not** a :class:`RuntimeError`, unlike every other failure these
+    funnels raise. Two dozen call sites across the engine wrap a br call in
+    ``except RuntimeError, OSError, ValueError`` and answer None or a typed
+    absence — :func:`read_record` is one — so a refusal in that family would be
+    swallowed into "the tracker had nothing to say", which is the fail-open
+    direction for the one guard whose whole purpose is that a write cannot slip
+    through. A violation here is a gate breaking its own declared type, not a
+    tracker that misbehaved, and it must reach the top.
+    """
+
+
+# Scoped to the calling thread by construction: a supervised pass runs its lanes
+# in a ThreadPoolExecutor, and a process-global flag would let one lane's
+# read-only section refuse another lane's legitimate write. The honest bound is
+# the other direction — a section that hands its work to a *new* thread does not
+# guard that thread, because a fresh context starts empty.
+_read_only: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "br_read_only", default=None
+)
+
+
+@contextlib.contextmanager
+def read_only(reason: str) -> Iterator[None]:
+    """Refuse every tracker write attempted in this thread until the block exits.
+
+    *reason* is quoted in the refusal, so the traceback names the gate that must
+    not have written rather than only the write it attempted. Restores the previous
+    state on the way out, exception or not, so a refused write does not leave the
+    tracker read-only for the rest of the process.
+    """
+    token = _read_only.set(reason)
+    try:
+        yield
+    finally:
+        _read_only.reset(token)
+
+
+def _refuse_write_in_read_only(args: Sequence[str]) -> None:
+    """Raise when *args* is not a read and a read-only section is active.
+
+    Fail-closed on an unclassified surface. ``tracker_usage.READ_SUBCOMMANDS`` is
+    deliberately not exhaustive, so "not known to be a read" is the only safe test
+    a guard against unrecoverable writes can make: a refusal is loud and fixed by
+    classifying the surface, while a leaked write is silent and permanent.
+
+    The two cases get different messages on purpose. A known write is the caller's
+    bug and there is nothing to reclassify; only an *unclassified* surface should
+    ever send a reader to :mod:`basicly.tracker_usage`, because telling them to
+    classify ``comments add`` as a read is how a guard gets disabled by its own
+    error text.
+    """
+    reason = _read_only.get()
+    if reason is None:
+        return
+    surface, _ = tracker_usage.split_invocation(list(args))
+    access = tracker_usage.classify_access(surface)
+    if access == "read":
+        return
+    named = f"br {surface}" if surface else " ".join(args)
+    fault = (
+        f"{named} is not classified, and unknown is not read: classify it in "
+        "tracker_usage if it only reads"
+        if access == "unclassified"
+        else f"{named} writes"
+    )
+    raise TrackerWriteRefusedError(f"{reason} must write nothing, but {fault}")
+
+
 def run_br(
     repo_root: Path, args: list[str], *, check: bool = True
 ) -> subprocess.CompletedProcess[str]:
-    """Run a br subcommand; raises when br is absent — the harness needs the tracker."""
+    """Run a br subcommand; raises when br is absent — the harness needs the tracker.
+
+    Raises:
+        TrackerWriteRefusedError: *args* writes and a :func:`read_only` section is active.
+    """
+    _refuse_write_in_read_only(args)
     br_path = which()
     if not br_path:
         raise RuntimeError("br is not on PATH; the harness requires the beads tracker")
@@ -312,7 +413,16 @@ def run_br(
 
 
 def try_run_br(repo_root: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:
-    """Run a br subcommand; None when br is absent (soft call sites)."""
+    """Run a br subcommand; None when br is absent (soft call sites).
+
+    Refuses a write inside a :func:`read_only` section by raising, exactly as
+    :func:`run_br` does. Soft here means "tolerates a missing tracker", never
+    "tolerates writing when a gate promised not to".
+
+    Raises:
+        TrackerWriteRefusedError: *args* writes and a :func:`read_only` section is active.
+    """
+    _refuse_write_in_read_only(args)
     br_path = which()
     if not br_path:
         return None
