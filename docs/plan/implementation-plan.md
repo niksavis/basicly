@@ -582,6 +582,7 @@ its design is implemented and only the listed precondition stands between it and
 | `design/work-tracker.md` | **Live** | `v0.8.0` ships. Five inbound references from `br.py`, `cli.py`, `tracker_surface.py`; it is the only record of what the replacement must be, including the requirements register. |
 | `design/agent-roster-design.md` | **Live** | `v0.10.0` ships the roster. Referenced from `.basicly/core/models/README.md`. |
 | `design/factory-design.md` | Deletable after `kjc5.13` | Absorb D1–D10 into architecture, then delete. `commit.py` names it; remove that reference first. |
+| `design/factory-loop-requirements.md` | **Live** | The target state of the loop and the measured delta from it, with 16 decisions and their sources. Drives `basicly-u2hl`. Absorbed into architecture and deleted when that epic closes. |
 | `design/gates-and-rework-design.md` | **Deletable now** — `uhiq.2` | Cited by path from `architecture.md:1692` only. The bounded-rework subsystem is built but has never fired, so what survives is the *unvalidated* status, which belongs on `m4zv.5`. |
 | `design/steering-surfaces-design.md` | **Deletable now** — `uhiq.2` | Zero inbound references; architecture `:1553-1585` already carries the recall result. |
 | `design/catalog-efficacy-design.md` | **Deletable now** — `uhiq.2` | Architecture `:1563` carries the upper-bound rule, but `:1583` and `:1692` still cite the file by path — inline those citations or they dangle. |
