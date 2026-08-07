@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 import basicly
-from basicly import permissions, run_record, runner
+from basicly import config, permissions, run_record, runner
 from basicly.config import (
     CONFIG_FILE,
     CONFIG_SCHEMA,
@@ -1448,3 +1448,165 @@ def test_every_config_key_a_loader_reads_is_in_the_schema() -> None:
     read |= set(re.findall(r'_harness_section\(repo_root,\s*"([a-z_]+)"\)', source))
 
     assert read - _schema_names() == set()
+
+
+# ---------------------------------------------------------------------------
+# basicly-69az: the schema is the tree's, not the running process's.
+# ---------------------------------------------------------------------------
+
+_ENGINE_SOURCE = Path("src") / "basicly" / "config.py"
+
+# The anchor the lane fixtures graft a new section onto. A literal from the file
+# under test, asserted present by every fixture that uses it, so a rename breaks
+# these tests loudly instead of quietly making them assert nothing.
+_SCHEMA_ANCHOR = "CONFIG_SCHEMA: dict[str, _Table] = {"
+
+
+def _engine_tree(root: Path, source: str) -> Path:
+    """Write *source* into *root* as the basicly engine source a checkout ships."""
+    engine = root / _ENGINE_SOURCE
+    engine.parent.mkdir(parents=True, exist_ok=True)
+    engine.write_text(source, encoding="utf-8")
+    return engine
+
+
+def _lane_source(added: str) -> str:
+    """This repo's own config.py with one extra section grafted into CONFIG_SCHEMA."""
+    source = (REPO_ROOT / _ENGINE_SOURCE).read_text(encoding="utf-8")
+    assert _SCHEMA_ANCHOR in source, "CONFIG_SCHEMA is no longer declared as a dict literal"
+    grafted = source.replace(
+        _SCHEMA_ANCHOR,
+        f'{_SCHEMA_ANCHOR}\n    "lane": _Table(keys=frozenset({{"{added}"}})),',
+        1,
+    )
+    assert grafted != source
+    return grafted
+
+
+def test_the_tree_schema_reader_reproduces_this_repos_own_schema() -> None:
+    """The static reader and the imported module must agree on this very file.
+
+    The anti-drift half of basicly-69az. A landing is judged by whatever this reader
+    makes of the tree's `config.py`, so a construct it silently mis-reads would move
+    the gate rather than relocate it. Equality against the live `CONFIG_SCHEMA` is
+    the only assertion that stays true as the schema grows.
+    """
+    assert config._tree_schema(REPO_ROOT) == CONFIG_SCHEMA
+
+
+def test_a_lane_adding_a_schema_entry_may_declare_it_in_the_same_commit(tmp_path: Path) -> None:
+    """basicly-69az: the landing reads the lane's schema, not the pre-merge engine's.
+
+    Reproduced four times in the field — `[worktree] append_only_paths`,
+    `[runner] quiet_after`, `[tracker] mode`, `[catalog] rank1_floor` — each time as
+    a landing that died before verify ran, on a name the tree's own `config.py`
+    introduces one line away from the declaration being refused.
+
+    The red half is asserted here too: checked against the *running* engine's schema,
+    which is what the pre-merge process used to use, the same file is still refused.
+    """
+    _engine_tree(tmp_path, _lane_source("added_by_the_lane"))
+    (tmp_path / CONFIG_FILE).write_text("[lane]\nadded_by_the_lane = 1\n", encoding="utf-8")
+    documents = config._config_documents(tmp_path)
+
+    assert config._problems(documents, config._ROOT_TABLE), "fixture no longer reproduces the bug"
+    assert unknown_config_keys(tmp_path) == []
+
+
+def test_the_landing_can_load_a_lane_config_the_pre_merge_engine_cannot_honour(
+    tmp_path: Path,
+) -> None:
+    """The call that actually died: `merge._verify_for_landing` -> `load_verify_config`.
+
+    The landing needs the lane's check list to re-verify the rebased tree, and it
+    loads it from the lane's own `basicly.toml`. That load validated the whole file
+    against the pre-merge schema, so a lane's new key stopped the landing from a
+    section the loader never reads.
+    """
+    _engine_tree(tmp_path, _lane_source("added_by_the_lane"))
+    (tmp_path / CONFIG_FILE).write_text(
+        "[lane]\nadded_by_the_lane = 1\n\n[[verify.checks]]\n"
+        'name = "unit"\ncommand = ["true"]\nmodes = ["fast", "full"]\n',
+        encoding="utf-8",
+    )
+
+    assert [check.name for check in load_verify_config(tmp_path).checks] == ["unit"]
+
+
+def test_a_typo_is_still_refused_in_a_tree_that_ships_the_engine(tmp_path: Path) -> None:
+    """The negative control: basicly-1piy's refusal is relocated, not relaxed.
+
+    A checkout whose `config.py` is unchanged is judged by exactly the schema the
+    running engine has, so a name no schema anywhere accepts fails as it always did.
+    """
+    _engine_tree(tmp_path, (REPO_ROOT / _ENGINE_SOURCE).read_text(encoding="utf-8"))
+    (tmp_path / CONFIG_FILE).write_text("[worktree]\nconcurency = 2\n", encoding="utf-8")
+
+    problems = unknown_config_keys(tmp_path)
+
+    assert len(problems) == 1
+    assert "unknown key 'concurency' in [worktree]" in problems[0]
+
+
+def test_a_lane_declaring_a_key_its_own_schema_lacks_is_refused(tmp_path: Path) -> None:
+    """Grafting a section is not a licence for any name inside it.
+
+    The tree accepts `[lane] added_by_the_lane` and nothing else, so the sibling
+    typo is reported against the lane's own schema — the check is relocated to the
+    tree, not switched off for it.
+    """
+    _engine_tree(tmp_path, _lane_source("added_by_the_lane"))
+    (tmp_path / CONFIG_FILE).write_text(
+        "[lane]\nadded_by_the_lane = 1\nadded_by_nobody = 2\n", encoding="utf-8"
+    )
+
+    problems = unknown_config_keys(tmp_path)
+
+    assert len(problems) == 1
+    assert "unknown key 'added_by_nobody' in [lane]" in problems[0]
+
+
+def test_an_unreadable_tree_schema_falls_back_and_names_the_ordering_rule(
+    tmp_path: Path,
+) -> None:
+    """Fail closed, and say which failure this is.
+
+    A tree whose `CONFIG_SCHEMA` this reader cannot model is judged by the running
+    engine again — the safe answer — but that is the one case where the refusal may
+    be about nothing worse than a lane being one commit ahead of base. So it carries
+    the ordering rule, instead of reading as a config typo the way all four field
+    occurrences did.
+    """
+    _engine_tree(tmp_path, "CONFIG_SCHEMA = build_schema()\n")
+    (tmp_path / CONFIG_FILE).write_text("[worktree]\nappend_only = 1\n", encoding="utf-8")
+
+    with pytest.raises(ValueError) as raised:
+        load_worktree_config(tmp_path)
+
+    assert "land the schema change first" in str(raised.value)
+
+
+def test_a_consumer_repo_refusal_does_not_mention_the_ordering_rule(tmp_path: Path) -> None:
+    """A repo that only *uses* basicly has no schema of its own and no ordering to get right."""
+    (tmp_path / CONFIG_FILE).write_text("[worktree]\nappend_only = 1\n", encoding="utf-8")
+
+    with pytest.raises(ValueError) as raised:
+        load_worktree_config(tmp_path)
+
+    assert "land the schema change first" not in str(raised.value)
+
+
+def test_the_tree_schema_is_reread_when_the_tree_changes(tmp_path: Path) -> None:
+    """The cache must not survive the merge that rewrites the schema under it.
+
+    A landing merges the lane into base and then re-reads base's config *in the same
+    process*. Caching the pre-merge parse would answer that read with the schema from
+    before the merge, which is the staleness this whole path exists to remove.
+    """
+    (tmp_path / CONFIG_FILE).write_text("[lane]\nadded_late = 1\n", encoding="utf-8")
+    _engine_tree(tmp_path, (REPO_ROOT / _ENGINE_SOURCE).read_text(encoding="utf-8"))
+    assert unknown_config_keys(tmp_path) != []
+
+    _engine_tree(tmp_path, _lane_source("added_late"))
+
+    assert unknown_config_keys(tmp_path) == []
