@@ -329,8 +329,21 @@ ENGINE_GATE_PROVIDERS = frozenset({VERIFY_GATE_PROVIDER, RUBRIC_GATE_PROVIDER})
 # *reads*, and basicly-esxp carries the case that read-cost has not once predicted change
 # cost on this repo. Until that lands this number keeps moving whenever a scope is
 # corrected upward, which is a property worth stating rather than a fact worth trusting.
+#
+# 248_000, derived the same day, from the same bead, at 245_466 — and the second raise
+# inside one landing is the evidence, not an embarrassment to be smoothed over. Nothing
+# about the change grew between 197_646 and 245_466: the landing's scope-collision gate
+# named eight further paths the diff touched, declaring them satisfied that gate, and
+# declaring them is what moved the estimate. **One field is serving two masters.** A
+# `## Scope` entry is read both as "the ground this lane owns" (collision detection, which
+# wants the declaration complete) and as "the material this lane reads" (the band, which
+# prices it) — so declaring honestly for the first necessarily inflates the second, and a
+# lane can chase its own tail between the two gates indefinitely. That is a design defect
+# in the field, not a fact about lane size, and it is filed as basicly-efw2. Until it is
+# split, read every derivation in this block as measuring declaration completeness rather
+# than working set, and do not cite the trend as evidence that lanes are getting bigger.
 DEFAULT_WORKING_SET_MIN = 8_000
-DEFAULT_WORKING_SET_MAX = 200_000
+DEFAULT_WORKING_SET_MAX = 248_000
 # Per-task-class multiplier on scope read-cost. Seeds, and they stay seeds: the
 # telemetry calibration that once overwrote them measured whole-lane spend, which is
 # a different quantity from a working set, and basicly-z2wi removed it. An unlisted
