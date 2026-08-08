@@ -470,13 +470,64 @@ Personas and the §3.1 state table are deliberately **not** filed yet: D5's rule
 only when it differs in tier, tools or artifact, and the artifacts do not exist; a transition table
 built over today's derived phases would only re-describe `derive_phase`.
 
-**One open question this section cannot answer** (§8.2 of the requirements doc): whether a
-**program design** — call-stack tree, file-tree diff, new public signatures — becomes a seventh
-artifact between CLASSIFY and DECOMPOSE. It is not presentation. `decompose` groups children by
-scope-glob overlap, i.e. **file adjacency, which is horizontal slicing by construction**, and a
-program design is the whole-change structure that would let it cut end-to-end instead. Deciding it
-is the same decision as `agzx.2`, which already proposes deriving exactly that artifact from an AST
-with no model and no tokens — so it should be settled there rather than invented twice.
+**Settled 2026-08-08** (§8.2, D20): the seventh artifact is **`change-shape`** — the call tree, the
+file-tree diff and the new public signatures — **derived from an AST, never authored**, emitted by
+CLASSIFY and named in DECOMPOSE's entry predicate. It is not a state: a derivation has no persona
+and cannot fail a judgement, so an eighth row in §3.1 would be ceremony around a function call. The
+name pairs it with `change-summary`, which is what BUILD hands back. `u2hl.22`, taken together with
+`agzx.2` because they are one decision.
+
+### 6.4 What the 2026-08-08 external review added
+
+Three sources reviewed; the licence position decided what could be taken from each.
+
+| Source | Licence | What we took |
+| --- | --- | --- |
+| `wsff.md` (humanlayer) | **none — all rights reserved** | mechanisms and measurements only; no template, heading or wording |
+| `12-factor-agents` | Apache-2.0, verified unmodified | corroboration only — its author states it has *"no quantitative validation"* |
+| `humanlayer/skills` | **MIT** © 2026 HumanLayer | expression, with attribution: the plugin package layout (`u2hl.24`), the per-phase completion criterion (`u2hl.25`), the control-loop shape (`u2hl.27`) |
+| humanlayer.com / CodeLayer | proprietary | observation only |
+
+The 12-factor list is worth recording as **convergence, not a backlog**: we independently satisfy
+its state factors — 5 (execution state *is* business state; the engine keeps no side-state), 6
+(launch/pause/resume, because phase is derived), 8 (own your control flow — declarative YAML phases
+are rejected, not deferred), 12 (stateless reducer), and 9 (compact errors: `repair_brief` clips to
+`MAX_REPAIR_OUTPUT_CHARS`). What we do not satisfy is 10 (small focused agents — the roster) and 11
+(trigger from anywhere — deliberately CLI-only).
+
+**And one gap it exposed that is ours alone**: §3.1 states BUILD's entry predicate as *"plan gate
+green **and** downstream WIP below limit"* and **nothing implements it** — `concurrency = 5` bounds
+parallelism, not unlanded work. `u2hl.23`. Our bound is denominated in tokens and slots; the
+quantity that actually runs out is review capacity.
+
+### 6.5 TypeScript — asked and answered: stay Python-only
+
+The observation that this field is full of TypeScript is **a GitHub Linguist artifact, not a fact
+about the code** [M]. `humanlayer/skills` is labelled TypeScript and contains **21 `.md`, 5 `.json`,
+3 `.yml` and 2 `.ts`** — and both `.ts` files are the same 11 KB helper duplicated across two
+plugins. Structurally it is the same kind of artifact as our own `.basicly/core/` (105 YAML
+sources). `humanlayer/humanlayer` is TS **plus Go**, where the TS is the desktop UI and the daemon
+is Go.
+
+Where TS genuinely dominates, it is **the product surface, not the work**: `cline` and `continue`
+are VS Code extensions, `opencode` ships a web console, `gemini-cli` is npm-distributed. The repos
+in basicly's actual peer class — tools that project a catalog into someone else's repo — are Python
+and Shell: `github/spec-kit` is **Python, zero TS**; `anthropics/claude-code` is Python-dominant.
+
+The decisive local fact: **every committer in a consumer repo already needs `uv` + Python 3.14**,
+because the 14 projected hooks and the 7,069-line kit are Python. A TS boundary that reaches a
+consumer adds a *second mandatory runtime*, which is what `work-tracker.md` §2's "no second
+language, no separate release train" exists to prevent — a requirement written after `br` (Rust)
+produced the nine defects in its §2.1 register.
+
+**One honest correction to our own claim**: basicly is *not* single-language today. It requires the
+`br` Rust binary and a node package for its own markdownlint hook. The requirement is aspirational
+about a state we have not reached; the `br` cut (§6.1) is what would make it true.
+
+**The one boundary worth revisiting**, and only when all three hold: an approved decision to ship a
+VS Code or JetBrains extension (a host that admits nothing else); the TS living behind a process
+boundary talking to the existing CLI over `--json`, so no Python is rewritten and no consumer gains
+node; and a named owner accepting the second release train.
 
 ### 6.3 The code-quality floor
 
@@ -752,6 +803,11 @@ Each blocks something and none can be derived from the code.
 1. **The ceremony threshold's written form** (`imnu.5`, `v0.9.0`). The loop is mandated for
    "non-trivial work", which is the agent's judgment call, so the rule is unenforceable. Needs a
    written threshold **and** a named lightweight path below it that skips ceremony but never hooks.
+
+**Settled 2026-08-08 and recorded here so it is not re-litigated: the language stays Python.** The
+TypeScript prevalence in this field is a Linguist artifact and, where real, is a product-surface
+choice (editor extensions, web consoles). basicly's peer class is Python. §6.5 carries the evidence
+and the three conditions that would flip it.
 
 Resolved and recorded so they are not reopened: **OQ-12, what counts as a "touch"**
 (2026-08-08) — an added top-level import is not one, and the bring-it-under obligation applies

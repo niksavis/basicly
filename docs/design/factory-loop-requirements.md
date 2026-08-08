@@ -91,8 +91,9 @@ at build→verify; everything else is checkpoints and lints.
 | D14 [D] | **File-size waiver: recorded reason at L1/L2, approval at L3** | Reuses the level already computed. Closes the self-granted-waiver-on-a-consumer-surface hole without ceremony everywhere else |
 | D15 [D] | **Kill always requires a human**, at every integrity level | Kill is the only verb that removes a *requirement* rather than routing work. An agent that can kill what it finds hard has an exit from every difficulty |
 | D16 [D] | **The plugin is a second distribution channel**, packaging the same projected output as `basicly install` | One source of truth, two delivery shapes. Betting the primary channel on a spec with seven areas still in FUTURE_CONSIDERATIONS would be premature |
-| D17 [D] | **`solution-design` is markdown with five machine-checked sections**: problem in the requester's terms, success as an observable, a **consumer transcript**, out of scope, constraints | Structured markdown is the only shape that is both readable and checkable — JSON is unreadable and prose is unactionable. The pattern is already proven twice here: the `## Plan` section and `needs-input.json`. The transcript is this repo's translation of a UI mockup: our consumer surface is a CLI, so the artifact that settles a design dispute by *showing* the surface is the command as it will be typed and what it will print (§8.1) |
+| D17 [D] | **`solution-design` is markdown with six machine-checked sections** (amended 2026-08-08 from five): problem in the requester's terms, success as an observable, a **consumer transcript**, out of scope, constraints, and **open questions** | Structured markdown is the only shape that is both readable and checkable — JSON is unreadable and prose is unactionable. The pattern is already proven twice here: the `## Plan` section and `needs-input.json`. The transcript is this repo's translation of a UI mockup: our consumer surface is a CLI, so the artifact that settles a design dispute by *showing* the surface is the command as it will be typed and what it will print (§8.1) |
 | D18 [D] | **Every planned child names how it is demonstrated end-to-end.** The plan gate refuses a child that cannot | Makes D10 satisfiable by construction. A child with no consumer-visible behaviour has no check to name, which is the horizontal-slice failure — and our decomposer slices horizontally *by construction* today, because scope-glob overlap is file adjacency (§8.2) |
+| D20 [D] | **`change-shape` — the shape of the whole change, derived not authored, emitted by CLASSIFY** | See §8.2. It is the structure `decompose` needs to cut end-to-end instead of by directory, and `basicly-agzx.2` already proposes deriving it from an AST at zero token cost. **Derived, so it is not a state**: states exist to hold a gate and a persona, and a derivation needs neither — DECOMPOSE's entry predicate gains it, nothing else moves |
 | D19 [D] | **Diff size is a plan-time signal, not a review-time discovery** | The sizing governor already forecasts in tokens; a child whose forecast implies a diff far past reviewable is reported when splitting is still cheap. Deliberately **not** a human-review requirement — L1/L2 stay delegable (§4), and a 2,000-line lane is hard to review whether the reader is a human or the next agent |
 
 ### 2.1 Risk accepted on D4
@@ -118,8 +119,8 @@ carry, so the schema is a formalisation of a live contract rather than an invent
 | State | Entry predicate | Exit gate | Persona | Handoff artifact |
 | --- | --- | --- | --- | --- |
 | **INTAKE** | a requirements artifact exists (light: produced conversationally; dark: supplied as a document) | the five `solution-design` sections validate [D17] | human (light) / none (dark) | `solution-design` |
-| **CLASSIFY** | `solution-design` valid | integrity level assigned; loop depth chosen | Juno at L2+ | `classification` |
-| **DECOMPOSE** | `classification` valid; depth = decompose | **plan gate** (§3.3) | Dana | `implementation-plan` |
+| **CLASSIFY** | `solution-design` valid | integrity level assigned; loop depth chosen; `change-shape` derives | Juno at L2+ | `classification`, `change-shape` [D20] |
+| **DECOMPOSE** | `classification` **and** `change-shape` valid; depth = decompose | **plan gate** (§3.3) | Dana | `implementation-plan` |
 | **BUILD** | plan gate green **and** downstream WIP below limit | self-check green; work committed on the branch | Kai | `change-summary` |
 | **VERIFY** | `change-summary` valid | deterministic gates green **and** checks derived from this unit's acceptance criteria green | none (D4 of factory design) | `verification-evidence` |
 | **VALIDATE** | `verification-evidence` **green** [D1 amended] | the change exercised **as a consumer would**, against the original requirements | Vera; Remo reviews by lens | `validation-transcript` |
@@ -288,8 +289,9 @@ must accept. `needs-input.json` is the existing precedent for a schema-validated
 
 | Artifact | Produced by | Must carry |
 | --- | --- | --- |
-| `solution-design` | INTAKE | five sections [D17]: `## Problem` (in the requester's terms), `## Success` (an observable, not a feeling), `## Consumer transcript`, `## Out of scope`, `## Constraints` |
+| `solution-design` | INTAKE | six sections [D17]: `## Problem` (in the requester's terms), `## Success` (an observable, not a feeling), `## Consumer transcript`, `## Out of scope`, `## Constraints`, `## Open questions` (§8.1.1) |
 | `classification` | CLASSIFY | integrity level; loop depth; the gate set, tier and budget the level selects |
+| `change-shape` [D20] | CLASSIFY (derived) | the call tree of what calls what; the file-tree diff of what appears and what moves; the signatures of the new public functions |
 | `implementation-plan` | DECOMPOSE | per task: testable acceptance criteria, scope globs, declared dependencies, budget, integrity level; plus the graph |
 | `change-summary` | BUILD | what changed and why; self-check result; the commit |
 | `verification-evidence` | VERIFY | per required gate: the check, the command, the result; per acceptance criterion: the derived check and its result |
@@ -319,12 +321,33 @@ inferring them. And it is **falsifiable at SHIP by a rule this repo already has*
 change as it will really be used — run it and read the output"* (`quality-gate` fragment) — so the
 design artifact and the shipping gate check the same thing from opposite ends.
 
-### 8.2 A seventh artifact the six do not cover — the program design
+### 8.1.1 `## Open questions`, and why the sixth section exists
 
-**Open, proposed 2026-08-08, needs an owner decision.** The six artifacts are one per *state*.
-Nothing among them carries the **shape of the whole change**: the call-stack tree of what calls
-what, the file-tree diff of what appears and what moves, and the signatures of the new public
-functions.
+Added to D17 on 2026-08-08. The harness already has a block-don't-guess protocol —
+`needs-input.json` — and it fires **when a lane is already blocked mid-build**. The unknowns are
+therefore surfaced at the most expensive moment available: after a worktree is provisioned, after a
+dispatch has started, and after tokens have been spent reaching the wall.
+
+This section moves the anticipable ones to the cheapest moment, before CLASSIFY. It carries what
+was asked and answered to reach this design, and what is still unknown together with what would
+resolve it. A design whose unknowns are written down can be **reviewed** for whether they matter;
+one whose unknowns are discovered at build time can only be escalated.
+
+`needs-input.json` is unchanged and stays: a fact nobody anticipated will still be reached
+mid-build, and blocking is still the right answer then.
+
+### 8.2 `change-shape` — the seventh artifact [D20]
+
+**Decided 2026-08-08.** The six artifacts are one per *state*. Nothing among them carried the
+**shape of the whole change**: the call tree of what calls what, the file-tree diff of what appears
+and what moves, and the signatures of the new public functions.
+
+**The name is ours and the pairing is the point.** `change-shape` is what BUILD is handed;
+`change-summary` is what BUILD hands back. Same noun, two tenses — shape it, build it, summarise
+it — so a reader who knows one knows where the other sits. The alternatives were rejected for
+reasons worth recording: *program design* names a document rather than its content and is borrowed
+expression from an unlicensed source; *structure* says nothing; *surface* already means the five
+L3 consumer surfaces here; *projection* is what the catalog does to a source.
 
 This is not a gap in presentation. It is the cause of a defect we can name [M]: **`decompose`
 groups children by scope-glob overlap — that is, by file adjacency — and slicing by file *is*
@@ -333,16 +356,27 @@ child with no consumer-visible behaviour, which is exactly the child D18 must re
 derive a check for. The decomposer slices horizontally because scope globs are the only structure
 it can see.
 
-A program design is that missing structure, and it must be produced **before** the slicing it
-informs — so its home is between CLASSIFY and DECOMPOSE, not inside BUILD. Its relationship to
+`change-shape` is that missing structure, and it must exist **before** the slicing it informs — so
+it is emitted by CLASSIFY and appears in DECOMPOSE's entry predicate. Its relationship to
 `solution-design` is neither containment nor union: `solution-design` is one per *requirement*
-entering the loop, a program design is one per *decompose event*, so a leaf has one and an epic has
+entering the loop, a `change-shape` is one per *decompose event*, so a leaf has one and an epic has
 one at each level of its tree.
 
-**Do not hand-author it if it can be derived.** `basicly-agzx.2` already proposes exactly this
-artifact from an AST — tree-sitter, no model, no tokens — and its own framing is that it lets "the
-decomposer declare intent and boundaries instead of enumerating files". Deciding this artifact and
-deciding `agzx.2` are the same decision.
+**It is derived, never authored** [D20]. `basicly-agzx.2` already proposes exactly this artifact
+from an AST — tree-sitter, no model, no tokens — and its own framing is that it lets "the decomposer
+declare intent and boundaries instead of enumerating files". Deciding this artifact and deciding
+`agzx.2` are the same decision, and they are now taken together.
+
+**Derived is why it needs no state.** A state exists to hold an entry predicate, an exit gate and a
+persona. A derivation has no persona and cannot fail a judgement — it either parses or reports that
+it could not. Adding an eighth state for it would be ceremony around a function call, and §3.1's
+table would grow a row that never blocks anything.
+
+**Independent corroboration, and its limit** [S]. HumanLayer's shipping product runs a six-phase
+workflow — Questions, Research, Design, **Structure**, Plan, Implement — placing a distinct phase
+between design and planning, exactly where this artifact sits. That is the same team as the essay
+in §14's licence flags, so it is one source expressed twice, not two sources agreeing. It raises
+the prior; it does not settle it.
 
 ---
 
