@@ -22,7 +22,7 @@ import json
 import os
 import re
 import shutil
-import subprocess  # nosec B404
+import subprocess
 import sys
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -67,10 +67,9 @@ def _probe_version(br_path: str) -> None:
         return
     _probed_paths.add(br_path)
     try:
-        # noqa/nosec pair: `br_path` is `shutil.which("br")`'s answer and the argv is a
-        # literal, so nothing here is caller-supplied. Both markers because bandit reads
-        # this tree only via the hook roots and ruff `S` reads it via `src/`.
-        proc = subprocess.run(  # nosec B603  # noqa: S603 — resolved path, literal argv
+        # `br_path` is `shutil.which("br")`'s answer and the argv is a literal, so
+        # nothing here is caller-supplied.
+        proc = subprocess.run(  # noqa: S603 — resolved path, literal argv
             [br_path, "--version"], capture_output=True, text=True, check=False, timeout=10
         )
     except OSError, subprocess.TimeoutExpired:
@@ -117,7 +116,7 @@ def _spawn(
     ) as timer:
         # `br_path` is resolved by `which()` and `args` is built by this module's own
         # callers from typed values, never from a shell string (see `_spawn`'s docstring).
-        proc = subprocess.run(  # nosec B603  # noqa: S603 — resolved path, engine-built argv
+        proc = subprocess.run(  # noqa: S603 — resolved path, engine-built argv
             [br_path, *args], cwd=repo_root, capture_output=True, text=True, check=False
         )
         timer.ok = proc.returncode == 0

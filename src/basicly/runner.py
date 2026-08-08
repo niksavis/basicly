@@ -672,7 +672,7 @@ def _run_help(binary: str) -> str | None:
     try:
         # `binary` is a configured runner name already resolved on PATH and the argv is
         # a literal flag; nothing here is caller-supplied.
-        proc = subprocess.run(  # nosec B603  # noqa: S603 — configured binary, literal argv
+        proc = subprocess.run(  # noqa: S603 — configured binary, literal argv
             [binary, HELP_FLAG], capture_output=True, text=True, check=False, timeout=10
         )
     except OSError, subprocess.SubprocessError:
@@ -947,7 +947,7 @@ def _kill_tree(proc: subprocess.Popen[str]) -> None:
 def _taskkill_tree(pid: int) -> None:
     """Windows tree kill: ``taskkill /T`` walks the child chain from *pid*."""
     try:
-        subprocess.run(  # nosec B603 B607  # noqa: S603 — fixed argv, no shell
+        subprocess.run(  # noqa: S603 — fixed argv, no shell
             ["taskkill", "/F", "/T", "/PID", str(pid)],  # noqa: S607 — a Windows system tool,
             # resolved from the system PATH by name because that is the only way it is reachable
             capture_output=True,
@@ -1466,7 +1466,7 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     # has no equivalent for signalling a tree (taskkill /T walks it instead); it
     # gets its own group only so a stray Ctrl-C cannot cross over. Each flag is
     # inert on the other platform.
-    proc = subprocess.Popen(  # nosec B603  # noqa: S603 — argv is the engine-built spec, no shell
+    proc = subprocess.Popen(  # noqa: S603 — argv is the engine-built spec, no shell
         argv,
         cwd=cwd,
         stdin=stdin_source,
@@ -1897,7 +1897,7 @@ def adapter_version(spec: RunnerSpec) -> str | None:
     if executable and shutil.which(executable):
         with contextlib.suppress(OSError, subprocess.SubprocessError):
             # `executable` passed `shutil.which` on the line above, and the argv is a literal.
-            proc = subprocess.run(  # nosec B603  # noqa: S603 — which()-resolved, literal argv
+            proc = subprocess.run(  # noqa: S603 — which()-resolved, literal argv
                 [executable, "--version"],
                 check=False,
                 text=True,
