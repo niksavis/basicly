@@ -119,7 +119,7 @@ the dependency clusters a cut draws from (§12).
 | --- | --- | --- |
 | ~~`v0.7.0`~~ | **SHIPPED 2026-08-06.** Trustworthy factory. Exit criterion 5 was not met, and the release documented that rather than claiming it. | shipped |
 | ~~`v0.8.0`~~ | **SHIPPED 2026-08-07.** Own the work graph — the store, not the floor. `br` is still in the runtime path (§6). | shipped |
-| **`v0.9.0`** | **Make the factory's own plumbing trustworthy, then finish the loop.** §5. The quality floor and five loop features landed on 2026-08-08; the same session measured the plumbing under them failing. Eleven ordered items, plus what remains of the loop. | 8–12 sessions |
+| **`v0.9.0`** | **Make the factory's own plumbing trustworthy, then finish the loop.** §5. The quality floor and five loop features landed on 2026-08-08; the same session measured the plumbing under them failing. Fifteen ordered items, plus what remains of the loop. | 8–12 sessions |
 | **`v0.9.1`** | **The measured evidence layer, when its chain unblocks.** Cost per landed package (`7bur`), AST localisation (`agzx.2`), the remaining Phase 2 gate (`m4zv.3`), parameter learning (`3ifz`). Split out because the whole chain sits behind `u6jq.1`, and holding the loop behind it would ship neither. | 3–5 sessions |
 | **`v0.10.0`** | **The judgment layer and always-on relief.** The roster's routing (`s2xf`) once `7bur` has numbers; the Phase 4 authoring pass and the empty-glob check (`a3ab.1`–`.3`). | 5–8 sessions |
 | **`v1.0.0`** | **Stabilize and declare.** §7. Surface audit and semver freeze, the breaking-marker gate, the fresh-consumer acceptance test, `br` out of the runtime path. `1.0` is a promise, so the last release proves it instead of adding capability. | 3–5 sessions |
@@ -171,7 +171,7 @@ criteria cannot be trusted. That is the ordering argument, and it is the whole o
 | 7 | `ejdm` | P0 | **Hand a dispatched agent the context the session already holds** — §5.1's 254x. The mechanism is the report file (`factory-loop.md` §8.3), not a longer prompt. |
 | 8 | `xjd2` | P0 | **Dispatch through the host agent runtime instead of spawning a headless CLI.** Blocked on `ejdm`. Open question it must answer first: whether the host runtime can be driven non-interactively from a subprocess at all. |
 | 9 | `esxp` · `o40x` | P1 | Bind the band floor; give a healthy supervisor a stop that does not kill live lanes. |
-| 10 | `4kdm` · `0p8n` | P1 | The specialist agents and skills the states already name; the harness gates carried into the coding agent's own hooks. |
+| 10 | `4kdm` · `0p8n` · `66ix` | P1 | The specialist agents and skills the states already name (`4kdm`), the harness gates carried into the coding agent's own hooks (`0p8n`), and Copilot hook parity behind it (`66ix` — a Copilot consumer gets the telemetry hook and **not** the `protect-generated` guard). `66ix` is blocked on `4kdm` by an edge. |
 | 11 | `ca42` | P0 | Rescoped: **keep `chars/4`**, record the evidence. `tiktoken` fetches a 3.5 MB vocabulary over HTTPS on first use, which a consumer's git hook cannot do. |
 
 ### 5.3 What remains of the loop
