@@ -294,5 +294,6 @@ def _load_target(path: Path) -> Target:
         enabled=data.get("enabled", True),
         tone=data.get("tone", "directive"),
         max_size_warning=data.get("max_size_warning", 0),
+        max_lines_warning=data.get("max_lines_warning", 0),
         outputs=outputs,
     )

@@ -78,6 +78,7 @@ def test_exclude_scoped_keeps_scoped_fragments_out_of_baseline() -> None:
         enabled=True,
         tone="terse_directive",
         max_size_warning=8000,
+        max_lines_warning=0,
         outputs=[
             OutputDef(
                 name="baseline",
@@ -210,6 +211,7 @@ def test_a_fragment_id_carrying_a_separator_cannot_reach_out_of_the_repo() -> No
         enabled=True,
         tone="terse_directive",
         max_size_warning=8000,
+        max_lines_warning=0,
         outputs=[
             OutputDef(
                 name="scoped_rules",

@@ -102,6 +102,7 @@ from .schema import (
     CATEGORIES,
     TECHNOLOGIES,
     PlannedOutput,
+    Target,
     ValidationError,
     technology_selected,
 )
@@ -224,6 +225,36 @@ def _load_context(repo_root: Path, paths: ProjectPaths) -> tuple[list[Any], list
     return fragments, targets
 
 
+def _budget_warnings(
+    targets: list[Target], item: PlannedOutput, content: str, repo_root: Path
+) -> list[str]:
+    """Warnings for a rendered output that overruns its target's always-on budget.
+
+    Two units, because the constraint is stated in both and only one was measured. The
+    character cap is ours; the **line** cap is the vendor's — "target under 200 lines per
+    CLAUDE.md file. Longer files consume more context and reduce adherence"
+    (code.claude.com/docs/en/memory, read 2026-08-08). Measuring characters alone let
+    `AGENTS.md` reach 231 lines while reading as merely 1,569 characters over, so a file
+    could be comfortably inside one budget and past the other with nothing saying so.
+
+    Warnings, not failures: an always-on file over budget is a cost to weigh, not a broken
+    tree, and the eviction that fixes it is authoring work (basicly-a3ab.1).
+    """
+    out: list[str] = []
+    for target in targets:
+        if target.name != item.target_name:
+            continue
+        where = item.output_path.relative_to(repo_root)
+        if target.max_size_warning and len(content) > target.max_size_warning:
+            out.append(
+                f"Warning: {where} exceeds {target.max_size_warning} characters ({len(content)})"
+            )
+        lines = content.count("\n") + 1
+        if target.max_lines_warning and lines > target.max_lines_warning:
+            out.append(f"Warning: {where} exceeds {target.max_lines_warning} lines ({lines})")
+    return out
+
+
 def _render_planned(repo_root: Path, paths: ProjectPaths, planned: PlannedOutput) -> str:
     module_name = f"basicly.renderers.{planned.target_name}"
     try:
@@ -343,18 +374,8 @@ def cmd_build(args: argparse.Namespace) -> int:
         if changed:
             changed_count += 1
             ui.say(f"Wrote {item.output_path.relative_to(repo_root)}", style="ok")
-        for target in targets:
-            if (
-                target.name == item.target_name
-                and target.max_size_warning
-                and len(content) > target.max_size_warning
-            ):
-                print(
-                    f"Warning: {item.output_path.relative_to(repo_root)} "
-                    f"exceeds {target.max_size_warning} characters "
-                    f"({len(content)})",
-                    file=sys.stderr,
-                )
+        for line in _budget_warnings(targets, item, content, repo_root):
+            print(line, file=sys.stderr)
 
     manifest_path = repo_root / paths.manifest_path
     existing_manifest: dict[str, Any] = {}

@@ -5,6 +5,7 @@ tone: terse_directive
 # has no glob-based instruction scoping and a nested AGENTS.md below the cwd is never
 # loaded (architecture §7.4). Counted in characters, not bytes. Codex's real budget is
 # project_doc_max_bytes (32 KiB default, configurable).
+max_lines_warning: 200
 max_size_warning: 12000
 outputs:
   agents_baseline:

@@ -173,6 +173,10 @@ class Target:
     enabled: bool
     tone: str
     max_size_warning: int
+    # Lines, not characters — the vendor states the adherence limit in lines
+    # ("target under 200 lines per CLAUDE.md file"), and a character cap alone
+    # missed AGENTS.md reaching 231. 0 disables.
+    max_lines_warning: int
     outputs: list[OutputDef]
 
 

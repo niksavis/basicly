@@ -107,14 +107,14 @@ uv run basicly permissions-check
 
 ## Core Rules
 
-- Keep diffs minimal; avoid unrelated refactors.
-- Solve the stated requirement only — no speculative abstractions or unrequested config.
-- Reuse before reinventing: prefer an existing helper, tool, or skill over new code or a hand-rolled equivalent.
-- Fix the root cause, not the symptom: check other call sites before calling a single-site patch complete.
-- Back claims with evidence (files read, commands run, tests).
-- Keep code clean: no dead code, debug prints, or silent error swallowing.
-- Match existing style and naming conventions in touched files.
-- Use deterministic tests; add regression tests for bug fixes.
+- Minimal diffs; no unrelated refactors.
+- Solve the stated requirement only — no speculative abstractions, no unrequested config.
+- Reuse > reinvent: an existing helper/tool/skill beats new code or a hand-rolled equivalent.
+- Root cause, not symptom: check other call sites before calling a single-site patch complete.
+- Back claims with evidence: files read · commands run · tests.
+- No dead code, debug prints, or silent error swallowing.
+- Match the style + naming of touched files.
+- Deterministic tests; a bug fix ships a regression test.
 
 ## Harness Loop
 
@@ -122,12 +122,12 @@ uv run basicly permissions-check
 
 ## Quality Gate
 
-- Review the diff before finishing, then exercise the change as it will really be used — run it and read the output; passing tests is not the same as using the feature.
-- Run the repo's existing checks on anything touched, and re-run after the final edit — a later change can break what passed. Point at gates, don't restate them.
-- Confirm success from the explicit pass/fail summary line; truncated output can hide a failure.
-- State only the verification scope actually exercised — say what you did not run; never upgrade "expected to work" to "works".
-- In a plan you ask someone to approve, mark the parts resting on code you have not read as assumptions, not as design; an approval spent on a false premise costs the checkpoint and the rework budget behind it.
-- The same rule covers a capability claim on a consumer-facing surface (README, site, release notes, repo description): exercise it before publishing — a false claim in code is caught by a gate, one in a README is caught by a consumer.
+- Review the diff, then exercise the change as it will really be used — run it, read the output. Tests passing ≠ feature working.
+- Run the repo's checks on anything touched, re-run after the final edit — a later change breaks what passed. Point at gates, don't restate them.
+- Confirm success from the explicit pass/fail summary line; truncated output hides failures.
+- State only the scope actually exercised. Say what you did not run. Never "expected to work" → "works".
+- In a plan awaiting approval, mark parts resting on unread code as assumptions, not design — an approval spent on a false premise costs the checkpoint + the rework budget behind it.
+- Same for a capability claim on a consumer surface (README · site · release notes · repo description): exercise before publishing. A false claim in code → caught by a gate; in a README → caught by a consumer.
 
 ## Use
 
