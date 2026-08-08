@@ -19,12 +19,11 @@ from basicly import cli
 from basicly.agents import GENERATED_MARKER as AGENT_GENERATED_MARKER
 from basicly.config import (
     CONFIG_FILE,
-    CONSUMER_CI_WORKFLOW,
     DEFAULT_CONFIG_TOML,
     LOCAL_CONFIG_FILE,
-    VSCODE_TASKS_JSON,
     load_project_paths,
 )
+from basicly.scaffolds import CONSUMER_CI_WORKFLOW, VSCODE_TASKS_JSON
 from basicly.skills import GENERATED_MARKER
 
 REPO_ROOT = Path(__file__).parent.parent

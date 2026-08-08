@@ -36,6 +36,7 @@ from basicly import (
     run_record,
     runner,
     supervise,
+    working_set,
 )
 from basicly.config import PolicyConfig, RunnerConfig, SizingConfig
 from basicly.supervise import LOCK_FILE, STALE_AFTER_S, LockHeldError, LockLostError
@@ -1094,6 +1095,10 @@ def _patch_readiness(
     # "Unreadable" admits and escalates nothing, which is the state these tests want;
     # the sizing-dependent behaviour is pinned with explicit sizings below.
     monkeypatch.setattr(supervise.decompose, "resolve_dispatch_sizing", lambda *_a: _lookup(None))
+    # Same trap once more for the WIP bound, which reads a phase per parked lane:
+    # nothing downstream is the state these scheduling tests want, and the bound's
+    # own behaviour is pinned in tests/test_wip.py.
+    monkeypatch.setattr(supervise.wip, "downstream_units", lambda *_a: ())
 
 
 # No grant, so no D3 ceiling: dispatch admission is not what is under test here.
@@ -4334,7 +4339,7 @@ def test_dispatch_does_not_silently_admit_a_lane_that_declares_no_scope(
     assert items[0].kind == "escalation"
     # Its own question, not a second generation of the out-of-band one: an operator
     # reading the queue has to be able to tell "too big" from "never measured".
-    assert items[0].question == supervise.UNSIZED_QUESTION
+    assert items[0].question == working_set.UNSIZED_QUESTION
     assert "never" in items[0].detail
     assert "8000..64000" in items[0].detail  # the band nothing was compared against
     # Retired by the engine, so it never lands in a human's wait column and never

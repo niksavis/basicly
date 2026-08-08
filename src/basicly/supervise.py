@@ -59,6 +59,7 @@ import time
 from collections.abc import Callable, Iterable, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 from . import (
@@ -74,6 +75,7 @@ from . import (
     repair_brief,
     run_record,
     runner,
+    wip,
     worktree,
 )
 from .br import run_br as _run_br
@@ -86,6 +88,12 @@ from .config import (
     load_worktree_config,
 )
 from .redact import redact_secrets
+from .working_set import (
+    WorkingSetAdmission,
+    admit_working_set,
+    band_coverage,
+    escalate_working_set,
+)
 
 LOCK_FILE = Path(".basicly/usage/supervisor.lock")
 
@@ -1128,286 +1136,6 @@ def meter_context_ceiling(  # noqa: PLR0913 — one parameter per metering input
     )
 
 
-# --- The working-set band at dispatch (D8 at the dispatch, basicly-jr0l.16) ---
-#
-# The sizing governor refuses an out-of-band *plan* at decompose, and nothing used
-# to check the band again when a lane was dispatched — so the band bound only work
-# that arrived through decompose. A supervised pass over pre-existing leaf beads,
-# which is exactly what this module does over a ready set, started whatever the
-# scheduler ranked first at any size. Re-measured on this repo's own ready set with
-# the band at 8000..64000, the top-ranked lane estimates 108605 working-set tokens —
-# 70% over the ceiling a plan would have been refused for — and three of its
-# siblings are over it too. So the check belongs here, before anything spawns,
-# exactly where ``runner.run`` refuses a dispatch whose model tier resolves to
-# nothing (basicly-kjc5.59): cost is bounded by sizing the work, never by killing a
-# working agent.
-#
-# The two ends of the band deliberately earn different severities:
-#
-# - **Above the ceiling the dispatch is refused.** The run would overflow the very
-#   window it was sized against, so the tokens buy a partial answer at best. The
-#   remedy — split the package — is a decompose action no engine can take, so the
-#   lane is held by a *pending* queue item until a human takes it.
-# - **Below the floor the dispatch is escalated and then proceeds.** An under-size
-#   lane succeeds; it merely wastes the per-lane overhead that merging it with a
-#   sibling would have saved. Holding it would strand deliverable work behind a
-#   human answer over an economic inefficiency, and a ready set of small beads
-#   would wedge a whole supervised run — the expensive failure in the cheap
-#   direction.
-#
-# A lane whose scope cannot be read at all is **admitted**. That is not the same
-# indeterminate answer as an estimate that lands outside the band: 60 of this
-# repo's 87 open beads carry no ``## Scope`` section — including basicly-jr0l.16
-# itself — so failing closed on a missing estimate would turn a sizing governor
-# into a ban on hand-filed work, strictly worse than the gap it closes. The model
-# precedent refuses because a *declared* tier resolved to nothing; an absent scope
-# declares nothing to contradict.
-#
-# It is admitted **visibly**, though, and that is basicly-jr0l.60. Admitting was only
-# half a decision: nothing distinguished a lane the band had checked and passed from
-# one it had never looked at, in the admission, the queue or the pass output. Measured
-# on the 2026-08-01 four-lane proof run, every dispatched lane was unsizeable, so the
-# band checked *nothing* and reported exactly what it reports when everything fits —
-# and all four then overran the context ceiling they were never compared against. So:
-#
-# * The **undeclared** case (the bead read fine and declares no scope) is a fact about
-#   the bead, and it is escalated: recorded on the lane and named in the pass output,
-#   then retired by the engine so the lane still dispatches. Same disposal as the
-#   under-floor advisory, for the same reason — holding the majority of a real tracker
-#   behind a human answer is the ban failing closed would have been. It is charged to
-#   the engine rather than notified for the same reason: a notification per hand-filed
-#   lane is a ban by noise.
-# * The **unreadable** case (the read itself failed) stays genuinely indeterminate and
-#   is not escalated. A transient br failure is not a finding about the package, and
-#   queuing one would put a tracker hiccup in the audit trail as a sizing defect.
-
-
-# The queue question an out-of-band lane asks, named once because
-# :func:`decisions.enqueue` keys items by (issue, kind, question) — a second copy of
-# this string would leak a pending item that nothing can find (basicly-jr0l.52).
-# The numbers stay in the *detail*, which is not part of the id, so re-deriving the
-# same pass finds the item it already queued instead of a fresh generation of it.
-# Every remedy it names changes the check's own inputs, deliberately: this is a
-# deterministic gate, so an answer releases the lane but never overrides the
-# arithmetic — a lane answered without a re-scope refuses again on its next pass.
-SIZING_QUESTION = "working set is outside the configured band: re-scope it or widen the band?"
-
-# The queue question a never-checked lane asks — a distinct string, so an unsized lane
-# and an out-of-band one are separate items rather than two generations of one, and an
-# operator reading the queue can tell "too big" from "never measured".
-UNSIZED_QUESTION = "working set was never checked: declare this package's scope?"
-
-# How the engine retires each advisory it does not hold the lane for. The wording is
-# the disposal reasoning, recorded where the decision is (D11).
-_UNDERSIZE_DISPOSAL = (
-    "dispatched anyway: under-cutting the floor wastes per-lane overhead, "
-    "but the package is deliverable and holding it would strand it"
-)
-_UNSIZED_DISPOSAL = (
-    "dispatched anyway: an undeclared scope is the normal state of a hand-filed bead, "
-    "so holding it would ban hand-filed work rather than size it — recorded so this "
-    "dispatch is not mistaken for one the band checked"
-)
-
-
-@dataclass(frozen=True)
-class WorkingSetAdmission:
-    """Whether a lane's estimated working set admits a dispatch (D8 at dispatch).
-
-    *violation* is :func:`policy.check_working_set`'s own guidance message, so the
-    band rule and its wording stay in one place; *refused* only classifies which end
-    of the band was crossed, which is what decides severity.
-    """
-
-    issue_id: str
-    # None when the bead declares no ``## Scope`` or could not be read at all.
-    sizing: decompose.DispatchSizing | None
-    violation: str | None
-    refused: bool
-    # Which absence left this lane unsized: ``decompose.SCOPE_UNDECLARED`` or
-    # ``decompose.SCOPE_UNREADABLE``. Empty when *sizing* is there — so
-    # :attr:`checked` reads off the estimate, not off this.
-    absence: str = ""
-
-    def record_inputs(self, repo_root: Path) -> dict[str, object]:
-        """The dispatch record's sizing keywords; empty when nothing was estimable.
-
-        Takes *repo_root* because one of those keywords is the forecast **spend**,
-        which is resolved from this repo's calibration (basicly-tcmy.34).
-        """
-        return {} if self.sizing is None else self.sizing.record_inputs(repo_root)
-
-    @property
-    def checked(self) -> bool:
-        """True when a real estimate was actually compared against the band.
-
-        The distinction the surface used to lack (basicly-jr0l.60): ``violation is
-        None`` answers "nothing was wrong", which is also what a lane nobody measured
-        looks like.
-        """
-        return self.sizing is not None
-
-
-def admit_working_set(repo_root: Path, issue_id: str, sizing: SizingConfig) -> WorkingSetAdmission:
-    """Estimate *issue_id*'s working set and judge it against the band (pure read).
-
-    Reuses :func:`decompose.resolve_dispatch_sizing` — the same estimator whose
-    forecast the dispatch record already carries (basicly-jr0l.34) — so the number
-    that gates a dispatch and the number recorded beside its actual cannot disagree.
-    That also means no new tracker read: this *is* the read the dispatch already made,
-    moved ahead of the bundle.
-
-    Never raises. Neither absence refuses, on the reasoning in this section's header,
-    but they are not the same admission: an undeclared scope carries the never-checked
-    notice that :func:`escalate_working_set` records, while a failed read carries
-    nothing, because it is a fact about the tracker rather than about the package.
-    """
-    lookup = decompose.SizingLookup(None, decompose.SCOPE_UNREADABLE)
-    with contextlib.suppress(RuntimeError, ValueError, OSError):
-        lookup = decompose.resolve_dispatch_sizing(repo_root, issue_id)
-    resolved = lookup.sizing
-    if resolved is None:
-        # Greenfield counts with undeclared, not with unreadable (basicly-jr0l.69):
-        # both are structural facts about the package that re-reading will not change,
-        # and both leave the working set genuinely unknown. Only a failed tracker read
-        # stays silent, because that is a fact about the tracker.
-        unchecked = (
-            policy.unchecked_working_set(issue_id, sizing)
-            if lookup.absence in (decompose.SCOPE_UNDECLARED, decompose.SCOPE_GREENFIELD)
-            else None
-        )
-        return WorkingSetAdmission(issue_id, None, unchecked, refused=False, absence=lookup.absence)
-    estimate = resolved.estimate
-    violation = policy.check_working_set(issue_id, estimate.total, estimate.scope_tokens, sizing)
-    return WorkingSetAdmission(
-        issue_id,
-        resolved,
-        violation,
-        # `check_working_set` still decides *whether* the band was crossed; this
-        # comparison only says which end, because only the ceiling refuses.
-        refused=violation is not None and estimate.total > sizing.working_set_max,
-    )
-
-
-def escalate_working_set(
-    repo_root: Path, admission: WorkingSetAdmission
-) -> decisions.DecisionItem | None:
-    """Queue an out-of-band or never-checked lane's sizing verdict; None when it fits.
-
-    A refusal stays **pending**, and that is what holds the lane: ``ready_lanes``
-    drops a lane with an unanswered item, so the package is not dispatched again
-    until someone re-scopes it. Every other advisory — under the floor, or never
-    checked at all because the bead declares no scope — is retired by the engine in
-    the same breath: recorded for the audit trail, charged to the delegated column
-    rather than a human's wait (D11), and out of ``has_pending`` — the same disposal
-    :func:`resolve_stall_flag` makes of its own moot question.
-
-    None also for a lane whose read failed: ``admit_working_set`` leaves that
-    violation None precisely so a tracker hiccup is not filed as a sizing finding.
-    """
-    if admission.violation is None:
-        return None
-    unsized = admission.absence in (decompose.SCOPE_UNDECLARED, decompose.SCOPE_GREENFIELD)
-    item = decisions.enqueue(
-        repo_root,
-        admission.issue_id,
-        "escalation",
-        UNSIZED_QUESTION if unsized else SIZING_QUESTION,
-        admission.violation,
-        human_required=admission.refused,
-    )
-    if not admission.refused:
-        decisions.answer(
-            repo_root,
-            item.decision_id,
-            _UNSIZED_DISPOSAL if unsized else _UNDERSIZE_DISPOSAL,
-            by=decisions.ENGINE_BY,
-        )
-    return item
-
-
-def band_coverage(working_sets: tuple[WorkingSetAdmission, ...]) -> str:
-    """Which of this pass's lanes the band actually measured, and which it could not.
-
-    Reported on every pass for the same reason :attr:`PassSpendAdmission.coverage` is:
-    the failure this closes was silent. A pass of lanes the band never looked at
-    printed nothing at all, so it was indistinguishable at the surface from a pass
-    where every estimate fitted — and on the run that measured it, all four lanes were
-    the former and all four overran (basicly-jr0l.60).
-    """
-    if not working_sets:
-        return "no lanes to check"
-    by_absence: dict[str, list[str]] = {}
-    checked: list[str] = []
-    for item in working_sets:
-        if item.checked:
-            checked.append(item.issue_id)
-        else:
-            by_absence.setdefault(item.absence, []).append(item.issue_id)
-    parts = []
-    if checked:
-        parts.append(f"checked: {', '.join(checked)}")
-    for absence, ids in sorted(by_absence.items()):
-        parts.append(f"NEVER CHECKED ({absence}): {', '.join(ids)}")
-    return "; ".join(parts)
-
-
-def band_report(working_sets: tuple[WorkingSetAdmission, ...]) -> tuple[str, ...]:
-    """One line per candidate: its working-set estimate and what the band would do.
-
-    :func:`band_coverage` answers "did the band look?" in a single line, which is the
-    right shape *during* a pass. Before one, the operator is deciding whether to mint a
-    budget at all, and that decision needs the per-lane numbers — an aggregate forecast
-    built from the unsizeable-lane assumption reads exactly like a measurement of lanes
-    nobody measured (basicly-prnm, the same silent shape as basicly-jr0l.60).
-
-    Ordered largest estimate first, then the unsized: the big lanes decide the budget,
-    and the absent ones are the authoring fix that changes the budget most.
-    """
-    sized = sorted(
-        (w for w in working_sets if w.sizing is not None),
-        key=lambda w: w.sizing.estimate.total if w.sizing else 0,
-        reverse=True,
-    )
-    lines = [
-        f"  {w.issue_id:<22} {w.sizing.estimate.total:>9} tok  {_band_verdict(w)}"
-        for w in sized
-        if w.sizing is not None
-    ]
-    # Named, never folded into a count: an undeclared scope is an authoring fix that
-    # takes a minute, and it is the largest single lever on what a pass costs.
-    lines += [
-        f"  {w.issue_id:<22} {'unsized':>9}      no scope the estimator can read"
-        for w in working_sets
-        if w.sizing is None
-    ]
-    return tuple(lines)
-
-
-def _band_verdict(admission: WorkingSetAdmission) -> str:
-    """What the band would do with one sized lane, worded for the pre-run table.
-
-    The floor is deliberately skipped when a scope matches nothing on disk, so a
-    greenfield package is not refused for having nothing to read yet
-    (:func:`policy.check_working_set`). That leaves a *broken* glob indistinguishable
-    from a greenfield one at the surface: both estimate to bare overhead and both read
-    as a comfortably small "in band" lane. Measured on this repo's own tracker, four
-    candidates sat at exactly the overhead figure. Say it instead, because the fix
-    differs — one needs a corrected path, the other needs nothing (the gate that
-    refuses an empty glob outright is basicly-a3ab.3).
-    """
-    if admission.refused:
-        return "REFUSED - too large, split it"
-    if admission.violation is not None:
-        # Only the ceiling refuses (see :func:`admit_working_set`), so a lane under the
-        # floor still dispatches while carrying the band's advice. Printing a bare
-        # "in band" for it would report the opposite of what the band actually said.
-        return "under the floor - dispatches, but merge it with a sibling"
-    if admission.sizing is not None and admission.sizing.estimate.scope_tokens == 0:
-        return "in band, but its scope matched no file"
-    return "in band"
-
-
 # --- The spend ceiling at pass admission (D3 looking forward, basicly-jr0l.22) ---
 #
 # ``policy.spend_status`` compares spend *already recorded* against the grant's
@@ -1745,6 +1473,53 @@ class LaneOutcome:
         return "; ".join(parts)
 
 
+class Unstarted(Enum):
+    """Why no runner ran a lane — the one axis the unstarted outcomes differ on.
+
+    :class:`LaneOutcome` records this as three independent booleans because that is
+    what the routing layer and the run record read, but only these four of their
+    eight combinations mean anything. Naming them here is what lets
+    :func:`_unstarted` take one argument instead of three, and what makes an
+    impossible pair (refused *and* carried) unspellable at the call site rather
+    than merely unused.
+    """
+
+    # A bound said no and nothing spawned. Deterministic — re-running would reach
+    # the identical verdict — so it must not count against the lane's rework budget.
+    REFUSED = "refused"
+    # Nothing spawned for a reason that is neither a deterministic refusal nor a
+    # known-retryable fault: a ceiling reached while the lane waited for a slot, a
+    # worktree with no session record, an unclassified error before the spawn.
+    STOPPED = "stopped"
+    # The dispatch died before the agent started, on a transient failure of the
+    # tracker's storage — retryable, and distinct from a refusal for that reason.
+    TRANSIENT = "transient"
+    # Work already committed on the branch: the lane owes a landing, not a run.
+    CARRIED = "carried"
+
+
+def _unstarted(issue_id: str, runner_name: str, detail: str, why: Unstarted) -> LaneOutcome:
+    """The outcome of a lane no runner ran: every measured field is None, not 0.
+
+    Six sites produce one — carried, refused two ways, halted, failed before spawn
+    — and they differ only in *detail* and *why*. A fabricated zero would be
+    indistinguishable from a measured one, which is what the metering rests on.
+    """
+    return LaneOutcome(
+        issue_id=issue_id,
+        runner_name=runner_name,
+        result=None,
+        needs_fact=None,
+        occupancy=None,
+        overrun=False,
+        followup_id=None,
+        detail=detail,
+        dispatched=why is not Unstarted.CARRIED,
+        refused=why is Unstarted.REFUSED,
+        transient=why is Unstarted.TRANSIENT,
+    )
+
+
 def ready_lanes(
     repo_root: Path, session: SessionState, *, skip: frozenset[str] = frozenset()
 ) -> tuple[AdoptedLane, ...]:
@@ -1973,6 +1748,62 @@ def _delegate_one(
     )
 
 
+def _say(report: Callable[[str], None] | None, line: str) -> None:
+    """Emit one pass-output line, or nothing when the caller wants no output."""
+    if report is not None:
+        report(line)
+
+
+def _ungranted_detail(
+    repo_root: Path,
+    session: SessionState,
+    spec: runner.RunnerSpec,
+    admission: policy.SpendStatus,
+    lanes: tuple[AdoptedLane, ...],
+) -> str | None:
+    """The refusal detail when a metered runner has no budget to meter against.
+
+    Both halves of D3's ceiling key on the grant — `spend_status` reports
+    `halted=False` and `remaining_tokens=None` when there is none, and
+    `check_pass_spend` admits anything against a None remainder — so an ungranted
+    session had no bound at all (basicly-kkux). Latent while the supervisor could not
+    seed its own lanes, and one command deep once basicly-t73d let it. A handoff spends
+    nothing, so it proceeds and this returns None.
+    """
+    granted = admission.grant is not None and admission.grant.token_budget is not None
+    if spec.kind != runner.HEADLESS or granted:
+        return None
+    return record_ungranted_refusal(repo_root, session.root_issue, spec.name, lanes)
+
+
+def _admit_wip(
+    repo_root: Path,
+    session: SessionState,
+    lanes: tuple[AdoptedLane, ...],
+    runner_name: str,
+    report: Callable[[str], None] | None,
+) -> tuple[tuple[AdoptedLane, ...], tuple[LaneOutcome, ...]]:
+    """Apply :mod:`basicly.wip`'s bound: the lanes that may start, and the held ones.
+
+    The held lanes come back as *outcomes* rather than as a silently shorter lane
+    list, so the routing layer sees them and an operator reads why. `refused` is what
+    keeps a held lane off the rework counter: the bound is deterministic arithmetic,
+    so re-running the lane would reach the identical verdict.
+    """
+    bound = wip.admit(repo_root, lanes, session.adopted, exclude=session.root_issue)
+    _say(report, f"wip:      {bound.coverage}")
+    wip.record_refusal(repo_root, session.root_issue, bound)
+    # Which units to land is this frame's half of the message (see `wip.reason`).
+    land = f"; land or review {', '.join(bound.downstream)}" if bound.downstream else ""
+    held = tuple(
+        _unstarted(
+            lane.issue_id, runner_name, f"not started: {bound.reason}{land}", Unstarted.REFUSED
+        )
+        for lane in bound.refused
+    )
+    return bound.admitted, held
+
+
 def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped input
     repo_root: Path,
     session: SessionState,
@@ -2005,6 +1836,10 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
     caller that already read the status pass it in; omitting it re-reads here, so no
     dispatch path can bypass the ceiling by forgetting to check.
 
+    Dispatch is bounded a second way, by the **downstream WIP limit**
+    (:mod:`basicly.wip`): lanes past what the session's unlanded work leaves room
+    for are refused naming the limit, and start once earlier work lands.
+
     *skip* excludes lanes the caller lands without a runner (basicly-kjc5.18).
 
     *report* receives the pass's band and spend coverage before anything is dispatched
@@ -2031,18 +1866,17 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
     spec = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
     sizing = load_sizing_config(repo_root)
 
-    # A metered runner needs a budget to be metered against. Both halves of D3's
-    # ceiling key on the grant — `spend_status` reports `halted=False` and
-    # `remaining_tokens=None` when there is none, and `check_pass_spend` admits
-    # anything against a None remainder — so an ungranted session had no bound at all
-    # (basicly-kkux). Latent while the supervisor could not seed its own lanes, and one
-    # command deep once basicly-t73d let it. A handoff spends nothing, so it proceeds.
-    ungranted = admission.grant is None or admission.grant.token_budget is None
-    if spec.kind == runner.HEADLESS and ungranted:
-        detail = record_ungranted_refusal(repo_root, session.root_issue, spec.name, lanes)
-        if report is not None:
-            report(f"refused:  {detail}")
+    # A metered runner needs a budget to be metered against (:func:`_ungranted_detail`).
+    ungranted = _ungranted_detail(repo_root, session, spec, admission, lanes)
+    if ungranted is not None:
+        _say(report, f"refused:  {ungranted}")
         return ()
+
+    # BUILD's other entry predicate — the downstream WIP bound. Read before sizing,
+    # so nothing forecasts a lane the bound holds.
+    lanes, held = _admit_wip(repo_root, session, lanes, spec.name, report)
+    if not lanes:
+        return held
 
     # Size every lane before any of them starts. The band needs this per lane and
     # the pass-spend gate needs all of them summed, so it is read once here and
@@ -2054,7 +1888,7 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
     _report_coverage(report, working_sets, pass_spend)
     if pass_spend.refused:
         record_pass_refusal(repo_root, session.root_issue, pass_spend)
-        return ()
+        return held
     banded = {item.issue_id: item for item in working_sets}
 
     # Read once for the whole pass, not per lane: every lane must be recorded
@@ -2088,15 +1922,8 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
             else inflight_halt(live)
         )
         if exhausted:
-            return LaneOutcome(
-                issue_id=lane.issue_id,
-                runner_name=spec.name,
-                result=None,
-                needs_fact=None,
-                occupancy=None,
-                overrun=False,
-                followup_id=None,
-                detail=f"not started: {exhausted}",
+            return _unstarted(
+                lane.issue_id, spec.name, f"not started: {exhausted}", Unstarted.STOPPED
             )
         started[lane.issue_id] = time.monotonic()
         # Per-lane containment: a transient br failure (e.g. a locked tracker
@@ -2121,19 +1948,16 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
                 spend=live,
             )
         except (RuntimeError, OSError, ValueError) as exc:
-            return LaneOutcome(
-                issue_id=lane.issue_id,
-                runner_name=spec.name,
-                result=None,
-                needs_fact=None,
-                occupancy=None,
-                overrun=False,
-                followup_id=None,
-                detail=f"lane dispatch failed: {exc}",
-                # Classified here rather than at the routing layer because this is
-                # the only frame that knows nothing ran: a nonzero *runner* exit
-                # quoting the same text is about the agent's work, not the store.
-                transient=br.is_transient_storage_error(str(exc)),
+            # `transient` is classified here rather than at the routing layer because
+            # this is the only frame that knows nothing ran: a nonzero *runner* exit
+            # quoting the same text is about the agent's work, not the store.
+            return _unstarted(
+                lane.issue_id,
+                spec.name,
+                f"lane dispatch failed: {exc}",
+                Unstarted.TRANSIENT
+                if br.is_transient_storage_error(str(exc))
+                else Unstarted.STOPPED,
             )
 
     pool = ThreadPoolExecutor(max_workers=max(1, cap))
@@ -2156,7 +1980,7 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
         pool.shutdown(wait=False, cancel_futures=True)
         raise
     pool.shutdown(wait=True)
-    return tuple(future.result() for future in futures)
+    return held + tuple(future.result() for future in futures)
 
 
 def _inflight_note(
@@ -2717,15 +2541,11 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
     """
     record = worktree.load_session(lane.binding.name, repo_root)
     if record is None:
-        return LaneOutcome(
-            issue_id=lane.issue_id,
-            runner_name=spec.name,
-            result=None,
-            needs_fact=None,
-            occupancy=None,
-            overrun=False,
-            followup_id=None,
-            detail=f"worktree {lane.binding.name!r} has no session record; re-provision the lane",
+        return _unstarted(
+            lane.issue_id,
+            spec.name,
+            f"worktree {lane.binding.name!r} has no session record; re-provision the lane",
+            Unstarted.STOPPED,
         )
     # Sized before the dispatch, not after: the estimate has to describe the tree the
     # agent was handed, not the one it left behind (basicly-kjc5.30). And before the
@@ -2738,16 +2558,11 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
     queued = escalate_working_set(repo_root, admission)
     if admission.refused:
         held = f"; held by {queued.decision_id}" if queued is not None else ""
-        return LaneOutcome(
-            issue_id=lane.issue_id,
-            runner_name=spec.name,
-            result=None,
-            needs_fact=None,
-            occupancy=None,
-            overrun=False,
-            followup_id=None,
-            detail=f"dispatch refused before it started: {admission.violation}{held}",
-            refused=True,
+        return _unstarted(
+            lane.issue_id,
+            spec.name,
+            f"dispatch refused before it started: {admission.violation}{held}",
+            Unstarted.REFUSED,
         )
     lane_sizing = admission.record_inputs(repo_root)
     if not lane_sizing:
@@ -3059,16 +2874,11 @@ def _carried_outcome(issue_id: str) -> LaneOutcome:
     it a *landing*, not a fresh implement-and-commit dispatch — that would spend
     a full run re-doing work already on the branch (basicly-kjc5.18).
     """
-    return LaneOutcome(
-        issue_id=issue_id,
-        runner_name="(none)",
-        result=None,
-        needs_fact=None,
-        occupancy=None,
-        overrun=False,
-        followup_id=None,
-        detail="work already committed on the branch; landing without a fresh dispatch",
-        dispatched=False,
+    return _unstarted(
+        issue_id,
+        "(none)",
+        "work already committed on the branch; landing without a fresh dispatch",
+        Unstarted.CARRIED,
     )
 
 

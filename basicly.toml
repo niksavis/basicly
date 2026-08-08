@@ -409,6 +409,18 @@ modes = ["fast", "full"]
 required_gates = ["verify"]
 # Rework retries allowed before a node escalates to a human.
 max_rework = 2
+# BUILD's second entry predicate (requirements 3.1): how many units may stand
+# downstream of build unlanded — merged and parked in verify, or verified and
+# waiting on a ship checkpoint — before a further dispatch is refused.
+#
+# Five, which is `[worktree] concurrency`, and the two agreeing is a coincidence
+# worth stating rather than a derivation: concurrency bounds how many lanes run
+# at once, this bounds how much finished-but-unreviewed output exists, and a
+# pass can exhaust the second while well inside the first. At these values one
+# full-width pass is admitted and a second cohort waits until the first lands,
+# which is the behaviour this repo already had — lower it to make review, not
+# slots or tokens, the constraint that binds.
+max_downstream_wip = 5
 
 # Agent-agnostic runner: how the harness invokes a coding agent headless to do a
 # node's work in its worktree. "auto" detects claude -> codex -> copilot on PATH,
