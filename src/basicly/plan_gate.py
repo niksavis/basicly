@@ -31,6 +31,10 @@ The gate is stated over a :class:`PlannedUnit` protocol rather than over
 ``decompose.ChildSpec`` so that it can sit *below* the decomposer in the import stack:
 the module that enforces a rule must not depend on the one being enforced.
 
+How a plan is *written down* and read back is :mod:`basicly.plan_record`'s, not this
+module's. The boundary is recorded form against judgement: nothing there decides
+whether a plan is adequate, and nothing here parses markup.
+
 :func:`build_entry_verdict` is the same five fields read back off the tracker at the
 moment a lane is about to be dispatched, for the units the decomposer never saw — a
 hand-filed bead carries no plan and dispatching it spends the same tokens. It is a
@@ -41,12 +45,12 @@ write.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from . import br
+from .plan_record import PLAN_HEADING, has_heading, parse_plan_section
 
 # The three integrity levels, in ascending blast radius: L1 routine (docs, comments,
 # test-only), L2 internal (engine code behind no consumer surface), L3 consumer (the
@@ -59,20 +63,6 @@ INTEGRITY_LEVELS = ("L1", "L2", "L3")
 # the plan schema, the gate message and the build-entry predicate cannot drift into
 # describing different sets.
 PLAN_FIELDS = ("acceptance", "scope", "depends_on", "budget_tokens", "integrity")
-
-ACCEPTANCE_HEADING = "## Acceptance Criteria"
-SCOPE_HEADING = "## Scope"
-PLAN_HEADING = "## Plan"
-
-# What a recorded `## Plan` line looks like, and the literal that means "declared, and
-# there is nothing in it" — distinguishable from an absent line, which is the whole
-# point of requiring the declaration.
-_PLAN_ENTRY = re.compile(r"^([a-z ]+): (.+)$")
-_BULLET_LINE = re.compile(r"^- (.+)$")
-_BACKTICKED = re.compile(r"^`([^`]+)`$")
-NOTHING_DECLARED = "none"
-
-_PLAN_LINE_KEYS = {"integrity": "integrity", "budget": "budget_tokens", "depends on": "depends_on"}
 
 # Depth-first colours for :func:`declared_cycles`: on the current path, and finished.
 _OPEN = "open"
@@ -128,42 +118,6 @@ class PlannedUnit(PlannedFields, Protocol):
     def title(self) -> str:
         """The proposed child's title, which the declared dependency graph is keyed on."""
         ...
-
-
-# --- Section reading --------------------------------------------------------
-
-
-def section_entries(description: str, heading: str) -> tuple[str, ...]:
-    """The ``- `` bullet entries recorded under *heading*, marker stripped.
-
-    Stops at the next ``## `` heading, so a section's entries are its own. A heading
-    that is absent and one that is empty both yield an empty tuple: they are the same
-    answer to "what did this bead declare here", and the caller that needs to tell
-    them apart reads the headings itself.
-    """
-    entries: list[str] = []
-    inside = False
-    for line in description.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("## "):
-            inside = stripped == heading
-            continue
-        if inside:
-            match = _BULLET_LINE.match(stripped)
-            if match:
-                entries.append(match.group(1).strip())
-    return tuple(entries)
-
-
-def backticked_entries(description: str, heading: str) -> tuple[str, ...]:
-    """The entries under *heading* that are one backticked value, unquoted.
-
-    The strict form is what makes a declared scope machine-readable: prose under the
-    heading is not a glob, and reading it as one would let a bead look sized when
-    nothing can size it.
-    """
-    matches = (_BACKTICKED.match(entry) for entry in section_entries(description, heading))
-    return tuple(match.group(1) for match in matches if match)
 
 
 # --- The plan gate over a proposed plan -------------------------------------
@@ -324,86 +278,6 @@ def require_plan(units: tuple[PlannedUnit, ...]) -> None:
         raise PlanGateError(verdict)
 
 
-# --- The recorded plan, and the build entry predicate -----------------------
-
-
-@dataclass(frozen=True)
-class RecordedPlan:
-    """The plan fields read back off a bead body, each absent as ``None``."""
-
-    acceptance: tuple[str, ...] = ()
-    scope: tuple[str, ...] = ()
-    depends_on: tuple[str, ...] | None = None
-    budget_tokens: int | None = None
-    integrity: str | None = None
-
-
-def render_plan_section(depends_on: tuple[str, ...], budget_tokens: int, integrity: str) -> str:
-    """The ``## Plan`` body :func:`parse_plan_section` reads back.
-
-    One writer and one reader for the recorded form, so the build entry predicate
-    cannot be reading a shape the decomposer stopped writing.
-    """
-    declared = ", ".join(f"`{dep}`" for dep in depends_on) if depends_on else NOTHING_DECLARED
-    return "\n".join((
-        f"- integrity: `{integrity}`",
-        f"- budget: `{budget_tokens}`",
-        f"- depends on: {declared}",
-    ))
-
-
-def parse_plan_section(description: str) -> RecordedPlan:
-    """The five plan fields recorded on a bead body, with absences kept as absences.
-
-    Structural, exactly like :func:`decompose.parse_scope_section`: a heading with
-    entries under it counts, and what those entries *say* is not judged here. That
-    leaves one lenient edge — ``policy.scaffold_body`` writes its unfilled acceptance
-    hint as a bullet, so a scaffold nobody filled in reads as having an acceptance
-    criterion. It is deliberately not special-cased. Refusing a ``TODO`` placeholder
-    would be a second, stricter answer to the question the Definition of Ready already
-    owns, and the case cannot arrive from the decomposer anyway: the plan gate requires
-    a non-empty acceptance list before a child is ever created, and such a bead is
-    refused here regardless by the four fields a scaffold does not carry.
-    """
-    values: dict[str, str] = {}
-    for entry in section_entries(description, PLAN_HEADING):
-        match = _PLAN_ENTRY.match(entry)
-        if match and match.group(1) in _PLAN_LINE_KEYS:
-            values[_PLAN_LINE_KEYS[match.group(1)]] = match.group(2).strip()
-
-    return RecordedPlan(
-        acceptance=section_entries(description, ACCEPTANCE_HEADING),
-        scope=backticked_entries(description, SCOPE_HEADING),
-        depends_on=_parse_recorded_list(values.get("depends_on")),
-        budget_tokens=_parse_recorded_budget(values.get("budget_tokens")),
-        integrity=_parse_recorded_scalar(values.get("integrity")),
-    )
-
-
-def _parse_recorded_scalar(value: str | None) -> str | None:
-    if value is None:
-        return None
-    match = _BACKTICKED.match(value)
-    return match.group(1) if match else None
-
-
-def _parse_recorded_budget(value: str | None) -> int | None:
-    text = _parse_recorded_scalar(value)
-    if text is None or not text.isdigit():
-        return None
-    return int(text)
-
-
-def _parse_recorded_list(value: str | None) -> tuple[str, ...] | None:
-    """A recorded dependency list: ``None`` when absent, ``()`` when declared empty."""
-    if value is None:
-        return None
-    if value.strip() == NOTHING_DECLARED:
-        return ()
-    matches = (_BACKTICKED.match(item.strip()) for item in value.split(","))
-    return tuple(match.group(1) for match in matches if match)
-
-
 @dataclass(frozen=True)
 class EntryVerdict:
     """Whether a unit may enter BUILD, and what it is missing if not."""
@@ -435,7 +309,17 @@ class EntryVerdict:
 
 
 def entry_verdict_for(issue_id: str, description: str) -> EntryVerdict:
-    """The build entry verdict for a bead whose body is already in hand (pure)."""
+    """The build entry verdict for a bead whose body is already in hand (pure).
+
+    The ratchet is the ``## Plan`` heading, not the fields under it. A body carrying
+    the heading was written by the decomposer under this gate, so an incomplete one is
+    a defect and is refused naming the field. A body with no heading at all predates
+    the gate — the same population D8 refuses to bulk-transform — and is admitted,
+    because a predicate that refuses every bead filed before it existed does not gate
+    the work that comes after it, it stops the harness.
+    """
+    if not has_heading(description, PLAN_HEADING):
+        return EntryVerdict(issue_id)
     recorded = parse_plan_section(description)
     return EntryVerdict(issue_id, missing_fields(recorded))
 

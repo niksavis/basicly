@@ -328,6 +328,20 @@ that is ≈376 lines [M].
 **Design:**
 
 - **Ratchet, not hard cap.** No file may cross the threshold. A file already over may only shrink.
+- **Top-level imports are not counted** [D, amended 2026-08-08]. As first shipped the ratchet
+  counted them, and that charged for the one change it exists to force. Measured on the first lane
+  after go-live: extracting `contention` out of `supervise.py` — a real split along a named
+  responsibility, taking a frozen 48,020-token module under its baseline — forced one
+  `from . import contention` line into `cli.py`, and that **four-token line failed `cli.py`'s own
+  ratchet**. Splitting a large module therefore required shrinking every module that imports it, so
+  the cheapest way to satisfy the gate was to split nothing. The exclusion is the narrowest fix: an
+  import is one line and is not what makes a file too large to read whole, and code growth is still
+  measured to the token. The 79 frozen baselines were recomputed once on the same measure — every
+  one strictly dropped — so nothing is forgiven but the import block. The control assertion is
+  `test_a_module_that_grew_by_code_still_fails_after_the_import_exclusion`; without it the
+  amendment cannot be told apart from turning the gate off, which is exactly how it first *looked*
+  to pass: run against import-inclusive baselines it reported a clean tree, because every module
+  had silently gained an allowance the size of its own import block.
 - **First touch brings it under** [D]. The first change to a frozen file after go-live must bring
   that file under the cap, not merely reduce it.
 - **Per-file waiver** [D]. A module that is genuinely cohesive may exceed the cap deliberately,
@@ -482,7 +496,7 @@ read; pass `--forward-subagent-text`; add light mode as a second dispatch path.
 | ~~OQ-6~~ | ~~File-size threshold~~ — **resolved**: 4,000 tokens, `SCOPE_FILE_READ_CAP` (§9.3) | — |
 | ~~OQ-7~~ | ~~Exemption list or deadline~~ — **resolved**: ratchet, first touch brings the file under cap, per-file waiver with a recorded reason (§9.3) | — |
 | ~~OQ-11~~ | ~~Waiver approval~~ — **resolved**: reason at L1/L2, approval at L3 (D14) | — |
-| **OQ-12** | What is a "touch" for the first-touch rule — any diff to the file, or a non-trivial one? A one-line typo fix triggering a 13× refactor is the failure mode to avoid | §9.3 |
+| ~~OQ-12~~ | ~~What is a "touch"~~ — **partly resolved 2026-08-08**: a touch that adds only a top-level import is not a touch, because the ratchet was charging for the splits it exists to force (§9.3). The original question — whether a one-line typo fix should trigger a refactor — is still open for *content* changes | §9.3 |
 | ~~OQ-8~~ | ~~Kill approval~~ — **resolved**: human at every level (D15) | — |
 | **OQ-9** | House direction on PEP 758 paren-free `except A, B:`. **Only open question left.** Recommendation: allow paren-free — the repo is 3.14-only so there is no compatibility argument, and no linter enforces either direction | `python-guidelines` |
 | ~~OQ-10~~ | ~~Plugin channel~~ — **resolved**: second channel, same projected output (D16) | — |

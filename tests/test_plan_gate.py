@@ -2,9 +2,11 @@
 
 Every test here is a control pair wherever a control pair is possible — the same plan
 with the field present and with it absent — because a gate that only ever sees good
-input cannot be shown to bind. The four groups match the four acceptance criteria of
-basicly-u2hl.1, and the group keywords (`cycle`, `edges`, `entry`) are the ones those
-criteria name as their checks.
+input cannot be shown to bind. The groups match the acceptance criteria of
+basicly-u2hl.1, and the group keywords (`cycle`, `entry`) are the ones those criteria
+name as their checks. The `edges` group and the decompose round trip are in
+``test_plan_record.py``, on the recorded-form-against-judgement boundary
+:mod:`basicly.plan_record` was split from :mod:`basicly.plan_gate` on.
 """
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import br, decompose, plan_gate, policy
+from basicly import br, decompose, plan_gate, plan_record
 from basicly.decompose import ChildSpec
 
 
@@ -27,11 +29,10 @@ class _Proc:
 
 
 class _FakeBr:
-    """Stateful stand-in for the br CLI, routed by subcommand.
+    """Stand-in for the br CLI, taught only what a refused plan may still reach.
 
-    Hands out sequential child ids on create and records every dep-add edge, which is
-    what the declared-graph assertions read. Deliberately raises on any call it was not
-    taught, so a test cannot pass because the decomposer quietly stopped calling br.
+    Serves ``show`` for the build-entry read and records any create or dep-add, which
+    is what the "creates no issue" assertions read. Any other subcommand raises.
     """
 
     def __init__(self, *, records: dict[str, dict] | None = None) -> None:
@@ -51,12 +52,6 @@ class _FakeBr:
             return _Proc(json.dumps([record]))
         if args[:2] == ["dep", "add"]:
             self.edges.append((args[2], args[3], args[args.index("-t") + 1]))
-            return _Proc("")
-        if args[:2] == ["dep", "cycles"]:
-            return _Proc(json.dumps({"cycles": [], "count": 0}))
-        if args[:2] == ["comments", "list"]:
-            return _Proc(json.dumps([]))
-        if args[:2] == ["comments", "add"]:
             return _Proc("")
         raise AssertionError(f"unexpected br call: {args}")
 
@@ -314,114 +309,6 @@ def test_decompose_refuses_a_plan_missing_a_field_and_creates_no_issue(
     assert fake.created == []
 
 
-# --- Declared edges reach the tracker ---------------------------------------
-
-
-def test_decompose_records_declared_edges_on_the_tracker(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Ordering the scopes cannot express must still reach `br dep tree`.
-
-    `a` and `b` own different files, so scope overlap puts them in separate parallel
-    groups and derives no edge at all. The declared dependency is the only thing that
-    can say `b` needs `a` first.
-    """
-    fake = _FakeBr()
-    _install(monkeypatch, fake)
-    children = (_planned("a", "src/a.py"), _planned("b", "src/b.py", depends_on=("a",)))
-
-    result = decompose.decompose(tmp_path, "feat", children)
-
-    assert fake.edges == [("feat.2", "feat.1", "blocks")]
-    assert result.children[1].depends_on == ("feat.1",)
-    # The grouping still reports them as scope-disjoint; the edge is what orders them.
-    assert result.parallel_groups == 2
-
-
-def test_declared_edges_resolve_sibling_titles_to_the_ids_just_created(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """A plan is written before anything is recorded, so it can only name titles."""
-    fake = _FakeBr()
-    _install(monkeypatch, fake)
-    children = (
-        _planned("a", "src/a.py"),
-        _planned("b", "src/b.py"),
-        _planned("c", "src/c.py", depends_on=("a", "b")),
-    )
-
-    decompose.decompose(tmp_path, "feat", children)
-
-    assert fake.edges == [("feat.3", "feat.1", "blocks"), ("feat.3", "feat.2", "blocks")]
-
-
-def test_a_declared_edges_duplicate_of_the_computed_chain_is_recorded_once(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Two children sharing a scope already chain; declaring it too must not double it."""
-    fake = _FakeBr()
-    _install(monkeypatch, fake)
-    children = (_planned("a", "src/s.py"), _planned("b", "src/s.py", depends_on=("a",)))
-
-    result = decompose.decompose(tmp_path, "feat", children)
-
-    assert fake.edges == [("feat.2", "feat.1", "blocks")]
-    assert result.children[1].depends_on == ("feat.1",)
-
-
-def test_the_computed_chain_still_records_edges_a_plan_declared_nothing_about(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """The negative control for the union: scope overlap keeps serializing on its own."""
-    fake = _FakeBr()
-    _install(monkeypatch, fake)
-    children = (_planned("a", "src/s.py"), _planned("b", "src/s.py"))
-
-    decompose.decompose(tmp_path, "feat", children)
-
-    assert fake.edges == [("feat.2", "feat.1", "blocks")]
-
-
-def test_a_created_child_records_its_plan_fields_in_its_body(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """The fields must outlive the plan document, which nothing keeps."""
-    fake = _FakeBr()
-    _install(monkeypatch, fake)
-    children = (_planned("a", "src/a.py"), _planned("b", "src/b.py", depends_on=("a",)))
-
-    decompose.decompose(tmp_path, "feat", children)
-
-    recorded = plan_gate.parse_plan_section(fake.created[1][2])
-    assert recorded.integrity == "L2"
-    assert recorded.budget_tokens == 40_000
-    assert recorded.depends_on == ("a",)
-    assert recorded.scope == ("src/b.py",)
-
-
-def test_a_recorded_body_still_satisfies_the_definition_of_ready(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Adding a section must not displace one the DoR requires (basicly-kjc5.44)."""
-    fake = _FakeBr()
-    _install(monkeypatch, fake)
-
-    decompose.decompose(tmp_path, "feat", (_planned("a", "src/a.py"),))
-
-    body = fake.created[0][2]
-    for heading in policy.required_sections("task"):
-        assert heading in body
-
-
-def test_a_recorded_empty_dependency_list_reads_back_as_declared_empty() -> None:
-    """`none` must round-trip as `()`, not as the absence the entry predicate refuses."""
-    body = plan_gate.render_plan_section((), 1000, "L1")
-
-    recorded = plan_gate.parse_plan_section(f"{plan_gate.PLAN_HEADING}\n\n{body}\n")
-
-    assert recorded.depends_on == ()
-
-
 # --- The build entry predicate ----------------------------------------------
 
 
@@ -438,10 +325,10 @@ def _recorded_body(**overrides: object) -> str:
     sections = []
     if fields["acceptance"]:
         entries = "\n".join(f"- {item}" for item in fields["acceptance"])  # type: ignore[union-attr]
-        sections.append(f"{plan_gate.ACCEPTANCE_HEADING}\n\n{entries}")
+        sections.append(f"{plan_record.ACCEPTANCE_HEADING}\n\n{entries}")
     if fields["scope"]:
         entries = "\n".join(f"- `{glob}`" for glob in fields["scope"])  # type: ignore[union-attr]
-        sections.append(f"{plan_gate.SCOPE_HEADING}\n\n{entries}")
+        sections.append(f"{plan_record.SCOPE_HEADING}\n\n{entries}")
     plan_lines = []
     if fields["integrity"] is not None:
         plan_lines.append(f"- integrity: `{fields['integrity']}`")
@@ -450,11 +337,11 @@ def _recorded_body(**overrides: object) -> str:
     if fields["depends_on"] is not None:
         declared = (
             ", ".join(f"`{dep}`" for dep in fields["depends_on"])  # type: ignore[union-attr]
-            or plan_gate.NOTHING_DECLARED
+            or plan_record.NOTHING_DECLARED
         )
         plan_lines.append(f"- depends on: {declared}")
     if plan_lines:
-        sections.append(plan_gate.PLAN_HEADING + "\n\n" + "\n".join(plan_lines))
+        sections.append(plan_record.PLAN_HEADING + "\n\n" + "\n".join(plan_lines))
     return "\n\n".join(sections) + "\n"
 
 
@@ -488,10 +375,24 @@ def test_build_entry_refuses_a_unit_missing_a_plan_field_naming_it(
     assert "feat.1" in verdict.reason
 
 
-def test_build_entry_refuses_a_hand_filed_bead_that_carries_no_plan_at_all() -> None:
-    """The population the decomposer never saw is the one this predicate exists for."""
+def test_build_entry_admits_a_hand_filed_bead_that_carries_no_plan_section() -> None:
+    """The ratchet: a bead the decomposer never wrote predates the gate (D8).
+
+    This assertion was inverted once. Refusing the no-heading population made every
+    granted dispatch of a pre-existing bead fail, which is a stopped harness rather
+    than a bound one.
+    """
     verdict = plan_gate.entry_verdict_for("feat.1", "Some prose and no headings.\n")
 
+    assert verdict.admitted
+    assert verdict.missing == ()
+
+
+def test_build_entry_refuses_a_bead_whose_plan_section_is_present_but_empty() -> None:
+    """Present-but-incomplete is the defect the ratchet still has to catch."""
+    verdict = plan_gate.entry_verdict_for("feat.1", f"{plan_record.PLAN_HEADING}\n\nprose\n")
+
+    assert not verdict.admitted
     assert verdict.missing == plan_gate.PLAN_FIELDS
 
 
@@ -520,22 +421,3 @@ def test_build_entry_refuses_a_unit_whose_record_cannot_be_read(
     assert not verdict.admitted
     assert verdict.unreadable
     assert "could not be read" in verdict.reason
-
-
-def test_a_decomposed_child_passes_the_predicate_that_gates_its_own_dispatch(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """The round trip: what decompose records is what build entry accepts.
-
-    Two halves written apart drift — this is the only test that fails when the writer
-    and the reader stop agreeing on the recorded form.
-    """
-    fake = _FakeBr()
-    _install(monkeypatch, fake)
-    children = (_planned("a", "src/a.py"), _planned("b", "src/b.py", depends_on=("a",)))
-
-    decompose.decompose(tmp_path, "feat", children)
-
-    for issue_id, _title, body in fake.created:
-        verdict = plan_gate.entry_verdict_for(issue_id, body)
-        assert verdict.admitted, verdict.reason

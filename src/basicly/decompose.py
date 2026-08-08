@@ -53,7 +53,7 @@ from collections.abc import Iterable
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
-from . import br, plan_gate, policy, run_record, runner
+from . import br, plan_gate, plan_record, policy, run_record, runner
 from .br import run_br as _run_br
 from .config import (
     DEFAULT_BUILD_FACTOR,
@@ -62,6 +62,7 @@ from .config import (
     load_sizing_config,
     load_worktree_config,
 )
+from .read_cost import instruction_overhead, scope_read_cost
 
 DEFAULT_CHILD_TYPE = "task"
 
@@ -595,175 +596,13 @@ def collapse_note(collapsing: tuple[CollapsingPath, ...]) -> str:
 
 
 # --- Context-cost sizing estimator (basicly-kjc5.2, factory design D8) -------
-
-# The projected agent-neutral instruction file every dispatch prompt points at;
-# its size is context every lane pays before reading any scope material.
-INSTRUCTIONS_FILE = "AGENTS.md"
+#
+# What a lane must *read* is measured in :mod:`basicly.read_cost` — this half turns
+# those tokens into an estimate, a frozen verdict and a forecast.
 
 # The heading _child_body records scope globs under; the line form itself belongs to
-# plan_gate, which reads every recorded section.
-_SCOPE_HEADING = plan_gate.SCOPE_HEADING
-
-
-def _text_tokens(text: str) -> int:
-    """Deterministic chars/4 token estimate (design 7.5: no tokenizer dependency)."""
-    return len(text) // 4
-
-
-def instruction_overhead(repo_root: Path) -> int:
-    """Fixed per-repo instruction overhead: the projected AGENTS.md, tokenized.
-
-    Computed by tokenizing the projected instructions, never configured
-    (design section 6). A repo without the file contributes zero; non-UTF-8
-    content still counts by size via replacement (same stance as scope files).
-    """
-    try:
-        path = repo_root / INSTRUCTIONS_FILE
-        return _text_tokens(path.read_text(encoding="utf-8", errors="replace"))
-    except OSError:
-        return 0
-
-
-# Directory names that are never a lane's working set: the VCS store, a
-# virtualenv, a dependency tree, and byte/tool caches. Matched by *name* at any
-# depth rather than by a leading dot, because the dot-directories this project
-# authors — ``.basicly``, ``.claude``, ``.github``, ``.beads`` — are legitimate
-# scope and excluding them would silently zero their read-cost, which is the
-# failure the ``./`` handling below already guards against.
-#
-# Deliberately conservative. ``dist``, ``build`` and ``site`` are *not* here:
-# basicly is installed into consumer repositories where any of those can be a
-# real source package, and a wrong exclusion is worse than a wrong inclusion —
-# it under-reads a lane and admits work the band should have refused
-# (basicly-jr0l.63).
-SCOPE_EXCLUDED_DIRS: frozenset[str] = frozenset({
-    ".git",
-    ".venv",
-    "venv",
-    "node_modules",
-    "__pycache__",
-    ".pytest_cache",
-    ".ruff_cache",
-    ".mypy_cache",
-    ".import_linter_cache",
-    ".doctor",
-})
-
-
-def _is_excluded(repo_root: Path, path: Path) -> bool:
-    """True when *path* sits under a directory no declared scope should read."""
-    try:
-        parts = path.relative_to(repo_root).parts
-    except ValueError:
-        # Outside the repo entirely — glob cannot produce this, but a caller
-        # passing an absolute pattern could; treat it as unreadable material.
-        return True
-    # parts[:-1] — the *directories*, never the filename, so a file that happens
-    # to be named `venv` is still read.
-    return any(part in SCOPE_EXCLUDED_DIRS for part in parts[:-1])
-
-
-def _scope_files(repo_root: Path, scope: tuple[str, ...]) -> set[Path]:
-    """The existing files matching any of the declared scope globs.
-
-    Only a literal ``./`` prefix is stripped — a bare ``lstrip`` would eat the
-    leading dot of a dot-directory scope (``.claude/**``) and silently zero its
-    read-cost. A leading ``/`` is relativized; a pattern the glob engine still
-    rejects (e.g. drive-anchored on Windows) is skipped, never fatal — the
-    governor treats it as unreadable material, matching the scope_read_cost
-    stance.
-
-    Paths under :data:`SCOPE_EXCLUDED_DIRS` are dropped. Without that, a scope of
-    ``**/*.py`` measured 2229 files here of which 2077 were the virtualenv — an
-    estimate describing the machine rather than the work, and one that pushes a
-    lane past ``working_set_max`` where the refusal holds it pending a human
-    (basicly-jr0l.63).
-    """
-    files: set[Path] = set()
-    for pattern in scope:
-        normalized = pattern.strip().replace("\\", "/")
-        while normalized.startswith("./"):
-            normalized = normalized[2:]
-        normalized = normalized.lstrip("/")
-        if not normalized:
-            continue
-        try:
-            matches = list(repo_root.glob(normalized))
-        except ValueError, NotImplementedError, OSError:
-            continue
-        for path in matches:
-            if path.is_file() and not _is_excluded(repo_root, path):
-                files.add(path)
-    return files
-
-
-# How much of one file a lane actually reads (basicly-fcls).
-#
-# This used to be "all of it", and that made a scope naming `cli.py` cost 45_556
-# tokens for a three-line change — while the harness's own always-on `tool-usage`
-# guidance tells the same agent to "find files by name, localize with focused
-# search, read only the ranges you need". The estimator and the instructions
-# described different agents, and the estimator was the one holding the gate.
-#
-# Measured over 185 (lane, file) pairs from 24 headless lane transcripts, taking
-# the *union* of line ranges each lane read out of each file, against the file's
-# size in this module's own chars/4 unit:
-#
-#   file tokens        n    median tokens read    median fraction
-#        73-  987     20                   357              1.000
-#       993- 2454     20                  1101              1.000
-#      2676- 3823     20                  2779              1.000
-#      4494- 6967     20                  1350              0.219
-#      7353-12843     20                  1524              0.147
-#     12843-17460     20                  1356              0.094
-#     17460-22829     20                  2224              0.122
-#     22829-32519     20                  1372              0.053
-#     32519-45556     25                  ~1000             0.022-0.068
-#
-# 78% of `Read` calls carried an offset or a limit. The shape is not a gentle
-# taper: below roughly 4_000 tokens a lane reads the file whole, and above it the
-# material it takes out is *flat* at ~1_500 tokens however large the file gets.
-# So the model is a cap, not a curve, and 4_000 is where the whole-file band ends
-# (last whole-read bucket tops out at 3_823, first partial bucket starts at 4_494).
-#
-# Set at the transition rather than at the ~1_500 plateau, deliberately: the cap
-# then covers the material actually read in 86% of the measured pairs and
-# over-states the large end by about 1.5x. That is the same stance
-# SCOPE_EXCLUDED_DIRS takes above — over-reading costs a false refusal a human can
-# see, under-reading admits work the band should have refused (basicly-jr0l.63).
-#
-# The cap alone is *not* the whole answer and must not be read as one. A lane's
-# real context occupancy correlates with its declared scope at R^2 = 0.095 over
-# those same 24 lanes (against 0.863 for turn count), and six lanes declaring no
-# scope at all still occupied 106k-209k tokens — so the term this formula is
-# really missing is a large ambient one, not a better read model. Fitting that
-# needs a measurement, which is why `RunRecord.context_tokens` lands with this
-# change and why no ambient constant is invented here: a factor fitted before the
-# measurement existed is exactly how basicly-z2wi's 216x happened.
-SCOPE_FILE_READ_CAP = 4_000
-
-
-def scope_read_cost(repo_root: Path, scope: tuple[str, ...]) -> int:
-    """Tokenized material a lane reads out of the files matching its scope globs.
-
-    Each file contributes its own size or :data:`SCOPE_FILE_READ_CAP`, whichever
-    is smaller — a small file is read whole, a large one is localized into
-    (basicly-fcls). Capping per *file* rather than per scope is what keeps a lane
-    naming three large modules costing more than one naming a single large module,
-    which a cap on the total would flatten away.
-
-    A glob matching nothing — a file the child will create — contributes zero:
-    there is nothing to read yet. Unreadable files are skipped (telemetry-grade
-    input, never fatal); binary content still counts by size via replacement.
-    """
-    total = 0
-    for path in _scope_files(repo_root, scope):
-        try:
-            text = path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        total += min(_text_tokens(text), SCOPE_FILE_READ_CAP)
-    return total
+# plan_record, which owns every recorded section.
+_SCOPE_HEADING = plan_record.SCOPE_HEADING
 
 
 # Where a build factor came from. Recorded with every estimate, on the same rule
@@ -850,11 +689,11 @@ def estimate_cost(
 def parse_scope_section(description: str) -> tuple[str, ...]:
     """The scope globs recorded under a ``## Scope`` heading, as _child_body writes them.
 
-    Delegates the reading to :func:`plan_gate.backticked_entries`, so the section
+    Delegates the reading to :func:`plan_record.backticked_entries`, so the section
     reader the build entry predicate uses and the one every sizing and merge gate uses
     are the same code — two readers of one recorded form is how the form drifts.
     """
-    return plan_gate.backticked_entries(description, _SCOPE_HEADING)
+    return plan_record.backticked_entries(description, _SCOPE_HEADING)
 
 
 def unparsed_scope_warning(description: str) -> str | None:
@@ -1996,12 +1835,12 @@ def _child_body(spec: ChildSpec) -> str:
         spec.type,
         {
             "## Acceptance Criteria": "\n".join(f"- {item}" for item in spec.acceptance),
-            plan_gate.SCOPE_HEADING: "\n".join(f"- `{glob}`" for glob in spec.scope),
+            plan_record.SCOPE_HEADING: "\n".join(f"- `{glob}`" for glob in spec.scope),
             # :func:`decompose` gates before it records, so these are never absent on
             # the real path. The fall-backs record an *empty* value rather than a
             # plausible one, so a spec that reached here ungated is refused again by
             # the entry predicate instead of looking declared.
-            plan_gate.PLAN_HEADING: plan_gate.render_plan_section(
+            plan_record.PLAN_HEADING: plan_record.render_plan_section(
                 spec.depends_on or (),
                 spec.budget_tokens or 0,
                 spec.integrity or "",

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import br, decompose, merge, policy, run_record
+from basicly import br, decompose, merge, policy, read_cost, run_record
 from basicly.config import (
     DEFAULT_BUILD_FACTOR,
     DEFAULT_BUILD_FACTOR_SEEDS,
@@ -704,9 +704,9 @@ _OVERSIZED_SCOPE = "src/big/*.py"
 
 def _write_oversized(repo: Path) -> None:
     """A tree whose `_OVERSIZED_SCOPE` sizes well above `DEFAULT_WORKING_SET_MAX`."""
-    files = -(-DEFAULT_WORKING_SET_MAX // (decompose.SCOPE_FILE_READ_CAP * 3)) + 2
+    files = -(-DEFAULT_WORKING_SET_MAX // (read_cost.SCOPE_FILE_READ_CAP * 3)) + 2
     for index in range(files):
-        _write(repo, f"src/big/m{index}.py", decompose.SCOPE_FILE_READ_CAP * 4 * 2)
+        _write(repo, f"src/big/m{index}.py", read_cost.SCOPE_FILE_READ_CAP * 4 * 2)
 
 
 def _sizing(**overrides) -> SizingConfig:
@@ -719,72 +719,6 @@ def _sizing(**overrides) -> SizingConfig:
     }
     defaults.update(overrides)
     return SizingConfig(**defaults)
-
-
-def test_instruction_overhead_tokenizes_agents_md(tmp_path: Path) -> None:
-    """Overhead is the projected AGENTS.md at chars/4; absent contributes zero."""
-    assert decompose.instruction_overhead(tmp_path) == 0
-    _write(tmp_path, "AGENTS.md", 8_000)
-    assert decompose.instruction_overhead(tmp_path) == 2_000
-
-
-def test_scope_read_cost_sums_matching_files_once(tmp_path: Path) -> None:
-    """Matching files sum at chars/4, deduped across overlapping globs."""
-    _write(tmp_path, "src/a.py", 400)
-    _write(tmp_path, "src/b.py", 200)
-    _write(tmp_path, "docs/c.md", 999)
-    cost = decompose.scope_read_cost(tmp_path, ("src/*.py", "src/a.py"))
-    assert cost == (400 + 200) // 4
-
-
-def test_scope_read_cost_recursive_glob_and_greenfield(tmp_path: Path) -> None:
-    """`**` spans directories; a glob matching nothing contributes zero."""
-    _write(tmp_path, "src/pkg/deep/mod.py", 800)
-    assert decompose.scope_read_cost(tmp_path, ("src/**/*.py",)) == 200
-    assert decompose.scope_read_cost(tmp_path, ("brand/new/file.py",)) == 0
-
-
-def test_a_large_file_is_sized_at_what_a_lane_reads_out_of_it(tmp_path: Path) -> None:
-    """AC: a small change to a large module is not sized at the whole module.
-
-    The defect basicly-fcls names. A scope of `src/basicly/cli.py` used to cost every
-    one of its 45,556 tokens, while the harness's own always-on `tool-usage` guidance
-    told the same agent to read only the ranges it needs — and 78% of the `Read` calls
-    across 24 measured lanes did exactly that.
-    """
-    _write(tmp_path, "src/big.py", decompose.SCOPE_FILE_READ_CAP * 4 * 10)
-
-    cost = decompose.scope_read_cost(tmp_path, ("src/big.py",))
-    assert cost == decompose.SCOPE_FILE_READ_CAP
-    assert cost < decompose._text_tokens("x" * (decompose.SCOPE_FILE_READ_CAP * 4 * 10))
-
-
-def test_a_file_under_the_read_cap_still_costs_all_of_itself(tmp_path: Path) -> None:
-    """The cap is a ceiling on one file, never a flat per-file price.
-
-    Below the transition a lane really does read the whole file — the measured median
-    fraction is 1.000 for every size band under ~4,000 tokens — so charging the cap
-    for a 200-token fragment would over-size the small end as badly as the whole-file
-    measure over-sized the large end.
-    """
-    _write(tmp_path, "src/small.py", 800)
-    assert decompose.scope_read_cost(tmp_path, ("src/small.py",)) == 200
-
-
-def test_the_read_cap_applies_per_file_so_a_wider_scope_still_costs_more(
-    tmp_path: Path,
-) -> None:
-    """Three large modules must outsize one, or the estimate stops ranking lanes.
-
-    A cap on the *total* would price a lane touching the whole package identically to
-    one touching a single module, which is the failure mode that makes a sizing band
-    useless rather than merely wrong.
-    """
-    for name in ("a", "b", "c"):
-        _write(tmp_path, f"src/{name}.py", decompose.SCOPE_FILE_READ_CAP * 4 * 3)
-
-    assert decompose.scope_read_cost(tmp_path, ("src/a.py",)) == decompose.SCOPE_FILE_READ_CAP
-    assert decompose.scope_read_cost(tmp_path, ("src/*.py",)) == 3 * decompose.SCOPE_FILE_READ_CAP
 
 
 def test_the_read_cap_lets_the_band_admit_a_change_to_a_large_module(
@@ -849,7 +783,7 @@ def test_grouping_is_unchanged_by_the_size_of_the_file_two_children_share(
     pair = (_child("a", "src/big.py", "src/a.py"), _child("b", "src/big.py", "src/b.py"))
     apart = (_child("a", "src/a.py"), _child("b", "src/b.py"))
 
-    for chars in (40, decompose.SCOPE_FILE_READ_CAP * 4 * 10):
+    for chars in (40, read_cost.SCOPE_FILE_READ_CAP * 4 * 10):
         _write(tmp_path, "src/big.py", chars)
         _write(tmp_path, "src/a.py", chars)
         _write(tmp_path, "src/b.py", chars)
@@ -866,7 +800,7 @@ def test_scope_overlap_is_unchanged_by_the_size_of_the_file(tmp_path: Path) -> N
     read-cost must not make a large file look less collided than a small one, or the
     gate would quietly stop refusing exactly the modules chunking is aimed at.
     """
-    _write(tmp_path, "src/big.py", decompose.SCOPE_FILE_READ_CAP * 4 * 10)
+    _write(tmp_path, "src/big.py", read_cost.SCOPE_FILE_READ_CAP * 4 * 10)
     _write(tmp_path, "src/small.py", 40)
 
     for name in ("big", "small"):
@@ -889,7 +823,7 @@ def test_merge_coupling_attribution_is_unchanged_by_the_size_of_the_file(
     from nothing else — never from read-cost — and that must hold for the largest
     file in the repo as much as for a fragment.
     """
-    _write(tmp_path, "src/big.py", decompose.SCOPE_FILE_READ_CAP * 4 * 10)
+    _write(tmp_path, "src/big.py", read_cost.SCOPE_FILE_READ_CAP * 4 * 10)
     scopes = {"lane-a": ("src/big.py",), "lane-b": ("src/small.py",)}
 
     assert merge.coupled_lanes(("src/big.py",), scopes, bounced="lane-b") == ("lane-a",)
@@ -1078,7 +1012,7 @@ def _lane_estimates(repo_root: Path, outcome: str) -> dict[str, int]:
     estimates: dict[str, int] = {}
     for bead_id, history in run_record.dispatch_history(repo_root).items():
         task_class, scope = beads.get(bead_id, ("task", ()))
-        scope_tokens = decompose.scope_read_cost(repo_root, scope)
+        scope_tokens = read_cost.scope_read_cost(repo_root, scope)
         if scope_tokens <= 0:
             continue
         estimate = _lane_estimate(scope_tokens, task_class)
@@ -1537,7 +1471,7 @@ def test_govern_reuses_a_frozen_estimate_when_the_tree_has_grown(
     # so a single-file drift would leave this test asserting nothing.
     _write(tmp_path, "src/b.py", 16_000)
     _write(tmp_path, "src/c.py", 16_000)
-    assert decompose.scope_read_cost(tmp_path, ("src/*.py",)) == 12_000
+    assert read_cost.scope_read_cost(tmp_path, ("src/*.py",)) == 12_000
 
     second = decompose.govern_working_set(tmp_path, (spec,), feature_id="feat")
     assert second == first
@@ -1681,51 +1615,6 @@ def test_govern_passes_greenfield_plan(tmp_path: Path) -> None:
     """A plan whose scopes match no existing files estimates overhead-only and fits."""
     estimates = decompose.govern_working_set(tmp_path, (_child("a"), _child("b")))
     assert [e.total for e in estimates] == [0, 0]
-
-
-def test_scope_read_cost_keeps_dot_directory_scopes(tmp_path: Path) -> None:
-    """A dot-directory glob keeps its leading dot; only a literal ./ prefix strips."""
-    _write(tmp_path, ".claude/rules/python.md", 400)
-    assert decompose.scope_read_cost(tmp_path, (".claude/rules/*.md",)) == 100
-    assert decompose.scope_read_cost(tmp_path, ("./.claude/rules/*.md",)) == 100
-    _write(tmp_path, "src/a.py", 40)
-    assert decompose.scope_read_cost(tmp_path, ("./src/a.py",)) == 10
-
-
-def test_scope_read_cost_excludes_dependency_and_cache_trees(tmp_path: Path) -> None:
-    """A virtualenv, dependency tree or cache under a glob is not the lane's work."""
-    _write(tmp_path, "src/a.py", 40)
-    _write(tmp_path, ".venv/lib/dep.py", 4000)
-    _write(tmp_path, "node_modules/pkg/index.py", 4000)
-    _write(tmp_path, "src/__pycache__/a.cpython-314.pyc", 4000)
-    _write(tmp_path, ".git/hooks/thing.py", 4000)
-    # Only src/a.py is the project's own file, so the recursive glob costs 10 —
-    # not the 4010 the same glob measured before the exclusion.
-    assert decompose.scope_read_cost(tmp_path, ("**/*.py",)) == 10
-
-
-def test_scope_read_cost_keeps_project_authored_dot_directories(tmp_path: Path) -> None:
-    """Exclusion is by directory name, so .basicly and .claude are still counted."""
-    _write(tmp_path, ".basicly/core/skills/s/skill.yaml", 400)
-    _write(tmp_path, ".claude/rules/python.md", 400)
-    assert decompose.scope_read_cost(tmp_path, (".basicly/**",)) == 100
-    assert decompose.scope_read_cost(tmp_path, (".claude/**",)) == 100
-
-
-def test_scope_read_cost_reads_a_file_named_like_an_excluded_dir(tmp_path: Path) -> None:
-    """The name check covers directories only, so a file called venv is still read."""
-    _write(tmp_path, "src/venv", 40)
-    assert decompose.scope_read_cost(tmp_path, ("src/**",)) == 10
-
-
-def test_scope_read_cost_skips_unglobbable_patterns(tmp_path: Path) -> None:
-    """An anchored or engine-rejected pattern is skipped, never fatal."""
-    _write(tmp_path, "etc/conf.py", 40)
-    # A leading slash is relativized; a drive-anchored pattern must not raise
-    # (on POSIX "c:" is an ordinary segment, on Windows the glob engine rejects
-    # it and the guard skips it).
-    assert decompose.scope_read_cost(tmp_path, ("/etc/conf.py",)) == 10
-    assert decompose.scope_read_cost(tmp_path, ("c:/nowhere/*.py",)) == 0
 
 
 # --- sizing carried into the dispatch record (basicly-jr0l.34) ---------------

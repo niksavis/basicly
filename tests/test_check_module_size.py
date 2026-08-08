@@ -5,7 +5,7 @@ number it has to report. The ratchet has three moving parts and each has a way o
 fail-open, which is what is pinned here:
 
 * **The cap is not respelled.** ``4000`` appears nowhere in the gate — it imports
-  :data:`~basicly.decompose.SCOPE_FILE_READ_CAP`. A second spelling would let the size a
+  :data:`~basicly.read_cost.SCOPE_FILE_READ_CAP`. A second spelling would let the size a
   lane is refused at drift from the size the sizing governor budgets with, so
   ``test_the_cap_is_never_respelled_in_the_gate`` asserts the literal's absence rather
   than trusting the import.
@@ -37,7 +37,7 @@ from types import ModuleType
 
 import pytest
 
-from basicly.decompose import SCOPE_FILE_READ_CAP
+from basicly.read_cost import SCOPE_FILE_READ_CAP
 
 REPO_ROOT = Path(__file__).parent.parent
 SCRIPT = REPO_ROOT / ".scripts" / "check_module_size.py"
@@ -99,6 +99,46 @@ def test_a_frozen_module_that_grew_fails_naming_both_counts() -> None:
     assert len(findings) == 1
     assert "53096" in findings[0].detail
     assert "53095" in findings[0].detail
+
+
+def test_an_added_import_line_does_not_count_against_a_frozen_module() -> None:
+    """Splitting a module must not fail every module that then has to import it.
+
+    The measured incident (2026-08-08): extracting `contention` out of `supervise.py`
+    forced one `from . import contention` into `cli.py`, and that four-token line failed
+    `cli.py`'s own ratchet — so the gate that exists to force splits charged for one.
+    """
+    before = "import json\n\n\nVALUE = 1\n"
+    after = "import json\nfrom pathlib import Path\n\n\nVALUE = 1\n"
+
+    assert gate.module_tokens(after) == gate.module_tokens(before)
+
+
+def test_a_parenthesised_import_is_excluded_across_its_continuation_lines() -> None:
+    """The multi-line `from . import (...)` block is how this repo actually imports."""
+    one_line = "from . import a\n\n\nVALUE = 1\n"
+    wrapped = "from . import (\n    a,\n    b,\n    c,\n)\n\n\nVALUE = 1\n"
+
+    assert gate.module_tokens(wrapped) == gate.module_tokens(one_line)
+
+
+def test_a_function_level_import_is_still_counted() -> None:
+    """Only column-0 imports are free; a deferred import is code the reader pays for."""
+    without = "def f():\n    return 1\n"
+    deferred = "def f():\n    from . import supervise\n\n    return 1\n"
+
+    assert gate.module_tokens(deferred) > gate.module_tokens(without)
+
+
+def test_a_module_that_grew_by_code_still_fails_after_the_import_exclusion() -> None:
+    """The control on the exclusion: only imports are forgiven, never content.
+
+    Without this assertion the amendment cannot be told apart from weakening the gate.
+    """
+    lean = "import json\n\n\nVALUE = 1\n"
+    grown = "import json\nimport sys\n\n\nVALUE = 1\nOTHER = 2\n"
+
+    assert gate.module_tokens(grown) > gate.module_tokens(lean)
 
 
 def test_a_frozen_module_that_shrank_is_admitted_without_editing_the_record() -> None:

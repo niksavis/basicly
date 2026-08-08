@@ -113,9 +113,8 @@ SKIP_DIRS = frozenset({
 # It masked a real one (basicly-jr0l.70): `migrate.py` and `events.py` use the ordinary
 # English words `folded` and `holds`, which retired the genuine suppressions for
 # `supervise.DispatchBundle.folded` and `worktree.RemovalVerdict.holds`. The module
-# docstring already names this hazard for catalog *prose* — "a field named `holds` or
-# `folded` would be masked by any skill that happens to use the English word" — and the
-# kit slipped through because it is Python rather than prose.
+# docstring names that hazard for catalog *prose*; the kit slipped through because it
+# is Python rather than prose.
 KIT_DIR = ".basicly/core/kit"
 
 # Non-Python consumers of a record field: the templates that render one and the
@@ -145,8 +144,7 @@ _IGNORE_OVERRIDE = "__wired_or_deleted_policing_run__"
 _VULTURE_FINDING = re.compile(r"^.+?:\d+: unused \w+ '(?P<name>[^']+)'")
 _GLOB_CHARS = frozenset("*?[")
 
-# Findings that predate the gate. `basicly-tcmy.21` deletes them; every entry here
-# must still reproduce, so the list can only shrink.
+# Findings that predate the gate; how the list binds is the docstring's last section.
 BASELINE: frozenset[str] = frozenset({
     # Commands no invocation names (10). The 2026-08-02 evidence pass counted 11.
     "command:catalog list",
@@ -164,19 +162,14 @@ BASELINE: frozenset[str] = frozenset({
     # ledger — it reads the field's value back out of the record JSON as
     # `entry["config_overrides"]` (basicly-3ifz.1).
     #
-    # `CreatedChild.depends_on` went for the *other* reason, and it is the masking
-    # hazard rather than a consumer: the plan gate gave `ChildSpec` a `depends_on`
-    # field that `decompose` reads by name, and the index matches bare names, so the
-    # finding stopped reproducing without the record field acquiring a reader
-    # (basicly-u2hl.1). The entry is removed because a baseline may only hold findings
-    # that still reproduce; what it cost is the ability to detect this one at all,
-    # which is the same trade `CostRollup.dispatches` documents from the other side.
+    # `CreatedChild.depends_on` went for the *other* reason — the masking hazard this
+    # module documents above, where the index matches *bare* names and a name declared
+    # anywhere retires a finding it never read. The plan gate gave `ChildSpec` its own
+    # `depends_on` field (basicly-u2hl.1), so the record field stopped reproducing
+    # without acquiring a reader, and a baseline may only hold live findings.
     #
-    # `CostRollup.dispatches` stays: it still has none. Retiring it in the same pass was
-    # the masking hazard this module documents above — `tuning` had declared its own
-    # `dispatches` name, and the index matches bare names, so a *different* record's
-    # field reported the consumer. `tuning` names it `dispatches_read` for that reason;
-    # renaming it back reproduces this finding.
+    # `CostRollup.dispatches` stays for the mirror reason: it still has no consumer, and
+    # `tuning` spells its own counter `dispatches_read` so it does not mask this entry.
     "record-field:basicly.agents.AgentOutputRoot.claude_passthrough",
     "record-field:basicly.agents.AgentDefinition.deprecated_model",
     "record-field:basicly.decisions.DecisionItem.queued_at",

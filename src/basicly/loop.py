@@ -58,6 +58,7 @@ from . import (
     needs_input,
     plan_gate,
     policy,
+    repair_brief,
     rubrics,
     run_record,
     runner,
@@ -628,10 +629,11 @@ def _meter_context_ceiling(ctx: _Ctx, dispatch: _Dispatch) -> str:
 def _dispatch_refused(ctx: _Ctx, name: str) -> AdvanceResult | None:
     """Why this dispatch must not start, or None to go ahead (basicly-1th1).
 
-    Both of the supervised path's forward-looking gates, applied to the interactive one:
-    the D3 spend halt, and the working-set band. Inert without a ``grant_root`` — a
-    caller that named no session has no grant ledger to read and no session to size
-    against, which is exactly the behaviour every such caller already had.
+    Three forward-looking gates, all inert without a ``grant_root`` — a caller that
+    named no session has no grant ledger to read, no session to size against, and no
+    tracker read on this path to fail closed on. Two are the supervised path's applied
+    to the interactive one: the D3 spend halt and the working-set band. The third is the
+    plan gate, ratcheted on the ``## Plan`` heading (:func:`plan_gate.entry_verdict_for`).
 
     Reuses ``supervise``'s admission rather than re-deriving it. A second copy of a
     sizing rule is how the number that gates a dispatch and the number recorded beside
@@ -655,11 +657,13 @@ def _dispatch_refused(ctx: _Ctx, name: str) -> AdvanceResult | None:
     # The plan gate, on entry to BUILD rather than on exit from DECOMPOSE: inspection
     # belongs before the expensive stage, and BUILD is where nearly all the tokens go.
     #
-    # Ratcheted with the rest of the plan fields, so it sits *after* the grant check
-    # rather than before it: a granted dispatch is a factory lane, whose bead decompose
-    # wrote a `## Plan` section for. A hand-filed bead driven with no session root keeps
-    # the behaviour it has always had, which is what stops this refusing the 600-odd
-    # beads that predate the section instead of gating the work that comes after it.
+    # Two ratchets, not one. The `## Plan` heading decides *whether the fields bind*:
+    # a body carrying it was written by the decomposer under this gate, so an incomplete
+    # one is refused naming the field, and a body without it predates the gate and is
+    # admitted. The grant root above decides *whether the read happens at all*: this
+    # predicate fails closed on an unreadable record, so running it against every
+    # interactive dispatch would turn a tracker that did not answer into a refusal on a
+    # path that never read the tracker before.
     entry = plan_gate.build_entry_verdict(ctx.repo_root, ctx.issue_id)
     if not entry.admitted:
         return _blocked(ctx, entry.reason, needs_input="plan")
@@ -693,7 +697,7 @@ def _run_agent(ctx: _Ctx, issue_id: str, cwd: Path, *, prompt: str | None = None
     start from a fresh context that already sees the commits their predecessors
     made (D6/D7). *prompt* overrides it for the one dispatch that is not a build:
     a repair run, which is briefed with the gate that rejected the work rather
-    than with the requirement (:func:`repair_prompt`, D5).
+    than with the requirement (:func:`repair_brief.repair_prompt`, D5).
 
     The sizing is measured *before* the agent runs and recorded with the dispatch
     (basicly-kjc5.30, basicly-jr0l.34). The scope read-cost is the denominator of
@@ -849,262 +853,6 @@ def dispatch_prompt(issue_id: str) -> str:
         '{"fact": "<the missing fact>", "detail": "<what you tried>"} and stop '
         "without committing a guess — the loop will block and surface it."
     )
-
-
-# --- Repair in place: the failing gate briefs the run that fixes it (u2hl.4) -
-#
-# Two measured gaps, one mechanism (docs/design/factory-loop-requirements.md §1):
-# supervised rework dispatched a *fresh* run, and the prompt it dispatched was
-# :func:`dispatch_prompt` — the same fixed text the lane started from, carrying
-# nothing about what had just failed. So the repair run re-derived the work from
-# the tracker and re-discovered the defect at the same gate, if at all.
-#
-# D5 makes repair a **mode of the implementer**, not a persona: same bead, same
-# worktree, a different brief. The brief is written where the failure is seen
-# (:func:`_rework`, the one funnel every finding-reporting gate passes through)
-# and read where the next run starts — by ``_on_build`` on the interactive path
-# and by ``supervise.build_bundle`` on the supervised one, so neither driver has
-# a way to dispatch a blind rework.
-#
-# It lives in the lane's own worktree under the self-ignored usage dir (the
-# needs-input sentinel's convention, basicly-o774): bound to the tree it
-# describes, never in a commit, and consumed on read so a stale brief cannot
-# re-fire against a gate that has since passed.
-
-# The brief a failed gate leaves for the run that repairs it, relative to the
-# worktree root.
-REPAIR_BRIEF_FILE = Path(".basicly/usage/repair-brief.json")
-
-# The gates whose failure a repair run can act on: the two that judge the lane's
-# own diff. The merge gate is not one of them — a collision is not a defect in
-# the work, and ``supervise._bounce_lane`` briefs its owner from the conflicting
-# paths instead. A landing that failed on its *verify* gate is admitted through
-# :data:`_LANDING_VERIFY_FAILED`, because that one is a red gate on this diff
-# whatever the record happens to be keyed under.
-REPAIR_GATES = (verify.DEFAULT_GATE, rubrics.RUBRIC_GATE)
-
-# The landing status that is a red verify rather than a collision or a state
-# (``merge.MergeResult.status``).
-_LANDING_VERIFY_FAILED = "verify-failed"
-
-# Bounds on what one brief may carry into a prompt. A gate's output is unbounded
-# — a failing suite can print megabytes — and a prompt that does not fit is a
-# repair that never starts, so the tail of each check's output is kept (a failure
-# reports at the end) and the number of checks is capped.
-MAX_REPAIR_EVIDENCE = 5
-MAX_REPAIR_OUTPUT_CHARS = 2000
-
-
-@dataclass(frozen=True)
-class GateEvidence:
-    """One failing check as the gate itself reported it: name, command, output."""
-
-    check: str
-    command: str = ""
-    output: str = ""
-
-
-@dataclass(frozen=True)
-class RepairBrief:
-    """What a failed gate reported, in the shape a repair dispatch is briefed with.
-
-    *issue_id* is the bead the failure is attributed to, which is not always the
-    node holding the worktree: a lane's sub-task fails on its own record and is
-    repaired in the lane's tree.
-    """
-
-    issue_id: str
-    gate: str
-    reason: str
-    findings: tuple[str, ...] = ()
-    evidence: tuple[GateEvidence, ...] = ()
-
-    def as_dict(self) -> dict[str, object]:
-        """The JSON shape written to the worktree."""
-        return {
-            "issue_id": self.issue_id,
-            "gate": self.gate,
-            "reason": self.reason,
-            "findings": list(self.findings),
-            "evidence": [
-                {"check": e.check, "command": e.command, "output": e.output} for e in self.evidence
-            ],
-        }
-
-
-def _parse_repair_brief(data: object) -> RepairBrief | None:
-    """The brief *data* describes, or None when it is not a well-formed one.
-
-    Tolerant in the same way and for the same reason as the needs-input sentinel:
-    a garbled brief costs one un-briefed dispatch, where raising would fail the
-    build phase on a file that is by construction advisory.
-    """
-    if not isinstance(data, dict):
-        return None
-    issue_id, gate = data.get("issue_id"), data.get("gate")
-    if not isinstance(issue_id, str) or not issue_id.strip():
-        return None
-    if not isinstance(gate, str) or not gate.strip():
-        return None
-    reason = data.get("reason")
-    raw_findings = data.get("findings")
-    findings = (
-        tuple(f for f in raw_findings if isinstance(f, str) and f.strip())
-        if isinstance(raw_findings, list)
-        else ()
-    )
-    raw_evidence = data.get("evidence")
-    evidence = (
-        tuple(
-            GateEvidence(
-                str(e.get("check", "")), str(e.get("command", "")), str(e.get("output", ""))
-            )
-            for e in raw_evidence
-            if isinstance(e, dict) and str(e.get("check", "")).strip()
-        )
-        if isinstance(raw_evidence, list)
-        else ()
-    )
-    return RepairBrief(
-        issue_id=issue_id.strip(),
-        gate=gate.strip(),
-        reason=reason.strip() if isinstance(reason, str) else "",
-        findings=findings,
-        evidence=evidence,
-    )
-
-
-def write_repair_brief(cwd: Path, brief: RepairBrief) -> bool:
-    """Leave *brief* in worktree *cwd* for its next dispatch; True when written.
-
-    Never creates the worktree, only the usage dir inside an existing one: a
-    binding whose tree is gone gets no brief rather than a directory nothing will
-    ever read, and the caller is a gate-failure path that must not acquire a
-    second way to fall over — so an unwritable tree simply yields False and the
-    next dispatch is the un-briefed one it was before.
-    """
-    if not cwd.is_dir():
-        return False
-    path = cwd / REPAIR_BRIEF_FILE
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(brief.as_dict(), indent=2) + "\n", encoding="utf-8")
-    except OSError:
-        return False
-    return True
-
-
-def take_repair_brief(cwd: Path) -> RepairBrief | None:
-    """Read and consume the repair brief in worktree *cwd*, if a gate left one.
-
-    Consumed on presence, valid or not, for the sentinel's reason: a brief
-    describes one failed round, so leaving it would brief a second run about a
-    gate the first may already have fixed.
-    """
-    path = cwd / REPAIR_BRIEF_FILE
-    try:
-        raw = path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-    with contextlib.suppress(OSError):
-        path.unlink()
-    try:
-        data = json.loads(raw)
-    except ValueError:
-        return None
-    return _parse_repair_brief(data)
-
-
-def _clip_output(text: str) -> str:
-    """The tail of *text* under :data:`MAX_REPAIR_OUTPUT_CHARS`, marked when cut."""
-    text = text.strip()
-    if len(text) <= MAX_REPAIR_OUTPUT_CHARS:
-        return text
-    return "…(earlier output cut)…\n" + text[-MAX_REPAIR_OUTPUT_CHARS:]
-
-
-def verify_evidence(report: verify.VerifyReport, cwd: Path, mode: str) -> tuple[GateEvidence, ...]:
-    """The failing checks of *report*, each with the command it ran and its output.
-
-    The output is collected by re-running exactly the checks that failed with
-    capture on — :func:`verify.rerun_failures`, the same call the landing gate
-    already makes for its unreliable-gate test, and evidence rather than a retry:
-    nothing in the tree, the config or the command line differs between the two
-    runs. It is paid for only where a gate has already failed and the loop is
-    about to spend an agent dispatch on it, which costs orders of magnitude more
-    than re-running the checks.
-
-    A check that passes on the re-run still contributes its (empty) output rather
-    than being dropped. Whether a failure reproduces is the landing gate's verdict
-    to make, and a brief that quietly omitted a finding would under-report what
-    the repair has to fix.
-    """
-    failures = sorted(set(report.failures))[:MAX_REPAIR_EVIDENCE]
-    if not failures:
-        return ()
-    commands: dict[str, str] = {}
-    with contextlib.suppress(OSError, ValueError):
-        commands = {
-            check.name: " ".join(check.command)
-            for check in verify.load_verify_config(cwd).for_mode(mode)
-        }
-    outputs: dict[str, str] = {}
-    with contextlib.suppress(OSError, ValueError):
-        rerun = verify.rerun_failures(report, cwd, mode, capture=True)
-        outputs = {r.name: (r.output or r.detail) for r in rerun.results}
-    return tuple(
-        GateEvidence(name, commands.get(name, ""), _clip_output(outputs.get(name, "")))
-        for name in failures
-    )
-
-
-def repair_prompt(brief: RepairBrief) -> str:
-    """The dispatch prompt for a repair run: fix what the gate reported, in place.
-
-    Deliberately not :func:`dispatch_prompt` with a note appended. A build prompt
-    tells the agent to read the requirement and implement it, which on a repair is
-    the wrong instruction twice over: the work exists and is committed on this
-    branch, and one named gate rejected it. What the run needs is the gate, its
-    command and its output — the three things the fixed text carried none of — and
-    an explicit refusal of the two moves that turn a repair back into a build:
-    re-planning the work, and starting somewhere else.
-    """
-    lines = [
-        f"You are in the existing git worktree for the tracked issue {brief.issue_id}. "
-        "The work is already committed on this branch and a gate rejected it. Repair "
-        "it here, in this worktree: do not re-plan the work, do not start a new "
-        "branch or worktree, and do not revert the commits already on it.",
-        "",
-        f"Gate: {brief.gate}",
-    ]
-    if brief.reason:
-        lines.append(f"Verdict: {brief.reason}")
-    if brief.findings:
-        lines += ["", "What the gate reported:", *(f"- {finding}" for finding in brief.findings)]
-    for item in brief.evidence:
-        if not item.command and not item.output:
-            # The check's name is already in the findings, so an entry the gate
-            # gave neither a command nor an output for would add a bare heading
-            # and no fact — measured against this repo's own config, where a
-            # check that runs in another mode resolves to exactly that.
-            continue
-        header = f"Check {item.check}"
-        if item.command:
-            header += f" — command: {item.command}"
-        lines += ["", header]
-        if item.output:
-            lines += ["", "```", item.output, "```"]
-    lines += [
-        "",
-        "Fix the cause the gate names and re-run its command until it passes, then "
-        f"commit the fix on this branch referencing {brief.issue_id}. Do not merge, "
-        "push, or close the issue — the harness loop lands and ships it.",
-        "If you exhaust your ability to resolve a required fact, do NOT guess: write "
-        f"{needs_input.SENTINEL_FILE.as_posix()} as "
-        '{"fact": "<the missing fact>", "detail": "<what you tried>"} and stop '
-        "without committing a guess — the loop will block and surface it.",
-    ]
-    return "\n".join(lines)
 
 
 # --- Delegated proposals: originating a phase's input (basicly-u6jq.2) -------
@@ -1756,7 +1504,9 @@ def _landing_findings(result: merge.MergeResult) -> tuple[str, ...]:
     return (f"status={result.status}", result.detail)
 
 
-def _landing_evidence(result: merge.MergeResult, mode: str) -> tuple[GateEvidence, ...]:
+def _landing_evidence(
+    result: merge.MergeResult, mode: str
+) -> tuple[repair_brief.GateEvidence, ...]:
     """How to reproduce a landing's red verify, for the repair brief (pure).
 
     Only the command, not the output. The landing gate ran the checks inside the
@@ -1771,9 +1521,11 @@ def _landing_evidence(result: merge.MergeResult, mode: str) -> tuple[GateEvidenc
     Nothing for any other status: a collision, a stale branch or an uncommitted
     worktree is not a check a repair run can re-run.
     """
-    if result.status != _LANDING_VERIFY_FAILED:
+    if result.status != repair_brief.LANDING_VERIFY_FAILED:
         return ()
-    return (GateEvidence(check=f"verify {mode}", command=f"basicly verify --mode {mode}"),)
+    return (
+        repair_brief.GateEvidence(check=f"verify {mode}", command=f"basicly verify --mode {mode}"),
+    )
 
 
 def _repair_in_place(ctx: _Ctx, binding: loop_state.WorktreeBinding) -> AdvanceResult | None:
@@ -1803,11 +1555,11 @@ def _repair_in_place(ctx: _Ctx, binding: loop_state.WorktreeBinding) -> AdvanceR
     if session is None:
         return None
     cwd = Path(session.worktree_path)
-    brief = take_repair_brief(cwd)
+    brief = repair_brief.take_repair_brief(cwd)
     if brief is None:
         return None
     where = f"worktree {binding.name!r}"
-    dispatch = _run_agent(ctx, brief.issue_id, cwd, prompt=repair_prompt(brief))
+    dispatch = _run_agent(ctx, brief.issue_id, cwd, prompt=repair_brief.repair_prompt(brief))
     if dispatch.result.handoff:
         return _blocked(
             ctx,
@@ -1949,7 +1701,7 @@ def _run_subtask(
             f"{where}: verify {_SUBTASK_VERIFY_MODE} failed: {', '.join(report.failures)}",
             issue_id=subtask_id,
             findings=report.failures,
-            evidence=verify_evidence(report, cwd, _SUBTASK_VERIFY_MODE),
+            evidence=repair_brief.verify_evidence(report, cwd, _SUBTASK_VERIFY_MODE),
         )
     _run_br(
         ctx.repo_root,
@@ -2075,7 +1827,9 @@ def _validate_lane(ctx: _Ctx, cwd: Path) -> AdvanceResult | None:
     return None
 
 
-def _rubric_evidence(verdicts: Sequence[rubrics.CheckVerdict]) -> tuple[GateEvidence, ...]:
+def _rubric_evidence(
+    verdicts: Sequence[rubrics.CheckVerdict],
+) -> tuple[repair_brief.GateEvidence, ...]:
     """The deterministic ``no`` verdicts as repair evidence (pure).
 
     The judged half is deliberately left out. A judged ``no`` is a decision, not a
@@ -2087,10 +1841,12 @@ def _rubric_evidence(verdicts: Sequence[rubrics.CheckVerdict]) -> tuple[GateEvid
     evaluator observed, which is what the repair has to act on.
     """
     return tuple(
-        GateEvidence(check=verdict.check_id, output=_clip_output(verdict.evidence))
+        repair_brief.GateEvidence(
+            check=verdict.check_id, output=repair_brief.clip_output(verdict.evidence)
+        )
         for verdict in verdicts
         if verdict.kind == rubrics.DETERMINISTIC and verdict.answer == rubrics.NO
-    )[:MAX_REPAIR_EVIDENCE]
+    )[: repair_brief.MAX_REPAIR_EVIDENCE]
 
 
 def _hold_for_validate_decision(ctx: _Ctx, disputed: list[rubrics.CheckVerdict]) -> AdvanceResult:
@@ -2216,7 +1972,7 @@ def lane_rework_spent(repo_root: Path, issue_id: str, config: PolicyConfig) -> i
     a tracker hiccup turn a bounded rework into a crash would cost more than the
     delayed ceiling, which the next attempt re-checks anyway.
     """
-    gates = dict.fromkeys((*config.required_gates, *REPAIR_GATES, merge.MERGE_GATE))
+    gates = dict.fromkeys((*config.required_gates, *repair_brief.REPAIR_GATES, merge.MERGE_GATE))
     try:
         return sum(policy.rework_charged(repo_root, issue_id, gate) for gate in gates)
     except RuntimeError, OSError, ValueError:
@@ -2231,7 +1987,7 @@ def _rework(  # noqa: PLR0913 — one parameter per recorded fact
     issue_id: str | None = None,
     landing: merge.MergeResult | None = None,
     findings: Sequence[str] = (),
-    evidence: Sequence[GateEvidence] = (),
+    evidence: Sequence[repair_brief.GateEvidence] = (),
 ) -> AdvanceResult:
     """Record a rework attempt for *gate* and block, escalating at the cap.
 
@@ -2261,7 +2017,7 @@ def _rework(  # noqa: PLR0913 — one parameter per recorded fact
     the convergence test judges, evidence is the text a repair run is briefed with
     and is deliberately not compared. Given a repairable gate and an allowance
     still to spend, both are left in the lane's worktree as a
-    :class:`RepairBrief` for its next dispatch (D5).
+    :class:`repair_brief.RepairBrief` for its next dispatch (D5).
     """
     target = issue_id or ctx.issue_id
     attempts = policy.record_rework(ctx.repo_root, target, gate)
@@ -2361,12 +2117,12 @@ def _brief_repair(  # noqa: PLR0913 — one parameter per recorded fact
     gate: str,
     reason: str,
     findings: Sequence[str],
-    evidence: Sequence[GateEvidence],
+    evidence: Sequence[repair_brief.GateEvidence],
     landing: merge.MergeResult | None,
 ) -> str:
     """Leave the repair brief in the lane's worktree; the detail suffix, or empty.
 
-    Only for a gate a repair run can act on (:data:`REPAIR_GATES`, plus a landing
+    Only for a gate a repair run can act on (:data:`repair_brief.REPAIR_GATES`, plus a landing
     that failed on its verify gate) and only while the allowance is unspent — an
     escalated round is a human's to dispose of, and briefing a dispatch that is not
     going to happen would leave a stale file for whatever runs next.
@@ -2375,22 +2131,22 @@ def _brief_repair(  # noqa: PLR0913 — one parameter per recorded fact
     brief is how "repair in place" is carried out, so it cannot be produced without
     the tree the failing diff is in.
     """
-    repairable = gate in REPAIR_GATES or (
-        landing is not None and landing.status == _LANDING_VERIFY_FAILED
+    repairable = gate in repair_brief.REPAIR_GATES or (
+        landing is not None and landing.status == repair_brief.LANDING_VERIFY_FAILED
     )
     if not repairable or ctx.state.worktree is None:
         return ""
     session = _bound_session(ctx, ctx.state.worktree)
     if session is None:
         return ""
-    brief = RepairBrief(
+    brief = repair_brief.RepairBrief(
         issue_id=target,
         gate=gate,
         reason=reason,
         findings=tuple(findings),
-        evidence=tuple(evidence)[:MAX_REPAIR_EVIDENCE],
+        evidence=tuple(evidence)[: repair_brief.MAX_REPAIR_EVIDENCE],
     )
-    if not write_repair_brief(Path(session.worktree_path), brief):
+    if not repair_brief.write_repair_brief(Path(session.worktree_path), brief):
         return ""
     return f"; briefed a repair for gate {gate!r} in worktree {ctx.state.worktree.name!r}"
 

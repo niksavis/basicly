@@ -24,7 +24,6 @@ from basicly import (
     merge,
     needs_input,
     policy,
-    rubrics,
     run_record,
     runner,
     supervise,
@@ -214,6 +213,17 @@ def _ready_leaf(at, monkeypatch: pytest.MonkeyPatch) -> dict:
     monkeypatch.setattr(worktree, "create", _create)
     monkeypatch.setattr(worktree, "list_sessions", lambda *_a, **_k: [])
     monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: None)
+
+    # Serve `show` a body with no `## Plan` heading: the pre-gate population, which the
+    # plan gate's ratchet admits. Stubbed because that gate fails closed on an unreadable
+    # record, so leaving the read unstubbed refuses every granted dispatch below for a
+    # reason none of these tests is about. At the spawn seam rather than at
+    # `br.read_record`, so a test that pins its own richer stand-in afterwards still wins.
+    def _show(_repo_root: Path, args: list[str], **_k) -> SimpleNamespace:
+        payload = json.dumps([{"id": "i", "title": "i", "description": "prose\n"}])
+        return SimpleNamespace(stdout=payload if args[:1] == ["show"] else "{}", returncode=0)
+
+    monkeypatch.setattr(br, "try_run_br", _show)
     return created
 
 
@@ -814,6 +824,23 @@ def test_classify_leaf_reports_failed_runner(
     assert result.blocked
     assert "runner 'codex' failed" in result.detail
     assert "exit 2" in result.detail and "boom" in result.detail
+
+
+def test_classify_leaf_blocks_at_the_concurrency_cap(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A leaf refuses to provision past [worktree].concurrency."""
+    created = _ready_leaf(at, monkeypatch)
+    _pin_runner(monkeypatch, "manual")
+    monkeypatch.setattr(
+        loop,
+        "load_worktree_config",
+        lambda *_a: WorktreeConfig(base_branch=None, concurrency=2),
+    )
+    monkeypatch.setattr(worktree, "list_sessions", lambda *_a, **_k: [_session("a"), _session("b")])
+    result = _advance(tmp_path)
+    assert result.blocked and "concurrency cap" in result.detail
+    assert "n" not in created
 
 
 def test_classify_feature_blocks_without_children(
@@ -2486,478 +2513,6 @@ def test_classify_leaf_forks_from_the_configured_base(
     assert created["repo_root"] == tmp_path
 
 
-# --- lane mini-loop (basicly-kjc5.9, factory design D4/D7) ------------------
-
-
-def _lane(has_children: bool = True) -> NodeState:
-    """A lane: a build-phase node bound to its own worktree, with sub-task beads."""
-    return _state("build", worktree=WorktreeBinding("i", "harness/i"), has_children=has_children)
-
-
-def _pin_lane(
-    monkeypatch: pytest.MonkeyPatch,
-    *,
-    subtasks: list[tuple[str, str]],
-    committed: tuple[str, ...] = (),
-    blocked: tuple[str, ...] = (),
-    pending: tuple[str, ...] = (),
-) -> dict:
-    """Pin a lane's worktree, sub-task states, and its git/decision/verify reads."""
-    calls: dict[str, list] = {"closed": [], "gates": [], "verify": []}
-    monkeypatch.setattr(worktree, "load_session", lambda *_a, **_k: _session("i"))
-    monkeypatch.setattr(loop, "_child_states", lambda _ctx: list(subtasks))
-    monkeypatch.setattr(loop.loop_state, "blocked_ids", lambda *_a: tuple(blocked))
-    monkeypatch.setattr(loop.decisions, "has_pending", lambda _r, issue: issue in pending)
-    monkeypatch.setattr(loop, "_subtask_committed", lambda sid, _s: sid in committed)
-
-    def _br(_root, args, **_k):
-        if args and args[0] == "close":
-            calls["closed"].append(args[1])
-        return SimpleNamespace(stdout="{}")
-
-    monkeypatch.setattr(loop, "_run_br", _br)
-
-    def _run_verify(_root, mode, *_a, **_k):
-        calls["verify"].append(mode)
-        return verify.VerifyReport(mode, ())
-
-    monkeypatch.setattr(verify, "run_verify", _run_verify)
-
-    def _report(_root, issue_id, report, **_k):
-        calls["gates"].append((issue_id, report.mode))
-        return True, "ok"
-
-    monkeypatch.setattr(verify, "report_gate", _report)
-    return calls
-
-
-def _no_rubrics(monkeypatch: pytest.MonkeyPatch) -> None:
-    """No rubric covers the lane's work class: validate has nothing to check."""
-    monkeypatch.setattr(loop.rubrics, "load_rubrics", lambda *_a, **_k: [])
-
-
-def test_lane_records_its_subtask_plan_then_blocks(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """A bound node with a sub-task plan decomposes in place and stays in build."""
-    at(_lane(has_children=False))
-    planned = {}
-
-    def _decompose(_root, feature_id, children):
-        planned["feature"], planned["n"] = feature_id, len(children)
-        return decompose.DecomposeResult(feature_id, (), (("i.1",),))
-
-    monkeypatch.setattr(decompose, "decompose", _decompose)
-    child = decompose.ChildSpec("t", ("ac",), ("src/x.py",))
-    result = _advance(tmp_path, children=(child, child))
-    assert planned == {"feature": "i", "n": 2}
-    assert result.to_phase == "build" and result.blocked
-    assert "advance again to run them in sequence" in result.detail
-
-
-def test_lane_plan_over_the_subtask_bound_is_refused(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """max_subtasks_per_lane bounds the plan before anything is recorded (design §6)."""
-    at(_lane(has_children=False))
-
-    def _no_decompose(*_a, **_k):
-        raise AssertionError("an over-bound plan must not be recorded")
-
-    monkeypatch.setattr(decompose, "decompose", _no_decompose)
-    config = PolicyConfig(required_gates=("verify",), max_rework=2, max_subtasks_per_lane=2)
-    child = decompose.ChildSpec("t", ("ac",), ("src/x.py",))
-    result = loop.advance(
-        tmp_path, "i", config=config, inputs=loop.Inputs(children=(child, child, child))
-    )
-    assert result.blocked and "max_subtasks_per_lane bound (2)" in result.detail
-
-
-def test_lane_with_too_many_subtask_beads_blocks(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Sub-task beads created out of band are bounded too, before any dispatch."""
-    at(_lane())
-    _pin_lane(monkeypatch, subtasks=[(f"i.{n}", "open") for n in range(3)])
-    config = PolicyConfig(required_gates=("verify",), max_rework=2, max_subtasks_per_lane=2)
-    result = loop.advance(tmp_path, "i", config=config)
-    assert result.blocked and "over the [policy] max_subtasks_per_lane bound (2)" in result.detail
-
-
-def test_lane_dispatches_the_next_subtask_fresh_and_fast_verifies_it(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """One fresh dispatch per sub-task in the lane worktree, then a fast verify (D4/D7)."""
-    at(_lane())
-    calls = _pin_lane(monkeypatch, subtasks=[("i.1", "open"), ("i.2", "open")])
-    _pin_runner(monkeypatch, "claude")
-    dispatched = {}
-
-    def _run(spec, prompt, cwd, **_k):
-        dispatched["prompt"], dispatched["cwd"] = prompt, cwd
-        # The commit lands during the run, as a real dispatch would.
-        monkeypatch.setattr(loop, "_subtask_committed", lambda *_a: True)
-        return runner.RunResult(spec.name, tuple(spec.command), executed=True, returncode=0)
-
-    monkeypatch.setattr(runner, "run", _run)
-    result = loop.advance(tmp_path, "i", config=CONFIG)
-
-    assert "i.1" in dispatched["prompt"] and dispatched["cwd"] == Path("/tmp/i")
-    assert calls["verify"] == ["fast"] and calls["gates"] == [("i.1", "fast")]
-    assert calls["closed"] == ["i.1"]
-    assert result.action == "sub-task" and result.progressed and not result.blocked
-    assert result.to_phase == "build" and "sub-task 1/2 (i.1)" in result.detail
-
-
-def test_lane_runs_subtasks_in_order_skipping_closed_ones(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """A resumed lane picks up at the first still-open sub-task, never re-running one."""
-    at(_lane())
-    calls = _pin_lane(
-        monkeypatch,
-        subtasks=[("i.1", "closed"), ("i.2", "open"), ("i.3", "open")],
-        committed=("i.2",),
-    )
-    _pin_runner(monkeypatch, "claude")
-    monkeypatch.setattr(
-        runner, "run", lambda *_a, **_k: pytest.fail("a committed sub-task must not re-dispatch")
-    )
-    result = loop.advance(tmp_path, "i", config=CONFIG)
-    assert calls["closed"] == ["i.2"] and calls["gates"] == [("i.2", "fast")]
-    assert "sub-task 2/3 (i.2)" in result.detail
-
-
-def test_lane_handoff_blocks_for_the_driving_agent(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """A handoff runner leaves the sub-task to the driving agent and blocks."""
-    at(_lane())
-    calls = _pin_lane(monkeypatch, subtasks=[("i.1", "open")])
-    _pin_runner(monkeypatch, "manual")
-    result = loop.advance(tmp_path, "i", config=CONFIG)
-    assert result.blocked and "awaiting the agent's work" in result.detail
-    assert "sub-task 1/1 (i.1)" in result.detail
-    assert calls["closed"] == [] and calls["verify"] == []
-
-
-def test_lane_subtask_without_a_commit_reworks_the_subtask(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """A clean run that committed nothing is bounded on the sub-task's own record."""
-    at(_lane())
-    _pin_lane(monkeypatch, subtasks=[("i.1", "open")])
-    _pin_runner(monkeypatch, "claude")
-    monkeypatch.setattr(
-        runner,
-        "run",
-        lambda spec, *_a, **_k: runner.RunResult(
-            spec.name, tuple(spec.command), executed=True, returncode=0
-        ),
-    )
-    reworked: list[tuple[str, str]] = []
-    monkeypatch.setattr(
-        policy, "record_rework", lambda _r, issue, gate: reworked.append((issue, gate)) or 1
-    )
-    result = loop.advance(tmp_path, "i", config=CONFIG)
-    assert reworked == [("i.1", "verify")]
-    assert result.blocked and "without committing anything referencing i.1" in result.detail
-
-
-def test_lane_subtask_verify_failure_reworks_the_subtask_not_the_lane(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """A failed fast verify bounds the sub-task, so one bad step cannot burn the lane."""
-    at(_lane())
-    _pin_lane(monkeypatch, subtasks=[("i.1", "open")], committed=("i.1",))
-    monkeypatch.setattr(
-        verify,
-        "run_verify",
-        lambda _r, mode, *_a, **_k: verify.VerifyReport(
-            mode, (verify.CheckResult("pytest", "fail", 1),)
-        ),
-    )
-    reworked: list[tuple[str, str]] = []
-    monkeypatch.setattr(
-        policy, "record_rework", lambda _r, issue, gate: reworked.append((issue, gate)) or 1
-    )
-    findings = _pin_finding_sets(monkeypatch)
-    result = loop.advance(tmp_path, "i", config=CONFIG)
-    assert reworked == [("i.1", "verify")]
-    assert result.blocked and "verify fast failed: pytest" in result.detail
-    # The sub-task's own finding set, on its own record, so a repeat is detectable.
-    assert findings == [("i.1", "verify", ("pytest",))]
-
-
-def test_lane_follows_the_dependency_chain_not_the_tracker_order(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """The blocks chain decides what runs next, not the order br lists dependents in.
-
-    Same-scope sub-tasks are serialized by a ``blocks`` chain at decompose time, so
-    the chain head is the only unblocked one — that is what makes the sequence
-    strict (D7), not the order the tracker happens to return.
-    """
-    at(_lane())
-    calls = _pin_lane(
-        monkeypatch,
-        subtasks=[("i.2", "open"), ("i.1", "open")],
-        committed=("i.1",),
-        blocked=("i.2",),
-    )
-    result = loop.advance(tmp_path, "i", config=CONFIG)
-    assert calls["closed"] == ["i.1"]
-    assert result.action == "sub-task" and "(i.1)" in result.detail
-
-
-def test_lane_holds_a_subtask_waiting_on_a_decision(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """A sub-task with a queued judgment is not re-dispatched into the same block."""
-    at(_lane())
-    _pin_lane(monkeypatch, subtasks=[("i.1", "open")], pending=("i.1",))
-    monkeypatch.setattr(
-        runner, "run", lambda *_a, **_k: pytest.fail("a held sub-task must not dispatch")
-    )
-    result = loop.advance(tmp_path, "i", config=CONFIG)
-    assert result.blocked and "waiting on a dependency or a queued decision" in result.detail
-
-
-def test_lane_integrates_with_full_verify_once_every_subtask_closes(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """All sub-tasks closed: the lane lands under full verify and moves to verify (D4)."""
-    at(_lane())
-    calls = _pin_lane(monkeypatch, subtasks=[("i.1", "closed"), ("i.2", "closed")])
-    _no_rubrics(monkeypatch)
-    landed = {}
-
-    def _merge(_root, name, *, bead, verify_mode, override_gate):
-        landed["name"], landed["bead"], landed["mode"] = name, bead, verify_mode
-        landed["override"] = override_gate
-        return merge.MergeResult(name, "merged", "landed")
-
-    monkeypatch.setattr(merge, "merge_worktree", _merge)
-    # Even a `fast` mode asked for on the command line cannot downgrade a lane
-    # integration: the change class picks the mode, not the caller.
-    result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(verify_mode="fast"))
-    # override False: nothing answered a `land anyway`, so the landing keeps its gate.
-    assert landed == {"name": "i", "bead": "i", "mode": "full", "override": False}
-    assert calls["verify"] == ["full"] and calls["gates"] == [("i", "full")]
-    assert result.to_phase == "verify" and result.action == "merged"
-
-
-def test_lane_validate_gate_blocks_the_landing_when_it_fails(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Validate is required at lane level: a failing rubric stops the merge (D4)."""
-    at(_lane())
-    _pin_lane(monkeypatch, subtasks=[("i.1", "closed")])
-    rubric = rubrics.Rubric(
-        id="r",
-        description="d",
-        applies_to=("task",),
-        checks=(
-            rubrics.RubricCheck("acceptance", "does it?", rubrics.DETERMINISTIC, command="false"),
-        ),
-    )
-    monkeypatch.setattr(loop.rubrics, "load_rubrics", lambda *_a, **_k: [rubric])
-    monkeypatch.setattr(
-        loop.rubrics,
-        "evaluate",
-        lambda *_a, **_k: [
-            rubrics.CheckVerdict("acceptance", rubrics.DETERMINISTIC, rubrics.NO, "exit 1")
-        ],
-    )
-    recorded: list[str] = []
-    monkeypatch.setattr(
-        loop.rubrics,
-        "report_gate",
-        lambda _r, issue, _v: recorded.append(issue) or (True, "ok"),
-    )
-    monkeypatch.setattr(
-        merge, "merge_worktree", lambda *_a, **_k: pytest.fail("validate must gate the landing")
-    )
-    monkeypatch.setattr(policy, "record_rework", lambda *_a: 1)
-    findings = _pin_finding_sets(monkeypatch)
-    result = loop.advance(tmp_path, "i", config=CONFIG)
-    assert recorded == ["i"]
-    assert result.blocked and "lane validate failed: acceptance" in result.detail
-    # The failed checks are the rubric gate's finding set (basicly-m4zv.5).
-    assert findings == [("i", rubrics.RUBRIC_GATE, ("acceptance",))]
-
-
-def test_lane_validate_evaluates_in_the_lane_worktree(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Validate judges the lane's own tree, before its work is merged anywhere."""
-    at(_lane())
-    _pin_lane(monkeypatch, subtasks=[("i.1", "closed")])
-    rubric = rubrics.Rubric(
-        id="r",
-        description="d",
-        applies_to=("task",),
-        checks=(rubrics.RubricCheck("tests", "tested?", rubrics.JUDGED),),
-    )
-    monkeypatch.setattr(loop.rubrics, "load_rubrics", lambda *_a, **_k: [rubric])
-    seen = {}
-
-    def _evaluate(issue_id, _rubric, repo_root, *_a, **_k):
-        seen["issue"], seen["cwd"] = issue_id, repo_root
-        return [rubrics.CheckVerdict("tests", rubrics.JUDGED, rubrics.YES, "tests present")]
-
-    monkeypatch.setattr(loop.rubrics, "evaluate", _evaluate)
-    monkeypatch.setattr(loop.rubrics, "report_gate", lambda *_a, **_k: (True, "ok"))
-    monkeypatch.setattr(
-        merge, "merge_worktree", lambda *_a, **_k: merge.MergeResult("i", "merged", "landed")
-    )
-    result = loop.advance(tmp_path, "i", config=CONFIG)
-    assert seen == {"issue": "i", "cwd": Path("/tmp/i")}
-    assert result.to_phase == "verify" and result.action == "merged"
-
-
-def _judged_no_lane(monkeypatch: pytest.MonkeyPatch, answer: str = rubrics.NO) -> None:
-    """Pin a lane whose only rubric check is judged and answers *answer*."""
-    rubric = rubrics.Rubric(
-        id="r",
-        description="d",
-        applies_to=("task",),
-        checks=(rubrics.RubricCheck("acceptance", "met?", rubrics.JUDGED),),
-    )
-    monkeypatch.setattr(loop.rubrics, "load_rubrics", lambda *_a, **_k: [rubric])
-    monkeypatch.setattr(
-        loop.rubrics,
-        "evaluate",
-        lambda *_a, **_k: [
-            rubrics.CheckVerdict(
-                "acceptance",
-                rubrics.JUDGED,
-                answer,
-                "criterion 2 unevidenced",
-                # Only a judged NO is a finding, and only a finding carries a
-                # severity — the record refuses the other combinations outright.
-                rubrics.BLOCKER if answer == rubrics.NO else "",
-            )
-        ],
-    )
-    monkeypatch.setattr(loop.rubrics, "report_gate", lambda *_a, **_k: (True, "ok"))
-
-
-def test_judged_no_queues_a_decision_and_holds_the_lane(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """A judged NO is a decision, not a test failure (D4 amended, roster R4)."""
-    at(_lane())
-    _pin_lane(monkeypatch, subtasks=[("i.1", "closed")])
-    _judged_no_lane(monkeypatch)
-    queued: list[tuple[str, str, str, str]] = []
-
-    def _enqueue(_repo, issue, kind, question, detail="", **_kwargs):
-        queued.append((issue, kind, question, detail))
-
-    monkeypatch.setattr(loop.decisions, "enqueue", _enqueue)
-    merged: list[str] = []
-
-    def _merge(*_args, **_kwargs):
-        merged.append("merged")
-        return merge.MergeResult("i", "merged", "landed")
-
-    monkeypatch.setattr(merge, "merge_worktree", _merge)
-    result = loop.advance(tmp_path, "i", config=CONFIG)
-
-    assert len(queued) == 1
-    issue, kind, question, detail = queued[0]
-    assert (issue, kind) == ("i", "validate")
-    # The severity rides onto the queued item: a queue that renders a MINOR and a
-    # BLOCKER identically is a queue disposed of in arrival order.
-    assert "acceptance (BLOCKER)" in question
-    assert detail == "acceptance: criterion 2 unevidenced"
-    assert merged == []  # the lane holds: it neither lands nor bounces
-    assert result.blocked and result.action == "decision"
-    assert "acceptance" in result.detail
-
-
-def test_judged_no_does_not_spend_a_rework_attempt(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """A false NO from a model must not consume the budget kept for real defects."""
-    at(_lane())
-    _pin_lane(monkeypatch, subtasks=[("i.1", "closed")])
-    _judged_no_lane(monkeypatch)
-    monkeypatch.setattr(loop.decisions, "enqueue", lambda *_a, **_k: None)
-    attempts: list[str] = []
-    monkeypatch.setattr(policy, "record_rework", lambda _r, _i, gate: attempts.append(gate) or 1)
-    loop.advance(tmp_path, "i", config=CONFIG)
-    assert attempts == []
-
-
-def test_judged_unknown_is_not_a_dispute(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """An UNKNOWN verdict means no agent answered (handoff) — it must not hold the lane."""
-    at(_lane())
-    _pin_lane(monkeypatch, subtasks=[("i.1", "closed")])
-    _judged_no_lane(monkeypatch, answer=rubrics.UNKNOWN)
-    queued: list[str] = []
-    monkeypatch.setattr(loop.decisions, "enqueue", lambda *_a, **_k: queued.append("q"))
-    monkeypatch.setattr(
-        merge, "merge_worktree", lambda *_a, **_k: merge.MergeResult("i", "merged", "landed")
-    )
-    result = loop.advance(tmp_path, "i", config=CONFIG)
-    assert queued == []
-    assert result.action == "merged"
-
-
-def test_references_bead_requires_a_whole_id_not_a_prefix() -> None:
-    """A sibling id sharing a prefix is not proof of work (i.1 vs i.10)."""
-    assert loop.references_bead("fix(loop): do it (basicly-i.1)", "basicly-i.1")
-    assert loop.references_bead("basicly-i.1 leads the subject", "basicly-i.1")
-    assert not loop.references_bead("fix(loop): do it (basicly-i.10)", "basicly-i.1")
-    assert not loop.references_bead("nothing to see here", "basicly-i.1")
-
-
-def test_lane_blocks_when_its_worktree_session_is_gone(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """A lane whose worktree record vanished is re-provisioned, not dispatched blind."""
-    at(_lane())
-    _pin_lane(monkeypatch, subtasks=[("i.1", "open")])
-    monkeypatch.setattr(worktree, "load_session", lambda *_a, **_k: None)
-    result = loop.advance(tmp_path, "i", config=CONFIG)
-    assert result.blocked and "no session record" in result.detail
-
-
-def test_plain_leaf_build_is_unchanged_by_the_lane_path(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """A leaf with no sub-task beads still lands its own dispatch directly."""
-    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
-    monkeypatch.setattr(loop, "_run_lane", lambda *_a: pytest.fail("a leaf has no lane mini-loop"))
-    monkeypatch.setattr(
-        merge, "merge_worktree", lambda *_a, **_k: merge.MergeResult("i", "merged", "landed")
-    )
-    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
-    monkeypatch.setattr(verify, "report_gate", lambda *_a, **_k: (True, "ok"))
-    assert _advance(tmp_path).action == "merged"
-
-
-def test_classify_leaf_blocks_at_the_concurrency_cap(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """A leaf refuses to provision past [worktree].concurrency."""
-    created = _ready_leaf(at, monkeypatch)
-    _pin_runner(monkeypatch, "manual")
-    monkeypatch.setattr(
-        loop,
-        "load_worktree_config",
-        lambda *_a: WorktreeConfig(base_branch=None, concurrency=2),
-    )
-    monkeypatch.setattr(worktree, "list_sessions", lambda *_a, **_k: [_session("a"), _session("b")])
-    result = _advance(tmp_path)
-    assert result.blocked and "concurrency cap" in result.detail
-    assert "n" not in created
-
-
 # --- A skipped tracker-state commit is never silent (basicly-f7li) ------------
 
 
@@ -3024,376 +2579,6 @@ def test_a_published_claim_adds_no_warning(
 
     assert tracker_commits == [("i", "record the claim before provisioning")]
     assert "NOT committed" not in result.detail
-
-
-# --- A chronically unreliable gate escalates (basicly-jr0l.41) -----------------
-
-
-def _unreliable_landing(monkeypatch: pytest.MonkeyPatch, events: int) -> list[tuple[str, str]]:
-    """Drive a landing whose gate is unreliable, with the count already at *events*."""
-    attempt = merge.MergeResult(
-        "i", merge.VERIFY_UNRELIABLE, "verify full failed on pytest but passed unchanged on re-run"
-    )
-    monkeypatch.setattr(merge, "merge_worktree", lambda *_a, **_k: attempt)
-    monkeypatch.setattr(policy, "record_unreliable_gate", lambda *_a, **_k: events)
-    enqueued: list[tuple[str, str]] = []
-    monkeypatch.setattr(
-        decisions,
-        "enqueue",
-        lambda _root, _issue, kind, question, *_a, **_k: enqueued.append((kind, question)),
-    )
-    return enqueued
-
-
-def test_a_flaky_gate_below_the_bound_blocks_without_escalating(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """One flake is no evidence against the work, so it must not reach a human yet."""
-    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
-    enqueued = _unreliable_landing(monkeypatch, events=1)
-
-    result = _advance(tmp_path)
-
-    assert result.blocked
-    assert enqueued == []
-
-
-def test_a_chronically_unreliable_gate_escalates_instead_of_deferring_forever(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """The livelock: no budget is spent, so no cap is reached, so nothing escalated.
-
-    Observed in the field — a br clock defect failed one arbitrary test per run,
-    the loop correctly refused to charge rework, and the lane could never land
-    because "forgiven" had no exit. The bound gives it one.
-    """
-    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
-    enqueued = _unreliable_landing(monkeypatch, events=policy.MAX_UNRELIABLE_GATE_EVENTS)
-
-    result = _advance(tmp_path)
-
-    assert result.blocked
-    assert len(enqueued) == 1
-    kind, question = enqueued[0]
-    assert kind == policy.REWORK_ESCALATION_KIND
-    assert policy.gate_from_unreliable_escalation(question) == merge.MERGE_GATE
-    assert "escalated" in result.detail
-    # That it is never charged as rework is pinned at the policy level, where the
-    # tracker is faked — asserting it here would drag a real br call into a unit test.
-
-
-# --- A shared-tracker gate is not this lane's failure (basicly-qorx) -----------
-
-
-def _foreign_landing(
-    monkeypatch: pytest.MonkeyPatch, *, queue: tuple[decisions.DecisionItem, ...] = ()
-) -> dict:
-    """Drive a landing whose gate another lane's record invalidated.
-
-    *queue* is what the bead's decision queue already holds, so the ask-once guard
-    can be exercised without a real tracker.
-    """
-    seen: dict = {"charged": [], "attributed": [], "enqueued": []}
-    attempt = merge.MergeResult(
-        "i",
-        merge.VERIFY_FOREIGN,
-        "verify full failed on pytest — invalidated in the shared tracker by "
-        "basicly-tcmy.5, not by this lane's diff",
-        culprits=("basicly-tcmy.5",),
-    )
-    monkeypatch.setattr(merge, "merge_worktree", lambda *_a, **_k: attempt)
-    monkeypatch.setattr(policy, "record_rework", lambda *a, **_k: seen["charged"].append(a) or 1)
-    monkeypatch.setattr(
-        policy,
-        "record_shared_gate_failure",
-        lambda *a, **_k: seen["attributed"].append(a) or 1,
-    )
-    monkeypatch.setattr(decisions, "items_on", lambda *_a, **_k: queue)
-    monkeypatch.setattr(
-        decisions,
-        "enqueue",
-        lambda _root, _issue, kind, question, *_a, **_k: seen["enqueued"].append((kind, question)),
-    )
-    return seen
-
-
-def test_a_gate_another_lanes_record_failed_spends_no_rework_and_names_that_lane(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """The measured defect: two siblings were charged 1/2 for a declaration in neither diff.
-
-    Every lane in a supervised pass shares one `.beads` through the redirect, so the
-    working-set ceiling asserted over basicly-tcmy.5's finishing record inside the
-    landings of basicly-tcmy.6 and basicly-tcmy.22 as well.
-    """
-    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
-    seen = _foreign_landing(monkeypatch)
-
-    result = _advance(tmp_path)
-
-    assert result.blocked
-    assert seen["charged"] == []  # the whole point
-    assert [(one[1], one[2], one[3]) for one in seen["attributed"]] == [
-        ("i", merge.MERGE_GATE, ("basicly-tcmy.5",))
-    ]
-
-
-def test_it_escalates_on_the_first_occurrence_rather_than_after_a_bound(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """A flake may clear itself on the next landing; a record in the tracker will not.
-
-    So the bound an unreliable gate gets would only delay the escalation — every
-    retry reaches the identical verdict (basicly-jr0l.16's reasoning about a
-    deterministic refusal).
-    """
-    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
-    seen = _foreign_landing(monkeypatch)
-
-    result = _advance(tmp_path)
-
-    assert len(seen["enqueued"]) == 1
-    kind, question = seen["enqueued"][0]
-    assert kind == policy.REWORK_ESCALATION_KIND
-    assert policy.gate_from_shared_gate_escalation(question) == merge.MERGE_GATE
-    assert "basicly-tcmy.5" in question
-    assert "escalated" in result.detail
-
-
-def test_an_answered_shared_gate_escalation_is_not_asked_again(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Ask once: an answered item re-opens under the next generation, which is a ladder.
-
-    The remedies are the human's to carry out and neither is on this lane's side, so
-    the answer cannot release the landing — the node holds on the answer it has
-    (basicly-tcmy.6's ladder, not repeated).
-    """
-    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
-    answered = decisions.DecisionItem(
-        decision_id="i#f1a5e",
-        issue_id="i",
-        kind=policy.REWORK_ESCALATION_KIND,
-        question=policy.shared_gate_escalation_question(merge.MERGE_GATE, ("basicly-tcmy.5",)),
-        detail="invalidated in the shared tracker by basicly-tcmy.5",
-        answer="fixed tcmy.5's record",
-        answered_by="human",
-    )
-    seen = _foreign_landing(monkeypatch, queue=(answered,))
-
-    result = _advance(tmp_path)
-
-    assert result.blocked
-    assert seen["enqueued"] == []
-    assert "already answered by human" in result.detail
-    assert seen["charged"] == []
-
-
-# --- ...and the escalation's `land anyway` is carried out (basicly-tcmy.6) ------
-#
-# The defect: answering only released the lane. The landing re-attempted, the same
-# flaky gate tripped, the count passed the bound again, and the identical question
-# re-opened under the next generation — an unbounded ladder of questions with the
-# offered remedy unimplemented.
-
-
-def _escalation_item(answer: str, *, by: str = "human") -> decisions.DecisionItem:
-    """One answered unreliable-gate escalation, worded by the code that words it."""
-    return decisions.DecisionItem(
-        decision_id="i#f1a5e",
-        issue_id="i",
-        kind=policy.REWORK_ESCALATION_KIND,
-        question=policy.unreliable_gate_escalation_question(merge.MERGE_GATE),
-        detail="verify full failed on pytest but passed unchanged on re-run",
-        answer=answer,
-        answered_by=by,
-    )
-
-
-def _landing_after_answer(
-    monkeypatch: pytest.MonkeyPatch,
-    *,
-    queue: list[decisions.DecisionItem],
-    spent: bool = False,
-    landing: merge.MergeResult | None = None,
-) -> dict:
-    """Drive a landing with *queue* already on the bead and the flake at the bound.
-
-    The merge stub reports whether the landing was asked to skip its gate, so the
-    override is observed at the boundary it crosses rather than inferred from a
-    message. *landing* overrides what the merge returns, for the cases where the
-    override cannot have been used.
-    """
-    seen: dict = {"override_gate": None, "spent": [], "enqueued": []}
-    unreliable = merge.MergeResult(
-        "i", merge.VERIFY_UNRELIABLE, "verify full failed on pytest but passed unchanged on re-run"
-    )
-    merged = landing or merge.MergeResult("i", "merged", "merged harness/i into main @ abc1234")
-
-    def _merge(_root, _name, *, bead, verify_mode, override_gate):  # noqa: ARG001
-        seen["override_gate"] = override_gate
-        return merged if override_gate else unreliable
-
-    monkeypatch.setattr(merge, "merge_worktree", _merge)
-    monkeypatch.setattr(decisions, "items_on", lambda *_a, **_k: tuple(queue))
-    monkeypatch.setattr(policy, "gate_override_spent", lambda *_a, **_k: spent)
-    monkeypatch.setattr(
-        policy, "spend_gate_override", lambda _r, _i, gate: seen["spent"].append(gate) or True
-    )
-    monkeypatch.setattr(policy, "record_unreliable_gate", lambda *_a, **_k: 3)
-    monkeypatch.setattr(
-        decisions,
-        "enqueue",
-        lambda _root, _issue, kind, question, *_a, **_k: seen["enqueued"].append((kind, question)),
-    )
-    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
-    monkeypatch.setattr(verify, "report_gate", lambda *_a, **_k: (True, "ok"))
-    return seen
-
-
-def test_an_answered_land_anyway_lands_once_without_re_running_the_gate(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """The remedy the escalation offers, carried out — it used to do nothing at all."""
-    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
-    seen = _landing_after_answer(monkeypatch, queue=[_escalation_item("land anyway")])
-
-    result = _advance(tmp_path)
-
-    assert seen["override_gate"] is True
-    assert seen["spent"] == [merge.MERGE_GATE]  # one-shot, spent at the landing
-    assert seen["enqueued"] == []
-    assert result.to_phase == "verify" and result.action == "merged"
-    # A landing that skipped a gate says so; "merged @ abc1234" alone would read green.
-    assert "skipped" in result.detail and merge.MERGE_GATE in result.detail
-
-
-def test_the_answered_escalation_is_never_re_asked_under_a_new_generation(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """The ladder: `enqueue` re-opens an *answered* item, so re-asking was unbounded.
-
-    `fix the flake` leaves the flake in place until a human fixes it, so the gate
-    trips again on the very next landing. Asking again is the livelock, not the fix.
-    """
-    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
-    seen = _landing_after_answer(monkeypatch, queue=[_escalation_item("fix the flake")])
-
-    result = _advance(tmp_path)
-
-    assert seen["override_gate"] is False  # the other choice authorises nothing
-    assert seen["spent"] == []
-    assert seen["enqueued"] == []
-    assert result.blocked and "already answered" in result.detail
-    assert "fix the flake" in result.detail
-
-
-def test_a_spent_override_does_not_bypass_the_gate_again(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """One answer, one landing: a standing `land anyway` must not skip the gate forever."""
-    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
-    seen = _landing_after_answer(monkeypatch, queue=[_escalation_item("land anyway")], spent=True)
-
-    result = _advance(tmp_path)
-
-    assert seen["override_gate"] is False
-    assert seen["spent"] == []
-    assert seen["enqueued"] == []
-    assert result.blocked and "no longer authorises a landing" in result.detail
-
-
-def test_a_delegated_land_anyway_does_not_skip_the_gate(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """An autonomy grant may dispose of the question; it may not waive a landing gate."""
-    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
-    seen = _landing_after_answer(
-        monkeypatch,
-        queue=[_escalation_item("land anyway", by=f"{decisions.DECIDER_BY_PREFIX}opus")],
-    )
-
-    result = _advance(tmp_path)
-
-    assert seen["override_gate"] is False
-    assert seen["spent"] == []
-    assert seen["enqueued"] == []  # still no ladder — the answer disposed of the ask
-    assert result.blocked
-
-
-def test_an_override_is_not_spent_by_a_landing_that_never_reached_the_gate(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """`not-ready` is operator-fixable and pre-gate, so it must not burn the one shot."""
-    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
-    seen = _landing_after_answer(
-        monkeypatch,
-        queue=[_escalation_item("land anyway")],
-        landing=merge.MergeResult("i", "not-ready", "no committed work on harness/i"),
-    )
-
-    result = _advance(tmp_path)
-
-    assert seen["override_gate"] is True  # offered...
-    assert seen["spent"] == []  # ...but the gate was never reached, so it survives
-    assert result.blocked and "no committed work" in result.detail
-
-
-def test_land_anyway_on_another_gate_does_not_waive_the_landing_gate(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """The override is authorised for the gate the answered question named, and no other.
-
-    Only the landing gate is escalated this way today, so this pins the reading of the
-    gate name rather than the assumption behind it.
-    """
-    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
-    other = decisions.DecisionItem(
-        decision_id="i#a11e",
-        issue_id="i",
-        kind=policy.REWORK_ESCALATION_KIND,
-        question=policy.unreliable_gate_escalation_question("rubric"),
-        answer="land anyway",
-        answered_by="human",
-    )
-    seen = _landing_after_answer(monkeypatch, queue=[other])
-
-    result = _advance(tmp_path)
-
-    assert seen["override_gate"] is False
-    assert seen["spent"] == []
-    assert result.blocked
-    # An answered unreliable escalation is on the bead, so the ladder still ends here.
-    assert seen["enqueued"] == []
-
-
-def test_a_rework_escalation_on_the_queue_never_overrides_a_landing_gate(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Both escalations ride one decision kind, so only the question may tell them apart.
-
-    A `retry` on the rework question must not be read as permission to skip a gate.
-    """
-    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
-    rework = decisions.DecisionItem(
-        decision_id="i#0dd1",
-        issue_id="i",
-        kind=policy.REWORK_ESCALATION_KIND,
-        question=policy.rework_escalation_question(merge.MERGE_GATE),
-        answer="retry",
-        answered_by="human",
-    )
-    seen = _landing_after_answer(monkeypatch, queue=[rework])
-
-    result = _advance(tmp_path)
-
-    assert seen["override_gate"] is False
-    assert seen["spent"] == []
-    # No unreliable-gate escalation has been answered, so this one is still asked once.
-    assert [q for _, q in seen["enqueued"]] == [
-        policy.unreliable_gate_escalation_question(merge.MERGE_GATE)
-    ]
-    assert result.blocked
 
 
 # --- declared evidence artifacts (basicly-m4zv.13) --------------------------
@@ -3531,6 +2716,48 @@ def test_a_build_artifact_is_looked_for_in_the_lane_worktree_not_the_base(
     monkeypatch.setattr(policy, "record_evidence", lambda *_a: True)
     result = loop.advance(tmp_path, "i", config=_evidence_config(build="build.log"))
     assert result.to_phase == "verify" and result.action == "merged"
+
+
+def _lane(has_children: bool = True) -> NodeState:
+    """A lane: a build-phase node bound to its own worktree, with sub-task beads."""
+    return _state("build", worktree=WorktreeBinding("i", "harness/i"), has_children=has_children)
+
+
+def _pin_lane(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    subtasks: list[tuple[str, str]],
+    committed: tuple[str, ...] = (),
+    blocked: tuple[str, ...] = (),
+    pending: tuple[str, ...] = (),
+) -> dict:
+    """Pin a lane's worktree, sub-task states, and its git/decision/verify reads."""
+    calls: dict[str, list] = {"closed": [], "gates": [], "verify": []}
+    monkeypatch.setattr(worktree, "load_session", lambda *_a, **_k: _session("i"))
+    monkeypatch.setattr(loop, "_child_states", lambda _ctx: list(subtasks))
+    monkeypatch.setattr(loop.loop_state, "blocked_ids", lambda *_a: tuple(blocked))
+    monkeypatch.setattr(loop.decisions, "has_pending", lambda _r, issue: issue in pending)
+    monkeypatch.setattr(loop, "_subtask_committed", lambda sid, _s: sid in committed)
+
+    def _br(_root, args, **_k):
+        if args and args[0] == "close":
+            calls["closed"].append(args[1])
+        return SimpleNamespace(stdout="{}")
+
+    monkeypatch.setattr(loop, "_run_br", _br)
+
+    def _run_verify(_root, mode, *_a, **_k):
+        calls["verify"].append(mode)
+        return verify.VerifyReport(mode, ())
+
+    monkeypatch.setattr(verify, "run_verify", _run_verify)
+
+    def _report(_root, issue_id, report, **_k):
+        calls["gates"].append((issue_id, report.mode))
+        return True, "ok"
+
+    monkeypatch.setattr(verify, "report_gate", _report)
+    return calls
 
 
 def test_a_declared_build_artifact_does_not_block_a_lanes_own_subtasks(
