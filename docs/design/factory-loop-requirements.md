@@ -95,6 +95,8 @@ at build→verify; everything else is checkpoints and lints.
 | D18 [D] | **Every planned child names how it is demonstrated end-to-end.** The plan gate refuses a child that cannot | Makes D10 satisfiable by construction. A child with no consumer-visible behaviour has no check to name, which is the horizontal-slice failure — and our decomposer slices horizontally *by construction* today, because scope-glob overlap is file adjacency (§8.2) |
 | D21 [D] | **Context control is field selection, not encoding.** Project tracker payloads to the fields a phase needs; encode only what remains, and only where a bijective codec is safe | Measured 2026-08-08 (§14). Selection beats serialisation by ~500x on this repo's own data |
 | D22 [D] | **Anything built against the tracker is written to our own record vocabulary, never to `br`'s payload shape** | `br` and `bv` are being removed (`work-tracker.md`). A field allowlist naming `br`'s JSON keys would have to be rewritten at the flip; one naming our own fields survives it, and only the adapter changes |
+| D23 [D] | **A sizing control with no recorded correct firing becomes observability; a control that has earned one keeps its teeth** | §15.7. Measured 2026-08-08: the grant spend ceiling fired correctly 5 times and the rework cap 78, while the runner timeout, the working-set band and the context ceiling have **zero** between them — and all three of those predict how large a unit of work will be, which this repo has never predicted well. A prediction that blocks must be right; a prediction that reports costs nothing when it is wrong. Demotion is not deletion: the number stays recorded, surfaced and falsifiable, because §15.6's gate was wrong for months *with the telemetry already contradicting it* |
+| D24 [D] | **`factory-design.md` is no longer the tiebreaker.** Authority runs: measured evidence in this repo → this document → `factory-design.md` | Owner, 2026-08-08. That document's §9 — "the honest answer to *is the design real?*" — contradicts itself on `kjc5.8`/`kjc5.11`; it keeps a context ceiling §15.6 deleted for never firing correctly; and its D6 rests on light mode having "one window shared by everything", which `steering-surfaces-design.md` §3 measures as **isolated** context. A factory-design decision no measurement contradicts still stands — this removes tiebreaker status, not content |
 | D20 [D] | **`change-shape` — the shape of the whole change, derived not authored, emitted by CLASSIFY** | See §8.2. It is the structure `decompose` needs to cut end-to-end instead of by directory, and `basicly-agzx.2` already proposes deriving it from an AST at zero token cost. **Derived, so it is not a state**: states exist to hold a gate and a persona, and a derivation needs neither — DECOMPOSE's entry predicate gains it, nothing else moves |
 | D19 [D] | **Diff size is a plan-time signal, not a review-time discovery** | The sizing governor already forecasts in tokens; a child whose forecast implies a diff far past reviewable is reported when splitting is still cheap. Deliberately **not** a human-review requirement — L1/L2 stay delegable (§4), and a 2,000-line lane is hard to review whether the reader is a human or the next agent |
 
@@ -749,6 +751,41 @@ recorded lanes cross it** (max observed 403,051). Against the stale hardcoded 20
 120,000 and **51 of 79 crossed**, which is where the twelve overrun follow-ups came from. A gate
 that has never once fired correctly — first at a fifth of its intended point, then never — is
 removed rather than given a third constant. Its follow-up machinery goes with it.
+
+### 15.7 D23 — a sizing control that never fires correctly becomes observability [D]
+
+**Decided 2026-08-08 by the owner**, generalising §15.6 from the one gate it removed to the class
+it belongs to. The owner's form: *the user can always stop the work themselves, but only if they
+can see what is happening* — so a number's job is to be **visible**, and only a number that has
+earned it may also **block**.
+
+The discriminator is evidence, not category. Every control in the engine was checked for a
+recorded **correct** firing [M, 2026-08-08, over `run-records.json` and the tracker]:
+
+| Control | Correct firings | Disposition |
+| --- | --- | --- |
+| Grant spend ceiling | **5** (`stopped_bound → {'spend': 5}`) | **stays a control** |
+| Rework cap (`max_rework 2`) | **78 markers** — 43 merge, 25 dispatch, 10 verify | **stays a control**, with the fix that a flake must not spend an attempt |
+| `stall_after 900` | n/a — already "a flag, never a kill" | already the target shape |
+| Runner timeout (hard kill) | **0** — no timeout in any `stopped_bound` | → observability |
+| Working-set band **ceiling** | **0 correct.** Retuned 64k→112k→56k→72k→132k→200k→248k, each time chasing the last dispatch; twice in one landing on 2026-08-08 | → observability |
+| Working-set band **floor** | never refuses by construction | already advisory; `basicly-esxp` asks whether it should bind |
+| Context ceiling | **0** — §15.6 | deleted |
+
+**So the rule is not "demote the controls".** Two of them work and pay for themselves; the ones
+with no correct firing are all *sizing* estimates — predictions about how large a unit of work
+will turn out to be — and this repo has never once made that prediction well. A prediction that
+blocks is a prediction that must be right; a prediction that reports costs nothing when it is
+wrong.
+
+**What a demoted control must still do**, so this is not simply deletion: it is recorded on the
+run, surfaced in `preflight` and in the pass line, and kept falsifiable against the ledger. The
+failure §15.6 describes is a gate firing at a fifth of its intended point *for months* with the
+telemetry already contradicting it — that is a visibility failure as much as a calibration one,
+and demotion without a visible number reproduces it.
+
+`basicly-rrah` is the prerequisite: until a lane's transcript survives its exit, "observability"
+names an intention rather than a mechanism.
 
 ---
 

@@ -1,10 +1,24 @@
 # Specialist Agent Roster — Named Roles Inside the Factory
 
 Status: **agreed design — reviewed 2026-07-25 (§7), amended 2026-07-26 (§9). No implementation
-until `basicly-kjc5` (the parallel factory) is complete.** `docs/design/factory-design.md` is the
-authoritative factory design and constrains everything below; where this document and the factory
-design appear to disagree, the factory design wins until it is amended. Tracking bead:
-`basicly-eqp6`.
+until `basicly-kjc5` (the parallel factory) is complete.**
+
+**Authority changed 2026-08-08 (owner).** This paragraph used to make
+`docs/design/factory-design.md` the tiebreaker over everything below. It no longer is — see
+[`gates-and-rework-design.md`](gates-and-rework-design.md) §Status for the measured reasons. The
+order is now **measured evidence, then
+[`factory-loop-requirements.md`](factory-loop-requirements.md), then `factory-design.md`**, and a
+factory-design decision no measurement contradicts still stands.
+
+**Two clauses in this document are now under review rather than binding**, because their premises
+were measured false on 2026-08-08 (`basicly-xjd2`, `basicly-4kdm`): §R7's rule that role prompts
+"cannot be Claude subagent files — the factory is agent-agnostic and dispatches headless Claude,
+Codex, and Copilot alike" rests on an agnosticism that 338 run records do not show (claude 156,
+manual 182, **codex and copilot 0**); and §1's "every dispatch pays fresh context priming
+(deliberate, per factory D6)" is contradicted in cost by the same ledger, where a corpus-handed
+`decide` dispatch costs 254x fewer tokens than a `lane` told to go and read. Neither clause is
+deleted here — each is the subject of its own bead, and this note exists so a reader does not
+build against a premise that is already being tested. Tracking bead: `basicly-eqp6`.
 
 **§9 carries the amendments from the state-of-the-art review**
 ([`research/2026-07-26-sota-review.md`](../research/2026-07-26-sota-review.md)). One of them reopens

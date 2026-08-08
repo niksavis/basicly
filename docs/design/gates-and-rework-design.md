@@ -2,9 +2,19 @@
 
 Status: **design, not yet decomposed.** Opened 2026-07-26 out of the state-of-the-art review
 ([`research/2026-07-26-sota-review.md`](../research/2026-07-26-sota-review.md) §§6.4–6.5).
-[`factory-design.md`](factory-design.md) remains authoritative; where this document and the
-factory design appear to disagree, the factory design wins until amended. This document proposes
-amendments rather than asserting them.
+**Authority changed 2026-08-08 (owner).** This clause used to read "`factory-design.md` remains
+authoritative; where this document and the factory design appear to disagree, the factory design
+wins until amended." It no longer holds, and the reason is measurement rather than preference:
+`factory-design.md` §9 — the section that calls itself "the honest answer to *is the design
+real?*" — contradicts itself on `kjc5.8` and `kjc5.11` (listed as both built and open), it keeps
+and justifies a context ceiling that [`factory-loop-requirements.md`](factory-loop-requirements.md)
+§15.6 deleted for having **never once fired correctly**, and its D6 rests on a claim this repo's
+own [`steering-surfaces-design.md`](steering-surfaces-design.md) §3 refutes.
+
+The order is now: **measured evidence in this repo, then
+[`factory-loop-requirements.md`](factory-loop-requirements.md), then `factory-design.md`.** A
+factory-design decision that no measurement contradicts still stands — the demotion removes its
+tiebreaker status, not its content. This document proposes amendments rather than asserting them.
 
 What it covers: a **taxonomy** for the gates we already have, **convergence detection** for the
 rework loop we already bound, and a **verification contract** for the judged output we already
