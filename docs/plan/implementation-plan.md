@@ -134,7 +134,7 @@ dependency clusters a cut draws from (§14). Rows are in shipping order.
 | ~~**`v0.7.0`**~~ | **SHIPPED 2026-08-06.** Trustworthy factory. 19 beads closed over two sessions. **Exit criterion 5 was not met** — see §5.1. `basicly-yc0x`. | shipped |
 | **`v0.7.1`** | **End the shared-anchor collision class**, and carry the unattended-run proof `v0.7.0` could not. `4746` (a changelog fragment per lane, so collision is impossible by construction), `bdd4` (dispatch a bounced lane to resolve its conflict rather than replaying the rebase), `3f76` (design docs stop carrying bead-id lists), `m4zv.5` (a stalled rework round escalates without spending the cap). A patch, not a minor, **only if** a curated `[Unreleased]` body keeps working alongside fragments. | 1–2 sessions |
 | ~~**`v0.8.0`**~~ | **SHIPPED 2026-08-07** (`ddfa651`). **Own the work graph — the store, not yet the floor.** The owned event log exists and is checkable: provenance, ids, snapshot with rotation, `fsck`/`rebuild`, import with tombstones, a shadow differential that refuses a self-agreeing comparison, and a `[tracker] mode` rung that flips the one record-read seam. **It does not remove `br` from the consumer floor**, and the row said it did until 2026-08-07 — measured at `MODE_OWNED` with no `br` on PATH, `gate list` and `lint` still raise "the harness requires the beads tracker", because `.19` flips `read_record` alone and 44 further spawn sites remain, 26 of them `comments`. That claim moves to `v1.0.0`, where the fresh-consumer acceptance test makes it falsifiable instead of asserted (`basicly-vkh0.22`). Plus streaming telemetry (`wctc`, `jr0l.66`). `basicly-vkh0`. | 5–8 sessions |
-| **`v0.9.0`** | **The factory loop and the code-quality floor** — retitled 2026-08-08, because this is what is already on `main` unreleased and what the next cut therefore contains. Two halves. **The loop** (`basicly-u2hl`, §6.2): integrity levels from a path rule with a diff-size downgrade, the Hold and Kill gate verbs, repair in the lane's own worktree briefed with the findings, the plan gate on entry to BUILD, and the module-size ratchet — all landed. Still open: the six handoff schemas, VALIDATE as a real state, the personas, EARS, and the retrospective's special-cause signal. **The floor** (§6.3): the ruff families the stack leaves off, pyright at its own default, security lint over `src/`, and the `noqa` debt ratchet — every one a CI check at zero token cost. Then the evidence work that is not blocked: the tutorial layer (`imnu.2`), the install capability tier (`imnu.3`), the ceremony threshold (`imnu.5`). | 6–9 sessions |
+| **`v0.9.0`** | **Make the factory's own plumbing trustworthy — reordered 2026-08-08 (§6.7) and this row now leads with it.** The code-quality floor shipped (`u2hl.12`, `.14`, `.15`, `.16`) and so did five loop features (`u2hl.18`, `.20`, `.23`, `.28`, `.32`), but the session that landed them measured the *plumbing* failing underneath: a landing that silently discards a lane's conflict resolution (`5vu4`, P0 — happened twice, and the suite stayed green through one of them), no persisted lane transcript at all (`rrah`, P0), a scope field feeding two gates that want opposite things (`efw2`, P0), a refuted claim in an epic reaching the decider as fact (`b9ef`, P0), three shared landing anchors bouncing 3 of 5 lanes (`ef7t`, P0; `3w51`), no binding band floor (`esxp`) and no way to stop a healthy supervisor without killing live lanes (`o40x`). **These precede the remaining loop features**, because every one of them corrupts the evidence the features would be judged by. Then what is still open on the loop (§6.2): the four remaining handoff schemas, VALIDATE as a real state, the personas, EARS, the retrospective's special-cause signal. Then the unblocked evidence work: `imnu.2`, `imnu.3`, `imnu.5`. | 8–12 sessions |
 | **`v0.9.1`** | **The measured evidence layer, when its chain unblocks.** Cost per landed package (`7bur`), AST localisation (`agzx.2`), the remaining Phase 2 gate (`m4zv.3`), parameter learning (`3ifz`). Split out of `v0.9.0` because the whole chain sits behind `69az` (§7) and has done for two releases; holding the factory loop behind it would ship neither. | 3–5 sessions |
 | **`v0.10.0`** | **The judgment layer and always-on relief.** The roster (`s2xf`), gated on `7bur`'s numbers by construction; the Phase 4 authoring pass and the empty-glob check (`a3ab.1`–`.3`). | 5–8 sessions |
 | **`v1.0.0`** | **Stabilize and declare.** Surface audit and semver freeze, the breaking-marker gate, the fresh-consumer acceptance test. `1.0` is a promise, so the last release proves the promise instead of adding capability. | 3–5 sessions |
@@ -607,6 +607,46 @@ about a state we have not reached; the `br` cut (§6.1) is what would make it tr
 VS Code or JetBrains extension (a host that admits nothing else); the TS living behind a process
 boundary talking to the existing CLI over `--json`, so no Python is rewritten and no consumer gains
 node; and a named owner accepting the second release train.
+
+### 6.7 The plumbing track — why it now precedes the loop features
+
+Filed 2026-08-08 from defects **measured while the factory was running**, not from review. The
+session shipped nine beads for **$140.83 over 41 dispatches** and the ladder's own row would have
+called that a good day; what it hides is where the money went.
+
+**The economics, from `run-records.json`** [M]:
+
+```text
+phase    n    mean tokens   mean $   mean s   failed
+lane    77      8,124,617    6.28      942    16/93 = 17.2%
+build   28     11,564,149    8.70     1163     4/153 =  2.6%
+decide  24         31,991    0.23       14     5/29  = 17.2%
+```
+
+`decide` is a dispatch **handed its corpus**; `lane` is a dispatch **told to go and read**. Same
+model, same repo: **254x the tokens and 27x the cost**, for the difference between inheriting
+context and rebuilding it. `loop.dispatch_prompt` (`loop.py:858`) is six sentences and carries no
+architecture, no file map and none of the session's own findings — so the ~$1.47 floor every lane
+pays before it edits anything is bought by the prompt, not by the work.
+
+Per unit of output on the same day: `u2hl.16` cost **$0.077 per changed line**, `u2hl.14`
+**$0.010**. The band has a floor verdict for exactly this and **the floor never refuses** — only
+the ceiling does.
+
+**Eight beads, and the order matters:**
+
+| | Bead | Why it precedes the features |
+| --- | --- | --- |
+| 1 | `rrah` P0 | no lane transcript is persisted anywhere, so **no claim about a lane is checkable after it ends** — including every claim in this section |
+| 2 | `5vu4` P0 | the landing rebase drops a lane's merge-commit resolution and reports success. Twice on 2026-08-08; on `u2hl.20` **the suite stayed green**, because the feature and its tests were dropped together |
+| 3 | `ef7t` P0, `3w51` P1 | three shared anchors bounced 3 of 5 lanes in one pass |
+| 4 | `efw2` P0 | one `## Scope` field feeds collision detection (wants it complete) and the band (prices what it reads), so declaring honestly inflates the estimate — 78,709 → 197,646 → 245,466 on an unchanged diff, and the ceiling was moved twice inside one landing |
+| 5 | `b9ef` P0 | the decider's corpus is the epic's bead text, which still asserted a claim its own design doc had refuted; it reasoned from that and abstained, wedging two lanes |
+| 6 | `esxp` P1, `o40x` P1 | bind the band floor; give a healthy supervisor a stop that does not kill live lanes |
+
+**The rule these share**, and the reason they outrank feature work: each corrupts the *evidence* a
+feature would be judged by. A loop state built on a factory that loses work, cannot be audited, and
+moves its own ratchets is a state whose acceptance criteria cannot be trusted.
 
 ## 7. `v0.9.1` — the measured evidence layer
 
