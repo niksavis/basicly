@@ -85,6 +85,10 @@ _WAIVER = re.compile(r"^#[ \t]*module-size-waiver:[ \t]*(\S.*?)[ \t]*$", re.MULT
 
 _LABEL = "module-size"
 
+# Where "first touch brings it under" stops applying (OQ-12, resolved 2026-08-08). Below
+# 2x the cap a single extraction reaches 4,000; above it, not growing is the whole rule.
+_BRING_UNDER_MULTIPLE = 2
+
 # A top-level import, and the continuation of a parenthesised one. Column 0 only: an
 # import deferred inside a function is code the reader pays for, and the handful this
 # repo defers on purpose each carry a PLC0415 suppression saying why.
@@ -248,7 +252,23 @@ def _grew(module: Module, baseline: int, cap: int) -> Finding:
             f"{module.tokens} tokens, up from the frozen {baseline}; a module over the "
             f"{cap}-token cap may only shrink"
         ),
-        remedy=f"bring it under {baseline} tokens — the first change to it should reach {cap}",
+        remedy=_shrink_remedy(baseline, cap),
+    )
+
+
+def _shrink_remedy(baseline: int, cap: int) -> str:
+    """How far this module has to come down, which depends on how far over it is (OQ-12).
+
+    Under 2x the cap one extraction reaches it, so the rule is payable by whoever touched
+    the module. At or above 2x the obligation is only not to grow: bringing a 13x module
+    under the cap is a decomposition track of its own, and charging it as a toll on the
+    next edit is what stopped a lint adoption dead on 2026-08-08.
+    """
+    if baseline < cap * _BRING_UNDER_MULTIPLE:
+        return f"bring it under {cap} tokens — one extraction reaches it from {baseline}"
+    return (
+        f"bring it back under {baseline} tokens; reaching {cap} from here is a "
+        "decomposition track of its own, not this change's obligation"
     )
 
 

@@ -490,6 +490,21 @@ unbuilt, which is the argument for the ratchet — and six of those carry no rea
 holds **21 `# nosec` comments that no scanner reads**, because bandit does not run there: they are
 inert and read as "reviewed", which is worse than no annotation.
 
+**Landed 2026-08-08** (`dad39f4`): ten ruff families, pyright at `standard`, `S` over `src/`, the
+`python-guidelines` skill, and the twenty module splits the size ratchet then forced. What that
+leaves, and it is the next session's first track:
+
+| Open | Size | Why it is next |
+| --- | --- | --- |
+| `u2hl.12` **`noqa` debt ratchet** | S | The debt is **77** and rising: 46 this morning, 30 at go-live. The adoption itself added 31 — every one with a reason, and nothing counting them. Touches no source file; freeze at today |
+| **§9.4 test-file naming gate** | S | Already drifted: 71 source modules, 115 test files, **10 modules with no matching test file**, 9 of them created by this session's splits. The convention was emergent when the doc measured it; the splits broke it |
+| **pyright over `.scripts/` and `.basicly/core/`** | S | pyright's default `exclude` is `**/.*`, so 35 modules — including the hooks that ship to consumers and run in the dispatch path — are unchecked at *either* mode. 9 errors measured, 4 possibly an `extraPaths` artifact, so re-measure against a real `include` before filing |
+| **The 7 remaining inert `# nosec`** | S | Down from 21, all in `br.py` and `runner.py`. They sit in `src/`, where bandit does not run, so they read as reviewed and are not |
+| `python-guidelines` **as a path-scoped fragment** | M | Decided 2026-08-08. It is exercised — 7 invocations on the day it shipped — but only when an agent thinks to ask, and the agent that most needs it is the one that does not. Costs ~1,500 chars on `AGENTS.md` against ~1,225 of headroom, so **`a3ab.1` must evict a line first** |
+
+**Deferred with the reason recorded**: `C901` 15 → 10 (14 violations, concentrated in the two
+modules already under the heaviest split pressure — do it after `cli.py` comes down).
+
 ## 7. `v0.9.1` — the measured evidence layer
 
 **Renumbered to `v0.9.1` on 2026-08-08.** Everything here sits behind one chain that has not moved
@@ -721,13 +736,15 @@ Each blocks something and none can be derived from the code.
    "non-trivial work", which is the agent's judgment call, so the rule is unenforceable. Needs a
    written threshold **and** a named lightweight path below it that skips ceremony but never hooks.
 
-2. **What counts as a "touch" for the module-size first-touch rule** (OQ-12, §9.3 of the loop
-   requirements). Partly answered 2026-08-08 — a change adding only a top-level import is not a
-   touch, because the ratchet was charging for the splits it exists to force. The original question
-   stands for *content* changes: should a one-line typo fix in a 39,000-token module oblige the
-   author to bring it under 4,000? Nothing derivable from the code answers this.
-
-Resolved and recorded so they are not reopened: **OQ-9, the PEP 758 house direction** — paren-free
+Resolved and recorded so they are not reopened: **OQ-12, what counts as a "touch"**
+(2026-08-08) — an added top-level import is not one, and the bring-it-under obligation applies
+only **below 2× the cap**; at or above 2× the obligation is not to grow, and the module comes down
+on a decomposition track of its own rather than as a toll on the next editor. The requirements doc
+now records **no open questions**; **the `python-guidelines` tier** — a path-scoped fragment on
+`**/*.py`, funded by evicting an always-on line via `a3ab.1`, because a skill the agent must think
+to ask for does not bind the agent who most needs it; **the first artifact track's scope** —
+`implementation-plan` and `change-summary` only, the `decompose→build` pair §2.1's mitigation
+names, with the other four undesigned until that pair has run in anger; **OQ-9, the PEP 758 house direction** — paren-free
 `except A, B:` is allowed and is the house form, recorded in the `python-guidelines` skill rather
 than in a linter, since none enforces either direction; **Tier-2's rank-1 floor** (`m4zv.2`, discharged
 2026-08-07) — `[catalog] rank1_floor = 0.85` against a measured baseline of 80/87 = 92.0%, with

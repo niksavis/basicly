@@ -597,7 +597,13 @@ cannot give it.
 A cutover must never be a big bang, because the harness's own development depends on the tracker
 working the whole time.
 
-1. **Import** the existing beads JSONL — it is already the format we would read.
+1. **Import** the existing beads JSONL — it is already the format we would read. **Ran once,
+   2026-08-07 (`b97a653`): 643 records as 3,775 events, every one carrying provenance
+   `EXTRACTED`.** But `migrate.import_snapshot` has no caller in `src/`, `.scripts/` or
+   `.basicly/`, no `main()`, and no CLI surface — `basicly tracker` lists `shadow` only — so it
+   is a **one-shot that cannot be repeated**, and it had already drifted 24 records behind the
+   export by the following day. Nothing a fresh consumer runs can build the ledger at all.
+   `basicly-vkh0.23`.
 2. **Shadow mode**: the new tracker reads the same ledger and answers the same queries
    read-only; a differential test asserts identical verdicts for phase derivation, ready set,
    and gate status across the live tracker's whole history.
@@ -621,6 +627,14 @@ working the whole time.
    longer reach the external tracker, so `br comments list` run by hand does not show them and
    the step-2 differential's comment comparison diverges by construction. Step 2 is therefore
    run on `dual`, before this — which is the order §5 already gives.
+
+   **The order was not followed** [M, 2026-08-08]. Step 5 landed on 2026-08-07 while the repo
+   was — and still is — `mode = "external"`, with steps 2, 3 and 4 unrun. It does not bite yet,
+   precisely because `external` still routes the markers to `br`: the divergence this paragraph
+   warns about only appears at `owned`. What it costs is an ordering constraint that is now
+   binding rather than advisory — **the step-2 differential must be run on `dual` and never on
+   `owned`**, and a run that finds comment divergence at `owned` is measuring this, not a
+   defect.
 
 ### 5.1 Three risks the 2026-07-26 review found in step 1
 

@@ -141,6 +141,29 @@ def test_a_module_that_grew_by_code_still_fails_after_the_import_exclusion() -> 
     assert gate.module_tokens(grown) > gate.module_tokens(lean)
 
 
+def test_a_module_under_twice_the_cap_is_told_to_reach_the_cap() -> None:
+    """OQ-12's payable half: one extraction gets there, so the rule names the cap."""
+    frozen = {"src/basicly/verify.py": 5_436}
+    findings = gate.collect([_module("src/basicly/verify.py", 5_556)], _ratchet(frozen))
+
+    assert "under 4000 tokens" in findings[0].remedy
+    assert "one extraction" in findings[0].remedy
+
+
+def test_a_module_far_over_the_cap_is_only_told_not_to_grow() -> None:
+    """The other half of OQ-12: a 13x module is not the next editor's toll.
+
+    Charging its decomposition to whoever touched it next is what stopped a repo-wide
+    lint adoption dead on 2026-08-08.
+    """
+    frozen = {"src/basicly/cli.py": 54_336}
+    findings = gate.collect([_module("src/basicly/cli.py", 54_362)], _ratchet(frozen))
+
+    assert "back under 54336" in findings[0].remedy
+    assert "decomposition track of its own" in findings[0].remedy
+    assert "one extraction" not in findings[0].remedy
+
+
 def test_a_frozen_module_that_shrank_is_admitted_without_editing_the_record() -> None:
     """Shrinking is the point; requiring a pyproject edit for it would tax every repair."""
     frozen = {"src/basicly/cli.py": 53_095}

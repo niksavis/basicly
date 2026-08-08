@@ -100,6 +100,12 @@ the entire field** [S]. Mitigation, which does not change the decision: **sequen
 `decompose→build` first** and let the other five be built to a shape that has already survived
 contact.
 
+**Scoped 2026-08-08** [D]. The first artifact track builds **`implementation-plan` and
+`change-summary` only** — the `decompose→build` pair the mitigation names, and no more. The other
+four are not designed until that pair has run in anger. `implementation-plan` is the cheapest of
+the six to start from because the plan gate (§3.3, shipped) already validates most of what it must
+carry, so the schema is a formalisation of a live contract rather than an invention.
+
 ---
 
 ## 3. The loop
@@ -246,6 +252,14 @@ prose is the underlying defect.
 | `root-cause` | RETROSPECTIVE | iterated-why with every link citing an observation; output is a named control + tier + covered class | the `session-finish` retro section |
 | `python-guidelines` | BUILD, REPAIR | §9(B) — the non-mechanical half | nothing (gap) |
 
+**Shipped 2026-08-08** (`basicly-u2hl.13`), and **being promoted to a path-scoped fragment** [D]:
+as a model-invoked skill it loads only when an agent thinks to ask, and the agent that most needs
+it is the one that does not. The core rules move to a fragment declaring `paths: ["**/*.py"]`, so
+they load whenever Python is touched. It is free on Claude and Copilot and costs ~1,500 characters
+on `AGENTS.md`, which has ~1,225 characters of headroom — so **one always-on line must leave
+first**, which is `basicly-a3ab.1`'s audit (the no-op test on every baseline line). The skill stays
+for the long-form material; the fragment carries only what must always bind.
+
 **Not encoded, deliberately** [S]: *genchi genbutsu* as a principle (its only checkable content is
 "claims carry attached evidence", which the repo already has), "make policies explicit" as
 exhortation, "quality at the source" as a slogan, vendor tollgate checklists, and RPN
@@ -350,8 +364,14 @@ that is ≈376 lines [M].
   amendment cannot be told apart from turning the gate off, which is exactly how it first *looked*
   to pass: run against import-inclusive baselines it reported a clean tree, because every module
   had silently gained an allowance the size of its own import block.
-- **First touch brings it under** [D]. The first change to a frozen file after go-live must bring
-  that file under the cap, not merely reduce it.
+- **First touch brings it under, below 2× the cap** [D, amended 2026-08-08 — OQ-12 resolved].
+  The first change to a frozen file **under 8,000 tokens** must bring it under the cap, not merely
+  reduce it: one extraction reaches 4,000 from there, so the rule is payable by whoever touched it.
+  **At or above 2× the cap the obligation is only not to grow.** Such a module comes down on a
+  decomposition track of its own rather than as a toll on the next person to edit it — the failure
+  mode OQ-12 named, and the one measured on 2026-08-08 when a repo-wide lint adoption put 18 modules
+  over at once and the strict reading would have required decomposing `cli.py` (54,362), `runner.py`
+  (32,295) and `supervise.py` (48,020) before a lint family could be enabled.
 - **Per-file waiver** [D]. A module that is genuinely cohesive may exceed the cap deliberately,
   carrying a one-line reason in the file. Waivers are themselves ratcheted — the count may not
   grow silently — following the pattern already used for the vulture ignore list.
@@ -504,7 +524,7 @@ read; pass `--forward-subagent-text`; add light mode as a second dispatch path.
 | ~~OQ-6~~ | ~~File-size threshold~~ — **resolved**: 4,000 tokens, `SCOPE_FILE_READ_CAP` (§9.3) | — |
 | ~~OQ-7~~ | ~~Exemption list or deadline~~ — **resolved**: ratchet, first touch brings the file under cap, per-file waiver with a recorded reason (§9.3) | — |
 | ~~OQ-11~~ | ~~Waiver approval~~ — **resolved**: reason at L1/L2, approval at L3 (D14) | — |
-| **OQ-12** | What is a "touch" — **partly resolved 2026-08-08, and now the only open question**: a touch that adds only a top-level import is not a touch, because the ratchet was charging for the splits it exists to force (§9.3). The original question — whether a one-line typo fix should trigger a refactor — is still open for *content* changes | §9.3 |
+| ~~OQ-12~~ | ~~What is a "touch"~~ — **resolved 2026-08-08 in two parts**: an added top-level import is not a touch (the ratchet was charging for the splits it exists to force), and the bring-it-under obligation applies only below 2× the cap. **No open questions remain** | — |
 | ~~OQ-8~~ | ~~Kill approval~~ — **resolved**: human at every level (D15) | — |
 | ~~OQ-9~~ | ~~PEP 758 house direction~~ — **resolved 2026-08-08**: paren-free `except A, B:` is the house form, recorded in the `python-guidelines` skill rather than in a linter, since none enforces either direction | — |
 | ~~OQ-10~~ | ~~Plugin channel~~ — **resolved**: second channel, same projected output (D16) | — |
