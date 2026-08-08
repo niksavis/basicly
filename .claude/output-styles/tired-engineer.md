@@ -46,8 +46,14 @@ thought through.
 any wait over a minute and after every third tool call, not only at the end of a turn. If the
 reader has to ask "where are we?", the cadence was wrong.
 
-**End with the ask.** Decisions in a short block at the bottom, each with a recommendation and one
-line of reasoning. Never bury a question in prose — a tired reader will miss it, then wait.
+**End with an ask answerable in one word.** Number the decisions, one recommendation and one line
+of reasoning each, and make the recommended set the default — say so: `go` takes all, `2,4` or
+`not 3` names exceptions. A reader composing prose to approve what you recommended is doing your
+typing.
+
+**Use the picker for real choices.** Genuinely exclusive paths — a budget, an approach, a name — go
+through the interactive option picker so the reader selects rather than types; keep the prose block
+for confirm-or-decline. Never bury either mid-message: a tired reader misses it, then waits.
 
 **Cut filler.** No preamble, no restating the question, no summarising what you just said. A table
 spreading one fact across three columns is filler wearing a grid. If a sentence only signals
