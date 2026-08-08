@@ -54,6 +54,7 @@ from . import (
     commit,
     decisions,
     decompose,
+    handoff,
     loop_state,
     merge,
     needs_input,
@@ -320,9 +321,20 @@ def _on_classify(ctx: _Ctx) -> AdvanceResult:
 
 
 def _on_decompose(ctx: _Ctx) -> AdvanceResult:
-    """Children exist: gate the decompose checkpoint, then fan out and land them."""
+    """Children exist: gate the decompose checkpoint and the plan artifact, then fan out.
+
+    The ``implementation-plan`` artifact is checked here because this is where the plan
+    enters BUILD: the next call provisions a worktree per child and starts spending. One
+    check at the fan-out rather than one per child — the artifact is one per decompose
+    event, so gating it per dispatch would ask the same question N times and pay a parent
+    lookup for each. A feature carrying no artifact is admitted, which is the ratchet
+    :mod:`basicly.handoff` states.
+    """
     if not policy.checkpoint_approved(ctx.repo_root, ctx.issue_id, "decompose"):
         return _blocked(ctx, "decompose checkpoint awaiting human approval", checkpoint="decompose")
+    plan = handoff.entry_verdict(ctx.repo_root, ctx.issue_id, handoff.IMPLEMENTATION_PLAN)
+    if not plan.admitted:
+        return _blocked(ctx, plan.reason, needs_input="artifact")
     return _build_children(ctx)
 
 
@@ -1443,6 +1455,7 @@ def _verify_and_land(
             return held
     mode = verify_mode or ctx.inputs.verify_mode
     override = _landing_gate_override(ctx)
+    built = _branch_facts(ctx, worktree_name)
     result = merge.merge_worktree(
         ctx.repo_root,
         worktree_name,
@@ -1477,7 +1490,62 @@ def _verify_and_land(
             findings=_landing_findings(result),
             evidence=_landing_evidence(result, mode),
         )
-    return _record_verify(ctx, result.detail, verify_mode=mode)
+    held = _record_change_summary(ctx, built, result)
+    return held if held is not None else _record_verify(ctx, result.detail, verify_mode=mode)
+
+
+def _branch_facts(ctx: _Ctx, worktree_name: str) -> tuple[str, tuple[str, ...]] | None:
+    """What the build committed — its branch head and changed paths — or None.
+
+    Read **before** the merge, which is the only moment both are still the build's own:
+    afterwards the head is base's and the changed set is whatever else landed alongside.
+    None when the worktree has no session record or its branch has no ref, which the
+    landing itself refuses with a better message than this could.
+
+    Nothing is read at all in a repo that has not adopted the artifact contract: the
+    facts would have nowhere to go, and this is the landing's only git read that no
+    other precondition already pays for.
+    """
+    if not handoff.adopted(ctx.repo_root, handoff.CHANGE_SUMMARY):
+        return None
+    session = worktree.load_session(worktree_name, ctx.repo_root)
+    if session is None:
+        return None
+    head = merge.branch_head(ctx.repo_root, session.branch)
+    if head is None:
+        return None
+    return head, merge.branch_changed_paths(ctx.repo_root, session.base, session.branch)
+
+
+def _record_change_summary(
+    ctx: _Ctx, built: tuple[str, tuple[str, ...]] | None, result: merge.MergeResult
+) -> AdvanceResult | None:
+    """Hand VERIFY the ``change-summary`` for this landing, or hold when it will not validate.
+
+    BUILD's handoff artifact (§8), written at the one point where the build is finished
+    and the branch facts still exist. Every field is derived — the bead's title, the head
+    :func:`_branch_facts` read before the merge, the paths it changed, and the landing's
+    own verdict — so nothing here depends on an agent having composed a report.
+
+    Held rather than raised: a payload the schema refuses is a fact about this landing an
+    operator can fix, and blocking names the field. A landing whose branch facts could not
+    be read records nothing and is admitted downstream by the same ratchet
+    :mod:`basicly.handoff` states — the alternative is refusing every already-landed
+    forward recovery, whose worktree is gone by construction.
+    """
+    if built is None:
+        return None
+    payload = handoff.summary_payload(
+        ctx.issue_id,
+        ctx.state.title,
+        built,
+        handoff.SelfCheck(result.status, result.detail, passed=result.merged),
+    )
+    try:
+        handoff.record(ctx.repo_root, ctx.issue_id, handoff.CHANGE_SUMMARY, payload)
+    except handoff.ArtifactError as exc:
+        return _blocked(ctx, exc.verdict.reason, needs_input="artifact")
+    return None
 
 
 def _landing_findings(result: merge.MergeResult) -> tuple[str, ...]:
@@ -1922,7 +1990,16 @@ def _build_children(ctx: _Ctx) -> AdvanceResult:
 
 
 def _record_verify(ctx: _Ctx, detail: str, *, verify_mode: str | None = None) -> AdvanceResult:
-    """Run verify + record the required gate so the derived phase becomes verify."""
+    """Run verify + record the required gate so the derived phase becomes verify.
+
+    VERIFY's entry predicate runs first (§3.1): a ``change-summary`` that does not
+    validate is refused before the gate spends a full check run on it. An epic landing
+    its children's worktrees carries no summary of its own and is admitted, which is the
+    ratchet :mod:`basicly.handoff` states.
+    """
+    summary = handoff.entry_verdict(ctx.repo_root, ctx.issue_id, handoff.CHANGE_SUMMARY)
+    if not summary.admitted:
+        return _blocked(ctx, summary.reason, needs_input="artifact")
     report = verify.run_verify(ctx.repo_root, verify_mode or ctx.inputs.verify_mode)
     gate_error = _record_gate(ctx, ctx.issue_id, report)
     if gate_error is not None:

@@ -53,7 +53,7 @@ from collections.abc import Iterable
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
-from . import br, plan_gate, plan_record, policy, run_record, runner
+from . import br, handoff, plan_gate, plan_record, policy, run_record, runner
 from .br import run_br as _run_br
 from .config import (
     DEFAULT_BUILD_FACTOR,
@@ -2035,9 +2035,11 @@ def decompose(repo_root: Path, feature_id: str, children: tuple[ChildSpec, ...])
         grouped.setdefault(child.group, []).append(child.issue_id)
     group_tuples = tuple(tuple(grouped[g]) for g in sorted(grouped))
 
-    return DecomposeResult(
+    result = DecomposeResult(
         feature_id, tuple(created), group_tuples, collapsing_paths(children, contended)
     )
+    handoff.record(repo_root, feature_id, handoff.IMPLEMENTATION_PLAN, handoff.plan_payload(result))
+    return result
 
 
 @dataclass(frozen=True)

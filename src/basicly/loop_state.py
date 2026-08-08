@@ -125,6 +125,10 @@ class NodeState:
     rework: dict[str, int]
     agent_context: str | None
     has_children: bool
+    # The issue's own title, carried so a state that has to say *why* a change was made
+    # reads it off the state it already folded rather than paying a second tracker read
+    # (``handoff.summary_payload``). Defaulted, so every other construction is unchanged.
+    title: str = ""
 
 
 def _show(repo_root: Path, issue_id: str) -> dict:
@@ -218,6 +222,7 @@ def read_node_state(
         rework=rework,
         agent_context=record.get("agent_context"),
         has_children=has_children,
+        title=str(record.get("title", "")),
     )
 
 

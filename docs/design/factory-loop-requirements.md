@@ -302,6 +302,29 @@ must accept. `needs-input.json` is the existing precedent for a schema-validated
 **Storage** is OQ-5. `[policy.evidence]` already exists as a per-phase artifact-path gate but is
 presence-only — "the engine never opens it" [M] `verify.py:243-249` — and unconfigured here.
 
+**Resolved to a mechanism 2026-08-08, building the first pair** (`basicly-u2hl.18`). D13's
+"typed events in the owned ledger" is reached **through `br.add_comment`/`br.read_comments`**,
+as a `[harness-artifact]` marker, not by appending to `.basicly/ledger/` directly. Two reasons,
+the second decisive:
+
+- A new `events.py` kind would have **no writer on this rung**: the repo runs
+  `[tracker] mode = "external"`. The marker seam writes on every rung and *becomes* a ledger
+  `comment` event at the flip, so `u4xu` and `vkh0.23` are no longer prerequisites of §8 —
+  which retires D13's stated consequence.
+- A direct ledger append **would refuse the landing it precedes** [M]: the advance sweeps
+  base-checkout dirt only under `.beads/` (`merge.commit_tracker_state`), and anything else
+  blocks the merge (`merge.foreign_dirt`). An artifact written into the committed ledger on
+  the way into BUILD would wedge the very landing it gates.
+
+The bound this carries, measured: below `owned` the marker is one argv element, and Windows
+caps a command line at 32,767 characters. The largest real decomposition here — `basicly-u2hl`,
+33 children — renders a **21,890-character** plan [M], failing loudly rather than silently if a
+plan ever crosses. The ceiling is the transport's and it disappears at `owned`.
+
+The schemas are catalog sources (`.basicly/core/schemas/`), so a repo that has not installed
+them runs **neither end** of the contract. Both producer and consumer resolve the schema first,
+which is what keeps a skipped write from becoming a refusal downstream.
+
 ### 8.1 The consumer transcript, and why it is not a mockup
 
 A UI product settles a design dispute with a picture of the screen. **This product has no screens**
