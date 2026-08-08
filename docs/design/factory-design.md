@@ -746,20 +746,26 @@ real?" — a decision above without a landed bead here is intent, not behavior.
 | 2 Sizing estimator + DoR governor | `kjc5.2` | estimate still drifts across invocations (`kjc5.30`) |
 | 3 Autonomy grant ledger | `kjc5.3` | ledger exists; enforcement gaps below |
 | 4 Decision queue | `kjc5.4`, `kjc5.17` | writes serialized; decider not yet auto-invoked (`kjc5.40`) |
-| 5 Supervisor core / dispatch / routing | `kjc5.5`, `.6`, `.7`, `.18`, `.20` | client commands still open (`kjc5.8`) |
+| 5 Supervisor core / dispatch / routing | `kjc5.5`, `.6`, `.7`, `.18`, `.20` | client commands shipped (`kjc5.8`, closed) — this cell said "still open" while the prose below said built; corrected 2026-08-08 |
 | 6 Lane mini-loop | `kjc5.9` | |
-| 7 Merge queue v2 | `kjc5.10` | attribution is landing-order dependent (`kjc5.32`) |
+| 7 Merge queue v2 | `kjc5.10` | attribution is landing-order independent since `kjc5.32` closed (`supervise._attribute_pass_couplings`). **Separately defective**: the landing rebase silently discards a lane's merge-commit conflict resolution — twice on 2026-08-08, once with the suite still green (`basicly-5vu4`) |
 | D4 amendment (validate has teeth) | `kjc5.19`, `kjc5.35` | every rubric now carries a deterministic check, enforced at load; a judged NO enqueues a decision and holds the lane |
 | Portable worktree provisioning | `kjc5.27` | `repo_root` threaded; was resolving from process cwd |
 | Process-tree kill on timeout | `kjc5.15` | |
 | Judge + decider bounded and metered | `kjc5.31` | |
 | Acceptance criteria required on every bead | `kjc5.36` | `br lint` never asks a chore, so the rule lives in the harness gate |
 
-**Open, and named where the decision claims otherwise.** §3 components 8–11 remain
-(`kjc5.11` process budget, `kjc5.12` release automation, `7bur` A/B eval, `4t9z` skill evals),
-plus the integration test (`kjc5.21`), the dogfood run (`kjc5.22`), and the architecture
-absorption (`kjc5.13`). The client surface (`kjc5.8`) is built: `loop session` observes and the
-`harness-client` skill drives it.
+**Open, corrected 2026-08-08.** This paragraph contradicted itself and the table above it —
+it listed `kjc5.11` as remaining two lines after §5 recorded it as "Built in `basicly-kjc5.11` as
+`runner.ProcessBudget`", and listed `kjc5.8` as open in the table while calling it built here.
+**Both are closed.** What genuinely remains of §3 components 8–11: `kjc5.12` release automation,
+`7bur` A/B eval, `4t9z` skill evals, plus the integration test (`kjc5.21`), the dogfood run
+(`kjc5.22`) and the architecture absorption (`kjc5.13`).
+
+That this section — the one titled as the honest answer to *is the design real?* — was itself
+wrong in three places is why `factory-design.md` **lost tiebreaker authority** on 2026-08-08
+(D24 in `factory-loop-requirements.md`). Authority now runs: measured evidence → that document →
+this one.
 
 The gaps that matter most, because a reader would otherwise believe the decision is enforced:
 
@@ -767,8 +773,19 @@ The gaps that matter most, because a reader would otherwise believe the decision
   and dispatch is not reproducible in its inputs as D9 requires (`kjc5.29`, `kjc5.28`).
 - **Coupling attribution depends on intra-pass landing order** (`kjc5.32`), which D9 forbids.
 
-**Dogfooding status.** Every landed component was built through the single-track loop on
-basicly itself, which satisfies §1's constraint for those components — but the *supervisor* path
-(concurrent lanes, autonomy, the standing queue) has never run on real work. `kjc5.22` is that
-test, and it is the honest gate on calling the factory done. Note also that `[policy] autonomy`
-is `L0` in this repo, so the grant ladder has never been exercised here at all.
+**Dogfooding status, corrected 2026-08-08.** This paragraph said the supervisor path "has never
+run on real work" and that the grant ladder "has never been exercised here at all". Both are now
+false and were already false when `architecture.md` recorded a supervised multi-lane run.
+
+Measured: supervised passes have landed real beads repeatedly, most recently session
+`basicly-u2hl:bc7cc925` on 2026-08-08, which dispatched five concurrent lanes under an **L3 grant
+of 300,000,000 tokens** and shipped nine beads. `[policy] autonomy` is still `L0` in the committed
+config — correctly, since that is the *grantable ceiling* and a grant raises it per session via
+`--autonomy L3`, which is the ladder working rather than the ladder unexercised.
+
+What `kjc5.22` still gates is narrower and unchanged: a pass completing with **zero human
+interventions attributable to a harness defect**. That has not happened. The 2026-08-08 pass
+recorded a **17.2% lane failure rate** (16 of 93 all-time), two silent data losses to the landing
+rebase, and two lanes wedged for an hour on a decider abstention — so the run is available
+(`u6jq.1` is unblocked and scheduler-ranked #1) and is deliberately held until `basicly-rrah` and
+`basicly-5vu4` land, because running it now would measure defects already filed.

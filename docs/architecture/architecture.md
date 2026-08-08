@@ -460,7 +460,24 @@ repo dogfoods them directly: [`.pre-commit-config.yaml`](../../.pre-commit-confi
 points straight at `core/hooks/*.py`. `basicly hooks-build` projects the manifest
 into a consumer's `.pre-commit-config.yaml` and then runs `pre-commit install` so the
 gates are active — not merely written; a gate that is shipped but never installed is
-inert, the exact failure that once let unguarded commits through (§8). The manifest's
+inert, the exact failure that once let unguarded commits through (§8).
+
+**Why pre-commit and not lefthook** (decided `basicly-3s2p`; absorbed here 2026-08-08 when
+the standalone decision note was deleted). The hooks are already runner-agnostic —
+`hooks.yaml` is a tool-neutral spec list and every hook script is standalone Python with no
+pre-commit API — so the only pre-commit-specific code is the projection layer in
+`hooks.py`. The decisive fact is that **every projected hook runs `uv run python <script>`**:
+uv and Python 3.14+ are required of a basicly committer whatever orchestrates the hooks, so
+lefthook's headline advantage — a static Go binary with "no runtime dependency" — buys this
+project nothing, while adding a binary-acquisition problem with no uv-native answer.
+pre-commit rides the uv channel consumers already have.
+
+Reopen the decision only if one of these changes: consumers stop reliably having uv on
+`PATH`; basicly drops the Python/uv requirement for the checks themselves; hook execution
+speed becomes a **measured** complaint that parallelism would fix; or pre-commit's
+provisioning seam regresses beyond what the `uv tool run` fallback covers. The
+runner-agnostic seam (the `manager` field, API-free scripts) is kept precisely so this stays
+cheap to reopen. The manifest's
 `manager` field routes each hook to one of three surfaces: `git` (the pre-commit
 config), `claude` (agent hooks in `.claude/settings.json`; the event derives from the
 spec `stage`, with an optional per-spec `matcher`), and `copilot` (managed

@@ -141,7 +141,7 @@ short form, and pins it however it pins models. The JSON is the contract.
 
 ## Traps
 
-Four, each of which has cost real debugging time.
+Five, each of which has cost real debugging time.
 
 1. **`updatedInput` replaces the tool input, it does not merge into it** — contrary
    to the general hooks documentation. The hook therefore copies every original key
@@ -156,6 +156,16 @@ Four, each of which has cost real debugging time.
 4. **`CLAUDE_CODE_SUBAGENT_MODEL` outranks** the per-invocation parameter the hook
    writes. Where it is set, every injection is inert and the hook stays deliberately
    silent. **Check that variable first** when an injection appears not to work.
+5. **Installing the hook has no effect until the host CLI process is restarted**, and
+   clearing the conversation reloads neither hooks nor agent definitions. Measured with
+   a control on 2026-08-01: a definition written by an earlier conversation _and_ a
+   brand-new one written seconds before were both rejected as "Agent type not found" in
+   a conversation begun by `/clear`, while agents predating the process start loaded
+   normally — which rules out the alternative explanation that an unrecognised `tier:`
+   frontmatter key was getting the definitions rejected. This is the fifth trap and it
+   is the one a reader hits first, so it is in the install steps too rather than only
+   here. A dry run and an already-installed converge run do not say it: nothing changed
+   for a restart to pick up.
 
 ## Debugging an injection
 
@@ -201,7 +211,10 @@ The kit-wide constraints are in [`../README.md`](../README.md). These are this k
 
 ## Where the evidence lives
 
-The design note is [`docs/design/tier-kit.md`](../../../../docs/design/tier-kit.md).
+The standalone design note (`docs/design/tier-kit.md`) was deleted 2026-08-08 once the kit
+shipped: this README is now the whole record, and the traps above are the part that was worth
+keeping. The hybrid rationale — why injection is preferred over static emission, and why copilot
+cannot take it — is in the section above.
 The beads carry the measurements: `basicly-wbsz.1` the resolver, `wbsz.2` the hook
 and the alias finding, `wbsz.3` the installer and the live end-to-end proof,
 `basicly-dukb` the portable project-scope command.

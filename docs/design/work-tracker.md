@@ -276,7 +276,7 @@ hooks.
 **It ships as a kit** (owner, 2026-08-05). "Inside the package" is where it *lives*, not what it
 *depends on*: the tracker is scripts plus data files in the repo, consumable with **zero `basicly`
 imports and nothing on `PATH`** — the same unit of delivery as the tier-injection kit
-(`design/tier-kit.md` §1.2), which is already proven in this shape at
+([`.basicly/core/kit/tier/README.md`](../../.basicly/core/kit/tier/README.md)), proven in this shape at
 `.basicly/core/kit/`. So another harness can adopt it the way we adopt `br` today, minus the
 binary.
 

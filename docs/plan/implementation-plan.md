@@ -113,7 +113,7 @@ RETROSPECTIVE does not exist — nothing computes a control limit over the gate-
 `policy.rework_recorded` reports a cross-gate total that **nothing enforces**, so a lane can still
 grind gate by gate.
 
-The tracker is still the external `br` binary: **43 spawn sites** behind the one seam in `br.py`,
+The tracker is still the external `br` binary: **31 spawn sites** behind the one seam in `br.py`,
 of which five have no owned equivalent at all (§6.1).
 
 **Three facts that are easy to get wrong**, so they are stated rather than left to be re-derived:
@@ -133,7 +133,7 @@ dependency clusters a cut draws from (§14). Rows are in shipping order.
 | --- | --- | --- |
 | ~~**`v0.7.0`**~~ | **SHIPPED 2026-08-06.** Trustworthy factory. 19 beads closed over two sessions. **Exit criterion 5 was not met** — see §5.1. `basicly-yc0x`. | shipped |
 | **`v0.7.1`** | **End the shared-anchor collision class**, and carry the unattended-run proof `v0.7.0` could not. `4746` (a changelog fragment per lane, so collision is impossible by construction), `bdd4` (dispatch a bounced lane to resolve its conflict rather than replaying the rebase), `3f76` (design docs stop carrying bead-id lists), `m4zv.5` (a stalled rework round escalates without spending the cap). A patch, not a minor, **only if** a curated `[Unreleased]` body keeps working alongside fragments. | 1–2 sessions |
-| ~~**`v0.8.0`**~~ | **SHIPPED 2026-08-07** (`ddfa651`). **Own the work graph — the store, not yet the floor.** The owned event log exists and is checkable: provenance, ids, snapshot with rotation, `fsck`/`rebuild`, import with tombstones, a shadow differential that refuses a self-agreeing comparison, and a `[tracker] mode` rung that flips the one record-read seam. **It does not remove `br` from the consumer floor**, and the row said it did until 2026-08-07 — measured at `MODE_OWNED` with no `br` on PATH, `gate list` and `lint` still raise "the harness requires the beads tracker", because `.19` flips `read_record` alone and 44 further spawn sites remain, 26 of them `comments`. That claim moves to `v1.0.0`, where the fresh-consumer acceptance test makes it falsifiable instead of asserted (`basicly-vkh0.22`). Plus streaming telemetry (`wctc`, `jr0l.66`). `basicly-vkh0`. | 5–8 sessions |
+| ~~**`v0.8.0`**~~ | **SHIPPED 2026-08-07** (`ddfa651`). **Own the work graph — the store, not yet the floor.** The owned event log exists and is checkable: provenance, ids, snapshot with rotation, `fsck`/`rebuild`, import with tombstones, a shadow differential that refuses a self-agreeing comparison, and a `[tracker] mode` rung that flips the one record-read seam. **It does not remove `br` from the consumer floor**, and the row said it did until 2026-08-07 — measured at `MODE_OWNED` with no `br` on PATH, `gate list` and `lint` still raise "the harness requires the beads tracker", because `.19` flips `read_record` alone and 31 further spawn sites remain, 26 of them `comments`. That claim moves to `v1.0.0`, where the fresh-consumer acceptance test makes it falsifiable instead of asserted (`basicly-vkh0.22`). Plus streaming telemetry (`wctc`, `jr0l.66`). `basicly-vkh0`. | 5–8 sessions |
 | **`v0.9.0`** | **Make the factory's own plumbing trustworthy — reordered 2026-08-08 (§6.7) and this row now leads with it.** The code-quality floor shipped (`u2hl.12`, `.14`, `.15`, `.16`) and so did five loop features (`u2hl.18`, `.20`, `.23`, `.28`, `.32`), but the session that landed them measured the *plumbing* failing underneath: a landing that silently discards a lane's conflict resolution (`5vu4`, P0 — happened twice, and the suite stayed green through one of them), no persisted lane transcript at all (`rrah`, P0), a scope field feeding two gates that want opposite things (`efw2`, P0), a refuted claim in an epic reaching the decider as fact (`b9ef`, P0), three shared landing anchors bouncing 3 of 5 lanes (`ef7t`, P0; `3w51`), no binding band floor (`esxp`) and no way to stop a healthy supervisor without killing live lanes (`o40x`). **These precede the remaining loop features**, because every one of them corrupts the evidence the features would be judged by. Then what is still open on the loop (§6.2): the four remaining handoff schemas, VALIDATE as a real state, the personas, EARS, the retrospective's special-cause signal. Then the unblocked evidence work: `imnu.2`, `imnu.3`, `imnu.5`. | 8–12 sessions |
 | **`v0.9.1`** | **The measured evidence layer, when its chain unblocks.** Cost per landed package (`7bur`), AST localisation (`agzx.2`), the remaining Phase 2 gate (`m4zv.3`), parameter learning (`3ifz`). Split out of `v0.9.0` because the whole chain sits behind `69az` (§7) and has done for two releases; holding the factory loop behind it would ship neither. | 3–5 sessions |
 | **`v0.10.0`** | **The judgment layer and always-on relief.** The roster (`s2xf`), gated on `7bur`'s numbers by construction; the Phase 4 authoring pass and the empty-glob check (`a3ab.1`–`.3`). | 5–8 sessions |
@@ -346,7 +346,7 @@ that changes would freeze a contract the roadmap already voids.
 read at their own call site with their own payload shape, and rewriting callers was the one thing
 that bead was required not to do. Measured 2026-08-07 at `MODE_OWNED` with `br.which` returning
 None, so an empty ledger cannot be the cause: `policy.gate_status` and `policy.definition_of_ready`
-both raise `br is not on PATH; the harness requires the beads tracker`. 44 typed spawn sites remain
+both raise `br is not on PATH; the harness requires the beads tracker`. 31 typed spawn sites remain
 — `comments` 26, `dep` 5, `update` 3, `sync` 2, and one each of `where`, `lint`, `init`, `gate`,
 `close`, `blocked` — and `comments` is the carrier for every checkpoint, gate marker, grant and
 rework record, so it is the load-bearing half rather than the tail. `basicly-vkh0.22` holds the
@@ -393,7 +393,9 @@ five-lane fan-out.
 
 Measured 2026-08-08 by reading every call site, not by reading bead titles. `br.py` is the only
 module that spawns `br`, through two funnels (`run_br`, `try_run_br`) reaching one `subprocess.run`.
-**43 spawn sites**, of which four already route to an owned equivalent (`comments add`,
+**31 spawn sites** across 11 modules (re-counted 2026-08-08 by call site, not by matching line —
+the earlier 43/44 figures counted `from .br import run_br` lines and docstrings), of which four
+already route to an owned equivalent (`comments add`,
 `comments list`, `show`, `scheduler`) and three are the shadow differential's reference side, which
 must keep reading the live store by construction.
 
@@ -418,9 +420,17 @@ and `rubrics` → `classify` and `loop` → the `decompose`/`supervise` bulk →
 store-lifecycle calls (`sync`, `init`, `where`) last. `bv` needs **nothing**: 0 of its 141 surfaces
 has ever been invoked, and no call site exists to contradict that.
 
-**Step 1 has not been run.** `basicly.toml` still says `mode = "external"` and `.basicly/ledger/`
-holds no `events-*.jsonl`, so the import is unrun and the dual write has never populated a gate
-field. Nothing downstream can be measured until it is.
+**Step 1 HAS been run; this paragraph claimed otherwise until 2026-08-08.** The import ran on
+2026-08-07 in commit `b97a653`: `.basicly/ledger/events-0001.jsonl` holds **3,775 events over 643
+records**, every one `imported_from: beads-export`, provenance `EXTRACTED`. The refuted claim is
+recorded rather than silently replaced because it is the second time this file has asserted a
+tracker fact the tree contradicts.
+
+What is actually true: `basicly.toml` still says `mode = "external"`, so **steps 2-4 have not
+run** and the dual write has never populated a gate field. And the import is a **one-shot with no
+entry point** — `migrate.import_snapshot` has no caller in `src/`, `.scripts/` or `.basicly/`, no
+`main()`, and `basicly tracker --help` lists `shadow` only (`basicly-vkh0.23`), so it cannot be
+repeated and had drifted 24 records behind the export within a day.
 
 ### 6.2 The factory loop — what landed and what is open
 
