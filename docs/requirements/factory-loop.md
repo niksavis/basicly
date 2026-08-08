@@ -375,13 +375,48 @@ Discipline: **encode only what a second party can check, or what a gate cannot e
 research is explicit that the rest is prose, and this repo's root-cause analysis found accreted
 prose is the underlying defect.
 
-| Skill | Invoked in | What it carries | Replaces |
+### 7.1 Three guidance surfaces, and which one a rule belongs on
+
+A rule reaches an agent by exactly one of three routes, and choosing wrong is why guidance rots:
+
+| Surface | Loads | Costs | Use when |
 | --- | --- | --- | --- |
-| `decompose-plan` | DECOMPOSE | testable criteria notation, dependency declaration, budget assignment | part of `harness-loop` |
-| `validate-as-consumer` | VALIDATE | run it as a consumer would, in the operational environment — never a re-run of the gate suite | nothing (gap) |
-| `repair-in-place` | REPAIR | same worktree, briefed with actual findings, no re-plan | nothing (gap) |
-| `root-cause` | RETROSPECTIVE | iterated-why with every link citing an observation; output is a named control + tier + covered class | the `session-finish` retro section |
-| `python-guidelines` | BUILD, REPAIR | §9(B) — the non-mechanical half | nothing (gap) |
+| **Fragment** | always, or on a path glob | always-on budget on every family; `AGENTS.md` has ~1,225 characters of headroom | it must bind even when nobody thought to ask |
+| **Skill** | when the model judges it relevant, or when a human types it | nothing until invoked | it is a *method* — long, situational, and useless when it does not apply |
+| **Agent** (§6) | when the engine dispatches a state, or on demand | a dispatch | it needs its own tools, tier and output contract, not just words |
+
+The three are not alternatives for the same content. **An agent is a dispatch contract; a skill is a
+method that contract can load.** An implementer agent says who runs, at what tier, with what tools,
+producing `change-summary`; `repair-in-place` says *how* to repair once it is running. Putting the
+method in the agent's prompt makes it unshareable; putting the contract in a skill makes it
+unenforceable.
+
+### 7.2 Two classes, mirroring §6.2
+
+| Class | Bound to | Today [M 2026-08-08] |
+| --- | --- | --- |
+| **Loop skills** | a state, loaded by that state's agent | **1 of 5 exist** |
+| **Ad-hoc skills** | nothing — invoked when they fit | 37 sources: 31 model-invoked, 6 user-invoked |
+
+**Not one of the 37 is named for a loop state.** The ad-hoc class is well populated — `tool-*`
+wrappers, `conventional-commits`, `worktree-isolation`, `test-discipline` — and the state-bound
+class is empty but for `python-guidelines`. That is the same asymmetry §6.3 measures for agents, and
+it has the same cause: the ad-hoc class is what a human reaches for, so it got built.
+
+| Skill | Invoked in | What it carries | Status [M] |
+| --- | --- | --- | --- |
+| `decompose-plan` | DECOMPOSE | testable criteria notation, dependency declaration, budget assignment | **missing** (part of `harness-loop` today) |
+| `validate-as-consumer` | VALIDATE | run it as a consumer would, in the operational environment — never a re-run of the gate suite | **missing** |
+| `repair-in-place` | REPAIR | same worktree, briefed with actual findings, no re-plan | **missing** |
+| `root-cause` | RETROSPECTIVE | iterated-why with every link citing an observation; output is a named control + tier + covered class | **missing** (the `session-finish` retro section stands in) |
+| `python-guidelines` | BUILD, REPAIR | §9.2 — the non-mechanical half | **shipped** (`basicly-u2hl.13`) |
+
+**A loop skill is blocked on its state, not on itself.** `validate-as-consumer` cannot be exercised
+while VALIDATE is not a phase, and `root-cause` cannot fire without the special-cause signal §3.2
+specifies. Authoring one ahead of its state produces a skill nothing invokes, which is the
+unfalsifiable-claim failure the catalog eval exists to catch — 8 of 34 skills had ever been
+exercised when that was last measured. `basicly-4kdm` owns the pairing: a loop skill lands with the
+agent that loads it, or not at all.
 
 **Shipped 2026-08-08** (`basicly-u2hl.13`), and **being promoted to a path-scoped fragment** [D]:
 as a model-invoked skill it loads only when an agent thinks to ask, and the agent that most needs

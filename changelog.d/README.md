@@ -16,6 +16,15 @@ The file holds the entry body only, no `###` heading: assembly writes the headin
   the change came from.
 ```
 
+## Why the name
+
+`d` is **directory**, following the Unix drop-in convention — `init.d`, `cron.d`,
+`conf.d`, `sources.list.d`. `<name>.d` means "a directory of fragments that compose
+into `<name>`", so the name itself says two things: `CHANGELOG.md` is the assembled
+artifact, and you add a file here rather than editing it. (It is also the directory
+name `scriv` uses for the same job; this repo implements its own scanner and takes
+only the convention.)
+
 ## Why a file per lane
 
 The filename carries the bead id, so it is unique by construction and two lanes
