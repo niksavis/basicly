@@ -8,15 +8,112 @@ then *does* with the number stays beside the estimator.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from basicly import read_cost
+
+_RECORD_FIELDS = ("issue_id", "agent", "tier", "status", "turns", "tokens", "cost_usd")
+
+# The calibration :func:`basicly.read_cost._text_tokens` documents, transcribed. Each
+# value is the estimator's signed relative error against tiktoken's o200k_base,
+# measured 2026-08-08 (basicly-u2hl.32); tiktoken is not a dependency of this repo, so
+# these are the record of that measurement rather than something a test re-derives.
+# They live here rather than in the module because a `src/` name whose only consumer is
+# a test is a `wired-or-deleted` finding by design, and the module has no production
+# caller for them — the estimator applies no correction, it forbids a use.
+_MEASURED_ERROR = {
+    "prose": 0.016,
+    "beads-json": -0.107,
+    "run-record-json": -0.164,
+    "run-record-md-headings": -0.289,
+    "run-record-tsv": -0.395,
+}
 
 
 def _write(repo: Path, rel: str, chars: int) -> None:
     path = repo / rel
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("x" * chars, encoding="utf-8")
+
+
+def _run_records(count: int) -> list[dict[str, object]]:
+    """Run-record-shaped rows — the population the calibration table was measured on."""
+    return [
+        {
+            "issue_id": f"basicly-u2hl.{index}",
+            "agent": "claude",
+            "tier": "high",
+            "status": "landed",
+            "turns": 40 + index,
+            "tokens": 8_000_000 + index * 13_337,
+            "cost_usd": round(12.5 + index * 0.37, 2),
+        }
+        for index in range(count)
+    ]
+
+
+def _calibrated(estimate: int, payload_format: str) -> float:
+    """*estimate* corrected by the format's measured error, as :data:`_MEASURED_ERROR` reads."""
+    return estimate / (1 + _MEASURED_ERROR[payload_format])
+
+
+def test_a_format_switch_is_not_rankable_through_the_estimator() -> None:
+    """AC: a format comparison does not rest on chars/4 — the gap is inside the bias.
+
+    The same twenty run records rendered as compact jsonl and as markdown headings come
+    out within a few percent of each other in characters, which is exactly the regime a
+    format decision would ask the estimator to arbitrate. It cannot: the correction the
+    two formats need differs by about 15%, so a gap smaller than that carries no
+    information about which rendering is really cheaper — the whole of it is accounted
+    for by the estimator's own bias. Corrected, the markdown is the dearer form by about
+    a fifth.
+    """
+    records = _run_records(20)
+    as_json = "\n".join(json.dumps(record) for record in records)
+    as_markdown = "\n".join(
+        f"## {record['issue_id']}\n"
+        + "\n".join(f"- {field}: {record[field]}" for field in _RECORD_FIELDS)
+        for record in records
+    )
+
+    estimated_json = read_cost._text_tokens(as_json)
+    estimated_markdown = read_cost._text_tokens(as_markdown)
+    # How far apart two renderings must estimate before the estimator's own
+    # between-format bias stops accounting for the whole difference.
+    resolution = 1 - (1 + _MEASURED_ERROR["run-record-md-headings"]) / (
+        1 + _MEASURED_ERROR["run-record-json"]
+    )
+    assert abs(1 - estimated_markdown / estimated_json) < resolution
+
+    real_json = _calibrated(estimated_json, "run-record-json")
+    real_markdown = _calibrated(estimated_markdown, "run-record-md-headings")
+    assert real_markdown / real_json > 1.10
+
+
+def test_a_format_saving_read_off_the_estimator_is_not_the_real_saving() -> None:
+    """The magnitude is unusable even where the ranking survives.
+
+    tsv is genuinely the cheaper rendering and the estimator does rank it first, so this
+    is the favourable case for it. It still overstates the win by more than ten points,
+    because correcting each side by its own measured error closes most of the gap the
+    estimator reported. Nothing downstream may quote a saving taken from this unit.
+    """
+    records = _run_records(20)
+    as_json = "\n".join(json.dumps(record) for record in records)
+    as_tsv = "\n".join(
+        "\t".join(str(record[field]) for field in _RECORD_FIELDS) for record in records
+    )
+
+    estimated_json = read_cost._text_tokens(as_json)
+    estimated_tsv = read_cost._text_tokens(as_tsv)
+    reported_saving = 1 - estimated_tsv / estimated_json
+
+    real_saving = 1 - _calibrated(estimated_tsv, "run-record-tsv") / _calibrated(
+        estimated_json, "run-record-json"
+    )
+    assert reported_saving > real_saving > 0
+    assert reported_saving - real_saving > 0.10
 
 
 def test_instruction_overhead_tokenizes_agents_md(tmp_path: Path) -> None:

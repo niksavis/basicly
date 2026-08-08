@@ -5,7 +5,10 @@ declared scope globs, how much material would an agent actually pull into contex
 Two terms answer it — the projected instruction file every dispatch prompt points at
 (:func:`instruction_overhead`) and the files the declared globs match
 (:func:`scope_read_cost`) — and both are *measured* against the tree, never configured
-(design section 6).
+(design section 6). Both are priced in the same chars/4 unit, which is calibrated on
+prose and on nothing else: :func:`_text_tokens` records the measured error per payload
+shape and the one use — comparing two serializations of the same data — that the unit
+cannot support.
 
 The boundary is measurement against judgement. Nothing here knows what a build factor
 is, what the band is, or whether a plan is dispatchable: :mod:`basicly.decompose`
@@ -31,7 +34,43 @@ INSTRUCTIONS_FILE = "AGENTS.md"
 
 
 def _text_tokens(text: str) -> int:
-    """Deterministic chars/4 token estimate (design 7.5: no tokenizer dependency)."""
+    """Deterministic chars/4 token estimate (design 7.5: no tokenizer dependency).
+
+    It is calibrated on prose and on nothing else, and the second half of that
+    sentence is a prohibition rather than a caveat. Measured 2026-08-08 against
+    tiktoken's ``o200k_base`` over real payloads from this repo (basicly-u2hl.32),
+    the same tokenizer ``docs/design/factory-loop-requirements.md`` §15.1 measured
+    formats with — each figure is the signed relative error against the tokenizer,
+    ``(chars/4 - real) / real``, so a real count is recovered as
+    ``estimate / (1 + error)``::
+
+        payload                          n     chars/4 against o200k_base
+        prose (skill bodies)                                       +1.6%
+        beads issue json                50                        -10.7%
+        run-record json                 50                        -16.4%
+        run-record markdown headings    50                        -28.9%
+        run-record tsv                  50                        -39.5%
+
+    On prose the estimate is worth what it costs: +1.6% is far inside the resolution
+    of everything downstream of it, since :data:`SCOPE_FILE_READ_CAP` is a
+    4,000-token cap fitted to buckets hundreds of tokens wide and the govern band it
+    feeds is 8K-64K.
+
+    On structured text it under-counts by 10-40%, and the size of the miss is set by
+    the *format* rather than by the content. So it cannot rank two renderings of the
+    same data, which is the one use it must never be put to: correcting json by its
+    measured -16.4% and tsv by its measured -39.5% multiplies the gap between them by
+    1.38, so a format switch this estimator reports as a saving is a real saving only
+    above ~28%, and under that the ranking inverts. ``tests/test_read_cost.py`` pins a
+    pair of real renderings whose whole estimated gap sits inside that bias, and a
+    second pair where the ranking survives but the saving is overstated by 14 points.
+
+    A format comparison needs a real tokenizer over the real payloads, which is what
+    produced the table above. Vendoring a BPE here is not on the table either: it is
+    a confirmation-gated dependency change (``docs/design/factory-design.md`` §6,
+    "Estimate (at decompose)") and is refused outright under ``.basicly/core/kit``,
+    which imports the standard library and nothing else.
+    """
     return len(text) // 4
 
 
