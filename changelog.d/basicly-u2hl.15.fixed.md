@@ -15,3 +15,20 @@
   the next directory of first-party Python fails there instead of inheriting the silence, and runs
   pyright over a bad module under `.scripts/` to prove the coverage is real — with the config minus
   its `exclude` override as the discriminator, which analyses nothing and exits 0 (basicly-u2hl.15).
+- **The spend-accuracy gate now measures a bead, not one attempt at a bead.**
+  `forecast_spend_tokens` is derived from a bead's `## Scope`, so every dispatch of that bead
+  records the identical number — what getting the whole bead done should cost — while
+  `decompose.spend_accuracy` compared it against each dispatch separately. A bead dispatched more
+  than once therefore had every attempt after the first scored against a forecast that covers work
+  an earlier attempt already did, which is a structural under-spend rather than a forecast error:
+  `basicly-u2hl.14` ran 30,139,416 then 2,785,270 then 1,512,403 tokens against a 26,320,290
+  forecast, and the third attempt alone read as 0.057x and turned `main` red while the lane itself
+  came in at 1.31x. The same unit error as basicly-tcmy.34, one level up — a number held against a
+  quantity it does not denominate. A bead's comparable dispatches are now summed into one
+  `SpendPair`, the forecast taken from the latest of them (a re-dispatch re-reads the bead, so four
+  of the eight multiply-dispatched beads in this ledger carry forecasts differing by 2.5-9.7% across
+  their attempts; each lands in band under either end, so no verdict turns on the choice), and
+  `attempts` is carried on the pair and named in the violation — "spent
+  17,000,000 tokens over 4 dispatches" — so an aggregate can never read as one runaway lane. The
+  live gate goes from one violation to none across 60 lanes, and an overrun spread across four
+  dispatches still fires (basicly-u2hl.15).

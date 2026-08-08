@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import statistics
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -2337,26 +2338,31 @@ def _record_spend_pair(  # noqa: PLR0913 — one parameter per seeded record fie
     estimated: bool = False,
     returncode: int = 0,
     forecast_source: str | None = None,
+    timestamp: str | None = None,
 ) -> None:
-    """Seed one write dispatch with an actual and whichever forecast half the test needs."""
-    run_record.record(
-        repo,
-        bead_id,
-        run_record.build_record(
-            agent="claude",
-            handoff=False,
-            returncode=returncode,
-            forecast_source=forecast_source,
-            duration_s=100.0,
-            command=("claude",),
-            tokens=tokens,
-            estimated=estimated,
-            task_class=task_class,
-            forecast_tokens=forecast_tokens,
-            forecast_spend_tokens=forecast_spend_tokens,
-            phase=phase,
-        ),
+    """Seed one write dispatch with an actual and whichever forecast half the test needs.
+
+    *timestamp* overrides the stamp `build_record` takes from the clock. Records of one
+    bead are deduplicated on it and folded in its order, so a test about several attempts
+    at one bead has to make the ordering an input rather than race two `now()` calls.
+    """
+    record = run_record.build_record(
+        agent="claude",
+        handoff=False,
+        returncode=returncode,
+        forecast_source=forecast_source,
+        duration_s=100.0,
+        command=("claude",),
+        tokens=tokens,
+        estimated=estimated,
+        task_class=task_class,
+        forecast_tokens=forecast_tokens,
+        forecast_spend_tokens=forecast_spend_tokens,
+        phase=phase,
     )
+    if timestamp is not None:
+        record = replace(record, timestamp=timestamp)
+    run_record.record(repo, bead_id, record)
 
 
 def test_the_spend_forecast_lands_within_an_order_of_magnitude_of_recorded_spend() -> None:
@@ -2540,3 +2546,81 @@ def test_an_assumed_fallback_forecast_is_named_not_compared(tmp_path: Path) -> N
     assert accuracy.pairs == ()
     assert accuracy.violations == ()
     assert accuracy.unscoped == ("b-1",)
+
+
+def test_a_beads_attempts_are_one_lane_rather_than_three_forecast_misses(tmp_path: Path) -> None:
+    """The known-bad control for basicly-u2hl.15, on `basicly-u2hl.14`'s real numbers.
+
+    `forecast_spend_tokens` is derived from the bead's scope, so all three of that lane's
+    dispatches recorded the same 26,320,290 — the cost of getting *the bead* done. Scored
+    per attempt, the two re-dispatches are compared against a forecast covering work the
+    first attempt already did, so the third read as 0.057x and failed the live gate while
+    the lane itself came in at 1.31x. Every attempt here is individually under the band.
+    """
+    for index, tokens in enumerate((30_139_416, 2_785_270, 1_512_403)):
+        _record_spend_pair(
+            tmp_path,
+            "b-1",
+            tokens=tokens,
+            forecast_spend_tokens=26_320_290,
+            timestamp=f"2026-08-08T1{index}:00:00+00:00",
+        )
+
+    accuracy = decompose.spend_accuracy(tmp_path, _sizing())
+
+    assert len(accuracy.pairs) == 1
+    assert accuracy.pairs[0].attempts == 3
+    assert accuracy.pairs[0].actual_tokens == 34_437_089
+    assert accuracy.violations == ()
+
+
+def test_an_overrun_spread_across_dispatches_is_still_reported(tmp_path: Path) -> None:
+    """Summing the attempts must not become a way to spend past the band quietly.
+
+    The half of the fix that can silently stop working: a bead is what the forecast
+    denominates, so re-dispatching it is exactly how a lane reaches 170x, and the count
+    is named in the violation because "spent 17,000,000" without it invites the reader to
+    hold one dispatch responsible for four.
+    """
+    for index in range(4):
+        _record_spend_pair(
+            tmp_path,
+            "b-1",
+            tokens=4_250_000,
+            forecast_spend_tokens=100_000,
+            timestamp=f"2026-08-08T1{index}:00:00+00:00",
+        )
+
+    accuracy = decompose.spend_accuracy(tmp_path, _sizing())
+
+    assert len(accuracy.violations) == 1
+    assert "b-1 spent 17,000,000 tokens over 4 dispatches" in accuracy.violations[0]
+    assert "170.000x" in accuracy.violations[0]
+
+
+def test_a_re_dispatched_lane_is_held_to_its_latest_forecast(tmp_path: Path) -> None:
+    """A re-dispatch re-reads the bead, so the two forecasts differ and one must win.
+
+    Four beads in this repo's ledger carry forecasts 6-10% apart across their attempts.
+    The newest is taken: it is the number a re-grant would be sized from. Asserted so the
+    tie-break is a decision on the record rather than whichever order the ledger enumerates.
+    """
+    _record_spend_pair(
+        tmp_path,
+        "b-1",
+        tokens=1_000_000,
+        forecast_spend_tokens=12_936_362,
+        timestamp="2026-08-08T10:00:00+00:00",
+    )
+    _record_spend_pair(
+        tmp_path,
+        "b-1",
+        tokens=1_000_000,
+        forecast_spend_tokens=13_749_377,
+        timestamp="2026-08-08T11:00:00+00:00",
+    )
+
+    accuracy = decompose.spend_accuracy(tmp_path, _sizing())
+
+    assert accuracy.pairs[0].forecast_tokens == 13_749_377
+    assert accuracy.pairs[0].actual_tokens == 2_000_000
