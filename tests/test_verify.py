@@ -1274,10 +1274,10 @@ def test_the_coverage_sweep_reports_a_directory_no_target_covers() -> None:
     """The control for the sweep above, in the exact shape this bead was filed for."""
     unscanned = _unscanned_directories(
         (".scripts", ".basicly/core/hooks"),
-        [".scripts/docs_claims.py", ".basicly/core/kit/tier_resolver.py"],
+        [".scripts/docs_claims.py", ".basicly/core/kit/tier/tier_resolver.py"],
     )
 
-    assert unscanned == [".basicly/core/kit"]
+    assert unscanned == [".basicly/core/kit/tier"]
 
 
 def test_bandit_fails_on_an_unsafe_construct_in_the_kit(tmp_path: Path) -> None:

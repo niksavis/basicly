@@ -311,7 +311,7 @@ one shape: **two lanes editing the same anchor in a file no bead declares.**
 | 1 | `CHANGELOG.md`, three lanes at one `### Fixed` anchor | 2 of 3 landed; `o8p0` filed and fixed |
 | 2 | `pytest` red on `main` — the spend gate compared a failed dispatch and an `assumed:` placeholder against whole-lane forecasts | fixed at the root; gate now 0 violations, median 0.96x |
 | 3 | `.basicly/generated-manifest.json` | 2 of 3 landed; `lyro` filed and fixed |
-| 4 | `docs/design/tier-injection-kit.md` §7, which lists two of the running beads by name | 2 of 3 landed |
+| 4 | `docs/design/tier-kit.md` §7, which lists two of the running beads by name | 2 of 3 landed |
 
 **The proof run did its job.** It found three real defects that four prior supervised passes
 never surfaced, and all three shipped. What it could not do is pass, because the remaining
@@ -786,7 +786,7 @@ its design is implemented and only the listed precondition stands between it and
 | `design/steering-surfaces-design.md` | **Deletable now** — `uhiq.2` | Zero inbound references; architecture `:1553-1585` already carries the recall result. |
 | `design/catalog-efficacy-design.md` | **Deletable now** — `uhiq.2` | Architecture `:1563` carries the upper-bound rule, but `:1583` and `:1692` still cite the file by path — inline those citations or they dangle. |
 | `design/harness-eval.md` | **Deletable now** — `uhiq.2` | Zero inbound references; superseded by the shipped `rubric` command and `.scripts/recall_eval.py`. |
-| `design/tier-injection-kit.md` | Deletable after reference removal | The kit ships at `.basicly/core/kit/`; referenced from `CHANGELOG.md` and the kit's own README. A changelog entry is history and may keep its link, so decide that explicitly. |
+| `design/tier-kit.md` | Deletable after reference removal | The kit ships at `.basicly/core/kit/`; referenced from `CHANGELOG.md` and the kit's own README. A changelog entry is history and may keep its link, so decide that explicitly. |
 | `architecture/hook-runner-decision.md` | **Deletable now** — `uhiq.2` | Zero inbound references anywhere. |
 | `archive/foundry-spike.md` | **Deletable now** — `uhiq.2` | Zero inbound references. The `docs/archive/` directory goes with it — an archive is the thing this rule forbids. |
 | `research/2026-07-26-sota-review.md` | Dated evidence | A review of the field on one date, with its conclusions already absorbed. Delete when nothing cites it; not design, so it never becomes code. |

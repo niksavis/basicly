@@ -25,6 +25,16 @@ caught one.
 - **A licence restricts copying expression, not learning a fact.** Measurements and
   concepts survive a restriction; implementations and ports do not. Keep the finding
   on the usable side of that line instead of dropping the source entirely.
+- **Ask what the author sells before you adopt what they recommend.** A source whose
+  recommended control happens to be its own product is positioning until something
+  independent evidences it. Measured 2026-08-08 on a widely-cited essay: every element
+  that survived scrutiny was mechanical (slice shape, an artifact of the call graph),
+  and every element that did not was one where the prescribed control was the author's
+  paid product. The tell is mechanical, so it is checkable.
+- **Check whether the prescription's premise assumes away a control you already run.**
+  That essay's argument holds only if no automated maintainability gate exists. This repo
+  runs seven. The premise was never argued, only assumed, and it took five iterations of
+  "why" to reach it — the first four all accepted it.
 - **Say whether you have the mechanism or only the correlation.** When a pattern holds
   across independent sources, state which one you established. Writing that every
   project adopting a design traded away determinism implied a cause that was really

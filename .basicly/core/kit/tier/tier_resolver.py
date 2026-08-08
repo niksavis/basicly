@@ -62,6 +62,10 @@ the module body runs — ``dataclasses`` resolves a string annotation through
     spec.loader.exec_module(module)
 """
 
+# module-size-waiver: the kit's contract is that a foreign harness can copy this file
+# and its hook flat into one directory and have them work, so splitting it along the
+# seam the cap wants (the model-map lookup) would break the thing the module exists for.
+
 from __future__ import annotations
 
 import argparse
@@ -371,9 +375,9 @@ def find_map(root: Path | None = None, *, beside_the_kit: bool = True) -> Path |
     if not beside_the_kit:
         return None
     here = Path(__file__).resolve().parent
-    # The kit's own neighbours: the catalog layout (`core/kit/` beside
-    # `core/models/`) and a flat copy of the two files into one directory.
-    for candidate in (here.parent / MODELS_DIRNAME / MAP_FILENAME, here / MAP_FILENAME):
+    # Its own neighbours: the catalog's `models/`, two levels up from a
+    # foldered kit, and a flat copy of the two files into one directory.
+    for candidate in (here.parents[1] / MODELS_DIRNAME / MAP_FILENAME, here / MAP_FILENAME):
         if candidate.is_file():
             return candidate
     return None

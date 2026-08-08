@@ -38,7 +38,7 @@ from types import ModuleType
 import pytest
 
 REPO_ROOT = Path(__file__).parent.parent
-KIT_RELATIVE_DIR = Path(".basicly") / "core" / "kit"
+KIT_RELATIVE_DIR = Path(".basicly/core/kit/tier")
 KIT_DIR = REPO_ROOT / KIT_RELATIVE_DIR
 INSTALLER = KIT_DIR / "install_hook.py"
 HOOK = KIT_DIR / "claude_tier_hook.py"

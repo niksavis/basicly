@@ -37,7 +37,7 @@ from basicly import models
 from basicly.schema import MODEL_TIERS
 
 REPO_ROOT = Path(__file__).parent.parent
-KIT = REPO_ROOT / ".basicly" / "core" / "kit" / "tier_resolver.py"
+KIT = REPO_ROOT / ".basicly/core/kit/tier/tier_resolver.py"
 MAP = REPO_ROOT / ".basicly" / "core" / "models" / "model-map.json"
 REFERENCE_MAP: dict = json.loads(MAP.read_text(encoding="utf-8"))
 

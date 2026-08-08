@@ -23,9 +23,9 @@ import, nothing on `PATH`, no third-party package, no network. Copy them plus
 ## Install
 
 ```bash
-python3 .basicly/core/kit/install_hook.py --dry-run
-python3 .basicly/core/kit/install_hook.py
-python3 .basicly/core/kit/install_hook.py --user
+python3 .basicly/core/kit/tier/install_hook.py --dry-run
+python3 .basicly/core/kit/tier/install_hook.py
+python3 .basicly/core/kit/tier/install_hook.py --user
 ```
 
 Default scope is this repository's `.claude/settings.json`. `--user` widens it
@@ -40,7 +40,7 @@ the hook is named through `${CLAUDE_PROJECT_DIR}`, which the host expands to the
 project root whatever the working directory is, and it runs under `uv`:
 
 ```json
-"command": "uv run --no-project --no-python-downloads python \"${CLAUDE_PROJECT_DIR}/.basicly/core/kit/claude_tier_hook.py\""
+"command": "uv run --no-project --no-python-downloads python \"${CLAUDE_PROJECT_DIR}/.basicly/core/kit/tier/claude_tier_hook.py\""
 ```
 
 The user's file is machine-local, so it keeps absolute paths and needs nothing on
@@ -61,7 +61,7 @@ clearing the conversation reloads nothing and the hook will appear to do nothing
 ## Check A Resolution Without Spawning Anything
 
 ```bash
-python3 .basicly/core/kit/tier_resolver.py --host claude --name my-agent
+python3 .basicly/core/kit/tier/tier_resolver.py --host claude --name my-agent
 ```
 
 Exit 0 with a `model` and an `alias`, or exit 1 with the `reason` it resolved

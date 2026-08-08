@@ -40,7 +40,7 @@ from basicly import models
 from basicly.schema import MODEL_TIERS
 
 REPO_ROOT = Path(__file__).parent.parent
-KIT_DIR = REPO_ROOT / ".basicly" / "core" / "kit"
+KIT_DIR = REPO_ROOT / ".basicly/core/kit/tier"
 HOOK = KIT_DIR / "claude_tier_hook.py"
 RESOLVER = KIT_DIR / "tier_resolver.py"
 MAP = REPO_ROOT / ".basicly" / "core" / "models" / "model-map.json"

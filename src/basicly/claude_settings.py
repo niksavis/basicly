@@ -42,7 +42,7 @@ HOOKS_KEY = "hooks"
 # Substituted by Claude Code itself, as a plain string, before any shell sees it —
 # which is what lets a projected hook resolve from any working directory without a
 # machine-specific absolute path in a tracked file (basicly-dukb, basicly-f3mi).
-# Kept identical to `.basicly/core/kit/install_hook.py`'s pair on purpose: two
+# Kept identical to `.basicly/core/kit/tier/install_hook.py`'s pair on purpose: two
 # spellings of the same contract would drift.
 PROJECT_DIR_PLACEHOLDER = "${CLAUDE_PROJECT_DIR}"
 HOOK_INTERPRETER = "uv run --no-project --no-python-downloads python"
@@ -166,7 +166,7 @@ def _agent_hook_command(spec: HookSpec, hooks_relpath: str) -> str:
     repo root; a Claude Code handler runs in the *current* directory, so a relative
     path failed the moment the working directory drifted — a `cd` was enough
     (basicly-f3mi). The same conclusion basicly-dukb reached from the vendor docs, and
-    ``.basicly/core/kit/install_hook.py`` already ships this exact shape.
+    ``.basicly/core/kit/tier/install_hook.py`` already ships this exact shape.
 
     ``--no-project`` keeps the spawn out of virtualenv resolution and matches the kit;
     every managed hook script is stdlib-only, so none of them needs the project env.

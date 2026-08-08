@@ -1,6 +1,6 @@
 {
   "version": "1",
-  "generated_at": "2026-08-07T22:35:04.927283+00:00",
+  "generated_at": "2026-08-08T11:30:09.352865+00:00",
   "outputs": {
     ".claude/CLAUDE.md": {
       "hash": "sha256:b5bc9e6373a7ce0587c6eccbed371923ada0fa04661932883e8f13764b5ad042",
@@ -32,7 +32,7 @@
       ]
     },
     ".claude/rules/external-review.md": {
-      "hash": "sha256:57b0e3bca476f1c19281454476f7367cc96da34f44f508dfb139fe1bd34420f2",
+      "hash": "sha256:f35564c6e2411240655206918f34f610a161185b4bc01a9c9e1e4b75356cc9d2",
       "source_fragments": [
         "external-review"
       ]
@@ -44,7 +44,7 @@
       ]
     },
     "AGENTS.md": {
-      "hash": "sha256:b7a2a791b0ef34a89cf2e1948d44090aa307ac9390ae5b7907ca50f602942297",
+      "hash": "sha256:5ce506c1b92be8e2adb1a22cf3f1f9ef8d5f4370679c8eeb6bc0737358f2a124",
       "source_fragments": [
         "require-explicit-confirmation",
         "knowledge-priming",
