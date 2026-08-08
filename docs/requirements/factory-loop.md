@@ -123,16 +123,16 @@ carry, so the schema is a formalisation of a live contract rather than an invent
 
 ### 3.1 States
 
-| State | Entry predicate | Exit gate | Persona | Handoff artifact |
+| State | Entry predicate | Exit gate | Role | Handoff artifact |
 | --- | --- | --- | --- | --- |
 | **INTAKE** | a requirements artifact exists (light: produced conversationally; dark: supplied as a document) | the five `solution-design` sections validate [D17] | human (light) / none (dark) | `solution-design` |
-| **CLASSIFY** | `solution-design` valid | integrity level assigned; loop depth chosen; `change-shape` derives | Juno at L2+ | `classification`, `change-shape` [D20] |
-| **DECOMPOSE** | `classification` **and** `change-shape` valid; depth = decompose | **plan gate** (§3.3) | Dana | `implementation-plan` |
-| **BUILD** | plan gate green **and** downstream WIP below limit | self-check green; work committed on the branch | Kai | `change-summary` |
+| **CLASSIFY** | `solution-design` valid | integrity level assigned; loop depth chosen; `change-shape` derives | `decider` at L2+ | `classification`, `change-shape` [D20] |
+| **DECOMPOSE** | `classification` **and** `change-shape` valid; depth = decompose | **plan gate** (§3.3) | `decomposer` | `implementation-plan` |
+| **BUILD** | plan gate green **and** downstream WIP below limit | self-check green; work committed on the branch | `implementer` | `change-summary` |
 | **VERIFY** | `change-summary` valid | deterministic gates green **and** checks derived from this unit's acceptance criteria green | none (D4 of factory design) | `verification-evidence` |
-| **VALIDATE** | `verification-evidence` **green** [D1 amended] | the change exercised **as a consumer would**, against the original requirements | Vera; Remo reviews by lens | `validation-transcript` |
-| **REPAIR** | verify or validate failed | Go / Kill / Hold / Recycle | Kai, repair mode | updated `change-summary` |
-| **SHIP** | verify and validate green | claims bound to evidence; post-ship action pre-declared | Tala curates | `release-record` |
+| **VALIDATE** | `verification-evidence` **green** [D1 amended] | the change exercised **as a consumer would**, against the original requirements | `validator`; `reviewer` by lens | `validation-transcript` |
+| **REPAIR** | verify or validate failed | Go / Kill / Hold / Recycle | `implementer`, repair mode | updated `change-summary` |
+| **SHIP** | verify and validate green | claims bound to evidence; post-ship action pre-declared | `curator` | `release-record` |
 
 VALIDATE is gated on VERIFY green [D1, amended] — sequential, not parallel. NASA's nominal flow
 gives validation a verified product, and a validation transcript from a build verify rejected is
@@ -153,7 +153,7 @@ produced this document.
 
 Output contract: not the why-chain. Three things — **a named control that would have refused the
 defect; its tier (control / warning / documentation); and the class of defects it covers.**
-Persona: Lumi. A documentation-tier outcome is recorded as a downgrade with the reason no
+Role: `retrospector` (§6). A documentation-tier outcome is recorded as a downgrade with the reason no
 stronger control was available.
 
 ### 3.3 The plan gate — the highest-value single addition
@@ -277,34 +277,91 @@ so it types as no gate at all until it earns one.
 
 ---
 
-## 6. Personas
+## 6. Agents — the specialists that drive the loop
 
-Seven are designed (roster design, absorbed here 2026-08-08). **Zero are implemented** [M] — one
-default runner serves every phase, `loop.py:678`.
+### 6.1 What an agent is here, and where it lives
 
-| Persona | Role | State | Status |
+**An agent is a catalog source, exactly like a skill.** It is authored as
+`.basicly/core/agents/<role>/agent.yaml` against `schemas/agent.schema.json`, projected by
+`basicly agents-build` into every agent root, and **vendored to a consumer by `basicly install`**.
+It is never a hand-written file under `.claude/agents/` — that directory is projected output, and
+editing it directly is the drift the projection gates exist to catch.
+
+**The file is named for the role, not for a persona.** `decomposer`, `implementer`, `validator`,
+`reviewer`, `decider`, `retrospector`, `curator` — the same vocabulary the state table uses, so a
+reader who knows the state knows the file. The roster design gave each a human name (Dana, Kai,
+Vera, Remo, Juno, Lumi, Tala); those are **display-only and carry no authority**, and no policy,
+gate or scheduling decision may key on one. The engine keys on the **role id**, which is the
+directory name. A name that appears in a dispatch record is a label; a role id is a contract.
+
+### 6.2 Two classes, and only one of them is bound to a state
+
+| Class | Invoked by | Bound to | Examples |
 | --- | --- | --- | --- |
-| Dana | Decomposer | DECOMPOSE | functional equivalent exists unnamed (`loop.py:1057-1094`) |
-| Kai | Implementer (+ **repair mode** [D5]) | BUILD, REPAIR | equivalent exists (`loop.py:663-700`); repair mode does not |
-| Vera | Validator | VALIDATE | equivalent exists (`rubrics._judge`) but never runs for leaves |
-| Remo | Reviewer, by lens | VALIDATE | **paper only** |
-| Juno | Decider | CLASSIFY, escalations | exists (`decisions.py`) |
-| Lumi | Retrospector | RETROSPECTIVE | **paper only** |
-| Tala | Curator | SHIP | **paper only** |
+| **Loop agents** | the engine, at a state boundary | exactly one state (or two, for the implementer's repair mode) | `decomposer`, `implementer`, `validator`, `reviewer`, `decider`, `retrospector`, `curator` |
+| **Ad-hoc agents** | a human or an agent, on demand | nothing — available whenever they fit | `code-reviewer`, `security-auditor`, `test-runner` |
 
-A persona is a **dispatch contract**, not a model and not a personality: role prompt, tool policy,
-model tier, gate authority, output contract. **Names are display-only** — no policy, gate or
-scheduling decision may key on a persona name; the engine keys on the **role id**.
+The distinction matters because it decides what a missing one costs. A missing **loop agent** means
+that state has no specialist and falls back to the default runner, which is the current situation
+for all seven. A missing **ad-hoc agent** costs only the convenience of not having it — it is the
+same relationship skills already have, where a model-invoked skill loads when it fits and a
+user-invoked one waits to be asked.
 
-Deliberately not personas, each refused by a decision rather than by preference (absorbed from the
-roster design 2026-08-08, which is deleted):
+**The three that exist today are all ad-hoc**, and none is a loop agent. They also need evaluating
+rather than assuming: each must still pass D5's admission test (differ in **tier, tools or
+artifact**), and any overlap with a loop agent about to be authored — `code-reviewer` against
+`reviewer`, `test-runner` against the verify gates — must be resolved rather than left as two
+things with one job.
+
+### 6.3 The gap, measured 2026-08-08
+
+```text
+rg -w 'dana|kai|vera|remo|juno|lumi|tala' src/     ->  0 hits
+.basicly/core/agents/                              ->  code-reviewer, security-auditor, test-runner
+.claude/agents/                                    ->  the same three, written by agents.sync()
+dispatch code that READS an agent root             ->  none
+```
+
+So the projection works and **nothing consumes it**: every dispatch ends at `Popen` of a CLI with a
+prompt built inline, and the only other consumer of `.claude/agents/` is `cli.py:1261`, which globs
+the directory to *delete* files. Authoring the seven loop agents is therefore necessary and not
+sufficient — `basicly-4kdm` owns the sources, and the engine must also learn to resolve a state to
+a role and dispatch it, which is what makes the roster real rather than projected.
+
+| Role | State | Status [M] |
+| --- | --- | --- |
+| `decomposer` | DECOMPOSE | functional equivalent exists unnamed (`loop.py:1057-1094`) |
+| `implementer` (+ **repair mode** [D5]) | BUILD, REPAIR | equivalent exists (`loop.py:663-700`); repair mode does not |
+| `validator` | VALIDATE | equivalent exists (`rubrics._judge`) but never runs for leaves |
+| `reviewer` (by lens) | VALIDATE | **paper only** |
+| `decider` | CLASSIFY, escalations | exists (`decisions.py`) |
+| `retrospector` | RETROSPECTIVE | **paper only** |
+| `curator` | SHIP | **paper only** |
+
+**Admission is staged, not wholesale** [D5]. A role is authored only when it differs in tier, tools
+or artifact. `decomposer` and `implementer` now qualify — `basicly-u2hl.18` shipped
+`implementation-plan` and `change-summary`, so each has an artifact of its own. `validator`,
+`reviewer`, `retrospector` and `curator` do not yet: their artifacts (`validation-transcript`,
+`release-record`) are unbuilt, so they are recorded as blocked on the artifact rather than authored
+speculatively. Authoring all seven at once is the accretion the admission test exists to prevent.
+
+A role is a **dispatch contract**: role prompt, tool policy, model tier, gate authority, output
+contract. Each judged role additionally carries an explicit adversarial stance and a role-specific
+list of how *that* role goes soft, derived from recorded verdict and rework history rather than
+invented (§11.1) — a generic rigour instruction is a no-op that costs tokens.
+
+### 6.4 Deliberately not agents
+
+Each refused by a decision rather than by preference (absorbed from the roster design 2026-08-08,
+which is deleted). A refusal here is load-bearing: it is what stops the roster growing a role per
+problem:
 
 | Refused | Why |
 | --- | --- |
 | Merge agent | it would resolve with neither lane's context, at the point of weakest verification. A conflict means the *graph* was wrong, not the merge |
 | Tester / verifier | verify is deterministic gates; a model running them adds cost and nondeterminism to the one trustworthy part. Authoring tests is the implementer's, and diagnosing a red gate is a capability of its repair dispatch |
 | Scout | a low-tier pre-reader's characteristic error — a slightly incomplete file list — is mechanically undetectable and silently narrows the implementer's view. **Permanently cut as a persona**; the same artifact derived deterministically from an AST is an engine step with no tier and no gate authority, which is D20's `change-shape` |
-| Shipper | version bump, changelog, tag and push are a command; the judged residue is curation, which is Tala |
+| Shipper | version bump, changelog, tag and push are a command; the judged residue is curation, which is `curator` |
 | Conductor | it is code. **No agent spawns agents** — the supervisor dispatches every persona and personas never dispatch each other. If it has a name it is an agent, and its output is a proposal the engine must validate |
 
 **Lens output is reported per lens, never merged into one ranked list** — a change can pass one axis
