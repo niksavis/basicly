@@ -1476,12 +1476,22 @@ DERIVED_SPEND_FORECAST = "derived"
 
 @dataclass(frozen=True)
 class SpendPair:
-    """One dispatch's forecast whole-lane spend beside the spend it really incurred.
+    """One *bead's* forecast whole-lane spend beside the spend it really incurred.
 
     Both halves in tokens of spend, which is what makes it a pair. The working-set
     forecast and its measured occupancy are the *other* pair
     (``run_record.ForecastError``, ``RunRecord.context_tokens``); mixing one half of
     each is the defect this exists to close.
+
+    The unit on the actual side is the bead, not the dispatch (basicly-u2hl.15).
+    ``forecast_spend_tokens`` is derived from the bead's *scope*, so every dispatch of a
+    bead records the identical number — what getting that bead done should cost — and
+    scoring each attempt against it made every re-dispatch a structural under-spend,
+    since the forecast covers work an earlier attempt already did. `basicly-u2hl.14` ran
+    30,139,416 then 2,785,270 then 1,512,403 tokens against a 26,320,290 forecast: the
+    third attempt alone read as 0.057x and turned main red, while the lane came in at
+    1.31x. :attr:`actual_tokens` therefore sums the attempts, which is also the unit a
+    grant is minted in — a grant pays for the rework too.
     """
 
     bead: str
@@ -1492,11 +1502,21 @@ class SpendPair:
     basis: str
     task_class: str | None = None
     model: str | None = None
+    # How many dispatches :attr:`actual_tokens` sums. Reported rather than folded away:
+    # a lane that took three attempts to land is a fact about the work, and a population
+    # quietly merged is the shape `incomparable` and `unscoped` already exist to refuse.
+    attempts: int = 1
 
     @property
     def ratio(self) -> float:
         """Actual over forecast. One quantity on both sides, so 1.0 is a perfect call."""
         return self.actual_tokens / self.forecast_tokens
+
+    @property
+    def spent(self) -> str:
+        """The actual, naming the dispatch count whenever it took more than one."""
+        over = f" over {self.attempts} dispatches" if self.attempts > 1 else ""
+        return f"{self.actual_tokens:,} tokens{over}"
 
     @property
     def in_band(self) -> bool:
@@ -1506,7 +1526,7 @@ class SpendPair:
 
 @dataclass(frozen=True)
 class SpendAccuracy:
-    """Every dispatch whose forecast spend can be held to its actual, and what cannot."""
+    """Every bead whose forecast spend can be held to its actual, and what cannot."""
 
     pairs: tuple[SpendPair, ...] = ()
     # Metered write dispatches carrying no forecast of either kind: a lane whose bead
@@ -1563,7 +1583,7 @@ class SpendAccuracy:
             key=lambda pair: -max(pair.ratio, 1 / pair.ratio),
         )
         return tuple(
-            f"{pair.bead} spent {pair.actual_tokens:,} tokens against a {pair.basis} "
+            f"{pair.bead} spent {pair.spent} against a {pair.basis} "
             f"forecast of {pair.forecast_tokens:,} ({pair.ratio:.3f}x), outside the "
             f"{SPEND_RATIO_BAND:.0f}x band: a grant sized from that forecast is wrong "
             f"by the same factor"
@@ -1571,14 +1591,33 @@ class SpendAccuracy:
         )
 
 
+def _fold_lane(attempts: tuple[SpendPair, ...]) -> SpendPair:
+    """Every comparable dispatch of one bead as the single lane its forecast denominates.
+
+    The forecast is the *last* attempt's, and its basis with it: a re-dispatch re-reads
+    the bead, so four of the eight multiply-dispatched beads in this repo's ledger carry
+    forecasts that differ across their attempts — by 2.5% to 9.7% — and the newest is the
+    one a re-grant would be sized from. A tie-break, not a lever: each of the four lands
+    in band under either end of its own spread, so no verdict here turns on the choice.
+    """
+    last = attempts[-1]
+    return replace(
+        last,
+        actual_tokens=sum(attempt.actual_tokens for attempt in attempts),
+        attempts=len(attempts),
+    )
+
+
 def spend_accuracy(repo_root: Path, sizing: SizingConfig) -> SpendAccuracy:
-    """Hold every recorded write dispatch's forecast spend against what it really spent.
+    """Hold every bead's forecast spend against what its dispatches really spent.
 
     The population is the dispatch ledger (:func:`run_record.dispatch_history`, so the
     committed markers count and a fresh clone measures the same thing), filtered to the
     write phases and to adapter-measured actuals — the same two rules
     :func:`unsized_lane_tokens` samples on, and for the same reasons: a rubric judge is
-    not a lane, and a chars/4 estimate is not a measurement.
+    not a lane, and a chars/4 estimate is not a measurement. The survivors are then
+    folded per bead by :func:`_fold_lane`, because the forecast denominates a bead and
+    not an attempt at one; :class:`SpendPair` carries why.
 
     A record that wrote its own spend forecast is compared against that number. An
     older one is compared against today's calibration applied to the working set it did
@@ -1666,8 +1705,16 @@ def spend_accuracy(repo_root: Path, sizing: SizingConfig) -> SpendAccuracy:
                     model=model if isinstance(model, str) else None,
                 )
             )
+    lanes: dict[str, list[SpendPair]] = {}
+    for pair in sorted(pairs, key=lambda pair: (pair.timestamp, pair.bead)):
+        lanes.setdefault(pair.bead, []).append(pair)
     return SpendAccuracy(
-        pairs=tuple(sorted(pairs, key=lambda pair: (pair.timestamp, pair.bead))),
+        pairs=tuple(
+            sorted(
+                (_fold_lane(tuple(attempts)) for attempts in lanes.values()),
+                key=lambda pair: (pair.timestamp, pair.bead),
+            )
+        ),
         unsized=unsized,
         incomparable=tuple(sorted(set(incomparable))),
         unmetered=unmetered,

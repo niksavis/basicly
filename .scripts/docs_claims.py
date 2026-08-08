@@ -500,7 +500,7 @@ def _run_assertions(root: Path) -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     """Entry point: ``--check`` reports drift, ``--fix`` regenerates the stale blocks."""
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--check", action="store_true", help="Report drift; write nothing")
     mode.add_argument("--fix", action="store_true", help="Regenerate every stale block")

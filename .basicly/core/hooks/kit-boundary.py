@@ -233,9 +233,9 @@ def _path_findings(rel: str, tree: ast.Module) -> list[Finding]:
     skip = _statement_strings(tree)
     findings: list[Finding] = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.Constant) and id(node) in skip:
+        if not isinstance(node, ast.expr) or id(node) in skip:
             continue
-        text = _path_text(node) if isinstance(node, ast.expr) else None
+        text = _path_text(node)
         if text and (rule := _path_rule(text)):
             findings.append(Finding(rel, node.lineno, rule, text))
     return _dedupe(findings)
