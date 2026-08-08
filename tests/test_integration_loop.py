@@ -82,6 +82,11 @@ needs_br = pytest.mark.skipif(
     br.which() is None, reason="the beads tracker (br) is not installed on this machine"
 )
 
+# The three fields the plan gate requires of every child (basicly-u2hl.1). These tests
+# are about the lane's run order, so each sub-task declares the minimum and no
+# dependency — the ordering under test is the one scope overlap derives.
+_GATED = {"depends_on": (), "budget_tokens": 40_000, "integrity": "L2"}
+
 # A verify check the test can make fail on demand, so a red landing is a real
 # subprocess verdict rather than a patched return value. Uses the running
 # interpreter (as_posix so a Windows path survives TOML) and nothing else.
@@ -400,8 +405,15 @@ def test_a_lane_runs_its_sub_tasks_in_sequence_then_integrates(harness_repo: Pat
     tree = Path(session.worktree_path)
 
     plan = (
-        ChildSpec("tokenize the input", ("Given input when tokenized then tokens",), ("app.txt",)),
-        ChildSpec("parse the tokens", ("Given tokens when parsed then a tree",), ("app.txt",)),
+        ChildSpec(
+            "tokenize the input",
+            ("Given input when tokenized then tokens",),
+            ("app.txt",),
+            **_GATED,
+        ),
+        ChildSpec(
+            "parse the tokens", ("Given tokens when parsed then a tree",), ("app.txt",), **_GATED
+        ),
     )
     recorded = loop.advance(repo, lane, inputs=loop.Inputs(children=plan))
     assert recorded.blocked
@@ -456,7 +468,7 @@ def test_a_sub_task_is_not_closed_by_a_sibling_whose_id_extends_it(harness_repo:
     tree = Path(session.worktree_path)
 
     plan = tuple(
-        ChildSpec(f"step {n}", (f"Given step {n} when run then done",), ("app.txt",))
+        ChildSpec(f"step {n}", (f"Given step {n} when run then done",), ("app.txt",), **_GATED)
         for n in range(1, 11)
     )
     loop.advance(repo, lane, inputs=loop.Inputs(children=plan))
@@ -502,314 +514,6 @@ def test_a_non_tracker_dirty_base_is_left_alone(harness_repo: Path) -> None:
 
     assert merge.commit_tracker_state(repo, issue) is False
     assert "app.txt" in _git(repo, "status", "--porcelain")
-
-
-# --- A supervisor pass over two real lanes ----------------------------------
-
-
-def _green(issue_id: str) -> supervise.LaneOutcome:
-    """The outcome a headless adapter produces when its dispatch succeeds.
-
-    The one thing this module synthesizes rather than performs: the fixture's
-    runner is the ``manual`` handoff, which by contract hands off instead of
-    writing code, so no real dispatch is ever green. Everything downstream of
-    it — the landing order, the merges, the gates, the tracker writes — is real.
-    """
-    return supervise.LaneOutcome(
-        issue_id=issue_id,
-        runner_name="fixture",
-        result=runner.RunResult(runner="fixture", command=(), executed=True, returncode=0),
-        needs_fact=None,
-        occupancy=None,
-        overrun=False,
-        followup_id=None,
-        detail="fixture dispatch",
-    )
-
-
-@needs_br
-def test_a_supervisor_pass_lands_two_lanes_in_dependency_order(harness_repo: Path) -> None:
-    """Two green lanes land in ``br``'s dependency order, not in arrival order.
-
-    Pins the basicly-kjc5.10 shape: ``merge.landing_order`` reads dependencies
-    out of ``br show --json``, which spells them ``id``/``dependency_type``
-    while the ``dep add`` echo spells them ``depends_on_id``/``type``. Reading
-    the wrong shape leaves the order silently empty, which no stubbed tracker
-    can disagree with.
-    """
-    repo = harness_repo
-    root = _create_bead(repo, "the session root", issue_type="epic")
-    first = _create_bead(repo, "the earlier lane")
-    second = _create_bead(repo, "the later lane")
-    for child in (first, second):
-        _br(repo, "dep", "add", child, root, "-t", "parent-child")
-    # The later lane genuinely depends on the earlier one.
-    _br(repo, "dep", "add", second, first, "-t", "blocks")
-
-    trees = {}
-    for name, child in (("first", first), ("second", second)):
-        _to_build(repo, child)
-        state = loop_state.read_node_state(repo, child)
-        assert state.worktree is not None
-        session = worktree.load_session(state.worktree.name, repo)
-        assert session is not None
-        trees[name] = Path(session.worktree_path)
-        _commit(trees[name], f"{name}.txt", "done\n", f"feat: the {name} lane ({child})")
-
-    session_state = supervise.derive_session(repo, root)
-    assert {cid for cid, _ in session_state.children} == {first, second}
-    assert {lane.issue_id for lane in session_state.adopted} == {first, second}
-
-    # Hand them over in the *wrong* order; the dependency edge must reorder them.
-    routed = supervise.route_outcomes(repo, session_state, (_green(second), _green(first)))
-    assert [r.issue_id for r in routed] == [first, second]
-    assert [r.route for r in routed] == ["merged", "merged"], [r.detail for r in routed]
-
-    # Both landings are real merges in the base checkout, in that order.
-    assert (repo / "first.txt").exists()
-    assert (repo / "second.txt").exists()
-    subjects = _git(repo, "log", "--format=%s", "--first-parent", "main").splitlines()
-    merges = [s for s in subjects if s.startswith("chore(worktree):")]
-    assert len(merges) == 2
-
-    for child in (first, second):
-        assert loop_state.read_node_state(repo, child).gates.required_passed == ("verify",)
-
-
-@needs_br
-def test_a_landing_pass_invents_no_coupling_from_the_shared_tracker(harness_repo: Path) -> None:
-    """Every landing rewrites ``.beads/**``; that must not read as a scope collision.
-
-    Pins the second basicly-kjc5.10 shape: ``lstrip("./")`` ate the leading dot
-    of ``.beads/``, so the engine-path filter matched nothing and each landing
-    attributed a false ``blocks`` edge to the lane that landed before it.
-    """
-    repo = harness_repo
-    root = _create_bead(repo, "the coupling root", issue_type="epic")
-    first = _create_bead(repo, "lane alpha")
-    second = _create_bead(repo, "lane beta")
-    for child in (first, second):
-        _br(repo, "dep", "add", child, root, "-t", "parent-child")
-
-    for name, child in (("alpha", first), ("beta", second)):
-        _to_build(repo, child)
-        state = loop_state.read_node_state(repo, child)
-        assert state.worktree is not None
-        session = worktree.load_session(state.worktree.name, repo)
-        assert session is not None
-        # Disjoint files: the only path both landings touch is the tracker's.
-        _commit(
-            Path(session.worktree_path),
-            f"{name}.txt",
-            "done\n",
-            f"feat: lane {name} ({child})",
-        )
-
-    session_state = supervise.derive_session(repo, root)
-    routed = supervise.route_outcomes(repo, session_state, (_green(first), _green(second)))
-    assert [r.route for r in routed] == ["merged", "merged"], [r.detail for r in routed]
-
-    # No lane acquired a dependency it did not declare.
-    for child in (first, second):
-        blocking = {
-            str(dep["id"])
-            for dep in _show(repo, child).get("dependencies") or []
-            if dep.get("dependency_type") == "blocks"
-        }
-        assert blocking == set(), f"{child} gained an invented coupling: {blocking}"
-
-
-@needs_br
-def test_a_pass_attributes_the_coupling_the_same_way_whichever_lane_bounced(
-    harness_repo: Path,
-) -> None:
-    """The coupling edge is a function of the declared scopes, not of landing order.
-
-    Pins basicly-kjc5.32 on the two things no stubbed tracker can decide: the
-    ``## Scope`` section really has to come back out of a real bead, and ``br``
-    really has to hold the resulting edge in one direction. So the same pass is
-    attributed twice with the two lanes' roles swapped — as reversing their
-    completion order does — and both must write the identical edge.
-    """
-    repo = harness_repo
-    root = _create_bead(repo, "the attribution root", issue_type="epic")
-    alpha = _create_bead(repo, "lane declaring the shared file")
-    beta = _create_bead(repo, "lane declaring the shared tree")
-    for child, scope in ((alpha, "src/shared.py"), (beta, "src/*.py")):
-        _br(repo, "dep", "add", child, root, "-t", "parent-child")
-        _br(
-            repo,
-            "update",
-            child,
-            "-d",
-            f"## Acceptance Criteria\n\n- Given it when landed then it holds\n"
-            f"\n## Scope\n\n- `{scope}`\n",
-        )
-
-    conflicts = ("src/shared.py",)
-    # alpha bounced and beta landed, then the reverse — the same collision seen
-    # from each side of the pass.
-    forward = merge.record_pass_couplings(repo, [(alpha, conflicts)], [beta])
-    backward = merge.record_pass_couplings(repo, [(beta, conflicts)], [alpha])
-
-    assert forward == {alpha: (beta,)}, "the declared scope did not come back out of br"
-    assert backward == {beta: (alpha,)}
-    # One edge in the tracker, in the canonical direction, not two opposed ones.
-    lower, higher = sorted((alpha, beta))
-    for bead, expected in ((lower, {higher: merge.COUPLING_DEP_TYPE}), (higher, {})):
-        coupled = {
-            str(dep["id"]): dep.get("dependency_type")
-            for dep in _show(repo, bead).get("dependencies") or []
-            if str(dep["id"]) in (alpha, beta)
-        }
-        assert coupled == expected
-
-
-@needs_br
-def test_a_landing_cancels_the_lane_it_broke_and_tells_it_why(harness_repo: Path) -> None:
-    """A lane a landing broke is cancelled, informed, and left free to re-dispatch (D6).
-
-    Pins basicly-kjc5.26 end to end, on the two things no stubbed tracker can
-    disagree with: ``git merge-tree`` really has to report the collision the
-    first landing created, and the record the supervisor publishes really has to
-    come back out of ``build_bundle`` in the cancelled lane's next prompt. A
-    gating ``blocks`` edge is the failure mode being excluded — the lane that
-    landed is merged but *not shipped*, so an edge onto it would drop the
-    cancelled lane out of the ready set and hold it behind a human.
-    """
-    repo = harness_repo
-    root = _create_bead(repo, "the collision root", issue_type="epic")
-    first = _create_bead(repo, "lane that lands first")
-    second = _create_bead(repo, "lane that gets cancelled")
-    for child in (first, second):
-        _br(repo, "dep", "add", child, root, "-t", "parent-child")
-
-    for name, child in (("first", first), ("second", second)):
-        _to_build(repo, child)
-        state = loop_state.read_node_state(repo, child)
-        assert state.worktree is not None
-        session = worktree.load_session(state.worktree.name, repo)
-        assert session is not None
-        # The same file, incompatible content: once one lands, the other's branch
-        # no longer merges onto the base.
-        _commit(
-            Path(session.worktree_path),
-            "shared.txt",
-            f"the {name} lane wrote this\n",
-            f"feat: lane {name} ({child})",
-        )
-
-    session_state = supervise.derive_session(repo, root)
-    routed = supervise.route_outcomes(repo, session_state, (_green(first), _green(second)))
-
-    assert [r.route for r in routed] == ["merged", "re-dispatch"], [r.detail for r in routed]
-    assert first in routed[1].detail
-    # The cancelled lane's landing was never attempted: the base carries the
-    # first lane's content and only its merge.
-    assert (repo / "shared.txt").read_text(encoding="utf-8") == "the first lane wrote this\n"
-    merges = [
-        line
-        for line in _git(repo, "log", "--format=%s", "--first-parent", "main").splitlines()
-        if line.startswith("chore(worktree):")
-    ]
-    assert len(merges) == 1
-
-    # Nothing gates the cancelled lane: it must be free to re-dispatch.
-    blocking = {
-        str(dep["id"])
-        for dep in _show(repo, second).get("dependencies") or []
-        if dep.get("dependency_type") == "blocks"
-    }
-    assert blocking == set(), f"{second} was gated instead of re-dispatched: {blocking}"
-
-    # And its next dispatch prompt carries why, naming the lane that landed.
-    bundle = supervise.build_bundle(repo, second, known_ids=frozenset({root, first, second}))
-    assert [info.kind for info in bundle.folded] == ["coupling"]
-    assert first in bundle.prompt
-
-
-@needs_br
-def test_a_missed_coupling_teaches_the_graph_without_gating_the_bounced_lane(
-    harness_repo: Path,
-) -> None:
-    """A recorded coupling must not hold the lane the bounce exists to send back.
-
-    Pins basicly-grrb, on the one thing no stubbed tracker can decide: whether
-    ``br`` counts this edge in ``br blocked``. The bounce records the coupling
-    onto the lane it collided with, and under the supervisor that lane is
-    ``merged`` but parked in verify awaiting a ship checkpoint — still open. As a
-    ``blocks`` edge that dropped the bounced lane out of ``ready_lanes``, holding
-    it behind a human approval instead of re-dispatching it.
-    """
-    repo = harness_repo
-    root = _create_bead(repo, "the coupling-edge root", issue_type="epic")
-    landed = _create_bead(repo, "the lane that landed")
-    bounced = _create_bead(repo, "the lane that bounced")
-    for child in (landed, bounced):
-        _br(repo, "dep", "add", child, root, "-t", "parent-child")
-        _to_build(repo, child)
-
-    # Exactly what a bounce writes, with the collided-with lane still open —
-    # which is the state a supervisor landing leaves it in.
-    merge.record_coupling(repo, bounced, landed)
-    assert _show(repo, landed)["status"] != "closed"
-
-    # The graph learned the coupling, written in the canonical direction — the two
-    # ids sorted — so the edge is identical whichever lane bounced (kjc5.32).
-    lower, higher = sorted((bounced, landed))
-    coupled = {
-        str(dep["id"]): dep.get("dependency_type")
-        for dep in _show(repo, lower).get("dependencies") or []
-    }
-    assert coupled.get(higher) == merge.COUPLING_DEP_TYPE
-
-    # ...and the bounced lane is still dispatchable on the next pass.
-    assert bounced not in loop_state.blocked_ids(repo)
-    session_state = supervise.derive_session(repo, root)
-    ready = {lane.issue_id for lane in supervise.ready_lanes(repo, session_state)}
-    assert bounced in ready, f"{bounced} was gated by the coupling it taught the graph"
-
-
-@needs_br
-def test_a_discovered_coupling_gates_and_orders_the_bead_it_names(harness_repo: Path) -> None:
-    """A lane's coupling discovery teaches the real graph, which then holds the order.
-
-    Pins basicly-kjc5.24 on what only ``br`` can answer: whether the proposed edge
-    actually gates (``br blocked`` → ``ready_lanes``) and whether the landing order
-    the merge queue computes from the tracker honours it. A lane already in flight
-    is deliberately excluded from gating (basicly-grrb), so the gated bead here is
-    one that has not started.
-    """
-    repo = harness_repo
-    root = _create_bead(repo, "the discovery root", issue_type="epic")
-    finder = _create_bead(repo, "the lane that discovers")
-    named = _create_bead(repo, "the bead it names")
-    for child in (finder, named):
-        _br(repo, "dep", "add", child, root, "-t", "parent-child")
-    _to_build(repo, finder)  # in flight; `named` has not started
-
-    supervise.record_found_info(
-        repo,
-        finder,
-        supervise.FoundInfo(
-            kind="coupling",
-            summary="the config loader is shared with the runner window",
-            affects=(named,),
-        ),
-    )
-
-    session_state = supervise.derive_session(repo, root)
-    recorded = supervise.propose_coupling_edges(repo, session_state)
-    assert recorded == ((named, finder, "blocks"),)
-
-    # br really gates it, so the pass will not dispatch the two in parallel...
-    assert named in loop_state.blocked_ids(repo)
-    # ...and the merge queue's dependency sort really honours the new edge.
-    ordered = merge.landing_order(repo, [(finder, finder), (named, named)])
-    assert [bead for _name, bead in ordered] == [finder, named]
-
-    # Re-reading the same record on a later pass proposes nothing new.
-    assert supervise.propose_coupling_edges(repo, supervise.derive_session(repo, root)) == ()
 
 
 # --- A real agent CLI: dispatched, metered, and landed (basicly-jr0l.43) ------

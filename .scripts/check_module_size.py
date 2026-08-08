@@ -5,8 +5,8 @@ rule, so `cli.py` reached 53,095 tokens with every gate green. This is that meas
 wired as a `[[verify.checks]]` fast entry.
 
 **Tokens, not lines.** Lines drift with docstring and comment density. Tokens are the unit
-the sizing governor already runs in, so :data:`~basicly.decompose.SCOPE_FILE_READ_CAP` and
-``decompose._text_tokens`` are *imported* rather than respelled here — a second chars/4
+the sizing governor already runs in, so :data:`~basicly.read_cost.SCOPE_FILE_READ_CAP` and
+``read_cost._text_tokens`` are *imported* rather than respelled here — a second chars/4
 spelling is a number that can drift from the one the loop actually budgets with.
 
 **The cap is that constant, and the reason it is that constant matters.** 4,000 tokens is
@@ -24,10 +24,16 @@ may only *shrink*. Three consequences, each its own finding:
 * A module not in the list may never cross the cap. The list is closed — an entry is only
   ever removed.
 * A frozen module that grew fails, naming both counts. Adding a line to `cli.py` is
-  therefore a failing commit until something else in it goes.
+  therefore a failing commit until something else in it goes — with one exception below.
 * A frozen module that has fallen to the cap has graduated, and its entry must go with it.
   Leaving the entry would license regrowth back to the go-live number, which is the
   fail-open shape this repo keeps paying for.
+
+**Top-level imports are not counted** (:func:`module_tokens`). Counting them made the
+ratchet charge for the one change it exists to force: a split adds an import line to every
+module that imports the new one, and those modules are frozen too. The frozen baselines
+were recomputed once on the same measure, so nothing is forgiven except the import block —
+a module that grew by real content still fails to the token.
 
 **Waivers, and why they are counted.** A genuinely cohesive module may exceed the cap
 deliberately by carrying a one-line reason as a column-0 comment: the marker is
@@ -61,7 +67,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from basicly.decompose import SCOPE_FILE_READ_CAP, _text_tokens  # noqa: E402  (path set above)
+from basicly.read_cost import SCOPE_FILE_READ_CAP, _text_tokens  # noqa: E402  (path set above)
 
 # Every directory whose Python this repo authors. `.basicly/core` is here because the kit
 # and the hooks ship to consumers and run in the dispatch path; omitting it would exempt
@@ -78,6 +84,11 @@ FROZEN_TABLE = "[tool.module_size.frozen]"
 _WAIVER = re.compile(r"^#[ \t]*module-size-waiver:[ \t]*(\S.*?)[ \t]*$", re.MULTILINE)
 
 _LABEL = "module-size"
+
+# A top-level import, and the continuation of a parenthesised one. Column 0 only: an
+# import deferred inside a function is code the reader pays for, and the handful this
+# repo defers on purpose each carry a PLC0415 suppression saying why.
+_IMPORT_LINE = re.compile(r"^(?:import|from)\s")
 
 
 class RatchetError(Exception):
@@ -114,6 +125,42 @@ def waiver_reason(text: str) -> str | None:
     """The reason a module waives the cap with, or ``None`` if it does not waive it."""
     match = _WAIVER.search(text)
     return match.group(1) if match else None
+
+
+def module_tokens(text: str) -> int:
+    """*text*'s size in tokens, counting everything except its top-level imports.
+
+    The imports are excluded because counting them made the ratchet punish the one
+    change it exists to encourage. Measured 2026-08-08: extracting ``contention`` out of
+    ``supervise.py`` — a real split, along a named responsibility, that took 48,020
+    tokens off a frozen module — forced one ``from . import contention`` line into
+    ``cli.py``, and that four-token line failed ``cli.py``'s own ratchet. So splitting a
+    large module required shrinking every module that imports it, and the cheapest way
+    to satisfy the gate was to not split anything.
+
+    Excluding them is the narrowest fix that removes the perverse incentive without
+    weakening the ratchet: an import is one line, it is not what makes a file too large
+    to read whole, and code growth is still measured to the token. A module that grew by
+    real content still fails — only the import block is free.
+
+    Args:
+        text: The module's source.
+
+    Returns:
+        The token count of the source with top-level ``import``/``from`` statements, and
+        the continuation lines of a parenthesised ``from ... import (`` block, removed.
+    """
+    kept: list[str] = []
+    depth = 0
+    for line in text.splitlines(keepends=True):
+        if depth:
+            depth += line.count("(") - line.count(")")
+            continue
+        if _IMPORT_LINE.match(line):
+            depth = line.count("(") - line.count(")")
+            continue
+        kept.append(line)
+    return _text_tokens("".join(kept))
 
 
 def load_ratchet(repo: Path) -> Ratchet:
@@ -176,7 +223,7 @@ def tracked_modules(repo: Path) -> list[Module]:
             text = (repo / name).read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        modules.append(Module(path=name, tokens=_text_tokens(text), waiver=waiver_reason(text)))
+        modules.append(Module(path=name, tokens=module_tokens(text), waiver=waiver_reason(text)))
     return sorted(modules, key=lambda module: module.path)
 
 

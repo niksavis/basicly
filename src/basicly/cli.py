@@ -25,6 +25,7 @@ from . import (
     catalog_verify,
     claude_settings,
     commit,
+    contention,
     decisions,
     decompose,
     fleet,
@@ -3318,10 +3319,9 @@ def _print_preflight_calibration(repo_root: Path, sizing: SizingConfig) -> None:
 def _print_preflight_contention(repo_root: Path, state: supervise.SessionState) -> None:
     """Report the two collisions on paths no bead declares (basicly-o8p0, basicly-lyro).
 
-    Both lines answer the same question — what happens at the merge queue to a path
-    every lane writes and no `## Scope` names — and they answer it oppositely, so they
-    are printed together: `contend:` names the paths that must serialise the pass, and
-    `regen:` names the ones that need not, because the engine rebuilds them.
+    Two lines, because :mod:`basicly.contention` answers the merge-queue question two
+    ways: `contend:` names the paths that must serialise the pass, `regen:` the ones
+    that need not, because the engine rebuilds them.
 
     Advisory, never a blocker: the remedy is a build order, and refusing the pass would
     turn a predictable conflict into a stopped factory. What it buys is that the
@@ -3337,13 +3337,13 @@ def _print_preflight_contention(repo_root: Path, state: supervise.SessionState) 
     just said one is dispatchable.
     """
     lanes = state.open_children or ((state.root_issue,) if not state.children else ())
-    lines = supervise.append_only_report(repo_root, lanes, decompose.append_only_paths(repo_root))
+    lines = contention.append_only_report(repo_root, lanes, decompose.append_only_paths(repo_root))
     print(f"contend:   {lines[0]}")
     for line in lines[1:]:
         print(line)
 
     worktree_config = load_worktree_config(repo_root)
-    regen = supervise.generated_report(
+    regen = contention.generated_report(
         worktree_config.generated_paths, worktree_config.regenerate_command
     )
     print(f"regen:     {regen[0]}")

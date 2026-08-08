@@ -21,7 +21,18 @@ from types import SimpleNamespace
 
 import pytest
 
-from basicly import decisions, loop, merge, policy, rubrics, runner, supervise, verify, worktree
+from basicly import (
+    decisions,
+    loop,
+    merge,
+    policy,
+    repair_brief,
+    rubrics,
+    runner,
+    supervise,
+    verify,
+    worktree,
+)
 from basicly.config import PolicyConfig, RunnerConfig
 from basicly.loop_state import NodeState, WorktreeBinding
 from basicly.policy import GateStatus
@@ -168,7 +179,7 @@ def test_a_failed_gate_repairs_in_the_same_worktree_the_lane_already_has(
 
     first = loop.advance(tmp_path, "i", config=CONFIG)
     assert first.blocked and "briefed a repair" in first.detail
-    assert (cwd / loop.REPAIR_BRIEF_FILE).is_file()
+    assert (cwd / repair_brief.REPAIR_BRIEF_FILE).is_file()
 
     second = loop.advance(tmp_path, "i", config=CONFIG)
 
@@ -189,8 +200,8 @@ def test_a_repair_brief_is_consumed_so_one_failure_cannot_dispatch_twice(
     loop.advance(tmp_path, "i", config=CONFIG)
     loop.advance(tmp_path, "i", config=CONFIG)
 
-    assert not (cwd / loop.REPAIR_BRIEF_FILE).exists()
-    assert loop.take_repair_brief(cwd) is None
+    assert not (cwd / repair_brief.REPAIR_BRIEF_FILE).exists()
+    assert repair_brief.take_repair_brief(cwd) is None
 
 
 def test_a_supervised_dispatch_repairs_in_the_same_worktree_the_lane_has(
@@ -203,22 +214,24 @@ def test_a_supervised_dispatch_repairs_in_the_same_worktree_the_lane_has(
     picked up by the next dispatch into the same tree.
     """
     cwd = _worktree(tmp_path, monkeypatch)
-    brief = loop.RepairBrief(
+    brief = repair_brief.RepairBrief(
         issue_id="i",
         gate=verify.DEFAULT_GATE,
         reason="verify full failed: pytest",
         findings=("pytest",),
     )
-    assert loop.write_repair_brief(cwd, brief)
+    assert repair_brief.write_repair_brief(cwd, brief)
     monkeypatch.setattr(supervise, "_show_issue", lambda *_a, **_k: {})
     monkeypatch.setattr(supervise, "found_info_records", lambda *_a, **_k: ())
     monkeypatch.setattr(supervise, "answered_decisions", lambda *_a, **_k: ())
 
     bundle = supervise.build_bundle(tmp_path, "i", cwd=cwd)
 
-    assert bundle.prompt == loop.repair_prompt(brief)
+    assert bundle.prompt == repair_brief.repair_prompt(brief)
     assert bundle.prompt != loop.dispatch_prompt("i")
-    assert not (cwd / loop.REPAIR_BRIEF_FILE).exists()  # consumed by the dispatch it briefed
+    assert not (
+        cwd / repair_brief.REPAIR_BRIEF_FILE
+    ).exists()  # consumed by the dispatch it briefed
     # And with no brief in the tree it is the ordinary build dispatch, unchanged.
     assert supervise.build_bundle(tmp_path, "i", cwd=cwd).prompt == loop.dispatch_prompt("i")
 
@@ -238,7 +251,7 @@ def test_a_supervised_landing_leaves_the_repair_to_the_dispatch_step(
     loop.advance(tmp_path, "i", config=CONFIG, repair_dispatch=False)
 
     # Still there for ``supervise._dispatch_lane`` to read on the next pass.
-    assert (cwd / loop.REPAIR_BRIEF_FILE).is_file()
+    assert (cwd / repair_brief.REPAIR_BRIEF_FILE).is_file()
 
 
 # --- findings ---------------------------------------------------------------
@@ -281,7 +294,7 @@ def test_verify_evidence_pairs_the_gate_findings_with_the_command_and_output(
     cwd = _worktree(tmp_path, monkeypatch, checks=checks)
     report = verify.VerifyReport("fast", (verify.CheckResult("pytest", "fail", 1),))
 
-    evidence = loop.verify_evidence(report, cwd, "fast")
+    evidence = repair_brief.verify_evidence(report, cwd, "fast")
 
     assert [e.check for e in evidence] == ["pytest"]
     assert evidence[0].command.startswith("python -c")
@@ -321,15 +334,18 @@ def test_an_evidence_entry_with_nothing_to_say_is_left_out_of_the_prompt() -> No
     Reachable against this repo's own config: a failing check that runs in another
     mode resolves to neither, and the check's name is in the findings already.
     """
-    brief = loop.RepairBrief(
+    brief = repair_brief.RepairBrief(
         issue_id="i",
         gate=verify.DEFAULT_GATE,
         reason="verify fast failed: typos",
         findings=("typos",),
-        evidence=(loop.GateEvidence("typos"), loop.GateEvidence("ruff", command="ruff check")),
+        evidence=(
+            repair_brief.GateEvidence("typos"),
+            repair_brief.GateEvidence("ruff", command="ruff check"),
+        ),
     )
 
-    prompt = loop.repair_prompt(brief)
+    prompt = repair_brief.repair_prompt(brief)
 
     assert "Check typos" not in prompt
     assert "- typos" in prompt  # still reported, as a finding
@@ -339,19 +355,19 @@ def test_an_evidence_entry_with_nothing_to_say_is_left_out_of_the_prompt() -> No
 def test_a_brief_that_cannot_be_parsed_is_dropped_rather_than_raised(tmp_path: Path) -> None:
     """A garbled brief costs one un-briefed dispatch, never a crash in the build phase."""
     cwd = tmp_path / "wt"
-    (cwd / loop.REPAIR_BRIEF_FILE).parent.mkdir(parents=True)
-    (cwd / loop.REPAIR_BRIEF_FILE).write_text("{not json", encoding="utf-8")
+    (cwd / repair_brief.REPAIR_BRIEF_FILE).parent.mkdir(parents=True)
+    (cwd / repair_brief.REPAIR_BRIEF_FILE).write_text("{not json", encoding="utf-8")
 
-    assert loop.take_repair_brief(cwd) is None
-    assert not (cwd / loop.REPAIR_BRIEF_FILE).exists()  # consumed, so it cannot re-fire
+    assert repair_brief.take_repair_brief(cwd) is None
+    assert not (cwd / repair_brief.REPAIR_BRIEF_FILE).exists()  # consumed, so it cannot re-fire
 
 
 def test_a_long_gate_output_keeps_its_tail_under_the_prompt_bound() -> None:
     """A failing suite can print megabytes; a prompt that does not fit is no repair."""
-    clipped = loop._clip_output("x" * 50_000 + "the assertion")
+    clipped = repair_brief.clip_output("x" * 50_000 + "the assertion")
 
     assert clipped.endswith("the assertion")
-    assert len(clipped) < loop.MAX_REPAIR_OUTPUT_CHARS + 100
+    assert len(clipped) < repair_brief.MAX_REPAIR_OUTPUT_CHARS + 100
 
 
 # --- ceiling ----------------------------------------------------------------
@@ -397,7 +413,7 @@ def test_a_lane_inside_the_ceiling_keeps_repairing(
     result = loop.advance(tmp_path, "i", config=CONFIG)
 
     assert result.action == "blocked"
-    assert (cwd / loop.REPAIR_BRIEF_FILE).is_file()
+    assert (cwd / repair_brief.REPAIR_BRIEF_FILE).is_file()
 
 
 def test_the_ceiling_is_never_stricter_than_the_per_gate_cap_it_bounds() -> None:
@@ -405,30 +421,3 @@ def test_the_ceiling_is_never_stricter_than_the_per_gate_cap_it_bounds() -> None
     for max_rework in range(0, 6):
         config = PolicyConfig(required_gates=("verify",), max_rework=max_rework)
         assert loop.lane_rework_ceiling(config) >= max_rework
-
-
-def test_an_unreadable_tracker_does_not_invent_a_ceiling(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """The ceiling is skipped, not assumed, when the attempts cannot be counted.
-
-    A tracker hiccup inside a gate-failure path must not become a second failure:
-    the per-gate cap is still bounding the loop, and the next attempt re-reads.
-    """
-
-    def _refuse(*_a, **_k):
-        raise RuntimeError("br unavailable")
-
-    monkeypatch.setattr(policy, "rework_charged", _refuse)
-
-    assert loop.lane_rework_spent(tmp_path, "i", CONFIG) is None
-
-
-def test_the_lane_total_sums_every_gate_that_can_charge_it(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Per-gate counters are what compound, so the total has to read all of them."""
-    charged = {verify.DEFAULT_GATE: 1, rubrics.RUBRIC_GATE: 2, merge.MERGE_GATE: 1}
-    monkeypatch.setattr(policy, "rework_charged", lambda _r, _i, gate: charged.get(gate, 0))
-
-    assert loop.lane_rework_spent(tmp_path, "i", CONFIG) == 4

@@ -53,7 +53,7 @@ from collections.abc import Iterable
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
-from . import br, policy, run_record, runner
+from . import br, plan_gate, plan_record, policy, run_record, runner
 from .br import run_br as _run_br
 from .config import (
     DEFAULT_BUILD_FACTOR,
@@ -62,6 +62,7 @@ from .config import (
     load_sizing_config,
     load_worktree_config,
 )
+from .read_cost import instruction_overhead, scope_read_cost
 
 DEFAULT_CHILD_TYPE = "task"
 
@@ -81,22 +82,39 @@ class ChildSpec:
     # :func:`_parse_shared`). Trailing and defaulted so every plan written before
     # the field existed keeps meaning exactly what it meant: own everything.
     shared: tuple[str, ...] = ()
+    # The three fields the plan gate requires and this module records, each defaulting
+    # to *absent* rather than to a value. ``None`` is the only honest default: an
+    # invented budget or a guessed integrity level would pass the gate while meaning
+    # nothing, and a dependency list defaulted to ``()`` would claim the plan declared
+    # "nothing blocks this" when it declared nothing at all. Declared-empty is ``()``.
+    depends_on: tuple[str, ...] | None = None
+    budget_tokens: int | None = None
+    integrity: str | None = None
 
 
 def parse_children(data: object) -> tuple[ChildSpec, ...]:
     """Validate a parsed plan document into child specs.
 
-    Expects ``{"children": [ {title, acceptance, scope, shared?, type?}, ... ]}``.
-    Raises ``ValueError`` on any malformed entry rather than silently dropping a
-    track — a lost child would be built by nobody. A child must declare a non-empty
-    scope so parallel-safety is computable; refusing to guess is the whole point.
+    Expects ``{"children": [ {title, acceptance, scope, depends_on, budget_tokens,
+    integrity, shared?, type?}, ... ]}``. Raises ``ValueError`` on any malformed entry
+    rather than silently dropping a track — a lost child would be built by nobody.
+
+    Two validations, in this order and deliberately not merged. Per entry, the *shape*:
+    a field that is present must be the right type, and an entry that is wrong about
+    that is wrong about itself, so it raises where it is read. Then the whole plan goes
+    through :func:`plan_gate.require_plan`, which is where *absence* is judged — it can
+    name every missing field across every child at once, where a per-entry raise would
+    surface them one dispatch at a time. :class:`plan_gate.PlanGateError` is a
+    ``ValueError``, so a caller that already handled a schema refusal handles this one.
     """
     if not isinstance(data, dict):
         raise ValueError(f"plan must be a table with a 'children' list, got {type(data).__name__}")
     raw_children = data.get("children")
     if not (isinstance(raw_children, list) and raw_children):
         raise ValueError("plan needs a non-empty 'children' list")
-    return tuple(_parse_child(entry, index) for index, entry in enumerate(raw_children))
+    children = tuple(_parse_child(entry, index) for index, entry in enumerate(raw_children))
+    plan_gate.require_plan(children)
+    return children
 
 
 def _parse_child(entry: object, index: int) -> ChildSpec:
@@ -121,7 +139,48 @@ def _parse_child(entry: object, index: int) -> ChildSpec:
         scope=scope,
         type=child_type.strip(),
         shared=_parse_shared(entry.get("shared"), scope, where),
+        depends_on=_parse_depends_on(entry.get("depends_on"), where),
+        budget_tokens=_parse_budget(entry.get("budget_tokens"), where),
+        integrity=_parse_integrity(entry.get("integrity"), where),
     )
+
+
+def _parse_depends_on(value: object, where: str) -> tuple[str, ...] | None:
+    """A child's declared dependency list: titles of siblings that must land first.
+
+    Sibling *titles*, not issue ids, because the plan is written before anything is
+    recorded and an id does not exist yet. :func:`decompose` resolves them once the
+    children are created. An empty list is a declaration ("nothing blocks this") and
+    is kept distinct from the key being absent, which the plan gate refuses.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise ValueError(f"{where} 'depends_on' must be a list of sibling titles")
+    entries: list[str] = []
+    for item in value:
+        if not (isinstance(item, str) and item.strip()):
+            raise ValueError(f"{where} 'depends_on' entries must be non-empty strings")
+        entries.append(item.strip())
+    return tuple(entries)
+
+
+def _parse_budget(value: object, where: str) -> int | None:
+    """A child's declared token budget. ``bool`` is rejected: ``True`` is not 1 token."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{where} 'budget_tokens' must be a whole number of tokens")
+    return value
+
+
+def _parse_integrity(value: object, where: str) -> str | None:
+    """A child's declared integrity level, one of :data:`plan_gate.INTEGRITY_LEVELS`."""
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{where} 'integrity' must be a non-empty string")
+    return value.strip()
 
 
 def _string_list(value: object, where: str) -> tuple[str, ...]:
@@ -537,175 +596,13 @@ def collapse_note(collapsing: tuple[CollapsingPath, ...]) -> str:
 
 
 # --- Context-cost sizing estimator (basicly-kjc5.2, factory design D8) -------
-
-# The projected agent-neutral instruction file every dispatch prompt points at;
-# its size is context every lane pays before reading any scope material.
-INSTRUCTIONS_FILE = "AGENTS.md"
-
-# One scope-glob line as _child_body records it under "## Scope".
-_SCOPE_LINE = re.compile(r"^- `([^`]+)`$")
-_SCOPE_HEADING = "## Scope"
-
-
-def _text_tokens(text: str) -> int:
-    """Deterministic chars/4 token estimate (design 7.5: no tokenizer dependency)."""
-    return len(text) // 4
-
-
-def instruction_overhead(repo_root: Path) -> int:
-    """Fixed per-repo instruction overhead: the projected AGENTS.md, tokenized.
-
-    Computed by tokenizing the projected instructions, never configured
-    (design section 6). A repo without the file contributes zero; non-UTF-8
-    content still counts by size via replacement (same stance as scope files).
-    """
-    try:
-        path = repo_root / INSTRUCTIONS_FILE
-        return _text_tokens(path.read_text(encoding="utf-8", errors="replace"))
-    except OSError:
-        return 0
-
-
-# Directory names that are never a lane's working set: the VCS store, a
-# virtualenv, a dependency tree, and byte/tool caches. Matched by *name* at any
-# depth rather than by a leading dot, because the dot-directories this project
-# authors — ``.basicly``, ``.claude``, ``.github``, ``.beads`` — are legitimate
-# scope and excluding them would silently zero their read-cost, which is the
-# failure the ``./`` handling below already guards against.
 #
-# Deliberately conservative. ``dist``, ``build`` and ``site`` are *not* here:
-# basicly is installed into consumer repositories where any of those can be a
-# real source package, and a wrong exclusion is worse than a wrong inclusion —
-# it under-reads a lane and admits work the band should have refused
-# (basicly-jr0l.63).
-SCOPE_EXCLUDED_DIRS: frozenset[str] = frozenset({
-    ".git",
-    ".venv",
-    "venv",
-    "node_modules",
-    "__pycache__",
-    ".pytest_cache",
-    ".ruff_cache",
-    ".mypy_cache",
-    ".import_linter_cache",
-    ".doctor",
-})
+# What a lane must *read* is measured in :mod:`basicly.read_cost` — this half turns
+# those tokens into an estimate, a frozen verdict and a forecast.
 
-
-def _is_excluded(repo_root: Path, path: Path) -> bool:
-    """True when *path* sits under a directory no declared scope should read."""
-    try:
-        parts = path.relative_to(repo_root).parts
-    except ValueError:
-        # Outside the repo entirely — glob cannot produce this, but a caller
-        # passing an absolute pattern could; treat it as unreadable material.
-        return True
-    # parts[:-1] — the *directories*, never the filename, so a file that happens
-    # to be named `venv` is still read.
-    return any(part in SCOPE_EXCLUDED_DIRS for part in parts[:-1])
-
-
-def _scope_files(repo_root: Path, scope: tuple[str, ...]) -> set[Path]:
-    """The existing files matching any of the declared scope globs.
-
-    Only a literal ``./`` prefix is stripped — a bare ``lstrip`` would eat the
-    leading dot of a dot-directory scope (``.claude/**``) and silently zero its
-    read-cost. A leading ``/`` is relativized; a pattern the glob engine still
-    rejects (e.g. drive-anchored on Windows) is skipped, never fatal — the
-    governor treats it as unreadable material, matching the scope_read_cost
-    stance.
-
-    Paths under :data:`SCOPE_EXCLUDED_DIRS` are dropped. Without that, a scope of
-    ``**/*.py`` measured 2229 files here of which 2077 were the virtualenv — an
-    estimate describing the machine rather than the work, and one that pushes a
-    lane past ``working_set_max`` where the refusal holds it pending a human
-    (basicly-jr0l.63).
-    """
-    files: set[Path] = set()
-    for pattern in scope:
-        normalized = pattern.strip().replace("\\", "/")
-        while normalized.startswith("./"):
-            normalized = normalized[2:]
-        normalized = normalized.lstrip("/")
-        if not normalized:
-            continue
-        try:
-            matches = list(repo_root.glob(normalized))
-        except ValueError, NotImplementedError, OSError:
-            continue
-        for path in matches:
-            if path.is_file() and not _is_excluded(repo_root, path):
-                files.add(path)
-    return files
-
-
-# How much of one file a lane actually reads (basicly-fcls).
-#
-# This used to be "all of it", and that made a scope naming `cli.py` cost 45_556
-# tokens for a three-line change — while the harness's own always-on `tool-usage`
-# guidance tells the same agent to "find files by name, localize with focused
-# search, read only the ranges you need". The estimator and the instructions
-# described different agents, and the estimator was the one holding the gate.
-#
-# Measured over 185 (lane, file) pairs from 24 headless lane transcripts, taking
-# the *union* of line ranges each lane read out of each file, against the file's
-# size in this module's own chars/4 unit:
-#
-#   file tokens        n    median tokens read    median fraction
-#        73-  987     20                   357              1.000
-#       993- 2454     20                  1101              1.000
-#      2676- 3823     20                  2779              1.000
-#      4494- 6967     20                  1350              0.219
-#      7353-12843     20                  1524              0.147
-#     12843-17460     20                  1356              0.094
-#     17460-22829     20                  2224              0.122
-#     22829-32519     20                  1372              0.053
-#     32519-45556     25                  ~1000             0.022-0.068
-#
-# 78% of `Read` calls carried an offset or a limit. The shape is not a gentle
-# taper: below roughly 4_000 tokens a lane reads the file whole, and above it the
-# material it takes out is *flat* at ~1_500 tokens however large the file gets.
-# So the model is a cap, not a curve, and 4_000 is where the whole-file band ends
-# (last whole-read bucket tops out at 3_823, first partial bucket starts at 4_494).
-#
-# Set at the transition rather than at the ~1_500 plateau, deliberately: the cap
-# then covers the material actually read in 86% of the measured pairs and
-# over-states the large end by about 1.5x. That is the same stance
-# SCOPE_EXCLUDED_DIRS takes above — over-reading costs a false refusal a human can
-# see, under-reading admits work the band should have refused (basicly-jr0l.63).
-#
-# The cap alone is *not* the whole answer and must not be read as one. A lane's
-# real context occupancy correlates with its declared scope at R^2 = 0.095 over
-# those same 24 lanes (against 0.863 for turn count), and six lanes declaring no
-# scope at all still occupied 106k-209k tokens — so the term this formula is
-# really missing is a large ambient one, not a better read model. Fitting that
-# needs a measurement, which is why `RunRecord.context_tokens` lands with this
-# change and why no ambient constant is invented here: a factor fitted before the
-# measurement existed is exactly how basicly-z2wi's 216x happened.
-SCOPE_FILE_READ_CAP = 4_000
-
-
-def scope_read_cost(repo_root: Path, scope: tuple[str, ...]) -> int:
-    """Tokenized material a lane reads out of the files matching its scope globs.
-
-    Each file contributes its own size or :data:`SCOPE_FILE_READ_CAP`, whichever
-    is smaller — a small file is read whole, a large one is localized into
-    (basicly-fcls). Capping per *file* rather than per scope is what keeps a lane
-    naming three large modules costing more than one naming a single large module,
-    which a cap on the total would flatten away.
-
-    A glob matching nothing — a file the child will create — contributes zero:
-    there is nothing to read yet. Unreadable files are skipped (telemetry-grade
-    input, never fatal); binary content still counts by size via replacement.
-    """
-    total = 0
-    for path in _scope_files(repo_root, scope):
-        try:
-            text = path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        total += min(_text_tokens(text), SCOPE_FILE_READ_CAP)
-    return total
+# The heading _child_body records scope globs under; the line form itself belongs to
+# plan_record, which owns every recorded section.
+_SCOPE_HEADING = plan_record.SCOPE_HEADING
 
 
 # Where a build factor came from. Recorded with every estimate, on the same rule
@@ -790,19 +687,13 @@ def estimate_cost(
 
 
 def parse_scope_section(description: str) -> tuple[str, ...]:
-    """The scope globs recorded under a ``## Scope`` heading, as _child_body writes them."""
-    scope: list[str] = []
-    in_scope = False
-    for line in description.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("## "):
-            in_scope = stripped == _SCOPE_HEADING
-            continue
-        if in_scope:
-            match = _SCOPE_LINE.match(stripped)
-            if match:
-                scope.append(match.group(1))
-    return tuple(scope)
+    """The scope globs recorded under a ``## Scope`` heading, as _child_body writes them.
+
+    Delegates the reading to :func:`plan_record.backticked_entries`, so the section
+    reader the build entry predicate uses and the one every sizing and merge gate uses
+    are the same code — two readers of one recorded form is how the form drifts.
+    """
+    return plan_record.backticked_entries(description, _SCOPE_HEADING)
 
 
 def unparsed_scope_warning(description: str) -> str | None:
@@ -1934,12 +1825,26 @@ def _child_body(spec: ChildSpec) -> str:
     deliberate trade: the placeholder satisfies the gate structurally, so the
     fan-out proceeds and the bead says out loud what is still owed, where omitting
     the heading would instead wedge the child before anyone could supply it.
+
+    The ``## Plan`` section records the three fields the plan gate added, so a lane
+    dispatched later can be held to the plan it was decomposed under
+    (:func:`plan_gate.build_entry_verdict`). Without it the fields would live only in
+    the plan document, which nothing keeps once the children exist.
     """
     return policy.compose_body(
         spec.type,
         {
             "## Acceptance Criteria": "\n".join(f"- {item}" for item in spec.acceptance),
-            "## Scope": "\n".join(f"- `{glob}`" for glob in spec.scope),
+            plan_record.SCOPE_HEADING: "\n".join(f"- `{glob}`" for glob in spec.scope),
+            # :func:`decompose` gates before it records, so these are never absent on
+            # the real path. The fall-backs record an *empty* value rather than a
+            # plausible one, so a spec that reached here ungated is refused again by
+            # the entry predicate instead of looking declared.
+            plan_record.PLAN_HEADING: plan_record.render_plan_section(
+                spec.depends_on or (),
+                spec.budget_tokens or 0,
+                spec.integrity or "",
+            ),
         },
     )
 
@@ -2025,20 +1930,33 @@ def _assert_no_new_cycles(repo_root: Path, created_ids: set[str]) -> None:
 
 
 def decompose(repo_root: Path, feature_id: str, children: tuple[ChildSpec, ...]) -> DecomposeResult:
-    """Create child issues under *feature_id* and wire the computed serial chains.
+    """Create child issues under *feature_id* and wire the declared and computed graphs.
 
-    The sizing governor runs first (D8): every child's context cost must land
-    inside the configured working-set band or the whole plan is refused before
-    anything is recorded. Each child is then created with acceptance criteria
-    (so DoR passes) and the parent's labels (so it stays in the parent's phase),
-    and any two children that :func:`serializes` are chained by a ``blocks`` edge in
-    declared order. The resulting graph is checked for cycles before the result —
-    carrying the parallel groups, the serial order, and the paths that were
-    load-bearing for the grouping — is returned.
+    The plan gate runs first and the sizing governor second, both before anything is
+    recorded: a plan missing a field, or whose declared dependencies contain a cycle,
+    is refused with no issue created, because a half-recorded decomposition is worse
+    than none — the children exist, nothing owns un-creating them, and the next run
+    creates a second set.
+
+    Two sources of ``blocks`` edges, unioned:
+
+    * **declared** — what the plan says must land first, resolved from sibling titles
+      to the ids just created. This is ordering the scopes cannot express: B needing
+      A's decision is invisible to a glob comparison when the two touch no common
+      file, and before this existed the graph simply did not carry it.
+    * **computed** — the serial chain within a scope-overlap group, which is a
+      parallel-*safety* fact rather than an ordering one.
+
+    Each child is created with acceptance criteria (so DoR passes), its recorded
+    ``## Plan`` section, and the parent's labels (so it stays in the parent's phase).
+    The resulting graph is checked for cycles before the result — carrying the parallel
+    groups, the serial order, and the paths that were load-bearing for the grouping —
+    is returned.
     """
     if not children:
         raise ValueError("decompose needs at least one child spec")
 
+    plan_gate.require_plan(children)
     govern_working_set(repo_root, children, feature_id=feature_id)
     contended = append_only_paths(repo_root)
     groups = group_children(children, contended)
@@ -2046,15 +1964,21 @@ def decompose(repo_root: Path, feature_id: str, children: tuple[ChildSpec, ...])
 
     inherited = feature_labels(repo_root, feature_id)
     issue_ids = [_create_child(repo_root, feature_id, spec, inherited) for spec in children]
+    by_title = {spec.title: issue_ids[index] for index, spec in enumerate(children)}
 
     created: list[CreatedChild] = []
     for index, spec in enumerate(children):
         pred = predecessors[index]
-        depends_on: tuple[str, ...] = ()
+        # Declared first so the graph reads in the plan's own order; the computed
+        # chain then adds only what it did not already say. dict.fromkeys dedupes a
+        # declared edge that the scope chain would have drawn anyway, without which
+        # the same pair would be added twice.
+        wanted = [by_title[dep] for dep in (spec.depends_on or ())]
         if pred is not None:
-            pred_id = issue_ids[pred]
-            _run_br(repo_root, ["dep", "add", issue_ids[index], pred_id, "-t", "blocks"])
-            depends_on = (pred_id,)
+            wanted.append(issue_ids[pred])
+        depends_on = tuple(dict.fromkeys(wanted))
+        for dep_id in depends_on:
+            _run_br(repo_root, ["dep", "add", issue_ids[index], dep_id, "-t", "blocks"])
         created.append(CreatedChild(issue_ids[index], spec, groups[index], depends_on))
 
     _assert_no_new_cycles(repo_root, set(issue_ids))

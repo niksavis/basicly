@@ -10,25 +10,56 @@ a checkpoint and a landing look like.
 
 ## 1. Write the child plan
 
-Children come from a plan file, not from the model's memory. Each entry is a
-title, a **list** of acceptance criteria, and a scope:
+Children come from a plan file, not from the model's memory. The **plan gate**
+refuses the plan unless every entry carries all five of: a **list** of acceptance
+criteria, a scope, a declared dependency list, a token budget, and an integrity
+level.
 
 ```toml
 [[children]]
 title = "Add an install note"
 acceptance = ["Given a reader when they open docs/install.md then the install command is shown"]
 scope = ["docs/install.md"]
+depends_on = []
+budget_tokens = 40000
+integrity = "L1"
 
 [[children]]
 title = "Add a loop note"
 acceptance = ["Given a reader when they open docs/loop.md then the loop commands are shown"]
 scope = ["docs/loop.md"]
+depends_on = []
+budget_tokens = 40000
+integrity = "L1"
 ```
+
+- `depends_on` names **sibling titles**, not issue ids — the plan is written
+  before anything is created. Write `depends_on = ["Add an install note"]` and
+  that edge is recorded as a `blocks` dependency on the tracker, so `br dep tree`
+  carries the ordering even between children whose scopes never overlap and
+  nothing would otherwise serialize. `[]` is a declaration ("nothing blocks
+  this"); omitting the key is not, and is refused.
+- `budget_tokens` is what the unit is worth spending.
+- `integrity` is `L1` (docs, comments, test-only), `L2` (engine code behind no
+  consumer surface) or `L3` (a consumer surface).
 
 `acceptance` is a list even with one entry; a bare string is refused:
 
 ```text
 Error: children[0] 'acceptance' must be a non-empty list of non-empty strings
+```
+
+A missing gate field is refused before anything is created, naming every field
+it is missing:
+
+```text
+Error: children[0] ('Add a loop note') declares no depends_on, budget_tokens, integrity; the plan gate refuses a unit BUILD cannot be held to
+```
+
+So is a cycle in the declared graph, naming its members:
+
+```text
+Error: the declared dependency graph has a cycle through a -> b -> a
 ```
 
 ## 2. Preview the grouping before you create anything
@@ -55,6 +86,9 @@ Read three things off it:
 - **Parallel groups.** Children whose scopes overlap land in one group and
   run serially. Two groups of one is maximum parallelism; one group of six
   means the scopes collide and you are paying for isolation you do not get.
+  The grouping reads **scopes only**, so it is an upper bound: a `depends_on`
+  you declared also orders two lanes, and the group count does not show it —
+  read `br dep tree` after creating them for the ordering you will actually get.
 - **Sizing.** Each child is estimated from what its scope globs actually match.
   `scope 0` means the globs matched no file yet — greenfield, or a broken path.
 - **The band verdict.** Only `REFUSED - too large, split it` blocks a dispatch.
