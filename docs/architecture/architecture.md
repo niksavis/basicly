@@ -1901,7 +1901,8 @@ Pillar 02 — **gates**:
 | Capability | Status | Where it is specified |
 | --- | --- | --- |
 | Git hook floor across pre-commit, commit-msg and pre-push | `shipped` | §4.2 |
-| Agent hooks for Claude Code and Copilot | `shipped` | §4.2 |
+| Agent hooks — Claude Code | `shipped` | §4.2 |
+| Agent hooks — Copilot CLI | **not possible today** | §4.2. Re-probed 2026-08-08 on CLI **1.0.77**: no `hook` option in `--help`, no hooks directory under `~/.copilot`, no hook key in its `settings.json`. Three earlier probes of a repo-level `.github/hooks/*.json` never fired it either. The row said `shipped` for both families until this correction, which is a capability claim on a consumer-facing surface that the host does not support. `basicly-0p8n` |
 | Verify pipeline with `fast`, `full` and `staged` modes | `shipped` | §6, §12 |
 | Every gate classified by type, and a pre-flight gate that writes nothing | `building` | [`factory-loop-requirements` §5.1](../requirements/factory-loop.md) |
 | Severity required on judged output, plus a lint refusing a pre-judging reviewer bundle | `building` | §14.3, `gates-and-rework` |
