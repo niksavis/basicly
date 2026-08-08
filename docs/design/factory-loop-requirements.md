@@ -504,9 +504,9 @@ read; pass `--forward-subagent-text`; add light mode as a second dispatch path.
 | ~~OQ-6~~ | ~~File-size threshold~~ — **resolved**: 4,000 tokens, `SCOPE_FILE_READ_CAP` (§9.3) | — |
 | ~~OQ-7~~ | ~~Exemption list or deadline~~ — **resolved**: ratchet, first touch brings the file under cap, per-file waiver with a recorded reason (§9.3) | — |
 | ~~OQ-11~~ | ~~Waiver approval~~ — **resolved**: reason at L1/L2, approval at L3 (D14) | — |
-| ~~OQ-12~~ | ~~What is a "touch"~~ — **partly resolved 2026-08-08**: a touch that adds only a top-level import is not a touch, because the ratchet was charging for the splits it exists to force (§9.3). The original question — whether a one-line typo fix should trigger a refactor — is still open for *content* changes | §9.3 |
+| **OQ-12** | What is a "touch" — **partly resolved 2026-08-08, and now the only open question**: a touch that adds only a top-level import is not a touch, because the ratchet was charging for the splits it exists to force (§9.3). The original question — whether a one-line typo fix should trigger a refactor — is still open for *content* changes | §9.3 |
 | ~~OQ-8~~ | ~~Kill approval~~ — **resolved**: human at every level (D15) | — |
-| **OQ-9** | House direction on PEP 758 paren-free `except A, B:`. **Only open question left.** Recommendation: allow paren-free — the repo is 3.14-only so there is no compatibility argument, and no linter enforces either direction | `python-guidelines` |
+| ~~OQ-9~~ | ~~PEP 758 house direction~~ — **resolved 2026-08-08**: paren-free `except A, B:` is the house form, recorded in the `python-guidelines` skill rather than in a linter, since none enforces either direction | — |
 | ~~OQ-10~~ | ~~Plugin channel~~ — **resolved**: second channel, same projected output (D16) | — |
 
 ---
