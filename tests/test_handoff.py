@@ -23,8 +23,9 @@ from pathlib import Path
 
 import pytest
 
-from basicly import artifact_record, br, handoff
-from basicly.decompose import ChildSpec, CreatedChild, DecomposeResult
+from basicly import artifact_record, br, handoff, plan_gate
+from basicly.decompose import CreatedChild, DecomposeResult
+from tests import plan_fixtures
 
 
 class _Proc:
@@ -63,16 +64,10 @@ def fake_br(monkeypatch: pytest.MonkeyPatch) -> _FakeBr:
     return fake
 
 
-def spec(title: str, *scope: str) -> ChildSpec:
-    """A child carrying every field the plan gate requires, so a plan is about the plan."""
-    return ChildSpec(
-        title=title,
-        acceptance=("the thing is demonstrable",),
-        scope=scope or (f"src/{title}.py",),
-        depends_on=(),
-        budget_tokens=40_000,
-        integrity="L2",
-    )
+# The child that passes the plan gate is ``plan_fixtures.planned``, not a copy of it: an
+# artifact test whose fixture drifted from the gate's would assert the schema against a
+# plan the gate would have refused, which is the one thing this contract may not do.
+spec = plan_fixtures.planned
 
 
 def decomposition() -> DecomposeResult:
@@ -102,10 +97,11 @@ def test_plan_payload_carries_every_gated_field_and_the_graph(work_repo: Path) -
     assert payload["groups"] == [["feat.1"], ["feat.2"]]
     first = payload["tasks"][0]
     assert first["issue_id"] == "feat.1"
-    assert first["acceptance"] == ["the thing is demonstrable"]
+    assert first["acceptance"] == ["given a plan when it is gated then it passes"]
     assert first["scope"] == ["src/a.py"]
     assert first["budget_tokens"] == 40_000
     assert first["integrity"] == "L2"
+    assert first["demonstration"] == plan_fixtures.DEMONSTRATION
     assert payload["tasks"][1]["depends_on"] == ["feat.1"]
     assert handoff.adopted(work_repo, handoff.IMPLEMENTATION_PLAN)
 
@@ -204,6 +200,23 @@ def test_a_hand_corrupted_plan_is_refused_naming_the_failing_field(
     verdict = handoff.entry_verdict(work_repo, "feat", handoff.IMPLEMENTATION_PLAN)
     assert not verdict.admitted
     assert "integrity" in verdict.reason and "L9" in verdict.reason
+
+
+def test_a_task_naming_no_demonstration_is_refused_though_a_recorded_bead_is_not(
+    work_repo: Path, fake_br: _FakeBr
+) -> None:
+    """D18 binds on the artifact and not on ``PLAN_FIELDS``, and the two populations differ.
+
+    A bead recorded before the field existed is admitted by ``plan_entry`` because its
+    silence is ambiguous. This artifact has no such population — its only producer is a
+    plan ``plan_gate.require_plan`` passed — so here the same silence is a defect.
+    """
+    payload = handoff.plan_payload(decomposition())
+    del payload["tasks"][0]["demonstration"]
+    fake_br.comments["feat"] = [artifact_record.marker_body(handoff.IMPLEMENTATION_PLAN, payload)]
+    verdict = handoff.entry_verdict(work_repo, "feat", handoff.IMPLEMENTATION_PLAN)
+    assert not verdict.admitted
+    assert plan_gate.DEMONSTRATION_FIELD in verdict.reason
 
 
 def test_a_plan_whose_payload_is_not_json_is_refused_not_ignored(

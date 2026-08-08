@@ -22,6 +22,23 @@ The gate refuses a plan unless every child carries five things:
 * **integrity** — which of the three levels (:data:`INTEGRITY_LEVELS`) selects the
   gate set, model tier and rework allowance for the unit.
 
+A **proposed** plan owes one more, and only a proposed plan does: **demonstration**
+(D18) — how the child is exercised end to end, naming a command, a request or a test
+through the consumer surface. It is the checkable proxy for horizontal slicing. Our
+decomposer groups by scope-glob overlap, which is file adjacency, so "add the model /
+add the service / add the CLI" is the shape it cuts by construction; each of those has
+no consumer-visible behaviour, so D10 has no check to derive from it and the defect is
+only discovered at verify, with the tokens already spent. A child whose author cannot
+name the demonstration is refused at plan time, when splitting is still cheap.
+
+It is deliberately **not** in :data:`PLAN_FIELDS`, which is what
+:func:`plan_entry.entry_verdict_for` holds a *recorded* bead to. Every child recorded
+before this field existed carries a ``## Plan`` heading and no demonstration line, so on
+that population absence is ambiguous between a defect and predating the rule — and a
+predicate that cannot tell those apart refuses the whole tracker, which is a stopped
+harness rather than a bound one. The plan gate has no such population: a proposed plan
+is authored fresh every time.
+
 Two whole-plan rules follow from the third: titles must be unique (a title-keyed graph
 with a duplicate key names an edge nobody can resolve) and the declared graph must be
 acyclic. A cycle is reported by naming its members, because "the plan has a cycle" is
@@ -35,22 +52,17 @@ How a plan is *written down* and read back is :mod:`basicly.plan_record`'s, not 
 module's. The boundary is recorded form against judgement: nothing there decides
 whether a plan is adequate, and nothing here parses markup.
 
-:func:`build_entry_verdict` is the same five fields read back off the tracker at the
-moment a lane is about to be dispatched, for the units the decomposer never saw — a
-hand-filed bead carries no plan and dispatching it spends the same tokens. It is a
-**pure read** that names the missing field; the caller decides what to do with the
-verdict, exactly as :func:`loop.stale_binding_verdict` splits the decision from the
-write.
+The same five fields read back off the tracker, for the units the decomposer never saw,
+are :mod:`basicly.plan_entry`'s. That half was split out on the same boundary when this
+module crossed the size cap: what a plan must declare is judgement, and reading a bead
+back to see whether it did is a query against a different population.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Protocol, runtime_checkable
-
-from . import br
-from .plan_record import PLAN_HEADING, has_heading, parse_plan_section
 
 # The three integrity levels, in ascending blast radius: L1 routine (docs, comments,
 # test-only), L2 internal (engine code behind no consumer surface), L3 consumer (the
@@ -63,6 +75,19 @@ INTEGRITY_LEVELS = ("L1", "L2", "L3")
 # the plan schema, the gate message and the build-entry predicate cannot drift into
 # describing different sets.
 PLAN_FIELDS = ("acceptance", "scope", "depends_on", "budget_tokens", "integrity")
+
+# The sixth field, required of a proposed plan only (see the module docstring for why
+# the recorded population cannot be held to it).
+DEMONSTRATION_FIELD = "demonstration"
+
+# What makes a demonstration a demonstration rather than a claim: one backticked span
+# naming the thing to run — the command, the request, the test node id. The same rule
+# :func:`plan_record.backticked_entries` holds a scope glob to, and for the same
+# reason: prose is not a runnable thing, and reading it as one lets a child look
+# demonstrated when nothing demonstrates it. It is a floor, not a judgement — the gate
+# asks whether the author could name one, which is the property horizontal slicing
+# fails.
+_NAMES_SOMETHING = re.compile(r"`[^`\n]+`")
 
 # Depth-first colours for :func:`declared_cycles`: on the current path, and finished.
 _OPEN = "open"
@@ -107,6 +132,11 @@ class PlannedFields(Protocol):
     @property
     def integrity(self) -> str | None:
         """The level selecting this unit's gate set, tier and rework allowance."""
+        ...
+
+    @property
+    def demonstration(self) -> str | None:
+        """How this unit is exercised end to end, through the consumer surface."""
         ...
 
 
@@ -170,6 +200,38 @@ def missing_fields(unit: PlannedFields) -> tuple[str, ...]:
         "integrity": bool(unit.integrity),
     }
     return tuple(field for field in PLAN_FIELDS if not present[field])
+
+
+def demonstration_fault(unit: PlannedFields) -> str:
+    """Why *unit*'s end-to-end demonstration does not count, or ``""`` when it does.
+
+    Three answers, deliberately distinct, because the remedy differs. **Absent** is the
+    horizontal slice D18 is aimed at, and the remedy is to re-cut the child rather than
+    to write a sentence. **Naming nothing runnable** is a child that has one and said so
+    in prose, and the remedy is to name the command. **Spanning lines** is neither: the
+    recorded form is one line per field, so a multi-line value would be silently
+    truncated to its first line by :func:`plan_record.parse_plan_section` and read back
+    as something the author did not write.
+    """
+    text = (unit.demonstration or "").strip()
+    if not text:
+        return (
+            f"declares no {DEMONSTRATION_FIELD}; a child that cannot name how it is "
+            "exercised end to end has no consumer-visible behaviour for a check to be "
+            "derived from, so split the plan differently rather than describing this one"
+        )
+    if "\n" in text:
+        return (
+            f"declares a {DEMONSTRATION_FIELD} spanning several lines; it is recorded as "
+            "one line and would read back truncated, so state it in one"
+        )
+    if not _NAMES_SOMETHING.search(text):
+        return (
+            f"declares a {DEMONSTRATION_FIELD} naming nothing runnable ({text!r}); name "
+            "the command to run, the request to make or the test that exercises it "
+            "through the consumer surface, backticked, as a scope glob is"
+        )
+    return ""
 
 
 def declared_cycles(units: tuple[PlannedUnit, ...]) -> tuple[tuple[str, ...], ...]:
@@ -252,6 +314,9 @@ def gate_plan(units: tuple[PlannedUnit, ...]) -> PlanVerdict:
                 f"{where} declares no {', '.join(missing)}; the plan gate refuses a unit "
                 "BUILD cannot be held to"
             )
+        fault = demonstration_fault(unit)
+        if fault:
+            violations.append(f"{where} {fault}")
         if unit.integrity and unit.integrity not in INTEGRITY_LEVELS:
             violations.append(
                 f"{where} declares integrity {unit.integrity!r}, which is not one of "
@@ -276,65 +341,3 @@ def require_plan(units: tuple[PlannedUnit, ...]) -> None:
     verdict = gate_plan(units)
     if verdict.refused:
         raise PlanGateError(verdict)
-
-
-@dataclass(frozen=True)
-class EntryVerdict:
-    """Whether a unit may enter BUILD, and what it is missing if not."""
-
-    issue_id: str
-    missing: tuple[str, ...] = ()
-    unreadable: bool = False
-
-    @property
-    def admitted(self) -> bool:
-        """True only when every plan field is on the record."""
-        return not self.missing and not self.unreadable
-
-    @property
-    def reason(self) -> str:
-        """Why the unit was refused, naming each missing field; empty when admitted."""
-        if self.unreadable:
-            return (
-                f"{self.issue_id} could not be read from the tracker, so the plan gate "
-                "cannot say whether it carries a plan"
-            )
-        if not self.missing:
-            return ""
-        fields = ", ".join(self.missing)
-        return (
-            f"{self.issue_id} declares no {fields}; the plan gate refuses a lane BUILD "
-            "cannot be held to, so declare the missing field before dispatching it"
-        )
-
-
-def entry_verdict_for(issue_id: str, description: str) -> EntryVerdict:
-    """The build entry verdict for a bead whose body is already in hand (pure).
-
-    The ratchet is the ``## Plan`` heading, not the fields under it. A body carrying
-    the heading was written by the decomposer under this gate, so an incomplete one is
-    a defect and is refused naming the field. A body with no heading at all predates
-    the gate — the same population D8 refuses to bulk-transform — and is admitted,
-    because a predicate that refuses every bead filed before it existed does not gate
-    the work that comes after it, it stops the harness.
-    """
-    if not has_heading(description, PLAN_HEADING):
-        return EntryVerdict(issue_id)
-    recorded = parse_plan_section(description)
-    return EntryVerdict(issue_id, missing_fields(recorded))
-
-
-def build_entry_verdict(repo_root: Path, issue_id: str) -> EntryVerdict:
-    """Whether *issue_id* may be dispatched into BUILD (a read; the caller acts).
-
-    Fail-closed on an unreadable record: a tracker that did not answer is not a bead
-    that declared a plan, and admitting one on a transient read failure is how a gate
-    that exists stops binding.
-    """
-    record = br.read_record(repo_root, issue_id)
-    if not isinstance(record, dict):
-        return EntryVerdict(issue_id, unreadable=True)
-    description = record.get("description")
-    if not isinstance(description, str):
-        return EntryVerdict(issue_id, unreadable=True)
-    return entry_verdict_for(issue_id, description)

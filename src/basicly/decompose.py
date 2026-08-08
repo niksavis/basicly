@@ -82,14 +82,15 @@ class ChildSpec:
     # :func:`_parse_shared`). Trailing and defaulted so every plan written before
     # the field existed keeps meaning exactly what it meant: own everything.
     shared: tuple[str, ...] = ()
-    # The three fields the plan gate requires and this module records, each defaulting
-    # to *absent* rather than to a value. ``None`` is the only honest default: an
-    # invented budget or a guessed integrity level would pass the gate while meaning
+    # The fields the plan gate requires and this module records, each defaulting to
+    # *absent* rather than to a value. ``None`` is the only honest default: an invented
+    # budget, guessed integrity or plausible demonstration would pass the gate meaning
     # nothing, and a dependency list defaulted to ``()`` would claim the plan declared
     # "nothing blocks this" when it declared nothing at all. Declared-empty is ``()``.
     depends_on: tuple[str, ...] | None = None
     budget_tokens: int | None = None
     integrity: str | None = None
+    demonstration: str | None = None
 
 
 def parse_children(data: object) -> tuple[ChildSpec, ...]:
@@ -141,7 +142,8 @@ def _parse_child(entry: object, index: int) -> ChildSpec:
         shared=_parse_shared(entry.get("shared"), scope, where),
         depends_on=_parse_depends_on(entry.get("depends_on"), where),
         budget_tokens=_parse_budget(entry.get("budget_tokens"), where),
-        integrity=_parse_integrity(entry.get("integrity"), where),
+        integrity=_parse_declared_text(entry, where, "integrity"),
+        demonstration=_parse_declared_text(entry, where, "demonstration"),
     )
 
 
@@ -174,12 +176,13 @@ def _parse_budget(value: object, where: str) -> int | None:
     return value
 
 
-def _parse_integrity(value: object, where: str) -> str | None:
-    """A child's declared integrity level, one of :data:`plan_gate.INTEGRITY_LEVELS`."""
+def _parse_declared_text(entry: dict, where: str, field: str) -> str | None:
+    """A child's *field* as declared text; whether it says anything usable is the gate's."""
+    value = entry.get(field)
     if value is None:
         return None
     if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{where} 'integrity' must be a non-empty string")
+        raise ValueError(f"{where} {field!r} must be a non-empty string")
     return value.strip()
 
 
@@ -600,10 +603,6 @@ def collapse_note(collapsing: tuple[CollapsingPath, ...]) -> str:
 # What a lane must *read* is measured in :mod:`basicly.read_cost` — this half turns
 # those tokens into an estimate, a frozen verdict and a forecast.
 
-# The heading _child_body records scope globs under; the line form itself belongs to
-# plan_record, which owns every recorded section.
-_SCOPE_HEADING = plan_record.SCOPE_HEADING
-
 
 # Where a build factor came from. Recorded with every estimate, on the same rule
 # `forecast_source`, `SpendCalibration` and `unsized_lane_tokens`' source already
@@ -693,7 +692,7 @@ def parse_scope_section(description: str) -> tuple[str, ...]:
     reader the build entry predicate uses and the one every sizing and merge gate uses
     are the same code — two readers of one recorded form is how the form drifts.
     """
-    return plan_record.backticked_entries(description, _SCOPE_HEADING)
+    return plan_record.backticked_entries(description, plan_record.SCOPE_HEADING)
 
 
 def unparsed_scope_warning(description: str) -> str | None:
@@ -714,15 +713,15 @@ def unparsed_scope_warning(description: str) -> str | None:
     block most of an existing tracker, which is the objection that settled
     basicly-vz78.
     """
-    if not any(line.strip() == _SCOPE_HEADING for line in description.splitlines()):
+    if not plan_record.has_heading(description, plan_record.SCOPE_HEADING):
         return None
     if parse_scope_section(description):
         return None
     return (
-        f"the `{_SCOPE_HEADING}` section parsed to no globs, so every gate reading it "
-        "treats this bead as declaring no scope at all — its lane cannot be sized and "
-        "the landing scope check is inert. Write each entry as a backticked glob on "
-        f"its own line, e.g. {policy.SCOPE_LINE_EXAMPLE}"
+        f"the `{plan_record.SCOPE_HEADING}` section parsed to no globs, so every gate "
+        "reading it treats this bead as declaring no scope at all — its lane cannot be "
+        "sized and the landing scope check is inert. Write each entry as a backticked "
+        f"glob on its own line, e.g. {policy.SCOPE_LINE_EXAMPLE}"
     )
 
 
@@ -1873,9 +1872,9 @@ def _child_body(spec: ChildSpec) -> str:
     fan-out proceeds and the bead says out loud what is still owed, where omitting
     the heading would instead wedge the child before anyone could supply it.
 
-    The ``## Plan`` section records the three fields the plan gate added, so a lane
+    The ``## Plan`` section records the fields the plan gate added, so a lane
     dispatched later can be held to the plan it was decomposed under
-    (:func:`plan_gate.build_entry_verdict`). Without it the fields would live only in
+    (:func:`plan_entry.build_entry_verdict`). Without it the fields would live only in
     the plan document, which nothing keeps once the children exist.
     """
     return policy.compose_body(
@@ -1891,6 +1890,7 @@ def _child_body(spec: ChildSpec) -> str:
                 spec.depends_on or (),
                 spec.budget_tokens or 0,
                 spec.integrity or "",
+                spec.demonstration or "",
             ),
         },
     )

@@ -31,7 +31,12 @@ _BULLET_LINE = re.compile(r"^- (.+)$")
 _BACKTICKED = re.compile(r"^`([^`]+)`$")
 NOTHING_DECLARED = "none"
 
-_PLAN_LINE_KEYS = {"integrity": "integrity", "budget": "budget_tokens", "depends on": "depends_on"}
+_PLAN_LINE_KEYS = {
+    "integrity": "integrity",
+    "budget": "budget_tokens",
+    "depends on": "depends_on",
+    "demonstration": "demonstration",
+}
 
 
 # --- Section reading --------------------------------------------------------
@@ -92,24 +97,34 @@ class RecordedPlan:
     depends_on: tuple[str, ...] | None = None
     budget_tokens: int | None = None
     integrity: str | None = None
+    # Free text, not a backticked scalar: it is a sentence naming a command, a request
+    # or a test, and the backticks sit *inside* it around the thing being named.
+    demonstration: str | None = None
 
 
-def render_plan_section(depends_on: tuple[str, ...], budget_tokens: int, integrity: str) -> str:
+def render_plan_section(
+    depends_on: tuple[str, ...], budget_tokens: int, integrity: str, demonstration: str
+) -> str:
     """The ``## Plan`` body :func:`parse_plan_section` reads back.
 
     One writer and one reader for the recorded form, so the build entry predicate
     cannot be reading a shape the decomposer stopped writing.
+
+    An empty *demonstration* renders a line with no value, which reads back as absent
+    — the same fall-back every other field here takes, and for the same reason: a
+    recorded placeholder would look declared.
     """
     declared = ", ".join(f"`{dep}`" for dep in depends_on) if depends_on else NOTHING_DECLARED
     return "\n".join((
         f"- integrity: `{integrity}`",
         f"- budget: `{budget_tokens}`",
         f"- depends on: {declared}",
+        f"- demonstration: {demonstration}",
     ))
 
 
 def parse_plan_section(description: str) -> RecordedPlan:
-    """The five plan fields recorded on a bead body, with absences kept as absences.
+    """The plan fields recorded on a bead body, with absences kept as absences.
 
     Structural, exactly like :func:`decompose.parse_scope_section`: a heading with
     entries under it counts, and what those entries *say* is not judged here. That
@@ -133,6 +148,7 @@ def parse_plan_section(description: str) -> RecordedPlan:
         depends_on=_parse_recorded_list(values.get("depends_on")),
         budget_tokens=_parse_recorded_budget(values.get("budget_tokens")),
         integrity=_parse_recorded_scalar(values.get("integrity")),
+        demonstration=values.get("demonstration"),
     )
 
 

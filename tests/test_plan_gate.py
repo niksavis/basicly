@@ -1,4 +1,4 @@
-"""The plan gate: the five fields a unit must declare before BUILD spends on it.
+"""The plan gate: what a unit must declare before BUILD spends tokens on it.
 
 Every test here is a control pair wherever a control pair is possible — the same plan
 with the field present and with it absent — because a gate that only ever sees good
@@ -6,91 +6,28 @@ input cannot be shown to bind. The groups match the acceptance criteria of
 basicly-u2hl.1, and the group keywords (`cycle`, `entry`) are the ones those criteria
 name as their checks. The `edges` group and the decompose round trip are in
 ``test_plan_record.py``, on the recorded-form-against-judgement boundary
-:mod:`basicly.plan_record` was split from :mod:`basicly.plan_gate` on.
+:mod:`basicly.plan_record` was split from :mod:`basicly.plan_gate` on; the sixth field
+D18 added is in ``test_plan_demonstration.py``, because only one of the two halves here
+binds on it.
 """
 
 from __future__ import annotations
 
-import json
-from collections.abc import Callable
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
-from basicly import br, decompose, plan_gate, plan_record
+from basicly import br, decompose, plan_entry, plan_gate, plan_record
 from basicly.decompose import ChildSpec
+from tests.plan_fixtures import FakeBr, Proc
+from tests.plan_fixtures import child_payload as _child_payload
+from tests.plan_fixtures import install as _install
+from tests.plan_fixtures import plan_payload as _plan_payload
+from tests.plan_fixtures import planned as _planned
+from tests.plan_fixtures import recorded_body as _recorded_body
 
-
-class _Proc:
-    def __init__(self, stdout: str = "", returncode: int = 0) -> None:
-        self.stdout = stdout
-        self.stderr = ""
-        self.returncode = returncode
-
-
-class _FakeBr:
-    """Stand-in for the br CLI, taught only what a refused plan may still reach.
-
-    Serves ``show`` for the build-entry read and records any create or dep-add, which
-    is what the "creates no issue" assertions read. Any other subcommand raises.
-    """
-
-    def __init__(self, *, records: dict[str, dict] | None = None) -> None:
-        self.records = records or {}
-        self.created: list[tuple[str, str, str]] = []  # (id, title, body)
-        self.edges: list[tuple[str, str, str]] = []  # (issue, depends_on, type)
-        self._counter = 0
-
-    def __call__(self, _repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
-        if args[:1] == ["create"]:
-            self._counter += 1
-            issue_id = f"feat.{self._counter}"
-            self.created.append((issue_id, args[1], args[args.index("-d") + 1]))
-            return _Proc(json.dumps({"id": issue_id}))
-        if args[:1] == ["show"]:
-            record = self.records.get(args[1], {"id": args[1], "labels": []})
-            return _Proc(json.dumps([record]))
-        if args[:2] == ["dep", "add"]:
-            self.edges.append((args[2], args[3], args[args.index("-t") + 1]))
-            return _Proc("")
-        raise AssertionError(f"unexpected br call: {args}")
-
-
-def _install(monkeypatch: pytest.MonkeyPatch, fake: Callable[..., _Proc]) -> None:
-    monkeypatch.setattr(decompose, "_run_br", fake)
-    monkeypatch.setattr(br, "try_run_br", fake)
-
-
-def _planned(title: str, *scope: str, **overrides: object) -> ChildSpec:
-    """A child that passes the gate, so a test can remove exactly one thing."""
-    fields: dict[str, object] = {
-        "title": title,
-        "acceptance": ("given a plan when it is gated then it passes",),
-        "scope": scope or (f"src/{title}.py",),
-        "depends_on": (),
-        "budget_tokens": 40_000,
-        "integrity": "L2",
-    }
-    fields.update(overrides)
-    return ChildSpec(**fields)  # type: ignore[arg-type]
-
-
-def _plan_payload(*children: dict) -> dict:
-    return {"children": list(children)}
-
-
-def _child_payload(title: str, **overrides: object) -> dict:
-    payload: dict[str, object] = {
-        "title": title,
-        "acceptance": ["given a plan when it is gated then it passes"],
-        "scope": [f"src/{title}.py"],
-        "depends_on": [],
-        "budget_tokens": 40_000,
-        "integrity": "L2",
-    }
-    payload.update(overrides)
-    return payload
-
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # --- The five required fields, at plan load ---------------------------------
 
@@ -284,7 +221,7 @@ def test_decompose_refuses_a_cycle_and_creates_no_issue(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A half-recorded decomposition is worse than none: nothing owns un-creating it."""
-    fake = _FakeBr()
+    fake = FakeBr()
     _install(monkeypatch, fake)
     children = (_planned("a", depends_on=("b",)), _planned("b", depends_on=("a",)))
 
@@ -299,7 +236,7 @@ def test_decompose_refuses_a_plan_missing_a_field_and_creates_no_issue(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """The gate binds at decompose too, for a caller that built specs directly."""
-    fake = _FakeBr()
+    fake = FakeBr()
     _install(monkeypatch, fake)
     bare = ChildSpec(title="a", acceptance=("does the thing",), scope=("src/a.py",))
 
@@ -312,42 +249,9 @@ def test_decompose_refuses_a_plan_missing_a_field_and_creates_no_issue(
 # --- The build entry predicate ----------------------------------------------
 
 
-def _recorded_body(**overrides: object) -> str:
-    """A bead body carrying every plan field, so a test can drop exactly one."""
-    fields: dict[str, object] = {
-        "acceptance": ("given the lane when it is dispatched then it is held to this",),
-        "scope": ("src/a.py",),
-        "depends_on": (),
-        "budget_tokens": 40_000,
-        "integrity": "L2",
-    }
-    fields.update(overrides)
-    sections = []
-    if fields["acceptance"]:
-        entries = "\n".join(f"- {item}" for item in fields["acceptance"])  # type: ignore[union-attr]
-        sections.append(f"{plan_record.ACCEPTANCE_HEADING}\n\n{entries}")
-    if fields["scope"]:
-        entries = "\n".join(f"- `{glob}`" for glob in fields["scope"])  # type: ignore[union-attr]
-        sections.append(f"{plan_record.SCOPE_HEADING}\n\n{entries}")
-    plan_lines = []
-    if fields["integrity"] is not None:
-        plan_lines.append(f"- integrity: `{fields['integrity']}`")
-    if fields["budget_tokens"] is not None:
-        plan_lines.append(f"- budget: `{fields['budget_tokens']}`")
-    if fields["depends_on"] is not None:
-        declared = (
-            ", ".join(f"`{dep}`" for dep in fields["depends_on"])  # type: ignore[union-attr]
-            or plan_record.NOTHING_DECLARED
-        )
-        plan_lines.append(f"- depends on: {declared}")
-    if plan_lines:
-        sections.append(plan_record.PLAN_HEADING + "\n\n" + "\n".join(plan_lines))
-    return "\n\n".join(sections) + "\n"
-
-
 def test_a_fully_planned_unit_is_admitted_to_build_entry() -> None:
     """The positive control: a lane decomposed under the gate still dispatches."""
-    verdict = plan_gate.entry_verdict_for("feat.1", _recorded_body())
+    verdict = plan_entry.entry_verdict_for("feat.1", _recorded_body())
 
     assert verdict.admitted
     assert verdict.reason == ""
@@ -367,7 +271,7 @@ def test_build_entry_refuses_a_unit_missing_a_plan_field_naming_it(
     field: str, absent: object
 ) -> None:
     """The refusal has to say which field, or nobody can fix the lane."""
-    verdict = plan_gate.entry_verdict_for("feat.1", _recorded_body(**{field: absent}))
+    verdict = plan_entry.entry_verdict_for("feat.1", _recorded_body(**{field: absent}))
 
     assert not verdict.admitted
     assert verdict.missing == (field,)
@@ -382,7 +286,7 @@ def test_build_entry_admits_a_hand_filed_bead_that_carries_no_plan_section() -> 
     granted dispatch of a pre-existing bead fail, which is a stopped harness rather
     than a bound one.
     """
-    verdict = plan_gate.entry_verdict_for("feat.1", "Some prose and no headings.\n")
+    verdict = plan_entry.entry_verdict_for("feat.1", "Some prose and no headings.\n")
 
     assert verdict.admitted
     assert verdict.missing == ()
@@ -390,7 +294,7 @@ def test_build_entry_admits_a_hand_filed_bead_that_carries_no_plan_section() -> 
 
 def test_build_entry_refuses_a_bead_whose_plan_section_is_present_but_empty() -> None:
     """Present-but-incomplete is the defect the ratchet still has to catch."""
-    verdict = plan_gate.entry_verdict_for("feat.1", f"{plan_record.PLAN_HEADING}\n\nprose\n")
+    verdict = plan_entry.entry_verdict_for("feat.1", f"{plan_record.PLAN_HEADING}\n\nprose\n")
 
     assert not verdict.admitted
     assert verdict.missing == plan_gate.PLAN_FIELDS
@@ -400,10 +304,10 @@ def test_build_entry_reads_the_bead_from_the_tracker(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """The predicate's input is the recorded bead, not a spec held in memory."""
-    fake = _FakeBr(records={"feat.1": {"id": "feat.1", "description": _recorded_body()}})
+    fake = FakeBr(records={"feat.1": {"id": "feat.1", "description": _recorded_body()}})
     _install(monkeypatch, fake)
 
-    assert plan_gate.build_entry_verdict(tmp_path, "feat.1").admitted
+    assert plan_entry.build_entry_verdict(tmp_path, "feat.1").admitted
 
 
 def test_build_entry_refuses_a_unit_whose_record_cannot_be_read(
@@ -411,12 +315,12 @@ def test_build_entry_refuses_a_unit_whose_record_cannot_be_read(
 ) -> None:
     """Fail closed: a tracker that did not answer is not a bead that declared a plan."""
 
-    def unreadable(*_args: object, **_kwargs: object) -> _Proc:
-        return _Proc("", returncode=1)
+    def unreadable(*_args: object, **_kwargs: object) -> Proc:
+        return Proc("", returncode=1)
 
     monkeypatch.setattr(br, "try_run_br", unreadable)
 
-    verdict = plan_gate.build_entry_verdict(tmp_path, "feat.1")
+    verdict = plan_entry.build_entry_verdict(tmp_path, "feat.1")
 
     assert not verdict.admitted
     assert verdict.unreadable
