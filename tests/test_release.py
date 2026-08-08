@@ -639,29 +639,6 @@ def test_the_checks_own_binary_running_elsewhere_is_not_a_witness(repo: Path) ->
     assert any(f"{CAPABILITY_VERIFY_CHECK} 'tracker-gate'" in r for r in result.refusals)
 
 
-def test_recorded_executions_unions_all_three_ledgers(repo: Path) -> None:
-    """Every ledger on disk is read, and the verify keys cannot collide with a tool name.
-
-    A check named `pytest` and a shell that typed `pytest` are different facts; they
-    share this map, so the namespace is what keeps the second from answering for the
-    first.
-    """
-    _record_tool_executions(repo, {"pytest": 785, "never-run-tool": 0})
-    _record_check_runs(repo, {"pytest": 2})
-    (repo / tracker_usage.LEDGER_FILE).parent.mkdir(parents=True, exist_ok=True)
-    (repo / tracker_usage.LEDGER_FILE).write_text(
-        '{"binary":"br","subcommand":"gate report","site":"engine","ok":true}\n', encoding="utf-8"
-    )
-
-    counts = capability_proof.recorded_executions(repo)
-
-    assert counts is not None
-    assert counts["pytest"] == 785
-    assert counts[f"{usage.VERIFY_CHECK_PREFIX}pytest"] == 2
-    assert counts["br gate report"] == 1
-    assert "never-run-tool" not in counts
-
-
 @pytest.mark.usefixtures("no_regen")
 def test_a_declared_capability_with_no_ledger_at_all_is_refused(repo: Path) -> None:
     """Absence of a record is not evidence of an execution, so the gate fails closed."""
@@ -681,28 +658,6 @@ def test_a_repo_that_declares_no_capability_is_not_refused(repo: Path) -> None:
     plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
 
     assert not release.run_release(repo, plan, issue_id="fx-1", dry_run=True).refused
-
-
-def test_this_repos_own_capability_inventory_is_never_empty() -> None:
-    """The other half of the empty-inventory rule: here, the gate must have teeth.
-
-    An inventory that names nothing refuses nothing, which is exactly how the import
-    contract reported `1 kept, 0 broken` for months. Asserted against the real tree, so
-    it fails if `[[verify.checks]]` is emptied or the reader stops finding it.
-
-    It deliberately does *not* assert the inventory is fully exercised: the counters are
-    machine-local and git-ignored, so that assertion would pass here and fail in CI.
-    """
-    capabilities = capability_proof.shipped_capabilities(Path(__file__).resolve().parents[1])
-
-    labels = {label for label, _ in capabilities}
-    assert {
-        f"{CAPABILITY_VERIFY_CHECK} 'pytest'",
-        f"{CAPABILITY_VERIFY_CHECK} 'projection-permissions'",
-    } <= labels
-    # A capability with no witness can never be refused, so the inventory would have
-    # teeth in name only.
-    assert all(witness for _, witness in capabilities)
 
 
 # --- The generated artefacts must survive this repo's own gates ---------------

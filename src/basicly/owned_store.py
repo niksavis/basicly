@@ -110,7 +110,7 @@ def set_mode_reader(reader: Callable[[Path], str] | None) -> None:
     behaviour this seam had before the cutover existed — nothing is mirrored and
     nothing is flipped. Every process that reaches the tracker imports ``config``
     (``basicly.cli`` does, and it is the only entry point), and
-    ``tests/test_br_seam.py`` asserts the installation rather than assuming it.
+    ``tests/test_owned_store.py`` asserts the installation rather than assuming it.
 
     Passing ``None`` uninstalls, which is what a test that wants the pre-cutover
     behaviour back should do.

@@ -77,9 +77,9 @@ def shipped_capabilities(repo_root: Path) -> tuple[tuple[str, str], ...]:
 
     Empty for a repo that declares no checks: a consumer with no ``[verify]`` section
     has made no capability claim for this gate to hold, and refusing its release would
-    be the gate inventing a requirement instead of reading one. ``test_release.py`` holds
-    the other half — that *this* repo's inventory is never empty — because an inventory
-    that names nothing cannot refuse anything.
+    be the gate inventing a requirement instead of reading one.
+    ``test_capability_proof.py`` holds the other half — that *this* repo's inventory is
+    never empty — because an inventory that names nothing cannot refuse anything.
     """
     return tuple(
         (

@@ -402,6 +402,34 @@ name = "noqa-debt"
 command = ["uv", "run", "python", ".scripts/check_noqa_debt.py"]
 modes = ["fast", "full"]
 
+# One test file per source module, enforced by name (basicly-u2hl.14,
+# `docs/design/factory-loop-requirements.md` §9.4). The convention was *emergent* when the
+# requirements doc measured it — 48 modules, 84 test files, every module covered — and
+# nothing made it binding, so the first splits broke it: after `dad39f4`, ten source units
+# had no test file named after them and nine of those were created that day. Their tests
+# were not missing, they stayed in the file named after the module they were extracted
+# from, which is the drift the gate exists to stop.
+#
+# Forward direction only: a source unit must have a test file, a test file need not have a
+# source unit. `tests/` legitimately covers `.scripts`, the git hooks, the shipped kit and
+# whole-loop integration paths, none of which are modules — failing on those would make the
+# gate unrunnable rather than stricter.
+#
+# A repo-local script rather than a CLI subcommand pair, on the same grounds as
+# `module-size` and `docs-claims`: the convention is basicly's own, and a consumer's test
+# layout is its own decision. `uv run python`, not a bare `python`, per the note above this
+# file's `docs-claims` entry.
+#
+# No `fix_command`. The repair is deciding which tests belong to the new module and moving
+# them, which is a judgment — a script that created an empty `test_<module>.py` would
+# satisfy the gate and prove nothing, which is the vacuous-instrument shape this repo keeps
+# paying for. In `fast` as well as `full`: it reads no file contents, only two `git
+# ls-files` listings, so the cost is one subprocess.
+[[verify.checks]]
+name = "test-naming"
+command = ["uv", "run", "python", ".scripts/check_test_naming.py"]
+modes = ["fast", "full"]
+
 # Loop gate/checkpoint policy: which gates block advancement and the rework cap.
 [policy]
 # Gate names (from [verify] / br gate report) that MUST pass to advance. Any

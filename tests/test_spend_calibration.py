@@ -2,9 +2,16 @@
 
 The three ratios that turn a working-set estimate into predicted spend, and the
 rule that a seeded ratio never reads as a measured one. Split out of
-``test_run_record.py`` with :mod:`basicly.spend_calibration` itself; the samples
-are still ``run_record.ForecastError`` values, because that is the recorded type
-the protocol this module calibrates from is satisfied by.
+``test_run_record.py`` with :mod:`basicly.spend_calibration` itself, and renamed
+here from ``test_run_record_spend.py`` when the §9.4 naming gate was made binding
+(basicly-u2hl.14) — the file was already this module's, under the name of the one
+it was extracted from. The samples are still ``run_record.ForecastError`` values,
+because that is the recorded type the protocol this module calibrates from is
+satisfied by.
+
+The phase filter these tests rely on is :mod:`basicly.dispatch_phase`'s, and its
+vocabulary is pinned in ``test_dispatch_phase.py``; what is asserted here is that
+the calibration *applies* it.
 """
 
 from __future__ import annotations
@@ -140,23 +147,6 @@ def test_calibrate_spend_refuses_a_dispatch_that_is_not_a_lane(phase: str | None
     calibration = _calibrate(_report(*pairs))
     assert calibration.pairs == 0
     assert calibration.tokens_per_working_set_token.source == spend_calibration.PRIOR_RATIO
-
-
-def test_the_calibration_and_the_lane_bound_read_one_phase_set() -> None:
-    """The two consumers that disagreed now share one definition of a write dispatch.
-
-    Both filters are ``is_write_phase``, and this pins the set they resolve against:
-    the interactive build and the supervised lane are in it, the helpers are not. The
-    defect was not a wrong value in either filter but that there were two of them.
-    """
-    assert set(run_record.WRITE_PHASES) == {run_record.BUILD_PHASE, run_record.LANE_PHASE}
-    assert run_record.is_write_phase(run_record.BUILD_PHASE)
-    assert run_record.is_write_phase(run_record.LANE_PHASE)
-    assert not run_record.is_write_phase(run_record.VALIDATE_PHASE)
-    assert not run_record.is_write_phase(run_record.DECIDE_PHASE)
-    # A record read off disk can carry anything, including nothing.
-    assert not run_record.is_write_phase(None)
-    assert not run_record.is_write_phase(1)
 
 
 def test_calibrate_spend_keeps_only_the_newest_window() -> None:
