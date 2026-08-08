@@ -1110,12 +1110,13 @@ _PLAN = {
             "title": "parse the header",
             "acceptance": ["given a header when parsed then the fields land"],
             "scope": ["src/header/**"],
-            # The plan gate's minimum (basicly-u2hl.1): a proposal missing any of the
-            # three is refused before the loop reaches the governor, which is what
-            # `test_a_plan_missing_a_gate_field_falls_back_to_the_block` pins.
+            # The plan gate's minimum (basicly-u2hl.1, basicly-u2hl.20): a proposal
+            # missing any of them is refused before the loop reaches the governor, which
+            # is what `test_a_plan_missing_a_gate_field_falls_back_to_the_block` pins.
             "depends_on": [],
             "budget_tokens": 40000,
             "integrity": "L2",
+            "demonstration": "run `basicly loop status` and read the header fields",
         }
     ]
 }
@@ -1147,6 +1148,7 @@ def test_classify_proposes_the_child_plan_under_a_grant(
             depends_on=(),
             budget_tokens=40_000,
             integrity="L2",
+            demonstration="run `basicly loop status` and read the header fields",
         ),
     )
     assert result.to_phase == "decompose" and result.action == "decomposed"
@@ -1224,6 +1226,7 @@ def test_a_plan_under_the_working_set_floor_falls_back_to_the_block(
                 "depends_on": [],
                 "budget_tokens": 40000,
                 "integrity": "L2",
+                "demonstration": "run `basicly loop status`",
             }
         ]
     }

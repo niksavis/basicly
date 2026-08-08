@@ -33,12 +33,13 @@ def _plan(tmp_path: Path, *, shared: bool) -> Path:
             "title": name,
             "acceptance": ["does the thing"],
             "scope": [f"src/{name}.py", MANIFEST],
-            # The plan gate's minimum (basicly-u2hl.1); these tests are about the
-            # grouping report, so every child declares the fields and none of them
-            # declares a dependency that would change the grouping.
+            # The plan gate's minimum (basicly-u2hl.1, basicly-u2hl.20); these tests are
+            # about the grouping report, so every child declares the fields and none of
+            # them declares a dependency that would change the grouping.
             "depends_on": [],
             "budget_tokens": 40000,
             "integrity": "L2",
+            "demonstration": f"run `basicly decompose feat --plan plan.json` for {name}",
             **({"shared": [MANIFEST]} if shared else {}),
         }
         for name in ("a", "b", "c", "d")
@@ -108,6 +109,7 @@ def test_a_plan_with_no_deciding_path_reports_no_collapse(
                     "depends_on": [],
                     "budget_tokens": 40000,
                     "integrity": "L2",
+                    "demonstration": "run `basicly decompose feat --dry-run`",
                 }
                 for name in ("a", "b")
             ]

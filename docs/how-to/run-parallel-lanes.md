@@ -11,9 +11,9 @@ a checkpoint and a landing look like.
 ## 1. Write the child plan
 
 Children come from a plan file, not from the model's memory. The **plan gate**
-refuses the plan unless every entry carries all five of: a **list** of acceptance
-criteria, a scope, a declared dependency list, a token budget, and an integrity
-level.
+refuses the plan unless every entry carries all six of: a **list** of acceptance
+criteria, a scope, a declared dependency list, a token budget, an integrity
+level, and an end-to-end demonstration.
 
 ```toml
 [[children]]
@@ -23,6 +23,7 @@ scope = ["docs/install.md"]
 depends_on = []
 budget_tokens = 40000
 integrity = "L1"
+demonstration = "open `docs/install.md` and run the command it shows"
 
 [[children]]
 title = "Add a loop note"
@@ -31,6 +32,7 @@ scope = ["docs/loop.md"]
 depends_on = []
 budget_tokens = 40000
 integrity = "L1"
+demonstration = "run `basicly loop status <issue>` as `docs/loop.md` documents it"
 ```
 
 - `depends_on` names **sibling titles**, not issue ids — the plan is written
@@ -42,6 +44,13 @@ integrity = "L1"
 - `budget_tokens` is what the unit is worth spending.
 - `integrity` is `L1` (docs, comments, test-only), `L2` (engine code behind no
   consumer surface) or `L3` (a consumer surface).
+- `demonstration` is how the child is exercised end to end — a command to run, a
+  request to make, or a test that goes through the consumer surface — with the
+  runnable part in backticks. A child that cannot name one has no
+  consumer-visible behaviour yet, which means it was sliced horizontally ("add
+  the model", "add the service", "add the CLI") and nothing at verify can derive
+  a check for it. Splitting it the other way is cheap here and expensive later,
+  which is why the refusal is at plan time.
 
 `acceptance` is a list even with one entry; a bare string is refused:
 
@@ -54,6 +63,14 @@ it is missing:
 
 ```text
 Error: children[0] ('Add a loop note') declares no depends_on, budget_tokens, integrity; the plan gate refuses a unit BUILD cannot be held to
+```
+
+A demonstration is refused twice over — once for being absent, and once for
+naming nothing anybody could run:
+
+```text
+Error: children[0] ('Add a loop note') declares no demonstration; a child that cannot name how it is exercised end to end has no consumer-visible behaviour for a check to be derived from, so split the plan differently rather than describing this one
+Error: children[0] ('Add a loop note') declares a demonstration naming nothing runnable ('the docs will describe the loop'); name the command to run, the request to make or the test that exercises it through the consumer surface, backticked, as a scope glob is
 ```
 
 So is a cycle in the declared graph, naming its members:

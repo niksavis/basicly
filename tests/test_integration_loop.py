@@ -85,7 +85,12 @@ needs_br = pytest.mark.skipif(
 # The three fields the plan gate requires of every child (basicly-u2hl.1). These tests
 # are about the lane's run order, so each sub-task declares the minimum and no
 # dependency — the ordering under test is the one scope overlap derives.
-_GATED = {"depends_on": (), "budget_tokens": 40_000, "integrity": "L2"}
+_GATED = {
+    "depends_on": (),
+    "budget_tokens": 40_000,
+    "integrity": "L2",
+    "demonstration": "run `basicly loop status` and read the lane phase",
+}
 
 # A verify check the test can make fail on demand, so a red landing is a real
 # subprocess verdict rather than a patched return value. Uses the running

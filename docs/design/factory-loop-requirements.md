@@ -165,11 +165,19 @@ The gate rejects a plan unless every task carries: acceptance criteria in a test
 scope globs, declared dependencies, a token budget, and an integrity level; and the dependency
 graph is acyclic; and scopes are disjoint or declared as shared.
 
-**And one more, added 2026-08-08** [D18]: **every child names how it is demonstrated end-to-end** —
-a command to run, a request to make, or a test that exercises it through the consumer surface. A
-child that cannot name one is sliced horizontally, and a horizontal child is why D10 fails: there is
-no consumer-visible behaviour yet, so there is no check to derive. This is the cheapest available
-check on a property that is otherwise only discovered at verify, when the tokens are already spent.
+**And one more, added 2026-08-08, shipped `basicly-u2hl.20`** [D18]: **every child names how it is
+demonstrated end-to-end** — a command to run, a request to make, or a test that exercises it
+through the consumer surface. A child that cannot name one is sliced horizontally, and a horizontal
+child is why D10 fails: there is no consumer-visible behaviour yet, so there is no check to derive.
+This is the cheapest available check on a property that is otherwise only discovered at verify, when
+the tokens are already spent.
+
+As shipped the field is refused on two grounds — absent, and present but naming nothing runnable —
+where "runnable" is a backticked span, the same machine-readability rule a `## Scope` glob already
+carries. It binds on the **proposed** plan only. Every child recorded before the field existed
+carries a `## Plan` heading and no demonstration line, so the build-entry predicate cannot tell that
+population from a defect, and a predicate that refuses the whole tracker is a stopped harness rather
+than a bound one (the §9.3 ratchet argument, applied to a field instead of a file).
 
 **Also reported at plan time, not refused** [D19]: a child whose forecast implies a diff far past
 reviewable size. The sizing governor already forecasts in tokens, so the signal is free. It is a

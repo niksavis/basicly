@@ -94,7 +94,12 @@ def _install(monkeypatch: pytest.MonkeyPatch, fake: Callable[..., _Proc]) -> Non
 # every spec these tests build, so a fixture stays a fixture for what it is *about*
 # rather than re-stating the gate's minimum in twenty places. What the gate does with
 # them is tested in `test_plan_gate.py`, not here.
-_GATED = {"depends_on": (), "budget_tokens": 40_000, "integrity": "L2"}
+_GATED = {
+    "depends_on": (),
+    "budget_tokens": 40_000,
+    "integrity": "L2",
+    "demonstration": "run `basicly decompose feat --dry-run`",
+}
 
 
 def _child(title: str, *scope: str) -> ChildSpec:
@@ -438,6 +443,7 @@ def _one_child(**extra: object) -> dict[str, object]:
                 "depends_on": [],
                 "budget_tokens": 40_000,
                 "integrity": "L2",
+                "demonstration": "run `basicly decompose feat --dry-run`",
                 **extra,
             }
         ]
@@ -447,8 +453,16 @@ def _one_child(**extra: object) -> dict[str, object]:
 # The three gate-required fields as a plan document spells them, for the format tests
 # that compare JSON against TOML — each needs the pair to be the same plan, and the
 # gate refuses the plan without them.
-_GATED_JSON = {"depends_on": [], "budget_tokens": 40000, "integrity": "L2"}
-_GATED_TOML = 'depends_on = []\nbudget_tokens = 40000\nintegrity = "L2"\n'
+_GATED_JSON = {
+    "depends_on": [],
+    "budget_tokens": 40000,
+    "integrity": "L2",
+    "demonstration": "run `basicly decompose feat --dry-run`",
+}
+_GATED_TOML = (
+    'depends_on = []\nbudget_tokens = 40000\nintegrity = "L2"\n'
+    'demonstration = "run `basicly decompose feat --dry-run`"\n'
+)
 
 
 @pytest.mark.parametrize("shared", [None, []], ids=["absent", "empty"])

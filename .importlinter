@@ -26,7 +26,7 @@ layers =
     catalog_lint | contention | health
     commit | merge
     repair_brief | wip | working_set
-    classify | decompose | loop_state | rubrics
+    classify | decompose | loop_state | plan_entry | rubrics
     decisions
     handoff
     plan_gate | policy | routing_evals | tuning | verify

@@ -58,7 +58,7 @@ from . import (
     loop_state,
     merge,
     needs_input,
-    plan_gate,
+    plan_entry,
     policy,
     repair_brief,
     rubrics,
@@ -648,7 +648,7 @@ def _dispatch_refused(ctx: _Ctx, name: str) -> AdvanceResult | None:
     named no session has no grant ledger to read, no session to size against, and no
     tracker read on this path to fail closed on. Two are the supervised path's applied
     to the interactive one: the D3 spend halt and the working-set band. The third is the
-    plan gate, ratcheted on the ``## Plan`` heading (:func:`plan_gate.entry_verdict_for`).
+    plan gate, ratcheted on the ``## Plan`` heading (:func:`plan_entry.entry_verdict_for`).
 
     Reuses ``supervise``'s admission rather than re-deriving it. A second copy of a
     sizing rule is how the number that gates a dispatch and the number recorded beside
@@ -679,7 +679,7 @@ def _dispatch_refused(ctx: _Ctx, name: str) -> AdvanceResult | None:
     # predicate fails closed on an unreadable record, so running it against every
     # interactive dispatch would turn a tracker that did not answer into a refusal on a
     # path that never read the tracker before.
-    entry = plan_gate.build_entry_verdict(ctx.repo_root, ctx.issue_id)
+    entry = plan_entry.build_entry_verdict(ctx.repo_root, ctx.issue_id)
     if not entry.admitted:
         return _blocked(ctx, entry.reason, needs_input="plan")
     sizing = load_sizing_config(ctx.repo_root)
