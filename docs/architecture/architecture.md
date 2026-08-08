@@ -800,9 +800,9 @@ inherits that failure.
 
    | Surface | chars | cap | headroom |
    | --- | --- | --- | --- |
-   | `.claude/CLAUDE.md` (claude) | 8278 | 9000 | 722 |
-   | `AGENTS.md` (codex) | 12797 | 12000 | -797 |
-   | `.github/copilot-instructions.md` (copilot) | 8381 | 9000 | 619 |
+   | `.claude/CLAUDE.md` (claude) | 8984 | 9000 | 16 |
+   | `AGENTS.md` (codex) | 13503 | 12000 | -1503 |
+   | `.github/copilot-instructions.md` (copilot) | 9087 | 9000 | -87 |
 
    <!-- docs-claims:end always-on-sizes -->
 

@@ -93,6 +93,18 @@ uv run basicly permissions-check
 - If rules conflict, prefer safety/security boundaries.
 - If repeated attempts at one approach fail, report the pattern and propose a different approach instead of retrying.
 
+## External Facts
+
+- **Your training data has a cutoff and third-party interfaces move.** A flag, config
+  key, API field, model id, price, limit or version may have changed since. Fetch the
+  vendor's current docs or interrogate the installed binary; never answer from recall.
+  The `interface-facts` skill is the long form — this line is what must bind when
+  nobody invokes it.
+- **An empty probe is not evidence of absence.** A search you designed returning
+  nothing is ambiguous between "absent" and "wrong probe", and the second is the
+  common case. Run a **positive control** that must return something before reporting
+  a zero; if the control is empty too, the zero is a property of the probe.
+
 ## Model Tier Routing
 
 A dispatch declares one of four tiers, cheapest first — `low`, `medium`, `high`,
