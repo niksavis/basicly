@@ -93,6 +93,8 @@ at build→verify; everything else is checkpoints and lints.
 | D16 [D] | **The plugin is a second distribution channel**, packaging the same projected output as `basicly install` | One source of truth, two delivery shapes. Betting the primary channel on a spec with seven areas still in FUTURE_CONSIDERATIONS would be premature |
 | D17 [D] | **`solution-design` is markdown with six machine-checked sections** (amended 2026-08-08 from five): problem in the requester's terms, success as an observable, a **consumer transcript**, out of scope, constraints, and **open questions** | Structured markdown is the only shape that is both readable and checkable — JSON is unreadable and prose is unactionable. The pattern is already proven twice here: the `## Plan` section and `needs-input.json`. The transcript is this repo's translation of a UI mockup: our consumer surface is a CLI, so the artifact that settles a design dispute by *showing* the surface is the command as it will be typed and what it will print (§8.1) |
 | D18 [D] | **Every planned child names how it is demonstrated end-to-end.** The plan gate refuses a child that cannot | Makes D10 satisfiable by construction. A child with no consumer-visible behaviour has no check to name, which is the horizontal-slice failure — and our decomposer slices horizontally *by construction* today, because scope-glob overlap is file adjacency (§8.2) |
+| D21 [D] | **Context control is field selection, not encoding.** Project tracker payloads to the fields a phase needs; encode only what remains, and only where a bijective codec is safe | Measured 2026-08-08 (§15). Selection beats serialisation by ~500x on this repo's own data |
+| D22 [D] | **Anything built against the tracker is written to our own record vocabulary, never to `br`'s payload shape** | `br` and `bv` are being removed (`work-tracker.md`). A field allowlist naming `br`'s JSON keys would have to be rewritten at the flip; one naming our own fields survives it, and only the adapter changes |
 | D20 [D] | **`change-shape` — the shape of the whole change, derived not authored, emitted by CLASSIFY** | See §8.2. It is the structure `decompose` needs to cut end-to-end instead of by directory, and `basicly-agzx.2` already proposes deriving it from an AST at zero token cost. **Derived, so it is not a state**: states exist to hold a gate and a persona, and a derivation needs neither — DECOMPOSE's entry predicate gains it, nothing else moves |
 | D19 [D] | **Diff size is a plan-time signal, not a review-time discovery** | The sizing governor already forecasts in tokens; a child whose forecast implies a diff far past reviewable is reported when splitting is still cheap. Deliberately **not** a human-review requirement — L1/L2 stay delegable (§4), and a 2,000-line lane is hard to review whether the reader is a human or the next agent |
 
@@ -622,6 +624,100 @@ read; pass `--forward-subagent-text`; add light mode as a second dispatch path.
 | ~~OQ-8~~ | ~~Kill approval~~ — **resolved**: human at every level (D15) | — |
 | ~~OQ-9~~ | ~~PEP 758 house direction~~ — **resolved 2026-08-08**: paren-free `except A, B:` is the house form, recorded in the `python-guidelines` skill rather than in a linter, since none enforces either direction | — |
 | ~~OQ-10~~ | ~~Plugin channel~~ — **resolved**: second channel, same projected output (D16) | — |
+
+---
+
+## 15. Context control [D21, D22]
+
+**The owner's framing, and the measurement that redirected it.** The proposal was to put only the
+needed tokens in the window and to use the format that costs least — with a hypothesis that XML
+stores more per token than JSON, and a requirement that any transformation be **deterministic in
+both directions with zero semantic loss**. The goal was explicitly *not* a smaller context for its
+own sake, but a more effective factory.
+
+The measurement supports the goal and refutes the mechanism.
+
+### 15.1 The format hypothesis is refuted [M]
+
+Measured with `tiktoken` `o200k_base`, cross-checked against `cl100k_base` (agreed within 1%), on
+real payloads from this repo. **XML never won a single payload at any size** — it cost 1.07x to
+1.80x compact JSON. The reason is the hypothesis inverted: JSON names a key once per record
+(`"k":`), XML names it **twice** (`<k>…</k>`). XML buys unambiguous nesting, never density.
+
+Winner by *shape*, because the shapes disagree: record-shaped and scalar-heavy → tabular (0.54x);
+record-shaped and prose-heavy → tabular, but the win collapses to 0.94x; tree-shaped → compact JSON
+or YAML, tied; prose-shaped → not re-serialisable at all.
+
+**The empirical kill-shot** [M]. `br` already ships a "token-optimized object notation". On this
+repo's real ready-queue:
+
+```text
+br ready --format text    10,489 chars    3,075 tok    2.0% of a p50 lane
+br ready --format json   223,961 chars   55,751 tok   36.9%
+br ready --format toon   225,768 chars   57,323 tok   37.9%   <- 2.8% WORSE than json
+projected to 5 fields      9,613 chars    2,507 tok    1.7%   <- 22x
+```
+
+The purpose-built optimized format **lost to plain JSON on real data**. The human text format,
+which nobody calls optimized, is 18x cheaper for one reason: it prints fewer fields.
+
+### 15.2 Where the waste is [M]
+
+A p50 lane occupies **151,099 tokens** (n=79 recorded dispatches). **basicly authors 3,812 of them
+— 2.52%.** Re-serialising every byte we control into the best measured format saves **1.01% of one
+lane**. Meanwhile `br ready --json`, which our own `tool-br` skill instructs every agent to run,
+costs **36.9% of a lane**, and projecting it to the five fields a lane needs costs 1.7%.
+
+**Selection beats serialisation by roughly 500x here**, which is why D21 is stated as it is.
+
+### 15.3 The frame is serialization, not compression [D]
+
+Compression presupposes a decompressor and a consumer that need not understand the compressed form.
+Here **the model is the consumer and reads the wire format directly** — there is no decode step. So
+the risk is not "can I invert it" (bijective codecs invert trivially, and one is round-trip-gated
+against this repo's own 682 beads, 3,775 events and 297 run-records) but **"does the model read it
+as accurately"**.
+
+That risk is documented and it is severe [S]: reformatting identical content plaintext→JSON moved
+HumanEval on GPT-4-32k from **76.22% to 21.95%** (arXiv 2411.10541), and cross-model overlap below
+0.2 means a format tuned on one model does not transfer. A dense tabular form scored **0.0%** on
+deep-nested *generation* where JSON scored 18.6%. So a codec is confined to **uniform record arrays
+the model only reads** — never nested data, never anything the model must emit — and ships only
+after an accuracy A/B whose intervals are reported.
+
+**Encryption is a red herring, and it was checked rather than assumed**: `redact.py` and the
+secret-scan hook perform *sanitisation on the way out*, which is the opposite requirement.
+
+### 15.4 Two things that must be said about the naive win [M]
+
+**The 0.54x tabular winner is not lossless.** It destroys `null` vs `""`, `int` vs `str`, `bool` vs
+`str`, embedded tabs and newlines, and absent-key vs null-key. A bijective encoding costs ~6% more
+and round-trips; the six loss modes become a committed adversarial fixture.
+
+**Projection is a filter, not a codec, and must be labelled so.** It is deliberately lossy by
+design. Only the codec carries a zero-semantic-loss claim; conflating the two is how that claim
+would come to be made falsely.
+
+### 15.5 Caching changes the economics [S]
+
+Cache reads cost **0.1x** base input, writes 1.25x–2x. So compressing a *stable* prefix saves 40%
+of a 0.1x line item, and a *dynamic* compression breaks the prefix and converts 0.1x reads into
+1.25x writes. **Compression and caching are substitutes and caching wins by an order of magnitude
+on stable text.**
+
+This makes one defect the gate on everything else [M]: `runner_usage.claude_json_usage` never
+populates `cache_read_tokens`/`cache_write_tokens`, though `runner_usage.py:177` populates them for
+codex. **0 of 297 dispatch records carry a cache split.** Until that lands, a 40% apparent saving
+that actually broke a cached prefix is indistinguishable from a real win, on the agent that does 76
+of 77 dispatches.
+
+### 15.6 The context ceiling is deleted, not retuned [D]
+
+`DEFAULT_CONTEXT_CEILING = 0.6` against a declared 1,000,000 window is 600,000, and **0 of 79
+recorded lanes cross it** (max observed 403,051). Against the stale hardcoded 200,000 it was
+120,000 and **51 of 79 crossed**, which is where the twelve overrun follow-ups came from. A gate
+that has never once fired correctly — first at a fifth of its intended point, then never — is
+removed rather than given a third constant. Its follow-up machinery goes with it.
 
 ---
 

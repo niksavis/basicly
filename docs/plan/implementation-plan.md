@@ -500,7 +500,42 @@ green **and** downstream WIP below limit"* and **nothing implements it** — `co
 parallelism, not unlanded work. `u2hl.23`. Our bound is denominated in tokens and slots; the
 quantity that actually runs out is review capacity.
 
-### 6.5 TypeScript — asked and answered: stay Python-only
+### 6.5 Context control — selection, not encoding
+
+Researched 2026-08-08 at the owner's request. §15 of the requirements doc carries the
+measurements; the ladder consequence is here.
+
+**The direction was right and the mechanism was not.** Measured with a real tokenizer on this
+repo's own payloads: **basicly authors 2.52% of a lane's context** (3,812 of a p50 151,099
+tokens), so re-serialising every byte we control into the best available format saves **1.01% of
+one lane**. Meanwhile `br ready --json` — which our own `tool-br` skill tells every agent to run —
+costs **36.9% of a lane**, and projecting it to the five fields a lane needs costs 1.7%.
+**Selection beats serialisation by roughly 500x here.**
+
+The XML hypothesis is refuted without exception: XML cost 1.07x–1.80x compact JSON on every
+payload, because JSON names a key once per record and XML names it twice. And `br`'s own
+"token-optimized" format measured **2.8% worse than plain JSON** on our real ready-queue.
+
+Five beads, `u2hl.29`–`.33`. `u2hl.29` is the substantive one and carries three parts in one
+landing: field projection (engine), the bijective codec (kit, uniform record arrays only), and the
+**claude cache split** — `runner_usage.claude_json_usage` never populates
+`cache_read_tokens`/`cache_write_tokens` though the codex path does, so **0 of 297 dispatch records
+carry one**. Cache reads cost 0.1x, which makes that defect the gate on measuring any context work
+at all: a 40% apparent saving that actually broke a cached prefix is indistinguishable from a real
+win on the agent doing 76 of 77 dispatches.
+
+**The context ceiling is deleted, not retuned** (`u2hl.30`). At 0.6 × a declared 1,000,000 window
+it is 600,000 and **0 of 79 lanes cross it**; against the stale hardcoded 200,000 it fired on 51 of
+79 and produced the twelve overrun follow-ups. A gate that has never once fired correctly does not
+get a third hand-picked constant.
+
+**A constraint on all of it** [D22]: `br` and `bv` are being removed, so anything built against the
+tracker names **our own record vocabulary, never `br`'s payload keys**. An adapter maps them, and
+at the flip only the adapter changes. A field allowlist written against `br`'s JSON would have to
+be rewritten — which is precisely the major refactor this constraint exists to prevent, and the
+reason it is recorded as a decision rather than left to judgement.
+
+### 6.6 TypeScript — asked and answered: stay Python-only
 
 The observation that this field is full of TypeScript is **a GitHub Linguist artifact, not a fact
 about the code** [M]. `humanlayer/skills` is labelled TypeScript and contains **21 `.md`, 5 `.json`,
