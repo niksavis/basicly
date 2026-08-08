@@ -116,7 +116,7 @@ Delta: v0.7.1..v0.8.0
 - **A `kit-boundary` gate that can actually see the kit tree.** The portable kit under
   `.basicly/core/kit` has one structural rule — the engine imports the kit; the kit imports
   nothing, and never reads basicly's config loader, logging, session state or policy module.
-  `docs/design/work-tracker.md` §4 named `lint-imports` as the enforcement for it. That was
+  `docs/requirements/work-tracker.md` §4 named `lint-imports` as the enforcement for it. That was
   unenforceable rather than merely unimplemented: import-linter analyses the `basicly`
   package, and the kit is flat modules with no `__init__.py`, outside it and not on
   `sys.path`, so the tool never opens a kit file. Measured, not argued —
@@ -193,7 +193,7 @@ Delta: v0.7.1..v0.8.0
   shadow differential reported *inconclusive* on the gate query for every population it
   could build — clean, and unable to say that clean meant anything. With `gate report`
   mirrored, a run over a population built through the seam comes back clean **and**
-  conclusive, which is the condition `docs/design/work-tracker.md` §5 step 4 licenses the
+  conclusive, which is the condition `docs/requirements/work-tracker.md` §5 step 4 licenses the
   flip on (`basicly-vkh0.19`).
 
 - **The owned scheduler ranks the ready set with a pure score that reads no clock.** A repo
@@ -653,7 +653,7 @@ Delta: v0.6.0..v0.7.0
   about it: nothing changed for a restart to pick up (`basicly-e3z6`).
 
 - **The tier injection kit is documented**, in `.basicly/core/kit/README.md` (how to
-  use it) and `docs/design/tier-injection-kit.md` (why it is shaped this way). They
+  use it) and `docs/requirements/tier-injection-kit.md` (why it is shaped this way). They
   state which host resolves a tier dynamically and which falls back to static
   frontmatter plus `copilot --model`, name the four Claude hook traps the rewrite
   depends on — `updatedInput` replaces rather than merges, `model` is absent unless

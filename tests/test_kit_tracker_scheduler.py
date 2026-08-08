@@ -140,7 +140,7 @@ def _write(directory: Path, stamps: Sequence[float]) -> None:
 def _age_ordered(ledger_events: Iterable[Any]) -> list[str]:
     """The records under the ordering the kit replaces: ``priority ASC, created_at ASC, id ASC``.
 
-    br's own documented ``fallback_policy``, quoted in `design/work-tracker.md` §9.2 and
+    br's own documented ``fallback_policy``, quoted in `work-tracker.md` §9.2 and
     reproduced here as the control. It reads ``created_at`` off the fold, which is exactly
     where the ledger keeps it.
     """

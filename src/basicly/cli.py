@@ -1605,7 +1605,7 @@ def _differential_vocabulary(repo_root: Path) -> dict[str, Any]:
 def _cmd_tracker_shadow(_args: argparse.Namespace) -> int:
     """Run the shadow differential and report ``clean`` and ``conclusive`` separately.
 
-    Step 2 of the cutover (`docs/design/work-tracker.md` §5). The two verdicts are
+    Step 2 of the cutover (`docs/requirements/work-tracker.md` §5). The two verdicts are
     printed as two lines and the exit code needs both, because a single answer would
     let the weaker question stand in for the stronger one: a comparison where every
     record gave one query the same answer agreed about nothing, and reporting that as
@@ -4634,7 +4634,7 @@ def _add_tracker_parser(subparsers: argparse._SubParsersAction) -> None:
     """Register the `basicly tracker` command group — the owned tracker's cutover."""
     tracker_parser = subparsers.add_parser(
         "tracker",
-        help="The owned work tracker's cutover (docs/design/work-tracker.md §5)",
+        help="The owned work tracker's cutover (docs/requirements/work-tracker.md §5)",
     )
     tracker_sub = tracker_parser.add_subparsers(dest="tracker_command", required=True)
     tracker_sub.add_parser(

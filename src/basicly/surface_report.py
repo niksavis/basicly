@@ -4,7 +4,7 @@ One responsibility, and it is the census. ``br`` and ``bv`` ship several hundred
 surfaces; the harness reaches a fraction of them, and the question that sizes the work
 tracker's replacement is *which* fraction — a surface an engine path calls is a hard
 requirement, one only a human at a prompt reaches can be served later or never
-(``docs/design/work-tracker.md`` §6). This module joins the measured ledger against the
+(``docs/requirements/work-tracker.md`` §6). This module joins the measured ledger against the
 committed inventory and prints both halves, including the never-used set in full: a
 truncated "and 26 more" would hide the actual scope decision.
 
@@ -37,7 +37,7 @@ def _surface_class(row: tracker_usage.SurfaceRow) -> str:
     The distinction is the one that sizes the replacement: the engine's set is a
     hard requirement, because a harness phase breaks without it, while an
     interactive-only surface can be served later or never
-    (`docs/design/work-tracker.md` §6).
+    (`docs/requirements/work-tracker.md` §6).
     """
     if row.engine_calls and row.interactive_calls:
         return "engine+interactive"

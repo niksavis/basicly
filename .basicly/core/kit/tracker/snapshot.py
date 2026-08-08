@@ -1,7 +1,7 @@
 r"""The derived record snapshot: a fold you can keep, and prove stale without folding.
 
 The log is the truth; this file is a **projection of it that anybody may delete**
-(`design/work-tracker.md` §4, basicly-vkh0.14). Everything here follows from that one
+(`work-tracker.md` §4, basicly-vkh0.14). Everything here follows from that one
 sentence, including the parts that look like extra work.
 
 ## Derived means gitignored, not committed

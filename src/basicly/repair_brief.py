@@ -1,6 +1,6 @@
 """The brief a failing gate leaves for the run that repairs it (D5, u2hl.4).
 
-Two measured gaps, one mechanism (``docs/design/factory-loop-requirements.md`` §1):
+Two measured gaps, one mechanism (``docs/requirements/factory-loop.md`` §1):
 supervised rework dispatched a *fresh* run, and the prompt it dispatched was
 ``loop.dispatch_prompt`` — the same fixed text the lane started from, carrying nothing
 about what had just failed. So the repair run re-derived the work from the tracker and

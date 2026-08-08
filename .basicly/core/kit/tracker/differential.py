@@ -1,6 +1,6 @@
 r"""The shadow differential: the owned ledger held against the **live** tracker.
 
-Step 2 of the four-step cutover (`docs/design/work-tracker.md` §5, basicly-vkh0.18). The
+Step 2 of the four-step cutover (`work-tracker.md` §5, basicly-vkh0.18). The
 owned event log answers the three queries the harness actually runs on — phase derivation,
 the ready set, and gate status — and this module compares those answers, record by record
 across the ledger's whole population, against the same answers read from the tracker that is

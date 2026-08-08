@@ -36,7 +36,7 @@ PATH_LEVELS = (
     ("src/basicly/integrity.py", "L2", "engine-internal"),
     (".scripts/wired_or_deleted.py", "L2", "engine-internal"),
     # Prose and tests.
-    ("docs/design/factory-loop-requirements.md", "L1", "docs-and-tests"),
+    ("docs/requirements/factory-loop.md", "L1", "docs-and-tests"),
     ("tests/test_integrity.py", "L1", "docs-and-tests"),
     ("README.md", "L1", "docs-and-tests"),
     ("site/index.html", "L1", "docs-and-tests"),

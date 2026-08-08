@@ -1,6 +1,6 @@
 r"""Import the existing tracker into the event log, with deletion as a statement.
 
-Step 1 of the four-step cutover (`docs/design/work-tracker.md` §5, basicly-vkh0.17): read
+Step 1 of the four-step cutover (`work-tracker.md` §5, basicly-vkh0.17): read
 the beads JSONL export the current tracker already writes and append it to the event log as
 events. Steps 2-4 — the shadow differential (basicly-vkh0.18), the dual write and the flip
 (basicly-vkh0.19) — read what this produces and are not this module's business.

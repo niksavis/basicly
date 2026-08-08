@@ -548,8 +548,8 @@ deferral of the index defensible rather than a hand-wave, and it costs one field
 Absorbed as a **concept** from the only production append-only journal in the 2026-07-26 review, and
 designed here from first principles: that project's source is permanently out of bounds as an
 implementation reference on a licence question the owner declined to litigate
-(`research/references.md` §2.3), so what follows owes it the idea and nothing else — no port, no
-snippet, no line ranges. This is the clean-room boundary `references.md` §2.1 already imposes on the
+(the review's Appendix A §2.3), so what follows owes it the idea and nothing else — no port, no
+snippet, no line ranges. This is the clean-room boundary Appendix A §2.1 already imposes on the
 tracker work, applied to a second source.
 
 Four rules, and the first is what keeps a denormalized total from recreating the dual-store defect
@@ -690,7 +690,7 @@ MIT". `beads_rust/LICENSE` is titled **"MIT License (with OpenAI/Anthropic Rider
 grants no rights to Anthropic, OpenAI, their affiliates, or anyone "acting directly or indirectly
 on behalf of, for the benefit of, or under the direction of" them, and it names "benchmarking,
 testing, analyzing, indexing" as restricted use. Full text and analysis in
-[`research/references.md`](../research/references.md) §2.
+[the review's Appendix A](../research/2026-07-26-sota-review.md) §2.
 
 **A clean-room boundary therefore applies to this work.** The replacement tracker must not be
 derived from `beads_rust` source. Its sanctioned inputs are:
@@ -997,7 +997,7 @@ production append-only journal in that reference set carries **no sequence numbe
 event ids from the wall clock plus a random component, so its only total order is the order its lines
 happen to sit in the file. In its own committed **6,467-event** fixture, **44.5% of events share a
 millisecond** with another event — a measured property of published data, recorded at
-`research/references.md` §2.3 and `research/2026-07-26-sota-review.md`, and usable independently of
+the review's Appendix A §2.3 and `research/2026-07-26-sota-review.md`, and usable independently of
 the licence question that puts that project's source out of bounds (§4.6).
 
 Three things follow, and the first is the number's actual force. At that collision rate a millisecond

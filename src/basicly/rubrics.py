@@ -49,7 +49,7 @@ VERIFY_MODES = ("fast", "full", "staged")
 # ledger treats any gate outside [policy] required_gates as advisory), so a
 # consumer promotes it by adding "rubric" to required_gates.
 # Validate is a **composite of two gates with different types**, recorded
-# separately (gates-and-rework-design.md §4.1, amending D4).
+# separately (amending factory-design D4).
 #
 # The pre-flight half keeps the original gate name, because it is the half that
 # behaves the way a gate is assumed to: deterministic, objective, and able to fail
@@ -77,7 +77,7 @@ YES = "yes"
 NO = "no"
 UNKNOWN = "unknown"
 
-# Severity vocabulary for a judged finding (gates-and-rework-design.md §5.4).
+# Severity vocabulary for a judged finding.
 # Deliberately small: two named classes is gsd-core's choice and three is ours
 # only because §4.3 needs a class explicitly excluded from the rework loop.
 BLOCKER = "BLOCKER"  # the goal is not achieved unless this is fixed

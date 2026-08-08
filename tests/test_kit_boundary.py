@@ -1,6 +1,6 @@
 """The kit-boundary gate must discriminate, not merely report (basicly-vkh0.16).
 
-`docs/design/work-tracker.md` §4 claimed the one-way kit boundary was already
+`docs/requirements/work-tracker.md` §4 claimed the one-way kit boundary was already
 enforced by `lint-imports`. It was not: import-linter analyses the `basicly`
 package, and the kit is flat modules outside it. `test_import_linter_cannot_see_a_kit_violation`
 runs the tool on a seeded violation and records that it reports clean — so this

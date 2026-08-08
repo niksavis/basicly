@@ -187,7 +187,7 @@ _TRANSIENT_MAX_WAIT_S = 1.0
 # Deliberately a *category*, not a whitelist of sqlite strings. A DATABASE_ERROR that
 # is genuinely permanent still fails — the deadline below bounds the wait and the
 # unrescued failure is returned to the caller untouched, exactly as a persistent clock
-# skew is. Requirements input for the replacement (R7 in docs/design/work-tracker.md),
+# skew is. Requirements input for the replacement (R7 in docs/requirements/work-tracker.md),
 # which must not corrupt shared state under concurrency at all, and must mark a
 # contention failure retryable when it does report one.
 _STORAGE_ERROR_CODE = "DATABASE_ERROR"
@@ -306,7 +306,7 @@ def _spawn_tolerating_transient(
         attempt += 1
 
 
-# --- Read-only sections (gates-and-rework-design.md §2) ----------------------
+# --- Read-only sections (factory-loop.md §5.1) -------------------------
 #
 # A pre-flight gate reads the world, returns a verdict, and writes nothing. The
 # rule earns enforcement here, at the funnel, rather than at each gate's call
@@ -442,7 +442,7 @@ def try_run_br(repo_root: Path, args: list[str]) -> subprocess.CompletedProcess[
 
 # --- The owned tracker: dual write, then the flip (basicly-vkh0.19) ----------
 #
-# Steps 3 and 4 of the cutover in `docs/design/work-tracker.md` §5. *Where* the
+# Steps 3 and 4 of the cutover in `docs/requirements/work-tracker.md` §5. *Where* the
 # owned store is and *what* a write becomes in it are :mod:`basicly.owned_store`
 # and :mod:`basicly.mirror`; what stays here is *when* either applies, because
 # this module is the one place the engine spawns br and therefore the only place
@@ -550,7 +550,7 @@ def owned_record(repo_root: Path, issue_id: str) -> dict | None:
 
 # --- Harness markers, carried natively (basicly-s5li) ------------------------
 #
-# Step 5 of the cutover in `docs/design/work-tracker.md` §5, and the step that
+# Step 5 of the cutover in `docs/requirements/work-tracker.md` §5, and the step that
 # actually removes br from the engine. `comments` is the largest remaining
 # dependency — 26 of the engine's 55 `_run_br` call sites and 45% of all recorded
 # br traffic — and measured over the live tracker on 2026-08-07, **89% of it
@@ -819,7 +819,7 @@ def all_comment_texts(repo_root: Path) -> dict[str, list[str]]:
 # Stripping it here rather than asking br not to emit it is deliberate: br has no
 # config knob for the field, and an upstream defect is requirements input for our
 # own replacement, never something we patch outside this repo. The requirement is
-# recorded for the replacement in docs/design/work-tracker.md — a record is
+# recorded for the replacement in docs/requirements/work-tracker.md — a record is
 # path-free, and provenance is the repo identity rather than a filesystem
 # location.
 MACHINE_PATH_FIELD = "source_repo_path"
@@ -899,7 +899,7 @@ def dependency_edge(dep: object) -> tuple[str, str] | None:
 
     One reader for both spellings, so a new call site cannot re-acquire the bug by
     picking a spelling. Carried as a requirement on the replacement, which must
-    emit exactly one spelling (`docs/design/work-tracker.md` R2, basicly-vkh0.6).
+    emit exactly one spelling (`docs/requirements/work-tracker.md` R2, basicly-vkh0.6).
     """
     if not isinstance(dep, dict):
         return None
@@ -1071,7 +1071,7 @@ def read_ranking(repo_root: Path, limit: int | None = None) -> dict:
 
 # --- The shadow differential's reference side (basicly-vkh0.18) --------------
 #
-# Step 2 of the cutover in `docs/design/work-tracker.md` §5, and the step the two
+# Step 2 of the cutover in `docs/requirements/work-tracker.md` §5, and the step the two
 # rungs above it are licensed by. The kit's `differential` module owns the
 # comparison and the audit; what it cannot own is the reference side, because
 # reading the live tracker means spawning br and the kit may not (§4). This is

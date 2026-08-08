@@ -17,7 +17,7 @@ it would actually bite:
   as the two-step sequence it was.
 
 The label a derivation *deserves* is the recorder's judgment and deliberately not this
-module's: `design/work-tracker.md` §9.6 puts a confident bounce inference at ``INFERRED``,
+module's: `work-tracker.md` §9.6 puts a confident bounce inference at ``INFERRED``,
 while this bead's criterion records an uncertain one as ``AMBIGUOUS``. Both are the same
 call — how sure was the deriver — so the module maps no source to any label, and the
 fixture below follows the criterion.

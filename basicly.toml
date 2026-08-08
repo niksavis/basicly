@@ -18,8 +18,8 @@ manifest = ".basicly/generated-manifest.json"
 [catalog]
 technologies = ["python", "node"]
 
-# The Tier-2 routing floor (basicly-m4zv.2, docs/design/catalog-efficacy-design.md
-# §3.2). `basicly catalog lint` ranks every entry's positive eval prompts against
+# The Tier-2 routing floor (basicly-m4zv.2). `basicly catalog lint` ranks every
+# entry's positive eval prompts against
 # the whole model-invoked description corpus with stemmed TF-IDF and reports the
 # share whose owner ranked *first*; below this floor the gate fails.
 #
@@ -42,7 +42,7 @@ rank1_floor = 0.85
 rank1_floor_high_water = 0.85
 
 # Which step of the work-tracker cutover this repo is on (basicly-vkh0.19,
-# docs/design/work-tracker.md §5). Three values, and each is a rung:
+# docs/requirements/work-tracker.md §5). Three values, and each is a rung:
 #
 #   external  br is the only store. The pre-cutover behaviour, and what a consumer
 #             who has never installed the kit's tracker gets.
@@ -211,7 +211,7 @@ name = "wired-or-deleted"
 command = ["uv", "run", "python", ".scripts/wired_or_deleted.py"]
 modes = ["fast", "full"]
 
-# The one-way kit boundary (basicly-vkh0.16). `docs/design/work-tracker.md` §4 named
+# The one-way kit boundary (basicly-vkh0.16). `docs/requirements/work-tracker.md` §4 named
 # `lint-imports` below as the enforcement for it. That was not a gap in the wiring, it
 # was unenforceable: import-linter analyses one `root_package`, declared as `basicly`,
 # and the kit is flat modules under `.basicly/core/kit` with no `__init__.py` and not
@@ -403,7 +403,7 @@ command = ["uv", "run", "python", ".scripts/check_noqa_debt.py"]
 modes = ["fast", "full"]
 
 # One test file per source module, enforced by name (basicly-u2hl.14,
-# `docs/design/factory-loop-requirements.md` §9.4). The convention was *emergent* when the
+# `docs/requirements/factory-loop.md` §9.4). The convention was *emergent* when the
 # requirements doc measured it — 48 modules, 84 test files, every module covered — and
 # nothing made it binding, so the first splits broke it: after `dad39f4`, ten source units
 # had no test file named after them and nine of those were created that day. Their tests

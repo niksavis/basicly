@@ -23,9 +23,7 @@ from basicly import br, cli, decisions, loop_state, policy, worktree
 _ISSUE = "basicly-x1"
 _WORKTREE = "basicly-x1-1"
 _BRANCH = f"harness/{_WORKTREE}"
-_REQUIREMENTS_MD = (
-    Path(__file__).resolve().parents[1] / "docs" / "design" / "factory-loop-requirements.md"
-)
+_REQUIREMENTS_MD = Path(__file__).resolve().parents[1] / "docs" / "requirements" / "factory-loop.md"
 
 
 class _Proc:

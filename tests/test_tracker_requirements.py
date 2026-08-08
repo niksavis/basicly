@@ -9,7 +9,7 @@ outside this repo.
 This module is that gate. One test per requirement, each exercising the harness's
 *own* defence against the **defective input**, so it fails if the defence is
 removed. The register in prose, with what each defect cost, is
-`docs/design/work-tracker.md` §2.1 (R1-R9); the ids here match it.
+`work-tracker.md` §2.1 (R1-R9); the ids here match it.
 
 Two things this module deliberately is not:
 
@@ -721,7 +721,7 @@ def test_every_requirement_in_the_design_register_has_a_test_here() -> None:
     a test name in this module, so adding a ninth defect to the register without
     a gate fails here rather than being noticed years later.
     """
-    design = (REPO_ROOT / "docs" / "design" / "work-tracker.md").read_text(encoding="utf-8")
+    design = (REPO_ROOT / "docs" / "requirements" / "work-tracker.md").read_text(encoding="utf-8")
     declared = {f"R{n}" for n in range(1, 10) if f"**{f'R{n}'}." in design}
     assert declared, "no R<n> requirements found in the design register"
 

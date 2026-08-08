@@ -2,7 +2,7 @@
 
 The kit under ``.basicly/core/kit`` is the portable half of this harness: the tier
 resolver, its host hook, and the work-tracker store. Its one structural rule
-(``docs/design/work-tracker.md`` §4) is that **the dependency direction is one-way** —
+(``docs/requirements/work-tracker.md`` §4) is that **the dependency direction is one-way** —
 the engine imports the kit; the kit imports nothing. Stated there in full: the kit
 may not read basicly's config loader, its logging, its session state or its policy
 module. It reads its own committed data and takes everything else as arguments.
@@ -303,7 +303,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(
         "kit-boundary: the kit reaches back into basicly — the dependency direction "
-        "is one-way (docs/design/work-tracker.md §4).",
+        "is one-way (docs/requirements/work-tracker.md §4).",
         file=sys.stderr,
     )
     for finding in findings:

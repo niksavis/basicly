@@ -1,4 +1,4 @@
-# Tier-2 routing evidence for `python-guidelines` (docs/design/catalog-efficacy-design.md §6).
+# Tier-2 routing evidence for `python-guidelines`.
 # Prompts paraphrase how a user actually asks; copying the description in would
 # game the eval. A failure here means fix the description, not the prompt.
 #

@@ -12,7 +12,7 @@ status: active
 scope:
   paths:
   - docs/research/**
-  - docs/design/**
+  - docs/requirements/**
 title: External Review
 body: |
   A research or design document is where a third-party project's advertising gets

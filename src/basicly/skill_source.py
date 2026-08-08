@@ -40,7 +40,7 @@ SKILL_SOURCE_FILE = "skill.yaml"
 # corpus and every reason not to pay for it.
 EVAL_SOURCE_FILE = "evals.yaml"
 
-# The invocation axis (basicly-m4zv.1, catalog-efficacy-design §3.5).
+# The invocation axis (basicly-m4zv.1).
 MODEL_INVOKED = "model"
 USER_INVOKED = "user"
 INVOCATIONS = frozenset({MODEL_INVOKED, USER_INVOKED})

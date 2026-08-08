@@ -3,12 +3,12 @@
 :mod:`basicly.tracker_usage` answers *which surfaces we exercise*. That is half the
 input Phase 6 needs. The other half is the complement — **which surfaces exist and
 we never touch** — because deciding not to build those is the main way owning the
-tracker stays tractable (`docs/design/work-tracker.md` §6). A usage ledger alone
+tracker stays tractable (`docs/requirements/work-tracker.md` §6). A usage ledger alone
 cannot answer it: absence of a record is indistinguishable from absence of a
 command.
 
 **The inventory comes from the tool's own help output, and that matters legally as
-well as practically.** `docs/design/work-tracker.md` §7 records a clean-room
+well as practically.** `docs/requirements/work-tracker.md` §7 records a clean-room
 boundary: the replacement must not be derived from ``beads_rust`` source, and
 ``br``'s *documented CLI contract* is one of the three sanctioned inputs. ``br
 --help`` is exactly that contract, so generating the inventory from it stays inside
@@ -161,7 +161,7 @@ def discover(br_binary: str = "br", bv_binary: str = "bv") -> dict:
             "source": "br --help, br <command> --help, bv --help",
             "note": (
                 "Generated from the documented CLI contract only. No beads_rust "
-                "source is read - see docs/design/work-tracker.md section 7."
+                "source is read - see docs/requirements/work-tracker.md section 7."
             ),
         },
         "br": {

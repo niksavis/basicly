@@ -39,7 +39,7 @@ def _text_tokens(text: str) -> int:
     It is calibrated on prose and on nothing else, and the second half of that
     sentence is a prohibition rather than a caveat. Measured 2026-08-08 against
     tiktoken's ``o200k_base`` over real payloads from this repo (basicly-u2hl.32),
-    the same tokenizer ``docs/design/factory-loop-requirements.md`` §15.1 measured
+    the same tokenizer ``docs/requirements/factory-loop.md`` §15.1 measured
     formats with — each figure is the signed relative error against the tokenizer,
     ``(chars/4 - real) / real``, so a real count is recovered as
     ``estimate / (1 + error)``::
@@ -67,7 +67,7 @@ def _text_tokens(text: str) -> int:
 
     A format comparison needs a real tokenizer over the real payloads, which is what
     produced the table above. Vendoring a BPE here is not on the table either: it is
-    a confirmation-gated dependency change (``docs/design/factory-design.md`` §6,
+    a confirmation-gated dependency change (factory design §6,
     "Estimate (at decompose)") and is refused outright under ``.basicly/core/kit``,
     which imports the standard library and nothing else.
     """

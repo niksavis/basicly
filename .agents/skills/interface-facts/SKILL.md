@@ -36,7 +36,7 @@ document's *summary* of an interface is a claim about a claim. Read the implemen
 before quoting the document, and read the section a summary cites before trusting the
 summary.
 
-Measured instance: `docs/design/factory-design.md` carried "copilot has no counts" in
+Measured instance: a design note carried "copilot has no counts" in
 a components table while section 7.5 immediately below documented the extraction
 mechanism and `runner.py` implemented it — mapping copilot's `session.shutdown`
 `modelMetrics` onto our usage split, with summation semantics verified against 15

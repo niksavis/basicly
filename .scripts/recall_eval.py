@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Measure always-on recall per agent family against a no-guidance control.
 
-Plan §4 Phase 1 item 1a; ``steering-surfaces-design.md`` §2.2 owns the result.
+Plan §4 Phase 1 item 1a.
 The question is not whether the baseline is *well-formed* — every existing gate
 answers that — but whether a rule in it is still being attended to at the size
 the file has reached. Anything the agent cannot recall is not doing work.
@@ -56,7 +56,7 @@ FAMILY_BASELINE = {
 # Every path in a cell that any family would load as guidance. The isolation
 # check asserts the set present equals the arm's declaration — the contamination
 # bug worth fearing is a *second* guidance file nobody meant to ship into the
-# cell (catalog-efficacy-design.md §4.3).
+# cell.
 GUIDANCE_PATHS = (
     Path("CLAUDE.md"),
     Path(".claude/CLAUDE.md"),

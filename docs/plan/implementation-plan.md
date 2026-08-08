@@ -311,7 +311,7 @@ one shape: **two lanes editing the same anchor in a file no bead declares.**
 | 1 | `CHANGELOG.md`, three lanes at one `### Fixed` anchor | 2 of 3 landed; `o8p0` filed and fixed |
 | 2 | `pytest` red on `main` — the spend gate compared a failed dispatch and an `assumed:` placeholder against whole-lane forecasts | fixed at the root; gate now 0 violations, median 0.96x |
 | 3 | `.basicly/generated-manifest.json` | 2 of 3 landed; `lyro` filed and fixed |
-| 4 | `docs/design/tier-kit.md` §7, which lists two of the running beads by name | 2 of 3 landed |
+| 4 | `docs/requirements/tier-kit.md` §7, which lists two of the running beads by name | 2 of 3 landed |
 
 **The proof run did its job.** It found three real defects that four prior supervised passes
 never surfaced, and all three shipped. What it could not do is pass, because the remaining
@@ -434,7 +434,7 @@ repeated and had drifted 24 records behind the export within a day.
 
 ### 6.2 The factory loop — what landed and what is open
 
-`basicly-u2hl`, driven by [`design/factory-loop-requirements.md`](../design/factory-loop-requirements.md).
+`basicly-u2hl`, driven by [`requirements/factory-loop.md`](../requirements/factory-loop.md).
 Landed on `main` since `v0.8.0`, unreleased:
 
 | Bead | What it made true |
@@ -863,10 +863,10 @@ its design is implemented and only the listed precondition stands between it and
 | `plan/implementation-plan.md` | **Authoritative** | This file. Deleted when `v1.0.0` ships and the ladder is spent. |
 | `tutorial/first-loop.md` | **Consumer-facing** | Never deleted while `basicly install` ships. Re-executed against a fresh repo whenever a command or its output changes (`imnu.2`). |
 | `how-to/customize-the-catalog.md`, `how-to/wire-up-the-verify-gate.md`, `how-to/unblock-a-commit.md`, `how-to/upgrade-and-check-drift.md`, `how-to/run-parallel-lanes.md`, `how-to/resume-a-track.md` | **Consumer-facing** | One page per recurring operation; a page goes when its operation does. Rationale stays in architecture — a how-to that starts explaining *why* is drifting into the reference (`imnu.2`). |
-| `design/work-tracker.md` | **Live** | Not `v0.8.0` — that shipped the *store*. This document survives until `br` leaves the runtime path (§6.1, `v1.0.0`'s acceptance test), because it is the only record of what the replacement must be, including the nine requirements carried forward from `br` defects already paid for. Five inbound references from `br.py`, `cli.py`, `tracker_surface.py`. |
+| `requirements/work-tracker.md` | **Live** | Not `v0.8.0` — that shipped the *store*. This document survives until `br` leaves the runtime path (§6.1, `v1.0.0`'s acceptance test), because it is the only record of what the replacement must be, including the nine requirements carried forward from `br` defects already paid for. Five inbound references from `br.py`, `cli.py`, `tracker_surface.py`. |
 | `design/agent-roster-design.md` | **Live** | `v0.10.0` ships the roster. Referenced from `.basicly/core/models/README.md`. |
 | `design/factory-design.md` | Deletable after `kjc5.13` | Absorb D1–D10 into architecture, then delete. `commit.py` names it; remove that reference first. |
-| `design/factory-loop-requirements.md` | **Live** | The target state of the loop and the measured delta from it, with 16 decisions and their sources. Drives `basicly-u2hl`; §6.2 tracks which decisions are code. Two sections are now *history* rather than specification — §5's corrected Hold/Kill diagnosis and §9.3's import-exclusion amendment — and both are kept deliberately, because a gap analysis that named the right defect and the wrong cause is the more useful record. Absorbed into architecture and deleted when that epic closes. |
+| `requirements/factory-loop.md` | **Live** | The target state of the loop and the measured delta from it, with 16 decisions and their sources. Drives `basicly-u2hl`; §6.2 tracks which decisions are code. Two sections are now *history* rather than specification — §5's corrected Hold/Kill diagnosis and §9.3's import-exclusion amendment — and both are kept deliberately, because a gap analysis that named the right defect and the wrong cause is the more useful record. Absorbed into architecture and deleted when that epic closes. |
 | `design/gates-and-rework-design.md` | **Deletable now** — `uhiq.2` | Cited by path from `architecture.md:1692` only. The bounded-rework subsystem is built but has never fired, so what survives is the *unvalidated* status, which belongs on `m4zv.5`. |
 | `design/steering-surfaces-design.md` | **Deletable now** — `uhiq.2` | Zero inbound references; architecture `:1553-1585` already carries the recall result. |
 | `design/catalog-efficacy-design.md` | **Deletable now** — `uhiq.2` | Architecture `:1563` carries the upper-bound rule, but `:1583` and `:1692` still cite the file by path — inline those citations or they dangle. |

@@ -45,8 +45,9 @@ a design decision taken by the owner. Unmarked prose is connective tissue and ca
 
 ## 1. Why this document exists
 
-The loop is specified in prose across `docs/design/factory-design.md`,
-`docs/design/agent-roster-design.md` and the `harness-loop` skill. The engine implements a
+The loop was specified in prose across `factory-design.md` and `agent-roster-design.md`, both
+absorbed into this document and deleted 2026-08-08, and the `harness-loop` skill. The engine
+implements a
 different, smaller thing. This document states the target so the delta can be decomposed.
 
 **The measured delta** [M], from a read of `loop.py`, `loop_state.py`, `decompose.py`,
@@ -96,7 +97,9 @@ at build→verify; everything else is checkpoints and lints.
 | D21 [D] | **Context control is field selection, not encoding.** Project tracker payloads to the fields a phase needs; encode only what remains, and only where a bijective codec is safe | Measured 2026-08-08 (§14). Selection beats serialisation by ~500x on this repo's own data |
 | D22 [D] | **Anything built against the tracker is written to our own record vocabulary, never to `br`'s payload shape** | `br` and `bv` are being removed (`work-tracker.md`). A field allowlist naming `br`'s JSON keys would have to be rewritten at the flip; one naming our own fields survives it, and only the adapter changes |
 | D23 [D] | **A sizing control with no recorded correct firing becomes observability; a control that has earned one keeps its teeth** | §15.7. Measured 2026-08-08: the grant spend ceiling fired correctly 5 times and the rework cap 78, while the runner timeout, the working-set band and the context ceiling have **zero** between them — and all three of those predict how large a unit of work will be, which this repo has never predicted well. A prediction that blocks must be right; a prediction that reports costs nothing when it is wrong. Demotion is not deletion: the number stays recorded, surfaced and falsifiable, because §15.6's gate was wrong for months *with the telemetry already contradicting it* |
-| D24 [D] | **`factory-design.md` is no longer the tiebreaker.** Authority runs: measured evidence in this repo → this document → `factory-design.md` | Owner, 2026-08-08. That document's §9 — "the honest answer to *is the design real?*" — contradicts itself on `kjc5.8`/`kjc5.11`; it keeps a context ceiling §15.6 deleted for never firing correctly; and its D6 rests on light mode having "one window shared by everything", which `steering-surfaces-design.md` §3 measures as **isolated** context. A factory-design decision no measurement contradicts still stands — this removes tiebreaker status, not content |
+| D24 [D] | **`factory-design.md` is no longer the tiebreaker.** Authority runs: measured evidence in this repo → this document → `factory-design.md` | Owner, 2026-08-08. That document's §9 — "the honest answer to *is the design real?*" — contradicts itself on `kjc5.8`/`kjc5.11`; it keeps a context ceiling §15.6 deleted for never firing correctly; and its D6 rests on light mode having "one window shared by everything", which architecture §5 records as **isolated** context (the citation also had the wrong section: it is §1 of that document, now absorbed). A factory-design decision no measurement contradicts still stands — this removes tiebreaker status, not content |
+| D25 [D] | **Agent-authored guidance never reaches the shared catalog without a human, at any grant level** — a decision class no autonomy level auto-disposes, an exception to the L0-L3 ladder rather than a rung in it | Roster R9, absorbed 2026-08-08. The argument is asymmetry, not the risk of a bad suggestion: a wrong implementation bounces off a gate, while a wrong fragment is **absorbed** and silently degrades every later lane with nothing mechanical to detect it. An agent that can amend the catalog under a grant widens its own constraints, and the next session inherits the widening as ground truth. Not in code [M]: `supervise.DELEGABLE_KINDS` is `("escalation", "needs-input")` (`supervise.py:1650`), so a never-auto-dispose class does not exist. Corollary: a retrospective's output is a **diff against catalog YAML**, never prose advice, so `catalog lint` and the projection checks bound what the human is asked to approve |
+| D26 [D] | **Route each role to the cheapest tier that can be relied on, priced per landed package** — total tokens, wall clock and human interventions per landed *correct* package, never the price of one dispatch. The predicate for "cheap is safe" is **specification completeness, not work category** | Roster R5 and its 2026-07-26 amendment, absorbed 2026-08-08. A brief carrying the literal code and the literal test cases is transcription and is mechanically verifiable; a brief that is a prose description is not. A cheap dispatch returns as rework, extra review cycles, bounced merges and human attention, all charged to the same package. **Operationally a dispatch with no resolved tier is a bug, not a default** — an omitted model inherits the session's, usually the most expensive, which defeats the rule silently. The four-tier ladder is already shipped (`.basicly/core/models/anchors.yaml`, `schema.MODEL_TIERS`); only this routing rule was unrecorded |
 | D20 [D] | **`change-shape` — the shape of the whole change, derived not authored, emitted by CLASSIFY** | See §8.2. It is the structure `decompose` needs to cut end-to-end instead of by directory, and `basicly-agzx.2` already proposes deriving it from an AST at zero token cost. **Derived, so it is not a state**: states exist to hold a gate and a persona, and a derivation needs neither — DECOMPOSE's entry predicate gains it, nothing else moves |
 | D19 [D] | **Diff size is a plan-time signal, not a review-time discovery** | The sizing governor already forecasts in tokens; a child whose forecast implies a diff far past reviewable is reported when splitting is still cheap. Deliberately **not** a human-review requirement — L1/L2 stay delegable (§4), and a 2,000-line lane is hard to review whether the reader is a human or the next agent |
 
@@ -244,11 +247,39 @@ Kill addresses the largest single documented failure mode in multi-agent systems
 repetition at 15.7%** [S] MAST, arXiv 2503.13657, 1,600+ annotated traces, κ=0.88. When the only
 exits are pass and retry, a lane that should be abandoned burns its rework budget instead.
 
+### 5.1 Gate types — what a failure does [D]
+
+Absorbed 2026-08-08 from `gates-and-rework-design.md`, which is deleted. The four verbs say what a
+gate *answers*; four **types** say what its failure *does*. `policy.GATE_TYPE_BY_GATE` types the
+five gates the engine names and defaults the rest to revision. Two rules govern a new one:
+
+- **Selection.** Start at pre-flight. A check that runs *after* work is produced is a revision
+  gate; one the revision loop cannot resolve escalates; one where continuing is dangerous aborts.
+- **Cap sizing.** A cap reflects the cost of one iteration. A landing bounce and a re-review of a
+  three-line fix must not share a budget.
+
+The gates the engine gives no name have nothing to key on, so they are classified here rather than
+in code — `policy.py:88-92` delegates to this table:
+
+| Unnamed gate | Type |
+| --- | --- |
+| Scope-disjointness at decompose | Pre-flight |
+| `fast` / `full` gates at sub-task and lane integrate | Revision |
+| Merge-queue bounce-back | Revision |
+| commit-msg / secret-scan / projection checks | Pre-flight |
+| Ship preconditions | Pre-flight |
+| `needs-input.json` | Escalation — the engine's escalation gate, still un-named as one |
+| Uncommitted work blocks a landing | Abort |
+
+**Corrected by D23.** The band ceiling was classified as a pre-flight refusal at dispatch and it
+still refuses (`working_set.py:41`). With **zero correct firings** it is observability under §15.7,
+so it types as no gate at all until it earns one.
+
 ---
 
 ## 6. Personas
 
-Seven are designed [S] `docs/design/agent-roster-design.md`. **Zero are implemented** [M] — one
+Seven are designed (roster design, absorbed here 2026-08-08). **Zero are implemented** [M] — one
 default runner serves every phase, `loop.py:678`.
 
 | Persona | Role | State | Status |
@@ -261,7 +292,23 @@ default runner serves every phase, `loop.py:678`.
 | Lumi | Retrospector | RETROSPECTIVE | **paper only** |
 | Tala | Curator | SHIP | **paper only** |
 
-Deliberately not personas [S] roster §4: merge agent, tester/verifier, scout, shipper, conductor.
+A persona is a **dispatch contract**, not a model and not a personality: role prompt, tool policy,
+model tier, gate authority, output contract. **Names are display-only** — no policy, gate or
+scheduling decision may key on a persona name; the engine keys on the **role id**.
+
+Deliberately not personas, each refused by a decision rather than by preference (absorbed from the
+roster design 2026-08-08, which is deleted):
+
+| Refused | Why |
+| --- | --- |
+| Merge agent | it would resolve with neither lane's context, at the point of weakest verification. A conflict means the *graph* was wrong, not the merge |
+| Tester / verifier | verify is deterministic gates; a model running them adds cost and nondeterminism to the one trustworthy part. Authoring tests is the implementer's, and diagnosing a red gate is a capability of its repair dispatch |
+| Scout | a low-tier pre-reader's characteristic error — a slightly incomplete file list — is mechanically undetectable and silently narrows the implementer's view. **Permanently cut as a persona**; the same artifact derived deterministically from an AST is an engine step with no tier and no gate authority, which is D20's `change-shape` |
+| Shipper | version bump, changelog, tag and push are a command; the judged residue is curation, which is Tala |
+| Conductor | it is code. **No agent spawns agents** — the supervisor dispatches every persona and personas never dispatch each other. If it has a name it is an agent, and its output is a proposal the engine must validate |
+
+**Lens output is reported per lens, never merged into one ranked list** — a change can pass one axis
+and fail another, and reranking lets one mask the other.
 
 ---
 
@@ -413,6 +460,24 @@ between design and planning, exactly where this artifact sits. That is the same 
 in §14's licence flags, so it is one source expressed twice, not two sources agreeing. It raises
 the prior; it does not settle it.
 
+### 8.3 An agent inherits through a durable artifact, not a replayed window
+
+Absorbed 2026-08-08 from `agent-roster-design.md`. Everything pasted into a dispatch prompt — and
+everything a subagent prints back — stays resident for the rest of the session and is re-read on
+every later turn. So the implementer **writes its full report to a file and returns only**: status,
+commits, a one-line test summary, and concerns. The report file *is* the persistent memory a fresh
+implementer reads, which is what makes a late-round tier bump work across runners that cannot
+resume a live subagent.
+
+Four statuses, because each has a different correct response: **DONE**, **DONE_WITH_CONCERNS**,
+**NEEDS_CONTEXT**, **BLOCKED**. And the rule that gives them teeth: **never ignore an escalation,
+and never force the same model to retry unchanged.** If the implementer said it is stuck, something
+must change.
+
+This is the mechanism `basicly-ejdm` builds against: it resolves the tension between D6's
+fresh-context decision and the measured 254x cost of a lane rebuilding what the session already
+holds, because a durable artifact is neither a replayed window nor a cold start.
+
 ---
 
 ## 9. Code quality
@@ -489,7 +554,7 @@ that is ≈376 lines [M].
   import is one line and is not what makes a file too large to read whole, and code growth is still
   measured to the token. The 79 frozen baselines were recomputed once on the same measure — every
   one strictly dropped — so nothing is forgiven but the import block. The control assertion is
-  `test_a_module_that_grew_by_code_still_fails_after_the_import_exclusion`; without it the
+  `test_a_module_that_grew_by_code_still_fails*after*the_import_exclusion`; without it the
   amendment cannot be told apart from turning the gate off, which is exactly how it first *looked*
   to pass: run against import-inclusive baselines it reported a clean tree, because every module
   had silently gained an allowance the size of its own import block.
@@ -613,6 +678,52 @@ mass [S]:
    definitions are unfalsifiable claims in our own catalogue.
 7. **Evidence binding at SHIP** as a separate pass — the writer of a claim is the wrong context
    to audit it.
+
+### 11.1 The judged-output contract — the unbuilt half
+
+Absorbed 2026-08-08 from `gates-and-rework-design.md`. Severity as a required field, the
+no-pre-judging lint, the composite rubric gate and the convergence detector all **shipped**. These
+did not, and each is deterministic engine code rather than a persona:
+
+- **The reviewer never receives the claim.** It gets artifact plus contract — the diff and the
+  criteria — never the producer's conclusion or rationale. Because bundles are assembled by code,
+  the assembler can be *structurally incapable* of including it, which is the difference between a
+  rule and a guarantee.
+- **Record the base before dispatching the producer.** Never derive a review base as `HEAD~1`: it
+  silently truncates a multi-commit unit and reviews its last commit while reporting on the whole.
+- **A re-review is scoped to the fix range**, verdicting each open finding addressed or not.
+  Out-of-scope observations become deferred minors and never extend the loop — otherwise each round
+  discovers unrelated work and the loop cannot converge.
+- **Adjudicate only at the cap**, per finding, into exactly one of parked-contestable,
+  parked-real-deferred, or blocked, each with a recorded ruling. Adjudicating earlier to end a loop
+  is pre-judging under another name, and a structural failure is never parked.
+- **A deferred minor needs a named consumer** (the ship-time rollup). Without one it is recorded and
+  structurally guaranteed to rot.
+- **An escalation ladder on late rework rounds.** Early rounds resume the same implementer; late
+  rounds dispatch a fresh one **one tier up**, briefed with the prior attempt's record. Ours bounces
+  to the same tier with the same framing every time, spending the cap without changing a variable.
+  It yields a measurable signal: **if late-round bumps routinely succeed, the initial tier was
+  wrong.**
+- **Every judged role carries a role-specific "how this role goes soft" list**, derived from
+  observed failures and never invented — for example issuing a warning for what is actually a
+  blocker, to avoid conflict with the producer. A generic rigour instruction is a **no-op**.
+- **Refute-or-promote, targeted.** A finding that would block a landing or a ship earns a refutation
+  pass: N independent reviewers, each on a *different* lens, prompted to disprove it, majority
+  required to kill it. Not a default — it multiplies the most expensive dispatch class and optimises
+  precision, the axis we are less worried about. The trigger is deterministic, so it stays out of a
+  model's hands (D9).
+- **Two degenerate reviewers are currently invisible**: the rubber stamp (approves nearly
+  everything, so its advisory green is worthless) and the noise generator (findings nearly all
+  adjudicated contestable, costing rework and buying nothing). Both are computable per lens from
+  data already recorded — finding rate and adjudication-outcome distribution over a window — and the
+  window and threshold must be **read from recorded history, never guessed**.
+
+**One dropped item argues against a live decision, so it is kept as a caveat rather than lost.**
+D10 says VERIFY runs named checks and judges nothing. The counter-case is **compliant
+hallucination**: output that satisfies the stated constraint while defeating its purpose, which a
+named check passes by construction. D10 stands — moving judgement to plan time is still right — but
+a criterion whose check can be satisfied without the behaviour is the failure mode to watch, and
+D18's end-to-end demonstration is the partial answer already shipped.
 
 ---
 
@@ -751,6 +862,19 @@ recorded lanes cross it** (max observed 403,051). Against the stale hardcoded 20
 120,000 and **51 of 79 crossed**, which is where the twelve overrun follow-ups came from. A gate
 that has never once fired correctly — first at a fifth of its intended point, then never — is
 removed rather than given a third constant. Its follow-up machinery goes with it.
+
+**The fraction frame itself is refuted, independently of this gate's telemetry** [S]. Degradation is
+driven by absolute tokens of material the model must reason over, not by window fraction: NoLiMa
+(arXiv 2502.05167) measures the same ~8-16K effective band across an 8x window gap, and RULER
+(arXiv 2404.06654) finds claimed-versus-effective ratios from 25% to over 100%, so no constant
+fraction exists. The "50-70% of window" rule appears in **no primary source**. One fractional effect
+is real and it is behavioural — models cut corners near their *perceived* limit — which makes it a
+guard, never a fill target. Recorded so a fraction is not re-proposed.
+
+**One clause of the reproducibility set is still unbuilt** [M 2026-08-08]. `run_record` persists
+`prompt_sha256`, `model`, `model_tier`, `model_source` and `adapter_version`, but **not the ids of
+the found-info records folded into the prompt** — so a re-dispatch is diffable in its prompt and not
+in its inputs, which is short of what D9 requires.
 
 ### 15.7 D23 — a sizing control that never fires correctly becomes observability [D]
 

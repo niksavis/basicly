@@ -48,8 +48,8 @@ def linked_worktree_guard(repo_root: Path) -> str | None:
     own throwaway tracker copy and a gate recorded there never reaches the base
     checkout — it is discarded at landing.
 
-    An **abort** gate, classified as :data:`basicly.policy.LINKED_WORKTREE_GATE`
-    (gates-and-rework-design.md §1): it halts the record, preserves the verify
+    An **abort** gate, classified as :data:`basicly.policy.LINKED_WORKTREE_GATE`: it
+    halts the record, preserves the verify
     verdict the caller already has, and reports the reason plus the remedy. Not a
     revision gate — no rework can make a throwaway tracker the real one — and not
     pre-flight, because the check is worth running after the work as well as before
@@ -335,7 +335,7 @@ DEPENDENCY_DEFECT_SIGNATURES: tuple[tuple[tuple[str, ...], str], ...] = (
         "br serialises every mutating command behind one .beads/.write.lock and "
         "fails the command outright when it cannot take it before the timeout, so a "
         "gate contends with whatever else drives the tracker at that moment; no diff "
-        "can make that contention its own fault (R8 in docs/design/work-tracker.md)",
+        "can make that contention its own fault (R8 in docs/requirements/work-tracker.md)",
     ),
 )
 

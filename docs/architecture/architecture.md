@@ -4,7 +4,7 @@
 > Beads (`br`) issues are broken down directly from it (§10). Where it and any other
 > document disagree, this one wins.
 >
-> **Its relationship to [`docs/design/`](../design/)**: a design document explores
+> **Its relationship to [`docs/requirements/`](../requirements/)**: a design document explores
 > and settles _one_ question in depth — the factory, the roster, gates and rework,
 > catalog efficacy, steering surfaces, the tracker. This file carries the _result_:
 > the current system in §§0–13 and the agreed direction in §14. A design document is
@@ -712,7 +712,14 @@ hand-edited — from YAML sources:
   catalog-source prompts rather than agent-native files
   ([plan](../plan/implementation-plan.md) Phase 5), so codex receives the same
   guidance through `AGENTS.md` and `.agents/skills`. No root costs always-on
-  budget: subagent files are on-demand.
+  budget, and the saving is structural rather than a matter of size: only an
+  agent's **name and description** load at session start, the **body never enters
+  the parent's context**, and **only the final message returns** — a subagent runs
+  in an **isolated context window**, so a dispatch's working set is never charged
+  to the session that spawned it. (Host capability of the Claude and Copilot
+  families, recorded 2026-07-26; a capability fact from first-party guidance, not a
+  run this repo executed. It is the fact that refutes any claim that concurrent
+  subagents must share one window — see `factory-loop.md` D24.)
 - **Tool names** are _not_ translated. GitHub's published alias table accepts
   Claude's PascalCase names as first-class and matches case-insensitively, so the
   names a source declares resolve on both families. The table is pinned as
@@ -922,7 +929,7 @@ names were removed, not aliased).
 | `basicly loop status\|advance\|run <issue>` | Drives one issue through the harness loop; a blocked step exits non-zero and names the input it needs. The multi-lane path is `preflight` (read-only: clean base, live worktrees, runner, grant, budget, per-lane band table and forecast spend) and then `supervise`, which dispatches ready lanes, routes their outcomes and lands green work until it is done or blocked on a human. A second session observes a live run with `session` and `watch`, and clears what a lane is blocked on with `decisions`, `answer` (record a human answer) and `decide` (invoke the decider agent, corpus-bounded). `kill` is the one gate verb that is not an answer — it closes a lane won't-do-this-way with a recorded reason and tears its worktree down, always behind a one-time confirm code no grant or TTY substitutes for (§12.2) |
 | `basicly commit <description>`              | Assembles the conventional-commit envelope from engine state — type from the bead's work class (refined by an all-docs/all-test/all-ci diff), scope from the staged paths weighted by churn, trailing bead id from the branch's worktree binding — and commits the staged change with it. Only the description (and an optional `--body`) is authored; a description the charset rules reject names the offending character before any commit is attempted. `--type`/`--scope`/`--issue` override a derived part, `--dry-run` prints the message only. The `commit-msg`/`beads-commit-msg` hooks stay the gate (design D10, `basicly-kjc5.42`) |
 | `basicly runner list\|dry-run\|run`         | Agent-agnostic headless runner adapters (claude/codex/copilot + `manual` handoff); the loop build phase auto-dispatches through them (§12.8) |
-| `basicly tracker shadow`                    | Step 2 of the work-tracker cutover ([`work-tracker`](../design/work-tracker.md) §5): folds the owned event log under `.basicly/ledger/` and compares its answers to phase derivation, the ready set and gate status against the **live** `br`, record by record. The reference is a `br list`/`br show`/`br gate list` read and never the JSONL export — an upsert-only import cannot express a deletion, so two derivatives of one snapshot agree with each other and prove nothing (§5.1), and the kit audits the reference by perturbing the ledger and refusing a source whose answers move with it. Writes to neither store, and reports `clean` and `conclusive` as two verdicts: a query every record answered identically discriminated nothing, so exit `0` needs both |
+| `basicly tracker shadow`                    | Step 2 of the work-tracker cutover ([`work-tracker`](../requirements/work-tracker.md) §5): folds the owned event log under `.basicly/ledger/` and compares its answers to phase derivation, the ready set and gate status against the **live** `br`, record by record. The reference is a `br list`/`br show`/`br gate list` read and never the JSONL export — an upsert-only import cannot express a deletion, so two derivatives of one snapshot agree with each other and prove nothing (§5.1), and the kit audits the reference by perturbing the ledger and refusing a source whose answers move with it. Writes to neither store, and reports `clean` and `conclusive` as two verdicts: a query every record answered identically discriminated nothing, so exit `0` needs both |
 | `basicly release <version> --issue ID [--date D] [--dry-run] [--autonomous --root ID]` | Component 9 release automation (`release.py`): bumps the single-sourced `__version__`, regenerates the version-stamped projections in a **fresh interpreter with the target repo forced onto `PYTHONPATH`** (`cli` binds `__version__` at import, and a same-process or installed-copy rebuild stamps the previous version), rewrites the `@vX.Y.Z` install pins in `README.md` + `site/index.html`, assembles the per-lane `changelog.d/<bead-id>.<category>.md` fragments into the `## [Unreleased]` body (grouped by Keep a Changelog heading, ordered by category then filename, deleted in the same commit — one file per lane so two lanes can never collide on one changelog anchor, `basicly-4746`) and upserts the dated `CHANGELOG.md` section from it via `.scripts/generate_release_changelog.py`, commits, and creates the annotated tag. **Never pushes** — publishing is irreversible and stays a human step. Refuses on a dirty tree, a version that does not move forward, an existing tag, or a fragment it cannot place (empty, misnamed, or no `[Unreleased]` heading to fold into), reporting every reason from one run; `--dry-run` runs the same checks and writes nothing. `--autonomous` requires an **L3** grant (not L1/L2) with green lights-out preconditions on `--root` (D3) |
 
 The formerly planned `basicly conflicts`/`basicly overrides` reporting views are
@@ -1619,7 +1626,7 @@ files with separate jobs:
 | Tutorial | [`docs/tutorial/first-loop.md`](../tutorial/first-loop.md) | one guaranteed-success path, install → shipped bead, no options offered | a consumer on day one |
 | How-to | [`docs/how-to/`](../how-to/) | the recurring operations, one page per task | a consumer with a job to do |
 | Reference | this file, plus [`CONTRIBUTING.md`](../../CONTRIBUTING.md) | the system as specified | anyone implementing or debugging |
-| Explanation | [`docs/design/`](../design/), [`docs/research/`](../research/) | why one question was settled the way it was | anyone changing a decision |
+| Explanation | [`docs/requirements/`](../requirements/), [`docs/research/`](../research/) | why one question was settled the way it was | anyone changing a decision |
 
 Three rules keep the layer from rotting into a second, competing account of the
 system:
@@ -1680,10 +1687,10 @@ this harness is measurably better than the others that also believe it.
 
 | Pillar | Today | Target | Owning design doc |
 | --- | --- | --- | --- |
-| Catalog (guidance) | projected + structurally gated; the path-scoped tier in use on two fragments | routing and behaviour measured per entry | [`catalog-efficacy`](../design/catalog-efficacy-design.md), [`steering-surfaces`](../design/steering-surfaces-design.md) |
-| Gates (enforcement) | deterministic, per-site behaviour | classified by type, with stall detection and a severity contract | [`gates-and-rework`](../design/gates-and-rework-design.md) |
-| Loop / factory (SDLC) | parallel lanes, autonomy grants, merge queue — dogfooded | named roles per judgment step; release automation reachable under a grant | [`factory-design`](../design/factory-design.md), [`agent-roster`](../design/agent-roster-design.md) |
-| Tracker (state) | external `br` binary in the critical path | owned, in-process, append-only event log | [`work-tracker`](../design/work-tracker.md) |
+| Catalog (guidance) | projected + structurally gated; the path-scoped tier in use on three fragments | routing and behaviour measured per entry | §14.4 |
+| Gates (enforcement) | deterministic, per-site behaviour | classified by type, with stall detection and a severity contract | [`factory-loop-requirements` §5.1](../requirements/factory-loop.md) |
+| Loop / factory (SDLC) | parallel lanes, autonomy grants, merge queue — dogfooded | named roles per judgment step; release automation reachable under a grant | §14.3 |
+| Tracker (state) | external `br` binary in the critical path | owned, in-process, append-only event log | [`work-tracker`](../requirements/work-tracker.md) |
 
 **14.2 The factory — built, and its remaining honesty gaps.** The supervisor,
 autonomy grant ledger, decision queue, lane mini-loop, and merge queue v2 have
@@ -1742,6 +1749,15 @@ and never report one as the other, and keep a safety tier that **executes** the
 produced code against hostile input, so "less code" or "more decisive" can never be
 bought by dropping validation.
 
+**Tier state today, measured 2026-08-08.** **Tier 1 and Tier 2 both ship**, as rules 8 and 9 of
+`catalog lint`, on every commit. The routing gate asserts positive top-k, pairwise negatives — the
+declared owner must _outrank_ the entry, because a bare "must not rank first" passes vacuously on a
+prompt that matches nothing — and a description-collision ceiling; it reports a **rank-1 rate**,
+measured at 83/90 = 92.2% against a `[catalog] rank1_floor` of 0.85 that ratchets and cannot be
+lowered. **Tier 3 is paper**: no arms, hidden checks or safety tier exist in code. The one Tier-1
+rule still unbuilt is making a _missing_ eval case file a failure (`basicly-m4zv.3`) — all 30
+model-invoked skills carry one by convention today, and the 19 fragments carry none.
+
 The single highest-leverage unknown sat here, and half of it has now been measured.
 The always-on baseline is a few thousand characters per family — the live measurement
 is the generated table in §7 detail 1; it was 7167 / 7299 / 8434 for Claude / Copilot /
@@ -1750,13 +1766,13 @@ against a consistent practitioner
 finding that adherence to dense rules degrades well below that. **The "cliff already
 crossed" reading is refuted**: measured 2026-07-26, both families reproduce 93–98% of
 their baseline's rules when asked, against a 6–17% no-guidance control
-([`steering-surfaces`](../design/steering-surfaces-design.md) §2.2). The content is
+(§14.4). The content is
 not invisible at this size.
 
 What that result does **not** settle is the operational question, so the entry above
 still stands as written: nothing measures which baseline rules _bind_ while an agent
 works. Recall under a direct cue is an upper bound and confirms mechanism only — by
-`catalog-efficacy`'s own rule it may not be cited as evidence of quality. So the cap
+§14.4's own rule it may not be cited as evidence of quality. So the cap
 policy is now asymmetric: **lowering it is ordinary housekeeping; raising it still has
 no evidence behind it** and would prejudge exactly the adherence question that remains
 open.
@@ -1764,18 +1780,18 @@ open.
 Relatedly, and cheaper than the design documents assume: the **path-scoped tier is
 already built** — targets declare a `scoped_rules` output and the planner routes
 fragments carrying a `scope` — and **two fragments now declare one**: `external-review`
-on `docs/research/**` + `docs/design/**`, and `platform-hermetic-tests` on `tests/**`.
+on `docs/research/**` + `docs/requirements/**`, and `platform-hermetic-tests` on `tests/**`.
 Moving conditional guidance (subprocess discipline, test isolation, catalog authoring)
 out of the always-on baseline is therefore authoring work, not engine work.
 
 Its cost effect is **asymmetric across families, not a blanket improvement** (§7
 detail 1): scoping removes a fragment from the Claude and Copilot baselines and
 **adds** it to Codex's, which has no glob scoping at all and therefore inlines scoped
-fragments into `AGENTS.md` — measured 1462 and 1614 characters for the two that exist,
+fragments into `AGENTS.md` — measured 869, 1462 and 1614 characters for the three that exist,
 against the `AGENTS.md` headroom in the §7 detail 1 table, which the **next** scoped
 fragment can already exhaust. Whether scoping also improves **adherence** is a hypothesis
 this repo cannot yet assert: the only measurement is recall under a direct cue, which
-`catalog-efficacy` §4.1 bars from standing as evidence of quality, and at 98% / 93%
+§14.4 bars from standing as evidence of quality, and at 98% / 93%
 there is no headroom left to improve — which is why Phase 4's exit criterion asks only
 that recall be **not degraded**.
 
@@ -1871,11 +1887,11 @@ Pillar 01 — **guidance**:
 | --- | --- | --- |
 | One catalog projected to Claude, Codex and Copilot — instructions, skills, subagents, permissions | `shipped` | §§4–7, §9 |
 | Drift gate (`basicly check`) run by CI | `shipped` | §6 |
-| Path-scoped rules tier, so conditional guidance loads on a matching file instead of always | `shipped` | §7 detail 4 — engine built, two fragments use it today; cost falls for claude and copilot and rises for codex (§14.4) |
+| Path-scoped rules tier, so conditional guidance loads on a matching file instead of always | `shipped` | §7 detail 4 — engine built, three fragments use it today; cost falls for claude and copilot and rises for codex (§14.4) |
 | Invocation axis per entry: model-invoked pays context load, user-invoked does not | `shipped` | §4.2 (skills) — declared on skill sources today, not yet on fragments |
-| Deterministic lexical routing evals — rank-1 rate in CI, no embeddings | `building` | §14.4, [`catalog-efficacy`](../design/catalog-efficacy-design.md) |
+| Deterministic lexical routing evals — rank-1 rate in CI, no embeddings | `building` | §14.4 |
 | An eval case file per catalog entry, enforced as a structural failure | `building` | §14.4 |
-| Relieve the always-on baseline by scoping what is conditional | `building` | §7, [`steering-surfaces`](../design/steering-surfaces-design.md) |
+| Relieve the always-on baseline by scoping what is conditional | `building` | §7, §14.4 |
 | Tutorial and how-to layer, so a new consumer has a path from install to first shipped unit | `shipped` | §13.1 — the tutorial was executed end to end on a fresh repo before it was written |
 | Whether an individual entry changes behaviour, and which baseline rules bind while an agent works | `researching` | §14.4 — recall measured 2026-07-26; adherence still open |
 | Cursor as a target; a native Codex scoped-rules renderer | `deferred` | §11 |
@@ -1887,7 +1903,7 @@ Pillar 02 — **gates**:
 | Git hook floor across pre-commit, commit-msg and pre-push | `shipped` | §4.2 |
 | Agent hooks for Claude Code and Copilot | `shipped` | §4.2 |
 | Verify pipeline with `fast`, `full` and `staged` modes | `shipped` | §6, §12 |
-| Every gate classified by type, and a pre-flight gate that writes nothing | `building` | [`gates-and-rework`](../design/gates-and-rework-design.md) |
+| Every gate classified by type, and a pre-flight gate that writes nothing | `building` | [`factory-loop-requirements` §5.1](../requirements/factory-loop.md) |
 | Severity required on judged output, plus a lint refusing a pre-judging reviewer bundle | `building` | §14.3, `gates-and-rework` |
 | Rework convergence detection from the open-finding set rather than the count | `building` | `gates-and-rework` |
 | `basicly install` reporting the capability tier it actually delivered | `building` | Plan Phase 3 — enforcement is plugin-tier; on an instruction-tier host the harness degrades to advice, and we currently say so nowhere |
@@ -1905,7 +1921,7 @@ Pillar 03 — **the loop**:
 | Measured context occupancy recorded beside the forecast on every dispatch | `shipped` | §12 — `RunRecord.context_tokens`, the first measurement of the quantity the band gates on |
 | Per-model spend and wall-clock forecast, enforced when a supervisor pass is admitted | `building` | Plan Phase 1 — the current forecast models working set, not turn count, and that is now **measured** rather than suspected: declared scope predicts occupancy at R² = 0.095 against 0.863 for turn count |
 | A supervised multi-lane run with zero human interventions caused by a harness defect | `building` | Plan Phase 0 exit criterion |
-| A named role per judgment step, each with its own instructions, tool policy, tier and output contract | `designed` | §14.3, [`agent-roster`](../design/agent-roster-design.md) |
+| A named role per judgment step, each with its own instructions, tool policy, tier and output contract | `designed` | §14.3, [`factory-loop` §6](../requirements/factory-loop.md) |
 | Cost per landed package — the instrument the tier claims rest on | `researching` | §14.6 |
 | Whether deterministic AST localisation cuts an implementer's pre-first-edit cost | `researching` | Plan Phase 1c |
 
@@ -1915,8 +1931,8 @@ Pillar 04 — **the work graph**:
 | --- | --- | --- |
 | Issues, dependencies, gate results, checkpoints and evidence in a tracked graph | `shipped` | §12.1 |
 | Phase derived from tracker state, so resume is a read rather than a replay | `shipped` | §12.1 |
-| Atomic publish of the shared tracker export, and a store error charged to the store rather than to the lane's rework budget | `shipped` | §12.1, [`work-tracker`](../design/work-tracker.md) R7 — gated by four reader processes against a live writer |
-| The scheduler score and rank recorded behind each dispatch | `building` | [`work-tracker`](../design/work-tracker.md) |
+| Atomic publish of the shared tracker export, and a store error charged to the store rather than to the lane's rework budget | `shipped` | §12.1, [`work-tracker`](../requirements/work-tracker.md) R7 — gated by four reader processes against a live writer |
+| The scheduler score and rank recorded behind each dispatch | `building` | [`work-tracker`](../requirements/work-tracker.md) |
 | Owned in-process append-only event log, removing the external binary from the critical path | `designed` | §14.5, `work-tracker` |
 | Provenance on every edge — extracted, inferred, ambiguous | `designed` | §14.5 |
 | `fsck` and `rebuild`, so "the log is the truth" is a claim someone can check | `designed` | §14.5 |

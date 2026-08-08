@@ -9,7 +9,7 @@ The description corpus is deliberately *not* filtered by ``[catalog] technologie
 Routing quality is a property of the catalog this repo ships to every consumer, so a
 technology this repo happens not to select would otherwise ship with an unchecked
 description — and a gate whose verdict depends on the running repo's configuration is
-not the reproducible measurement ``docs/design/catalog-efficacy-design.md`` §3.3 asks
+not the reproducible measurement this gate has to be
 for.
 
 Split out of ``catalog_lint`` when the module-size ratchet caught that module growing.

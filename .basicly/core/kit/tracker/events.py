@@ -1,7 +1,7 @@
 r"""The append-only event log: the tracker kit's authoritative store.
 
 Every change to a record is a new line; a record's state is a **fold** over its events
-(`design/work-tracker.md` §4, basicly-vkh0.11). Nothing here rewrites a line, and no
+(`work-tracker.md` §4, basicly-vkh0.11). Nothing here rewrites a line, and no
 other file is authoritative — the snapshot, the index and the edge list are derived and
 disposable, which is what makes a corrupt derivative something you delete rather than
 repair.

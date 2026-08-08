@@ -131,7 +131,7 @@ def test_only_tracker_jsonl_paths_are_in_scope() -> None:
     """Paths are legitimate content everywhere else, so a wider scan would be noise."""
     assert scan._TRACKER_GLOB.match(".beads/issues.jsonl")
     assert scan._TRACKER_GLOB.match(".beads/beads.base.jsonl")
-    assert not scan._TRACKER_GLOB.match("docs/design/work-tracker.md")
+    assert not scan._TRACKER_GLOB.match("docs/requirements/work-tracker.md")
     assert not scan._TRACKER_GLOB.match("tests/fixtures/issues.jsonl")
 
 

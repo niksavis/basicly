@@ -954,7 +954,7 @@ def _harness_section(repo_root: Path, name: str) -> dict:
 def load_tracker_mode(repo_root: Path) -> str:
     """Which step of the work-tracker cutover ``[tracker] mode`` declares.
 
-    The ladder is `docs/design/work-tracker.md` §5 and its values are
+    The ladder is `docs/requirements/work-tracker.md` §5 and its values are
     :data:`basicly.br.TRACKER_MODES`; the module that acts on the answer owns the
     vocabulary, so there is one spelling of ``dual`` in the engine.
 
@@ -975,7 +975,7 @@ def load_tracker_mode(repo_root: Path) -> str:
     if mode not in br.TRACKER_MODES:
         raise ValueError(
             f"[tracker] mode = {mode!r} is not one of {', '.join(br.TRACKER_MODES)}; "
-            f"the work-tracker cutover has no other step (docs/design/work-tracker.md §5)"
+            f"the work-tracker cutover has no other step (docs/requirements/work-tracker.md §5)"
         )
     return mode
 
@@ -1492,7 +1492,7 @@ def load_routing_floor(repo_root: Path) -> tuple[float | None, float | None]:
     undeclared. The pair exists so the floor can be *ratcheted*: `catalog lint`
     refuses a floor below the high-water mark, which makes lowering a threshold
     to green a regression a diff that says what it is instead of one that reads
-    like maintenance (docs/design/catalog-efficacy-design.md §3.2).
+    like maintenance.
     """
     data = _validated_documents(repo_root).get(CONFIG_FILE)
     if data is None:

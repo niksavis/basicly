@@ -14,7 +14,7 @@ where `decompose`'s own comment says "the whole-file band ends": above it an age
 reading a file whole and starts reading selectively. So this is an **agent working-set
 gate** and must not be read as a defect-density claim — the defect literature argues the
 other way (Hatton 1997 found mid-size components best; Koru 2008 found smaller modules
-proportionally *more* defect-prone). See `docs/design/factory-loop-requirements.md` §9.3.
+proportionally *more* defect-prone). See `docs/requirements/factory-loop.md` §9.3.
 
 **A ratchet, not a hard cap.** 78 of 179 tracked modules were already over the cap when
 this landed, and failing all of them would have meant turning the gate off. Instead each

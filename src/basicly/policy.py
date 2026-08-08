@@ -54,7 +54,7 @@ from .config import (
 MARKER = "[harness-policy]"
 
 
-# --- Gate types (gates-and-rework-design.md §1) ------------------------------
+# --- Gate types (factory-loop.md §5.1) ------------------------------
 #
 # The four behaviours a gate can have when it fails. Naming them is what makes
 # "what happens when this fails" a property of the gate rather than a decision
@@ -142,7 +142,7 @@ def preflight_gate(gate: str) -> contextlib.AbstractContextManager[None]:
     if declared != PREFLIGHT:
         raise ValueError(
             f"gate {gate!r} is typed {declared}, not {PREFLIGHT}; only a pre-flight "
-            "gate is read-only (gates-and-rework-design.md §1)"
+            "gate is read-only (factory-loop.md §5.1)"
         )
     return br.read_only(f"pre-flight gate {gate}")
 

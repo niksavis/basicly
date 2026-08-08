@@ -1848,7 +1848,7 @@ def _validate_lane(ctx: _Ctx, cwd: Path) -> AdvanceResult | None:
 
     D4: validate is acceptance-criteria satisfaction. It is a **composite of two
     gates with different types**, recorded separately by
-    :func:`rubrics.report_gate` (gates-and-rework-design.md §4.1):
+    :func:`rubrics.report_gate`:
 
     - ``rubric`` — the **pre-flight** half. Deterministic checks only, promoted
       from advisory to **required** at lane level. The promotion belongs to the

@@ -2,7 +2,7 @@
 
 Where ``catalog_lint`` guards the source contract (Tier 1: is the entry
 well-formed?) this module answers Tier 2: *does the entry fire when it should,
-and only then?* (``docs/design/catalog-efficacy-design.md`` §3). It is pure
+and only then?* It is pure
 computation over strings — the caller reads the catalog off disk and hands the
 descriptions and the eval cases in, so nothing here touches the filesystem and
 the whole tier is testable from a dict.

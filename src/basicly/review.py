@@ -13,7 +13,7 @@ This module is pure: it turns rendered material into a review prompt. Loading,
 rendering, and dispatching the prompt to a runner is the CLI's job, so the prompt
 assembly stays unit-testable without an agent on PATH.
 
-It also owns the **no-pre-judging lint** (gates-and-rework-design.md §5.3), which
+It also owns the **no-pre-judging lint**, which
 every reviewer bundle this repo assembles must pass before it is emitted.
 """
 
@@ -39,7 +39,7 @@ REVIEW_TASK = (
 )
 
 
-# --- The no-pre-judging lint (gates-and-rework-design.md §5.3) ---------------
+# --- The no-pre-judging lint ---------------
 
 # superpowers states the rule as a string test the prompt's *author* applies to
 # themselves: if what you are writing says "do not flag", "don't treat X as a
@@ -75,7 +75,7 @@ _PRE_JUDGING_PATTERNS: tuple[re.Pattern[str], ...] = (
 
 
 class PreJudgingError(ValueError):
-    """A reviewer bundle carrying a finding-suppressing directive (§5.3).
+    """A reviewer bundle carrying a finding-suppressing directive.
 
     Raised instead of returning the bundle, because the engine's job here is to
     **refuse to emit** it: a bundle that tells the reviewer what not to find is

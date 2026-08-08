@@ -1,6 +1,6 @@
 """Fail when a source module has no test file whose name derives from it.
 
-`docs/design/factory-loop-requirements.md` §9.4 states the convention — `test_<module>.py`,
+`docs/requirements/factory-loop.md` §9.4 states the convention — `test_<module>.py`,
 or `test_<module>_<aspect>.py` when one module's tests justify a split — and records that it
 was *emergent* when it was measured: 48 modules, 84 test files, every module covered. Nothing
 made it binding, so the first splits broke it. Measured 2026-08-08 after `dad39f4`: **71 source

@@ -1,6 +1,6 @@
 r"""The owned ranking: a pure score over the graph, with no age term (basicly-vkh0.20).
 
-`design/work-tracker.md` §9.2 settled what replaces `br scheduler`, and the sharp half of
+`work-tracker.md` §9.2 settled what replaces `br scheduler`, and the sharp half of
 it is a *subtraction*: **the ranking must drop `created_at`**. br's documented fallback
 policy is ``priority ASC, created_at ASC, id ASC``, and an age term makes dispatch order
 clock-dependent for a graph nobody changed — which D9 forbids for anything outliving the

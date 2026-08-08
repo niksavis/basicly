@@ -1,6 +1,6 @@
 """The dual write and the flip at the br seam (basicly-vkh0.19).
 
-Steps 3 and 4 of the cutover in ``docs/design/work-tracker.md`` §5, and the three
+Steps 3 and 4 of the cutover in ``docs/requirements/work-tracker.md`` §5, and the three
 things this bead has to show:
 
 - **Every write reaches both stores, and a divergence fails the command.** Asserted by
