@@ -50,9 +50,8 @@ came back from another window: running, spent, blocked on whom, next step. Never
 above". If the reader has to ask "where are we?", the cadence was wrong.
 
 **End with an ask answerable in one word.** Number the decisions, one recommendation and one line
-of reasoning each, and make the recommended set the default — say so: `go` takes all, `2,4` or
-`not 3` names exceptions. A reader composing prose to approve what you recommended is doing your
-typing.
+of reasoning each, then say `go` takes all and a number list takes only those. A reader composing
+prose to approve what you recommended is doing your typing.
 
 **Use the picker for real choices.** Genuinely exclusive paths — a budget, an approach, a name — go
 through the interactive option picker so the reader selects rather than types; keep the prose block
