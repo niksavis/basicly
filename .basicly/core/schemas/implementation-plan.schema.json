@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basicly.dev/schemas/implementation-plan.schema.json",
   "title": "basicly implementation-plan handoff artifact",
-  "description": "What DECOMPOSE hands BUILD (factory loop requirements 8). One artifact per decompose event, recorded on the feature that was decomposed. It carries the five fields the plan gate already refuses a child for, resolved onto the ids the decomposition created, plus the graph those ids were grouped into - so BUILD reads the plan it is held to instead of re-deriving it from each child's body.",
+  "description": "What DECOMPOSE hands BUILD (factory loop requirements 8). One artifact per decompose event, recorded on the feature that was decomposed. It carries the six fields the plan gate already refuses a child for, resolved onto the ids the decomposition created, plus the graph those ids were grouped into - so BUILD reads the plan it is held to instead of re-deriving it from each child's body.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -35,7 +35,8 @@
           "scope",
           "depends_on",
           "budget_tokens",
-          "integrity"
+          "integrity",
+          "demonstration"
         ],
         "properties": {
           "issue_id": {
@@ -86,6 +87,11 @@
               "L3"
             ],
             "description": "The level selecting this unit's gate set, model tier and rework allowance."
+          },
+          "demonstration": {
+            "type": "string",
+            "minLength": 1,
+            "description": "How this task is exercised end to end through the consumer surface (D18) - the command, request or test that demonstrates it. Required here, unlike in the build-entry predicate over a recorded bead: this artifact's only producer is a decomposition plan_gate.require_plan already passed, so there is no population whose silence could be mistaken for a defect. That it names something runnable is the gate's rule, not restated here, on the same grounds scope does not re-encode what makes a string a glob."
           }
         }
       }

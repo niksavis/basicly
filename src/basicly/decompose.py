@@ -177,10 +177,7 @@ def _parse_budget(value: object, where: str) -> int | None:
 
 
 def _parse_declared_text(entry: dict, where: str, field: str) -> str | None:
-    """A child's *field* as declared text: its integrity level, its demonstration.
-
-    Whether the text *says* anything usable is the plan gate's, not this parser's.
-    """
+    """A child's *field* as declared text; whether it says anything usable is the gate's."""
     value = entry.get(field)
     if value is None:
         return None

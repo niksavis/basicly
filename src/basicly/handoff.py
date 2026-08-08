@@ -5,7 +5,7 @@ Two of the six §8 names an artifact for, and deliberately only two: `implementa
 recommendation to prove one schema first, and §2.1's accepted mitigation is to sequence
 this pair first and let the other four be built to a shape that has survived contact.
 `implementation-plan` is the cheapest of the six to start from because the plan gate
-already refuses a child that declares none of its five fields, so the schema formalises a
+already refuses a child that declares none of its plan fields, so the schema formalises a
 live contract rather than inventing one.
 
 One responsibility, and it is the ruling: compose a state's own facts into a payload, and
@@ -208,9 +208,16 @@ class PlannedTask(Protocol):
     writable slot no frozen dataclass can satisfy.
 
     The spec is :class:`plan_gate.PlannedUnit` itself rather than a second protocol over
-    the same fields. The artifact and the gate describe one field set, and ``PLAN_FIELDS``
-    exists precisely so the schema, the gate's message and the entry predicate cannot
-    drift into describing different ones.
+    the same fields, so there is one declaration of what a planned child carries and this
+    artifact cannot come to describe a field the gate does not define. The converse does
+    **not** hold and is worth saying: a member added to the protocol and never read here
+    is no type error, so nothing but a test catches a field the gate requires and the
+    handoff silently drops — which is what ``test_handoff`` asserts field by field.
+
+    One field set read two ways, then, not two field sets: the schema requires
+    ``demonstration`` alongside ``PLAN_FIELDS`` because a proposed plan owes it and this
+    artifact has no producer but a gated plan, while ``plan_entry``'s predicate over an
+    already-recorded bead cannot (see :data:`plan_gate.DEMONSTRATION_FIELD`).
     """
 
     @property
@@ -220,7 +227,7 @@ class PlannedTask(Protocol):
 
     @property
     def spec(self) -> plan_gate.PlannedUnit:
-        """The child spec that was planned: its title and the five plan fields."""
+        """The child spec that was planned: its title and the plan fields."""
         ...
 
     @property
@@ -252,9 +259,12 @@ class RecordedDecomposition(Protocol):
 def plan_payload(result: RecordedDecomposition) -> dict:
     """The ``implementation-plan`` payload for a finished decomposition (pure).
 
-    Reads the five plan fields off each child's own spec rather than re-deriving them:
-    the artifact has to say what the children were *created* under, or it is a second
-    opinion about the plan instead of a record of it.
+    Reads the plan fields off each child's own spec rather than re-deriving them: the
+    artifact has to say what the children were *created* under, or it is a second opinion
+    about the plan instead of a record of it. That includes ``demonstration`` (D18), which
+    the gate requires of a proposed plan but ``PLAN_FIELDS`` leaves out — dropping it here
+    would leave the one field BUILD is meant to read from the artifact recoverable only
+    from each child's body, which is the re-derivation this artifact exists to replace.
     """
     return {
         "schema_version": SCHEMA_VERSION,
@@ -268,6 +278,7 @@ def plan_payload(result: RecordedDecomposition) -> dict:
                 "depends_on": list(child.depends_on),
                 "budget_tokens": child.spec.budget_tokens,
                 "integrity": child.spec.integrity,
+                "demonstration": child.spec.demonstration,
             }
             for child in result.children
         ],
