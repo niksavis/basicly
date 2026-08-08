@@ -211,6 +211,49 @@ waiver_count = 1
 "tests/test_tuning.py" = 4133
 "tests/test_verify.py" = 15681
 "tests/test_worktree.py" = 6030
+
+# Suppression-debt ratchet (basicly-u2hl.12). The gate is `.scripts/check_noqa_debt.py`,
+# wired as the `noqa-debt` [[verify.checks]] entry. Read that script's docstring for why a
+# suppression needs a count kept outside the code, and why the directives are read from
+# `tokenize` comments rather than by substring — `src/basicly/br.py:70` is a comment that
+# looks like a suppression, suppresses nothing, and ruff only warns about.
+#
+# `unreasoned_count` is how many suppressions carry no reason after their code, against the
+# house form `# noqa: CODE - reason`. It is here for the same reason [tool.module_size]'s
+# `waiver_count` is, and fails in both directions: an unargued suppression cannot appear,
+# and cannot be swapped for another, in a diff that does not touch this file.
+[tool.noqa_debt]
+unreasoned_count = 7
+
+# Every code suppressed in this tree at the count it stood at when the gate landed
+# (2026-08-08, 76 across `src`, `tests`, `.scripts` and `.basicly/core`). Unlike
+# [tool.module_size.frozen] this list is *not* closed — adopting a new rule family
+# legitimately introduces a code — but a code absent from it is refused until someone adds
+# the line, which is what makes each new suppression a reviewer-visible decision instead of
+# one comment inside a 5,000-line module.
+#
+# A count that falls has to be banked here in the same diff. Leaving the higher number would
+# license regrowth back to it for free, which is the fail-open shape the module-size ratchet
+# names; an entry that reaches zero is deleted rather than set to 0.
+#
+# `S603`/`S607` (21 of the 76) are the subprocess pair, and `PLR0913` (32) is argument count
+# on functions that mirror the CLI surface. Both are debts with a decomposition track behind
+# them, not lines to shave off the next commit.
+[tool.noqa_debt.frozen]
+A002 = 2
+ARG001 = 2
+BLE001 = 3
+E402 = 4
+E731 = 1
+PLC0415 = 5
+PLR0911 = 2
+PLR0913 = 32
+S105 = 2
+S603 = 15
+S607 = 6
+S701 = 1
+UP017 = 1
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/basicly"]
 exclude = ["**/__pycache__", "**/*.pyc"]

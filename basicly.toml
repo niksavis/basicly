@@ -386,6 +386,22 @@ name = "module-size"
 command = ["uv", "run", "python", ".scripts/check_module_size.py"]
 modes = ["fast", "full"]
 
+# Suppression debt, as a per-code ratchet (basicly-u2hl.12). ruff cannot police its own
+# suppressions — a `# noqa` is the one edit that makes the linter agree with you — so the
+# count lives outside the code, in `[tool.noqa_debt]` in pyproject.toml. §9.1 recorded 46;
+# it was 76 by the time the gate was built, every one added through a green gate.
+#
+# A repo-local script rather than a CLI subcommand, on the same grounds as `module-size`:
+# the debt is basicly's own and a consumer's frozen table would be its own decision.
+# `uv run python`, not a bare `python`, per the note above this file's `docs-claims` entry.
+#
+# No `fix_command`. The mechanical repair — raise the number — is the one thing that must
+# not be automatic, because a reviewer reading that line is the entire mechanism.
+[[verify.checks]]
+name = "noqa-debt"
+command = ["uv", "run", "python", ".scripts/check_noqa_debt.py"]
+modes = ["fast", "full"]
+
 # Loop gate/checkpoint policy: which gates block advancement and the rework cap.
 [policy]
 # Gate names (from [verify] / br gate report) that MUST pass to advance. Any
