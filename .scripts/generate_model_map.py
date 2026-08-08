@@ -139,8 +139,8 @@ class GeneralModelRule:
         """Name every requirement this record fails (empty when it is usable)."""
         modalities = record.get("modalities")
         modalities = modalities if isinstance(modalities, Mapping) else {}
-        inputs = modalities.get("input") if isinstance(modalities.get("input"), list) else []
-        outputs = modalities.get("output") if isinstance(modalities.get("output"), list) else []
+        inputs = raw if isinstance(raw := modalities.get("input"), list) else []
+        outputs = raw if isinstance(raw := modalities.get("output"), list) else []
         failed: list[str] = []
         if self.require_text_input and "text" not in inputs:
             failed.append(f"takes no text input (modalities.input={inputs})")
@@ -654,7 +654,7 @@ def _report_drift(map_path: Path, committed: Mapping[str, Any], resolved: dict) 
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument(
         "--check",
         action="store_true",

@@ -46,9 +46,29 @@ addopts = ["--import-mode=importlib"]
 # behind. Numbered-run retention stays at pytest's default of 3.
 tmp_path_retention_policy = "failed"
 
+# Type checking (basicly-u2hl.15). Both `include` and `exclude` are spelled out
+# because pyright's defaults silently drop the two trees with the widest blast
+# radius: the default `exclude` is `["**/node_modules", "**/__pycache__", "**/.*"]`,
+# and that last pattern hides `.scripts` and `.basicly/core` — the hooks that ship
+# to consumers via `basicly install` and run in the dispatch path. `exclude` is
+# applied on top of `include` and wins, and it filters files named explicitly on
+# the command line too (`pyright .scripts/check_module_size.py` analysed 0 files),
+# so adding `include` alone would not have been enough — the default `exclude` has
+# to be replaced, not extended.
+#
+# Replacing it means re-stating the two patterns worth keeping. `**/.*` is not
+# among them, and nothing else needs to be: `include` is an allow-list, so `.venv`
+# and any nested worktree under `.claude/` stay out by not being named rather than
+# by being excluded.
+#
+# `tests/test_type_checking.py` sweeps the tracked tree against both lists, so the
+# next directory of first-party Python fails there instead of being silently dropped,
+# and runs pyright over a bad module under `.scripts` to prove the coverage is real.
 [tool.pyright]
 extraPaths = ["src", "."]
 typeCheckingMode = "standard"
+include = ["src", "tests", ".scripts", ".basicly/core"]
+exclude = ["**/node_modules", "**/__pycache__"]
 
 [project.scripts]
 basicly = "basicly.cli:main"
