@@ -48,6 +48,7 @@ from . import (
     ui,
     usage_report,
     verify,
+    working_set,
     worktree,
 )
 from . import session as session_config
@@ -56,13 +57,10 @@ from .config import (
     AUTONOMY_LEVELS,
     CHECKPOINTS,
     CONFIG_FILE,
-    CONSUMER_CI_WORKFLOW,
     DEFAULT_CONFIG_TOML,
     ENGINE_GATE_PROVIDERS,
     LOCAL_CONFIG_FILE,
-    OVERLAY_FRAGMENT_STUBS,
     VERIFY_MODES,
-    VSCODE_TASKS_JSON,
     WORK_TYPES,
     ProjectPaths,
     SizingConfig,
@@ -95,6 +93,11 @@ from .hooks import (
 from .loader import load_fragments_from_roots, load_targets
 from .planner import plan_outputs
 from .renderers.common import sha256_of_text
+from .scaffolds import (
+    CONSUMER_CI_WORKFLOW,
+    OVERLAY_FRAGMENT_STUBS,
+    VSCODE_TASKS_JSON,
+)
 from .schema import (
     CATEGORIES,
     TECHNOLOGIES,
@@ -2932,7 +2935,7 @@ def _print_band_report(
     working_sets: tuple[supervise.WorkingSetAdmission, ...], sizing: SizingConfig
 ) -> None:
     """Print the per-lane band table, headed by the band the verdicts are against."""
-    lines = supervise.band_report(working_sets)
+    lines = working_set.band_report(working_sets)
     if not lines:
         return
     print(f"band:      {sizing.working_set_min}..{sizing.working_set_max} working-set tokens")

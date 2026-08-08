@@ -132,6 +132,12 @@ concurrency = 5
 required_gates = ["verify"]
 # Rework retries allowed before a node escalates to a human.
 max_rework = 2
+# Units that may stand downstream of build - merged and parked in verify, or
+# waiting on a ship checkpoint - before a further dispatch is refused. Bounds
+# unlanded work, which [worktree] concurrency does not: that bounds how many
+# lanes run at once, this bounds how much finished-but-unreviewed output piles
+# up. Lower it when review, not machine capacity, is what runs out.
+max_downstream_wip = 5
 
 # Working-set sizing governor for decompose (factory D8). A child's context
 # cost is estimated deterministically (instruction overhead + scope read-cost
@@ -187,200 +193,6 @@ default = "auto"
 #                                  # basicly.identityAllowEmail when strict mode is on.
 """
 
-# Scaffolded into .vscode/tasks.json by `basicly install` when absent — one
-# single-command task per harness operation (no shell && chaining, so the
-# commands work in PowerShell 5, cmd, and POSIX shells alike). The file is the
-# user's after scaffolding: install never overwrites it, and uninstall --purge
-# deletes it only when still byte-identical to this scaffold.
-VSCODE_TASKS_JSON = """\
-{
-  // Scaffolded by `basicly install`; yours to edit — install never overwrites it.
-  "version": "2.0.0",
-  "tasks": [
-    {
-      "label": "basicly: build",
-      "detail": "Regenerate agent instruction files after editing overlay fragments",
-      "type": "shell",
-      "command": "@UVX@ build",
-      "problemMatcher": []
-    },
-    {
-      "label": "basicly: skills-build",
-      "detail": "Re-project skills into every agent root",
-      "type": "shell",
-      "command": "@UVX@ skills-build --all-default-roots",
-      "problemMatcher": []
-    },
-    {
-      "label": "basicly: hooks-build",
-      "detail": "Re-project and activate the git hooks",
-      "type": "shell",
-      "command": "@UVX@ hooks-build",
-      "problemMatcher": []
-    },
-    {
-      "label": "basicly: update",
-      "detail": "Install or upgrade: converge core, projections, skills, and hooks",
-      "type": "shell",
-      "command": "@UVX@ install",
-      "problemMatcher": []
-    },
-    {
-      "label": "basicly: uninstall",
-      "detail": "Remove everything basicly manages (overlay and config survive)",
-      "type": "shell",
-      "command": "@UVX@ uninstall",
-      "problemMatcher": []
-    }
-  ]
-}
-""".replace("@UVX@", "uvx --from git+https://github.com/niksavis/basicly@main basicly")
-
-# Scaffolded into .github/workflows/basicly-gates.yml by `basicly install` when
-# absent — the consumer CI floor mirroring the local git-hook gates. Assumes no
-# consumer stack beyond git + uv on the runner: the commit-message hooks are
-# stdlib-only (plain python3), drift/verify run through the uvx git+ channel,
-# and `basicly verify` executes only the checks the consumer configured (an
-# empty config passes). Same contract as the other scaffolds: written once,
-# then the user's; uninstall --purge removes it only while byte-identical.
-CONSUMER_CI_WORKFLOW = """\
-# Scaffolded by `basicly install`; yours to edit — install never overwrites it.
-name: basicly-gates
-
-# Tracker-only pushes (.beads/**) skip CI: the harness loop necessarily commits
-# beads state separately from the work, and the local commit-msg hooks are the
-# deterministic floor for those commits.
-"on":
-  push:
-    branches: [main]
-    paths-ignore:
-      - ".beads/**"
-  pull_request:
-    branches: [main]
-    paths-ignore:
-      - ".beads/**"
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-jobs:
-  commit-messages:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Validate commit messages
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            base_sha="${{ github.event.pull_request.base.sha }}"
-            head_sha="${{ github.event.pull_request.head.sha }}"
-            range="${base_sha}..${head_sha}"
-          else
-            before_sha="${{ github.event.before }}"
-            zeros="0000000000000000000000000000000000000000"
-            if [ -z "${before_sha}" ] || [ "${before_sha}" = "${zeros}" ]; then
-              range="${{ github.sha }}"
-            else
-              range="${before_sha}..${{ github.sha }}"
-            fi
-          fi
-          echo "Checking commit messages in range: ${range}"
-          failed=0
-          while IFS= read -r sha; do
-            [ -z "${sha}" ] && continue
-            msg_file="$(mktemp)"
-            git log -1 --format='%B' "${sha}" > "${msg_file}"
-            python3 .basicly/core/hooks/commit-msg.py "${msg_file}" || failed=1
-            python3 .basicly/core/hooks/beads-commit-msg.py "${msg_file}" || failed=1
-            rm -f "${msg_file}"
-          done < <(git log --format='%H' "${range}")
-          exit "${failed}"
-
-  gates:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - name: Catalog lint
-        run: @UVX@ catalog lint
-      - name: Projection drift check
-        run: @UVX@ check
-      - name: Skill projection drift check
-        run: @UVX@ skills-check --all-default-roots
-      - name: Hook wiring drift check
-        run: @UVX@ hooks-check
-      - name: Configured verify checks
-        run: @UVX@ verify --mode full
-""".replace("@UVX@", "uvx --from git+https://github.com/niksavis/basicly@main basicly")
-
-# Scaffolded into the user overlay by `basicly install` when absent — the two
-# highest-signal descriptive blocks an agent instruction file needs (project
-# overview and verbatim-runnable commands). Their content is per-repo, so each
-# ships as a draft the consumer fills in and activates: draft fragments load
-# and lint but never project (the planner keeps only active ones), so the
-# placeholders cannot leak into generated files. Same contract as the other
-# scaffolds: written once, then the file is the user's. Keyed by path relative
-# to the overlay `user/` root.
-OVERLAY_FRAGMENT_STUBS: dict[str, str] = {
-    "project/project-overview.fragment.yaml": """\
-schema_version: 1
-id: project-overview
-description: What this project is - purpose, stack, entry points.
-category: project
-priority: critical
-applies_to: [all]
-tags: [overview, priming]
-# Draft until you fill it in: set `status: active` and run `basicly build`.
-status: draft
-title: Project Overview
-body: |
-  - Purpose: TODO - what this project does and who uses it, in 1-2 lines.
-  - Stack: TODO - the languages, frameworks, and versions that matter (e.g. Python 3.14 + uv).
-  - Entry points: TODO - the main binary/module/service and where it lives.
-  - Architecture docs: TODO - pointer to the authoritative doc; do not embed a directory map here.
-""",
-    "commands/commands.fragment.yaml": """\
-schema_version: 1
-id: commands
-description: Verbatim-runnable commands for everyday development.
-category: commands
-priority: high
-applies_to: [all]
-tags: [commands, build, test]
-# Draft until you fill it in: set `status: active` and run `basicly build`.
-status: draft
-title: Commands
-body: |
-  Commands in code fences are exact - run them verbatim instead of improvising variants.
-
-  Setup:
-
-  ```sh
-  # TODO: dependency install (e.g. uv sync --group dev)
-  ```
-
-  Test:
-
-  ```sh
-  # TODO: full test suite (e.g. uv run pytest -q)
-  ```
-
-  Single test:
-
-  ```sh
-  # TODO: one test file or case (e.g. uv run pytest tests/test_x.py -q)
-  ```
-
-  Lint / format:
-
-  ```sh
-  # TODO: linter and formatter (e.g. uv run ruff check)
-  ```
-""",
-}
 
 # Default concurrency cap when no basicly.toml (or no [worktree]) is present.
 # Five: it matches the scaffold above, and `DEFAULT_MAX_AGENT_PROCESSES` of 8 splits
@@ -394,6 +206,15 @@ VERIFY_MODES = ("fast", "full", "staged")
 # Policy defaults when no basicly.toml (or no [policy]) is present.
 DEFAULT_REQUIRED_GATES = ("verify",)
 DEFAULT_MAX_REWORK = 2
+
+# How many units may stand downstream of BUILD unlanded before a further dispatch
+# is refused (requirements 3.1). Five matches DEFAULT_WORKTREE_CONCURRENCY so a
+# first full-width pass is admitted and a *second* cohort is not until the first
+# is reviewed — but the two are independent quantities, not one knob spelled
+# twice: concurrency bounds how many lanes run at once, this bounds how much
+# finished-but-unlanded output exists. Lower it to make review capacity, rather
+# than slots or tokens, the constraint that binds first.
+DEFAULT_MAX_DOWNSTREAM_WIP = 5
 
 # Gate providers the engine itself records under — re-exported as
 # ``verify.GATE_PROVIDER`` and ``rubrics.GATE_PROVIDER``, which are the only two
@@ -698,6 +519,7 @@ CONFIG_SCHEMA: dict[str, _Table] = {
             "notify_command",
             "decider_max_decisions",
             "max_subtasks_per_lane",
+            "max_downstream_wip",
             "scope_collision",
         }),
         tables={"evidence": _OPEN_TABLE, "sizing": _SIZING_TABLE},
@@ -1390,6 +1212,8 @@ class PolicyConfig:
     decider_max_decisions: int = DEFAULT_DECIDER_MAX_DECISIONS
     # Sanity bound on the sub-task beads one lane may run in sequence (D7).
     max_subtasks_per_lane: int = DEFAULT_MAX_SUBTASKS_PER_LANE
+    # Units allowed to stand downstream of BUILD unlanded (requirements 3.1).
+    max_downstream_wip: int = DEFAULT_MAX_DOWNSTREAM_WIP
     # Per-phase evidence artifact declarations (basicly-m4zv.13): loop phase ->
     # repo-relative path that must exist and be non-empty before the loop may
     # advance past that phase. Empty by default, so the mechanism is inert until a
@@ -1466,6 +1290,9 @@ def load_policy_config(repo_root: Path) -> PolicyConfig:
         ),
         max_subtasks_per_lane=_positive_int(
             section.get("max_subtasks_per_lane"), DEFAULT_MAX_SUBTASKS_PER_LANE
+        ),
+        max_downstream_wip=_positive_int(
+            section.get("max_downstream_wip"), DEFAULT_MAX_DOWNSTREAM_WIP
         ),
     )
 
