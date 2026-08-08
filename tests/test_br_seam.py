@@ -40,9 +40,8 @@ from typing import Any
 
 import pytest
 
-from basicly import br, config, policy, run_record, tracker_usage
+from basicly import br, policy, run_record
 from basicly.config import PolicyConfig
-from basicly.owned_store import _mode_reader
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 KIT_SOURCE = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker"
@@ -257,76 +256,11 @@ def _kinds(repo: Path, record: str) -> list[str]:
     return [event.kind for event in _ledger_events(repo) if event.record == record]
 
 
-# --- the mode declaration -----------------------------------------------------
-
-
-def test_importing_config_installs_the_mode_reader() -> None:
-    """The seam is put in the repo's declared mode by an import, not by a caller.
-
-    `basicly.br` cannot import `basicly.config` — `config -> runner -> run_record -> br`
-    already runs the other way — so the reader is installed from above. That inversion
-    is invisible at both ends, which is exactly why it is asserted here: without it the
-    seam silently answers ``external`` for a repo that declared ``owned``, and the first
-    symptom would be reads coming from the wrong store.
-    """
-    assert _mode_reader == [config.load_tracker_mode]
-
-
-def test_a_repo_that_declares_nothing_is_external(tmp_path: Path) -> None:
-    """The pre-cutover behaviour is what a consumer who never heard of this gets."""
-    assert config.load_tracker_mode(tmp_path) == br.DEFAULT_TRACKER_MODE
-    assert br.tracker_mode(tmp_path) == br.MODE_EXTERNAL
-
-
-@pytest.mark.parametrize("mode", br.TRACKER_MODES)
-def test_each_declared_rung_reaches_the_seam(tmp_path: Path, mode: str) -> None:
-    """Every value the ladder has is readable end to end, not just the default."""
-    (tmp_path / "basicly.toml").write_text(f'[tracker]\nmode = "{mode}"\n', encoding="utf-8")
-    assert br.tracker_mode(tmp_path) == mode
-
-
-def test_a_mode_outside_the_ladder_is_refused(tmp_path: Path) -> None:
-    """A value the engine cannot honour is an error, never a silent default.
-
-    The two behaviours differ in *which store answers a read*, so defaulting a
-    misspelled ``owned`` back to ``external`` would leave the file stating one thing
-    and the engine doing another — with no diff to review.
-    """
-    (tmp_path / "basicly.toml").write_text('[tracker]\nmode = "flipped"\n', encoding="utf-8")
-    with pytest.raises(ValueError, match="not one of external, dual, owned"):
-        config.load_tracker_mode(tmp_path)
-
-
-def test_the_ledger_is_one_per_repo_not_one_per_worktree(tmp_path: Path) -> None:
-    """A lane's writes belong to the base checkout, or teardown deletes them.
-
-    The same rule `tracker_usage.ledger_root` was given after the usage spool was
-    written into worktrees and discarded at teardown (basicly-vkh0.8) — a ledger that
-    did not follow the redirect would lose every write a lane made.
-    """
-    base = tmp_path / "base"
-    (base / ".beads").mkdir(parents=True)
-    worktree = tmp_path / "wt"
-    (worktree / ".beads").mkdir(parents=True)
-    (worktree / ".beads" / "redirect").write_text(str(base / ".beads"), encoding="utf-8")
-
-    assert br.ledger_dir(worktree) == base / br.LEDGER_DIR
-    assert br.ledger_dir(base) == base / br.LEDGER_DIR
-
-
-def test_the_ledger_sits_beside_the_other_committed_ledger_artifacts() -> None:
-    """One directory, taken off one constant, so a gate cannot be pointed elsewhere.
-
-    `.scripts/kit_deployment.py` gates this directory's ignore rules and
-    `.gitattributes` pins the log's bytes there; a second literal in this module could
-    drift from either without anything noticing.
-    """
-    ledger = br.LEDGER_DIR
-    assert ledger == tracker_usage.LEDGER_FILE.parent
-    assert ledger == Path(".basicly") / "ledger"
-
-
 # --- the dual write -----------------------------------------------------------
+#
+# Which rung a repo declares, where its ledger lives and how the kit is reached are
+# `tests/test_owned_store.py`'s — this file starts from a mode already resolved and
+# asserts what the seam then *does* with it.
 
 
 def test_external_mode_writes_nothing_to_the_owned_ledger(tmp_path: Path, fake_br: _FakeBr) -> None:

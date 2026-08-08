@@ -286,21 +286,6 @@ def test_the_repair_prompt_carries_the_gates_findings_not_the_build_text(
     assert "do not re-plan the work" in prompt
 
 
-def test_verify_evidence_pairs_the_gate_findings_with_the_command_and_output(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """The evidence is read off the gate's own config and a captured re-run."""
-    checks = f'[[verify.checks]]\nname = "pytest"\ncommand = {FAILING_CHECK}\nmodes = ["fast"]\n'
-    cwd = _worktree(tmp_path, monkeypatch, checks=checks)
-    report = verify.VerifyReport("fast", (verify.CheckResult("pytest", "fail", 1),))
-
-    evidence = repair_brief.verify_evidence(report, cwd, "fast")
-
-    assert [e.check for e in evidence] == ["pytest"]
-    assert evidence[0].command.startswith("python -c")
-    assert "E   assert 1 == 2" in evidence[0].output
-
-
 def test_a_rubric_failure_briefs_the_deterministic_findings_only() -> None:
     """A judged ``no`` is a decision a human owns, so it never briefs a repair."""
     verdicts = [
@@ -326,48 +311,6 @@ def test_a_landing_verify_failure_briefs_the_command_that_reproduces_it() -> Non
     # A collision is not a check a repair run can re-run.
     conflict = merge.MergeResult("i", "merge-conflicts", "conflicts in x.py", ("x.py",))
     assert loop._landing_evidence(conflict, "full") == ()
-
-
-def test_an_evidence_entry_with_nothing_to_say_is_left_out_of_the_prompt() -> None:
-    """A check the gate gave no command and no output for adds a heading and no fact.
-
-    Reachable against this repo's own config: a failing check that runs in another
-    mode resolves to neither, and the check's name is in the findings already.
-    """
-    brief = repair_brief.RepairBrief(
-        issue_id="i",
-        gate=verify.DEFAULT_GATE,
-        reason="verify fast failed: typos",
-        findings=("typos",),
-        evidence=(
-            repair_brief.GateEvidence("typos"),
-            repair_brief.GateEvidence("ruff", command="ruff check"),
-        ),
-    )
-
-    prompt = repair_brief.repair_prompt(brief)
-
-    assert "Check typos" not in prompt
-    assert "- typos" in prompt  # still reported, as a finding
-    assert "Check ruff — command: ruff check" in prompt
-
-
-def test_a_brief_that_cannot_be_parsed_is_dropped_rather_than_raised(tmp_path: Path) -> None:
-    """A garbled brief costs one un-briefed dispatch, never a crash in the build phase."""
-    cwd = tmp_path / "wt"
-    (cwd / repair_brief.REPAIR_BRIEF_FILE).parent.mkdir(parents=True)
-    (cwd / repair_brief.REPAIR_BRIEF_FILE).write_text("{not json", encoding="utf-8")
-
-    assert repair_brief.take_repair_brief(cwd) is None
-    assert not (cwd / repair_brief.REPAIR_BRIEF_FILE).exists()  # consumed, so it cannot re-fire
-
-
-def test_a_long_gate_output_keeps_its_tail_under_the_prompt_bound() -> None:
-    """A failing suite can print megabytes; a prompt that does not fit is no repair."""
-    clipped = repair_brief.clip_output("x" * 50_000 + "the assertion")
-
-    assert clipped.endswith("the assertion")
-    assert len(clipped) < repair_brief.MAX_REPAIR_OUTPUT_CHARS + 100
 
 
 # --- ceiling ----------------------------------------------------------------

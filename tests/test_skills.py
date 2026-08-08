@@ -7,14 +7,12 @@ from pathlib import Path
 import pytest
 import yaml
 
-from basicly.schema import ValidationError
 from basicly.skills import (
     GENERATED_MARKER,
     SKILLS_SOURCE_DIR,
     UNMANAGED_REASON_PREFIX,
     SkillDefinition,
     check_synced_skills,
-    discover_skills,
     render_skill_md,
     resolve_skill_roots,
     root_requires_description,
@@ -44,37 +42,6 @@ def _write_skill(
         + "\n",
         encoding="utf-8",
     )
-
-
-def test_discover_skills_loads_source(tmp_path: Path) -> None:
-    """discover_skills reads skill.yaml sources and parses name/description/instructions."""
-    _write_skill(tmp_path, "tool-ripgrep", "tool-ripgrep", "Use ripgrep for fast code search.")
-
-    skills = discover_skills(tmp_path)
-
-    assert [skill.slug for skill in skills] == ["tool-ripgrep"]
-    assert skills[0].name == "tool-ripgrep"
-    assert skills[0].description == "Use ripgrep for fast code search."
-    assert skills[0].instructions.startswith("# tool-ripgrep")
-
-
-def test_discover_skills_requires_fields(tmp_path: Path) -> None:
-    """discover_skills fails when a required field is missing."""
-    path = tmp_path / SKILLS_SOURCE_DIR / "tool-ripgrep" / "skill.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("name: x\ndescription: y\n", encoding="utf-8")  # no instructions
-
-    with pytest.raises(ValidationError):
-        discover_skills(tmp_path)
-
-
-def test_discover_skills_ignores_non_yaml_source(tmp_path: Path) -> None:
-    """A stray SKILL.md left in a source dir is not discovered (no double-load)."""
-    md = tmp_path / SKILLS_SOURCE_DIR / "legacy" / "SKILL.md"
-    md.parent.mkdir(parents=True, exist_ok=True)
-    md.write_text("---\nname: legacy\ndescription: d\n---\n\nbody\n", encoding="utf-8")
-
-    assert discover_skills(tmp_path) == []
 
 
 def test_render_skill_md_frontmatter_marker_and_body() -> None:
@@ -381,33 +348,6 @@ def test_a_model_invoked_skill_keeps_the_marker_as_its_first_body_line() -> None
 
     assert rendered.split("---\n")[2].splitlines()[0] == GENERATED_MARKER
     assert f"# {GENERATED_MARKER}" not in rendered
-
-
-def test_loading_rejects_an_unknown_invocation_value(tmp_path: Path) -> None:
-    """A third position on a two-position axis would be unenforceable downstream."""
-    path = tmp_path / SKILLS_SOURCE_DIR / "odd" / "skill.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        "schema_version: 1\nname: odd\ninvocation: occasionally\ninstructions: |\n  # x\n",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(ValidationError, match="must be one of"):
-        discover_skills(tmp_path)
-
-
-def test_loading_a_user_invoked_skill_needs_no_description(tmp_path: Path) -> None:
-    """The loader cannot require a description it is the point of this entry not to have."""
-    path = tmp_path / SKILLS_SOURCE_DIR / "handrun" / "skill.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        "schema_version: 1\nname: handrun\ninvocation: user\ninstructions: |\n  # x\n",
-        encoding="utf-8",
-    )
-
-    (skill,) = discover_skills(tmp_path)
-    assert skill.invocation == "user"
-    assert skill.description == ""
 
 
 # --- Per-root loader tolerance (basicly-m4zv.10) -------------------------------

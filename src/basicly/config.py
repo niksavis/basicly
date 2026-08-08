@@ -312,8 +312,38 @@ ENGINE_GATE_PROVIDERS = frozenset({VERIFY_GATE_PROVIDER, RUBRIC_GATE_PROVIDER})
 # lane this size cannot run, and this one ran. What licenses 132_000 is exactly that
 # completion, which is the rule at the top of this block applied honestly; what the
 # rule cannot do is stop a lane from moving it.
+#
+# 200_000, derived 2026-08-08 from basicly-u2hl.14 at 197_646. **Third instance of the
+# same ratchet, and the first where the widening was the operator's rather than the
+# lane's.** u2hl.14 was admitted on a 13-entry scope (78_709), and that scope was wrong:
+# it named the ten source modules the naming gate covers and omitted the ten test files
+# the gate obliges the lane to *create*, so the merge gate refused the landing twice for
+# editing ground it had not declared. Correcting the declaration to the 27 paths the lane
+# genuinely touches took the estimate to 197_646, and the completed record then failed
+# the separating gate exactly as tcmy.5's did.
+#
+# So the honest reading is narrower than "a 197_646 lane runs fine". What moved is the
+# *declaration*, not the work: the same diff was always this wide and the band was
+# measuring an under-declared scope. That is an argument for the ceiling being a poor
+# instrument here rather than for the lane being large — the band prices what a scope
+# *reads*, and basicly-esxp carries the case that read-cost has not once predicted change
+# cost on this repo. Until that lands this number keeps moving whenever a scope is
+# corrected upward, which is a property worth stating rather than a fact worth trusting.
+#
+# 248_000, derived the same day, from the same bead, at 245_466 — and the second raise
+# inside one landing is the evidence, not an embarrassment to be smoothed over. Nothing
+# about the change grew between 197_646 and 245_466: the landing's scope-collision gate
+# named eight further paths the diff touched, declaring them satisfied that gate, and
+# declaring them is what moved the estimate. **One field is serving two masters.** A
+# `## Scope` entry is read both as "the ground this lane owns" (collision detection, which
+# wants the declaration complete) and as "the material this lane reads" (the band, which
+# prices it) — so declaring honestly for the first necessarily inflates the second, and a
+# lane can chase its own tail between the two gates indefinitely. That is a design defect
+# in the field, not a fact about lane size, and it is filed as basicly-efw2. Until it is
+# split, read every derivation in this block as measuring declaration completeness rather
+# than working set, and do not cite the trend as evidence that lanes are getting bigger.
 DEFAULT_WORKING_SET_MIN = 8_000
-DEFAULT_WORKING_SET_MAX = 132_000
+DEFAULT_WORKING_SET_MAX = 248_000
 # Per-task-class multiplier on scope read-cost. Seeds, and they stay seeds: the
 # telemetry calibration that once overwrote them measured whole-lane spend, which is
 # a different quantity from a working set, and basicly-z2wi removed it. An unlisted

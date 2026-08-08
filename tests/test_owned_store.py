@@ -1,0 +1,179 @@
+"""Where the owned tracker store is: which rung, which directory, which kit module.
+
+Moved out of `test_br_seam.py` when the §9.4 naming gate was made binding
+(basicly-u2hl.14), along the boundary the module itself draws — *resolution* against
+*the seam*. Nothing here spawns br, mirrors a write or reads an event: what the dual
+write and the flip then *do* with these answers stays with `br.run_br`, which is where
+a stand-in br and a real ledger are needed to say anything.
+
+Asserted against :mod:`basicly.owned_store` and, where a caller spells it that way,
+against the `br` re-export as well — `br.tracker_mode` and `br.LEDGER_DIR` are how the
+engine reaches these, so a split that left a re-export behind would pass one and fail
+the other.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from basicly import br, config, owned_store, tracker_usage
+from basicly.owned_store import TrackerDivergenceError, _mode_reader
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+# --- the mode declaration -----------------------------------------------------
+
+
+def test_importing_config_installs_the_mode_reader() -> None:
+    """The seam is put in the repo's declared mode by an import, not by a caller.
+
+    `basicly.br` cannot import `basicly.config` — `config -> runner -> run_record -> br`
+    already runs the other way — so the reader is installed from above. That inversion
+    is invisible at both ends, which is exactly why it is asserted here: without it the
+    seam silently answers ``external`` for a repo that declared ``owned``, and the first
+    symptom would be reads coming from the wrong store.
+    """
+    assert _mode_reader == [config.load_tracker_mode]
+
+
+def test_a_repo_that_declares_nothing_is_external(tmp_path: Path) -> None:
+    """The pre-cutover behaviour is what a consumer who never heard of this gets."""
+    assert config.load_tracker_mode(tmp_path) == owned_store.DEFAULT_TRACKER_MODE
+    assert owned_store.tracker_mode(tmp_path) == owned_store.MODE_EXTERNAL
+
+
+@pytest.mark.parametrize("mode", owned_store.TRACKER_MODES)
+def test_each_declared_rung_reaches_the_seam(tmp_path: Path, mode: str) -> None:
+    """Every value the ladder has is readable end to end, not just the default."""
+    (tmp_path / "basicly.toml").write_text(f'[tracker]\nmode = "{mode}"\n', encoding="utf-8")
+    assert owned_store.tracker_mode(tmp_path) == mode
+    assert br.tracker_mode(tmp_path) == mode
+
+
+def test_a_mode_outside_the_ladder_is_refused(tmp_path: Path) -> None:
+    """A value the engine cannot honour is an error, never a silent default.
+
+    The two behaviours differ in *which store answers a read*, so defaulting a
+    misspelled ``owned`` back to ``external`` would leave the file stating one thing
+    and the engine doing another — with no diff to review.
+    """
+    (tmp_path / "basicly.toml").write_text('[tracker]\nmode = "flipped"\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="not one of external, dual, owned"):
+        config.load_tracker_mode(tmp_path)
+
+
+def test_the_ladder_is_ordered_and_starts_where_a_consumer_starts() -> None:
+    """§5 walks the rungs in this order, and `external` is rung zero.
+
+    Reordering them would silently change what "the rung above" means to a reader of
+    `basicly.toml`, which is the only place the choice is recorded.
+    """
+    assert owned_store.TRACKER_MODES == (
+        owned_store.MODE_EXTERNAL,
+        owned_store.MODE_DUAL,
+        owned_store.MODE_OWNED,
+    )
+    assert owned_store.DEFAULT_TRACKER_MODE == owned_store.MODE_EXTERNAL
+
+
+def test_with_no_reader_installed_the_mode_is_the_pre_cutover_one(tmp_path: Path) -> None:
+    """Uninstalling is what a test wanting the pre-cutover behaviour back does.
+
+    Restored in a `finally`, because the holder is process-global: leaving it empty
+    would make every later test in this process read `external` for a repo that
+    declared otherwise, and they would fail somewhere else entirely.
+    """
+    (tmp_path / "basicly.toml").write_text('[tracker]\nmode = "owned"\n', encoding="utf-8")
+    installed = list(_mode_reader)
+    try:
+        owned_store.set_mode_reader(None)
+        assert owned_store.tracker_mode(tmp_path) == owned_store.DEFAULT_TRACKER_MODE
+    finally:
+        owned_store.set_mode_reader(installed[0] if installed else None)
+    assert _mode_reader == installed
+
+
+# --- where the ledger lives ---------------------------------------------------
+
+
+def test_the_ledger_is_one_per_repo_not_one_per_worktree(tmp_path: Path) -> None:
+    """A lane's writes belong to the base checkout, or teardown deletes them.
+
+    The same rule `tracker_usage.ledger_root` was given after the usage spool was
+    written into worktrees and discarded at teardown (basicly-vkh0.8) — a ledger that
+    did not follow the redirect would lose every write a lane made.
+    """
+    base = tmp_path / "base"
+    (base / ".beads").mkdir(parents=True)
+    worktree = tmp_path / "wt"
+    (worktree / ".beads").mkdir(parents=True)
+    (worktree / ".beads" / "redirect").write_text(str(base / ".beads"), encoding="utf-8")
+
+    assert owned_store.ledger_dir(worktree) == base / owned_store.LEDGER_DIR
+    assert owned_store.ledger_dir(base) == base / owned_store.LEDGER_DIR
+
+
+def test_the_ledger_sits_beside_the_other_committed_ledger_artifacts() -> None:
+    """One directory, taken off one constant, so a gate cannot be pointed elsewhere.
+
+    `.scripts/kit_deployment.py` gates this directory's ignore rules and
+    `.gitattributes` pins the log's bytes there; a second literal in this module could
+    drift from either without anything noticing.
+    """
+    ledger = owned_store.LEDGER_DIR
+    assert ledger == tracker_usage.LEDGER_FILE.parent
+    assert ledger == Path(".basicly") / "ledger"
+    assert br.LEDGER_DIR is owned_store.LEDGER_DIR
+
+
+# --- reaching the installed kit -----------------------------------------------
+
+
+def test_a_repo_with_no_kit_installed_is_refused_rather_than_degraded(tmp_path: Path) -> None:
+    """A mode above `external` has already promised both stores hold the same facts.
+
+    The directory is named, because the repair is installing it there — a bare "not
+    found" would leave a reader guessing which of the two checkouts was asked.
+    """
+    with pytest.raises(TrackerDivergenceError, match="tracker kit is not installed"):
+        owned_store.kit(tmp_path)
+
+
+def test_the_filesystem_is_asked_before_the_cache(tmp_path: Path) -> None:
+    """Otherwise a repo with no kit is answered out of some other repo's.
+
+    This process has already loaded this repo's kit by the time the suite gets here, so
+    a cache consulted first would hand that module back and the mode would look enabled
+    while writing nowhere. Loading the real kit first is what makes the refusal below
+    evidence rather than a coincidence.
+    """
+    assert owned_store.kit(REPO_ROOT).events is not None
+
+    with pytest.raises(TrackerDivergenceError):
+        owned_store.kit(tmp_path)
+
+
+def test_one_kit_module_object_per_repo_however_it_is_reached() -> None:
+    """Two loads of one file give two `Event` classes, and `isinstance` then lies.
+
+    Identity, because equality would hold for two separately-loaded copies of the same
+    source — which is the failure this fixed prefix exists to prevent.
+    """
+    assert owned_store.kit(REPO_ROOT) is owned_store.kit(REPO_ROOT)
+    assert owned_store.kit(REPO_ROOT, owned_store.DEFAULT_KIT_MODULE) is owned_store.kit(REPO_ROOT)
+
+
+def test_a_kit_module_beside_the_differential_is_reached_by_name() -> None:
+    """The scheduler sits beside the differential rather than under it (basicly-vkh0.20)."""
+    scheduler = owned_store.kit(REPO_ROOT, owned_store.SCHEDULER_KIT_MODULE)
+
+    assert scheduler is not owned_store.kit(REPO_ROOT)
+    assert scheduler is owned_store.kit(REPO_ROOT, owned_store.SCHEDULER_KIT_MODULE)
+
+
+def test_a_divergence_is_a_runtime_error_a_br_caller_already_handles() -> None:
+    """So the message is what `br.run_br` callers already print, not a new failure mode."""
+    assert issubclass(TrackerDivergenceError, RuntimeError)

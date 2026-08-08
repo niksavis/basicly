@@ -216,7 +216,6 @@ waiver_count = 1
 "tests/test_kit_tracker_scheduler.py" = 4141
 "tests/test_kit_tracker_snapshot.py" = 9115
 "tests/test_loop.py" = 38745
-"tests/test_loop_repair.py" = 4254
 "tests/test_loop_state.py" = 4905
 "tests/test_merge.py" = 19737
 "tests/test_model_map.py" = 6708
