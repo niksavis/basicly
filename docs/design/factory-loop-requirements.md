@@ -93,7 +93,7 @@ at build→verify; everything else is checkpoints and lints.
 | D16 [D] | **The plugin is a second distribution channel**, packaging the same projected output as `basicly install` | One source of truth, two delivery shapes. Betting the primary channel on a spec with seven areas still in FUTURE_CONSIDERATIONS would be premature |
 | D17 [D] | **`solution-design` is markdown with six machine-checked sections** (amended 2026-08-08 from five): problem in the requester's terms, success as an observable, a **consumer transcript**, out of scope, constraints, and **open questions** | Structured markdown is the only shape that is both readable and checkable — JSON is unreadable and prose is unactionable. The pattern is already proven twice here: the `## Plan` section and `needs-input.json`. The transcript is this repo's translation of a UI mockup: our consumer surface is a CLI, so the artifact that settles a design dispute by *showing* the surface is the command as it will be typed and what it will print (§8.1) |
 | D18 [D] | **Every planned child names how it is demonstrated end-to-end.** The plan gate refuses a child that cannot | Makes D10 satisfiable by construction. A child with no consumer-visible behaviour has no check to name, which is the horizontal-slice failure — and our decomposer slices horizontally *by construction* today, because scope-glob overlap is file adjacency (§8.2) |
-| D21 [D] | **Context control is field selection, not encoding.** Project tracker payloads to the fields a phase needs; encode only what remains, and only where a bijective codec is safe | Measured 2026-08-08 (§15). Selection beats serialisation by ~500x on this repo's own data |
+| D21 [D] | **Context control is field selection, not encoding.** Project tracker payloads to the fields a phase needs; encode only what remains, and only where a bijective codec is safe | Measured 2026-08-08 (§14). Selection beats serialisation by ~500x on this repo's own data |
 | D22 [D] | **Anything built against the tracker is written to our own record vocabulary, never to `br`'s payload shape** | `br` and `bv` are being removed (`work-tracker.md`). A field allowlist naming `br`'s JSON keys would have to be rewritten at the flip; one naming our own fields survives it, and only the adapter changes |
 | D20 [D] | **`change-shape` — the shape of the whole change, derived not authored, emitted by CLASSIFY** | See §8.2. It is the structure `decompose` needs to cut end-to-end instead of by directory, and `basicly-agzx.2` already proposes deriving it from an AST at zero token cost. **Derived, so it is not a state**: states exist to hold a gate and a persona, and a derivation needs neither — DECOMPOSE's entry predicate gains it, nothing else moves |
 | D19 [D] | **Diff size is a plan-time signal, not a review-time discovery** | The sizing governor already forecasts in tokens; a child whose forecast implies a diff far past reviewable is reported when splitting is still cheap. Deliberately **not** a human-review requirement — L1/L2 stay delegable (§4), and a 2,000-line lane is hard to review whether the reader is a human or the next agent |
@@ -627,7 +627,7 @@ read; pass `--forward-subagent-text`; add light mode as a second dispatch path.
 
 ---
 
-## 15. Context control [D21, D22]
+## 14. Context control [D21, D22]
 
 **The owner's framing, and the measurement that redirected it.** The proposal was to put only the
 needed tokens in the window and to use the format that costs least — with a hypothesis that XML
@@ -721,7 +721,7 @@ removed rather than given a third constant. Its follow-up machinery goes with it
 
 ---
 
-## 14. Sources
+## 15. Sources
 
 Institutional and primary, fetched directly: Kanban Guide (kanbanguides.org), Kanban University,
 lean.org lexicon (jidoka, andon, error-proofing, heijunka, continuous-flow, pull-production,

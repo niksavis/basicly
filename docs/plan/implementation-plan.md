@@ -477,6 +477,50 @@ and cannot fail a judgement, so an eighth row in §3.1 would be ceremony around 
 name pairs it with `change-summary`, which is what BUILD hands back. `u2hl.22`, taken together with
 `agzx.2` because they are one decision.
 
+### 6.3 The code-quality floor
+
+§9 of the loop requirements, and the owner's standing instruction that it is not optional: the skill
+on one side, the hooks and CI gates on the other. Every item is a deterministic check at **zero token
+cost**, which §10 ranks above any judged check.
+
+Measured 2026-08-08 — **no family is adoptable at zero cost**, so each is a real fix, not a config
+line:
+
+| Gate | State | Cost to adopt |
+| --- | --- | --- |
+| pyright `standard` | repo declares `basic`, below pyright's own default | **1 error, 1 file** |
+| `RET` `TID` `DTZ` `A` | not selected | 5 violations |
+| `FURB` | not selected | 4 |
+| `BLE001` | not selected | 4, each a judgement about a process boundary |
+| `PERF` | not selected | 16 |
+| `TRY` less `TRY003` | not selected | 26 (`TRY003` alone is 442 — a message string in `raise`, style at scale) |
+| `TC001/002/006` | not selected | 16 (`TC003` alone is 111 — deferred, recorded) |
+| `S` over `src/` less `S101` | bandit is scoped to `.scripts`, `.basicly/core/hooks`, `.basicly/core/kit` — **not `src/`** | 25 |
+| `C901` at 10 | shipped at 15 | 14 |
+| `noqa` debt ratchet | does not exist | 0 files: freeze at today |
+| `python-guidelines` skill | does not exist | §9.2's nine judgement calls |
+
+Two corrections to §9.1 of the requirements doc, both found by re-measuring rather than quoting it:
+the `noqa` debt it records as 30 is **46** across 20 files — it grew 53% while the ratchet was
+unbuilt, which is the argument for the ratchet — and six of those carry no reason at all. And `src/`
+holds **21 `# nosec` comments that no scanner reads**, because bandit does not run there: they are
+inert and read as "reviewed", which is worse than no annotation.
+
+**Landed 2026-08-08** (`dad39f4`): ten ruff families, pyright at `standard`, `S` over `src/`, the
+`python-guidelines` skill, and the twenty module splits the size ratchet then forced. What that
+leaves, and it is the next session's first track:
+
+| Open | Size | Why it is next |
+| --- | --- | --- |
+| `u2hl.12` **`noqa` debt ratchet** | S | The debt is **77** and rising: 46 this morning, 30 at go-live. The adoption itself added 31 — every one with a reason, and nothing counting them. Touches no source file; freeze at today |
+| **§9.4 test-file naming gate** | S | Already drifted: 71 source modules, 115 test files, **10 modules with no matching test file**, 9 of them created by this session's splits. The convention was emergent when the doc measured it; the splits broke it |
+| **pyright over `.scripts/` and `.basicly/core/`** | S | pyright's default `exclude` is `**/.*`, so 35 modules — including the hooks that ship to consumers and run in the dispatch path — are unchecked at *either* mode. 9 errors measured, 4 possibly an `extraPaths` artifact, so re-measure against a real `include` before filing |
+| **The 7 remaining inert `# nosec`** | S | Down from 21, all in `br.py` and `runner.py`. They sit in `src/`, where bandit does not run, so they read as reviewed and are not |
+| `python-guidelines` **as a path-scoped fragment** | M | Decided 2026-08-08. It is exercised — 7 invocations on the day it shipped — but only when an agent thinks to ask, and the agent that most needs it is the one that does not. Costs ~1,500 chars on `AGENTS.md` against ~1,225 of headroom, so **`a3ab.1` must evict a line first** |
+
+**Deferred with the reason recorded**: `C901` 15 → 10 (14 violations, concentrated in the two
+modules already under the heaviest split pressure — do it after `cli.py` comes down).
+
 ### 6.4 What the 2026-08-08 external review added
 
 Three sources reviewed; the licence position decided what could be taken from each.
@@ -502,7 +546,7 @@ quantity that actually runs out is review capacity.
 
 ### 6.5 Context control — selection, not encoding
 
-Researched 2026-08-08 at the owner's request. §15 of the requirements doc carries the
+Researched 2026-08-08 at the owner's request. §14 of the requirements doc carries the
 measurements; the ladder consequence is here.
 
 **The direction was right and the mechanism was not.** Measured with a real tokenizer on this
@@ -563,50 +607,6 @@ about a state we have not reached; the `br` cut (§6.1) is what would make it tr
 VS Code or JetBrains extension (a host that admits nothing else); the TS living behind a process
 boundary talking to the existing CLI over `--json`, so no Python is rewritten and no consumer gains
 node; and a named owner accepting the second release train.
-
-### 6.3 The code-quality floor
-
-§9 of the loop requirements, and the owner's standing instruction that it is not optional: the skill
-on one side, the hooks and CI gates on the other. Every item is a deterministic check at **zero token
-cost**, which §10 ranks above any judged check.
-
-Measured 2026-08-08 — **no family is adoptable at zero cost**, so each is a real fix, not a config
-line:
-
-| Gate | State | Cost to adopt |
-| --- | --- | --- |
-| pyright `standard` | repo declares `basic`, below pyright's own default | **1 error, 1 file** |
-| `RET` `TID` `DTZ` `A` | not selected | 5 violations |
-| `FURB` | not selected | 4 |
-| `BLE001` | not selected | 4, each a judgement about a process boundary |
-| `PERF` | not selected | 16 |
-| `TRY` less `TRY003` | not selected | 26 (`TRY003` alone is 442 — a message string in `raise`, style at scale) |
-| `TC001/002/006` | not selected | 16 (`TC003` alone is 111 — deferred, recorded) |
-| `S` over `src/` less `S101` | bandit is scoped to `.scripts`, `.basicly/core/hooks`, `.basicly/core/kit` — **not `src/`** | 25 |
-| `C901` at 10 | shipped at 15 | 14 |
-| `noqa` debt ratchet | does not exist | 0 files: freeze at today |
-| `python-guidelines` skill | does not exist | §9.2's nine judgement calls |
-
-Two corrections to §9.1 of the requirements doc, both found by re-measuring rather than quoting it:
-the `noqa` debt it records as 30 is **46** across 20 files — it grew 53% while the ratchet was
-unbuilt, which is the argument for the ratchet — and six of those carry no reason at all. And `src/`
-holds **21 `# nosec` comments that no scanner reads**, because bandit does not run there: they are
-inert and read as "reviewed", which is worse than no annotation.
-
-**Landed 2026-08-08** (`dad39f4`): ten ruff families, pyright at `standard`, `S` over `src/`, the
-`python-guidelines` skill, and the twenty module splits the size ratchet then forced. What that
-leaves, and it is the next session's first track:
-
-| Open | Size | Why it is next |
-| --- | --- | --- |
-| `u2hl.12` **`noqa` debt ratchet** | S | The debt is **77** and rising: 46 this morning, 30 at go-live. The adoption itself added 31 — every one with a reason, and nothing counting them. Touches no source file; freeze at today |
-| **§9.4 test-file naming gate** | S | Already drifted: 71 source modules, 115 test files, **10 modules with no matching test file**, 9 of them created by this session's splits. The convention was emergent when the doc measured it; the splits broke it |
-| **pyright over `.scripts/` and `.basicly/core/`** | S | pyright's default `exclude` is `**/.*`, so 35 modules — including the hooks that ship to consumers and run in the dispatch path — are unchecked at *either* mode. 9 errors measured, 4 possibly an `extraPaths` artifact, so re-measure against a real `include` before filing |
-| **The 7 remaining inert `# nosec`** | S | Down from 21, all in `br.py` and `runner.py`. They sit in `src/`, where bandit does not run, so they read as reviewed and are not |
-| `python-guidelines` **as a path-scoped fragment** | M | Decided 2026-08-08. It is exercised — 7 invocations on the day it shipped — but only when an agent thinks to ask, and the agent that most needs it is the one that does not. Costs ~1,500 chars on `AGENTS.md` against ~1,225 of headroom, so **`a3ab.1` must evict a line first** |
-
-**Deferred with the reason recorded**: `C901` 15 → 10 (14 violations, concentrated in the two
-modules already under the heaviest split pressure — do it after `cli.py` comes down).
 
 ## 7. `v0.9.1` — the measured evidence layer
 
