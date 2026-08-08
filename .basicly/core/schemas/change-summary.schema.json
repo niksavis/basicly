@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basicly.dev/schemas/change-summary.schema.json",
+  "title": "basicly change-summary handoff artifact",
+  "description": "What BUILD hands VERIFY (factory loop requirements 8). One artifact per landing, recorded on the unit that built. Every field is derived from the branch and the landing verdict rather than authored by the agent: an output contract a model has to compose is the least standardised element in this design, and nothing here needs a judgement to fill in.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "issue",
+    "why",
+    "commit",
+    "changed",
+    "self_check"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "description": "Artifact-format version; bump only when a consumer's contract changes."
+    },
+    "issue": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The unit of work this build was dispatched for."
+    },
+    "why": {
+      "type": "string",
+      "minLength": 1,
+      "description": "What the change is for, in the requirement's own words: the bead's title."
+    },
+    "commit": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The head of the branch the build committed on, read before the landing merges it."
+    },
+    "changed": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Paths the branch changed against its base. At least one: a build that changed nothing has nothing for VERIFY to check.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "self_check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "passed",
+        "detail"
+      ],
+      "description": "The landing's own verify verdict - the self-check BUILD's exit gate names, run inside the worktree by merge.merge_worktree before anything reached base.",
+      "properties": {
+        "status": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The landing status the self-check produced (merged, verify-failed, ...)."
+        },
+        "passed": {
+          "type": "boolean",
+          "description": "Whether the self-check left the work clean enough to land."
+        },
+        "detail": {
+          "type": "string",
+          "description": "The landing's own rendering of the verdict; empty when it had nothing to add."
+        }
+      }
+    }
+  }
+}

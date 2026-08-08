@@ -28,6 +28,7 @@ layers =
     repair_brief
     classify | decompose | loop_state | rubrics
     decisions
+    handoff
     plan_gate | policy | routing_evals | tuning | verify
     capability_proof
     config | worktree
@@ -36,7 +37,7 @@ layers =
     runner_usage
     decider_contract
     decision_marker
-    run_record | skill_source | surface_report
+    artifact_record | run_record | skill_source | surface_report
     spend_calibration
     br
     mirror
