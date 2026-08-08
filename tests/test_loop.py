@@ -804,7 +804,12 @@ def test_dispatch_record_captures_token_telemetry(
     entry = records["i"][0]
     assert (entry["tokens"], entry["cost"], entry["estimated"]) == (140, 0.25, False)
     # The redacted command reflects the usage-capturing argv actually dispatched.
-    assert entry["command"][-3:] == ["--output-format", "stream-json", "--verbose"]
+    assert entry["command"][-4:] == [
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--forward-subagent-text",
+    ]
 
 
 def test_classify_leaf_reports_failed_runner(

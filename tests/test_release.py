@@ -18,9 +18,10 @@ from pathlib import Path
 
 import pytest
 
+from basicly import capability_proof, release, tracker_usage, usage, verify
 from basicly import commit as commit_mod
 from basicly import policy as policy_mod
-from basicly import release, tracker_usage, usage, verify
+from basicly.capability_proof import CAPABILITY_VERIFY_CHECK
 from basicly.config import PolicyConfig
 
 CURRENT = "0.5.1"
@@ -563,7 +564,7 @@ def test_a_planted_unexercised_capability_refuses_the_release(repo: Path) -> Non
     result = release.run_release(repo, plan, issue_id="fx-1")
 
     assert result.refused
-    assert any(f"{release.CAPABILITY_VERIFY_CHECK} 'planted'" in r for r in result.refusals)
+    assert any(f"{CAPABILITY_VERIFY_CHECK} 'planted'" in r for r in result.refusals)
     # Refused before the first byte: no bump, no tag, nothing to undo.
     assert release.read_version(repo) == CURRENT
     assert _git(repo, "status", "--porcelain").strip() == ""
@@ -614,9 +615,7 @@ def test_a_wrapper_executable_is_not_accepted_as_the_witness(repo: Path) -> None
     result = release.run_release(repo, plan, issue_id="fx-1", dry_run=True)
 
     assert result.refused
-    assert any(
-        f"{release.CAPABILITY_VERIFY_CHECK} 'wired-or-deleted'" in r for r in result.refusals
-    )
+    assert any(f"{CAPABILITY_VERIFY_CHECK} 'wired-or-deleted'" in r for r in result.refusals)
 
 
 def test_the_checks_own_binary_running_elsewhere_is_not_a_witness(repo: Path) -> None:
@@ -637,7 +636,7 @@ def test_the_checks_own_binary_running_elsewhere_is_not_a_witness(repo: Path) ->
     result = release.run_release(repo, plan, issue_id="fx-1", dry_run=True)
 
     assert result.refused
-    assert any(f"{release.CAPABILITY_VERIFY_CHECK} 'tracker-gate'" in r for r in result.refusals)
+    assert any(f"{CAPABILITY_VERIFY_CHECK} 'tracker-gate'" in r for r in result.refusals)
 
 
 def test_recorded_executions_unions_all_three_ledgers(repo: Path) -> None:
@@ -654,7 +653,7 @@ def test_recorded_executions_unions_all_three_ledgers(repo: Path) -> None:
         '{"binary":"br","subcommand":"gate report","site":"engine","ok":true}\n', encoding="utf-8"
     )
 
-    counts = release.recorded_executions(repo)
+    counts = capability_proof.recorded_executions(repo)
 
     assert counts is not None
     assert counts["pytest"] == 785
@@ -678,7 +677,7 @@ def test_a_declared_capability_with_no_ledger_at_all_is_refused(repo: Path) -> N
 
 def test_a_repo_that_declares_no_capability_is_not_refused(repo: Path) -> None:
     """A consumer with no `[verify]` section published no claim for this gate to hold."""
-    assert release.shipped_capabilities(repo) == ()
+    assert capability_proof.shipped_capabilities(repo) == ()
     plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
 
     assert not release.run_release(repo, plan, issue_id="fx-1", dry_run=True).refused
@@ -694,12 +693,12 @@ def test_this_repos_own_capability_inventory_is_never_empty() -> None:
     It deliberately does *not* assert the inventory is fully exercised: the counters are
     machine-local and git-ignored, so that assertion would pass here and fail in CI.
     """
-    capabilities = release.shipped_capabilities(Path(__file__).resolve().parents[1])
+    capabilities = capability_proof.shipped_capabilities(Path(__file__).resolve().parents[1])
 
     labels = {label for label, _ in capabilities}
     assert {
-        f"{release.CAPABILITY_VERIFY_CHECK} 'pytest'",
-        f"{release.CAPABILITY_VERIFY_CHECK} 'projection-permissions'",
+        f"{CAPABILITY_VERIFY_CHECK} 'pytest'",
+        f"{CAPABILITY_VERIFY_CHECK} 'projection-permissions'",
     } <= labels
     # A capability with no witness can never be refused, so the inventory would have
     # teeth in name only.

@@ -282,17 +282,25 @@ module-length rule, and `C90` is not enabled. `cli.py` is **5,097 lines**; `src/
 
 | Guideline | Mechanism | Status |
 | --- | --- | --- |
-| Cyclomatic complexity | ruff `C90`, `max-complexity` | **not enabled.** Measured: **0 violations at 15, 14 at 10** [M]. Enable at 15 today — free and immediately binding — then ratchet |
+| Cyclomatic complexity | ruff `C90`, `max-complexity` | **enabled at 15** (`basicly-u2hl.5`). The 14-at-10 figure re-confirmed 2026-08-08; ratcheting to 10 is `cli.py` ×4, `supervise.py` ×2, then one each |
 | File size | **no ruff rule exists.** A script under `.scripts/` wired as a `[[verify.checks]]` fast entry — see §9.3 | **the gap.** Nothing in the stack measures it |
-| Blind `except Exception` | ruff `BLE001` | not enabled |
-| Exception hygiene, perf, builtins shadowing | ruff `TRY`, `PERF`, `FURB`, `A`, `RET`, `TC`, `TID`, `DTZ` | not enabled |
-| Security lint over `src/` | ruff `S` | bandit runs, but scoped to `.scripts`/hooks/kit — **not `src/`** [M] |
-| Type completeness | pyright `basic` → `standard` | repo is **below pyright's own default** [M] |
-| Suppression-debt ratchet | count `# noqa` per code, fail on increase | not present. Current debt: `PLR0913`×23, `PLC0415`×5, `PLR0911`×2 [M] |
+| Blind `except Exception` | ruff `BLE001` | **4 violations measured** 2026-08-08; adopted in `basicly-u2hl.11`. Each is a judgement about a process boundary, not a mechanical narrowing |
+| Exception hygiene, perf, builtins shadowing | ruff `TRY`, `PERF`, `FURB`, `A`, `RET`, `TC`, `TID`, `DTZ` | **adopted** in `basicly-u2hl.11`. Measured 2026-08-08: `RET` 1, `TID` 1, `DTZ` 1, `A` 2, `FURB` 4, `PERF` 16, `TRY` less `TRY003` 26, `TC001/002/006` 16. **`TRY003` (442) and `TC003` (111) are deliberately ignored** with the reason recorded in `.ruff.toml` — style at scale, not a defect class |
+| Security lint over `src/` | ruff `S` | **adopted for `src/` only**, per-file-ignored elsewhere so bandit keeps the trees it already scans. 25 violations less `S101`. `S101` (6,931, every one an `assert` in `tests/`) mirrors the existing bandit `skips = ["B101"]` rather than inventing a second answer |
+| Type completeness | pyright `basic` → `standard` | **done** (`basicly-u2hl.10`). Exactly one error, and it was a lying annotation rather than a defect: `tracker_usage._Timer.__exit__` was `-> bool`, which declares a context manager that *may suppress*, so every name bound in the `with` read as possibly-unbound. `-> Literal[False]` fixes it; restructuring the consumer only relocates the error. **Still open**: pyright's default exclude skips `.scripts/` and `.basicly/core/`, so ~35 modules are unchecked at either mode |
+| Suppression-debt ratchet | count `# noqa` per code, fail on increase | not present (`basicly-u2hl.12`). **The debt figure on this row was stale and is corrected**: re-measured 2026-08-08 it is **46 across 20 files**, not 30 — `PLR0913`×32, `PLC0415`×5, `E402`×3, `PLR0911`×2, `ARG001`×2, `UP017`×1, `E731`×1 — so it grew ~53% while the ratchet was unbuilt, which is the argument for building it. **Six carry no reason at all**, against a house form of `# noqa: CODE — reason` |
 
 Already enforced — **do not re-propose**: line length, format, naming, Google docstrings,
 `PLR0911/12/13/15`, dead code, import layering, tri-platform pyright, commented-code ban, mutable
 defaults, `finally` control flow.
+
+**A finding this table did not predict** [M, 2026-08-08]. `src/` carries **21 `# nosec` comments
+that no scanner reads**, because bandit is configured over `.scripts`, `.basicly/core/hooks` and
+`.basicly/core/kit` and never `src/`. One of them is
+`autoescape=False,  # nosec B701` — a real XSS-class annotation nobody checks. An inert suppression
+is worse than none: it reads as "reviewed" and is not, and it is invisible to the very ratchet above.
+Adopting ruff `S` over `src/` is what makes those 21 sites answerable, and 21 of the 25 findings land
+on exactly them.
 
 ### 9.2 Non-deterministic — the `python-guidelines` skill
 

@@ -24,7 +24,7 @@ from typing import cast
 
 import pytest
 
-from basicly import models, run_record, runner
+from basicly import copilot_store, models, run_record, runner, runner_envelope
 from basicly.config import load_runner_config
 from basicly.runner import (
     BUILTIN_RUNNERS,
@@ -640,7 +640,9 @@ def _patch_popen(
         def __init__(self) -> None:
             self.returncode = returncode
 
-        def communicate(self, input=None, timeout=None):
+        # Renaming — the alternative — would make this fake reject the real call: the
+        # code under test passes `communicate(input=...)` by keyword.
+        def communicate(self, input=None, timeout=None):  # noqa: A002 — Popen's own name
             captured["input"] = input
             captured["timeout"] = timeout
             return stdout, stderr
@@ -776,6 +778,11 @@ def test_run_without_identity_adds_only_attribution(monkeypatch: pytest.MonkeyPa
 
 
 # --- usage capture + extraction (basicly-kjc5.1) -----------------------------
+
+
+# Spelled out, never read back from the runner: an assertion sourced from the
+# code under test asserts nothing.
+_CLAUDE_STREAM_FLAGS = ["--output-format", "stream-json", "--verbose", "--forward-subagent-text"]
 
 
 def _claude_spec() -> RunnerSpec:
@@ -992,10 +999,12 @@ def test_format_command_capture_usage_appends_claude_flags() -> None:
     """A usage-capturing claude dispatch asks for the per-turn stream.
 
     stream-json is refused under -p without --verbose, so the flag is part of
-    the contract, not decoration (basicly-kjc5.14).
+    the contract, not decoration (basicly-kjc5.14). --forward-subagent-text is
+    legal only on this shape; `test_runner_subagent_stream.py` pins what it
+    forwards (basicly-u2hl.7).
     """
     argv = runner.format_command(_claude_spec(), "go", capture_usage=True)
-    assert argv == ["claude", "-p", "go", "--output-format", "stream-json", "--verbose"]
+    assert argv == ["claude", "-p", "go", *_CLAUDE_STREAM_FLAGS]
 
 
 def test_format_command_capture_usage_keeps_the_pinned_json_envelope() -> None:
@@ -1036,160 +1045,7 @@ def test_run_capture_usage_executes_with_usage_flags(monkeypatch: pytest.MonkeyP
     """run(capture_usage=True) invokes the argv with the usage-report flags."""
     captured = _patch_popen(monkeypatch)
     runner.run(_claude_spec(), "go", Path("/work"), capture_usage=True)
-    assert captured["argv"] == ["claude", "-p", "go", "--output-format", "stream-json", "--verbose"]
-
-
-def test_extract_usage_claude_reads_tokens_and_cost() -> None:
-    """The claude result object yields summed usage tokens plus total_cost_usd."""
-    spec = _claude_json_spec()
-    usage = runner.extract_usage(spec, _executed(spec, _CLAUDE_RESULT))
-    assert usage is not None
-    assert usage.tokens == 2 + 5960 + 15496 + 17
-    assert usage.cost == pytest.approx(0.136147)
-    assert usage.estimated is False
-
-
-def test_extract_usage_claude_without_cost_field() -> None:
-    """A usage block without total_cost_usd still reports tokens, cost null."""
-    stdout = json.dumps({"usage": {"input_tokens": 10, "output_tokens": 5}})
-    spec = _claude_json_spec()
-    usage = runner.extract_usage(spec, _executed(spec, stdout))
-    assert usage == runner.Usage(tokens=15, cost=None, estimated=False)
-
-
-def test_extract_usage_claude_unparseable_falls_back_to_estimate() -> None:
-    """Non-JSON output (e.g. an overridden command) degrades to the chars/4 estimate."""
-    result = _executed(_claude_spec(), "plain text answer", stderr="warn")
-    usage = runner.extract_usage(_claude_spec(), result)
-    assert usage == runner.Usage(
-        tokens=(len("plain text answer") + len("warn")) // 4, cost=None, estimated=True
-    )
-
-
-def test_extract_usage_claude_json_without_usage_block_estimates() -> None:
-    """A parseable object missing the usage block still degrades to the estimate."""
-    stdout = json.dumps({"type": "result", "result": "ok"})
-    usage = runner.extract_usage(_claude_spec(), _executed(_claude_spec(), stdout))
-    assert usage is not None
-    assert usage.estimated is True
-
-
-@pytest.mark.parametrize(("turn", "total_tokens"), _CODEX_TURNS)
-def test_extract_usage_codex_total_matches_the_cli_own_total(turn: dict, total_tokens: int) -> None:
-    """A single observed turn totals exactly what codex itself accounted for it.
-
-    The identity that settles the summation semantics: codex's session rollout
-    recorded `total_tokens` for this very turn, and input + output reproduces it
-    to the token. Any addend beyond those two would overshoot it.
-    """
-    usage = runner.extract_usage(_codex_spec(), _executed(_codex_spec(), _codex_stream(turn)))
-    assert usage is not None
-    assert usage.tokens == total_tokens
-    assert usage.estimated is False
-
-
-def test_extract_usage_codex_records_reasoning_without_adding_it() -> None:
-    """`reasoning_output_tokens` lands on the split but never in the total.
-
-    Measured, not assumed (basicly-jr0l.37): the probed turn spent 147 of its 155
-    output tokens on reasoning, so summing the two would double-count 147 tokens
-    and inflate a 12919-token turn to 13066.
-    """
-    turn, total_tokens = _CODEX_TURNS[0]
-    usage = runner.extract_usage(_codex_spec(), _executed(_codex_spec(), _codex_stream(turn)))
-    assert usage is not None
-    assert usage.reasoning_tokens == 147
-    assert usage.tokens == total_tokens
-    assert usage.tokens != total_tokens + 147
-    # Subset of output, so the residue is the answer plus its framing.
-    assert usage.output_tokens is not None and usage.reasoning_tokens <= usage.output_tokens
-
-
-def test_extract_usage_codex_records_the_cache_split_without_adding_it() -> None:
-    """Cached input is the portion *inside* `input_tokens`, not a separate addend.
-
-    `input_tokens` is the superset (the same convention copilot's `inputTokens`
-    follows), so the uncached remainder the pricing model needs is derivable as
-    input minus cache-read rather than stored a fourth time — and adding
-    cache-read back in would report 22903 tokens for a 12919-token turn.
-    """
-    turn, total_tokens = _CODEX_TURNS[0]
-    usage = runner.extract_usage(_codex_spec(), _executed(_codex_spec(), _codex_stream(turn)))
-    assert usage is not None
-    assert (usage.input_tokens, usage.output_tokens) == (12764, 155)
-    assert (usage.cache_read_tokens, usage.cache_write_tokens) == (9984, 0)
-    assert usage.tokens == total_tokens
-    assert usage.tokens != total_tokens + 9984
-    # The uncached remainder is derivable, which is why it is not stored a fourth time.
-    assert usage.input_tokens is not None and usage.cache_read_tokens is not None
-    assert usage.input_tokens - usage.cache_read_tokens == 2780
-
-
-def test_extract_usage_codex_keeps_cache_write_out_of_the_total() -> None:
-    """Cache-write is recorded and, like cache-read, is not added to the total.
-
-    Synthetic on purpose, and the one codex assertion here **not** backed by an
-    observed number: every turn recorded on this machine reported
-    `cache_write_input_tokens` 0, so the total_tokens identity cannot speak to it.
-    The convention comes from the semantics the rest of the mapping follows —
-    cache-written tokens are prompt tokens, so they sit inside `input_tokens`,
-    which is verified outright on the copilot side (`inputTokens == input +
-    cacheRead + cacheWrite` on 15 stores). Pinned so a build that disagrees
-    reddens a test instead of silently under-counting a cache-warming turn.
-    """
-    stream = _codex_stream({
-        "input_tokens": 1000,
-        "cached_input_tokens": 600,
-        "cache_write_input_tokens": 300,
-        "output_tokens": 20,
-        "reasoning_output_tokens": 8,
-    })
-    usage = runner.extract_usage(_codex_spec(), _executed(_codex_spec(), stream))
-    assert usage is not None
-    assert usage.cache_write_tokens == 300
-    assert usage.tokens == 1000 + 20
-
-
-def test_extract_usage_codex_sums_the_split_across_turns() -> None:
-    """A multi-turn stream meters once, per kind, over every turn's usage."""
-    usage = runner.extract_usage(_codex_spec(), _executed(_codex_spec(), _CODEX_EVENTS))
-    assert usage is not None
-    assert (usage.input_tokens, usage.output_tokens) == (12764 + 16824, 155 + 5)
-    assert (usage.cache_read_tokens, usage.cache_write_tokens) == (9984 + 10496, 0)
-    assert usage.reasoning_tokens == 147 + 0
-    assert usage.tokens == 12764 + 155 + 16824 + 5
-    assert usage.cost is None and usage.credits is None
-
-
-def test_extract_usage_codex_leaves_an_unreported_kind_null() -> None:
-    """A build that emits no cache or reasoning counts records null, never zero.
-
-    0.146.0 reports a real `reasoning_output_tokens` of 0 for a turn that did no
-    reasoning, so a fabricated 0 would be indistinguishable from that measurement.
-    """
-    stream = _codex_stream({"input_tokens": 100, "output_tokens": 7})
-    usage = runner.extract_usage(_codex_spec(), _executed(_codex_spec(), stream))
-    assert usage is not None
-    assert (usage.input_tokens, usage.output_tokens) == (100, 7)
-    assert usage.cache_read_tokens is None
-    assert usage.cache_write_tokens is None
-    assert usage.reasoning_tokens is None
-    assert usage.tokens == 107
-
-
-def test_extract_usage_codex_without_usage_events_estimates() -> None:
-    """An event stream with no turn.completed usage degrades to the estimate."""
-    stdout = '{"type":"thread.started","thread_id":"t1"}\nnot json\n'
-    usage = runner.extract_usage(_codex_spec(), _executed(_codex_spec(), stdout))
-    assert usage is not None
-    assert usage.estimated is True
-
-
-def test_extract_usage_no_format_estimates_over_transcript() -> None:
-    """A spec with no usage format meters the transcript at chars/4."""
-    spec = RunnerSpec("acme", HEADLESS, ("acme", PROMPT_PLACEHOLDER))
-    result = _executed(spec, "x" * 100, stderr="y" * 20)
-    assert runner.extract_usage(spec, result) == runner.Usage(tokens=30, cost=None, estimated=True)
+    assert captured["argv"] == ["claude", "-p", "go", *_CLAUDE_STREAM_FLAGS]
 
 
 # --- copilot: usage measured from its own session store (basicly-2rn9) -------
@@ -1228,7 +1084,7 @@ def test_run_mints_a_session_id_for_a_metered_copilot_dispatch(
     captured = _patch_popen(monkeypatch)
     result = runner.run(copilot, "go", Path("/work"), capture_usage=True)
     assert result.session_id is not None
-    argv = cast(list[str], captured["argv"])
+    argv = cast("list[str]", captured["argv"])
     assert argv[-2:] == ["--session-id", result.session_id]
     # A real UUID, not a placeholder: copilot rejects anything else, and two
     # dispatches must never share a store.
@@ -1243,178 +1099,7 @@ def test_run_without_capture_usage_keys_no_copilot_store(
     captured = _patch_popen(monkeypatch)
     result = runner.run(copilot, "go", Path("/work"))
     assert result.session_id is None
-    assert "--session-id" not in cast(list[str], captured["argv"])
-
-
-def test_extract_usage_copilot_reads_the_shutdown_model_metrics(tmp_path: Path) -> None:
-    """The store's session.shutdown yields the measured split, credits, and total.
-
-    Pinned against the captured 1.0.75 event: `inputTokens` already contains both
-    cache counts, so the total is input + output — adding the cache fields would
-    report 48K for a 24K probe.
-    """
-    spec = _copilot_spec(_copilot_store(tmp_path, _COPILOT_EVENTS))
-    usage = runner.extract_usage(spec, _copilot_run(spec))
-    assert usage is not None
-    assert usage.estimated is False
-    assert (usage.input_tokens, usage.output_tokens) == (24210, 4)
-    assert (usage.cache_read_tokens, usage.cache_write_tokens) == (0, 24208)
-    assert usage.reasoning_tokens == 0
-    assert usage.tokens == 24210 + 4
-    # nanoAiu -> credits, and cost stays null: credits are not USD.
-    assert usage.credits == pytest.approx(6.0564)
-    assert usage.cost is None
-
-
-def test_extract_usage_copilot_sums_across_models(tmp_path: Path) -> None:
-    """A dispatch that switched model mid-run meters once, over every model block."""
-    events = json.dumps({
-        "type": "session.shutdown",
-        "data": {
-            "modelMetrics": {
-                "claude-sonnet-5": {
-                    "usage": {
-                        "inputTokens": 100,
-                        "outputTokens": 10,
-                        "cacheReadTokens": 60,
-                        "cacheWriteTokens": 30,
-                        "reasoningTokens": 4,
-                    },
-                    "totalNanoAiu": 1_500_000_000,
-                },
-                "gpt-5": {
-                    "usage": {
-                        "inputTokens": 200,
-                        "outputTokens": 20,
-                        "cacheReadTokens": 150,
-                        "cacheWriteTokens": 40,
-                        "reasoningTokens": 6,
-                    },
-                    "totalNanoAiu": 500_000_000,
-                },
-            }
-        },
-    })
-    spec = _copilot_spec(_copilot_store(tmp_path, events))
-    usage = runner.extract_usage(spec, _copilot_run(spec))
-    assert usage is not None
-    assert (usage.input_tokens, usage.output_tokens) == (300, 30)
-    assert (usage.cache_read_tokens, usage.cache_write_tokens) == (210, 70)
-    assert usage.reasoning_tokens == 10
-    assert usage.tokens == 330
-    assert usage.credits == pytest.approx(2.0)
-
-
-def test_extract_usage_copilot_skips_noise_and_a_truncated_tail(tmp_path: Path) -> None:
-    """Unparseable and unrecognized lines are skipped, not treated as a parse failure.
-
-    A killed dispatch leaves a truncated final line, and the store interleaves
-    event kinds the reader knows nothing about.
-    """
-    events = "\n".join([
-        "not json at all",
-        _COPILOT_EVENTS,
-        '{"type":"session.shutdown","data":{"modelMe',  # truncated tail
-    ])
-    spec = _copilot_spec(_copilot_store(tmp_path, events))
-    usage = runner.extract_usage(spec, _copilot_run(spec))
-    assert usage is not None
-    assert usage.tokens == 24210 + 4
-    assert usage.estimated is False
-
-
-def test_extract_usage_copilot_absent_store_falls_back_to_the_estimate(tmp_path: Path) -> None:
-    """No store on disk meters by estimate, *flagged* as one — never as measured."""
-    spec = _copilot_spec(tmp_path / "session-state")
-    result = _copilot_run(spec)
-    usage = runner.extract_usage(spec, result)
-    assert usage is not None
-    assert usage == runner.Usage(tokens=len(result.stdout) // 4, cost=None, estimated=True)
-    assert usage.credits is None and usage.input_tokens is None
-
-
-def test_extract_usage_copilot_unreadable_store_falls_back_to_the_estimate(
-    tmp_path: Path,
-) -> None:
-    """A store path that is a directory, not a readable file, degrades the same way."""
-    store = tmp_path / "session-state"
-    (store / _COPILOT_SESSION / "events.jsonl").mkdir(parents=True)  # not a file
-    spec = _copilot_spec(store)
-    usage = runner.extract_usage(spec, _copilot_run(spec))
-    assert usage is not None
-    assert usage.estimated is True
-
-
-def test_extract_usage_copilot_without_a_session_id_estimates(tmp_path: Path) -> None:
-    """No store key means nothing to join on, so the run meters by estimate.
-
-    The store on disk is real here: the point is that it is *not* read, because
-    guessing which session was this dispatch's would attribute another run's spend.
-    """
-    spec = _copilot_spec(_copilot_store(tmp_path, _COPILOT_EVENTS))
-    usage = runner.extract_usage(spec, _copilot_run(spec, session_id=None))
-    assert usage is not None
-    assert usage.estimated is True
-
-
-def test_extract_usage_copilot_store_without_a_shutdown_event_estimates(tmp_path: Path) -> None:
-    """A session killed before shutdown has no metrics, so it meters by estimate.
-
-    This is why the usage_checkpoint event is not the source: it survives a kill
-    but carries credits and no tokens, which would report a token-free dispatch.
-    """
-    events = "\n".join([
-        '{"type":"session.start","data":{"sessionId":"' + _COPILOT_SESSION + '"}}',
-        '{"type":"session.usage_checkpoint","data":{"totalNanoAiu":6056400000}}',
-    ])
-    spec = _copilot_spec(_copilot_store(tmp_path, events))
-    usage = runner.extract_usage(spec, _copilot_run(spec))
-    assert usage is not None
-    assert usage.estimated is True
-
-
-def test_extract_usage_copilot_shutdown_without_usable_metrics_estimates(tmp_path: Path) -> None:
-    """A shutdown event whose model metrics carry no token count degrades, not zeroes."""
-    events = json.dumps({
-        "type": "session.shutdown",
-        "data": {"modelMetrics": {"claude-sonnet-5": {"requests": {"count": 1}}}},
-    })
-    spec = _copilot_spec(_copilot_store(tmp_path, events))
-    usage = runner.extract_usage(spec, _copilot_run(spec))
-    assert usage is not None
-    assert usage.estimated is True
-
-
-def test_copilot_session_store_default_is_home_relative_and_unexpanded() -> None:
-    """The default never bakes in a machine path and never calls home() at import.
-
-    An absolute default resolved at import time would be a committed
-    machine-specific path, and would make the suite read the developer's real
-    store whenever a test forgot to inject one.
-    """
-    assert Path("~/.copilot/session-state") == runner.DEFAULT_COPILOT_SESSION_STORE
-    assert next(s for s in BUILTIN_RUNNERS if s.name == "copilot").session_store is None
-
-
-def test_extract_usage_copilot_expands_a_home_relative_store(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A `~`-relative store base is expanded at read time, so `~` stays portable."""
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("USERPROFILE", str(tmp_path))  # Path.expanduser on Windows
-    _copilot_store(tmp_path / ".copilot", _COPILOT_EVENTS)
-    spec = _copilot_spec(Path("~/.copilot/session-state"))
-    usage = runner.extract_usage(spec, _copilot_run(spec))
-    assert usage is not None
-    assert usage.tokens == 24210 + 4
-
-
-def test_extract_usage_none_when_nothing_executed() -> None:
-    """A handoff or dry run has no transcript to meter: no usage, not a zero estimate."""
-    handoff = RunResult(MANUAL_RUNNER, (), executed=False, handoff=True)
-    assert runner.extract_usage(RunnerSpec(MANUAL_RUNNER, HANDOFF), handoff) is None
-    dry = RunResult("claude", ("claude",), executed=False)
-    assert runner.extract_usage(_claude_spec(), dry) is None
+    assert "--session-id" not in cast("list[str]", captured["argv"])
 
 
 def test_builtin_usage_formats_pin_the_probed_capabilities() -> None:
@@ -1483,39 +1168,6 @@ def test_the_json_envelope_survives_a_line_the_cli_printed_around_it() -> None:
     usage = runner.extract_usage(spec, _executed(spec, noisy))
     assert usage is not None
     assert usage.estimated is False
-
-
-def test_result_text_takes_codex_last_agent_message() -> None:
-    """A multi-turn codex run answers in its final message, not its narration.
-
-    The earlier `agent_message` events are progress notes from before the tool
-    calls; concatenating them would prepend commentary to a reply a caller is
-    about to parse as one JSON object.
-    """
-    stream = "\n".join([
-        '{"type":"thread.started","thread_id":"t1"}',
-        '{"type":"item.completed","item":{"type":"agent_message","text":"looking into it"}}',
-        '{"type":"item.completed","item":{"type":"reasoning","text":"not a message"}}',
-        '{"type":"item.completed","item":{"type":"agent_message","text":"the answer"}}',
-        '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":2}}',
-    ])
-    assert runner.result_text(_codex_spec(), stream) == "the answer"
-
-
-def test_result_text_falls_back_to_the_transcript_with_no_parseable_envelope() -> None:
-    """An adapter that did not emit its declared shape has no reply hidden elsewhere.
-
-    Blanking the transcript instead would throw away the only text there is —
-    including the CLI's own error message, which is what a caller shows a human.
-    Both callers fail closed on it anyway: an envelope is not a parseable answer
-    to either of them.
-    """
-    for spec in (_claude_json_spec(), _claude_spec(), _codex_spec()):
-        assert runner.result_text(spec, "error: not logged in") == "error: not logged in"
-    # Parseable JSON, but not the envelope: no `result` field, and no agent_message.
-    no_result, no_message = '{"type":"result"}', '{"type":"turn.completed"}'
-    assert runner.result_text(_claude_json_spec(), no_result) == no_result
-    assert runner.result_text(_codex_spec(), no_message) == no_message
 
 
 def test_a_metered_dispatch_keeps_both_its_numbers_and_its_answer() -> None:
@@ -2596,7 +2248,7 @@ def test_a_copilot_dispatch_that_switched_model_reports_both(tmp_path: Path) -> 
     session = "11111111-2222-3333-4444-555555555555"
     store = tmp_path / session
     store.mkdir()
-    (store / runner.COPILOT_EVENTS_FILE).write_text(
+    (store / copilot_store.COPILOT_EVENTS_FILE).write_text(
         json.dumps({
             "type": "session.shutdown",
             "data": {
@@ -2868,7 +2520,7 @@ def test_event_usage_sums_to_the_terminal_total_on_both_streaming_adapters() -> 
     for spec, stream in ((_claude_spec(), _CLAUDE_STREAM), (_codex_spec(), _CODEX_EVENTS)):
         live = sum(
             usage.tokens
-            for event in runner._claude_stream_events(stream)
+            for event in runner_envelope.stream_events(stream)
             if (usage := runner.event_usage(spec, event)) is not None
         )
         terminal = runner.extract_usage(spec, _executed(spec, stream))

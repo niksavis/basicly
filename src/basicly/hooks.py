@@ -5,6 +5,12 @@ renders that into a hook manager's native config. Only pre-commit is supported
 today (``.pre-commit-config.yaml``), and the managed hooks are confined to a
 single ``repo: local`` block so foreign repos/hooks the consumer already has are
 never clobbered. See docs/architecture/architecture.md §4.2, §11.6.
+
+What that config *looks like* is :mod:`basicly.precommit_config`'s answer, not this
+module's: the boundary is the installation against the document. Everything here
+touches the consumer's tree — loads the manifest, writes files, prunes retired ones,
+runs ``pre-commit install`` — and asks that module for the text to write and for a
+verdict on the text it read back.
 """
 
 from __future__ import annotations
@@ -12,15 +18,19 @@ from __future__ import annotations
 import json
 import shlex
 import shutil
-import subprocess  # nosec B404
+import subprocess
 from dataclasses import dataclass
-from io import StringIO
 from pathlib import Path
 
 import yaml
-from ruamel.yaml import YAML
 
 from .catalog import bundled_catalog_root, iter_catalog_files
+from .precommit_config import (
+    excluded_hooks_present,
+    managed_hook_mismatches,
+    parse_config,
+    render_precommit_config,
+)
 from .projection import SyncResult, atomic_write_text, sync_file
 from .schema import ValidationError, technology_selected
 
@@ -197,9 +207,11 @@ def check_copilot_hooks(
 
     hooks_dir = repo_root / COPILOT_HOOKS_DIR
     if hooks_dir.is_dir():
-        for path in sorted(hooks_dir.glob(f"{COPILOT_MANAGED_PREFIX}*.json")):
-            if path not in wanted:
-                mismatches.append((path, "not in the catalog (stale managed hook file)"))
+        mismatches.extend(
+            (path, "not in the catalog (stale managed hook file)")
+            for path in sorted(hooks_dir.glob(f"{COPILOT_MANAGED_PREFIX}*.json"))
+            if path not in wanted
+        )
     return mismatches
 
 
@@ -215,181 +227,6 @@ def remove_copilot_hooks(repo_root: Path) -> int:
     if not any(hooks_dir.iterdir()):
         hooks_dir.rmdir()
     return removed
-
-
-def _hook_entry(spec: HookSpec, hooks_relpath: str) -> dict:
-    # pre-commit shell-splits `entry`, so the script path must be quoted to
-    # survive spaces or shell metacharacters in a configured core path.
-    entry: dict = {
-        "id": spec.id,
-        "name": spec.id,
-        "entry": f"uv run python {shlex.quote(f'{hooks_relpath}/{spec.script}')}",
-        "language": "system",
-        "stages": [spec.stage],
-        "pass_filenames": spec.pass_filenames,
-    }
-    if spec.always_run:
-        entry["always_run"] = True
-    return entry
-
-
-def _managed_local_block(specs: list[HookSpec], hooks_relpath: str) -> dict:
-    """The single ``repo: local`` block that carries basicly's managed hooks."""
-    return {"repo": "local", "hooks": [_hook_entry(spec, hooks_relpath) for spec in specs]}
-
-
-def merge_precommit_config(
-    existing: dict | None,
-    specs: list[HookSpec],
-    hooks_relpath: str,
-    strip_ids: set[str] | None = None,
-) -> dict:
-    """Return a pre-commit config with basicly's managed hooks merged in.
-
-    Managed hooks (matched by id) are stripped from every ``local`` repo and a
-    single fresh managed block is appended, so re-running is idempotent and
-    foreign repos/hooks are preserved untouched. ``strip_ids`` widens the strip
-    set beyond the rendered specs so a hook a technology selection excludes is
-    removed rather than stranded.
-    """
-    config = dict(existing) if isinstance(existing, dict) else {}
-    managed_ids = strip_ids or {spec.id for spec in specs}
-
-    kept: list = []
-    for repo in config.get("repos") or []:
-        if isinstance(repo, dict) and repo.get("repo") == "local":
-            hooks = [
-                hook
-                for hook in (repo.get("hooks") or [])
-                if not (isinstance(hook, dict) and hook.get("id") in managed_ids)
-            ]
-            if hooks:
-                kept.append({**repo, "hooks": hooks})
-            # A local repo left empty was fully basicly-managed; drop it.
-        else:
-            kept.append(repo)
-
-    kept.append(_managed_local_block(specs, hooks_relpath))
-    config["repos"] = kept
-    return config
-
-
-def _round_trip_yaml() -> YAML:
-    """A ruamel round-trip parser that keeps comments, order, and quoting."""
-    ryaml = YAML()
-    ryaml.preserve_quotes = True
-    # pre-commit entries can be long; never fold them across lines.
-    ryaml.width = 4096
-    return ryaml
-
-
-def _replace_managed_block(
-    config: dict,
-    specs: list[HookSpec],
-    hooks_relpath: str,
-    strip_ids: set[str] | None,
-) -> None:
-    """Rebuild only basicly's managed block, mutating ``config`` in place.
-
-    Strips basicly's managed hooks from every ``local`` repo and appends one
-    fresh managed block, so a round-trip parser keeps every unmanaged repo/hook
-    (and its comments) exactly where it was.
-    """
-    managed_ids = strip_ids or {spec.id for spec in specs}
-    repos = config.get("repos")
-    if not isinstance(repos, list):
-        repos = []
-        config["repos"] = repos
-    for ri in range(len(repos) - 1, -1, -1):
-        repo = repos[ri]
-        if not (isinstance(repo, dict) and repo.get("repo") == "local"):
-            continue
-        hooks = repo.get("hooks")
-        if isinstance(hooks, list):
-            for hi in range(len(hooks) - 1, -1, -1):
-                hook = hooks[hi]
-                if isinstance(hook, dict) and hook.get("id") in managed_ids:
-                    del hooks[hi]
-        # A local repo left with no hooks was fully basicly-managed; drop it.
-        if not hooks:
-            del repos[ri]
-    repos.append(_managed_local_block(specs, hooks_relpath))
-
-
-def render_precommit_config(
-    existing_text: str | None,
-    specs: list[HookSpec],
-    hooks_relpath: str,
-    strip_ids: set[str] | None = None,
-) -> str:
-    """Render the merged pre-commit config to deterministic YAML text.
-
-    A fresh file is rendered from scratch. When rewriting an existing file,
-    only basicly's managed ``local`` block is rebuilt: every unmanaged repo and
-    hook keeps its comments and position byte-for-byte (regression: a plain
-    ``yaml.safe_load``/``safe_dump`` round-trip dropped comments and reordered
-    hand-maintained hooks — basicly-wd7u).
-    """
-    if not existing_text:
-        merged = merge_precommit_config(None, specs, hooks_relpath, strip_ids)
-        return yaml.safe_dump(merged, sort_keys=False, default_flow_style=False)
-    ryaml = _round_trip_yaml()
-    config = ryaml.load(existing_text)
-    if not isinstance(config, dict):
-        merged = merge_precommit_config(None, specs, hooks_relpath, strip_ids)
-        return yaml.safe_dump(merged, sort_keys=False, default_flow_style=False)
-    _replace_managed_block(config, specs, hooks_relpath, strip_ids)
-    buf = StringIO()
-    ryaml.dump(config, buf)
-    return buf.getvalue()
-
-
-def _parse_config(config_path: Path, existing_text: str) -> dict:
-    parsed = yaml.safe_load(existing_text)
-    if not isinstance(parsed, dict):
-        raise ValueError(f"{config_path}: not a valid pre-commit config (expected a mapping)")
-    return parsed
-
-
-def managed_hook_mismatches(
-    config: dict,
-    specs: list[HookSpec],
-    hooks_relpath: str,
-) -> list[str]:
-    """Compare the managed hooks in a parsed config semantically, not textually.
-
-    A managed hook matches when every key/value basicly renders for it is present
-    with an equal value — regardless of file formatting, comments, or how the
-    consumer groups their ``local`` repos. Extra consumer-added keys are allowed.
-    Returns a reason per missing/out-of-sync managed hook; empty means in sync.
-    """
-    found: dict[str, dict] = {}
-    for repo in config.get("repos") or []:
-        if isinstance(repo, dict) and repo.get("repo") == "local":
-            for hook in repo.get("hooks") or []:
-                if isinstance(hook, dict) and "id" in hook:
-                    found[hook["id"]] = hook
-
-    mismatches: list[str] = []
-    for spec in specs:
-        expected = _hook_entry(spec, hooks_relpath)
-        actual = found.get(spec.id)
-        if actual is None:
-            mismatches.append(f"managed hook '{spec.id}' missing")
-        elif any(actual.get(key) != value for key, value in expected.items()):
-            mismatches.append(f"managed hook '{spec.id}' out of sync")
-    return mismatches
-
-
-def excluded_hooks_present(config: dict, excluded_ids: set[str]) -> list[str]:
-    """Return a reason per excluded managed hook still wired in the config."""
-    present: list[str] = []
-    for repo in config.get("repos") or []:
-        if isinstance(repo, dict) and repo.get("repo") == "local":
-            for hook in repo.get("hooks") or []:
-                if isinstance(hook, dict) and hook.get("id") in excluded_ids:
-                    present.append(f"managed hook '{hook['id']}' excluded by technology selection")
-    return present
 
 
 def sync_hooks(
@@ -427,7 +264,7 @@ def sync_hooks(
     # and formatting); rewrite only when a managed hook is missing, wrong, or
     # stranded after a technology selection excluded it.
     existing_text = config_path.read_text(encoding="utf-8")
-    parsed = _parse_config(config_path, existing_text)
+    parsed = parse_config(config_path, existing_text)
     if managed_hook_mismatches(parsed, specs, hooks_relpath) or excluded_hooks_present(
         parsed, excluded_ids
     ):
@@ -461,12 +298,14 @@ def _git_hooks_dir(repo_root: Path) -> Path:
     """
     try:
         result = subprocess.run(
-            ["git", "rev-parse", "--git-path", "hooks"],
+            # `shutil.which` — the alternative — buys nothing: `except OSError` below is
+            # already the git-not-installed branch, and PATH resolution is the behaviour.
+            ["git", "rev-parse", "--git-path", "hooks"],  # noqa: S607 — PATH git, see above
             cwd=repo_root,
             capture_output=True,
             text=True,
             check=False,
-        )  # nosec B603 B607
+        )
     except OSError:
         return repo_root / ".git" / "hooks"
     rel = result.stdout.strip()
@@ -540,7 +379,9 @@ def install_hooks(repo_root: Path, stages: list[str]) -> tuple[bool, str]:
     if cmd is None:
         return False, f"neither pre-commit nor uv is on PATH; install uv, then run: {manual}"
 
-    result = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True, check=False)  # nosec B603
+    # `cmd` is `_pre_commit_command`'s `shutil.which` result plus this module's literals;
+    # no consumer string reaches it and `shell=False` passes the argv straight to execve.
+    result = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True, check=False)  # noqa: S603 — argv built here, no shell
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip() or "unknown error"
         return False, f"pre-commit install failed ({detail}); run manually: {manual}"
@@ -562,7 +403,8 @@ def uninstall_hooks(repo_root: Path, stages: list[str]) -> tuple[bool, str]:
     if cmd is None:
         return False, f"neither pre-commit nor uv is on PATH; run manually: {manual}"
 
-    result = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True, check=False)  # nosec B603
+    # Same argv provenance as `install_hooks`: `_pre_commit_command` plus literals.
+    result = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True, check=False)  # noqa: S603 — argv built here, no shell
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip() or "unknown error"
         return False, f"pre-commit uninstall failed ({detail}); run manually: {manual}"
@@ -582,7 +424,7 @@ def remove_managed_hooks(repo_root: Path) -> str | None:
     if not config_path.exists():
         return None
 
-    parsed = _parse_config(config_path, config_path.read_text(encoding="utf-8"))
+    parsed = parse_config(config_path, config_path.read_text(encoding="utf-8"))
     specs = git_hook_specs(load_hook_specs())
     managed_ids = {spec.id for spec in specs}
 
@@ -629,12 +471,14 @@ def _tracked_identity(path: Path, cwd: Path) -> tuple[Path, str] | None:
     """
     try:
         proc = subprocess.run(
-            ["git", "rev-parse", "--git-common-dir", "--show-toplevel"],
+            # Partial path for the same reason as `_git_hooks_dir`: PATH resolution is the
+            # behaviour, and `except OSError` below is the git-not-installed branch.
+            ["git", "rev-parse", "--git-common-dir", "--show-toplevel"],  # noqa: S607 — as above
             cwd=cwd,
             capture_output=True,
             text=True,
             check=False,
-        )  # nosec B603 B607
+        )
     except OSError:
         return None
     lines = [line for line in proc.stdout.splitlines() if line.strip()]
@@ -696,10 +540,13 @@ def check_hooks(
         return mismatches
 
     existing_text = config_path.read_text(encoding="utf-8")
-    parsed = _parse_config(config_path, existing_text)
-    for reason in managed_hook_mismatches(parsed, specs, core_hooks_dir.as_posix()):
-        mismatches.append((config_path, reason))
-    for reason in excluded_hooks_present(parsed, excluded_ids):
-        mismatches.append((config_path, reason))
+    parsed = parse_config(config_path, existing_text)
+    mismatches.extend(
+        (config_path, reason)
+        for reason in managed_hook_mismatches(parsed, specs, core_hooks_dir.as_posix())
+    )
+    mismatches.extend(
+        (config_path, reason) for reason in excluded_hooks_present(parsed, excluded_ids)
+    )
 
     return mismatches

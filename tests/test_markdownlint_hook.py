@@ -12,8 +12,10 @@ import ast
 import importlib.util
 import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from typing import TYPE_CHECKING
 
-import pytest
+if TYPE_CHECKING:
+    import pytest
 
 REPO_ROOT = Path(__file__).parent.parent
 SCRIPT = REPO_ROOT / ".basicly" / "core" / "hooks" / "markdownlint.py"

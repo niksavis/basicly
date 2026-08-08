@@ -12,11 +12,13 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from pathlib import Path
-
-import pytest
+from typing import TYPE_CHECKING
 
 from basicly import br, decompose, plan_gate, plan_record, policy
 from basicly.decompose import ChildSpec
+
+if TYPE_CHECKING:
+    import pytest
 
 
 class _Proc:

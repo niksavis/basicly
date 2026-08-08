@@ -19,11 +19,13 @@ Two properties, and both are about arithmetic the enforcement half cannot see:
 from __future__ import annotations
 
 from pathlib import Path
-
-import pytest
+from typing import TYPE_CHECKING
 
 from basicly import loop, merge, policy, rubrics, verify
 from basicly.config import PolicyConfig
+
+if TYPE_CHECKING:
+    import pytest
 
 CONFIG = PolicyConfig(required_gates=("verify",), max_rework=2)
 

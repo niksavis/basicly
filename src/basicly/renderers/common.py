@@ -4,17 +4,24 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from jinja2 import Environment, FileSystemLoader
 
-from ..schema import PlannedOutput
+if TYPE_CHECKING:
+    from basicly.schema import PlannedOutput
 
 
 def make_env(templates_dir: Path) -> Environment:
     """Create a Jinja2 environment for templates under templates_dir."""
     return Environment(
         loader=FileSystemLoader(str(templates_dir)),
-        autoescape=False,  # nosec B701
+        # These templates render Markdown and TOML instruction files, never HTML, and the
+        # output is read by an agent and by git. The alternative — `select_autoescape` —
+        # was rejected because autoescaping turns a literal `&` or `<` in a fragment body
+        # into an entity in the projected file, i.e. corrupts every generated artifact.
+        # The XSS sink the rule guards does not exist: nothing here is served to a browser.
+        autoescape=False,  # noqa: S701 — non-HTML output; see the note above
         keep_trailing_newline=True,
     )
 

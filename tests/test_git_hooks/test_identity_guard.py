@@ -3,8 +3,10 @@ from __future__ import annotations
 import importlib.util
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import pytest
+if TYPE_CHECKING:
+    import pytest
 
 
 def _load_identity_guard_module():

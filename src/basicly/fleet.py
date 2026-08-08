@@ -101,7 +101,9 @@ def fleet_report(root: Path, status_fn: Callable[[Path], dict[str, Any]]) -> dic
     for repo_root in discover_repos(root):
         try:
             status = status_fn(repo_root)
-        except Exception as exc:  # a single repo's snapshot must not fail the fleet
+        # *status_fn* is injected and runs against a repo this module does not own, so its
+        # failure set is open by construction — narrowing was rejected for that reason.
+        except Exception as exc:  # noqa: BLE001 — injected callable, recorded in the rollup
             status = {"error": f"{type(exc).__name__}: {exc}"}
         runs = run_record_summary(repo_root)
         total_runs += runs["total_runs"]

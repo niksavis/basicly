@@ -1329,10 +1329,7 @@ def load_verify_config(repo_root: Path) -> VerifyConfig:
     if not isinstance(raw_checks, list):
         return VerifyConfig(())
 
-    checks: list[VerifyCheck] = []
-    for entry in raw_checks:
-        checks.append(_parse_verify_check(entry))
-    return VerifyConfig(tuple(checks))
+    return VerifyConfig(tuple(_parse_verify_check(entry) for entry in raw_checks))
 
 
 def _parse_verify_check(entry: object) -> VerifyCheck:
@@ -2136,6 +2133,6 @@ def _parse_overlay_paths(paths: dict) -> list[Path] | None:
 
     if isinstance(value, list):
         parsed = [Path(item) for item in value if isinstance(item, str) and item.strip()]
-        return parsed if parsed else None
+        return parsed or None
 
     return None

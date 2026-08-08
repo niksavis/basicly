@@ -2341,7 +2341,7 @@ def _parse_ts(text: str) -> datetime | None:
     zone would turn a missing suffix into an hours-wrong interval.
     """
     try:
-        stamp = datetime.fromisoformat(text.strip().replace("Z", "+00:00"))
+        stamp = datetime.fromisoformat(text.strip())
     except ValueError:
         return None
     return stamp if stamp.tzinfo is not None else stamp.replace(tzinfo=UTC)

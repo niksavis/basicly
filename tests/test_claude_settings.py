@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-
-import pytest
+from typing import TYPE_CHECKING
 
 from basicly import claude_settings, cli
+from basicly.hooks import HookSpec
+
+if TYPE_CHECKING:
+    import pytest
 
 SETTINGS = Path(".claude/settings.json")
 
@@ -81,7 +84,7 @@ def test_cli_bg_isolation_noop_when_already_none(
     assert _read_settings(tmp_path) == {"worktree": {"bgIsolation": "none"}}
 
 
-GUARD = claude_settings.HookSpec(
+GUARD = HookSpec(
     id="protect-generated", script="protect-generated.py", stage="pretooluse", manager="claude"
 )
 HOOKS_RELPATH = ".basicly/core/hooks"
@@ -144,7 +147,7 @@ def test_agent_hook_mismatches_flags_missing_and_stale(tmp_path: Path) -> None:
     assert claude_settings.agent_hook_mismatches(tmp_path, [GUARD], HOOKS_RELPATH)
 
 
-COUNTER = claude_settings.HookSpec(
+COUNTER = HookSpec(
     id="tool-usage", script="tool-usage.py", stage="posttooluse", manager="claude", matcher="Bash"
 )
 

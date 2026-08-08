@@ -11,10 +11,12 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-
-import pytest
+from typing import TYPE_CHECKING
 
 from basicly import cli, health, run_record
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def _entry(agent: str, outcome: str, ts: str) -> dict:

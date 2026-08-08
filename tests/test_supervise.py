@@ -5387,6 +5387,48 @@ def test_lane_stream_counts_an_event_that_carries_no_usage() -> None:
     assert stream.spent == 0  # nothing measured, so nothing accrued
 
 
+def test_lane_stream_keeps_the_last_thing_the_dispatch_said() -> None:
+    """The third reading (basicly-jr0l.66): elapsed and spend never say *what* it is doing."""
+    stream = supervise.LaneStream()
+
+    stream(runner.StreamEvent(line="x", text="Reading the plan gate\nthen the tests"))
+    stream(runner.StreamEvent(line="y", text="Running the suite"))
+
+    # The latest, not the first: a heartbeat reports where the lane is now.
+    assert stream.doing == "Running the suite"
+
+
+def test_lane_stream_names_the_nested_agent_that_said_it() -> None:
+    """Forwarded turns arrive interleaved and are indistinguishable without the name."""
+    stream = supervise.LaneStream()
+
+    stream(runner.StreamEvent(line="x", text="Auditing the seam", subagent="reviewer"))
+
+    assert stream.doing == "reviewer: Auditing the seam"
+
+
+def test_lane_stream_reports_nothing_for_a_dispatch_that_has_said_nothing() -> None:
+    """A blank is honest; an invented one is not — the same rule spend follows."""
+    stream = supervise.LaneStream()
+
+    stream(_turn(120))  # a metered turn carrying no prose
+    stream(runner.StreamEvent(line="y", text="   \n  "))  # whitespace is not prose
+
+    assert stream.doing == ""
+    with supervise.live_lane("epic.1", stream):
+        assert supervise.inflight_activity() == {}
+
+
+def test_lane_stream_clips_a_long_turn_to_one_heartbeat_row() -> None:
+    """Four concurrent lanes have to fit on a terminal row, so the prose is bounded."""
+    stream = supervise.LaneStream()
+
+    stream(runner.StreamEvent(line="x", text="w" * 500))
+
+    assert len(stream.doing) == supervise._SAID_CHARS + len("...")
+    assert stream.doing.endswith("...")
+
+
 def test_dispatch_lane_drives_the_watchdog_and_the_spend_meter_from_the_stream(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -5593,6 +5635,20 @@ def test_inflight_note_reports_the_tokens_a_running_lane_has_reported() -> None:
 
     assert "epic.1 12s 84000 tok" in note
     assert "epic.2 3s," in note or note.endswith("epic.2 3s")
+
+
+def test_inflight_note_says_what_a_running_lane_is_doing() -> None:
+    """Elapsed and spend say a lane is alive and expensive, never whether it is stuck."""
+    lane = _lane("epic.1")
+    futures: dict[Future[supervise.LaneOutcome], supervise.AdoptedLane] = {Future(): lane}
+    started = {"epic.1": time.monotonic() - 12.0}
+    stream = supervise.LaneStream()
+    stream(runner.StreamEvent(line="x", text="Rebasing onto main", subagent="kai"))
+
+    with supervise.live_lane("epic.1", stream):
+        note = supervise._inflight_note(started, futures, set(futures))
+
+    assert "[kai: Rebasing onto main]" in note
 
 
 # --- The terminal spend bound: D3 binding *during* a dispatch (basicly-lpsf) --

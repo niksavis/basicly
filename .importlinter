@@ -21,20 +21,31 @@ containers =
 exhaustive = True
 layers =
     cli
-    supervise
+    supervise | usage_report
     loop | release
     catalog_lint | contention | health
     commit | merge
     repair_brief
     classify | decompose | loop_state | rubrics
     decisions
-    plan_gate | policy | tuning | verify
+    plan_gate | policy | routing_evals | tuning | verify
+    capability_proof
     config | worktree
     claude_settings | runner
-    agents | catalog_verify | fleet | hooks | loader | models | permissions | planner | renderers | skills | state
-    run_record
+    agents | catalog_verify | copilot_store | fleet | hooks | loader | models | permissions | planner | renderers | skills | state
+    runner_usage
+    decider_contract
+    decision_marker
+    run_record | skill_source | surface_report
+    spend_calibration
     br
-    catalog | catalog_routing | integrity | needs_input | plan_record | projection | read_cost | redact | review | schema | session | tracker_surface | tracker_usage | ui | usage
+    mirror
+    owned_store
+    dispatch_phase
+    runner_envelope
+    catalog | catalog_routing | catalog_source | checkout | integrity | needs_input | plan_record | precommit_config | projection | read_cost | redact | review | schema | session | tracker_surface | tracker_usage | ui | usage | verify_artifact
+    tracker_invocation
+    stemmer
 # Two cycles survive as function-level imports carrying `# noqa: PLC0415`; the
 # top-level direction is the one the tiers encode. Listing them here is not a
 # weakening: `unmatched_ignore_imports_alerting` defaults to `error`, so when a cycle

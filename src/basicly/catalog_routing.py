@@ -19,93 +19,20 @@ Three properties are load-bearing, and one temptation is refused:
   judging relevance — and also non-deterministic, network-dependent and
   unownable. Semantics are Tier 3's job.
 
-The stemmer is a deliberately conservative subset of Porter's step 1 (plurals,
-``-ed``/``-ing``, ``-ly``) rather than the full algorithm: those are the endings
-that actually separate a user's phrasing from a description's ("commits" vs
-"commit", "rendering" vs "render"), and every derivational rule beyond them buys
-less conflation than it risks. The rule table below *is* the specification —
-this is our stemmer, not a claim about someone else's.
+The vocabulary half — which words two texts are allowed to be compared on — is
+:mod:`basicly.stemmer`. The boundary is *scoring* against *conflation*: nothing
+here decides that "branches" and "branch" are the same word, and nothing there
+knows a corpus exists.
 """
 
 from __future__ import annotations
 
 import math
-import re
 from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
-# Word characters only: "tf-idf" becomes "tf" + "idf" and "pre-commit" becomes
-# "pre" + "commit", so a hyphenated compound in a description still matches the
-# bare word a user types.
-_TOKEN_RE = re.compile(r"[a-z0-9]+")
-
-_VOWELS = frozenset("aeiou")
-
-# Pure function words. Deliberately short: IDF already flattens a term that
-# appears in every description, so the stop list only has to remove words that
-# are frequent *and* arbitrary. Directional particles ("up", "out", "over") are
-# kept — they carry real signal in phrases like "set up" and "roll out".
-STOPWORDS = frozenset({
-    "a",
-    "an",
-    "and",
-    "are",
-    "as",
-    "at",
-    "be",
-    "been",
-    "but",
-    "by",
-    "can",
-    "do",
-    "does",
-    "for",
-    "from",
-    "has",
-    "have",
-    "how",
-    "i",
-    "if",
-    "in",
-    "into",
-    "is",
-    "it",
-    "its",
-    "me",
-    "my",
-    "no",
-    "not",
-    "of",
-    "on",
-    "or",
-    "so",
-    "than",
-    "that",
-    "the",
-    "their",
-    "then",
-    "there",
-    "these",
-    "they",
-    "this",
-    "those",
-    "to",
-    "was",
-    "were",
-    "what",
-    "when",
-    "where",
-    "which",
-    "while",
-    "who",
-    "why",
-    "will",
-    "with",
-    "would",
-    "you",
-    "your",
-})
+from .stemmer import tokenize
 
 # Collision ceilings (§3.1 assertion 3): a pair at or above the error ceiling is
 # a lint violation, a pair at or above the warning ceiling is an advisory.
@@ -115,124 +42,6 @@ COLLISION_WARN = 0.50
 # Default top-k for a positive routing assertion; an entry's signature ask
 # declares `top_k: 1` in its own case file.
 DEFAULT_TOP_K = 3
-
-
-def _consonant_at(word: str, index: int) -> bool:
-    """True when ``word[index]`` is a consonant, treating 'y' positionally."""
-    char = word[index]
-    if char in _VOWELS:
-        return False
-    if char != "y":
-        return True
-    # A leading 'y' is a consonant; elsewhere it is a consonant only after a
-    # vowel ("happy" ends vowel-consonant, "cry" ends consonant-vowel).
-    return index == 0 or not _consonant_at(word, index - 1)
-
-
-def _measure(word: str) -> int:
-    """Porter's *m*: the number of vowel-then-consonant transitions in ``word``.
-
-    ``m`` is what separates a suffix that is genuinely attached to a stem from
-    one that is merely the end of a short word — "feed" keeps its "ee" because
-    the stem before it has ``m == 0``, while "agreed" loses one because its does
-    not.
-    """
-    pattern = "".join("c" if _consonant_at(word, i) else "v" for i in range(len(word)))
-    return pattern.count("vc")
-
-
-def _has_vowel(word: str) -> bool:
-    return any(not _consonant_at(word, i) for i in range(len(word)))
-
-
-def _ends_double_consonant(word: str) -> bool:
-    return len(word) >= 2 and word[-1] == word[-2] and _consonant_at(word, len(word) - 1)
-
-
-def _ends_cvc(word: str) -> bool:
-    """True when ``word`` ends consonant-vowel-consonant, last not w/x/y.
-
-    The shape that needs a silent "e" restored after stripping: "hop" from
-    "hoping" wants "hope", while "hopping" undoubles to "hop" and stays there.
-    """
-    if len(word) < 3:
-        return False
-    last = len(word) - 1
-    return (
-        _consonant_at(word, last)
-        and not _consonant_at(word, last - 1)
-        and _consonant_at(word, last - 2)
-        and word[last] not in "wxy"
-    )
-
-
-def _restore(stem: str) -> str:
-    """Repair the stem left by an ``-ed``/``-ing`` strip.
-
-    Three repairs, in order: a stem ending "at"/"bl"/"iz" regains its "e"
-    ("conflat" -> "conflate"); a doubled final consonant that is not l/s/z is
-    undoubled ("hopp" -> "hop"); a short consonant-vowel-consonant stem regains
-    its "e" ("hop" from "hoping" -> "hope").
-    """
-    if stem.endswith(("at", "bl", "iz")):
-        return stem + "e"
-    if _ends_double_consonant(stem) and stem[-1] not in "lsz":
-        return stem[:-1]
-    if _measure(stem) == 1 and _ends_cvc(stem):
-        return stem + "e"
-    return stem
-
-
-def stem(word: str) -> str:
-    """Reduce ``word`` to its conflation key (see the module docstring).
-
-    Conservative by construction: plurals, ``-ed``/``-ing`` and ``-ly`` only.
-    Words of three characters or fewer are returned unchanged — there is no
-    stem left to find and stripping one turns "ads" into "ad" but "was" into
-    "wa".
-    """
-    if len(word) <= 3:
-        return word
-
-    # Plurals. The "-es" rule is the one worth stating: English adds a full
-    # "es" after a sibilant, so a bare "-s" strip leaves "branches" as
-    # "branche" and it never meets "branch" — which is exactly how "which
-    # branch am I on" failed to reach `tool-git`. The stem-length guard keeps
-    # it off short words where "es" is not a plural marker ("uses" -> "use",
-    # not "us").
-    if word.endswith("sses"):
-        word = word[:-2]
-    elif word.endswith("ies"):
-        word = word[:-3] + "i"
-    elif word.endswith("es") and len(word) >= 5 and word[:-2].endswith(("s", "x", "z", "ch", "sh")):
-        word = word[:-2]
-    elif word.endswith("s") and not word.endswith(("ss", "us")):
-        word = word[:-1]
-
-    # Past and progressive.
-    if word.endswith("eed"):
-        if _measure(word[:-3]) > 0:
-            word = word[:-1]
-    else:
-        for suffix in ("ed", "ing"):
-            if word.endswith(suffix) and _has_vowel(word[: -len(suffix)]):
-                word = _restore(word[: -len(suffix)])
-                break
-
-    # Adverbial.
-    if len(word) > 4 and word.endswith("ly") and _has_vowel(word[:-2]):
-        word = word[:-2]
-
-    return word
-
-
-def tokenize(text: str) -> list[str]:
-    """Lowercase, split on word characters, drop stop words, stem what is left."""
-    return [
-        stem(token)
-        for token in _TOKEN_RE.findall(text.lower())
-        if token not in STOPWORDS and len(token) > 1
-    ]
 
 
 def _l2_normalize(vector: dict[str, float]) -> dict[str, float]:
@@ -314,8 +123,10 @@ class Ranker:
         """Every description pair with its cosine similarity, most similar first."""
         pairs: list[tuple[str, str, float]] = []
         for i, left in enumerate(self.slugs):
-            for right in self.slugs[i + 1 :]:
-                pairs.append((left, right, _cosine(self._vectors[left], self._vectors[right])))
+            pairs.extend(
+                (left, right, _cosine(self._vectors[left], self._vectors[right]))
+                for right in self.slugs[i + 1 :]
+            )
         return sorted(pairs, key=lambda item: (-item[2], item[0], item[1]))
 
 

@@ -25,20 +25,35 @@ and the single-extension decision cannot regress (architecture §4.2):
    the rank-1 rate clears a floor this gate refuses to lower.
 
 ``README.md`` and other documentation files are not sources and are left alone.
+
+Two neighbours own what this module deliberately does not. Reading a source at all —
+where it lives, whether it parses, what its JSON Schema says about it — is
+:mod:`basicly.catalog_source`; rule 9 above is asserted by :mod:`basicly.routing_evals`
+and merely *collected* here. The boundary is *ruling* against *reading* on one side and
+Tier 1 against Tier 2 on the other, and both were drawn when the module-size ratchet
+caught this module growing.
 """
 
 from __future__ import annotations
 
-import json
 import re
-from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
-from jsonschema import Draft202012Validator
-from jsonschema.exceptions import ValidationError
 
-from . import agents, catalog_routing, config, rubrics, skills
+from . import agents, routing_evals, rubrics, skill_source
+from .catalog_source import (
+    AGENTS_DIR,
+    CORE_DIR,
+    FRAGMENTS_DIR,
+    HOOKS_DIR,
+    RUBRICS_DIR,
+    SKILLS_DIR,
+    load_mapping,
+    rel,
+    schema_validator,
+    schema_violations,
+)
 from .schema import MODEL_TIERS, TECHNOLOGIES
 
 # Agent Skills spec (https://agentskills.io/specification) name rule: 1-64 chars,
@@ -52,69 +67,9 @@ _DEEP_REF_RE = re.compile(r"(?:references|scripts|assets)/[^\s()\[\]]+/[^\s()\[\
 # Progressive-disclosure guideline: keep the SKILL.md body under ~500 lines.
 _MAX_SKILL_BODY_LINES = 500
 
-CORE_DIR = Path(".basicly/core")
-SKILLS_DIR = CORE_DIR / "skills"
-FRAGMENTS_DIR = CORE_DIR / "fragments"
-AGENTS_DIR = CORE_DIR / "agents"
-HOOKS_DIR = CORE_DIR / "hooks"
-RUBRICS_DIR = CORE_DIR / "rubrics"
-SCHEMAS_DIR = CORE_DIR / "schemas"
 # Skill properties whose absence _check_invocation_axis reports in full, so the
 # raw jsonschema "is a required property" line is dropped for them.
 _AXIS_OWNED_REQUIRED = frozenset({"invocation"})
-
-
-def _rel(path: Path, repo_root: Path) -> str:
-    try:
-        return path.relative_to(repo_root).as_posix()
-    except ValueError:
-        return str(path)
-
-
-def _validator(repo_root: Path, name: str) -> Draft202012Validator:
-    schema = json.loads((repo_root / SCHEMAS_DIR / name).read_text(encoding="utf-8"))
-    return Draft202012Validator(schema)
-
-
-def _missing_required(err: ValidationError) -> str | None:
-    """The property name a jsonschema ``required`` error is about, else None.
-
-    Derived by diffing the required list against the instance rather than parsed
-    out of ``err.message``, so a jsonschema wording change cannot silently stop a
-    caller's suppression from matching.
-    """
-    if err.validator != "required" or not isinstance(err.instance, dict):
-        return None
-    required = err.validator_value
-    if not isinstance(required, list):
-        return None
-    return next((p for p in required if p not in err.instance), None)
-
-
-def _validate(
-    path: Path,
-    validator: Draft202012Validator,
-    repo_root: Path,
-    *,
-    owned_required: frozenset[str] = frozenset(),
-) -> list[str]:
-    """Schema violations for one source, as ``path: message`` lines.
-
-    ``owned_required`` names properties whose absence a later, more helpful check
-    reports instead: the raw jsonschema line is dropped so one defect yields one
-    diagnostic. Nothing else is suppressed — a wrong *value* for such a property
-    still reports here.
-    """
-    try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except yaml.YAMLError as exc:
-        return [f"{_rel(path, repo_root)}: invalid YAML: {exc}"]
-    errors = sorted(validator.iter_errors(data), key=lambda e: list(e.path))
-    return [
-        f"{_rel(path, repo_root)}: {err.message}"
-        for err in errors
-        if _missing_required(err) not in owned_required
-    ]
 
 
 def _check_enforcement_pointer(path: Path, repo_root: Path) -> list[str]:
@@ -130,7 +85,7 @@ def _check_enforcement_pointer(path: Path, repo_root: Path) -> list[str]:
     if not isinstance(commands, list) or not isinstance(body, str):
         return []  # schema validation already reports the type error
     return [
-        f"{_rel(path, repo_root)}: enforced_by command '{command}' is not cited in the body"
+        f"{rel(path, repo_root)}: enforced_by command '{command}' is not cited in the body"
         for command in commands
         if isinstance(command, str) and command not in body
     ]
@@ -141,16 +96,16 @@ def _validate_agent_schemas(repo_root: Path) -> list[str]:
     violations: list[str] = []
     agent_sources = sorted((repo_root / AGENTS_DIR).glob(f"*/{agents.AGENT_SOURCE_FILE}"))
     if agent_sources:
-        validator = _validator(repo_root, "agent.schema.json")
+        validator = schema_validator(repo_root, "agent.schema.json")
         for path in agent_sources:
-            violations.extend(_validate(path, validator, repo_root))
+            violations.extend(schema_violations(path, validator, repo_root))
     block_sources = sorted(
         (repo_root / AGENTS_DIR / agents.BLOCKS_DIR_NAME).glob(agents.BLOCK_SOURCE_GLOB)
     )
     if block_sources:
-        validator = _validator(repo_root, "block.schema.json")
+        validator = schema_validator(repo_root, "block.schema.json")
         for path in block_sources:
-            violations.extend(_validate(path, validator, repo_root))
+            violations.extend(schema_violations(path, validator, repo_root))
     return violations
 
 
@@ -169,7 +124,7 @@ def _tier_violations(path: Path, data: object, repo_root: Path) -> list[str]:
         return []  # `tier` is optional; absent means the runner's configured default
     if not isinstance(tier, str) or tier.strip() not in MODEL_TIERS:
         return [
-            f"{_rel(path, repo_root)}: model tier {tier!r} is not in the portable "
+            f"{rel(path, repo_root)}: model tier {tier!r} is not in the portable "
             f"vocabulary; declare `tier: {' | '.join(MODEL_TIERS)}`"
         ]
     return []
@@ -211,39 +166,40 @@ def lint_catalog(repo_root: Path) -> list[str]:
         return violations
 
     # 1. no discoverable-name sources
-    for path in sorted((repo_root / SKILLS_DIR).rglob("SKILL.md")):
-        violations.append(
-            f"{_rel(path, repo_root)}: skill sources must be skill.yaml, not SKILL.md"
-        )
-    for path in sorted((repo_root / FRAGMENTS_DIR).rglob("*.fragment.md")):
-        violations.append(
-            f"{_rel(path, repo_root)}: fragment sources must be *.fragment.yaml, not *.fragment.md"
-        )
-    for path in sorted((repo_root / AGENTS_DIR).rglob("*.md")):
-        if path.name == "README.md":
-            continue
-        violations.append(
-            f"{_rel(path, repo_root)}: agent sources must be agent.yaml or *.block.yaml, "
-            "not markdown (the projector renders the markdown into every agent root)"
-        )
-    for path in sorted((repo_root / RUBRICS_DIR).rglob("*.md")):
-        violations.append(
-            f"{_rel(path, repo_root)}: rubric sources must be *.rubric.yaml, not markdown"
-        )
+    violations.extend(
+        f"{rel(path, repo_root)}: skill sources must be skill.yaml, not SKILL.md"
+        for path in sorted((repo_root / SKILLS_DIR).rglob("SKILL.md"))
+    )
+    violations.extend(
+        f"{rel(path, repo_root)}: fragment sources must be *.fragment.yaml, not *.fragment.md"
+        for path in sorted((repo_root / FRAGMENTS_DIR).rglob("*.fragment.md"))
+    )
+    violations.extend(
+        f"{rel(path, repo_root)}: agent sources must be agent.yaml or *.block.yaml, "
+        "not markdown (the projector renders the markdown into every agent root)"
+        for path in sorted((repo_root / AGENTS_DIR).rglob("*.md"))
+        if path.name != "README.md"
+    )
+    violations.extend(
+        f"{rel(path, repo_root)}: rubric sources must be *.rubric.yaml, not markdown"
+        for path in sorted((repo_root / RUBRICS_DIR).rglob("*.md"))
+    )
 
     # 2. single YAML extension
-    for path in sorted(core.rglob("*.yml")):
-        violations.append(f"{_rel(path, repo_root)}: use the .yaml extension, not .yml")
+    violations.extend(
+        f"{rel(path, repo_root)}: use the .yaml extension, not .yml"
+        for path in sorted(core.rglob("*.yml"))
+    )
 
     # 3. schema validation
-    skill_validator = _validator(repo_root, "skill.schema.json")
-    fragment_validator = _validator(repo_root, "fragment.schema.json")
+    skill_validator = schema_validator(repo_root, "skill.schema.json")
+    fragment_validator = schema_validator(repo_root, "fragment.schema.json")
     for path in sorted((repo_root / SKILLS_DIR).glob("*/skill.yaml")):
         violations.extend(
-            _validate(path, skill_validator, repo_root, owned_required=_AXIS_OWNED_REQUIRED)
+            schema_violations(path, skill_validator, repo_root, owned_required=_AXIS_OWNED_REQUIRED)
         )
     for path in sorted((repo_root / FRAGMENTS_DIR).rglob("*.fragment.yaml")):
-        violations.extend(_validate(path, fragment_validator, repo_root))
+        violations.extend(schema_violations(path, fragment_validator, repo_root))
 
     violations.extend(_validate_agent_schemas(repo_root))
     violations.extend(_check_overlay_agent_tiers(repo_root))
@@ -266,17 +222,9 @@ def lint_catalog(repo_root: Path) -> list[str]:
     violations.extend(_check_invocation_axis(repo_root))
 
     # 9. Tier-2 routing evals over the model-invoked set (basicly-m4zv.2)
-    violations.extend(routing_outcome(repo_root).violations)
+    violations.extend(routing_evals.routing_outcome(repo_root).violations)
 
     return violations
-
-
-def _load_skill_data(path: Path) -> dict | None:
-    try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except yaml.YAMLError:
-        return None  # schema validation already reports malformed YAML
-    return data if isinstance(data, dict) else None
 
 
 def _check_skill_spec(repo_root: Path) -> list[str]:
@@ -288,19 +236,21 @@ def _check_skill_spec(repo_root: Path) -> list[str]:
     """
     violations: list[str] = []
     for path in sorted((repo_root / SKILLS_DIR).glob("*/skill.yaml")):
-        data = _load_skill_data(path)
+        data = load_mapping(path)
         if data is None:
             continue
-        rel = _rel(path, repo_root)
+        source = rel(path, repo_root)
         slug = path.parent.name
         name = data.get("name")
         if isinstance(name, str):
             if name != slug:
-                violations.append(f"{rel}: skill name '{name}' must match its directory '{slug}'")
+                violations.append(
+                    f"{source}: skill name '{name}' must match its directory '{slug}'"
+                )
             if len(name) > 64 or not _SKILL_NAME_RE.match(name):
                 violations.append(
-                    f"{rel}: skill name '{name}' must be 1-64 lowercase a-z0-9/hyphen characters "
-                    "with no leading, trailing, or consecutive hyphen"
+                    f"{source}: skill name '{name}' must be 1-64 lowercase a-z0-9/hyphen "
+                    "characters with no leading, trailing, or consecutive hyphen"
                 )
     return violations
 
@@ -327,156 +277,30 @@ def _check_invocation_axis(repo_root: Path) -> list[str]:
     """
     violations: list[str] = []
     for path in sorted((repo_root / SKILLS_DIR).glob("*/skill.yaml")):
-        data = _load_skill_data(path)
+        data = load_mapping(path)
         if data is None:
             continue
-        rel = _rel(path, repo_root)
+        source = rel(path, repo_root)
         invocation = data.get("invocation")
         has_description = isinstance(data.get("description"), str) and data["description"].strip()
         if invocation is None:
             violations.append(
-                f"{rel}: no 'invocation' declared — add `invocation: model` for an entry the "
+                f"{source}: no 'invocation' declared — add `invocation: model` for an entry the "
                 "agent should discover and route to, or `invocation: user` for one only a human "
                 "types (which must then carry no description). `invocation: model` preserves the "
                 "behaviour of any entry that already has a description"
             )
-        elif invocation == skills.MODEL_INVOKED and not has_description:
+        elif invocation == skill_source.MODEL_INVOKED and not has_description:
             violations.append(
-                f"{rel}: a model-invoked entry needs a description — it is what the agent "
+                f"{source}: a model-invoked entry needs a description — it is what the agent "
                 "reads to decide whether to route here"
             )
-        elif invocation == skills.USER_INVOKED and has_description:
+        elif invocation == skill_source.USER_INVOKED and has_description:
             violations.append(
-                f"{rel}: a user-invoked entry must not carry a description — nothing can route "
+                f"{source}: a user-invoked entry must not carry a description — nothing can route "
                 "to it, so the description is context load bought for no reach"
             )
     return violations
-
-
-@dataclass(frozen=True)
-class RoutingOutcome:
-    """One Tier-2 run over a repo's catalog: the metric, its floor, and findings."""
-
-    report: catalog_routing.RoutingReport
-    floor: float | None
-    violations: tuple[str, ...]
-    warnings: tuple[str, ...]
-
-    def summary(self) -> str:
-        """The one-line CI metric: rank-1 rate against the floor it must clear.
-
-        A rate printed without the threshold beside it is a number, not a
-        metric: the reader cannot tell a pass from a near miss, and nobody can
-        judge how much headroom a raise would spend.
-        """
-        against = f"floor {self.floor:.1%}" if self.floor is not None else "no floor declared"
-        return (
-            f"routing: rank-1 rate {self.report.rank1_hits}/{self.report.positives} "
-            f"= {self.report.rank1_rate:.1%} ({against})"
-        )
-
-
-def _model_invoked_descriptions(repo_root: Path) -> dict[str, str]:
-    """Slug -> description for every model-invoked skill source.
-
-    The whole authored set, deliberately *not* filtered by ``[catalog]
-    technologies``. Routing quality is a property of the catalog this repo
-    ships to every consumer, so a technology this repo happens not to select
-    would otherwise ship with an unchecked description — and a gate whose
-    verdict depends on the running repo's configuration is not the
-    reproducible measurement §3.3 asks for.
-    """
-    descriptions: dict[str, str] = {}
-    for path in sorted((repo_root / SKILLS_DIR).glob("*/skill.yaml")):
-        data = _load_skill_data(path)
-        if data is None:
-            continue
-        description = data.get("description")
-        if data.get("invocation") == skills.MODEL_INVOKED and isinstance(description, str):
-            descriptions[path.parent.name] = description
-    return descriptions
-
-
-def _load_eval_cases(
-    repo_root: Path, ranked: set[str]
-) -> tuple[list[catalog_routing.PositiveCase], list[catalog_routing.NegativeCase], list[str]]:
-    """Load and validate every ``evals.yaml`` present under the skill sources.
-
-    A *missing* case file is not reported here — making one a Tier-1 failure is
-    basicly-m4zv.3's job, and failing on it now would red the gate for every
-    entry before the corpus exists. A file that *is* present must be complete:
-    an eval nobody can trust is worse than none, because it reads as coverage.
-    """
-    positives: list[catalog_routing.PositiveCase] = []
-    negatives: list[catalog_routing.NegativeCase] = []
-    violations: list[str] = []
-    sources = sorted((repo_root / SKILLS_DIR).glob(f"*/{skills.EVAL_SOURCE_FILE}"))
-    if not sources:
-        return positives, negatives, violations
-    validator = _validator(repo_root, "evals.schema.json")
-    for path in sources:
-        slug = path.parent.name
-        rel = _rel(path, repo_root)
-        schema_errors = _validate(path, validator, repo_root)
-        if schema_errors:
-            violations.extend(schema_errors)
-            continue
-        if slug not in ranked:
-            violations.append(
-                f"{rel}: '{slug}' is not a model-invoked entry, so nothing can route to it — "
-                "a user-invoked entry carries no description and needs no routing evidence"
-            )
-            continue
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        entry_positives, entry_negatives = catalog_routing.entry_cases(slug, data)
-        positives.extend(entry_positives)
-        for negative in entry_negatives:
-            if negative.owner == slug:
-                violations.append(
-                    f"{rel}: negative prompt {negative.prompt!r} names '{slug}' as its own "
-                    "owner — a negative belongs to a different entry, or it asserts nothing"
-                )
-                continue
-            if negative.owner not in ranked:
-                violations.append(
-                    f"{rel}: negative prompt {negative.prompt!r} names owner "
-                    f"'{negative.owner}', which is not a model-invoked catalog entry"
-                )
-                continue
-            negatives.append(negative)
-    return positives, negatives, violations
-
-
-def routing_outcome(repo_root: Path) -> RoutingOutcome:
-    """Run the Tier-2 routing eval over ``repo_root``'s catalog (basicly-m4zv.2).
-
-    Three assertions plus the CI metric: positive prompts rank their owner in
-    top-k, negative prompts are outranked by their declared owner, no
-    description pair collides, and the rank-1 rate clears a floor that may be
-    raised but never lowered.
-    """
-    descriptions = _model_invoked_descriptions(repo_root)
-    positives, negatives, violations = _load_eval_cases(repo_root, set(descriptions))
-    report = catalog_routing.evaluate(descriptions, positives, negatives)
-    try:
-        floor, high_water = config.load_routing_floor(repo_root)
-    except ValueError as exc:
-        return RoutingOutcome(report, None, (*violations, *report.failures, str(exc)), ())
-    # The floor gate activates with the corpus. A catalog with no eval cases has
-    # no rank-1 rate to defend, and demanding a floor for a rate nobody can
-    # measure would fail a freshly installed consumer on arithmetic over an
-    # empty set. Making the corpus itself mandatory is basicly-m4zv.3's job.
-    floor_findings = (
-        catalog_routing.floor_violations(report.rank1_rate, floor, high_water)
-        if report.positives
-        else []
-    )
-    return RoutingOutcome(
-        report=report,
-        floor=floor,
-        violations=(*violations, *report.failures, *floor_findings),
-        warnings=report.collision_warnings,
-    )
 
 
 def skill_warnings(repo_root: Path) -> list[str]:
@@ -487,25 +311,25 @@ def skill_warnings(repo_root: Path) -> list[str]:
     description pair over the Tier-2 collision *warning* line, which is the
     early sign of the drift the error ceiling later refuses.
     """
-    warnings: list[str] = list(routing_outcome(repo_root).warnings)
+    warnings: list[str] = list(routing_evals.routing_outcome(repo_root).warnings)
     for path in sorted((repo_root / SKILLS_DIR).glob("*/skill.yaml")):
-        data = _load_skill_data(path)
+        data = load_mapping(path)
         if data is None:
             continue
-        rel = _rel(path, repo_root)
+        source = rel(path, repo_root)
         instructions = data.get("instructions")
         if isinstance(instructions, str):
             lines = len(instructions.splitlines())
             if lines > _MAX_SKILL_BODY_LINES:
                 warnings.append(
-                    f"{rel}: SKILL.md body is {lines} lines; keep it under "
+                    f"{source}: SKILL.md body is {lines} lines; keep it under "
                     f"~{_MAX_SKILL_BODY_LINES} (move detail into references/)"
                 )
-            for match in _DEEP_REF_RE.findall(instructions):
-                warnings.append(
-                    f"{rel}: file reference '{match}' is more than one level deep; "
-                    "keep references one level from SKILL.md"
-                )
+            warnings.extend(
+                f"{source}: file reference '{match}' is more than one level deep; "
+                "keep references one level from SKILL.md"
+                for match in _DEEP_REF_RE.findall(instructions)
+            )
     return warnings
 
 
@@ -530,11 +354,11 @@ def _technology_violations(path: Path, data: object, repo_root: Path) -> list[st
     if not isinstance(technologies, list) or not all(
         isinstance(item, str) for item in technologies
     ):
-        return [f"{_rel(path, repo_root)}: technologies must be a list of strings"]
+        return [f"{rel(path, repo_root)}: technologies must be a list of strings"]
     unknown = sorted(set(technologies) - TECHNOLOGIES)
     if unknown:
         return [
-            f"{_rel(path, repo_root)}: unknown technologies: {', '.join(unknown)} "
+            f"{rel(path, repo_root)}: unknown technologies: {', '.join(unknown)} "
             f"(allowed: {', '.join(sorted(TECHNOLOGIES))})"
         ]
     return []

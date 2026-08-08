@@ -3277,7 +3277,7 @@ def test_the_refusal_survives_the_engine_s_own_tracker_error_handling(
         try:
             br.run_br(tmp_path, ["comments", "add", "i", "text"])
         except RuntimeError, OSError, ValueError:
-            return None
+            return
 
     with policy.preflight_gate(policy.DOR_GATE), pytest.raises(br.TrackerWriteRefusedError):
         soft_reader()

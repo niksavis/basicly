@@ -47,13 +47,9 @@ import argparse
 import ast
 import re
 import sys
-import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
-
-import yaml
 
 # `loop._LEAF_TYPES` is private and has no public alias; this script is repo-local
 # tooling reading its own tree, and the whole point is to bind to the definition the
@@ -61,6 +57,13 @@ import yaml
 from basicly import cli, config, loop
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+# `.scripts` is deliberately not a package, so the sibling below is importable only
+# with this script's own directory on the path. Running this file as a script already
+# puts it there; the insert is for `tests/test_docs_claims.py`, which loads this module
+# by file path through `spec_from_file_location` and so starts with neither entry.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from docs_claim_sources import ClaimError, load_toml, load_yaml, read_text  # noqa: E402
 
 ARCHITECTURE_MD = "docs/architecture/architecture.md"
 IMPLEMENTATION_PLAN = "docs/plan/implementation-plan.md"
@@ -80,57 +83,15 @@ TOOL_BR_SKILL = f"{SKILLS_DIR}/tool-br/skill.yaml"
 FIX_HINT = "uv run python .scripts/docs_claims.py --fix"
 
 
-class ClaimError(Exception):
-    """A claim cannot be evaluated at all — a missing marker, file, or source field.
-
-    Distinct from drift: drift is repairable by ``--fix``, this is not, so both
-    modes report it and exit non-zero rather than writing a placeholder.
-    """
-
-
-# --------------------------------------------------------------------------- io
-
-
-def _read(path: Path) -> str:
-    """Text of *path*, with newlines normalized by universal-newline decoding."""
-    if not path.exists():
-        raise ClaimError(f"{path} does not exist")
-    return path.read_text(encoding="utf-8")
-
-
-def _write(path: Path, text: str) -> None:
-    """Write *text* back to *path*, preserving the file's existing line ending.
-
-    Reading normalizes CRLF to LF, so writing without this would silently convert
-    every line of a Windows checkout the first time one block drifted.
-    """
-    newline = "\r\n" if b"\r\n" in path.read_bytes() else "\n"
-    path.write_text(text, encoding="utf-8", newline=newline)
-
-
-def _load_toml(path: Path) -> dict[str, Any]:
-    """Parse a TOML file, failing loudly on anything but a mapping."""
-    try:
-        return tomllib.loads(_read(path))
-    except tomllib.TOMLDecodeError as exc:
-        raise ClaimError(f"{path}: {exc}") from exc
-
-
-def _load_yaml(path: Path) -> dict[str, Any]:
-    """Parse a YAML mapping source, failing loudly on anything else."""
-    data = yaml.safe_load(_read(path))
-    if not isinstance(data, dict):
-        raise ClaimError(f"{path}: expected a YAML mapping")
-    return data
-
-
 # ----------------------------------------------------------------- block splice
 
 
 def _splice(text: str, name: str, body: list[str]) -> str:
     """Return *text* with the ``name`` block's content replaced by *body*."""
-    begin = re.search(rf"^([ \t]*)<!-- docs-claims:begin {re.escape(name)} -->$", text, re.M)
-    end = re.search(rf"^[ \t]*<!-- docs-claims:end {re.escape(name)} -->$", text, re.M)
+    begin = re.search(
+        rf"^([ \t]*)<!-- docs-claims:begin {re.escape(name)} -->$", text, re.MULTILINE
+    )
+    end = re.search(rf"^[ \t]*<!-- docs-claims:end {re.escape(name)} -->$", text, re.MULTILINE)
     if begin is None or end is None:
         raise ClaimError(f"marker pair for block {name!r} not found")
     if end.start() < begin.end():
@@ -164,7 +125,7 @@ def _always_on_sizes(root: Path) -> list[str]:
     """
     rows: list[list[str]] = []
     for target_path in sorted((root / TARGETS_DIR).glob("*.yaml")):
-        target = _load_yaml(target_path)
+        target = load_yaml(target_path)
         if not target.get("enabled", False):
             continue
         name = target.get("name") or target_path.stem
@@ -176,7 +137,7 @@ def _always_on_sizes(root: Path) -> list[str]:
             surface = output.get("path")
             if not surface:
                 continue
-            chars = len(_read(root / surface))
+            chars = len(read_text(root / surface))
             rows.append([f"`{surface}` ({name})", str(chars), str(cap), str(cap - chars)])
     if not rows:
         raise ClaimError(f"{TARGETS_DIR}: no enabled target declares an always-on output")
@@ -193,7 +154,7 @@ def _catalog_skills(root: Path) -> list[str]:
     """
     rows: list[list[str]] = []
     for source in sorted((root / SKILLS_DIR).glob("*/skill.yaml")):
-        skill = _load_yaml(source)
+        skill = load_yaml(source)
         name = skill.get("name")
         if not isinstance(name, str):
             raise ClaimError(f"{source}: 'name' must be a string")
@@ -212,7 +173,7 @@ def _catalog_skills(root: Path) -> list[str]:
 
 def _script_purpose(script: Path) -> str:
     """First line of *script*'s module docstring — the hook's one-line purpose."""
-    docstring = ast.get_docstring(ast.parse(_read(script)))
+    docstring = ast.get_docstring(ast.parse(read_text(script)))
     if not docstring:
         raise ClaimError(f"{script}: hook scripts need a module docstring for the README table")
     return docstring.splitlines()[0].strip()
@@ -225,7 +186,7 @@ def _catalog_hooks(root: Path) -> list[str]:
     pre-push), so it is preserved rather than sorted.
     """
     hooks_dir = root / HOOKS_DIR
-    manifest = _load_yaml(hooks_dir / "hooks.yaml")
+    manifest = load_yaml(hooks_dir / "hooks.yaml")
     entries = manifest.get("hooks")
     if not isinstance(entries, list) or not entries:
         raise ClaimError(f"{HOOKS_DIR}/hooks.yaml: 'hooks' must be a non-empty list")
@@ -264,7 +225,7 @@ def _plan_current_state(root: Path) -> list[str]:
     per-mode, so any single hand-written "an N-check verify" is wrong for at least one
     mode. The plan claimed an 8-check ``full`` declaring nine; it is 15 declared.
     """
-    verify = _load_toml(root / "basicly.toml").get("verify") or {}
+    verify = load_toml(root / "basicly.toml").get("verify") or {}
     checks = verify.get("checks")
     if not isinstance(checks, list) or not checks:
         raise ClaimError("basicly.toml: [[verify.checks]] must be a non-empty list")
@@ -311,7 +272,7 @@ def _subparsers(parser: argparse.ArgumentParser) -> argparse._SubParsersAction |
 
 def _section_8(root: Path) -> str:
     """The architecture document's section 8, where every command is tabulated."""
-    text = _read(root / ARCHITECTURE_MD)
+    text = read_text(root / ARCHITECTURE_MD)
     start = text.index("## 8) CLI surface")
     end = text.find("\n## ", start)
     return text[start:end] if end != -1 else text[start:]
@@ -428,7 +389,7 @@ def _skill_work_types(root: Path) -> list[str]:
     docs bead produced one the loop could never advance — and ``br`` itself validates
     nothing, storing whatever ``--type`` is handed, so no tool caught it.
     """
-    skill = _load_yaml(root / TOOL_BR_SKILL)
+    skill = load_yaml(root / TOOL_BR_SKILL)
     instructions = skill.get("instructions")
     if not isinstance(instructions, str):
         raise ClaimError(f"{TOOL_BR_SKILL}: 'instructions' must be a string")
@@ -487,13 +448,23 @@ ASSERTIONS: tuple[Assertion, ...] = (
 # ------------------------------------------------------------------------- main
 
 
+def _write(path: Path, text: str) -> None:
+    """Write *text* back to *path*, preserving the file's existing line ending.
+
+    Reading normalizes CRLF to LF, so writing without this would silently convert
+    every line of a Windows checkout the first time one block drifted.
+    """
+    newline = "\r\n" if b"\r\n" in path.read_bytes() else "\n"
+    path.write_text(text, encoding="utf-8", newline=newline)
+
+
 def _run_blocks(root: Path, *, fix: bool) -> list[str]:
     """Compare (and optionally rewrite) every generated block; return failure lines."""
     failures: list[str] = []
     for block in BLOCKS:
         path = root / block.path
         try:
-            current = _read(path)
+            current = read_text(path)
             updated = _splice(current, block.name, block.render(root))
         except ClaimError as exc:
             failures.append(f"{block.path} [{block.name}]: {exc}")

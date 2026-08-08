@@ -5,6 +5,10 @@ to be short, current and actionable: what is true now, what ships next, in what 
 that order. Historical narrative was removed rather than kept — the tracker holds the incidents
 and `git log` holds the sequence.
 
+**Revised 2026-08-08**: `v0.8.0` shipped, so §6 is history rather than plan; the factory-loop
+build (`basicly-u2hl`) and the code-quality floor (§9 of the loop requirements) are added to the
+ladder as the content of the next cut; and §6.1 records what of the `br` cut is actually left.
+
 This file plus [`architecture.md`](../architecture/architecture.md) are the whole picture.
 Architecture is the human-readable account of concepts, structure and settled decisions; this
 file is the ladder. Every other document under `docs/` is temporary and is deleted when its
@@ -77,8 +81,8 @@ commit, because every hand-written copy of them was stale within days:
 
 | Measure | Value |
 | --- | --- |
-| Engine modules (`src/basicly/*.py`) | 51 |
-| Test files | 99 |
+| Engine modules (`src/basicly/*.py`) | 71 |
+| Test files | 115 |
 | `[[verify.checks]]` declared | 20 |
 | …of which run in `--mode fast` | 15 |
 | …of which run in `--mode full` | 19 |
@@ -99,11 +103,18 @@ band and its governor; read-capped scope sizing; per-model spend forecasting; ti
 resolution with recorded provenance; `basicly loop preflight`; atomic publication of the shared
 tracker export.
 
-**Not built** (verified at `cbbd47a`): no role registry and no persona routing — the two `src/`
-hits for "persona" are prose; no lexical ranker; no `severity` field anywhere in `src/`,
-`.basicly/core/rubrics/` or `schemas/` — the one `supervise.py` hit is a comment; no `evals/`
-directory. The tracker is still the external `br` binary, reached through two `subprocess.run`
-sites in `br.py` behind the call sites `basicly-tcmy.14` exists to unify.
+**Not built** (re-verified 2026-08-08 by a line-by-line read of `src/`, not from bead titles):
+**zero of the seven designed personas** — one default runner serves every phase, and `decisions.py`
+is Juno's function under another name; no role registry and no persona routing; no `severity` field
+in `src/`, `.basicly/core/rubrics/` or `schemas/`; **zero of the six handoff artifact schemas** of
+§8 of the loop requirements, and `events.KIND_DISPATCH` still has no writer; **no EARS validation**
+anywhere; VALIDATE is a step inside `build` rather than a state, and **never runs for a leaf**;
+RETROSPECTIVE does not exist — nothing computes a control limit over the gate-failure ledger.
+`policy.rework_recorded` reports a cross-gate total that **nothing enforces**, so a lane can still
+grind gate by gate.
+
+The tracker is still the external `br` binary: **43 spawn sites** behind the one seam in `br.py`,
+of which five have no owned equivalent at all (§6.1).
 
 **Three facts that are easy to get wrong**, so they are stated rather than left to be re-derived:
 
@@ -122,8 +133,9 @@ dependency clusters a cut draws from (§14). Rows are in shipping order.
 | --- | --- | --- |
 | ~~**`v0.7.0`**~~ | **SHIPPED 2026-08-06.** Trustworthy factory. 19 beads closed over two sessions. **Exit criterion 5 was not met** — see §5.1. `basicly-yc0x`. | shipped |
 | **`v0.7.1`** | **End the shared-anchor collision class**, and carry the unattended-run proof `v0.7.0` could not. `4746` (a changelog fragment per lane, so collision is impossible by construction), `bdd4` (dispatch a bounced lane to resolve its conflict rather than replaying the rebase), `3f76` (design docs stop carrying bead-id lists), `m4zv.5` (a stalled rework round escalates without spending the cap). A patch, not a minor, **only if** a curated `[Unreleased]` body keeps working alongside fragments. | 1–2 sessions |
-| **`v0.8.0`** | **Own the work graph — the store, not yet the floor.** The owned event log exists and is checkable: provenance, ids, snapshot with rotation, `fsck`/`rebuild`, import with tombstones, a shadow differential that refuses a self-agreeing comparison, and a `[tracker] mode` rung that flips the one record-read seam. **It does not remove `br` from the consumer floor**, and the row said it did until 2026-08-07 — measured at `MODE_OWNED` with no `br` on PATH, `gate list` and `lint` still raise "the harness requires the beads tracker", because `.19` flips `read_record` alone and 44 further spawn sites remain, 26 of them `comments`. That claim moves to `v1.0.0`, where the fresh-consumer acceptance test makes it falsifiable instead of asserted (`basicly-vkh0.22`). Plus streaming telemetry (`wctc`, `jr0l.66`). `basicly-vkh0`. | 5–8 sessions |
-| **`v0.9.0`** | **Evidence, gates, docs.** Cost per landed package (`7bur`), AST localisation (`agzx.2`), the Phase 2 deterministic gates (`m4zv.2`–`.6`) built against the owned tracker, the D4 amendment, the tutorial layer (`imnu.2`), the install capability tier (`imnu.3`), the ceremony threshold (`imnu.5`), parameter learning (`3ifz`). | 6–9 sessions |
+| ~~**`v0.8.0`**~~ | **SHIPPED 2026-08-07** (`ddfa651`). **Own the work graph — the store, not yet the floor.** The owned event log exists and is checkable: provenance, ids, snapshot with rotation, `fsck`/`rebuild`, import with tombstones, a shadow differential that refuses a self-agreeing comparison, and a `[tracker] mode` rung that flips the one record-read seam. **It does not remove `br` from the consumer floor**, and the row said it did until 2026-08-07 — measured at `MODE_OWNED` with no `br` on PATH, `gate list` and `lint` still raise "the harness requires the beads tracker", because `.19` flips `read_record` alone and 44 further spawn sites remain, 26 of them `comments`. That claim moves to `v1.0.0`, where the fresh-consumer acceptance test makes it falsifiable instead of asserted (`basicly-vkh0.22`). Plus streaming telemetry (`wctc`, `jr0l.66`). `basicly-vkh0`. | 5–8 sessions |
+| **`v0.9.0`** | **The factory loop and the code-quality floor** — retitled 2026-08-08, because this is what is already on `main` unreleased and what the next cut therefore contains. Two halves. **The loop** (`basicly-u2hl`, §6.2): integrity levels from a path rule with a diff-size downgrade, the Hold and Kill gate verbs, repair in the lane's own worktree briefed with the findings, the plan gate on entry to BUILD, and the module-size ratchet — all landed. Still open: the six handoff schemas, VALIDATE as a real state, the personas, EARS, and the retrospective's special-cause signal. **The floor** (§6.3): the ruff families the stack leaves off, pyright at its own default, security lint over `src/`, and the `noqa` debt ratchet — every one a CI check at zero token cost. Then the evidence work that is not blocked: the tutorial layer (`imnu.2`), the install capability tier (`imnu.3`), the ceremony threshold (`imnu.5`). | 6–9 sessions |
+| **`v0.9.1`** | **The measured evidence layer, when its chain unblocks.** Cost per landed package (`7bur`), AST localisation (`agzx.2`), the remaining Phase 2 gate (`m4zv.3`), parameter learning (`3ifz`). Split out of `v0.9.0` because the whole chain sits behind `69az` (§7) and has done for two releases; holding the factory loop behind it would ship neither. | 3–5 sessions |
 | **`v0.10.0`** | **The judgment layer and always-on relief.** The roster (`s2xf`), gated on `7bur`'s numbers by construction; the Phase 4 authoring pass and the empty-glob check (`a3ab.1`–`.3`). | 5–8 sessions |
 | **`v1.0.0`** | **Stabilize and declare.** Surface audit and semver freeze, the breaking-marker gate, the fresh-consumer acceptance test. `1.0` is a promise, so the last release proves the promise instead of adding capability. | 3–5 sessions |
 
@@ -320,7 +332,7 @@ adding a changelog entry, none conflicting — *is* the evidence `u6jq.1` needs.
 lands with the release that makes it possible, rather than being re-attempted against a cause
 we already understand.
 
-## 6. `v0.8.0` — own the work graph
+## 6. `v0.8.0` — own the work graph (SHIPPED 2026-08-07)
 
 `basicly-vkh0`, P0. The tracker *is* the harness's state, so every guarantee in §2 is downstream of
 it, and it is currently an unowned external binary in the critical path whose licence carries a
@@ -377,12 +389,116 @@ nothing consumes it. Requirements carried forward from paid-for `br` defects liv
 (closed) as committed regression tests, including the WAL corruption R7 found under our own
 five-lane fan-out.
 
-## 7. `v0.9.0` — evidence, gates, docs
+### 6.1 What is actually left of the `br` cut
 
-**Status, 2026-08-07.** The deterministic-gate row is **shipped**: `m4zv.2`, `.4` and `.6` landed
-this release and `.5` landed in `v0.7.1`, so four of the five are closed and only `m4zv.3` remains
-(blocked behind `v0vt`). The D4 prerequisite named below is **already satisfied** — `imnu.1` is
-closed. Ready and unblocked: `imnu.2`, `imnu.3`, `imnu.5`, `3ifz`.
+Measured 2026-08-08 by reading every call site, not by reading bead titles. `br.py` is the only
+module that spawns `br`, through two funnels (`run_br`, `try_run_br`) reaching one `subprocess.run`.
+**43 spawn sites**, of which four already route to an owned equivalent (`comments add`,
+`comments list`, `show`, `scheduler`) and three are the shadow differential's reference side, which
+must keep reading the live store by construction.
+
+**Five operations have no owned equivalent at all**, and each is a design question rather than a
+port:
+
+| Operation | Call site | Why it is not a port |
+| --- | --- | --- |
+| `lint` | `policy.definition_of_ready` | br's templates are compiled into the binary and no read-only command reports them; `policy._TYPE_SECTIONS` is a hand-maintained mirror. Replacing it means **owning the validation rules** — which is requirement R3 (rules are configuration, not code) |
+| `dep cycles --blocking-only` | `decompose._assert_no_new_cycles` | No cycle detection exists in the kit |
+| `list --label` / `list -a` | `supervise._labelled_issues` | `events.fold` holds labels in `RecordState.fields`, but `differential.RecordView` deliberately excludes them, so the data is there and the query surface is not |
+| `create` id minting | `decompose._create_child`, `supervise.finalize_followup` | `ids.mint_root_id` and `ids.next_child_id` exist and **nothing calls them**; the create path takes the id from br's reply |
+| `gate list` | `policy.gate_status` | The kit models gate rows, but the owned side reads `missing` on 331 of 643 records because no export carries a gate field. Only the dual write populates it, and this repo is still `mode = "external"` |
+
+Three further pairs **bypass the seam** and read and write their own store consistently
+(`[harness-sizing]` in `decompose`, `[harness-info]` and `[harness-overrun]` in `supervise`);
+retiring them is `basicly-wpc8` and is a prerequisite, not a parallel task.
+
+**The order the cut has to happen in**: the kit grows what is missing (cycles, a label/blocked query,
+validation rules) → `br.py`'s six mirror translators become owned write seams → `policy` → `verify`
+and `rubrics` → `classify` and `loop` → the `decompose`/`supervise` bulk → `loop_state` → the
+store-lifecycle calls (`sync`, `init`, `where`) last. `bv` needs **nothing**: 0 of its 141 surfaces
+has ever been invoked, and no call site exists to contradict that.
+
+**Step 1 has not been run.** `basicly.toml` still says `mode = "external"` and `.basicly/ledger/`
+holds no `events-*.jsonl`, so the import is unrun and the dual write has never populated a gate
+field. Nothing downstream can be measured until it is.
+
+### 6.2 The factory loop — what landed and what is open
+
+`basicly-u2hl`, driven by [`design/factory-loop-requirements.md`](../design/factory-loop-requirements.md).
+Landed on `main` since `v0.8.0`, unreleased:
+
+| Bead | What it made true |
+| --- | --- |
+| `u2hl.2` | Integrity level assigned by a deterministic path rule (D9), with the diff-size downgrade (D11) |
+| `u2hl.3` | Hold and Kill carried out as writes (D3, D15). §5 of the requirements doc records that the original diagnosis named the right defect and the wrong cause |
+| `u2hl.4` | Repair runs in the lane's own worktree, briefed with the gate's actual findings (D5) |
+| `u2hl.5` | Module size gated as a token ratchet; `C901` enabled at 15 |
+| `u2hl.1` | The plan gate on entry to BUILD (§3.3), ratcheted on the `## Plan` heading so it binds the population it was written for and not the 600 beads that predate it |
+| `u2hl.8`, `.9` | Four modules split along named responsibilities, and the ratchet stopped charging for the splits it exists to force |
+
+**Open, in the order the dependencies allow.** Each is one unit; the sizes are decomposition
+signals, not commitments.
+
+1. `u2hl.6` synthesise a `description` for every projected skill root — three skills fail the Agent
+   Skills spec on the Claude root while the `.agents` root already synthesises one (S).
+2. `u2hl.7` pass `--forward-subagent-text` and route the forwarded events into the stream sink the
+   runner already reads (S).
+3. **A total rework ceiling** — D12's per-gate allowance is shipped and correct, but
+   `policy.rework_recorded` is reported and never enforced, so a lane can grind gate by gate (S).
+4. **Declared dependencies in the plan graph** — the plan gate requires the *field*; ordering is
+   still derived from scope overlap alone, so "B needs A's decision" between two children touching
+   no common file is still inexpressible (M).
+5. **D10** — every acceptance criterion names its own check at plan time, and VERIFY runs the named
+   checks instead of judging. This is the single largest documented failure mass in the field (L).
+6. **VALIDATE as a real state** — a phase in `LOOP_PHASES`, gated on verify green, running for
+   leaves as well as lanes, plus the `validate-as-consumer` skill (L).
+7. **The six handoff schemas as typed ledger events** (D4, D13) — sequenced `decompose→build`
+   first, per the risk accepted in §2.1 of the requirements doc (L).
+8. **RETROSPECTIVE** — a special-cause signal over the gate-failure ledger, plus `root-cause` with
+   its named-control/tier/covered-class contract (L).
+
+Personas and the §3.1 state table are deliberately **not** filed yet: D5's rule admits a persona
+only when it differs in tier, tools or artifact, and the artifacts do not exist; a transition table
+built over today's derived phases would only re-describe `derive_phase`.
+
+### 6.3 The code-quality floor
+
+§9 of the loop requirements, and the owner's standing instruction that it is not optional: the skill
+on one side, the hooks and CI gates on the other. Every item is a deterministic check at **zero token
+cost**, which §10 ranks above any judged check.
+
+Measured 2026-08-08 — **no family is adoptable at zero cost**, so each is a real fix, not a config
+line:
+
+| Gate | State | Cost to adopt |
+| --- | --- | --- |
+| pyright `standard` | repo declares `basic`, below pyright's own default | **1 error, 1 file** |
+| `RET` `TID` `DTZ` `A` | not selected | 5 violations |
+| `FURB` | not selected | 4 |
+| `BLE001` | not selected | 4, each a judgement about a process boundary |
+| `PERF` | not selected | 16 |
+| `TRY` less `TRY003` | not selected | 26 (`TRY003` alone is 442 — a message string in `raise`, style at scale) |
+| `TC001/002/006` | not selected | 16 (`TC003` alone is 111 — deferred, recorded) |
+| `S` over `src/` less `S101` | bandit is scoped to `.scripts`, `.basicly/core/hooks`, `.basicly/core/kit` — **not `src/`** | 25 |
+| `C901` at 10 | shipped at 15 | 14 |
+| `noqa` debt ratchet | does not exist | 0 files: freeze at today |
+| `python-guidelines` skill | does not exist | §9.2's nine judgement calls |
+
+Two corrections to §9.1 of the requirements doc, both found by re-measuring rather than quoting it:
+the `noqa` debt it records as 30 is **46** across 20 files — it grew 53% while the ratchet was
+unbuilt, which is the argument for the ratchet — and six of those carry no reason at all. And `src/`
+holds **21 `# nosec` comments that no scanner reads**, because bandit does not run there: they are
+inert and read as "reviewed", which is worse than no annotation.
+
+## 7. `v0.9.1` — the measured evidence layer
+
+**Renumbered to `v0.9.1` on 2026-08-08.** Everything here sits behind one chain that has not moved
+in two releases, and holding the factory loop (§6.2) and the code-quality floor (§6.3) behind it
+would have shipped neither. The docs debt below moved *up* to `v0.9.0`, because it is not blocked.
+
+**Status.** The deterministic-gate row is **shipped**: `m4zv.2`, `.4` and `.6` landed in `v0.8.0`
+and `.5` in `v0.7.1`, so four of five are closed and only `m4zv.3` remains (blocked behind `v0vt`).
+The D4 prerequisite named below is **already satisfied** — `imnu.1` is closed.
 
 **The numbers are blocked, so do not start here.** `7bur` cannot begin: its one open blocker is
 the `u6jq` epic, whose remaining child `u6jq.1` is itself blocked on `69az`. The chain is
@@ -579,10 +695,10 @@ its design is implemented and only the listed precondition stands between it and
 | `plan/implementation-plan.md` | **Authoritative** | This file. Deleted when `v1.0.0` ships and the ladder is spent. |
 | `tutorial/first-loop.md` | **Consumer-facing** | Never deleted while `basicly install` ships. Re-executed against a fresh repo whenever a command or its output changes (`imnu.2`). |
 | `how-to/customize-the-catalog.md`, `how-to/wire-up-the-verify-gate.md`, `how-to/unblock-a-commit.md`, `how-to/upgrade-and-check-drift.md`, `how-to/run-parallel-lanes.md`, `how-to/resume-a-track.md` | **Consumer-facing** | One page per recurring operation; a page goes when its operation does. Rationale stays in architecture — a how-to that starts explaining *why* is drifting into the reference (`imnu.2`). |
-| `design/work-tracker.md` | **Live** | `v0.8.0` ships. Five inbound references from `br.py`, `cli.py`, `tracker_surface.py`; it is the only record of what the replacement must be, including the requirements register. |
+| `design/work-tracker.md` | **Live** | Not `v0.8.0` — that shipped the *store*. This document survives until `br` leaves the runtime path (§6.1, `v1.0.0`'s acceptance test), because it is the only record of what the replacement must be, including the nine requirements carried forward from `br` defects already paid for. Five inbound references from `br.py`, `cli.py`, `tracker_surface.py`. |
 | `design/agent-roster-design.md` | **Live** | `v0.10.0` ships the roster. Referenced from `.basicly/core/models/README.md`. |
 | `design/factory-design.md` | Deletable after `kjc5.13` | Absorb D1–D10 into architecture, then delete. `commit.py` names it; remove that reference first. |
-| `design/factory-loop-requirements.md` | **Live** | The target state of the loop and the measured delta from it, with 16 decisions and their sources. Drives `basicly-u2hl`. Absorbed into architecture and deleted when that epic closes. |
+| `design/factory-loop-requirements.md` | **Live** | The target state of the loop and the measured delta from it, with 16 decisions and their sources. Drives `basicly-u2hl`; §6.2 tracks which decisions are code. Two sections are now *history* rather than specification — §5's corrected Hold/Kill diagnosis and §9.3's import-exclusion amendment — and both are kept deliberately, because a gap analysis that named the right defect and the wrong cause is the more useful record. Absorbed into architecture and deleted when that epic closes. |
 | `design/gates-and-rework-design.md` | **Deletable now** — `uhiq.2` | Cited by path from `architecture.md:1692` only. The bounded-rework subsystem is built but has never fired, so what survives is the *unvalidated* status, which belongs on `m4zv.5`. |
 | `design/steering-surfaces-design.md` | **Deletable now** — `uhiq.2` | Zero inbound references; architecture `:1553-1585` already carries the recall result. |
 | `design/catalog-efficacy-design.md` | **Deletable now** — `uhiq.2` | Architecture `:1563` carries the upper-bound rule, but `:1583` and `:1692` still cite the file by path — inline those citations or they dangle. |
@@ -605,7 +721,15 @@ Each blocks something and none can be derived from the code.
    "non-trivial work", which is the agent's judgment call, so the rule is unenforceable. Needs a
    written threshold **and** a named lightweight path below it that skips ceremony but never hooks.
 
-Resolved and recorded so they are not reopened: **Tier-2's rank-1 floor** (`m4zv.2`, discharged
+2. **What counts as a "touch" for the module-size first-touch rule** (OQ-12, §9.3 of the loop
+   requirements). Partly answered 2026-08-08 — a change adding only a top-level import is not a
+   touch, because the ratchet was charging for the splits it exists to force. The original question
+   stands for *content* changes: should a one-line typo fix in a 39,000-token module oblige the
+   author to bring it under 4,000? Nothing derivable from the code answers this.
+
+Resolved and recorded so they are not reopened: **OQ-9, the PEP 758 house direction** — paren-free
+`except A, B:` is allowed and is the house form, recorded in the `python-guidelines` skill rather
+than in a linter, since none enforces either direction; **Tier-2's rank-1 floor** (`m4zv.2`, discharged
 2026-08-07) — `[catalog] rank1_floor = 0.85` against a measured baseline of 80/87 = 92.0%, with
 `rank1_floor_high_water` starting equal so a later lowering is a visible act; the rationale is in
 `basicly.toml` beside the value; `v1.0.0`'s meaning (§2); the clean-room boundary

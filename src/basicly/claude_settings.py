@@ -23,9 +23,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from .hooks import HookSpec
 from .projection import atomic_write_text
+
+if TYPE_CHECKING:
+    from .hooks import HookSpec
 
 CLAUDE_SETTINGS_PATH = Path(".claude/settings.json")
 WORKTREE_KEY = "worktree"

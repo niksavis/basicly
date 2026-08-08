@@ -66,6 +66,11 @@ def _parse_argv(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("-p", "--prompt", required=True)
     parser.add_argument("--output-format", choices=("text", "json", "stream-json"), default="text")
     parser.add_argument("--verbose", action="store_true")
+    # Accepted because the real CLI accepts it (verified on Claude Code 2.1.226,
+    # `--forward-subagent-text`). This parser exists to refuse a flag the agent CLI
+    # would refuse, so a flag the harness starts passing has to be added here
+    # deliberately rather than tolerated by a permissive stand-in (basicly-u2hl.7).
+    parser.add_argument("--forward-subagent-text", action="store_true")
     return parser.parse_args(argv)
 
 

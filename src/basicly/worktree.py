@@ -15,100 +15,34 @@ the same records without a tracked file.
 from __future__ import annotations
 
 import json
-import subprocess
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from . import checkout
 from .br import try_run_br
+from .checkout import (
+    current_branch,
+    git,
+    git_common_dir,
+    main_checkout,
+    registered_worktrees,
+    run,
+    worktrees_root,
+)
 from .hooks import PRECOMMIT_CONFIG, hook_stages, install_hooks, load_hook_specs
 
 BRANCH_PREFIX = "harness/"
+
+# Re-exported under the name its callers hold it to: `loop` and `release` both
+# refuse a transition when they are standing in a linked worktree, and both ask
+# this module — which is also the object their tests patch.
+is_linked_checkout = checkout.is_linked_checkout
 
 # Heavy dependency dirs each worktree gets as its own standalone tree. They are
 # freshly installed (not symlinked/copied from main), which keeps the worktree
 # self-contained and makes teardown safe.
 DEP_DIRS = (".venv", "node_modules")
-
-
-def run(
-    args: list[str],
-    *,
-    cwd: Path | str | None = None,
-    check: bool = True,
-    env: dict[str, str] | None = None,
-) -> subprocess.CompletedProcess[str]:
-    """Run a subprocess with explicit utf-8 decoding (Windows defaults to cp1252).
-
-    *env* replaces the child's environment wholesale when given (the release
-    regeneration needs PYTHONPATH pointed at the repo being released); omitting it
-    inherits this process's, which is what every other caller wants.
-    """
-    proc = subprocess.run(  # nosec B603
-        args,
-        cwd=cwd,
-        env=env,
-        check=False,
-        text=True,
-        encoding="utf-8",
-        capture_output=True,
-    )
-    if check and proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout or "").strip()
-        raise RuntimeError(
-            f"command failed ({proc.returncode}): {' '.join(map(str, args))}\n{detail}"
-        )
-    return proc
-
-
-def git(
-    args: list[str], *, cwd: Path | str | None = None, check: bool = True
-) -> subprocess.CompletedProcess[str]:
-    """Run ``git`` with the shared utf-8 subprocess wrapper."""
-    return run(["git", *args], cwd=cwd, check=check)
-
-
-def git_common_dir(cwd: Path | str | None = None) -> Path:
-    """Return the shared git common dir (``<main>/.git`` for the main checkout)."""
-    out = git(["rev-parse", "--git-common-dir"], cwd=cwd).stdout.strip()
-    path = Path(out)
-    if not path.is_absolute():
-        path = Path(cwd or Path.cwd()) / path
-    return path.resolve()
-
-
-def main_checkout(cwd: Path | str | None = None) -> Path:
-    """Return the primary working tree (parent of the git common dir)."""
-    return git_common_dir(cwd).parent
-
-
-def worktrees_root(cwd: Path | str | None = None) -> Path:
-    """Return the sibling ``<repo>.worktrees`` directory that holds worktrees."""
-    main = main_checkout(cwd)
-    return main.parent / f"{main.name}.worktrees"
-
-
-def current_branch(cwd: Path | str | None = None) -> str:
-    """Return the checked-out branch name for *cwd*."""
-    return git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=cwd).stdout.strip()
-
-
-def is_linked_checkout(cwd: Path | str | None = None) -> bool:
-    """True when *cwd* is inside a linked worktree rather than the primary checkout.
-
-    A linked worktree has its own per-worktree git dir under
-    ``<common>/worktrees/<name>``; the primary checkout's git dir *is* the common
-    dir. Comparing the two is git's own definition of "am I in a linked worktree",
-    which the loop uses to refuse merge/ship transitions that must run from base.
-    Returns ``False`` when *cwd* is not a git repository (nothing to refuse).
-    """
-    proc = git(["rev-parse", "--git-dir"], cwd=cwd, check=False)
-    if proc.returncode != 0:
-        return False
-    git_dir = Path(proc.stdout.strip())
-    if not git_dir.is_absolute():
-        git_dir = Path(cwd or Path.cwd()) / git_dir
-    return git_dir.resolve() != git_common_dir(cwd)
 
 
 def now_iso() -> str:
@@ -162,10 +96,10 @@ def load_session(name: str, cwd: Path | str | None = None) -> Session | None:
 
 def list_sessions(cwd: Path | str | None = None) -> list[Session]:
     """Return all recorded worktree sessions, sorted by name."""
-    out: list[Session] = []
-    for path in sorted(sessions_dir(cwd).glob("*.json")):
-        out.append(Session(**json.loads(path.read_text(encoding="utf-8"))))
-    return out
+    return [
+        Session(**json.loads(path.read_text(encoding="utf-8")))
+        for path in sorted(sessions_dir(cwd).glob("*.json"))
+    ]
 
 
 def provision_deps(worktree: Path) -> list[str]:
@@ -298,24 +232,6 @@ def create(name: str, base: str | None = None, repo_root: Path | str | None = No
     for note in notes:
         print(f"  {note}")
     return session
-
-
-def registered_worktrees(cwd: Path | str | None = None) -> dict[Path, str | None]:
-    """Return ``{path: branch}`` for every worktree git currently tracks.
-
-    Branch is ``None`` for a detached-HEAD worktree. Used to resolve and to
-    reconcile against session records.
-    """
-    out: dict[Path, str | None] = {}
-    porcelain = git(["worktree", "list", "--porcelain"], cwd=cwd).stdout
-    path: Path | None = None
-    for line in porcelain.splitlines():
-        if line.startswith("worktree "):
-            path = Path(line[len("worktree ") :].strip())
-            out[path] = None
-        elif line.startswith("branch ") and path is not None:
-            out[path] = line[len("branch ") :].strip().removeprefix("refs/heads/")
-    return out
 
 
 def _resolve_worktree(

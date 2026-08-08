@@ -20,6 +20,19 @@ select = [
     "ERA", # eradicate
     "PL",  # Pylint
     "RUF", # Ruff-specific rules
+    # The families the requirements doc (docs/design/factory-loop-requirements.md §9.1)
+    # records as unenabled (basicly-u2hl.11). Each was measured and its findings paid off
+    # before the family was selected, so the gate lands green and binds the next violation.
+    "A",    # flake8-builtins (shadowing a builtin)
+    "BLE",  # flake8-blind-except (blind `except Exception`)
+    "DTZ",  # flake8-datetimez (naive datetime/date)
+    "FURB", # refurb (modern-idiom refactors)
+    "PERF", # Perflint
+    "RET",  # flake8-return
+    "S",    # flake8-bandit (see [lint.per-file-ignores]: adopted for `src/`)
+    "TC",   # flake8-type-checking
+    "TID",  # flake8-tidy-imports
+    "TRY",  # tryceratops (exception hygiene)
 ]
 ignore = [
     "D100",   # Missing docstring in public module
@@ -27,7 +40,53 @@ ignore = [
     "D203",   # 1 blank line required before class docstring
     "D213",   # Multi-line docstring summary should start at the second line
     "PLR2004", # Magic value used in comparison (common in tests and small scripts)
+    # --- Deliberately not adopted with their families (basicly-u2hl.11). Measured on
+    # --- 2026-08-08; each is style at scale rather than a defect class.
+    # 442 hits. Bans a message string in `raise`, i.e. demands a custom exception class
+    # (or a module constant) per message. The messages here are the diagnostics the CLI
+    # prints; hoisting every one out of its `raise` would move the text away from the
+    # condition that produced it and buy nothing a reader can use.
+    "TRY003",
+    # 24 hits, and its premise does not hold here. TRY004 assumes an `isinstance` guard
+    # protects a *parameter* against a caller passing the wrong type. Every site in this
+    # tree instead validates a *document* — a `basicly.toml` table, a `hooks.yaml` entry,
+    # a decompose plan, a rubric — that arrived from `yaml.safe_load`/`tomllib.load`. A
+    # malformed document is a bad value, which is `ValueError` by Python convention, and
+    # this repo has standardised on it: `loop.py:1121` wraps `decompose.parse_children`
+    # in `except ValueError` precisely so a proposed plan that is a list rather than a
+    # table is *reported* instead of crashing the lane, and ~40 tests assert
+    # `pytest.raises(ValueError, ...)` against these same parsers. Splitting the contract
+    # so a missing key raises ValueError and a wrong-typed key raises TypeError would
+    # walk straight past those handlers with no caller able to use the distinction.
+    "TRY004",
+    # 111 hits. Moving typing-only *stdlib* imports into `if TYPE_CHECKING:` would touch
+    # ~70 files to save no measurable import time (stdlib modules are already loaded by
+    # the interpreter or by a sibling import). TC001/TC002 stay on: those defer *our own*
+    # and third-party modules, where the cost is real.
+    "TC003",
+    # 6931 hits, every one an `assert` in `tests/`, where `assert` is how pytest asserts.
+    # Global rather than left to the `tests/**` entry below, and deliberately: this is the
+    # repo-wide answer to "is a bare assert a finding", and it mirrors the existing bandit
+    # `skips = ["B101"]` in pyproject.toml instead of inventing a second, differently
+    # scoped answer to the same question.
+    "S101",
 ]
+
+# `S` (flake8-bandit) is adopted for `src/` — the gap §9.1 names, because bandit is
+# configured to scan `.scripts`, `.basicly/core/hooks` and `.basicly/core/kit` and never
+# `src/`. Everywhere else keeps its existing scanner or is out of scope:
+#
+#   - the three trees below already run bandit, which reads the `# nosec` markers that
+#     live there. Selecting `S` too would demand a second, parallel suppression comment
+#     on every one of those lines with no second opinion behind it.
+#   - `tests/`: a test suite spawns `git`/`uv` by partial path, writes fixtures under
+#     hardcoded tmp paths and uses `random` for sample data — by design. Those findings
+#     describe the harness, not the product. bandit excludes `tests` for the same reason.
+[lint.per-file-ignores]
+"tests/**" = ["S"]
+".scripts/**" = ["S"]
+".basicly/core/hooks/**" = ["S"]
+".basicly/core/kit/**" = ["S"]
 
 # Cyclomatic complexity (basicly-u2hl.5). 15, because that is what binds today at zero
 # cost: measured on 2026-08-07, this tree has 0 violations at 15 and 14 at 10. So the gate

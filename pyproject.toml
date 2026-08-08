@@ -48,7 +48,7 @@ tmp_path_retention_policy = "failed"
 
 [tool.pyright]
 extraPaths = ["src", "."]
-typeCheckingMode = "basic"
+typeCheckingMode = "standard"
 
 [project.scripts]
 basicly = "basicly.cli:main"
@@ -136,7 +136,6 @@ waiver_count = 0
 # Tests are 43 of the 79 and hold the worst offender, so they will not come down as a side
 # effect of refactoring `src/`.
 [tool.module_size.frozen]
-".basicly/core/hooks/tool-usage.py" = 4361
 ".basicly/core/kit/tier_resolver.py" = 6246
 ".basicly/core/kit/tracker/differential.py" = 10792
 ".basicly/core/kit/tracker/events.py" = 12290
@@ -152,7 +151,6 @@ waiver_count = 0
 "src/basicly/agents.py" = 6893
 "src/basicly/br.py" = 22846
 "src/basicly/catalog_lint.py" = 6212
-"src/basicly/catalog_routing.py" = 4904
 "src/basicly/cli.py" = 54336
 "src/basicly/commit.py" = 6497
 "src/basicly/config.py" = 24203
@@ -211,7 +209,6 @@ waiver_count = 0
 "tests/test_skills.py" = 5067
 "tests/test_supervise.py" = 60132
 "tests/test_tracker_requirements.py" = 7835
-"tests/test_tracker_usage.py" = 4634
 "tests/test_tuning.py" = 4133
 "tests/test_verify.py" = 15681
 "tests/test_worktree.py" = 6030

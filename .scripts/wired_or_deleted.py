@@ -157,9 +157,10 @@ BASELINE: frozenset[str] = frozenset({
     "command:status",
     "command:usage forecast",
     "command:usage tracker",
-    # Record fields read only by their own module or by a test (43). Was 45:
-    # `RunRecord.config_overrides` acquired a consumer when `tuning` began reading the
-    # ledger — it reads the field's value back out of the record JSON as
+    # Record fields read only by their own module or by a test (41). Was 43: both
+    # `HookSpec` fields gained a reader when `_hook_entry` moved to `precommit_config`.
+    # Was 45: `RunRecord.config_overrides` acquired a consumer when `tuning` began
+    # reading the ledger — it reads the field's value back out of the record JSON as
     # `entry["config_overrides"]` (basicly-3ifz.1).
     #
     # `CreatedChild.depends_on` went for the *other* reason — the masking hazard this
@@ -170,11 +171,12 @@ BASELINE: frozenset[str] = frozenset({
     #
     # `CostRollup.dispatches` stays for the mirror reason: it still has no consumer, and
     # `tuning` spells its own counter `dispatches_read` so it does not mask this entry.
+    # Six entries left with the 2026-08-08 splits: this gate reports a field no reader
+    # outside its defining module touches, so moving a record to its own module gives
+    # its fields a reader by construction. They stopped reproducing, which is the only
+    # reason a baseline entry is ever removed.
     "record-field:basicly.agents.AgentOutputRoot.claude_passthrough",
     "record-field:basicly.agents.AgentDefinition.deprecated_model",
-    "record-field:basicly.decisions.DecisionItem.queued_at",
-    "record-field:basicly.decisions.DeciderVerdict.confidence",
-    "record-field:basicly.decisions.DeciderVerdict.abstain",
     "record-field:basicly.decompose.CollapsingPath.declarers",
     "record-field:basicly.decompose.CollapsingPath.groups_without",
     "record-field:basicly.decompose.CollapsingPath.neutralized",
@@ -186,8 +188,6 @@ BASELINE: frozenset[str] = frozenset({
     "record-field:basicly.health.AgentDrift.recent_failure_rate",
     "record-field:basicly.health.AgentDrift.delta",
     "record-field:basicly.health.AgentDrift.regressed",
-    "record-field:basicly.hooks.HookSpec.pass_filenames",
-    "record-field:basicly.hooks.HookSpec.always_run",
     "record-field:basicly.loop_state.Ranking.nodes",
     "record-field:basicly.loop_state.Ranking.fallback_sort",
     "record-field:basicly.policy.Grant.unmetered_at_issue",
@@ -199,10 +199,7 @@ BASELINE: frozenset[str] = frozenset({
     "record-field:basicly.release.ReleasePlan.pins",
     "record-field:basicly.release.ReleaseResult.tagged",
     "record-field:basicly.run_record.CostRollup.dispatches",
-    "record-field:basicly.run_record.ForecastError.actual_cost",
-    "record-field:basicly.run_record.ForecastError.actual_wall_clock_s",
     "record-field:basicly.runner.Capability.reachable",
-    "record-field:basicly.skills.SkillDefinition.allowed_tools",
     "record-field:basicly.supervise.FoundInfo.affects",
     "record-field:basicly.supervise.DispatchBundle.folded",
     "record-field:basicly.supervise.PassSpendAdmission.unforecast",

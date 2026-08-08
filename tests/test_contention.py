@@ -12,10 +12,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-
-import pytest
+from typing import TYPE_CHECKING
 
 from basicly import br, contention, decompose
+
+if TYPE_CHECKING:
+    import pytest
 
 
 class _Proc:

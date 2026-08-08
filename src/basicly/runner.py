@@ -42,7 +42,33 @@ from pathlib import Path
 from typing import IO
 
 from . import models, run_record
+from .copilot_store import COPILOT_SESSION_STORE, shutdown_data, store_usage
 from .redact import redact_secrets
+from .runner_envelope import (
+    CLAUDE_JSON,
+    CLAUDE_STREAM_JSON,
+    CLAUDE_SUBAGENT_TYPE,
+    CLAUDE_TOKEN_KEYS,
+    CODEX_JSONL,
+    CODEX_TOKEN_KEYS,
+    UNNAMED_SUBAGENT,
+    claude_last_turn_usage,
+    claude_result_event,
+    claude_result_field,
+    codex_agent_message,
+    codex_turn_usages,
+    forwarded,
+    stream_events,
+    stream_object,
+)
+from .runner_usage import (
+    Usage,
+    claude_json_usage,
+    claude_turn_usage,
+    codex_jsonl_usage,
+    codex_turn_usage,
+    floor_usage,
+)
 
 # Marker replaced by the prompt when a runner injects it as a command argument.
 PROMPT_PLACEHOLDER = "{prompt}"
@@ -76,45 +102,13 @@ MANUAL_RUNNER = "manual"
 AUTO = "auto"
 AUTO_ORDER = ("claude", "codex", "copilot")
 
-# Usage-report formats a headless CLI can emit (basicly-kjc5.1): how a
-# usage-capturing dispatch asks the CLI to report token usage and how
-# extract_usage parses the captured output. None means the CLI reports no
-# usage, so the chars/4 transcript estimate applies.
-CLAUDE_JSON = "claude-json"  # `--output-format json`: one result object with a usage block
-# `--output-format stream-json --verbose`: JSONL events, one per turn, ending in
-# the same result object. The only claude envelope that carries *per-turn* usage,
-# which is what the context-ceiling meter needs (basicly-kjc5.14).
-CLAUDE_STREAM_JSON = "claude-stream-json"
-CODEX_JSONL = "codex-jsonl"  # `--json`: JSONL event stream with turn.completed usage
-# copilot reports nothing usable on stdout — its result event carries
-# premium-request counts, not tokens — but it writes a per-session event store,
-# and that store's terminating `session.shutdown` event carries the per-model
-# token split and the AI-credit spend (probed 1.0.75, present in 15 of 15 local
-# sessions). So this format measures out of band: `--session-id <uuid>` *sets*
-# the new session's id, which makes the store path known before the store
-# exists, and stdout stays plain text — which is what keeps the rubric judge's
-# text parser working on a metered dispatch (basicly-2rn9).
-COPILOT_SESSION_STORE = "copilot-session-store"
+# Every usage-report format a spec may declare. The enumeration lives here rather
+# than with either reader because dispatching on the format is this module's job:
+# three of them name an envelope in captured stdout (:mod:`basicly.runner_envelope`)
+# and the fourth names a store the agent writes itself (:mod:`basicly.copilot_store`),
+# and only a caller that has to pick between them needs the union. None means the CLI
+# reports no usage at all, so the chars/4 transcript estimate applies.
 USAGE_FORMATS = (CLAUDE_JSON, CLAUDE_STREAM_JSON, CODEX_JSONL, COPILOT_SESSION_STORE)
-
-# Where copilot keeps its per-session event stores, and the stream inside one.
-# Held unexpanded so no machine-specific path is committed and `Path.home()` is
-# never called at import: the reader expands it at the point of use, which also
-# lets a test (or `[runner] copilot_session_store`) redirect it to a temp dir.
-DEFAULT_COPILOT_SESSION_STORE = Path("~/.copilot/session-state")
-COPILOT_EVENTS_FILE = "events.jsonl"
-COPILOT_SHUTDOWN_EVENT = "session.shutdown"
-
-# The codex `--json` events that carry the agent's own reply, as opposed to its
-# usage: an `item.completed` whose item is an `agent_message` (probed 0.146.0).
-# :func:`result_text` reads the reply out of these so a metered codex dispatch
-# still has a parseable answer.
-CODEX_ITEM_COMPLETED = "item.completed"
-CODEX_AGENT_MESSAGE = "agent_message"
-# The codex `--json` event that carries a turn's token usage. Named because both
-# the batch reader (:func:`_codex_turn_usages`) and the incremental one
-# (:func:`_codex_turn_usage`) key on it, and they must key on the same string.
-CODEX_TURN_COMPLETED = "turn.completed"
 
 # Context-window defaults per adapter (factory design §6, basicly-kjc5.6): the
 # denominator for the context-ceiling meter. Conservative published windows;
@@ -164,8 +158,17 @@ DECLARED_WINDOW = "[runner] context_windows"  # the per-agent declaration, most 
 # sandbox/approval).
 _USAGE_FLAGS = {
     CLAUDE_JSON: ("--output-format", "json"),
-    # claude refuses stream-json under -p without --verbose.
-    CLAUDE_STREAM_JSON: ("--output-format", "stream-json", "--verbose"),
+    # claude refuses stream-json under -p without --verbose. `--forward-subagent-text`
+    # rides with them because this is the one dispatch shape it is legal on (2.1.226
+    # `--help`: "only works with --print and --output-format=stream-json"). Without it
+    # a lane that delegates goes silent for the whole nested run — no event reaches the
+    # stream, so neither the quiet bound nor a watching human can tell it from a wedge.
+    CLAUDE_STREAM_JSON: (
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--forward-subagent-text",
+    ),
     CODEX_JSONL: ("--json",),
     # The one format whose flag takes a value: the per-dispatch session UUID is
     # appended by _apply_usage, because it is what extract_usage later reads the
@@ -667,7 +670,9 @@ def _headless_flags(spec: RunnerSpec) -> list[str]:
 def _run_help(binary: str) -> str | None:
     """Run ``<binary> --help``; return its combined output, or None if it could not run."""
     try:
-        proc = subprocess.run(  # nosec B603
+        # `binary` is a configured runner name already resolved on PATH and the argv is
+        # a literal flag; nothing here is caller-supplied.
+        proc = subprocess.run(  # nosec B603  # noqa: S603 — configured binary, literal argv
             [binary, HELP_FLAG], capture_output=True, text=True, check=False, timeout=10
         )
     except OSError, subprocess.SubprocessError:
@@ -933,16 +938,18 @@ def _kill_tree(proc: subprocess.Popen[str]) -> None:
             return
         try:
             proc.wait(timeout=KILL_GRACE_S)
-            return  # the group went down on the polite signal
         except subprocess.TimeoutExpired:
             continue
+        else:
+            return  # the group went down on the polite signal
 
 
 def _taskkill_tree(pid: int) -> None:
     """Windows tree kill: ``taskkill /T`` walks the child chain from *pid*."""
     try:
-        subprocess.run(  # nosec B603 B607 — fixed argv, no shell, system tool
-            ["taskkill", "/F", "/T", "/PID", str(pid)],
+        subprocess.run(  # nosec B603 B607  # noqa: S603 — fixed argv, no shell
+            ["taskkill", "/F", "/T", "/PID", str(pid)],  # noqa: S607 — a Windows system tool,
+            # resolved from the system PATH by name because that is the only way it is reachable
             capture_output=True,
             check=False,
             timeout=KILL_GRACE_S,
@@ -999,11 +1006,18 @@ class StreamEvent:
     *line* is the redacted text with its newline stripped, *data* the JSON object
     it parsed to (None for a plain-text line the CLI interleaved), and *usage*
     the per-turn token usage the event reported, when it carries one.
+
+    *text* is the prose a human would read off the turn and *subagent* names the
+    nested agent it came from, None when the lane agent produced it itself. They
+    are what makes a dispatch watchable rather than merely metered: *line* and
+    *usage* say a lane is alive and what it spent, never what it is doing.
     """
 
     line: str
     data: dict | None = None
     usage: Usage | None = None
+    text: str | None = None
+    subagent: str | None = None
 
 
 # What a caller supplies to observe a dispatch as it happens. Return value
@@ -1125,23 +1139,6 @@ def _streaming(spec: RunnerSpec, *, capture_usage: bool) -> bool:
     return capture_usage and spec.usage_format in STREAMING_FORMATS
 
 
-def _stream_object(line: str) -> dict | None:
-    """One stream line parsed as a JSON object, or None when it is not one.
-
-    The same tolerance the batch readers have (:func:`_claude_stream_events`): a
-    dispatch interleaves plain-text warnings with its stream and a killed one ends
-    mid-line, so an unparseable line is skipped rather than fatal.
-    """
-    stripped = line.strip()
-    if not stripped.startswith("{"):
-        return None
-    try:
-        obj = json.loads(stripped)
-    except json.JSONDecodeError:
-        return None
-    return obj if isinstance(obj, dict) else None
-
-
 def _emit(spec: RunnerSpec, line: str, on_event: EventSink) -> None:
     """Redact one stdout line, parse it, and hand the event to *on_event*.
 
@@ -1160,9 +1157,22 @@ def _emit(spec: RunnerSpec, line: str, on_event: EventSink) -> None:
     takes on its notifier.
     """
     text = redact_secrets(line.rstrip("\n"))
-    data = _stream_object(text)
-    event = StreamEvent(
-        line=text, data=data, usage=event_usage(spec, data) if data is not None else None
+    data = stream_object(text)
+    # The three readers are total over any JSON object — each guards every field
+    # with isinstance and returns None rather than raising on a shape it does not
+    # recognise. That is not tidiness: they run on the stdout reader thread, so a
+    # raise here would end the read with the dispatch still running, leaving the
+    # rest of its output unobserved and its totals taken from a cut transcript.
+    event = (
+        StreamEvent(line=text)
+        if data is None
+        else StreamEvent(
+            line=text,
+            data=data,
+            usage=event_usage(spec, data),
+            text=event_text(spec, data),
+            subagent=event_subagent(spec, data),
+        )
     )
     with contextlib.suppress(Exception):
         on_event(event)
@@ -1456,7 +1466,7 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     # has no equivalent for signalling a tree (taskkill /T walks it instead); it
     # gets its own group only so a stray Ctrl-C cannot cross over. Each flag is
     # inert on the other platform.
-    proc = subprocess.Popen(  # nosec B603
+    proc = subprocess.Popen(  # nosec B603  # noqa: S603 — argv is the engine-built spec, no shell
         argv,
         cwd=cwd,
         stdin=stdin_source,
@@ -1519,80 +1529,6 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     )
 
 
-@dataclass(frozen=True)
-class Usage:
-    """Token usage for one executed run: adapter-reported, or a chars/4 estimate."""
-
-    # The single summed total processed. Every consumer of the run-record's
-    # `tokens` reads it as that (the D3 grant ceiling, sizing calibration, the
-    # cost rollups), so the split fields below are siblings, never a redefinition.
-    tokens: int
-    cost: float | None
-    estimated: bool
-    # Provider-neutral per-kind split, null for an adapter that reports no split
-    # (basicly-2rn9). Each family's own summation semantics are folded in by its
-    # extractor, so a reader never has to know whose numbers these were.
-    input_tokens: int | None = None
-    output_tokens: int | None = None
-    cache_read_tokens: int | None = None
-    cache_write_tokens: int | None = None
-    reasoning_tokens: int | None = None
-    # AI credits, **not** USD. `cost` is USD (claude's total_cost_usd); copilot
-    # meters in AIU. They are different units, so they get different fields —
-    # adding them into one number would be a silent accounting defect.
-    credits: float | None = None
-
-
-# Claude usage-block keys: input_tokens excludes the cache fields (Anthropic
-# usage semantics), so the total processed is the sum of all four.
-_CLAUDE_TOKEN_KEYS = (
-    "input_tokens",
-    "cache_creation_input_tokens",
-    "cache_read_input_tokens",
-    "output_tokens",
-)
-# Codex usage keys summed into the total. Verified against codex-cli 0.146.0's
-# own arithmetic by a live probe (2026-07-31, basicly-jr0l.37): a turn reporting
-# input_tokens 12764, cached_input_tokens 9984, cache_write_input_tokens 0,
-# output_tokens 155 and reasoning_output_tokens 147 is accounted
-# total_tokens 12919 in the session rollout, and 12764 + 155 == 12919 exactly.
-# So cached_input_tokens is a subset of input_tokens and reasoning_output_tokens
-# is a subset of output_tokens (the probe's visible answer was 4 characters, so
-# 155 - 147 is the answer plus framing) — adding either would double-count.
-_CODEX_TOKEN_KEYS = ("input_tokens", "output_tokens")
-# codex `turn.completed` usage keys mapped onto Usage's split fields
-# (basicly-jr0l.37). `input_tokens` is the **superset**, exactly as copilot's
-# `inputTokens` is: it already contains the cached portion, so the uncached
-# remainder is `input_tokens - cache_read_tokens` rather than a fourth stored
-# number. Same convention for both providers, so a cost model can read the split
-# without knowing whose numbers these were.
-_CODEX_USAGE_KEYS = {
-    "input_tokens": "input_tokens",
-    "output_tokens": "output_tokens",
-    "cache_read_tokens": "cached_input_tokens",
-    "cache_write_tokens": "cache_write_input_tokens",
-    "reasoning_tokens": "reasoning_output_tokens",
-}
-# copilot `session.shutdown` per-model usage keys, mapped onto Usage's split
-# fields. Summation semantics, verified against 15 local 1.0.75 stores:
-# `inputTokens` *includes* both cache fields (inputTokens ==
-# tokenDetails.input + cacheReadTokens + cacheWriteTokens held on all 15), so
-# the total processed is inputTokens + outputTokens and adding the cache fields
-# would double-count — the same subset relationship codex's cached_input_tokens
-# has. `reasoningTokens` never exceeded `outputTokens`, so it is read as a
-# subset of output too and likewise not added.
-_COPILOT_USAGE_KEYS = {
-    "input_tokens": "inputTokens",
-    "output_tokens": "outputTokens",
-    "cache_read_tokens": "cacheReadTokens",
-    "cache_write_tokens": "cacheWriteTokens",
-    "reasoning_tokens": "reasoningTokens",
-}
-# copilot meters AI credits in nano-AIU: a `totalNanoAiu` of 6_056_400_000 is
-# 6.0564 credits (observed on the probe the test fixture was captured from).
-_NANO_AIU_PER_CREDIT = 1_000_000_000
-
-
 def extract_usage(spec: RunnerSpec, result: RunResult) -> Usage | None:
     """Token usage for *result*: adapter-reported when parseable, else estimated.
 
@@ -1618,24 +1554,19 @@ def extract_usage(spec: RunnerSpec, result: RunResult) -> Usage | None:
         return None
     if not result.executed:
         captured = result.stdout or result.stderr
-        return _floor_usage(result) if captured else None
+        return floor_usage(result.stdout, result.stderr) if captured else None
     reported: Usage | None = None
     if spec.usage_format == CLAUDE_JSON:
-        reported = _claude_json_usage(result.stdout)
+        reported = claude_json_usage(result.stdout)
     elif spec.usage_format == CLAUDE_STREAM_JSON:
-        reported = _claude_json_usage(_claude_result_event(result.stdout))
+        reported = claude_json_usage(claude_result_event(result.stdout))
     elif spec.usage_format == CODEX_JSONL:
-        reported = _codex_jsonl_usage(result.stdout)
+        reported = codex_jsonl_usage(result.stdout)
     elif spec.usage_format == COPILOT_SESSION_STORE:
-        reported = _copilot_store_usage(spec, result.session_id)
+        reported = store_usage(spec, result.session_id)
     if reported is not None:
         return reported
-    return _floor_usage(result)
-
-
-def _floor_usage(result: RunResult) -> Usage:
-    """The chars/4 floor over whatever transcript was captured (design 7.5)."""
-    return Usage(tokens=(len(result.stdout) + len(result.stderr)) // 4, cost=None, estimated=True)
+    return floor_usage(result.stdout, result.stderr)
 
 
 def result_text(spec: RunnerSpec, stdout: str) -> str:
@@ -1668,133 +1599,14 @@ def result_text(spec: RunnerSpec, stdout: str) -> str:
     parseable answer to either of them.
     """
     if spec.usage_format == CLAUDE_JSON:
-        unwrapped = _claude_result_field(stdout)
+        unwrapped = claude_result_field(stdout)
     elif spec.usage_format == CLAUDE_STREAM_JSON:
-        unwrapped = _claude_result_field(_claude_result_event(stdout))
+        unwrapped = claude_result_field(claude_result_event(stdout))
     elif spec.usage_format == CODEX_JSONL:
-        unwrapped = _codex_agent_message(stdout)
+        unwrapped = codex_agent_message(stdout)
     else:
         return stdout
     return unwrapped if unwrapped is not None else stdout
-
-
-def _claude_result_object(stdout: str) -> dict | None:
-    """Claude's result object, located rather than assumed to be all of *stdout*.
-
-    Both readers below used to require ``stdout`` to be pure JSON, which made the
-    non-streaming envelope intolerant of anything the CLI prints around it. The
-    streaming reader never was — :func:`_claude_stream_events` skips lines it does
-    not recognise — and the noise is not a property of the output format: the
-    warning this module's own fixture pins ("no stdin data received in 3s") comes
-    from the CLI's stdin handling, so a format that emits one object is exposed to
-    it just the same. That was not observed on the ``json`` arm; it is inferred
-    from the arm where it *was* observed, and hardened for because of what it
-    costs. A leading line there reproduced both halves of basicly-gczc at once —
-    the reply unreadable *and* the record estimated, which halts the grant — so
-    the tolerant read is the one that cannot fail open.
-
-    Takes the **last** parseable top-level object, matching the streaming
-    reader's "last result event" rule, and falls back to parsing the whole
-    transcript so a pretty-printed object spanning several lines still reads.
-    """
-    events = _claude_stream_events(stdout)
-    if events:
-        return events[-1]
-    try:
-        obj = json.loads(stdout.strip() or "null")
-    except json.JSONDecodeError:
-        return None
-    return obj if isinstance(obj, dict) else None
-
-
-def _claude_json_usage(stdout: str) -> Usage | None:
-    """Parse claude's ``--output-format json`` result object (one JSON object).
-
-    Tokens sum the usage block's input/output/cache fields; cost comes from
-    ``total_cost_usd``. None on any parse miss so the caller falls back to the
-    estimate.
-    """
-    obj = _claude_result_object(stdout)
-    if obj is None or not isinstance(obj.get("usage"), dict):
-        return None
-    usage = obj["usage"]
-    values = [usage[key] for key in _CLAUDE_TOKEN_KEYS if isinstance(usage.get(key), int)]
-    if not values:
-        return None
-    cost = obj.get("total_cost_usd")
-    return Usage(
-        tokens=sum(values),
-        cost=float(cost) if isinstance(cost, int | float) else None,
-        estimated=False,
-    )
-
-
-def _claude_result_field(stdout: str) -> str | None:
-    """The ``result`` string of claude's result object (one JSON object), or None.
-
-    Shared by both claude envelopes because the streaming one ends in the very
-    same object — see :func:`_claude_result_event`. None on any parse miss, or on
-    a result field that is not a string (an ``is_error`` envelope can carry a
-    structured payload there), so :func:`result_text` falls back to the
-    transcript. An empty string is a real answer — the agent printed nothing —
-    and is returned as one.
-    """
-    obj = _claude_result_object(stdout)
-    if obj is None:
-        return None
-    value = obj.get("result")
-    return value if isinstance(value, str) else None
-
-
-def _claude_stream_events(stdout: str) -> list[dict]:
-    """The parseable JSON objects in a claude ``stream-json`` transcript, in order.
-
-    Unparseable lines are skipped rather than failing the whole read: the stream
-    is interleaved with whatever the CLI writes around it, and a truncated final
-    line is normal for a killed dispatch.
-    """
-    events: list[dict] = []
-    for line in stdout.splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("{"):
-            continue
-        try:
-            obj = json.loads(stripped)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(obj, dict):
-            events.append(obj)
-    return events
-
-
-def _claude_result_event(stdout: str) -> str:
-    """The stream's terminating ``result`` event, re-serialized, or an empty string.
-
-    Lets the cumulative cost/token view reuse :func:`_claude_json_usage`: the
-    stream ends in the very same result object the non-streaming envelope emits,
-    so there is one parser for it and no second definition of "total".
-    """
-    for event in reversed(_claude_stream_events(stdout)):
-        if event.get("type") == "result":
-            return json.dumps(event)
-    return ""
-
-
-def _claude_last_turn_usage(stdout: str) -> dict | None:
-    """The usage block of the stream's **last assistant message**.
-
-    That is the occupancy view (design D8): what the window held on the final
-    call. The cumulative result-event sum is not — ``cache_read_input_tokens``
-    re-counts the context every turn, so it exceeds the window on any healthy
-    multi-turn run.
-    """
-    for event in reversed(_claude_stream_events(stdout)):
-        if event.get("type") != "assistant":
-            continue
-        message = event.get("message")
-        if isinstance(message, dict) and isinstance(message.get("usage"), dict):
-            return message["usage"]
-    return None
 
 
 def event_usage(spec: RunnerSpec, event: dict) -> Usage | None:
@@ -1826,227 +1638,48 @@ def event_usage(spec: RunnerSpec, event: dict) -> Usage | None:
     reaches the run record, so nothing here can move a recorded total.
     """
     if spec.usage_format == CLAUDE_STREAM_JSON:
-        return _claude_turn_usage(event)
+        return claude_turn_usage(event)
     if spec.usage_format == CODEX_JSONL:
-        return _codex_turn_usage(event)
+        return codex_turn_usage(event)
     return None
 
 
-def _claude_turn_usage(event: dict) -> Usage | None:
-    """One claude ``assistant`` event's usage block, summed the way the total is.
+def event_text(spec: RunnerSpec, event: dict) -> str | None:
+    """The prose *event* carries, for a sink to show as a progress line.
 
-    No cost: ``total_cost_usd`` lives only on the terminating result event, so a
-    per-turn cost would have to be invented and this reports None instead.
+    Claude only: codex reports its reply as one terminal ``agent_message`` that
+    :func:`codex_agent_message` already reads. Thinking blocks are excluded —
+    each arrives with a signature blob many times the length of its prose. None
+    when the turn carried no text, the common case: a tool-calling turn's content
+    is a ``tool_use`` block with nothing to show beyond having happened.
     """
-    if event.get("type") != "assistant":
+    if spec.usage_format != CLAUDE_STREAM_JSON:
         return None
     message = event.get("message")
-    if not isinstance(message, dict) or not isinstance(message.get("usage"), dict):
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, list):
         return None
-    usage = message["usage"]
-    values = [usage[key] for key in _CLAUDE_TOKEN_KEYS if isinstance(usage.get(key), int)]
-    if not values:
-        return None
-    return Usage(tokens=sum(values), cost=None, estimated=False)
+    parts = [
+        block["text"]
+        for block in content
+        if isinstance(block, dict)
+        and block.get("type") == "text"
+        and isinstance(block.get("text"), str)
+    ]
+    return "\n".join(parts).strip() or None
 
 
-def _codex_turn_usage(event: dict) -> Usage | None:
-    """One codex ``turn.completed`` event's usage, split exactly as the total is."""
-    if event.get("type") != CODEX_TURN_COMPLETED:
-        return None
-    usage = event.get("usage")
-    if not isinstance(usage, dict):
-        return None
-    values = [usage[key] for key in _CODEX_TOKEN_KEYS if isinstance(usage.get(key), int)]
-    if not values:
-        return None
-    return Usage(tokens=sum(values), cost=None, estimated=False, **_codex_usage_split([usage]))
+def event_subagent(spec: RunnerSpec, event: dict) -> str | None:
+    """Which nested subagent *event* was forwarded from, or None for a lane turn.
 
-
-def _codex_jsonl_usage(stdout: str) -> Usage | None:
-    """Sum token usage over codex's ``--json`` event stream (JSONL).
-
-    Each ``turn.completed`` event carries a usage object; input and output
-    tokens sum across turns onto ``tokens``, and the per-kind counts sum onto the
-    split fields (basicly-jr0l.37) so a cost model can price the cached portion
-    an order of magnitude cheaper than the uncached one. ``tokens`` stays
-    input + output — see :data:`_CODEX_TOKEN_KEYS` for the measured reason the
-    cache and reasoning counts are subsets, not addends. Codex reports no cost.
-    None when no usage event parses, so the caller falls back to the estimate.
+    The ``subagent_type`` claude puts on a forwarded event, falling back to
+    :data:`UNNAMED_SUBAGENT` when it names none — so a sink always tells nested
+    work apart without reading :data:`CLAUDE_PARENT_TOOL_USE_ID` itself.
     """
-    total = 0
-    found = False
-    usages = _codex_turn_usages(stdout)
-    for usage in usages:
-        values = [usage[key] for key in _CODEX_TOKEN_KEYS if isinstance(usage.get(key), int)]
-        if values:
-            total += sum(values)
-            found = True
-    if not found:
+    if spec.usage_format != CLAUDE_STREAM_JSON or not forwarded(event):
         return None
-    split = _codex_usage_split(usages)
-    return Usage(
-        tokens=total,
-        cost=None,
-        estimated=False,
-        input_tokens=split["input_tokens"],
-        output_tokens=split["output_tokens"],
-        cache_read_tokens=split["cache_read_tokens"],
-        cache_write_tokens=split["cache_write_tokens"],
-        reasoning_tokens=split["reasoning_tokens"],
-    )
-
-
-def _codex_usage_split(usages: list[dict]) -> dict[str, int | None]:
-    """Sum codex's per-kind token counts across turns, leaving an absent kind null.
-
-    A count no turn reported stays None rather than 0, because those are
-    different claims: 0.146.0 reports a real ``reasoning_output_tokens`` of 0 for
-    a turn that did no reasoning, so a fabricated 0 for a build that omits the
-    field would be indistinguishable from that measurement.
-    """
-    split: dict[str, int | None] = dict.fromkeys(_CODEX_USAGE_KEYS)
-    for usage in usages:
-        for field, key in _CODEX_USAGE_KEYS.items():
-            value = usage.get(key)
-            if isinstance(value, int) and not isinstance(value, bool):
-                split[field] = (split[field] or 0) + value
-    return split
-
-
-def _codex_agent_message(stdout: str) -> str | None:
-    """The text of the **last** ``agent_message`` item in codex's ``--json`` stream.
-
-    The last one, not the concatenation: a multi-turn run emits one per turn, and
-    the reply to the prompt is the final one — earlier ones are progress narration
-    from before the tool calls. Scanned from the end for that reason, and
-    unparseable lines are skipped like everywhere else in this module (a truncated
-    final line is normal for a killed dispatch).
-
-    None when no such item parses, so :func:`result_text` falls back to the
-    transcript.
-    """
-    for line in reversed(stdout.splitlines()):
-        stripped = line.strip()
-        if not stripped.startswith("{"):
-            continue
-        try:
-            event = json.loads(stripped)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(event, dict) or event.get("type") != CODEX_ITEM_COMPLETED:
-            continue
-        item = event.get("item")
-        if not isinstance(item, dict) or item.get("type") != CODEX_AGENT_MESSAGE:
-            continue
-        text = item.get("text")
-        if isinstance(text, str):
-            return text
-    return None
-
-
-def _codex_turn_usages(stdout: str) -> list[dict]:
-    """The usage objects of codex's ``turn.completed`` events, in stream order."""
-    usages: list[dict] = []
-    for line in stdout.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        try:
-            event = json.loads(stripped)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(event, dict) or event.get("type") != CODEX_TURN_COMPLETED:
-            continue
-        usage = event.get("usage")
-        if isinstance(usage, dict):
-            usages.append(usage)
-    return usages
-
-
-def _copilot_shutdown_data(spec: RunnerSpec, session_id: str | None) -> dict | None:
-    """The ``session.shutdown`` payload of one copilot session's store, or None.
-
-    The store lives at ``<session_store>/<session_id>/events.jsonl`` — the
-    directory name *is* the session id (checked on 15 of 15 local stores against
-    each one's ``session.start``), which is what makes a supplied id a sound
-    join. Scanned from the end because the shutdown event terminates the stream,
-    and unparseable lines are skipped rather than failing the read: a truncated
-    final line is normal for a killed dispatch.
-
-    None for no session id, a store that is absent or unreadable, or a stream
-    with no usable shutdown event. Never raises — the caller must be able to
-    degrade to the estimate, and telemetry may not fail a dispatch.
-    """
-    if not session_id:
-        return None
-    base = spec.session_store or DEFAULT_COPILOT_SESSION_STORE
-    events = base.expanduser() / session_id / COPILOT_EVENTS_FILE
-    try:
-        text = events.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return None
-    for line in reversed(text.splitlines()):
-        stripped = line.strip()
-        if not stripped.startswith("{"):
-            continue
-        try:
-            event = json.loads(stripped)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(event, dict) and event.get("type") == COPILOT_SHUTDOWN_EVENT:
-            data = event.get("data")
-            if isinstance(data, dict):
-                return data
-    return None
-
-
-def _copilot_store_usage(spec: RunnerSpec, session_id: str | None) -> Usage | None:
-    """Measured usage for one copilot dispatch, read from its own session store.
-
-    Sums the shutdown event's ``modelMetrics`` blocks, so a dispatch that
-    switched model mid-run still meters once: per-kind tokens onto the split
-    fields, ``totalNanoAiu`` onto ``credits``. ``tokens`` is input + output only
-    (see :data:`_COPILOT_USAGE_KEYS` for why the cache and reasoning counts are
-    subsets, not addends), and ``cost`` stays null because copilot bills in AI
-    credits and that field is USD.
-
-    None when no model block yields a token count, so the caller falls back to
-    the flagged estimate.
-    """
-    data = _copilot_shutdown_data(spec, session_id)
-    metrics = data.get("modelMetrics") if data is not None else None
-    if not isinstance(metrics, dict):
-        return None
-    split = dict.fromkeys(_COPILOT_USAGE_KEYS, 0)
-    nano_aiu: float | None = None
-    measured = False
-    for entry in metrics.values():
-        if not isinstance(entry, dict):
-            continue
-        usage = entry.get("usage")
-        if isinstance(usage, dict):
-            for field, key in _COPILOT_USAGE_KEYS.items():
-                value = usage.get(key)
-                if isinstance(value, int) and not isinstance(value, bool):
-                    split[field] += value
-                    measured = True
-        aiu = entry.get("totalNanoAiu")
-        if isinstance(aiu, int | float) and not isinstance(aiu, bool):
-            nano_aiu = (nano_aiu or 0.0) + float(aiu)
-    if not measured:
-        return None
-    return Usage(
-        tokens=split["input_tokens"] + split["output_tokens"],
-        cost=None,
-        estimated=False,
-        input_tokens=split["input_tokens"],
-        output_tokens=split["output_tokens"],
-        cache_read_tokens=split["cache_read_tokens"],
-        cache_write_tokens=split["cache_write_tokens"],
-        reasoning_tokens=split["reasoning_tokens"],
-        credits=None if nano_aiu is None else nano_aiu / _NANO_AIU_PER_CREDIT,
-    )
+    kind = event.get(CLAUDE_SUBAGENT_TYPE)
+    return kind if isinstance(kind, str) and kind else UNNAMED_SUBAGENT
 
 
 # --- Observed model: what the adapter says it actually ran (basicly-kjc5.59) ---
@@ -2098,7 +1731,7 @@ def _dedup(names: list[str]) -> tuple[str, ...]:
 
 def _claude_observed_models(stdout: str, *, streaming: bool) -> tuple[str, ...]:
     """Models named by a claude envelope: `modelUsage` first, then the turns."""
-    payload = _claude_result_event(stdout) if streaming else stdout
+    payload = claude_result_event(stdout) if streaming else stdout
     found: list[str] = []
     try:
         obj = json.loads(payload.strip() or "null")
@@ -2111,8 +1744,13 @@ def _claude_observed_models(stdout: str, *, streaming: bool) -> tuple[str, ...]:
                 canonical = block.get("canonicalModel") if isinstance(block, dict) else None
                 found.append(canonical if isinstance(canonical, str) and canonical else key)
     if not found and streaming:
-        for event in _claude_stream_events(stdout):
+        for event in stream_events(stdout):
             message = event.get("message")
+            # A forwarded subagent turn names the subagent's model, which is its
+            # own tier's and not the lane's pin — counting it here would report a
+            # `model_mismatch` for a dispatch that honoured its pin exactly.
+            if forwarded(event):
+                continue
             if event.get("type") == "assistant" and isinstance(message, dict):
                 model = message.get("model")
                 if isinstance(model, str):
@@ -2124,7 +1762,7 @@ def _claude_observed_models(stdout: str, *, streaming: bool) -> tuple[str, ...]:
 
 def _copilot_observed_models(spec: RunnerSpec, session_id: str | None) -> tuple[str, ...]:
     """Models named by a copilot session store: the `modelMetrics` keys."""
-    data = _copilot_shutdown_data(spec, session_id)
+    data = shutdown_data(spec, session_id)
     metrics = data.get("modelMetrics") if data is not None else None
     if not isinstance(metrics, dict):
         return ()
@@ -2183,14 +1821,14 @@ def context_occupancy(spec: RunnerSpec, result: RunResult) -> int | None:
     if not result.executed:
         return None
     if spec.usage_format == CLAUDE_STREAM_JSON:
-        usage = _claude_last_turn_usage(result.stdout)
+        usage = claude_last_turn_usage(result.stdout)
         if usage is None:
             return None
-        values = [usage[key] for key in _CLAUDE_TOKEN_KEYS if isinstance(usage.get(key), int)]
+        values = [usage[key] for key in CLAUDE_TOKEN_KEYS if isinstance(usage.get(key), int)]
         return sum(values) if values else None
     if spec.usage_format == CODEX_JSONL:
-        for usage in reversed(_codex_turn_usages(result.stdout)):
-            values = [usage[key] for key in _CODEX_TOKEN_KEYS if isinstance(usage.get(key), int)]
+        for usage in reversed(codex_turn_usages(result.stdout)):
+            values = [usage[key] for key in CODEX_TOKEN_KEYS if isinstance(usage.get(key), int)]
             if values:
                 return sum(values)
         return None
@@ -2258,7 +1896,8 @@ def adapter_version(spec: RunnerSpec) -> str | None:
     executable = spec.command[0] if spec.command else None
     if executable and shutil.which(executable):
         with contextlib.suppress(OSError, subprocess.SubprocessError):
-            proc = subprocess.run(  # nosec B603
+            # `executable` passed `shutil.which` on the line above, and the argv is a literal.
+            proc = subprocess.run(  # nosec B603  # noqa: S603 — which()-resolved, literal argv
                 [executable, "--version"],
                 check=False,
                 text=True,

@@ -38,16 +38,15 @@ from . import (
     projection,
     release,
     review,
+    routing_evals,
     rubrics,
     run_record,
     runner,
     state,
     supervise,
-    tracker_surface,
-    tracker_usage,
-    tuning,
+    surface_report,
     ui,
-    usage,
+    usage_report,
     verify,
     worktree,
 )
@@ -199,8 +198,7 @@ def _fragment_roots(paths: ProjectPaths) -> list[tuple[Path, str | None]]:
     if paths.legacy_fragments_dir not in {p for p, _ in roots}:
         roots.append((paths.legacy_fragments_dir, None))
 
-    for overlay_root in paths.overlay_fragments_dirs:
-        roots.append((overlay_root, "user"))
+    roots.extend((overlay_root, "user") for overlay_root in paths.overlay_fragments_dirs)
 
     seen: set[Path] = set()
     deduped: list[tuple[Path, str | None]] = []
@@ -1564,434 +1562,13 @@ def _resolve_skill_output_roots(args: argparse.Namespace, repo_root: Path) -> li
     )
 
 
-def _surface_class(row: tracker_usage.SurfaceRow) -> str:
-    """Whether an engine path reaches *row*, or only a human at a prompt.
-
-    The distinction is the one that sizes the replacement: the engine's set is a
-    hard requirement, because a harness phase breaks without it, while an
-    interactive-only surface can be served later or never
-    (`docs/design/work-tracker.md` §6).
-    """
-    if row.engine_calls and row.interactive_calls:
-        return "engine+interactive"
-    if row.engine_calls:
-        return "engine"
-    return "interactive-only"
-
-
-def _refresh_tracker_surface(repo_root: Path) -> None:
-    """Re-probe br/bv for their full surface and rewrite the committed inventory."""
-    br_path = br.which()
-    if br_path is None:
-        ui.say(
-            "br is not on PATH, so the surface inventory cannot be refreshed. "
-            "The report below uses the committed inventory unchanged.",
-            style="warn",
-        )
-        return
-    inventory = tracker_surface.discover(br_path)
-    tracker_surface.save(repo_root, inventory)
-    ui.say(
-        f"Wrote {len(inventory['br']['commands'])} br surface(s) and "
-        f"{len(inventory['bv']['flags'])} bv flag(s) to {tracker_surface.INVENTORY_FILE}.",
-        style="ok",
-    )
-
-
-def _promote_tracker_spool(repo_root: Path) -> None:
-    """Fold the spool into the committed ledger, reporting anything it refused."""
-    moved, dropped = tracker_usage.promote(repo_root)
-    ui.say(
-        f"Promoted {moved} spooled record(s) into {tracker_usage.LEDGER_FILE}."
-        if moved
-        else "Nothing spooled to promote.",
-        style="ok" if moved else "warn",
-    )
-    if dropped:
-        ui.say(
-            f"Discarded {dropped} spooled record(s) whose subcommand is not a "
-            "surface (shell text recorded by an older recorder).",
-            style="warn",
-        )
-
-
-def _cmd_usage_tracker(args: argparse.Namespace) -> int:
-    """Report the measured br/bv surface Phase 6 freezes its scope from."""
-    repo_root = _repo_root()
-    notes: list[str] = []
-
-    if args.refresh_surface:
-        _refresh_tracker_surface(repo_root)
-    if args.promote:
-        _promote_tracker_spool(repo_root)
-
-    rows = tracker_usage.summarize(repo_root)
-    if not rows:
-        ui.say(
-            f"No tracker usage recorded yet — run the harness, then read "
-            f"{tracker_usage.LEDGER_FILE}.",
-            style="warn",
-        )
-        return 0
-
-    inventory = tracker_surface.load(repo_root)
-    measured = {(row.binary, row.subcommand) for row in rows}
-    unused: dict[str, list[str]] = {}
-    unknown: list[tuple[str, str]] = []
-    if inventory is None:
-        notes.append(
-            "No surface inventory committed, so the never-used set is unknown. "
-            "Run `basicly usage tracker --refresh-surface`."
-        )
-    else:
-        unused = tracker_surface.never_used(inventory, measured)
-        unknown = tracker_surface.unknown_used(inventory, measured)
-
-    if args.as_json:
-        ui.say(
-            json.dumps(
-                {
-                    "used": [
-                        {
-                            "binary": row.binary,
-                            "subcommand": row.subcommand,
-                            "calls": row.calls,
-                            "engine_calls": row.engine_calls,
-                            "interactive_calls": row.interactive_calls,
-                            "surface_class": _surface_class(row),
-                            "access": row.access,
-                            "mean_ms": round(row.mean_ms, 1) if row.mean_ms is not None else None,
-                            "flags": list(row.flags),
-                        }
-                        for row in rows
-                    ],
-                    "never_used": unused,
-                    "used_but_not_in_inventory": [list(pair) for pair in unknown],
-                    "calls_by_access": tracker_usage.access_ratio(rows),
-                    "inventory_br_version": (inventory or {}).get("br", {}).get("version"),
-                    "notes": notes,
-                },
-                indent=2,
-                sort_keys=True,
-            )
-        )
-        return 0
-
-    ui.table(
-        f"Measured br/bv surface ({len(rows)})",
-        ["binary", "subcommand", "calls", "reached by", "access", "mean ms", "flags"],
-        [
-            [
-                row.binary,
-                row.subcommand,
-                f"{row.calls} ({row.engine_calls}e/{row.interactive_calls}i)",
-                _surface_class(row),
-                row.access,
-                f"{row.mean_ms:.0f}" if row.mean_ms is not None else "—",
-                " ".join(row.flags) or "—",
-            ]
-            for row in rows
-        ],
-    )
-    ratio = tracker_usage.access_ratio(rows)
-    ui.say(
-        "calls by access: " + ", ".join(f"{name}={count}" for name, count in sorted(ratio.items())),
-    )
-
-    for binary, surfaces in sorted(unused.items()):
-        known = len(tracker_surface.known_surfaces(inventory or {}).get(binary, ()))
-        if not surfaces:
-            ui.say(f"{binary}: every one of its {known} known surfaces is used.", style="ok")
-            continue
-        # Printed in full, never truncated: this is the set Phase 6 gets to not
-        # build, and a "and 26 more" would hide the actual scope decision.
-        namespaces = sorted(tracker_surface.groups(inventory or {}) & set(surfaces))
-        qualifier = (
-            f" ({len(namespaces)} of them a group namespace rather than an operation)"
-            if namespaces
-            else ""
-        )
-        ui.say(
-            f"{binary}: {len(surfaces)} of {known} surfaces never used{qualifier} — "
-            + ", ".join(surfaces)
-        )
-
-    if unknown:
-        ui.say(
-            "used but absent from the inventory (recorder defect or br drift): "
-            + ", ".join(f"{binary} {sub}" for binary, sub in unknown),
-            style="warn",
-        )
-    for note in notes:
-        ui.say(note, style="warn")
-    return 0
-
-
-def _spend_accuracy_report(repo_root: Path) -> None:
-    """Say whether the *spend* forecast lands near what the lanes really spent.
-
-    The table above compares a working set against a whole-lane cost, and that ratio is
-    mostly the turn multiplier — an operator reading it as forecast error concludes the
-    sizing governor is broken. This is the same-unit comparison, which is the one that
-    answers whether a grant minted from a forecast will hold (basicly-tcmy.34).
-    """
-    accuracy = decompose.spend_accuracy(repo_root, load_sizing_config(repo_root))
-    if not accuracy.pairs:
-        ui.say(
-            "No dispatch can be held to a spend forecast yet, so the band below is "
-            "unmeasured rather than met.",
-            style="warn",
-        )
-        return
-    median = accuracy.median_ratio
-    bases = ", ".join(
-        f"{sum(pair.basis == basis for pair in accuracy.pairs)} {basis}"
-        for basis in sorted({pair.basis for pair in accuracy.pairs})
-    )
-    ui.say(
-        f"Actual/forecast spend: median {median:.2f}x over {len(accuracy.pairs)} pair(s) "
-        f"({bases}), band {1 / decompose.SPEND_RATIO_BAND:.1f}x-"
-        f"{decompose.SPEND_RATIO_BAND:.0f}x."
-    )
-    for violation in accuracy.violations:
-        ui.say(violation, style="warn")
-    ui.say(
-        f"Not held to a spend forecast: {accuracy.unsized} metered write dispatch(es) "
-        f"with no forecast at all, {accuracy.unmetered} with no measured actual, "
-        f"{accuracy.aborted} the runner reported as failed.",
-        style="muted",
-    )
-    if accuracy.unscoped:
-        ui.say(
-            "Not comparable, their forecast came from the `assumed:` fallback rather "
-            f"than a declared scope: {', '.join(accuracy.unscoped)}.",
-            style="muted",
-        )
-    if accuracy.incomparable:
-        ui.say(
-            "Not comparable, their recorded working-set forecast is above the band's "
-            f"ceiling: {', '.join(accuracy.incomparable)}.",
-            style="muted",
-        )
-
-
-def _cmd_usage_forecast(_args: argparse.Namespace) -> int:
-    """Report the forecast error per dispatch, and what could not be paired.
-
-    The unpaired counts print even when there is nothing to pair: an empty table
-    alone would read as "the forecast is fine" where it means "no dispatch has ever
-    carried both halves", which is the state basicly-jr0l.34 was filed about.
-    """
-    report = run_record.forecast_errors(_repo_root())
-    if report.errors:
-        ui.table(
-            f"Forecast error per dispatch ({report.paired})",
-            ["bead", "class", "model", "forecast", "actual", "ratio", "source"],
-            [
-                [
-                    error.bead,
-                    error.task_class or "-",
-                    error.model or "-",
-                    str(error.forecast_tokens),
-                    str(error.actual_tokens) + (" (est)" if error.estimated else ""),
-                    f"{error.ratio:.2f}x",
-                    error.forecast_source or "-",
-                ]
-                for error in report.errors
-            ],
-        )
-        median = report.median_ratio
-        if median is not None:
-            ui.say(f"Median actual/forecast: {median:.2f}x over {report.paired} pair(s).")
-            ui.say(
-                "The forecast is a working set and the actual is total spend, which an "
-                "agentic loop re-sends every turn — so this ratio carries the turn "
-                "multiplier as well as any estimator error (basicly-jr0l.21).",
-                style="muted",
-            )
-        for task_class, errors in report.by_task_class().items():
-            ratios = sorted(error.ratio for error in errors)
-            ui.say(
-                f"  {task_class}: {len(errors)} pair(s), {ratios[0]:.2f}x-{ratios[-1]:.2f}x",
-                style="muted",
-            )
-    else:
-        ui.say(
-            "No dispatch carries both a forecast and a measured actual, so no "
-            "forecast error is computable yet.",
-            style="warn",
-        )
-    ui.say(
-        f"Unpaired: {report.forecast_only} forecast with no actual, "
-        f"{report.actual_only} actual with no forecast, "
-        f"{report.unmetered} with neither (handoffs and un-sized helper dispatches).",
-        style="muted",
-    )
-    _spend_accuracy_report(_repo_root())
-    return 0
-
-
-def _census_text(counts: dict[str, int]) -> str:
-    """Render a name -> count map as ``3 local, 12 tracker``; ``-`` when empty."""
-    return ", ".join(f"{count} {name}" for name, count in counts.items()) or "-"
-
-
-def _recommendation_cell(parameter: tuning.ParameterTuning) -> str:
-    """The advised value, its provenance and the sample size behind it.
-
-    All three in one cell on purpose: a number without its label reads as measured,
-    and a label without its sample size cannot be argued with.
-    """
-    if parameter.recommendation is None:
-        return f"- ({parameter.status})"
-    advised = tuning.render_value(parameter.recommendation)
-    return f"{advised} ({parameter.status}, n={parameter.samples})"
-
-
-def _advice_line(parameter: tuning.ParameterTuning) -> str:
-    """One parameter's whole claim on a single soft-wrapped line.
-
-    The table above it is the scannable overview, and rich folds a wide table's cells
-    across lines on a narrow terminal — which is fine to read and impossible to grep.
-    So every fact the table carries is restated here, unfolded, where a consumer (and
-    the test that holds this command to its promises) can find it whole.
-    """
-    unit = parameter.unit
-    if parameter.recommendation is None:
-        advice = f"no recommendation ({parameter.status})"
-    else:
-        values = sorted(item.value for item in parameter.observations)
-        advice = (
-            f"advised {tuning.render_value(parameter.recommendation)} {unit} from "
-            f"{parameter.samples} sample(s) ({parameter.status}), observed "
-            f"{tuning.render_value(values[0])}-{tuning.render_value(values[-1])} {unit}"
-        )
-    return (
-        f"  {parameter.key}: {tuning.render_value(parameter.in_force)} {unit} in force, "
-        f"{advice} — {parameter.basis}."
-    )
-
-
-def _cmd_usage_tuning(_args: argparse.Namespace) -> int:
-    """Advise every governed parameter from the recorded dispatches, and change nothing.
-
-    Every parameter prints, including the ones nothing measures: a report that listed
-    only what it could advise on would make "no evidence exists for this bound" look
-    exactly like "this bound is fine", which is the state the tuner exists to expose.
-    """
-    report = tuning.tuning_report(_repo_root())
-    ui.table(
-        f"Advisory parameter tuning ({report.dispatches_read} dispatch(es) read: "
-        f"{_census_text(report.sources)})",
-        ["parameter", "in force", "samples", "source", "outcomes", "recommendation"],
-        [
-            [
-                parameter.key,
-                f"{tuning.render_value(parameter.in_force)} {parameter.unit}",
-                str(parameter.samples),
-                _census_text(parameter.sources),
-                _census_text(parameter.outcomes),
-                _recommendation_cell(parameter),
-            ]
-            for parameter in report.parameters
-        ],
-    )
-    ui.say(
-        f"Measured past {report.min_samples} sample(s) (`[policy.sizing] "
-        f"calibration_min_samples`), over the newest {report.window}.",
-        style="muted",
-    )
-    for parameter in report.parameters:
-        ui.say(_advice_line(parameter), style="muted")
-        for cohort in parameter.cohorts:
-            ui.say(
-                f"      under {cohort.in_force} {parameter.unit}: {cohort.samples} sample(s), "
-                f"{_census_text(cohort.outcomes)} ({_census_text(cohort.sources)})",
-                style="muted",
-            )
-        if parameter.status == tuning.SEEDED:
-            ui.say(
-                f"      seeded: {parameter.samples} sample(s) is under {parameter.min_samples}, "
-                f"so the declared prior {tuning.render_value(parameter.prior)} "
-                f"{parameter.unit} stands — it would displace the value in force "
-                f"{tuning.render_value(parameter.in_force)} {parameter.unit}.",
-                style="warn",
-            )
-    ui.say(
-        "This report changed nothing. A tuner proposes and a human or a gate disposes: "
-        "apply a recommendation by editing basicly.toml yourself.",
-        style="ok",
-    )
-    return 0
-
-
-# Rows of the unresolved-head bucket the report prints before truncating.
-_UNRESOLVED_ROWS = 15
-
-
-def _cmd_usage_report(_args: argparse.Namespace) -> int:
-    """Report which tools and skills the recorded usage shows were actually used."""
-    repo_root = _repo_root()
-    skills = discover_skills(repo_root)
-    slugs = [skill.slug for skill in skills]
-    commands = usage.catalog_commands(skill.instructions for skill in skills)
-    report = usage.build_report(repo_root, slugs, commands)
-    if report is None:
-        ui.say(
-            f"No usage data at {usage.USAGE_FILE} — the tool-usage hook has not "
-            "recorded anything in this repo yet.",
-            style="warn",
-        )
-        return 0
-
-    if report.tools:
-        ui.table(
-            f"Terminal tools ({len(report.tools)})",
-            ["tool", "count", "last used"],
-            [[e.name, str(e.count), e.last_used] for e in report.tools],
-        )
-    if report.unresolved:
-        # Shown, not hidden: most of these are parser misses, but a real tool this
-        # machine has not installed lands here too, and a bucket printed as a bare
-        # count would read as "all noise" for both. Truncated because years of
-        # accumulated misses run to hundreds of one-off words — the head of the list
-        # and the totals are what say whether the recorder is still missing today,
-        # and the count dropped is named rather than left to the reader to notice.
-        shown = report.unresolved[:_UNRESOLVED_ROWS]
-        dropped = len(report.unresolved) - len(shown)
-        suffix = f", {dropped} lower-count rows not shown" if dropped else ""
-        ui.table(
-            f"Unresolved heads ({len(report.unresolved)}, "
-            f"{sum(e.count for e in report.unresolved)} recorded{suffix}) — no command "
-            "of this name resolves here: parser misses, or tools absent from this "
-            "checkout. Neither used nor unused",
-            ["head", "count", "last used"],
-            [[e.name, str(e.count), e.last_used] for e in shown],
-        )
-    if report.skills:
-        ui.table(
-            f"Skills ({len(report.skills)})",
-            ["skill", "count", "last used"],
-            [[e.name, str(e.count), e.last_used] for e in report.skills],
-        )
-    if report.never_used_skills:
-        ui.say(
-            "Never-used catalog skills (culling candidates): "
-            + ", ".join(report.never_used_skills),
-            style="muted",
-        )
-    else:
-        ui.say("Every catalog skill has recorded usage.", style="ok")
-    return 0
-
-
 def cmd_usage(args: argparse.Namespace) -> int:
     """Dispatch the usage telemetry subcommands (report / tracker / forecast / tuning)."""
     handlers = {
-        "report": _cmd_usage_report,
-        "tracker": _cmd_usage_tracker,
-        "forecast": _cmd_usage_forecast,
-        "tuning": _cmd_usage_tuning,
+        "report": usage_report.cmd_report,
+        "tracker": surface_report.cmd_tracker,
+        "forecast": usage_report.cmd_forecast,
+        "tuning": usage_report.cmd_tuning,
     }
     return _dispatch(args, "usage_command", handlers, group="usage")
 
@@ -2289,7 +1866,7 @@ def cmd_catalog_lint(_args: argparse.Namespace) -> int:
         print(f"catalog lint: warning: {warning}", file=sys.stderr)
     # The Tier-2 CI metric, printed whether the gate passes or fails: a floor is
     # only raisable by someone who can see how much headroom the catalog has.
-    print(f"catalog lint: {catalog_lint.routing_outcome(repo_root).summary()}")
+    print(f"catalog lint: {routing_evals.routing_outcome(repo_root).summary()}")
     violations = catalog_lint.lint_catalog(repo_root)
     if violations:
         print("catalog lint: FAILED", file=sys.stderr)
@@ -5237,7 +4814,9 @@ def main(argv: list[str] | None = None) -> int:
     except ValidationError as exc:
         print(f"Validation error: {exc}", file=sys.stderr)
         return 1
-    except Exception as exc:
+    # The process's last frame. The alternative — letting an unexpected type escape —
+    # prints a traceback at a user and exits 1 anyway; this translates instead.
+    except Exception as exc:  # noqa: BLE001 — process boundary, reported not swallowed
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 

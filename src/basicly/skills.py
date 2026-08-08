@@ -24,28 +24,22 @@ whole directory.
 from __future__ import annotations
 
 import shutil
-from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 
 from .projection import SyncResult, sync_file, write_if_changed
-from .schema import ValidationError, technology_selected, validate_technologies
+from .schema import technology_selected
+from .skill_source import (
+    EVAL_SOURCE_FILE,
+    MODEL_INVOKED,
+    SKILL_SOURCE_FILE,
+    SKILLS_SOURCE_DIR,
+    SkillDefinition,
+    discover_skills,
+)
 
-SKILLS_SOURCE_DIR = Path(".basicly/core/skills")
-SKILL_SOURCE_FILE = "skill.yaml"
 SKILL_FILE_NAME = "SKILL.md"
-# Tier-2 routing evidence (basicly-m4zv.2), colocated with the entry it is about
-# so a reviewer sees the description and the prompts that must reach it in one
-# diff. A catalog *source*, not a bundled resource: it is read by `catalog lint`
-# and never projected, because an agent loading a skill has no use for the eval
-# corpus and every reason not to pay for it.
-EVAL_SOURCE_FILE = "evals.yaml"
-
-# The invocation axis (basicly-m4zv.1, catalog-efficacy-design §3.5).
-MODEL_INVOKED = "model"
-USER_INVOKED = "user"
-INVOCATIONS = frozenset({MODEL_INVOKED, USER_INVOKED})
 # .claude/skills is Claude Code's only project root; .agents/skills is the
 # Agent Skills open-standard root Codex reads. Copilot/VS Code reads BOTH (plus
 # .github/skills), so a .github copy would only triple its discovery — it was
@@ -77,139 +71,6 @@ GENERATED_MARKER = (
 # Prefix of every mismatch reason a rebuild cannot clear, because no source
 # describes the file. The check-side remedy keys on it to say so.
 UNMANAGED_REASON_PREFIX = "unmanaged ("
-
-
-@dataclass(frozen=True)
-class SkillDefinition:
-    """A source skill loaded from .basicly/core/skills.
-
-    ``technologies`` is basicly-internal scoping (§9) and is NOT emitted into the
-    projected SKILL.md frontmatter. The optional spec fields (``license``,
-    ``compatibility``, ``allowed_tools``, ``metadata``) round-trip into the
-    frontmatter; omitting them yields the minimal ``name``/``description`` header.
-    """
-
-    slug: str
-    name: str
-    # The invocation axis (basicly-m4zv.1). A model-invoked entry keeps a
-    # description and is advertised to the agent, paying context load every turn;
-    # a user-invoked entry carries none and is reached by a human typing it.
-    # Declared rather than inferred, because "does this route correctly" is not a
-    # well-posed question until an entry knows whether anything can route to it —
-    # which is why this is the prerequisite for the Tier-2 routing evals.
-    invocation: str
-    # Empty for a user-invoked entry; the pairing is enforced by catalog_lint.
-    description: str
-    instructions: str
-    source_path: Path
-    technologies: tuple[str, ...] = ()
-    license: str | None = None
-    compatibility: str | None = None
-    allowed_tools: str | None = None
-    metadata: tuple[tuple[str, str], ...] = ()
-
-    @property
-    def source_dir(self) -> Path:
-        """The skill's source directory (parent of ``skill.yaml``)."""
-        return self.source_path.parent
-
-
-def _require_str(value: object, field: str, path: Path) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise ValidationError(f"missing required field '{field}'", path)
-    return value
-
-
-def _optional_str(
-    value: object, field: str, path: Path, *, max_len: int | None = None
-) -> str | None:
-    """Validate an optional spec string field (absent -> None)."""
-    if value is None:
-        return None
-    if not isinstance(value, str) or not value.strip():
-        raise ValidationError(f"field '{field}' must be a non-empty string", path)
-    if max_len is not None and len(value) > max_len:
-        raise ValidationError(f"field '{field}' exceeds {max_len} characters", path)
-    return value
-
-
-def _load_metadata(value: object, path: Path) -> tuple[tuple[str, str], ...]:
-    """Validate the optional ``metadata`` map (string keys -> string values)."""
-    if value is None:
-        return ()
-    if not isinstance(value, dict):
-        raise ValidationError("field 'metadata' must be a mapping", path)
-    items: list[tuple[str, str]] = []
-    for key, entry in value.items():
-        if not isinstance(key, str):
-            raise ValidationError("metadata keys must be strings", path)
-        if not isinstance(entry, str):
-            raise ValidationError(
-                f"metadata value for '{key}' must be a string (quote numbers, e.g. \"1.0\")", path
-            )
-        items.append((key, entry))
-    return tuple(items)
-
-
-def discover_skills(
-    repo_root: Path,
-    source_dir: Path = SKILLS_SOURCE_DIR,
-) -> list[SkillDefinition]:
-    """Load and validate all skills from the source collection directory."""
-    base_dir = repo_root / source_dir
-    if not base_dir.exists():
-        return []
-
-    skills: list[SkillDefinition] = []
-    seen_slugs: set[str] = set()
-
-    for path in sorted(base_dir.glob(f"*/{SKILL_SOURCE_FILE}")):
-        slug = path.parent.name
-        if slug in seen_slugs:
-            raise ValidationError(f"duplicate skill slug '{slug}'", path)
-        seen_slugs.add(slug)
-
-        try:
-            data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        except yaml.YAMLError as exc:
-            raise ValidationError(f"invalid YAML: {exc}", path) from exc
-        if not isinstance(data, dict):
-            raise ValidationError("skill source must be a YAML mapping", path)
-
-        technologies = validate_technologies(data.get("technologies") or [], path)
-
-        invocation = _require_str(data.get("invocation"), "invocation", path).strip()
-        if invocation not in INVOCATIONS:
-            raise ValidationError(
-                f"field 'invocation' must be one of {', '.join(sorted(INVOCATIONS))}, "
-                f"got {invocation!r}",
-                path,
-            )
-        # A user-invoked entry legitimately has no description, so this cannot go
-        # through _require_str. The pairing (model needs one, user must not have
-        # one) is a catalog_lint rule so the failure can explain itself.
-        raw_description = data.get("description")
-        description = raw_description.strip() if isinstance(raw_description, str) else ""
-
-        skills.append(
-            SkillDefinition(
-                slug=slug,
-                name=_require_str(data.get("name"), "name", path).strip(),
-                invocation=invocation,
-                description=description,
-                instructions=_require_str(data.get("instructions"), "instructions", path),
-                source_path=path,
-                technologies=tuple(technologies),
-                license=_optional_str(data.get("license"), "license", path),
-                compatibility=_optional_str(
-                    data.get("compatibility"), "compatibility", path, max_len=500
-                ),
-                allowed_tools=_optional_str(data.get("allowed-tools"), "allowed-tools", path),
-                metadata=_load_metadata(data.get("metadata"), path),
-            )
-        )
-
-    return skills
 
 
 def _optional_frontmatter(skill: SkillDefinition) -> str:
@@ -520,8 +381,10 @@ def _check_projected_skill(skill: SkillDefinition, skill_dir: Path) -> list[tupl
             mismatches.append((target, "content mismatch"))
 
     if skill_dir.is_dir():
-        for candidate in sorted(skill_dir.rglob("*")):
-            if candidate.is_file() and candidate not in expected:
-                mismatches.append((candidate, "unexpected (not in source)"))
+        mismatches.extend(
+            (candidate, "unexpected (not in source)")
+            for candidate in sorted(skill_dir.rglob("*"))
+            if candidate.is_file() and candidate not in expected
+        )
 
     return mismatches

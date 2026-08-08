@@ -36,12 +36,21 @@ of it.
 
 from __future__ import annotations
 
+import contextlib
 import json
-import re
 import time
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
+
+from . import tracker_invocation
+from .tracker_invocation import is_valid_surface, split_invocation
+
+# The canonical two-word group set, re-exported under the name the inventory gate
+# holds it to: `tests/test_tracker_surface.py` asserts the committed
+# `tracker-surface.json` groups equal this, and it reads them from here.
+GROUP_SUBCOMMANDS = tracker_invocation.GROUP_SUBCOMMANDS
 
 # The write buffer. Lives under the self-ignoring usage dir, so it never dirties
 # the tree; lost with the machine, which is exactly why `promote` exists.
@@ -53,39 +62,6 @@ LEDGER_FILE = Path(".basicly/ledger/tracker-usage.jsonl")
 
 SITE_ENGINE = "engine"
 SITE_INTERACTIVE = "interactive"
-
-# A positional that could name a br subcommand. See :func:`is_surface_word` for
-# why a stricter filter than "does not start with -" is required.
-_SURFACE_WORD = re.compile(r"^[a-z][a-z0-9-]*$")
-
-# A leading long flag standing in for a subcommand: `bv` has none at all, so a
-# flag is the only name its invocation has.
-_LONG_FLAG_SURFACE = re.compile(r"^--[a-z][a-z0-9-]*[a-z0-9]$")
-
-# Top-level br commands that take a second word naming a distinct operation, so
-# the pair is one surface. Generated from `br --help` and mirrored in
-# `.basicly/ledger/tracker-surface.json`; `test_tracker_surface` asserts the two
-# agree, which is what turns "keep this in step" into a gate.
-#
-# The set previously held five entries and was wrong in both directions: it missed
-# `audit`, `doctor`, `epic`, `history`, `label` and `query` — so `br label add` and
-# `br label list` collapsed to one surface named `label`, understating exactly the
-# count a freeze reads — and it listed `catalog`, which is a *basicly* command and
-# has never existed in br (basicly-vkh0.2).
-GROUP_SUBCOMMANDS = frozenset({
-    "audit",
-    "comments",
-    "config",
-    "coordination",
-    "dep",
-    "doctor",
-    "epic",
-    "gate",
-    "history",
-    "label",
-    "query",
-    "robot-docs",
-})
 
 # Subcommands that only read. Used for the read/write ratio the cache design
 # rests on: if reads dominate by the margin the 175x in-process figure implies,
@@ -162,65 +138,6 @@ def classify_access(subcommand: str) -> str:
     if subcommand in WRITE_SUBCOMMANDS:
         return "write"
     return "unclassified"
-
-
-def is_surface_word(token: str) -> bool:
-    """True when *token* could name a ``br`` subcommand.
-
-    Every ``br`` command name is lowercase letters, digits and hyphens. Anything
-    else in a positional slot is shell text that survived tokenisation, not a
-    surface — and it reached the committed ledger: ``br --version 2>&1`` recorded
-    the surface ``2>&1``, and ``br $g --help`` inside a shell loop recorded ``$g``
-    (six such rows across four fake surfaces, basicly-vkh0.2). A freeze list is
-    exactly the artifact that must not contain them, since its whole purpose is to
-    say which surfaces exist.
-
-    Rejecting the token rather than the whole invocation is deliberate: for
-    ``br --version 2>&1`` the real surface is the leading flag, and dropping only
-    the junk word still records it.
-    """
-    return bool(_SURFACE_WORD.match(token))
-
-
-def is_valid_surface(subcommand: str) -> bool:
-    """True when *subcommand* is a shape :func:`split_invocation` can legitimately emit.
-
-    Two shapes are legitimate: one or two command words (``show``, ``dep add``), or
-    a single long flag for a binary that has no subcommands (``bv --robot-next``,
-    ``br --version``). Everything else is recorder junk. Used at the promote
-    boundary so the committed ledger cannot inherit it.
-    """
-    if not subcommand:
-        return False
-    if subcommand.startswith("-"):
-        return bool(_LONG_FLAG_SURFACE.match(subcommand))
-    words = subcommand.split()
-    return len(words) <= 2 and all(is_surface_word(word) for word in words)
-
-
-def split_invocation(args: list[str] | tuple[str, ...]) -> tuple[str, tuple[str, ...]]:
-    """The subcommand and the flag *names* in *args*.
-
-    A leading flag (``br --version``) is a surface in its own right and becomes
-    the subcommand, because there is no other name for it. Two-word subcommands
-    (``dep add``, ``comments list``, ``gate report``) are joined so the pair is
-    one surface — they are separate operations and freezing them as bare ``dep``
-    would lose the distinction the replacement has to reproduce.
-
-    ``--flag=value`` is truncated at the ``=``; a value in the next position is
-    simply not collected, since only names are recorded.
-    """
-    words = [arg for arg in args if not arg.startswith("-") and is_surface_word(arg)]
-    flags = sorted({arg.split("=", 1)[0] for arg in args if arg.startswith("-")})
-
-    if not words:
-        # No positional at all: the leading flag *is* the surface (`br --version`).
-        return (flags[0] if flags else "", tuple(flags))
-
-    subcommand = words[0]
-    if len(words) > 1 and subcommand in GROUP_SUBCOMMANDS:
-        subcommand = f"{subcommand} {words[1]}"
-    return subcommand, tuple(flags)
 
 
 def ledger_root(repo_root: Path) -> Path:
@@ -302,8 +219,13 @@ def record(  # noqa: PLR0913 — six independent facts about one observation
     partial record: several supervisor lanes share this file, and append mode
     with one write per record is the cheapest thing that survives that without a
     lock. A torn line would be discarded by the reader anyway.
+
+    The suppressed set is the complete cover for this body — every statement is a
+    stat, a mkdir, a write, a ``float()`` or a ``json.dumps``. ``except Exception``
+    was rejected: this is a library call, not a process boundary, so anything
+    outside those three is a defect here and belongs in the caller's traceback.
     """
-    try:
+    with contextlib.suppress(OSError, TypeError, ValueError):
         if not is_enabled(repo_root):
             return
         subcommand, flags = split_invocation(args)
@@ -330,8 +252,6 @@ def record(  # noqa: PLR0913 — six independent facts about one observation
             gitignore.write_text("*\n", encoding="utf-8")
         with spool.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(entry, separators=(",", ":"), sort_keys=True) + "\n")
-    except Exception:  # nosec B110 — telemetry must never fail a tracker call
-        pass
 
 
 def timed(
@@ -357,7 +277,13 @@ def timed(
             self._start = time.monotonic()
             return self
 
-        def __exit__(self, exc_type, exc, tb) -> bool:
+        # `Literal[False]`, not `bool`: a plain `bool` declares a context manager
+        # that *may* suppress the caller's exception, so a type checker must treat
+        # every name bound in the `with` body as possibly-unbound after it — which
+        # is exactly what pyright reported against `_spawn`'s `return proc`
+        # (basicly-u2hl.10). The literal states the contract the line below already
+        # keeps, and is the only thing that makes the call site provably correct.
+        def __exit__(self, exc_type, exc, tb) -> Literal[False]:
             elapsed_ms = (time.monotonic() - self._start) * 1000
             record(
                 repo_root,

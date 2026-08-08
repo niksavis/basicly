@@ -8,6 +8,10 @@ executed command, and for a Claude ``Skill`` call it records the skill as a
 ``.basicly/usage/tool-usage.json`` — real data for culling idle tools/skills
 from the catalog.
 
+What a shell command *ran* is ``shell_tokens``'s answer, not this module's: the
+boundary is recording against parsing. Everything here reads a payload, decides what
+is worth counting and writes it down; nothing here looks at shell syntax.
+
 Telemetry, never a gate: every path exits 0, the usage dir ignores itself
 (``.basicly/usage/.gitignore``), writes are atomic, and a corrupt counter file
 restarts empty instead of failing the agent's tool call.
@@ -17,10 +21,22 @@ from __future__ import annotations
 
 import json
 import re
-import shlex
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+
+# The sibling parser, imported the way `kit-boundary.py` imports `check_runner`: a hook
+# is run by path under whatever interpreter the host provides, and a test loads it
+# through `spec_from_file_location`, so neither puts this directory on `sys.path`.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shell_tokens import (
+    WRAPPER_TOKENS,
+    segment_tokens,
+    skip_wrapper_args,
+    split_pipeline_segments,
+    strip_heredocs,
+    tools_in_command,
+)
 
 USAGE_DIR = Path(".basicly/usage")
 USAGE_FILE = USAGE_DIR / "tool-usage.json"
@@ -42,8 +58,8 @@ TRACKER_SPOOL = USAGE_DIR / "tracker-usage.jsonl"
 TRACKER_LEDGER_DIR = Path(".basicly/ledger")
 TRACKER_BINARIES = {"br", "bv"}
 # Kept in step with tracker_usage.GROUP_SUBCOMMANDS: these take a second word that
-# names a distinct operation, so the pair is one surface. A parity test compares
-# the two sets, because "kept in step" as a comment had already drifted — this set
+# names a distinct operation, so the pair is one surface. A parity test compares the
+# two sets, because "kept in step" as a comment had already drifted — this set
 # was missing six real groups (`audit`, `doctor`, `epic`, `history`, `label`,
 # `query`) and carried `catalog`, which is a basicly command br has never had.
 TWO_WORD_SUBCOMMANDS = {
@@ -69,200 +85,6 @@ SURFACE_WORD = re.compile(r"^[a-z][a-z0-9-]*$")
 # Tool names that carry a shell command, per platform (Claude: Bash; Copilot:
 # bash/shell). Anything else (Edit, view, ...) is not ours to count.
 SHELL_TOOLS = {"bash", "shell"}
-
-# Segment heads that say nothing about tool selection.
-SKIP_TOKENS = {
-    "cd",
-    "echo",
-    "exit",
-    "export",
-    "set",
-    "unset",
-    "true",
-    "false",
-    "then",
-    "else",
-    "elif",
-    "fi",
-    "do",
-    "done",
-    "if",
-    "while",
-    "until",
-    "for",
-    "case",
-    "esac",
-    # Control-flow and declaration words that head their own line inside a
-    # multi-line loop or function body, where the newline split makes them a
-    # segment head of their own (basicly-m0p1).
-    "break",
-    "continue",
-    "declare",
-    "function",
-    "in",
-    "local",
-    "readonly",
-    "return",
-    "shift",
-    "{",
-    "}",
-    "(",
-    ")",
-}
-
-# Wrappers whose *argument* is the interesting tool (`uv run pytest` counts
-# both uv and pytest). `env` is one of them: `env -C <dir> <cmd>` and
-# `env FOO=1 <cmd>` were crediting env alone and losing the tool.
-WRAPPER_TOKENS = {
-    "uv",
-    "uvx",
-    "npx",
-    "env",
-    "sudo",
-    "xargs",
-    "command",
-    "exec",
-    "nohup",
-    "time",
-}
-
-# A wrapper's own subcommand names no tool: keep walking to the real command.
-WRAPPER_SUBCOMMANDS = {"run", "tool"}
-
-# Wrapper flags whose value is a *separate* argv item, so both must be skipped:
-# `uv run --directory <worktree> pytest` credited the worktree's basename as the
-# tool 49 times and never credited pytest (basicly-m0p1). The `--flag=value`
-# form needs no entry here — it is a single token the generic flag skip drops.
-WRAPPER_VALUE_FLAGS = {
-    "--directory",
-    "--project",
-    "--python",
-    "--with",
-    "--from",
-    "--package",
-    "-C",
-    "-u",
-}
-
-# Inline code, not a tool invocation: nothing after these is a command name.
-WRAPPER_STOP_TOKENS = {"python", "-m"}
-
-# `cmd <<TAG` / `cmd <<-'TAG'` / `cmd <<\TAG`: everything until the terminator
-# line is data, not commands — counting heredoc body lines as tools was
-# basicly-587. The optional backslash disables expansion (`<<\EOF`); missing it
-# left those bodies unstripped and leaked their keywords/terminator (basicly-v7eu).
-_HEREDOC = re.compile(r"<<-?\s*\\?(['\"]?)(?P<tag>[A-Za-z_][A-Za-z0-9_]*)\1")
-
-# `name() {` / `function name {`: a function defined in the command text is not a
-# tool, so neither is the call to it later in that same text (`write_src`, counted
-# 3 times as a terminal tool — basicly-m0p1).
-_FUNCTION_DEF = re.compile(
-    r"(?:^|[\n;&|])\s*"
-    r"(?:function\s+(?P<keyword>[A-Za-z_][A-Za-z0-9_]*)"
-    r"|(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\(\s*\))"
-)
-
-
-def _split_pipeline_segments(command: str) -> list[str]:
-    """Split on the pipeline operators ``|| && ; |`` and newlines outside quotes.
-
-    Splitting the raw string with a regex would shatter a quoted argument that
-    contains an operator or newline — a multi-line ``git commit -m`` body, a
-    ``--title "add x; ship it"`` — into fake segments whose first word is then
-    miscounted as a command head (basicly-zcvo). Tracking quote state keeps
-    quoted-string contents inside a single segment.
-
-    A command substitution opener (``$(``, a backtick) is also a boundary: it runs
-    a real command, and gluing it to the token before it — ``id=$(br create ...)``
-    — made the *subcommand* the head, which is how ``create`` and ``run`` (64
-    counts) entered the table instead of ``br`` (basicly-m0p1).
-    """
-    segments: list[str] = []
-    buf: list[str] = []
-    quote: str | None = None
-    i, n = 0, len(command)
-    while i < n:
-        ch = command[i]
-        # A backslash escapes the next char everywhere except inside '...'.
-        if ch == "\\" and quote != "'" and i + 1 < n:
-            buf.append(ch)
-            buf.append(command[i + 1])
-            i += 2
-            continue
-        # Inside '...' a substitution is literal text, so quote state still decides.
-        if quote != "'" and (command[i : i + 2] == "$(" or ch == "`"):
-            segments.append("".join(buf))
-            buf = []
-            i += 2 if ch == "$" else 1
-            continue
-        if quote is not None:
-            buf.append(ch)
-            if ch == quote:
-                quote = None
-            i += 1
-            continue
-        if ch in ("'", '"'):
-            quote = ch
-            buf.append(ch)
-            i += 1
-            continue
-        if command[i : i + 2] in ("||", "&&"):
-            segments.append("".join(buf))
-            buf = []
-            i += 2
-            continue
-        if ch in (";", "|", "\n"):
-            segments.append("".join(buf))
-            buf = []
-            i += 1
-            continue
-        buf.append(ch)
-        i += 1
-    segments.append("".join(buf))
-    return segments
-
-
-def _strip_heredocs(command: str) -> str:
-    """Drop here-document bodies so their lines are never counted as tools."""
-    out: list[str] = []
-    terminator: str | None = None
-    for line in command.split("\n"):
-        if terminator is not None:
-            if line.strip() == terminator:
-                terminator = None
-            continue
-        match = _HEREDOC.search(line)
-        if match:
-            terminator = match.group("tag")
-        out.append(line)
-    return "\n".join(out)
-
-
-def _shell_functions(command: str) -> set[str]:
-    """Names of the shell functions *command* defines; calling one names no tool."""
-    return {match["keyword"] or match["name"] for match in _FUNCTION_DEF.finditer(command)}
-
-
-def _skip_wrapper_args(tokens: list[str]) -> list[str]:
-    """Advance past a wrapper's subcommands, flags, flag values and VAR=val prefixes.
-
-    One interleaved walk rather than one ordered pass per kind: a flag can precede
-    the subcommand (``uv --directory <path> run pytest``) and a flag's value can be
-    a separate argv item (``uv run --directory <path> pytest``), and the old fixed
-    order credited that value as the tool (basicly-m0p1).
-    """
-    while tokens:
-        head = tokens[0]
-        if head in WRAPPER_STOP_TOKENS:
-            return []
-        if head in WRAPPER_VALUE_FLAGS:
-            tokens = tokens[2:]  # the flag *and* the value that follows it
-            continue
-        if head in WRAPPER_SUBCOMMANDS or head.startswith("-") or "=" in head:
-            tokens = tokens[1:]
-            continue
-        break
-    return tokens
 
 
 def _command_from_payload(payload: dict) -> str | None:
@@ -290,60 +112,23 @@ def _skill_from_payload(payload: dict) -> str | None:
     return None
 
 
-def tools_in_command(command: str) -> list[str]:
-    """Head tokens (basenames) of every pipeline segment, wrappers unwrapped."""
-    tools: list[str] = []
-    text = _strip_heredocs(command)
-    functions = _shell_functions(text)
-    for segment in _split_pipeline_segments(text):
-        try:
-            tokens = shlex.split(segment, posix=True)
-        except ValueError:
-            tokens = segment.split()
-        while tokens:
-            head = tokens[0]
-            if "=" in head and not head.startswith("-"):
-                tokens.pop(0)  # VAR=val prefix: skip it and keep scanning for the head
-                continue
-            if head in SKIP_TOKENS or head in functions or head.startswith("-"):
-                tokens = []  # a builtin, a local function, or a stray flag names no tool
-            break
-        while tokens:
-            name = Path(tokens[0]).name
-            if not name or not re.match(r"^[A-Za-z0-9._-]+$", name):
-                break
-            tools.append(name)
-            if name in WRAPPER_TOKENS:
-                tokens = _skip_wrapper_args(tokens[1:])
-                continue
-            break
-    return tools
-
-
 def tracker_invocations(command: str) -> list[tuple[str, list[str]]]:
     """Every ``br``/``bv`` call in *command*, as ``(binary, args)``.
 
     Reuses the pipeline splitter, so a tracker call later in a pipeline or after
     ``&&`` is seen, and unwraps the same wrappers ``tools_in_command`` does
     (``uv run br ...``).
-
-    ``shlex.split`` mangles backslashes under POSIX rules, which would corrupt a
-    Windows path in an argument — harmless here because only the subcommand and
-    flag *names* are kept and every value is discarded.
     """
     found: list[tuple[str, list[str]]] = []
-    for segment in _split_pipeline_segments(_strip_heredocs(command)):
-        try:
-            tokens = shlex.split(segment, posix=True)
-        except ValueError:
-            tokens = segment.split()
+    for segment in split_pipeline_segments(strip_heredocs(command)):
+        tokens = segment_tokens(segment)
         while tokens:
             head = tokens[0]
             if "=" in head and not head.startswith("-"):
                 tokens.pop(0)  # VAR=val prefix
                 continue
             if Path(head).name in WRAPPER_TOKENS:
-                tokens = _skip_wrapper_args(tokens[1:])
+                tokens = skip_wrapper_args(tokens[1:])
                 continue
             break
         if not tokens:
@@ -468,8 +253,11 @@ def main() -> int:
         skill = _skill_from_payload(payload)
         if skill:
             record([f"skill:{skill}"], Path.cwd())
-    except Exception:  # nosec B110 — telemetry must never fail the tool call
-        pass
+    # A raise here fails a tool call that already succeeded. Narrowing was rejected: the
+    # body spans stdin decoding, JSON parsing and two file writes. It reports rather than
+    # swallowing — a silent failure is a ledger that quietly stops counting.
+    except Exception as exc:  # noqa: BLE001 — hook boundary, reported below
+        print(f"tool-usage: telemetry skipped ({type(exc).__name__})", file=sys.stderr)
     return 0
 
 

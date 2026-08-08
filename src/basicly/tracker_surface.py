@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess  # nosec B404
+import subprocess
 from pathlib import Path
 
 # Sits beside the usage ledger because it is the other half of the same question,
@@ -106,7 +106,7 @@ def _help(binary: str, *args: str) -> str:
     what it could not probe.
     """
     try:
-        proc = subprocess.run(  # nosec B603 — fixed argv, no shell, no untrusted input
+        proc = subprocess.run(  # noqa: S603 — argv list, no shell; see the docstring
             [binary, *args, "--help"],
             capture_output=True,
             text=True,
@@ -121,7 +121,7 @@ def _help(binary: str, *args: str) -> str:
 def _version(binary: str) -> str:
     """First line of ``<binary> --version``, or "" when unavailable."""
     try:
-        proc = subprocess.run(  # nosec B603 — fixed argv, no shell
+        proc = subprocess.run(  # noqa: S603 — argv list, no shell; `binary` is a known name
             [binary, "--version"],
             capture_output=True,
             text=True,

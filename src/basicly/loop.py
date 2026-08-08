@@ -46,6 +46,7 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from . import (
     br,
@@ -75,7 +76,9 @@ from .config import (
     load_sizing_config,
     load_worktree_config,
 )
-from .decompose import ChildSpec
+
+if TYPE_CHECKING:
+    from .decompose import ChildSpec
 
 # Work classes that are leaf tracks — they build directly rather than decompose
 # (architecture §12.1: bug/chore are leaves; a task is a unit of work).

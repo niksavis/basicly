@@ -61,13 +61,6 @@ def _stub_provisioning(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(worktree, "install_worktree_hooks", lambda _wt: "hooks: stubbed")
 
 
-def test_main_checkout_and_worktrees_root(git_repo: Path) -> None:
-    """The sibling worktrees root is ``<repo>.worktrees`` next to the checkout."""
-    assert worktree.main_checkout(git_repo) == git_repo
-    assert worktree.worktrees_root(git_repo).name == "repo.worktrees"
-    assert worktree.worktrees_root(git_repo).parent == git_repo.parent
-
-
 def test_create_makes_sibling_worktree_on_harness_branch(
     git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -300,18 +293,6 @@ def test_cleanup_removes_worktree_branch_and_metadata(
     assert "harness/gone" not in _branches(git_repo)
     assert "main" in _branches(git_repo)  # base untouched
     assert worktree.load_session("gone", git_repo) is None
-
-
-def test_is_linked_checkout_distinguishes_worktree_from_base(
-    git_repo: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A linked worktree reports True; the primary checkout and a non-repo False."""
-    monkeypatch.chdir(git_repo)
-    session = worktree.create("linked")
-
-    assert worktree.is_linked_checkout(session.path) is True
-    assert worktree.is_linked_checkout(git_repo) is False
-    assert worktree.is_linked_checkout(git_repo.parent) is False  # not a repo
 
 
 def test_cleanup_drops_record_when_branch_already_gone(

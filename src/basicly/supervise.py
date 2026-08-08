@@ -179,9 +179,10 @@ def acquire(repo_root: Path, session_id: str, root_issue: str) -> Path:
     )
     try:
         _create_lock(path, payload)
-        return path
     except FileExistsError:
         pass
+    else:
+        return path
 
     holder = read_holder(repo_root)
     if holder is None:
@@ -189,9 +190,10 @@ def acquire(repo_root: Path, session_id: str, root_issue: str) -> Path:
         # lock is free, not contested — try the plain create once more.
         try:
             _create_lock(path, payload)
-            return path
         except FileExistsError as exc:
             raise LockHeldError("another supervisor acquired the freed lock first") from exc
+        else:
+            return path
     if holder.age_s < STALE_AFTER_S:
         raise LockHeldError(
             f"supervisor {holder.session_id or 'unknown'} (pid {holder.pid or '?'}) holds the "
@@ -1448,8 +1450,12 @@ def _band_verdict(admission: WorkingSetAdmission) -> str:
 # second one won at import, so editing this copy, the one a reader finds beside
 # `PassSpendAdmission`, changed nothing at all: verbatim the failure jr0l.52 exists to
 # prevent, in the constant that carries jr0l.52's own warning (basicly-tcmy.3).
+#
+# `PASS` here is the supervisor *pass* over the lanes, not a credential — S105 keys on
+# the substring. Renaming to dodge the heuristic was rejected: the name is the domain
+# term used by `PassSpendAdmission` and every pass-scoped constant beside it.
 PASS_SPEND_QUESTION = (
-    "re-scope this pass or re-grant: its forecast spend exceeds the remaining budget"
+    "re-scope this pass or re-grant: its forecast spend exceeds the remaining budget"  # noqa: S105 — supervisor pass, not a credential
 )
 
 
@@ -2166,6 +2172,11 @@ def _inflight_note(
     once a lane has reported some: an adapter that measures out of band has no stream
     to read, and a fabricated 0 would be indistinguishable from a measured one.
 
+    *What* it is doing is the third half, and it is why the dispatch stream is forwarded
+    at all (basicly-jr0l.66, basicly-u2hl.7): elapsed and spend say a lane is alive and
+    expensive without saying whether it is stuck. It is omitted for a lane that has said
+    nothing, on the same rule as spend — a blank is honest, an invented one is not.
+
     A monotonic clock, because this is a duration; a wall clock can step backwards and
     report a lane as having run for a negative time.
     """
@@ -2181,8 +2192,11 @@ def _inflight_note(
         queued = len(pending)
         return f"{queued} lane(s) queued behind the concurrency cap, none started yet"
     live = inflight_spend()
+    doing = inflight_activity()
     return ", ".join(
-        f"{issue_id} {elapsed:.0f}s" + (f" {live[issue_id]} tok" if live.get(issue_id) else "")
+        f"{issue_id} {elapsed:.0f}s"
+        + (f" {live[issue_id]} tok" if live.get(issue_id) else "")
+        + (f" [{doing[issue_id]}]" if doing.get(issue_id) else "")
         for issue_id, elapsed in running
     )
 
@@ -2197,14 +2211,18 @@ def lane_activity(cwd: Path) -> str:
     works. It is kept because the stream has the mirror-image blind spot, emitting
     nothing inside that same long tool call.
     """
-    head = subprocess.run(
-        ["git", "-C", str(cwd), "rev-parse", "HEAD"],
+    # Two read-only git queries. The argv is literal apart from *cwd*, which is a
+    # worktree path this process created, and it is passed as one list element with
+    # `shell=False` — a path with a space or a `;` in it stays one argument. `git` by
+    # name so the consumer's PATH picks the binary, as everywhere else in the engine.
+    head = subprocess.run(  # noqa: S603 — argv list, no shell; see the note above
+        ["git", "-C", str(cwd), "rev-parse", "HEAD"],  # noqa: S607 — PATH git, as everywhere
         capture_output=True,
         text=True,
         check=False,
     )
-    dirty = subprocess.run(
-        ["git", "-C", str(cwd), "status", "--porcelain"],
+    dirty = subprocess.run(  # noqa: S603 — argv list, no shell; see the note above
+        ["git", "-C", str(cwd), "status", "--porcelain"],  # noqa: S607 — PATH git, as everywhere
         capture_output=True,
         text=True,
         check=False,
@@ -2252,10 +2270,11 @@ class LaneStream:
     """
 
     def __init__(self) -> None:
-        """An unstarted meter: no events, nothing spent."""
+        """An unstarted meter: no events, nothing spent, nothing said."""
         self._lock = threading.Lock()
         self._events = 0
         self._tokens = 0
+        self._doing = ""
 
     def __call__(self, event: runner.StreamEvent) -> None:
         """Record one event. Called on the runner's stdout reader thread."""
@@ -2263,6 +2282,9 @@ class LaneStream:
             self._events += 1
             if event.usage is not None:
                 self._tokens += event.usage.tokens
+            said = _said(event)
+            if said:
+                self._doing = said
 
     @property
     def events(self) -> int:
@@ -2276,6 +2298,12 @@ class LaneStream:
         with self._lock:
             return self._tokens
 
+    @property
+    def doing(self) -> str:
+        """The last thing this dispatch said, or empty before it has said anything."""
+        with self._lock:
+            return self._doing
+
     def fingerprint(self) -> str:
         """A reading that changes on every event, for :class:`runner.StallWatchdog`.
 
@@ -2283,6 +2311,30 @@ class LaneStream:
         events, and a lane repeating itself is working, not wedged.
         """
         return f"events:{self.events}"
+
+
+# How much of a turn's prose reaches a one-line heartbeat. Long enough to tell two
+# activities apart, short enough that four concurrent lanes still fit on a terminal row.
+_SAID_CHARS = 60
+
+
+def _said(event: runner.StreamEvent) -> str:
+    """The one line *event* contributes to a heartbeat, or empty if it contributes none.
+
+    Only the first line of the turn's prose: an agent's turn is paragraphs and the
+    heartbeat is a row. A forwarded turn is prefixed with the nested agent that produced
+    it (``runner.StreamEvent.subagent``), because "which agent is talking" is the whole
+    reason a lane that fans out internally is otherwise unreadable — the events arrive
+    interleaved and are indistinguishable without it.
+    """
+    lines = (event.text or "").strip().splitlines()
+    first = lines[0].strip() if lines else ""
+    if not first:
+        return ""
+    clipped = first[:_SAID_CHARS].rstrip()
+    if len(first) > _SAID_CHARS:
+        clipped += "..."
+    return f"{event.subagent}: {clipped}" if event.subagent else clipped
 
 
 # The in-flight lane meters of the pass currently running, keyed by issue id.
@@ -2341,6 +2393,13 @@ def inflight_spend() -> dict[str, int]:
     with _LIVE_LOCK:
         live = tuple(_LIVE_LANES.items())
     return {issue_id: stream.spent for issue_id, stream in live}
+
+
+def inflight_activity() -> dict[str, str]:
+    """The last thing each currently-running lane said, for the heartbeat."""
+    with _LIVE_LOCK:
+        live = tuple(_LIVE_LANES.items())
+    return {issue_id: stream.doing for issue_id, stream in live if stream.doing}
 
 
 def retired_spend() -> int:

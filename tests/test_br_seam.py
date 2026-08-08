@@ -42,6 +42,7 @@ import pytest
 
 from basicly import br, config, policy, run_record, tracker_usage
 from basicly.config import PolicyConfig
+from basicly.owned_store import _mode_reader
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 KIT_SOURCE = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker"
@@ -268,7 +269,7 @@ def test_importing_config_installs_the_mode_reader() -> None:
     seam silently answers ``external`` for a repo that declared ``owned``, and the first
     symptom would be reads coming from the wrong store.
     """
-    assert br._mode_reader == [config.load_tracker_mode]
+    assert _mode_reader == [config.load_tracker_mode]
 
 
 def test_a_repo_that_declares_nothing_is_external(tmp_path: Path) -> None:

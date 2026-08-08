@@ -19,8 +19,10 @@ from __future__ import annotations
 
 import re
 from difflib import SequenceMatcher
+from typing import TYPE_CHECKING
 
-from .schema import Fragment
+if TYPE_CHECKING:
+    from .schema import Fragment
 
 # Two normalized bodies at or above this similarity ratio are near-duplicates.
 NEAR_DUPLICATE_RATIO = 0.95
@@ -99,9 +101,11 @@ def _ambiguous_phrases(fragments: list[Fragment]) -> list[str]:
     violations: list[str] = []
     for fragment in fragments:
         body = fragment.body.lower()
-        for phrase in AMBIGUOUS_PHRASES:
-            if phrase in body:
-                violations.append(f"fragment '{fragment.id}' contains vague phrase '{phrase}'")
+        violations.extend(
+            f"fragment '{fragment.id}' contains vague phrase '{phrase}'"
+            for phrase in AMBIGUOUS_PHRASES
+            if phrase in body
+        )
     return sorted(violations)
 
 

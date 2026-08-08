@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-
-import pytest
+from typing import TYPE_CHECKING
 
 from basicly.schema import ValidationError, display_path
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_a_source_inside_the_repo_root_is_reported_relative(tmp_path: Path) -> None:

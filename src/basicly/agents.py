@@ -597,8 +597,7 @@ def lint_agent_sources(repo_root: Path) -> list[str]:
             )
 
         missing = unknown_block_refs(agent, blocks)
-        for ref in missing:
-            violations.append(f"{rel}: references unknown block '{ref}'")
+        violations.extend(f"{rel}: references unknown block '{ref}'" for ref in missing)
         if missing:
             continue
 
