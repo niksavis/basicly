@@ -91,6 +91,9 @@ at build→verify; everything else is checkpoints and lints.
 | D14 [D] | **File-size waiver: recorded reason at L1/L2, approval at L3** | Reuses the level already computed. Closes the self-granted-waiver-on-a-consumer-surface hole without ceremony everywhere else |
 | D15 [D] | **Kill always requires a human**, at every integrity level | Kill is the only verb that removes a *requirement* rather than routing work. An agent that can kill what it finds hard has an exit from every difficulty |
 | D16 [D] | **The plugin is a second distribution channel**, packaging the same projected output as `basicly install` | One source of truth, two delivery shapes. Betting the primary channel on a spec with seven areas still in FUTURE_CONSIDERATIONS would be premature |
+| D17 [D] | **`solution-design` is markdown with five machine-checked sections**: problem in the requester's terms, success as an observable, a **consumer transcript**, out of scope, constraints | Structured markdown is the only shape that is both readable and checkable — JSON is unreadable and prose is unactionable. The pattern is already proven twice here: the `## Plan` section and `needs-input.json`. The transcript is this repo's translation of a UI mockup: our consumer surface is a CLI, so the artifact that settles a design dispute by *showing* the surface is the command as it will be typed and what it will print (§8.1) |
+| D18 [D] | **Every planned child names how it is demonstrated end-to-end.** The plan gate refuses a child that cannot | Makes D10 satisfiable by construction. A child with no consumer-visible behaviour has no check to name, which is the horizontal-slice failure — and our decomposer slices horizontally *by construction* today, because scope-glob overlap is file adjacency (§8.2) |
+| D19 [D] | **Diff size is a plan-time signal, not a review-time discovery** | The sizing governor already forecasts in tokens; a child whose forecast implies a diff far past reviewable is reported when splitting is still cheap. Deliberately **not** a human-review requirement — L1/L2 stay delegable (§4), and a 2,000-line lane is hard to review whether the reader is a human or the next agent |
 
 ### 2.1 Risk accepted on D4
 
@@ -114,7 +117,7 @@ carry, so the schema is a formalisation of a live contract rather than an invent
 
 | State | Entry predicate | Exit gate | Persona | Handoff artifact |
 | --- | --- | --- | --- | --- |
-| **INTAKE** | a requirements artifact exists (light: produced conversationally; dark: supplied as a document) | design artifact validates | human (light) / none (dark) | `solution-design` |
+| **INTAKE** | a requirements artifact exists (light: produced conversationally; dark: supplied as a document) | the five `solution-design` sections validate [D17] | human (light) / none (dark) | `solution-design` |
 | **CLASSIFY** | `solution-design` valid | integrity level assigned; loop depth chosen | Juno at L2+ | `classification` |
 | **DECOMPOSE** | `classification` valid; depth = decompose | **plan gate** (§3.3) | Dana | `implementation-plan` |
 | **BUILD** | plan gate green **and** downstream WIP below limit | self-check green; work committed on the branch | Kai | `change-summary` |
@@ -158,6 +161,17 @@ before the expensive stage:
 The gate rejects a plan unless every task carries: acceptance criteria in a testable notation,
 scope globs, declared dependencies, a token budget, and an integrity level; and the dependency
 graph is acyclic; and scopes are disjoint or declared as shared.
+
+**And one more, added 2026-08-08** [D18]: **every child names how it is demonstrated end-to-end** —
+a command to run, a request to make, or a test that exercises it through the consumer surface. A
+child that cannot name one is sliced horizontally, and a horizontal child is why D10 fails: there is
+no consumer-visible behaviour yet, so there is no check to derive. This is the cheapest available
+check on a property that is otherwise only discovered at verify, when the tokens are already spent.
+
+**Also reported at plan time, not refused** [D19]: a child whose forecast implies a diff far past
+reviewable size. The sizing governor already forecasts in tokens, so the signal is free. It is a
+report rather than a refusal because a large diff is sometimes correct — a mechanical rename is one
+— and because the remedy (split it) is the author's call while splitting is still cheap.
 
 ---
 
@@ -274,7 +288,7 @@ must accept. `needs-input.json` is the existing precedent for a schema-validated
 
 | Artifact | Produced by | Must carry |
 | --- | --- | --- |
-| `solution-design` | INTAKE | the requirement, in the requester's terms; constraints; what is explicitly out of scope |
+| `solution-design` | INTAKE | five sections [D17]: `## Problem` (in the requester's terms), `## Success` (an observable, not a feeling), `## Consumer transcript`, `## Out of scope`, `## Constraints` |
 | `classification` | CLASSIFY | integrity level; loop depth; the gate set, tier and budget the level selects |
 | `implementation-plan` | DECOMPOSE | per task: testable acceptance criteria, scope globs, declared dependencies, budget, integrity level; plus the graph |
 | `change-summary` | BUILD | what changed and why; self-check result; the commit |
@@ -283,6 +297,52 @@ must accept. `needs-input.json` is the existing precedent for a schema-validated
 
 **Storage** is OQ-5. `[policy.evidence]` already exists as a per-phase artifact-path gate but is
 presence-only — "the engine never opens it" [M] `verify.py:243-249` — and unconfigured here.
+
+### 8.1 The consumer transcript, and why it is not a mockup
+
+A UI product settles a design dispute with a picture of the screen. **This product has no screens**
+— its consumer surface is the CLI, `basicly.toml`, the catalog source schemas, the generated-file
+contract and the ledger format (§4, L3). The artifact that does the same job here is the **command
+as the consumer will type it, with the output it is intended to print**:
+
+```text
+## Consumer transcript
+
+$ basicly tracker import --dry-run
+ledger 643 records, export 667
+would add 24 records, 0 tombstones
+```
+
+It earns its place three times over. A reader disputes the surface before it exists, which is the
+whole function of a mockup. The agent receives the exact strings it must produce rather than
+inferring them. And it is **falsifiable at SHIP by a rule this repo already has** — *"exercise the
+change as it will really be used — run it and read the output"* (`quality-gate` fragment) — so the
+design artifact and the shipping gate check the same thing from opposite ends.
+
+### 8.2 A seventh artifact the six do not cover — the program design
+
+**Open, proposed 2026-08-08, needs an owner decision.** The six artifacts are one per *state*.
+Nothing among them carries the **shape of the whole change**: the call-stack tree of what calls
+what, the file-tree diff of what appears and what moves, and the signatures of the new public
+functions.
+
+This is not a gap in presentation. It is the cause of a defect we can name [M]: **`decompose`
+groups children by scope-glob overlap — that is, by file adjacency — and slicing by file *is*
+horizontal slicing.** "The module", "the service", "the CLI" are file clusters, and each produces a
+child with no consumer-visible behaviour, which is exactly the child D18 must refuse and D10 cannot
+derive a check for. The decomposer slices horizontally because scope globs are the only structure
+it can see.
+
+A program design is that missing structure, and it must be produced **before** the slicing it
+informs — so its home is between CLASSIFY and DECOMPOSE, not inside BUILD. Its relationship to
+`solution-design` is neither containment nor union: `solution-design` is one per *requirement*
+entering the loop, a program design is one per *decompose event*, so a leaf has one and an epic has
+one at each level of its tree.
+
+**Do not hand-author it if it can be derived.** `basicly-agzx.2` already proposes exactly this
+artifact from an AST — tree-sitter, no model, no tokens — and its own framing is that it lets "the
+decomposer declare intent and boundaries instead of enumerating files". Deciding this artifact and
+deciding `agzx.2` are the same decision.
 
 ---
 

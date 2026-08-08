@@ -452,14 +452,31 @@ signals, not commitments.
    checks instead of judging. This is the single largest documented failure mass in the field (L).
 6. **VALIDATE as a real state** — a phase in `LOOP_PHASES`, gated on verify green, running for
    leaves as well as lanes, plus the `validate-as-consumer` skill (L).
-7. **The six handoff schemas as typed ledger events** (D4, D13) — sequenced `decompose→build`
-   first, per the risk accepted in §2.1 of the requirements doc (L).
-8. **RETROSPECTIVE** — a special-cause signal over the gate-failure ledger, plus `root-cause` with
-   its named-control/tier/covered-class contract (L).
+7. **The first two handoff schemas as typed ledger events** (D4, D13) — `implementation-plan` and
+   `change-summary` only, per §2.1's mitigation as scoped by the owner on 2026-08-08. `u2hl.18` (L).
+8. **`solution-design` at INTAKE** (D17) — five machine-checked sections, one of which is a
+   **consumer transcript**: the command as it will be typed and what it will print. This product has
+   no screens, so that is what settles a design dispute before the code exists, and the `quality-gate`
+   rule already checks the same thing from the shipping end (M).
+9. **The demonstration field on every planned child** (D18) — the plan gate refuses a child that
+   cannot say how it is exercised through the consumer surface. Small, and it makes D10 satisfiable
+   by construction rather than by hope (S).
+10. **Diff size reported at plan time** (D19) — the sizing governor already forecasts in tokens, so
+    the signal is free; a report, never a refusal (S).
+11. **RETROSPECTIVE** — a special-cause signal over the gate-failure ledger, plus `root-cause` with
+    its named-control/tier/covered-class contract (L).
 
 Personas and the §3.1 state table are deliberately **not** filed yet: D5's rule admits a persona
 only when it differs in tier, tools or artifact, and the artifacts do not exist; a transition table
 built over today's derived phases would only re-describe `derive_phase`.
+
+**One open question this section cannot answer** (§8.2 of the requirements doc): whether a
+**program design** — call-stack tree, file-tree diff, new public signatures — becomes a seventh
+artifact between CLASSIFY and DECOMPOSE. It is not presentation. `decompose` groups children by
+scope-glob overlap, i.e. **file adjacency, which is horizontal slicing by construction**, and a
+program design is the whole-change structure that would let it cut end-to-end instead. Deciding it
+is the same decision as `agzx.2`, which already proposes deriving exactly that artifact from an AST
+with no model and no tokens — so it should be settled there rather than invented twice.
 
 ### 6.3 The code-quality floor
 
