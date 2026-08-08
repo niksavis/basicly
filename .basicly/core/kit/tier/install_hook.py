@@ -28,14 +28,16 @@ Run it::
   path, nothing machine-specific, identical on Windows, Linux and macOS. The
   user's file is machine-local, so it keeps absolute paths and needs nothing on
   ``PATH``. ``--interpreter`` overrides the command for a consumer without uv.
-- **GitHub Copilot CLI**: installs **nothing**, and reports why. Copilot cannot
-  intercept a spawn today: a repo-level ``.github/hooks/*.json`` hook never fired
-  across three probes (basicly-wbsz), and on 1.0.77 there is no hook surface at
-  all — no ``hooks`` directory under ``~/.copilot``, no hook key in its
-  ``settings.json``, no hook option in ``--help`` (measured on basicly-wbsz.3).
-  Copilot's working path is static frontmatter plus session-level
-  ``copilot --model``. Reporting a successful install for a hook that will never
-  fire would be worse than declining.
+- **GitHub Copilot CLI**: installs **nothing**, and reports why. **Copilot does have
+  hooks** — corrected 2026-08-08; the earlier "no hook surface at all" claim was an
+  artifact of the probe, and this repo already ships a ``postToolUse`` hook there.
+  What is unshown is the narrower thing this kit needs: a repo-level
+  ``.github/hooks/*.json`` hook never fired **for an agent spawn** across three probes
+  (basicly-wbsz) on 1.0.77, and GitHub documents ``preToolUse`` as able to *approve or
+  deny* a tool call, where a spawn rewrite needs *modify*. Copilot's working path is
+  therefore static frontmatter plus session-level ``copilot --model``. Reporting a
+  successful install for a hook that will not rewrite the spawn would be worse than
+  declining.
 
 Re-running converges: a group running this kit's hook is stripped and rewritten
 rather than appended, so the second run changes nothing and duplicates nothing.
@@ -100,7 +102,7 @@ DEFAULT_INTERPRETER = "uv run --no-project --no-python-downloads python"
 # error, which would read as "you typed it wrong" instead of "it cannot work".
 CANNOT_INTERCEPT = {
     "copilot": (
-        "the Copilot CLI exposes no hook surface that fires for a spawn "
+        "no copilot hook is known to fire for a spawn "
         "(repo-level .github/hooks never fired across three probes, and 1.0.77 "
         "has no hooks directory, no hook setting and no hook option); use static "
         "frontmatter plus `copilot --model` instead"

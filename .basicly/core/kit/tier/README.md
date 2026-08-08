@@ -27,18 +27,31 @@ Dynamic is preferred because a model pinned into a definition file is a fact
 duplicated in every definition, and it goes stale silently. The static path is the
 documented **fallback**, not a second-class accident.
 
-The copilot finding is measured, not assumed, and is pinned to **CLI 1.0.77**
-(copilot self-updates). Across three probes a repo-level `.github/hooks/*.json`
-hook never fired — on agent delegation, on a shell tool with `--allow-all-tools`,
-and on the same without it — and 1.0.77 has no hooks directory under `~/.copilot`,
-no hook key in its `settings.json` and no hook option in `--help`.
+**Corrected 2026-08-08.** This section previously said copilot "has no hook surface
+at all", citing no hooks directory under `~/.copilot`, no hook key in `settings.json`
+and no hook option in `--help`. **All three were artifacts of the probe.** Copilot CLI
+does support hooks: they are documented under `copilot help config` and in GitHub's
+own reference, configured **inline** under a `hooks` key in `config.json` (user level)
+or `settings.json` (repo level), or as `.github/hooks/*.json` files — and basicly
+already ships one, `basicly-tool-usage-copilot.json` on `postToolUse`. The documented
+events are `sessionStart`, `sessionEnd`, `userPromptSubmitted`, `preToolUse`,
+`postToolUse` and `errorOccurred`.
+
+**What remains true is narrower, and it is the part this kit depends on.** Across three
+probes on **1.0.77** a `preToolUse` hook never fired _for an agent spawn_ — on agent
+delegation, on a shell tool with `--allow-all-tools`, and on the same without it. And
+even where `preToolUse` does fire, GitHub documents it as able to **approve or deny** a
+tool call; this kit needs to **rewrite** one, which is a strictly stronger capability.
+So the static fallback stands until someone demonstrates a spawn-time rewrite, and the
+open question is _"can a copilot hook modify an `Agent` call?"_, never _"does copilot
+have hooks?"_
 
 So the installer **declines for copilot and says why**, rather than reporting a
 success for a hook that would never fire:
 
 ```console
 $ python3 .basicly/core/kit/tier/install_hook.py --host copilot
-copilot: nothing installed - the Copilot CLI exposes no hook surface that fires
+copilot: nothing installed - no copilot hook is known to fire
 for a spawn (...); use static frontmatter plus `copilot --model` instead
 ```
 
