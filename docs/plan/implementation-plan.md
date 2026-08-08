@@ -1,39 +1,37 @@
 # basicly Implementation Plan
 
-The route from the current release to `v1.0.0`. Rewritten 2026-08-03 against `main` @ `cbbd47a`
-to be short, current and actionable: what is true now, what ships next, in what order, and why
-that order. Historical narrative was removed rather than kept — the tracker holds the incidents
-and `git log` holds the sequence.
+The route from the current release to `v1.0.0`. **Rewritten 2026-08-08** against `main` @ `28257e9`,
+after a session that measured the factory running and found the *plumbing* — not the loop's
+states — to be what fails. The nine design documents this file used to index are gone: six were
+absorbed into three authoritative documents and deleted, three carried nothing live (§9).
 
-**Revised 2026-08-08**: `v0.8.0` shipped, so §6 is history rather than plan; the factory-loop
-build (`basicly-u2hl`) and the code-quality floor (§9 of the loop requirements) are added to the
-ladder as the content of the next cut; and §6.1 records what of the `br` cut is actually left.
+Shipped history is deliberately absent. `git log` holds the sequence and the tracker holds the
+incidents; this file is the ladder and nothing else.
 
-This file plus [`architecture.md`](../architecture/architecture.md) are the whole picture.
-Architecture is the human-readable account of concepts, structure and settled decisions; this
-file is the ladder. Every other document under `docs/` is temporary and is deleted when its
-design becomes code plus architecture prose (§11).
+This file plus [`architecture.md`](../architecture/architecture.md),
+[`requirements/factory-loop.md`](../requirements/factory-loop.md) and
+[`requirements/work-tracker.md`](../requirements/work-tracker.md) are the whole picture.
+Architecture is the status quo; the two requirements documents are the target; this file is the
+order.
 
 ## 1. How to work from this file
 
-The contract for whoever — human or agent — picks up work here.
-
-1. **The code is the authority.** This file sequences; it does not define behaviour. Where the
-   two disagree, the code is right and this file is stale. Where this file and architecture
-   disagree about *what the system is*, architecture wins.
-2. **A bead's claim is a claim.** Every defect row below cites a `file:line` that was re-checked
-   at the named commit. Re-check it again before you fix it: the code may have moved, and a bead
-   written weeks ago may describe a defect someone else already closed.
-3. **A closed bead proves code exists, not that a gate binds.** Before trusting any gate, call
-   its own functions on real inputs. A fail-open gate is indistinguishable from a passing one.
+1. **The code is the authority.** This file sequences; it does not define behaviour. Where the two
+   disagree, the code is right and this file is stale. Where this file and architecture disagree
+   about *what the system is*, architecture wins.
+2. **A bead's claim is a claim.** Re-check a cited `file:line` before fixing it — the code may have
+   moved, and a bead written weeks ago may describe a defect someone else already closed.
+3. **A closed bead proves code exists, not that a gate binds.** Call the gate's own functions on
+   real inputs. A fail-open gate is indistinguishable from a passing one. Measured 2026-08-08:
+   three separate claims in this file were false against the tree.
 4. **Ask the tracker for counts, never this file.** `br` is always right about status. Use
    `.beads/issues.jsonl` for whole-tracker questions — `br list --json` caps its result and drops
-   closed rows. Structural figures that *are* in this file come from a generated block (§3).
+   closed rows. Structural figures that *are* here come from a generated block (§3).
 5. **Measure before you dispatch.** Take the baseline in base, record it on the bead, diff against
    it at review. A lane that rewords a number instead of measuring it produces a regression under
    an acceptance criterion claiming improvement.
-6. **One unit of work per bead; order and reasons live here.** A graph of 50 beads does not make
-   a sequence legible, and the tracker is itself scheduled for replacement (§6).
+6. **A document that describes shipped code is noise.** If it is in the code, it does not belong in
+   a document (§9). This rule deleted nine files on 2026-08-08.
 
 ## 2. Destination
 
@@ -58,14 +56,14 @@ Three invariants constrain *how* any of it may be built:
 
 **`v1.0.0` means three things**, all required (owner, 2026-07-30):
 
-1. Every agreed design is implemented — architecture §14's target state is running code, and each
-   design document is absorbed and deleted (§11).
+1. Every agreed design is implemented — architecture §14's target state is running code, and every
+   requirements document is absorbed and deleted (§9).
 2. The consumer criterion is *demonstrated* (`basicly-ctdz`): a fresh repo with only git and a
    uv-provisioned Python interpreter installs basicly, runs every gate and drives the loop end to
    end, with no external `br` binary.
 3. A full semver contract: the CLI surface, `basicly.toml`, the catalog source schemas, the
    generated-file contract and the owned ledger format are declared stable. Every one of those
-   broke within the last two minors, so the promise needs a stabilization release (§9), not a
+   broke within the last two minors, so the promise needs a stabilization release (§7), not a
    version-number ceremony.
 
 **Non-goals**, so the plan cannot quietly grow: an LLM orchestrator; personas spawning personas;
@@ -74,8 +72,8 @@ or daemon; agent-to-agent messaging. Reasons are in architecture §14.7.
 
 ## 3. Current state
 
-Structural figures are generated from the tree by `.scripts/docs_claims.py` and gated on every
-commit, because every hand-written copy of them was stale within days:
+Structural figures are generated from the tree and gated on every commit, because every
+hand-written copy of them was stale within days:
 
 <!-- docs-claims:begin plan-current-state -->
 
@@ -90,541 +88,49 @@ commit, because every hand-written copy of them was stale within days:
 
 <!-- docs-claims:end plan-current-state -->
 
-Two kinds of figure are deliberately absent. **Tracker counts** move several times per session, so
-generating them would rewrite this document during unrelated lanes and dirty the base checkout a
-landing refuses on. **Always-on character sizes** are already a generated block in
-`architecture.md`; a second copy here is the duplication this exercise removes.
+**Not built**, re-verified 2026-08-08 by reading `src/` rather than by counting closed beads:
+**zero of the seven personas** (`rg -w 'dana|kai|vera|remo|juno|lumi|tala' src/` returns nothing),
+and one default runner serves every phase; **four of the five designed skills** are absent, only
+`python-guidelines` ships; **no EARS validation** anywhere; **VALIDATE is not a phase** —
+`config.LOOP_PHASES` has six names and `loop_state.PHASES` has seven, and the two tuples disagree;
+RETROSPECTIVE does not exist; `policy.rework_recorded` reports a cross-gate total that nothing
+enforces.
 
-**Shipped and dogfooded** (`v0.6.0` plus the unreleased work): catalog and projection with drift
-gates; the git and agent hook floor; the single-track loop; worktree isolation; the concurrent
-supervisor with lanes and a serial merge queue; autonomy grants L0–L3 with a spend ceiling; the
-decision queue and corpus-bounded decider; release automation to the annotated tag; the sizing
-band and its governor; read-capped scope sizing; per-model spend forecasting; tier→model
-resolution with recorded provenance; `basicly loop preflight`; atomic publication of the shared
-tracker export.
+**Four figures this file previously got wrong**, corrected against the tree:
 
-**Not built** (re-verified 2026-08-08 by a line-by-line read of `src/`, not from bead titles):
-**zero of the seven designed personas** — one default runner serves every phase, and `decisions.py`
-is Juno's function under another name; no role registry and no persona routing; no `severity` field
-in `src/`, `.basicly/core/rubrics/` or `schemas/`; **zero of the six handoff artifact schemas** of
-§8 of the loop requirements, and `events.KIND_DISPATCH` still has no writer; **no EARS validation**
-anywhere; VALIDATE is a step inside `build` rather than a state, and **never runs for a leaf**;
-RETROSPECTIVE does not exist — nothing computes a control limit over the gate-failure ledger.
-`policy.rework_recorded` reports a cross-gate total that **nothing enforces**, so a lane can still
-grind gate by gate.
-
-The tracker is still the external `br` binary: **31 spawn sites** behind the one seam in `br.py`,
-of which five have no owned equivalent at all (§6.1).
-
-**Three facts that are easy to get wrong**, so they are stated rather than left to be re-derived:
-
-| Claim | Measured reality |
+| Was written | Measured 2026-08-08 |
 | --- | --- |
-| "We lack a path-scoped guidance tier" | Built and **in use**. 2 of 21 fragments declare `paths:` (`platform-hermetic-tests`, `external-review`), each projected to `.claude/rules/{id}.md`. The remaining work is authoring plus the empty-glob check (§8). |
-| "Scoping a fragment shrinks the always-on baseline" | Only for Claude and Copilot. **Codex pays**, ~1500 chars per scoped fragment (1462 and 1614 measured), because it has no glob scoping and inlines them. `AGENTS.md` has ~1225 chars of headroom against a 12000 cap, so the *next* scoped fragment overflows it. Any claim that the baseline shrank must name the family. |
-| "The baseline is past the recall cliff" | **Refuted**, 2026-07-26 (`basicly-agzx.1`): claude recalls 98% of its 53 always-on rules, copilot 93% of 54, against 17% / 6% no-guidance controls. Read it narrowly — recall under a direct cue is an upper bound and may **not** be cited as evidence of quality. Codex is unmeasured, its CLI being absent. |
+| "Step 1 has not been run… `.basicly/ledger/` holds no `events-*.jsonl`" | the import **ran** (`b97a653`): 3,775 events over 643 records |
+| `br` spawn sites 43 / 44 | **31**, across 11 modules — the old count included `from .br import` lines and docstrings |
+| 20 verify checks | **22** |
+| `basicly-tcmy.34` "the remaining P0" | **closed** 2026-08-05 |
+
+**And one that matters more than the rest**: `basicly-u6jq.1` — `v0.7.0`'s unmet exit criterion 5,
+the unattended multi-lane proof — is **unblocked and scheduler-ranked first**, and has been. All 22
+of its `blocks` edges point at closed beads, and `br` computes readiness from target status rather
+than edge presence, so nothing was ever holding it. It is deliberately **not** run yet: see §5.4.
 
 ## 4. The release ladder
 
-A **release** is a shippable cut; the phase labels in the tracker (`phase-0` … `phase-7`) are the
-dependency clusters a cut draws from (§14). Rows are in shipping order.
+Rows are in shipping order. A **release** is a shippable cut; the phase labels in the tracker are
+the dependency clusters a cut draws from (§12).
 
 | Release | Content and reason | Size |
 | --- | --- | --- |
-| ~~**`v0.7.0`**~~ | **SHIPPED 2026-08-06.** Trustworthy factory. 19 beads closed over two sessions. **Exit criterion 5 was not met** — see §5.1. `basicly-yc0x`. | shipped |
-| **`v0.7.1`** | **End the shared-anchor collision class**, and carry the unattended-run proof `v0.7.0` could not. `4746` (a changelog fragment per lane, so collision is impossible by construction), `bdd4` (dispatch a bounced lane to resolve its conflict rather than replaying the rebase), `3f76` (design docs stop carrying bead-id lists), `m4zv.5` (a stalled rework round escalates without spending the cap). A patch, not a minor, **only if** a curated `[Unreleased]` body keeps working alongside fragments. | 1–2 sessions |
-| ~~**`v0.8.0`**~~ | **SHIPPED 2026-08-07** (`ddfa651`). **Own the work graph — the store, not yet the floor.** The owned event log exists and is checkable: provenance, ids, snapshot with rotation, `fsck`/`rebuild`, import with tombstones, a shadow differential that refuses a self-agreeing comparison, and a `[tracker] mode` rung that flips the one record-read seam. **It does not remove `br` from the consumer floor**, and the row said it did until 2026-08-07 — measured at `MODE_OWNED` with no `br` on PATH, `gate list` and `lint` still raise "the harness requires the beads tracker", because `.19` flips `read_record` alone and 31 further spawn sites remain, 26 of them `comments`. That claim moves to `v1.0.0`, where the fresh-consumer acceptance test makes it falsifiable instead of asserted (`basicly-vkh0.22`). Plus streaming telemetry (`wctc`, `jr0l.66`). `basicly-vkh0`. | 5–8 sessions |
-| **`v0.9.0`** | **Make the factory's own plumbing trustworthy — reordered 2026-08-08 (§6.7) and this row now leads with it.** The code-quality floor shipped (`u2hl.12`, `.14`, `.15`, `.16`) and so did five loop features (`u2hl.18`, `.20`, `.23`, `.28`, `.32`), but the session that landed them measured the *plumbing* failing underneath: a landing that silently discards a lane's conflict resolution (`5vu4`, P0 — happened twice, and the suite stayed green through one of them), no persisted lane transcript at all (`rrah`, P0), a scope field feeding two gates that want opposite things (`efw2`, P0), a refuted claim in an epic reaching the decider as fact (`b9ef`, P0), three shared landing anchors bouncing 3 of 5 lanes (`ef7t`, P0; `3w51`), no binding band floor (`esxp`) and no way to stop a healthy supervisor without killing live lanes (`o40x`). **These precede the remaining loop features**, because every one of them corrupts the evidence the features would be judged by. Then what is still open on the loop (§6.2): the four remaining handoff schemas, VALIDATE as a real state, the personas, EARS, the retrospective's special-cause signal. Then the unblocked evidence work: `imnu.2`, `imnu.3`, `imnu.5`. | 8–12 sessions |
-| **`v0.9.1`** | **The measured evidence layer, when its chain unblocks.** Cost per landed package (`7bur`), AST localisation (`agzx.2`), the remaining Phase 2 gate (`m4zv.3`), parameter learning (`3ifz`). Split out of `v0.9.0` because the whole chain sits behind `69az` (§7) and has done for two releases; holding the factory loop behind it would ship neither. | 3–5 sessions |
-| **`v0.10.0`** | **The judgment layer and always-on relief.** The roster (`s2xf`), gated on `7bur`'s numbers by construction; the Phase 4 authoring pass and the empty-glob check (`a3ab.1`–`.3`). | 5–8 sessions |
-| **`v1.0.0`** | **Stabilize and declare.** Surface audit and semver freeze, the breaking-marker gate, the fresh-consumer acceptance test. `1.0` is a promise, so the last release proves the promise instead of adding capability. | 3–5 sessions |
+| ~~`v0.7.0`~~ | **SHIPPED 2026-08-06.** Trustworthy factory. Exit criterion 5 was not met, and the release documented that rather than claiming it. | shipped |
+| ~~`v0.8.0`~~ | **SHIPPED 2026-08-07.** Own the work graph — the store, not the floor. `br` is still in the runtime path (§6). | shipped |
+| **`v0.9.0`** | **Make the factory's own plumbing trustworthy, then finish the loop.** §5. The quality floor and five loop features landed on 2026-08-08; the same session measured the plumbing under them failing. Eleven ordered items, plus what remains of the loop. | 8–12 sessions |
+| **`v0.9.1`** | **The measured evidence layer, when its chain unblocks.** Cost per landed package (`7bur`), AST localisation (`agzx.2`), the remaining Phase 2 gate (`m4zv.3`), parameter learning (`3ifz`). Split out because the whole chain sits behind `u6jq.1`, and holding the loop behind it would ship neither. | 3–5 sessions |
+| **`v0.10.0`** | **The judgment layer and always-on relief.** The roster's routing (`s2xf`) once `7bur` has numbers; the Phase 4 authoring pass and the empty-glob check (`a3ab.1`–`.3`). | 5–8 sessions |
+| **`v1.0.0`** | **Stabilize and declare.** §7. Surface audit and semver freeze, the breaking-marker gate, the fresh-consumer acceptance test, `br` out of the runtime path. `1.0` is a promise, so the last release proves it instead of adding capability. | 3–5 sessions |
 
-Sizes are sizing signals for decomposition, not commitments.
+Sizes are decomposition signals, not commitments.
 
-**Why `v0.7.0` precedes `v0.8.0`, and why the two were split** (owner, 2026-08-03): the ladder
-previously wrote one release for both. `u6jq.1`'s whole value is that it *measures*, and it cannot
-complete today because `basicly-gczc` halts the grant on any delegated decision — so a
-measurement taken now measures the meter. Meanwhile Phase 6's build is undecomposed. Shipping the
-proof of the factory and the replacement of the factory's state store in one cut serves neither.
+## 5. `v0.9.0` — the plumbing, then the loop
 
-**The ladder's invariant**: a row must name every open bead its own entries are blocked on, so a
-reader who starts at the top of a row is never sent to a blocked bead. Check it against the
-tracker's edges rather than by eye — `br dep tree <id>`, not judgement.
+### 5.1 Why the plumbing precedes the features
 
-## 5. `v0.7.0` — trustworthy factory (next)
-
-Tracked by `basicly-yc0x`. Track A's evidence was re-verified at `cbbd47a`, line by line; Track B's
-and Track D's rows carry their beads' own evidence and should be re-checked before they are worked.
-
-**Status after the 2026-08-04 session.** Six beads shipped — `23ep`, `7kxq`, `uexy`, `irrm`,
-`qorx`, `toj6` — at a measured **78.5M tokens / $59.65**, a mean of **13.1M and $9.94 per lane**
-across six samples. That supersedes the single-sample ~17M/$12 figure recorded on 2026-08-03: the
-spread is wide (5.6M to 25.1M) and the mean is roughly half the top of it, so **size a pass on the
-mean and treat any single lane as a poor estimator of the next one**. Every dispatch metered
-`estimated: False`, so `gczc`'s meter fix holds across all seven.
-
-**The 2026-08-03 rows below are corrected, not just extended.** `tcmy.5`, `tcmy.6` and `tcmy.22`
-were recorded as SHIPPED; each in fact crossed the context ceiling and **finalized early**, leaving
-`tcmy.39`, `tcmy.38` and `tcmy.37` to carry the remainder. They are partial landings. The cause was
-not their size — see `23ep` below.
-
-**The finding that reorders everything (`23ep`, closed).** `runner.py` declared the claude context
-window as **200000** while the dispatched model (Claude Opus 5) has **1000000**, so the finalize
-trigger sat at 120000 instead of ~600000 and **truncated healthy lanes for months** — twelve
-`(context-ceiling overrun)` follow-up beads, eight still open at the time. The repo's own telemetry
-had refuted the constant all along: a recorded occupancy of 223221 cannot fit a 200000 window. The
-fix declares the window per agent in `basicly.toml`, records its provenance, and ships
-`runner.window_violations` so the declaration is falsifiable against the ledger. **Validated on this
-session's own six lanes**: occupancies of 403051, 208904, 200996, 173228, 128113 and 123312 — every
-one over the old trigger, none near the corrected one. Six of six would have been spuriously
-truncated. Zero new overrun follow-ups were spun.
-
-**Its sibling (`7kxq`, closed).** Probing `23ep`'s gate showed the finalize protocol had exactly one
-caller, in `supervise.py` — so the **single-track `loop run` path recorded occupancy and never acted
-on it**. The two write paths disagreed about a bead's fate for reasons unrelated to the bead. Both
-now share one `meter_context_ceiling`. This was Phase S's shape exactly, an instrument built and
-never connected, and `uexy`'s gate would have caught it.
-
-**Deferred out of the release, deliberately:** `o486` (P2) carries the working-set band's own
-calibration — the band gates on a proxy running 3.16x–12.72x low against measured occupancy across
-nine pairs, and `config.py`'s maximum was derived by re-applying the estimator to its own output. It
-is blocked on `23ep` because calibrating against a trigger that was wrong by 5x would fit the error.
-
-Three findings from the 2026-08-03 session still stand, and one is the remaining P0:
-
-- **`tcmy.34` (P0, blocks `u6jq.1`)** — the dispatch forecast is **269× low at the median** over
-  14 paired records (range 1×–591×). The narrowing that makes it tractable: the engine already
-  computes a realistic whole-lane figure for pass admission (18.6M/lane, against measured 17M,
-  15.8M, 10.7M) while recording a *working-set* figure in the field named `forecast_tokens`. Two
-  estimators ~280× apart, and `jr0l.34`'s pairing compares one against the other. **Fix the unit
-  before fitting anything** — a calibration on the current field is a correction factor on a units
-  error, which is how `z2wi` reached 216.65 against a seed of 3.0.
-- **`tcmy.35` (P1, blocks `7bur`)** — nothing in this repo declares a model tier, so every dispatch
-  runs unpinned. `models.py:69` refuses only when a tier *was* declared, so the refusal is
-  unreachable; `tier_honoured` is null while `observed_models` shows two models served one lane.
-- **`qorx` gained a blast radius.** `tcmy.5` widened its own scope mid-flight from the 8 globs it
-  was admitted on to 16, completed at 130,780, and its finishing record failed the tracker-wide
-  ceiling gate — **for its two siblings as well**, because a pass shares one `.beads` through the
-  redirect. Each was charged rework for a defect in neither diff. Resolved for now by deriving the
-  ceiling to 132,000 (`b6c5685`); the ratchet is untouched.
-
-**Two gates proved they bind rather than merely existing**, which is the distinction §1 calls the
-sharpest recurring lesson: pass admission refused a 1.7% forecast overrun instead of dispatching,
-and the grant halted `gczc`'s ship when its budget was spent. `4tjt` also fired correctly — an
-answered `retry` granted one further attempt instead of instantly re-escalating.
-
-### Track A — lights-out blockers, and they gate the proof run
-
-Each carries a `blocks` edge into `basicly-u6jq.1`, so the tracker refuses to hand out the proof run
-first. **`jr0l.65` is the only one still open.**
-
-One structural note earned the hard way on 2026-08-04: `supervise` fans out over a root's
-`parent-child` dependents, so a release epic that declares its blockers as `blocks` edges has **no
-children and cannot be a pass root at all**. `yc0x` was filed that way and `preflight` reported
-`0 open child(ren)`. Membership is now expressed as `parent-child`, which costs nothing — an epic
-with open children does not close either — and the four beads adopted had no parent of their own, so
-§14's rule that phase membership is a label rather than a re-parenting is intact. Attempting both at
-once is refused as a cycle.
-
-| Bead | Evidence at `cbbd47a` | Fix shape |
-| --- | --- | --- |
-| ~~**`gczc`** P0~~ **SHIPPED 2026-08-03** | `decisions.py:655` calls `runner.run` with no `capture_usage`. `policy.py:1305-1319`: one `estimated=True` record that is not `unstarted` sets `halted=True`. So one delegated decision ends the grant. | **Not a one-liner.** With `capture_usage=True`, claude's stdout becomes a JSON envelope and `decisions.parse_verdict` (`:562`) takes first-`{`→last-`}`, so it would parse the envelope and fail closed to abstain. `rubrics.py:281` omits the flag for exactly that reason. Root fix: a `result_text(spec, stdout)` unwrapper in `runner` (claude-json → `.result`, stream-json → last result event, codex-jsonl → last message; copilot's `--session-id` never touches stdout) with both call sites routed through it. Fallback: treat a corpus-bounded decider floor like `unstarted` — cheaper, but it under-meters a real agent run, so record that. |
-| ~~**`tcmy.5`** P1~~ **SHIPPED 2026-08-03** | `loop.py:627` records `phase="build"`; `supervise.py:2120,2226` record `phase="lane"`. `decompose.unsized_lane_tokens` reads only `lane`; `calibrated_build_factors` filters on no phase at all, so decider and rubric dispatches are build-factor samples. | One named write-phase set read by both consumers, and a seeded factor recorded as seeded rather than measured. Same family as `z2wi`: a number compared against a number denominated in a different quantity. |
-| ~~**`tcmy.6`** P1~~ **SHIPPED 2026-08-03** | `policy.gate_from_unreliable_escalation` (`policy.py:560`) has zero production callers — only `tests/test_loop.py:2171` and `tests/test_policy.py:1689`. `cli.py:3421` calls `gate_from_rework_escalation`, whose regex does not match the unreliable question. | Answering "land anyway" implements nothing, so the flake re-trips and the identical question re-enqueues under the next generation. Carry out the override once, or stop offering it. |
-| **`jr0l.65`** P1 — **the only Track A item left** | `_live_session_violations` counts needs-input markers by text; only `_issue_is_closed` discounts them. **Line refs re-verified 2026-08-04 and corrected on the bead**: the two functions are at `policy.py:1438` and `policy.py:375`, not the `1394`/`1430` this row cited. | Discount an *answered* marker exactly as a closed bead's is — a third case of the rule both docstrings already state, that a marker on closed work is history rather than live state. `decisions.answer` writes a second marker with the same id, so resolution is readable and no schema growth is needed. Smallest item in the track. |
-| ~~**`toj6`** P1~~ **SHIPPED 2026-08-04** | `supervise.py:321` defined open children as `status != "closed"`, so a `deferred` bead was sized into the band, counted in `children_open`, and funded. | Excluded `deferred`. The unsized-child question stays with `jr0l.61`. |
-| ~~**`qorx`** P1~~ **SHIPPED 2026-08-04, re-scoped first** | The row below described the *ratchet*, and that half moved to `o486`: `23ep` replaced the derivation, which removed the self-declared input. | What actually shipped is the half the bead never carried, though `config.py`'s comment claimed it did — **the cross-lane blast radius**. A pass shares one `.beads`, so `tcmy.5`'s failing record charged rework to two siblings for a defect in neither diff. Now attributed to the lane whose declaration invalidated the gate. |
-| ~~**`23ep`** P0~~ **SHIPPED 2026-08-04** | Filed this session. `runner.py` declared claude's window at 200000 against a dispatched 1000000, so the finalize trigger sat at 120000 and truncated healthy lanes; the ledger already refuted it at 223221 occupancy. | Window declared per agent in `basicly.toml` with recorded provenance, plus `runner.window_violations` to keep the declaration falsifiable against the ledger. **Do not re-fix by writing a bigger constant** — that is the same unchecked declaration one generation on. |
-| ~~**`7kxq`** P1~~ **SHIPPED 2026-08-04** | Filed this session, found by probing `23ep`'s gate. The finalize protocol had one caller, so the single-track `loop run` path measured occupancy and never acted on it. | One shared `meter_context_ceiling` called from both write paths, replacing the supervised path's inline copy — a duplicated ceiling is how the two came to disagree. |
-
-### Track B — close Phase S: the gates that never existed
-
-Phase S was inserted because every defect found on 2026-08-02 had one shape: **an instrument
-built and never connected.** `permissions-check` shipped wired to no gate; the import contract
-forbade modules that cannot exist and reported `1 kept, 0 broken` forever; `.scripts/recall_eval.py`
-was built, run once and wired to nothing. Its sizing half is closed (`z2wi`, `3w44`, `ipx2`,
-`fcls`, `8ry8`, `vkh0.10`, `jr0l.64`, `vaal`); its two gates were rows in a document with no bead
-until 2026-08-03.
-
-| Bead | Work |
-| --- | --- |
-| ~~**`uexy`** P1~~ **SHIPPED 2026-08-04** | **Wired-or-deleted.** `vulture` was declared at `pyproject.toml:37` and called from nowhere; it now runs as a declared verify check and the gate fails on a symbol referenced only inside its own module or under `tests/`. `tcmy.21` remains the deletion half. |
-| ~~**`irrm`** P1~~ **SHIPPED 2026-08-04** | **Exercised-or-unproven.** No release tag while a shipped capability has zero executions in the ledger — the deterministic form of the rule that a consumer-facing capability claim must be exercised before it is published. **Its inventory surfaced a live false claim**: 221 dispatch records hold only `claude` and `manual`, so `codex` and `copilot` have never run while the README advertises all three; 8 of 34 skills and none of the 8 shipped tool skills are exercised. Recorded as its own finding, not silently absorbed. |
-| ~~**`tcmy.22`** P1~~ **SHIPPED 2026-08-03** | **Fix the suite the release rests on.** The git stub returns `_Proc(0)` for any unstubbed subcommand across 35 instantiations in `test_merge.py` alone; `work_repo` copytrees 331 MB including the live tracker DB and the gitignored local overlay; `conftest.py` resets neither `runner._BUDGET` nor `session._OVERRIDES`. |
-| **`m4zv.14`** P1 | **Signature-forgiveness half only.** The machine-global `~/.beads/.write.lock` makes the pytest gate flaky and each flake spends a rework attempt against a cap of 2. The root fix is the `v0.8.0` flip, so one more release pays the flake — but a recognised signature must stop it charging rework. |
-
-### Track C — the release event
-
-**`u6jq.1`** — re-run the dogfood shape as a supervised multi-lane run. **Two open blockers as of
-2026-08-04**: `tcmy.34` (the 269× forecast miss — a proof run measured through that forecast measures
-the forecast) and `jr0l.65`. Everything else that gated it has closed.
-
-Size it on the six-lane mean of **13.1M tokens / $9.94**, so a three-lane proof needs ~40M — not the
-10M this row once cited, and not the ~55M implied by the single 25.1M outlier. It doubles as the
-telemetry run for the tracker surface. Run it behind `basicly loop preflight` and the forecast gate:
-the first attempt cost $34.16 for 46.0M tokens, 13.7× the 3.36M baseline, and failed its criterion.
-**Cost is bounded by sizing the work, never by interrupting a working agent.**
-
-**What the 2026-08-04 session already demonstrated, short of the criterion.** A four-lane supervised
-pass ran `uexy`, `irrm`, `qorx` and `toj6` concurrently through the serial merge queue to `done: yes`
-with no human editing code, and a preceding two-lane sequence landed `23ep` and `7kxq` — six beads,
-zero new overrun follow-ups, every dispatch metered. That is not `u6jq.1`: the pass needed **three
-human approvals** (the L3 grant, its top-up, and the epic's own `decompose` checkpoint, which a
-covering grant cannot serve itself), and the criterion is zero interventions attributable to a
-*harness defect*. Those three are gates working as designed, so the honest reading is that the
-remaining distance is `tcmy.34` and `jr0l.65`, not the fan-out mechanics.
-
-### Track D — bug fillers, opportunistic
-
-Take where a lane has remainder; drop without renegotiation: `tcmy.19` (the beads redirect
-resolved in two places), `tcmy.25` (scope read cost reads binaries as text), `ky5z`, `1pcl`,
-`y2uh`, `kjc5.57`.
-
-### Exit criteria
-
-1. Every Track A bead closed, each with a regression test **proven red first** (`kjc5.49`).
-2. A pass that delegates a decision does not halt its grant — proven by calling
-   `policy.session_spend` and `spend_status` on the real record set, not by reading the diff.
-3. `vulture` runs as a declared verify check and the wired-or-deleted gate fails on a planted
-   unreferenced symbol; the exercised-or-unproven gate fails on a planted zero-execution
-   capability.
-4. An unstubbed git subcommand fails a test loudly.
-5. `u6jq.1` completes with zero human interventions attributable to a harness defect.
-6. `[Unreleased]` in `CHANGELOG.md` is curated **before** `basicly release` runs — the command
-   promotes that body into the dated section and the workflow reads the tagged commit, so curating
-   afterwards never publishes.
-
-**Explicitly out**: the tracker replacement, `7bur`, `agzx.2`, `m4zv.2`–`.6`, the roster, the
-Phase 4 authoring pass, and everything in §9.
-
-### 5.1 `v0.7.0` shipped with exit criterion 5 unmet — the record
-
-Tagged 2026-08-06. Criteria 1–4 and 6 were met and verified by exercise. **Criterion 5 —
-`u6jq.1`, a supervised multi-lane run completing with zero human interventions — was not**,
-and the release documents that rather than claiming it.
-
-Four attempts over two sessions. Each failed on a *different* file, and three of the four on
-one shape: **two lanes editing the same anchor in a file no bead declares.**
-
-| Attempt | Blocked on | Outcome |
-| --- | --- | --- |
-| 1 | `CHANGELOG.md`, three lanes at one `### Fixed` anchor | 2 of 3 landed; `o8p0` filed and fixed |
-| 2 | `pytest` red on `main` — the spend gate compared a failed dispatch and an `assumed:` placeholder against whole-lane forecasts | fixed at the root; gate now 0 violations, median 0.96x |
-| 3 | `.basicly/generated-manifest.json` | 2 of 3 landed; `lyro` filed and fixed |
-| 4 | `docs/requirements/tier-kit.md` §7, which lists two of the running beads by name | 2 of 3 landed |
-
-**The proof run did its job.** It found three real defects that four prior supervised passes
-never surfaced, and all three shipped. What it could not do is pass, because the remaining
-cause is a **convention, not a bug**: while lanes edit shared prose at one anchor, no pass
-completes unattended, and the enumerate-the-paths approach can never finish — nobody predicted
-a design document's open-items list.
-
-Two structural facts make retrying pointless, and both are now filed:
-
-1. `o8p0`'s remedy is **advisory** — it warns and recommends a build order; it cannot prevent
-   a collision, and it only knows paths someone declared.
-2. **A rebase bounce cannot converge under rework.** Attempt two replays the identical rebase
-   against the identical moved anchor. Observed three times in one session; it is `m4zv.5`'s
-   thesis, and it means every prose collision costs the full cap before escalating.
-
-`v0.7.1` carries the fix, and `4746`'s acceptance criterion — three concurrent lanes each
-adding a changelog entry, none conflicting — *is* the evidence `u6jq.1` needs. So the proof
-lands with the release that makes it possible, rather than being re-attempted against a cause
-we already understand.
-
-## 6. `v0.8.0` — own the work graph (SHIPPED 2026-08-07)
-
-`basicly-vkh0`, P0. The tracker *is* the harness's state, so every guarantee in §2 is downstream of
-it, and it is currently an unowned external binary in the critical path whose licence carries a
-rider restricting a class of users. Twelve distinct defects on the epic have already been paid for
-in diagnosis time; the clock defect alone consumed two tracks of workaround. `br.run_br` raises
-when the binary is absent and `basicly install` does not install it, so a `1.0.0` declared before
-that changes would freeze a contract the roadmap already voids.
-
-**That condition is still standing after `v0.8.0`, and this section used to imply otherwise.**
-`vkh0.19` flips `br.read_record` and nothing else, deliberately — the other subcommands are each
-read at their own call site with their own payload shape, and rewriting callers was the one thing
-that bead was required not to do. Measured 2026-08-07 at `MODE_OWNED` with `br.which` returning
-None, so an empty ledger cannot be the cause: `policy.gate_status` and `policy.definition_of_ready`
-both raise `br is not on PATH; the harness requires the beads tracker`. 31 typed spawn sites remain
-— `comments` 26, `dep` 5, `update` 3, `sync` 2, and one each of `where`, `lint`, `init`, `gate`,
-`close`, `blocked` — and `comments` is the carrier for every checkpoint, gate marker, grant and
-rework record, so it is the load-bearing half rather than the tail. `basicly-vkh0.22` holds the
-measurement and the decision; the claim is carried to `v1.0.0`'s acceptance test (§9), which
-exercises a consumer with no `br` rather than asserting the binary is gone.
-
-**Decompose first** — the build has no beads yet. Order:
-
-1. **The event log.** Append-only is the truth; the record snapshot and any index are derived and
-   disposable. A record's state is a fold over its events, so history survives a squash or a
-   shallow clone. Sequence numbers from the single writer give total order. **A wall-clock
-   timestamp is evidence and nothing branches on it** — that is the defect class behind the flake
-   in §5's Track B.
-2. **Provenance on every edge.** `EXTRACTED` (asserted by a human or mechanically derived from a
-   repo fact) may gate a landing; `INFERRED` (proposed by an agent, or deduced from a bounce) is
-   usable but visible as a proposal; `AMBIGUOUS` routes a decision and never silently gates. The
-   label belongs to the *event*, so a human confirming an inferred edge is a new promoting event
-   rather than a mutation.
-3. **An explicit collision budget** for ids, sized from the birthday paradox against a declared
-   maximum probability, with adaptive length — safe because existing ids never change.
-4. **`fsck` and `rebuild`.** Without them, "the log is the truth" is a claim nobody can check.
-5. **Import → shadow → dual-write → flip.** Three known risks: the JSONL format is second-class
-   upstream and will drift; `import` is upsert-only so **a snapshot cannot express deletion** and
-   tombstones are a first-class concern; and the shadow differential must therefore compare
-   against the **live tracker**, never a re-import of its own export — two derivatives of one
-   lossy snapshot agree with each other and prove nothing.
-
-**Constraints.** The surface is frozen (`vkh0.2`, closed): a surface nobody exercised does not
-exist in the replacement, and no schema may be designed from memory of our own usage. A clean-room
-boundary applies and was signed off on `basicly-qk6y` — not derived from `beads_rust` source;
-sanctioned inputs are our own ledger's observable data, `br`'s documented CLI contract and the
-genuine-MIT upstream original. Wire `qk6y` as a blocker of the event-log beads to record the
-sign-off.
-
-**Also here**: `vkh0.9` (absorb the measured journal mechanisms into the requirements register) is
-the one open prerequisite and is not surface-dependent. When we own the ranking, the scheduler
-score must become **pure** and drop `created_at`: age-based ordering makes dispatch order
-clock-dependent for an unchanged graph. `vkh0.4` (cross-repo offer exchange) stays deferred —
-nothing consumes it. Requirements carried forward from paid-for `br` defects live on `vkh0.6`
-(closed) as committed regression tests, including the WAL corruption R7 found under our own
-five-lane fan-out.
-
-### 6.1 What is actually left of the `br` cut
-
-Measured 2026-08-08 by reading every call site, not by reading bead titles. `br.py` is the only
-module that spawns `br`, through two funnels (`run_br`, `try_run_br`) reaching one `subprocess.run`.
-**31 spawn sites** across 11 modules (re-counted 2026-08-08 by call site, not by matching line —
-the earlier 43/44 figures counted `from .br import run_br` lines and docstrings), of which four
-already route to an owned equivalent (`comments add`,
-`comments list`, `show`, `scheduler`) and three are the shadow differential's reference side, which
-must keep reading the live store by construction.
-
-**Five operations have no owned equivalent at all**, and each is a design question rather than a
-port:
-
-| Operation | Call site | Why it is not a port |
-| --- | --- | --- |
-| `lint` | `policy.definition_of_ready` | br's templates are compiled into the binary and no read-only command reports them; `policy._TYPE_SECTIONS` is a hand-maintained mirror. Replacing it means **owning the validation rules** — which is requirement R3 (rules are configuration, not code) |
-| `dep cycles --blocking-only` | `decompose._assert_no_new_cycles` | No cycle detection exists in the kit |
-| `list --label` / `list -a` | `supervise._labelled_issues` | `events.fold` holds labels in `RecordState.fields`, but `differential.RecordView` deliberately excludes them, so the data is there and the query surface is not |
-| `create` id minting | `decompose._create_child`, `supervise.finalize_followup` | `ids.mint_root_id` and `ids.next_child_id` exist and **nothing calls them**; the create path takes the id from br's reply |
-| `gate list` | `policy.gate_status` | The kit models gate rows, but the owned side reads `missing` on 331 of 643 records because no export carries a gate field. Only the dual write populates it, and this repo is still `mode = "external"` |
-
-Three further pairs **bypass the seam** and read and write their own store consistently
-(`[harness-sizing]` in `decompose`, `[harness-info]` and `[harness-overrun]` in `supervise`);
-retiring them is `basicly-wpc8` and is a prerequisite, not a parallel task.
-
-**The order the cut has to happen in**: the kit grows what is missing (cycles, a label/blocked query,
-validation rules) → `br.py`'s six mirror translators become owned write seams → `policy` → `verify`
-and `rubrics` → `classify` and `loop` → the `decompose`/`supervise` bulk → `loop_state` → the
-store-lifecycle calls (`sync`, `init`, `where`) last. `bv` needs **nothing**: 0 of its 141 surfaces
-has ever been invoked, and no call site exists to contradict that.
-
-**Step 1 HAS been run; this paragraph claimed otherwise until 2026-08-08.** The import ran on
-2026-08-07 in commit `b97a653`: `.basicly/ledger/events-0001.jsonl` holds **3,775 events over 643
-records**, every one `imported_from: beads-export`, provenance `EXTRACTED`. The refuted claim is
-recorded rather than silently replaced because it is the second time this file has asserted a
-tracker fact the tree contradicts.
-
-What is actually true: `basicly.toml` still says `mode = "external"`, so **steps 2-4 have not
-run** and the dual write has never populated a gate field. And the import is a **one-shot with no
-entry point** — `migrate.import_snapshot` has no caller in `src/`, `.scripts/` or `.basicly/`, no
-`main()`, and `basicly tracker --help` lists `shadow` only (`basicly-vkh0.23`), so it cannot be
-repeated and had drifted 24 records behind the export within a day.
-
-### 6.2 The factory loop — what landed and what is open
-
-`basicly-u2hl`, driven by [`requirements/factory-loop.md`](../requirements/factory-loop.md).
-Landed on `main` since `v0.8.0`, unreleased:
-
-| Bead | What it made true |
-| --- | --- |
-| `u2hl.2` | Integrity level assigned by a deterministic path rule (D9), with the diff-size downgrade (D11) |
-| `u2hl.3` | Hold and Kill carried out as writes (D3, D15). §5 of the requirements doc records that the original diagnosis named the right defect and the wrong cause |
-| `u2hl.4` | Repair runs in the lane's own worktree, briefed with the gate's actual findings (D5) |
-| `u2hl.5` | Module size gated as a token ratchet; `C901` enabled at 15 |
-| `u2hl.1` | The plan gate on entry to BUILD (§3.3), ratcheted on the `## Plan` heading so it binds the population it was written for and not the 600 beads that predate it |
-| `u2hl.8`, `.9` | Four modules split along named responsibilities, and the ratchet stopped charging for the splits it exists to force |
-
-**Open, in the order the dependencies allow.** Each is one unit; the sizes are decomposition
-signals, not commitments.
-
-1. `u2hl.6` synthesise a `description` for every projected skill root — three skills fail the Agent
-   Skills spec on the Claude root while the `.agents` root already synthesises one (S).
-2. `u2hl.7` pass `--forward-subagent-text` and route the forwarded events into the stream sink the
-   runner already reads (S).
-3. **A total rework ceiling** — D12's per-gate allowance is shipped and correct, but
-   `policy.rework_recorded` is reported and never enforced, so a lane can grind gate by gate (S).
-4. **Declared dependencies in the plan graph** — the plan gate requires the *field*; ordering is
-   still derived from scope overlap alone, so "B needs A's decision" between two children touching
-   no common file is still inexpressible (M).
-5. **D10** — every acceptance criterion names its own check at plan time, and VERIFY runs the named
-   checks instead of judging. This is the single largest documented failure mass in the field (L).
-6. **VALIDATE as a real state** — a phase in `LOOP_PHASES`, gated on verify green, running for
-   leaves as well as lanes, plus the `validate-as-consumer` skill (L).
-7. **The first two handoff schemas as typed ledger events** (D4, D13) — `implementation-plan` and
-   `change-summary` only, per §2.1's mitigation as scoped by the owner on 2026-08-08. `u2hl.18` (L).
-8. **`solution-design` at INTAKE** (D17) — five machine-checked sections, one of which is a
-   **consumer transcript**: the command as it will be typed and what it will print. This product has
-   no screens, so that is what settles a design dispute before the code exists, and the `quality-gate`
-   rule already checks the same thing from the shipping end (M).
-9. **The demonstration field on every planned child** (D18) — the plan gate refuses a child that
-   cannot say how it is exercised through the consumer surface. Small, and it makes D10 satisfiable
-   by construction rather than by hope (S).
-10. **Diff size reported at plan time** (D19) — the sizing governor already forecasts in tokens, so
-    the signal is free; a report, never a refusal (S).
-11. **RETROSPECTIVE** — a special-cause signal over the gate-failure ledger, plus `root-cause` with
-    its named-control/tier/covered-class contract (L).
-
-Personas and the §3.1 state table are deliberately **not** filed yet: D5's rule admits a persona
-only when it differs in tier, tools or artifact, and the artifacts do not exist; a transition table
-built over today's derived phases would only re-describe `derive_phase`.
-
-**Settled 2026-08-08** (§8.2, D20): the seventh artifact is **`change-shape`** — the call tree, the
-file-tree diff and the new public signatures — **derived from an AST, never authored**, emitted by
-CLASSIFY and named in DECOMPOSE's entry predicate. It is not a state: a derivation has no persona
-and cannot fail a judgement, so an eighth row in §3.1 would be ceremony around a function call. The
-name pairs it with `change-summary`, which is what BUILD hands back. `u2hl.22`, taken together with
-`agzx.2` because they are one decision.
-
-### 6.3 The code-quality floor
-
-§9 of the loop requirements, and the owner's standing instruction that it is not optional: the skill
-on one side, the hooks and CI gates on the other. Every item is a deterministic check at **zero token
-cost**, which §10 ranks above any judged check.
-
-Measured 2026-08-08 — **no family is adoptable at zero cost**, so each is a real fix, not a config
-line:
-
-| Gate | State | Cost to adopt |
-| --- | --- | --- |
-| pyright `standard` | repo declares `basic`, below pyright's own default | **1 error, 1 file** |
-| `RET` `TID` `DTZ` `A` | not selected | 5 violations |
-| `FURB` | not selected | 4 |
-| `BLE001` | not selected | 4, each a judgement about a process boundary |
-| `PERF` | not selected | 16 |
-| `TRY` less `TRY003` | not selected | 26 (`TRY003` alone is 442 — a message string in `raise`, style at scale) |
-| `TC001/002/006` | not selected | 16 (`TC003` alone is 111 — deferred, recorded) |
-| `S` over `src/` less `S101` | bandit is scoped to `.scripts`, `.basicly/core/hooks`, `.basicly/core/kit` — **not `src/`** | 25 |
-| `C901` at 10 | shipped at 15 | 14 |
-| `noqa` debt ratchet | does not exist | 0 files: freeze at today |
-| `python-guidelines` skill | does not exist | §9.2's nine judgement calls |
-
-Two corrections to §9.1 of the requirements doc, both found by re-measuring rather than quoting it:
-the `noqa` debt it records as 30 is **46** across 20 files — it grew 53% while the ratchet was
-unbuilt, which is the argument for the ratchet — and six of those carry no reason at all. And `src/`
-holds **21 `# nosec` comments that no scanner reads**, because bandit does not run there: they are
-inert and read as "reviewed", which is worse than no annotation.
-
-**Landed 2026-08-08** (`dad39f4`): ten ruff families, pyright at `standard`, `S` over `src/`, the
-`python-guidelines` skill, and the twenty module splits the size ratchet then forced. What that
-leaves, and it is the next session's first track:
-
-| Open | Size | Why it is next |
-| --- | --- | --- |
-| `u2hl.12` **`noqa` debt ratchet** | S | The debt is **77** and rising: 46 this morning, 30 at go-live. The adoption itself added 31 — every one with a reason, and nothing counting them. Touches no source file; freeze at today |
-| **§9.4 test-file naming gate** | S | Already drifted: 71 source modules, 115 test files, **10 modules with no matching test file**, 9 of them created by this session's splits. The convention was emergent when the doc measured it; the splits broke it |
-| **pyright over `.scripts/` and `.basicly/core/`** | S | pyright's default `exclude` is `**/.*`, so 35 modules — including the hooks that ship to consumers and run in the dispatch path — are unchecked at *either* mode. 9 errors measured, 4 possibly an `extraPaths` artifact, so re-measure against a real `include` before filing |
-| **The 7 remaining inert `# nosec`** | S | Down from 21, all in `br.py` and `runner.py`. They sit in `src/`, where bandit does not run, so they read as reviewed and are not |
-| `python-guidelines` **as a path-scoped fragment** | M | Decided 2026-08-08. It is exercised — 7 invocations on the day it shipped — but only when an agent thinks to ask, and the agent that most needs it is the one that does not. Costs ~1,500 chars on `AGENTS.md` against ~1,225 of headroom, so **`a3ab.1` must evict a line first** |
-
-**Deferred with the reason recorded**: `C901` 15 → 10 (14 violations, concentrated in the two
-modules already under the heaviest split pressure — do it after `cli.py` comes down).
-
-### 6.4 What the 2026-08-08 external review added
-
-Three sources reviewed; the licence position decided what could be taken from each.
-
-| Source | Licence | What we took |
-| --- | --- | --- |
-| `wsff.md` (humanlayer) | **none — all rights reserved** | mechanisms and measurements only; no template, heading or wording |
-| `12-factor-agents` | Apache-2.0, verified unmodified | corroboration only — its author states it has *"no quantitative validation"* |
-| `humanlayer/skills` | **MIT** © 2026 HumanLayer | expression, with attribution: the plugin package layout (`u2hl.24`), the per-phase completion criterion (`u2hl.25`), the control-loop shape (`u2hl.27`) |
-| humanlayer.com / CodeLayer | proprietary | observation only |
-
-The 12-factor list is worth recording as **convergence, not a backlog**: we independently satisfy
-its state factors — 5 (execution state *is* business state; the engine keeps no side-state), 6
-(launch/pause/resume, because phase is derived), 8 (own your control flow — declarative YAML phases
-are rejected, not deferred), 12 (stateless reducer), and 9 (compact errors: `repair_brief` clips to
-`MAX_REPAIR_OUTPUT_CHARS`). What we do not satisfy is 10 (small focused agents — the roster) and 11
-(trigger from anywhere — deliberately CLI-only).
-
-**And one gap it exposed that is ours alone**: §3.1 states BUILD's entry predicate as *"plan gate
-green **and** downstream WIP below limit"* and **nothing implements it** — `concurrency = 5` bounds
-parallelism, not unlanded work. `u2hl.23`. Our bound is denominated in tokens and slots; the
-quantity that actually runs out is review capacity.
-
-### 6.5 Context control — selection, not encoding
-
-Researched 2026-08-08 at the owner's request. §14 of the requirements doc carries the
-measurements; the ladder consequence is here.
-
-**The direction was right and the mechanism was not.** Measured with a real tokenizer on this
-repo's own payloads: **basicly authors 2.52% of a lane's context** (3,812 of a p50 151,099
-tokens), so re-serialising every byte we control into the best available format saves **1.01% of
-one lane**. Meanwhile `br ready --json` — which our own `tool-br` skill tells every agent to run —
-costs **36.9% of a lane**, and projecting it to the five fields a lane needs costs 1.7%.
-**Selection beats serialisation by roughly 500x here.**
-
-The XML hypothesis is refuted without exception: XML cost 1.07x–1.80x compact JSON on every
-payload, because JSON names a key once per record and XML names it twice. And `br`'s own
-"token-optimized" format measured **2.8% worse than plain JSON** on our real ready-queue.
-
-Five beads, `u2hl.29`–`.33`. `u2hl.29` is the substantive one and carries three parts in one
-landing: field projection (engine), the bijective codec (kit, uniform record arrays only), and the
-**claude cache split** — `runner_usage.claude_json_usage` never populates
-`cache_read_tokens`/`cache_write_tokens` though the codex path does, so **0 of 297 dispatch records
-carry one**. Cache reads cost 0.1x, which makes that defect the gate on measuring any context work
-at all: a 40% apparent saving that actually broke a cached prefix is indistinguishable from a real
-win on the agent doing 76 of 77 dispatches.
-
-**The context ceiling is deleted, not retuned** (`u2hl.30`). At 0.6 × a declared 1,000,000 window
-it is 600,000 and **0 of 79 lanes cross it**; against the stale hardcoded 200,000 it fired on 51 of
-79 and produced the twelve overrun follow-ups. A gate that has never once fired correctly does not
-get a third hand-picked constant.
-
-**A constraint on all of it** [D22]: `br` and `bv` are being removed, so anything built against the
-tracker names **our own record vocabulary, never `br`'s payload keys**. An adapter maps them, and
-at the flip only the adapter changes. A field allowlist written against `br`'s JSON would have to
-be rewritten — which is precisely the major refactor this constraint exists to prevent, and the
-reason it is recorded as a decision rather than left to judgement.
-
-### 6.6 TypeScript — asked and answered: stay Python-only
-
-The observation that this field is full of TypeScript is **a GitHub Linguist artifact, not a fact
-about the code** [M]. `humanlayer/skills` is labelled TypeScript and contains **21 `.md`, 5 `.json`,
-3 `.yml` and 2 `.ts`** — and both `.ts` files are the same 11 KB helper duplicated across two
-plugins. Structurally it is the same kind of artifact as our own `.basicly/core/` (105 YAML
-sources). `humanlayer/humanlayer` is TS **plus Go**, where the TS is the desktop UI and the daemon
-is Go.
-
-Where TS genuinely dominates, it is **the product surface, not the work**: `cline` and `continue`
-are VS Code extensions, `opencode` ships a web console, `gemini-cli` is npm-distributed. The repos
-in basicly's actual peer class — tools that project a catalog into someone else's repo — are Python
-and Shell: `github/spec-kit` is **Python, zero TS**; `anthropics/claude-code` is Python-dominant.
-
-The decisive local fact: **every committer in a consumer repo already needs `uv` + Python 3.14**,
-because the 14 projected hooks and the 7,069-line kit are Python. A TS boundary that reaches a
-consumer adds a *second mandatory runtime*, which is what `work-tracker.md` §2's "no second
-language, no separate release train" exists to prevent — a requirement written after `br` (Rust)
-produced the nine defects in its §2.1 register.
-
-**One honest correction to our own claim**: basicly is *not* single-language today. It requires the
-`br` Rust binary and a node package for its own markdownlint hook. The requirement is aspirational
-about a state we have not reached; the `br` cut (§6.1) is what would make it true.
-
-**The one boundary worth revisiting**, and only when all three hold: an approved decision to ship a
-VS Code or JetBrains extension (a host that admits nothing else); the TS living behind a process
-boundary talking to the existing CLI over `--json`, so no Python is rewritten and no consumer gains
-node; and a named owner accepting the second release train.
-
-### 6.7 The plumbing track — why it now precedes the loop features
-
-Filed 2026-08-08 from defects **measured while the factory was running**, not from review. The
-session shipped nine beads for **$140.83 over 41 dispatches** and the ladder's own row would have
-called that a good day; what it hides is where the money went.
-
-**The economics, from `run-records.json`** [M]:
+Measured 2026-08-08 over the whole of `.basicly/usage/run-records.json`:
 
 ```text
 phase    n    mean tokens   mean $   mean s   failed
@@ -634,301 +140,194 @@ decide  24         31,991    0.23       14     5/29  = 17.2%
 ```
 
 `decide` is a dispatch **handed its corpus**; `lane` is a dispatch **told to go and read**. Same
-model, same repo: **254x the tokens and 27x the cost**, for the difference between inheriting
-context and rebuilding it. `loop.dispatch_prompt` (`loop.py:858`) is six sentences and carries no
-architecture, no file map and none of the session's own findings — so the ~$1.47 floor every lane
-pays before it edits anything is bought by the prompt, not by the work.
+model, same repo: **254x the tokens and 27x the cost**. `loop.dispatch_prompt` (`loop.py:858`) is
+about ninety words and passes only the issue id — no requirement, no scope, no plan, no prior
+finding — so the floor every lane pays before its first edit is bought by the prompt, not by the
+work.
 
-Per unit of output on the same day: `u2hl.16` cost **$0.077 per changed line**, `u2hl.14`
-**$0.010**. The band has a floor verdict for exactly this and **the floor never refuses** — only
-the ceiling does.
+Per unit of output that floor dominates small work: `basicly-u2hl.16` cost **$0.077 per changed
+line**, `basicly-u2hl.14` **$0.010**. The band has a floor verdict for exactly this and **the floor
+never refuses**; only the ceiling does.
 
-**Eight beads, and the order matters:**
+The failures are not incidental. In one pass: three of five lanes bounced on shared anchors, two
+were wedged for an hour by a decider reasoning from a refuted claim in a bead, and **two lanes
+silently lost committed work to the landing rebase** — on one of them the test suite stayed green,
+because the feature and its tests were dropped together.
 
-| | Bead | Why it precedes the features |
-| --- | --- | --- |
-| 1 | `rrah` P0 | no lane transcript is persisted anywhere, so **no claim about a lane is checkable after it ends** — including every claim in this section |
-| 2 | `5vu4` P0 | the landing rebase drops a lane's merge-commit resolution and reports success. Twice on 2026-08-08; on `u2hl.20` **the suite stayed green**, because the feature and its tests were dropped together |
-| 3 | `ef7t` P0, `3w51` P1 | three shared anchors bounced 3 of 5 lanes in one pass |
-| 4 | `efw2` P0 | one `## Scope` field feeds collision detection (wants it complete) and the band (prices what it reads), so declaring honestly inflates the estimate — 78,709 → 197,646 → 245,466 on an unchanged diff, and the ceiling was moved twice inside one landing |
-| 5 | `b9ef` P0 | the decider's corpus is the epic's bead text, which still asserted a claim its own design doc had refuted; it reasoned from that and abstained, wedging two lanes |
-| 6 | `esxp` P1, `o40x` P1 | bind the band floor; give a healthy supervisor a stop that does not kill live lanes |
+**Each of these corrupts the evidence a feature would be judged by.** A loop state built on a
+factory that loses work, cannot be audited, and moves its own ratchets is a state whose acceptance
+criteria cannot be trusted. That is the ordering argument, and it is the whole of it.
 
-**The rule these share**, and the reason they outrank feature work: each corrupts the *evidence* a
-feature would be judged by. A loop state built on a factory that loses work, cannot be audited, and
-moves its own ratchets is a state whose acceptance criteria cannot be trusted.
+### 5.2 The plumbing track, in order
 
-## 7. `v0.9.1` — the measured evidence layer
+| # | Bead | P | What it fixes |
+| --- | --- | --- | --- |
+| 1 | `rrah` | P0 | **No lane transcript is persisted anywhere.** The stream is read into an in-memory sink and spent on token accounting; `.basicly/usage/` holds totals and nothing about what a lane did. Until this lands, no claim about a lane is checkable after it ends — including every claim in this section. |
+| 2 | `5vu4` | P0 | **The landing rebase silently discards a lane's merge-commit conflict resolution.** `git rebase` skips merge commits and reports success. Twice on 2026-08-08; the suite is not a backstop. |
+| 3 | `ef7t` · `3w51` | P0 · P1 | Three shared landing anchors — `basicly.toml` checks, `pyproject.toml` frozen lists, and the generated block in this file — bounced three of five lanes. `3w51` is the generated-block half. |
+| 4 | `efw2` | P0 | **One `## Scope` field feeds two gates that want opposite things** — collision detection wants it complete, the band prices what it reads. Declaring honestly took one bead from 78,709 to 197,646 to 245,466 on an unchanged diff, and the ceiling moved twice inside one landing. |
+| 5 | `b9ef` | P0 | **The decider's corpus is the epic's bead text**, which still asserted a claim its own requirements document had refuted. It quoted that claim, reasoned from it, and abstained — wedging two lanes. |
+| 6 | `89hm` | P0 | **The context-window fix never reached consumers.** `runner.py:142` ships `claude: 200_000`; `basicly.toml` overrides to one million *for this repo only*. Every consumer inherits the defect that produced eighteen overrun beads here. |
+| 7 | `ejdm` | P0 | **Hand a dispatched agent the context the session already holds** — §5.1's 254x. The mechanism is the report file (`factory-loop.md` §8.3), not a longer prompt. |
+| 8 | `xjd2` | P0 | **Dispatch through the host agent runtime instead of spawning a headless CLI.** Blocked on `ejdm`. Open question it must answer first: whether the host runtime can be driven non-interactively from a subprocess at all. |
+| 9 | `esxp` · `o40x` | P1 | Bind the band floor; give a healthy supervisor a stop that does not kill live lanes. |
+| 10 | `4kdm` · `0p8n` | P1 | The specialist agents and skills the states already name; the harness gates carried into the coding agent's own hooks. |
+| 11 | `ca42` | P0 | Rescoped: **keep `chars/4`**, record the evidence. `tiktoken` fetches a 3.5 MB vocabulary over HTTPS on first use, which a consumer's git hook cannot do. |
 
-**Renumbered to `v0.9.1` on 2026-08-08.** Everything here sits behind one chain that has not moved
-in two releases, and holding the factory loop (§6.2) and the code-quality floor (§6.3) behind it
-would have shipped neither. The docs debt below moved *up* to `v0.9.0`, because it is not blocked.
+### 5.3 What remains of the loop
 
-**Status.** The deterministic-gate row is **shipped**: `m4zv.2`, `.4` and `.6` landed in `v0.8.0`
-and `.5` in `v0.7.1`, so four of five are closed and only `m4zv.3` remains (blocked behind `v0vt`).
-The D4 prerequisite named below is **already satisfied** — `imnu.1` is closed.
+Landed 2026-08-08 and unreleased: the plan gate on entry to BUILD, integrity levels from a path
+rule with the diff-size downgrade, Hold and Kill as writes, repair in the lane's own worktree, the
+module-size ratchet, the first two handoff artifacts (`implementation-plan`, `change-summary`), the
+D18 demonstration field, the WIP bound, and the code-quality floor.
 
-**The numbers are blocked, so do not start here.** `7bur` cannot begin: its one open blocker is
-the `u6jq` epic, whose remaining child `u6jq.1` is itself blocked on `69az`. The chain is
-`69az → u6jq.1 → u6jq → 7bur → agzx.2, 4t9z, s2xf → kjc5`, so **`69az` is the unblocking
-action for this whole section**, not `7bur`. `agzx.2` sits behind `7bur` and inherits the wait.
-(Note `kjc5` is `7bur`'s *parent*, not a blocker — a child does not wait on its epic.)
+Open, in the order the dependencies allow: `u2hl.6` skill descriptions · `u2hl.21` diff size
+reported at plan time · the four remaining handoff schemas · **VALIDATE as a real state**, since it
+is not in `LOOP_PHASES` and the two phase tuples disagree · D10's criterion-derived checks · EARS ·
+RETROSPECTIVE's special-cause signal · `u2hl.17` once `a3ab.1` evicts an always-on line.
 
-**What `7bur` is for, once reachable.** It is the hub: it gates `4t9z` by an existing
-edge and four design decisions defer to it — the roster's tier table, eval scale, the localisation
-question, and prefix-stable dispatch bundles. Its hard constraint: **the eval must not cost more
-than the thing it measures** — cheap models on the arms, the strong model only for judging. Label
-dispatches by *specification completeness*, not work category: the predicate for a cheap tier being
-safe is whether the brief already contains the code and the tests. `agzx.2` then answers whether an
-AST-derived localisation artifact (tree-sitter, no model, no tokens) cuts an implementer's
-pre-first-edit token share; it must land before the roster, because it changes what a decomposer's
-scope declaration has to carry.
+Nine `u2hl` children are **band-refused** on read cost rather than on size — the same
+over-declaration `efw2` describes. Narrowing their scopes is about thirty minutes, not nine splits.
 
-**The deterministic gates** (`m4zv.2`–`.6`), highest value-per-cost in the plan — all run in CI at
-zero token cost:
+### 5.4 Do not start here
 
-- **`m4zv.2` routing evals.** Stemmed TF-IDF over descriptions, pure Python, no new dependency.
-  Three assertions: a positive prompt ranks its owner top-k; a negative prompt declares an `owner`
-  and the assertion is that the owner **outranks** this entry (a bare "must not rank first" passes
-  vacuously); no two descriptions exceed a pairwise similarity ceiling (error 75%, warn 50%). The
-  CI metric is rank-1 rate, floor set below a measured baseline and **never lowered to make a
-  regression pass** — lowering it is deleting the test while looking like maintenance. Refuse
-  embeddings: non-deterministic, network-dependent, unownable.
-- **`m4zv.3` an eval case per catalog entry**, enforced as a Tier-1 failure, colocated with the
-  source and scaffolded from `catalog new`. Stage by *adding* entries to the enforced set, never by
-  lowering a threshold. This raises the cost of adding an entry, which is the intended brake on
-  accretion. **The entry set is now counted** (`v0vt`, 2026-08-07): **35 skill sources** — 29
-  model-invoked, 6 user-invoked — project to **30 skills in each root** (27 model, 3 user). The
-  five that project nowhere each declare a `technologies` gate naming their own environment
-  (`tool-starship`, `tool-tmux`, `tool-wezterm`, `tool-zsh`, `wsl`) against this repo's
-  `["python", "node"]`; confirmed by adding `tmux` and watching `tool-tmux` project, then prune on
-  restore. Nothing is silently dropped. **So decide which set `m4zv.3` enforces**: the routing eval
-  gates **29 model-invoked *sources***, of which only 27 are projected here — its near-miss list
-  names `wsl` and `tool-tmux`, neither of which exists in this repo's `.claude/skills/`. Enforcing
-  over sources is defensible for a distributed catalog, but it must be stated, because "an eval case
-  per catalog entry" reads as the projected set and is 3 entries smaller.
-- **`m4zv.4` severity as a required field** on judged output — `BLOCKER` / `IMPORTANT` / `MINOR` —
-  rejected as a schema violation rather than complained about, plus the **no-pre-judging lint**:
-  refuse to emit a reviewer bundle containing a finding-suppressing directive.
-- **`m4zv.5` rework convergence.** Compare the **open-finding set** between iterations, not the
-  count. One stalled round warns; two consecutive escalate immediately without consuming the cap; a
-  diverging round escalates on first occurrence. The subsystem it hardens has **never fired** — 286
-  gate results recorded, 0 failed, re-counted 2026-08-03 — so treat its existing behaviour as
-  unvalidated rather than proven.
-- **`m4zv.6` gate taxonomy.** Classify every gate as pre-flight / revision / escalation / abort and
-  enforce that **a pre-flight gate writes nothing**; our two worst recorded incidents were both
-  checks that recorded state where they should have blocked entry.
+**`u6jq.1` is unblocked and ranked first, and is deliberately held.** It is the proof that a
+supervised pass completes with zero interventions attributable to a harness defect. Running it
+against a 17.2% lane failure rate and two known silent data losses would measure the defects in
+§5.2 rather than the factory. It becomes the right move after `rrah` and `5vu4`.
 
-**Prerequisite for `m4zv.4`/`.5`: the D4 amendment — satisfied, nothing to do first.** `imnu.1`
-closed, so architecture already records validate as a **composite**: a deterministic pre-flight
-component that can fail the lane plus a judged escalation component that enqueues a decision. This
-keeps "no persona passes a required gate" intact while giving the required gate teeth. Build
-against the shipped shape.
+## 6. What is left of the `br` cut
 
-**The docs debt.** `imnu.2` (a tutorial and how-to layer — `docs/` has no "your first loop"
-walkthrough, which is an adoption blocker for a distribution meant to be installed by other
-repos), `imnu.3` (declare and report the capability tier `basicly install` actually delivered:
-instruction-tier / skill-tier / plugin-tier — our central claim is *enforcement*, which is
-plugin-tier, and on an instruction-tier host the harness degrades to advice and we say so nowhere),
-`imnu.5` (the ceremony threshold and the named lightweight path below it), `kjc5.13` (absorb the
-factory design, then delete it per §11).
+Tracked by `basicly-vkh0`; specified by
+[`requirements/work-tracker.md`](../requirements/work-tracker.md).
 
-**Also here**: `3ifz` — learn `concurrency`, the per-lane budget, the sizing band and `max_rework`
-from recorded outcomes instead of judgment; it needs the forecast/actual pairs `vz78` created.
-`jr0l.43`'s successor `jr0l.56` (close or declare the gap where no test drives a real agent CLI
-through the loop).
+The migration is five steps and they did not run in order:
 
-## 8. `v0.10.0` — the judgment layer and always-on relief
+```text
+1 import          RAN once by hand (b97a653) - but migrate.import_snapshot has no caller,
+                  no main() and no CLI, so it cannot be repeated  (basicly-vkh0.23, P0)
+2 shadow          machinery ships; MUST run on `dual`, so it cannot run today
+3 dual-write      NOT RUN - basicly.toml says mode = "external"
+4 flip            blocked on 3
+5 native markers  LANDED 2026-08-07, before steps 2-4
+```
 
-**The roster** (`s2xf`, design agreed on `eqp6`, nothing built). Today the factory dispatches one
-generic prompt shape for every lane; this replaces it with named roles carrying their own
-instructions, tool policy, model tier and output contract.
+**31 spawn sites** across 11 modules behind the one seam in `br.py`. Only `show`, `scheduler` and
+comments have owned equivalents. **Five operations have none at all**, and each is a design
+question rather than a port: `lint` (which means owning the validation rules — requirement R3),
+`dep cycles`, `list --label`, id minting (`ids.mint_root_id` exists and nothing calls it), and
+`gate list` (the owned side reads `missing` on 331 of 643 records because only the dual write
+populates it).
 
-- **Engine**: a role registry (role id → prompt source, tier, tool policy, output schema); a
-  `[runner.roles]` config section with defaults, so a consumer with no overlay gets a working
-  roster; role-aware dispatch; tool-policy overlays at invocation, generalising the existing
-  decider confinement to every read-only role; per-role attribution, so per-role telemetry and
-  cost-per-landed-package fall out for free.
-- **Prompts as catalog sources**, not agent-native subagent files — the factory is agent-agnostic.
-  Each judged role carries an explicit adversarial stance and a role-specific list of how *that*
-  role goes soft (reviewer conflict-avoidance — downgrading a blocker to avoid disagreeing with the
-  producer — named as a predicted failure). **Derive those lists from the recorded verdict, rework
-  and adjudication history, never invent them**; a generic rigour instruction is a no-op that costs
-  tokens.
-- **Contracts**: lens output reported per lens, never merged into one ranked list, because a change
-  can pass one axis and fail another and merging lets one mask the other. The implementer hands
-  over a **report file** and returns only status, commits, a one-line test summary and concerns —
-  pasted history stays resident in the dispatcher's context and is re-read every later turn. Four
-  statuses with different correct responses: `DONE` / `DONE_WITH_CONCERNS` / `NEEDS_CONTEXT` /
-  `BLOCKED`, and the rule that gives it teeth: never force the same model to retry unchanged.
-- **Two pieces that do not fall out of the registry shape**: the R4 disposition path (a judged NO
-  enqueues a decision carrying the failing criterion and its evidence, and the lane *holds* rather
-  than landing or bouncing), and a decision class **no grant level auto-disposes** — an exception
-  to the L0–L3 ladder, so an autonomy grant can never hand the catalog to the decider.
-- **Capability escalation on late rework rounds** (resume the same agent early, fresh dispatch one
-  tier up late), which produces a readable signal: if late bumps routinely succeed, the initial tier
-  was wrong.
+Rework state lives in `br` comments, so the rework cap — one of only two controls with a recorded
+correct firing — depends on the tracker being removed.
 
-**Always-on relief** (`a3ab.1`–`.3`), routine tidying rather than surgery because §3 found the
-baseline recalled rather than lost:
-
-1. `a3ab.1` — audit every baseline line against three questions: is this really a hook? can I write
-   a glob for it? **does it change behaviour versus the default at all?** The third is the no-op
-   test and it is the most common defect in an always-on layer.
-2. `a3ab.2` — declare scopes on the fragments that earn them. Authoring work, not engine work. Per
-   fragment, weigh the guarantee change: a fragment that must bind in PR review stays unscoped,
-   because scoping removes it from the github.com Copilot surface. Mind Codex's headroom (§3) — the
-   next scoped fragment overflows `AGENTS.md` unless something leaves it first.
-3. `a3ab.3` — the one check the existing gates cannot see: a scope whose globs match nothing. The
-   fragment is well-formed, it projects, `check` is green, and the rule never loads. Warn at
-   projection time; error only where the technology is selected, so a docs-only consumer is not
-   punished for having no Python.
-
-Then `a3ab.4` (project the constraints as an explicit always-do / ask-first / never-do block — a
-retrieval problem wants a structural fix, not more prose) and `a3ab.5`.
-
-**Exit criteria.** Every judgment step routed to a named role; no dispatch with an unresolved tier;
-a judged NO holds its lane and produces a disposable decision; the roster's cost claims visible in
-`7bur`'s instrument rather than asserted; the baseline measurably smaller on two of three families
-with recall **not degraded** (at 98% / 93% there is no headroom to improve, so demanding
-improvement would be unsatisfiable); and no declared scope matching nothing.
-
-## 9. `v1.0.0` — stabilize and declare
-
-No epic yet; file one at decomposition. Nothing here is speculative — every item traces to a defect
-the consumer review found.
+## 7. `v1.0.0` — stabilize and declare
 
 | Work | Why |
 | --- | --- |
-| Surface audit and semver freeze | Enumerate and freeze five surfaces: CLI commands and flags, `basicly.toml` plus the `basicly.local.toml` overlay contract, the four catalog source schemas, the generated-file/manifest contract, and the owned ledger format. Each broke within the last two minors, so the audit means reading each surface against its consumers; the freeze is a written compatibility policy with a deprecation path. |
-| Breaking-marker discipline as a gate | The `v0.6.0` audit existed because zero of 535 commits carried a `!` marker. After the freeze, a commit changing a frozen surface without the marker must fail a deterministic check — or `2.0`'s audit repeats `0.6`'s. |
-| Forward-version CI job | The floor claim is "3.14+" and CI tests exactly 3.14. Add the next Python so the "+" is tested. The floor itself stays (owner-confirmed). |
-| Error-path polish | Two soft spots at the consumer trust boundary: `basicly check` in a never-installed repo points at `build` instead of `install`, and the CLI's blanket exception handler leaves no `--debug` escape hatch (`tcmy.24`). |
-| The acceptance test | A fresh consumer repo — git plus a uv-provisioned interpreter, no `br` — installs basicly, runs every gate, and drives one unit of work through the loop to a landed commit. Exercise it as it will really be used, and publish nothing that was not exercised. |
-| Final absorption | Every remaining design document folded into architecture and deleted (§11); §3 of this file refreshed one last time. |
+| Surface audit and semver freeze | Enumerate and freeze five surfaces: CLI commands and flags, `basicly.toml` plus the overlay contract, the catalog source schemas, the generated-file contract, and the owned ledger format. Each broke within the last two minors. |
+| Breaking-marker discipline as a gate | The `v0.6.0` audit existed because zero of 535 commits carried a `!` marker. After the freeze, a commit changing a frozen surface without it must fail deterministically. |
+| Forward-version CI job | The floor claim is "3.14+" and CI tests exactly 3.14. Add the next Python so the "+" is tested. |
+| Error-path polish | `basicly check` in a never-installed repo points at `build` instead of `install`; the CLI's blanket handler leaves no `--debug` escape hatch (`tcmy.24`). |
+| The acceptance test | A fresh consumer repo — git plus a uv-provisioned interpreter, no `br` — installs basicly, runs every gate, and drives one unit of work to a landed commit. |
+| Final absorption | Both requirements documents folded into architecture and deleted (§9); §3 refreshed one last time. |
 
 **Exit criteria.** The acceptance test passes on a machine that has never seen this repo; the
 compatibility policy is published; a surface-breaking commit without a marker fails CI; `v1.0.0` is
 tagged by `basicly release` with both pushes explicitly owner-approved.
 
-## 10. Standing constraints
+## 8. Standing constraints
 
 Rules any release must honour. Each exists because breaking it cost a session or more.
 
 - **Do not grow the schema of a component about to be replaced.** Land evidence as `[harness-*]`
-  comment markers — a format we own, which migrates with us — not as tracker fields. Applies to
-  `kjc5.47`, `.48`, `.50`, `.51` and `jr0l.19`, `.20`.
+  comment markers — a format we own — not as tracker fields.
 - **Free deterministic gates before judged ones.** A CI check at zero token cost that catches a
   silent failure forever outranks a judged check that costs tokens per run.
-- **Prefer the root cause, but ship the workaround first when the root cause is a release away** —
-  then stop charging rework for it and carry the defect forward as a *requirement* on the
-  replacement.
 - **Never lower a CI floor to make a regression pass**, and never defeat a gate to force success.
-  Fix the failing gate.
-- **Recall is an upper bound.** It confirms mechanism, never outcome, and may not be cited as
-  evidence of quality.
-- **A filter on an optional field hides a population.** Every failed lane records no
-  `scope_tokens`, so a filtered query silently excluded the whole failure set and a false rationale
-  reached `config.py` (`ipx2`).
-- **Assert a platform difference by injection, not by racing.** Make the platform difference test
-  data; a passing local `pyright --pythonplatform Windows` is false comfort.
-- **A wall-clock timestamp is evidence; nothing branches on it.**
+- **A ratchet moved by an artifact is not evidence.** `DEFAULT_WORKING_SET_MAX` has been retuned
+  seven times, twice inside one landing, each time chasing the last dispatch. Read every derivation
+  in `config.py` as measuring *declaration completeness*, not working set, until `efw2` lands.
+- **A sizing control with no recorded correct firing becomes observability** (D23). The spend
+  ceiling, with five correct firings, and the rework cap, with 78, keep their teeth; the runner
+  timeout, the band ceiling and the context ceiling have zero between them.
 - **A constant describing an external capability must be falsifiable against our own ledger.** It is
-  the one class of value that is *correct when written* and rots silently as the vendor ships, so no
-  gate catches it and no review re-reads it. `claude`'s context window sat at 200000 against a
-  dispatched 1000000 for months while the run records held occupancies above 200000 — a contradiction
-  that was mechanically detectable the whole time — and it truncated healthy lanes into twelve
-  follow-up beads (`23ep`). Where a field measures the same quantity a constant declares, wire the
-  comparison as a check; and fix such a constant by *declaring* it with recorded provenance, never by
-  pasting in a fresher number.
-- **A recurring follow-up shape is a symptom, not a workload.** Twelve beads named the truncation and
-  none asked why the trigger fired. Before working a queue of look-alike items, suspect the mechanism
-  that spawns them.
+  the one class of value that is correct when written and rots silently. And a fix that reaches only
+  this repo's config is not a fix (`89hm`).
+- **Recall is an upper bound.** It confirms mechanism, never outcome.
+- **A filter on an optional field hides a population.** Prove a zero-finding against a positive
+  control.
+- **Assert a platform difference by injection, not by racing.**
+- **A wall-clock timestamp is evidence; nothing branches on it.**
+- **A recurring follow-up shape is a symptom, not a workload.** Twelve beads named one truncation and
+  none asked why the trigger fired; five survivors were killed on 2026-08-08 after probing that each
+  original had in fact delivered.
+- **A bulk find-replace needs a line-by-line audit.** One on 2026-08-08 rewrote references to
+  *deleted* files into paths that never existed; the diff caught it and nothing else would have.
 
-## 11. Document disposal register
+## 9. Document register
 
-Owner rule: **the code is the authority, `architecture.md` is the human-readable summary, and every
-other document under `docs/` is temporary** — deleted once its design is code and its surviving
-rules are in architecture. The one exception is the consumer-facing layer (`tutorial/`, `how-to/`):
-it documents shipped behaviour for someone who does not read this repo's code, so it is corrected
-against the code rather than deleted. This register is what makes the rule enforceable: if a
-document is not listed here it should not exist.
-
-`Live` means it specifies work not yet built, so deleting it loses a requirement. `Deletable` means
-its design is implemented and only the listed precondition stands between it and deletion.
+The owner rule: **the code is the authority, `architecture.md` is the human-readable status quo,
+and every other document under `docs/` is temporary.** Nine files were deleted on 2026-08-08 under
+it — six absorbed first, three carrying nothing live. If a document is not listed here it should not
+exist.
 
 | Document | Status | Precondition for deletion |
 | --- | --- | --- |
 | `architecture/architecture.md` | **Authoritative** | Never deleted. Corrected against the code whenever the two disagree. |
+| `requirements/factory-loop.md` | **Live** | The target loop and the measured delta from it, with 26 decisions. Drives `basicly-u2hl`. Absorbed into architecture and deleted when that epic closes. |
+| `requirements/work-tracker.md` | **Live** | Survives until `br` leaves the runtime path (§6). The only record of what the replacement must be, including nine requirements carried forward from `br` defects already paid for. |
 | `plan/implementation-plan.md` | **Authoritative** | This file. Deleted when `v1.0.0` ships and the ladder is spent. |
 | `tutorial/first-loop.md` | **Consumer-facing** | Never deleted while `basicly install` ships. Re-executed against a fresh repo whenever a command or its output changes (`imnu.2`). |
-| `how-to/customize-the-catalog.md`, `how-to/wire-up-the-verify-gate.md`, `how-to/unblock-a-commit.md`, `how-to/upgrade-and-check-drift.md`, `how-to/run-parallel-lanes.md`, `how-to/resume-a-track.md` | **Consumer-facing** | One page per recurring operation; a page goes when its operation does. Rationale stays in architecture — a how-to that starts explaining *why* is drifting into the reference (`imnu.2`). |
-| `requirements/work-tracker.md` | **Live** | Not `v0.8.0` — that shipped the *store*. This document survives until `br` leaves the runtime path (§6.1, `v1.0.0`'s acceptance test), because it is the only record of what the replacement must be, including the nine requirements carried forward from `br` defects already paid for. Five inbound references from `br.py`, `cli.py`, `tracker_surface.py`. |
-| `design/agent-roster-design.md` | **Live** | `v0.10.0` ships the roster. Referenced from `.basicly/core/models/README.md`. |
-| `design/factory-design.md` | Deletable after `kjc5.13` | Absorb D1–D10 into architecture, then delete. `commit.py` names it; remove that reference first. |
-| `requirements/factory-loop.md` | **Live** | The target state of the loop and the measured delta from it, with 16 decisions and their sources. Drives `basicly-u2hl`; §6.2 tracks which decisions are code. Two sections are now *history* rather than specification — §5's corrected Hold/Kill diagnosis and §9.3's import-exclusion amendment — and both are kept deliberately, because a gap analysis that named the right defect and the wrong cause is the more useful record. Absorbed into architecture and deleted when that epic closes. |
-| `design/gates-and-rework-design.md` | **Deletable now** — `uhiq.2` | Cited by path from `architecture.md:1692` only. The bounded-rework subsystem is built but has never fired, so what survives is the *unvalidated* status, which belongs on `m4zv.5`. |
-| `design/steering-surfaces-design.md` | **Deletable now** — `uhiq.2` | Zero inbound references; architecture `:1553-1585` already carries the recall result. |
-| `design/catalog-efficacy-design.md` | **Deletable now** — `uhiq.2` | Architecture `:1563` carries the upper-bound rule, but `:1583` and `:1692` still cite the file by path — inline those citations or they dangle. |
-| `design/harness-eval.md` | **Deletable now** — `uhiq.2` | Zero inbound references; superseded by the shipped `rubric` command and `.scripts/recall_eval.py`. |
-| `design/tier-kit.md` | Deletable after reference removal | The kit ships at `.basicly/core/kit/`; referenced from `CHANGELOG.md` and the kit's own README. A changelog entry is history and may keep its link, so decide that explicitly. |
-| `architecture/hook-runner-decision.md` | **Deletable now** — `uhiq.2` | Zero inbound references anywhere. |
-| `archive/foundry-spike.md` | **Deletable now** — `uhiq.2` | Zero inbound references. The `docs/archive/` directory goes with it — an archive is the thing this rule forbids. |
-| `research/2026-07-26-sota-review.md` | Dated evidence | A review of the field on one date, with its conclusions already absorbed. Delete when nothing cites it; not design, so it never becomes code. |
-| `research/references.md` | Dated evidence | Goes with the review above. |
+| `how-to/customize-the-catalog.md`, `how-to/wire-up-the-verify-gate.md`, `how-to/unblock-a-commit.md`, `how-to/upgrade-and-check-drift.md`, `how-to/run-parallel-lanes.md`, `how-to/resume-a-track.md` | **Consumer-facing** | One page per recurring operation; a page goes when its operation does. Rationale stays in architecture — a how-to that starts explaining *why* is drifting into the reference. |
+| `research/2026-07-26-sota-review.md` | **Dated evidence** | A review of the field on one date, plus Appendix A — the licence and provenance register the tracker work's clean-room boundary rests on. Delete when nothing cites it. |
 
 **Deleting a document means removing its references from the code first.** Under the owner rule the
 code must read well enough not to need them, so a prose pointer at a design document is deleted
 rather than repointed.
 
-## 12. Owner decisions still owed
+**The previous register was wrong on six of nine rows**, every one undercounting inbound references
+— it called `gates-and-rework-design.md` "cited from `architecture.md` only" when seven modules
+cited it. Do not trust a register row; run the grep.
 
-Each blocks something and none can be derived from the code.
+## 10. Owner decisions still owed
 
-1. **The ceremony threshold's written form** (`imnu.5`, `v0.9.0`). The loop is mandated for
-   "non-trivial work", which is the agent's judgment call, so the rule is unenforceable. Needs a
-   written threshold **and** a named lightweight path below it that skips ceremony but never hooks.
+1. **The ceremony threshold's written form** (`imnu.5`). The loop is mandated for "non-trivial
+   work", which is the agent's judgment call, so the rule is unenforceable. Needs a written
+   threshold **and** a named lightweight path below it that skips ceremony but never hooks.
+2. **Whether losing the github.com Copilot surface is acceptable, per scoped fragment.** Scoping
+   removes a fragment from that surface entirely — a guarantee change, not a refactor. Three
+   fragments are already scoped and the call was never made for any of them.
+3. **Tier 3 of the catalog eval** — the four arms, and the safety tier as a gate rather than a
+   metric. Architecture §14.4 names the shape; the arms table is unbuilt and unowned.
 
-**Settled 2026-08-08 and recorded here so it is not re-litigated: the language stays Python.** The
-TypeScript prevalence in this field is a Linguist artifact and, where real, is a product-surface
-choice (editor extensions, web consoles). basicly's peer class is Python. §6.5 carries the evidence
-and the three conditions that would flip it.
+**Settled and recorded so they are not re-litigated:** the language stays **Python** (the
+TypeScript prevalence in this field is a Linguist artifact, and every committer already needs
+`uv` and Python 3.14 for the projected hooks); `factory-design.md` **lost tiebreaker authority**
+(D24, and the file is now deleted) — authority runs *measured evidence, then the requirements
+documents, then nothing else*; sizing controls become observability (D23); agent-authored guidance
+never reaches the catalog without a human at any grant level (D25); roles route to the cheapest tier
+that can be *relied on*, priced per landed package (D26); the tokenizer stays `chars/4` because a
+real one needs a network call; declarative YAML phases are **rejected**, not deferred; the Python
+3.14 floor stays.
 
-Resolved and recorded so they are not reopened: **OQ-12, what counts as a "touch"**
-(2026-08-08) — an added top-level import is not one, and the bring-it-under obligation applies
-only **below 2× the cap**; at or above 2× the obligation is not to grow, and the module comes down
-on a decomposition track of its own rather than as a toll on the next editor. The requirements doc
-now records **no open questions**; **the `python-guidelines` tier** — a path-scoped fragment on
-`**/*.py`, funded by evicting an always-on line via `a3ab.1`, because a skill the agent must think
-to ask for does not bind the agent who most needs it; **the first artifact track's scope** —
-`implementation-plan` and `change-summary` only, the `decompose→build` pair §2.1's mitigation
-names, with the other four undesigned until that pair has run in anger; **OQ-9, the PEP 758 house direction** — paren-free
-`except A, B:` is allowed and is the house form, recorded in the `python-guidelines` skill rather
-than in a linter, since none enforces either direction; **Tier-2's rank-1 floor** (`m4zv.2`, discharged
-2026-08-07) — `[catalog] rank1_floor = 0.85` against a measured baseline of 80/87 = 92.0%, with
-`rank1_floor_high_water` starting equal so a later lowering is a visible act; the rationale is in
-`basicly.toml` beside the value; `v1.0.0`'s meaning (§2); the clean-room boundary
-(`qk6y`, discharged); declarative YAML phases are **rejected**, not deferred — the
-`verified`/landed invariant cannot move into data without leaving the type checker, the test suite
-and code review behind, and no consumer has asked; the github.com Copilot surface question is a
-per-fragment rule at §8 step 2; the machine-local retro lane (`jr0l.28`) stays deferred past
-`1.0.0` on bypass-by-accretion risk and zero recorded demand; the Python 3.14 floor stays.
-
-## 13. Risks and how each is detected
+## 11. Risks and how each is detected
 
 | Risk | Detection |
 | --- | --- |
-| A measurement is uninterpretable because an arm was contaminated | The eval harness asserts its own isolation: read back what guidance is live in the cell and fail if it does not match the arm's declaration. Never rely on someone noticing an implausible number. |
+| A gate is believed to bind because its bead is closed | Probe the gate's own functions on real inputs. Three claims in this file were false against the tree on 2026-08-08. |
+| A measurement is uninterpretable because an arm was contaminated | The eval harness asserts its own isolation: read back what guidance is live in the cell and fail if it does not match the arm's declaration. |
 | Eval-case coverage stalls and the gate is quietly relaxed | Tier-1 failure from the start; stage by adding entries to the enforced set, never by lowering a threshold. |
-| `v0.8.0` grows into a general-purpose tracker | The frozen surface list is the scope contract, and the non-goals are recorded. Anything not in the measured surface is out. |
+| The tracker replacement grows into a general-purpose tracker | The frozen surface list is the scope contract, and the non-goals are recorded. |
 | The roster is built on a guessed tier table | `s2xf` is gated on `7bur` by an edge. If `7bur` slips, the roster waits rather than proceeding on assumption. |
-| A gate is believed to bind because its bead is closed | Probe the gate's own functions on real inputs. `jr0l.22` was shipped and inert for 67% of the tracker, which cost a 36% grant overrun. |
-| This file goes stale | §3 is generated and gated; everything else is refreshed at the start of each release, and a row that cites a `file:line` is re-verified before it is worked. |
+| A lane silently loses committed work | `5vu4`. Until it lands, diff a landing against its pre-rebase tip — the suite will not catch it. |
+| This file goes stale | §3 is generated and gated; everything else is refreshed at the start of each release, and a row citing a `file:line` is re-verified before it is worked. |
 
-## 14. Phase labels to epics
+## 12. Phase labels to epics
 
 Phase membership is a tracker **label**, not a re-parenting, so a bead's parent stays its epic of
-origin and `kjc5` children appear across several phases. Query it rather than reading a list here:
+origin. Query it rather than reading a list here:
 
 ```sh
 br list --label phase-2          # membership
@@ -939,23 +338,16 @@ br dep tree <issue>              # what blocks it
 
 | Phase | Epic | Release |
 | --- | --- | --- |
-| S — make what exists true | `basicly-vaal`, gates on `uexy` / `irrm` | `v0.7.0` |
-| 0 — unattended run | `basicly-u6jq` | `v0.7.0` |
-| 1 — buy the numbers | `basicly-agzx` | `v0.9.0` |
-| 2 — free deterministic gates | `basicly-m4zv` | `v0.9.0` |
+| 1 — buy the numbers | `basicly-agzx` | `v0.9.1` |
+| 2 — free deterministic gates | `basicly-m4zv` | `v0.9.1` |
 | 3 — absorb designs, pay docs debt | `basicly-imnu` | `v0.9.0` |
 | 4 — always-on relief | `basicly-a3ab` | `v0.10.0` |
 | 5 — judgment layer | `basicly-s2xf` | `v0.10.0` |
-| 6 — own the work graph | `basicly-vkh0` | `v0.8.0` |
+| 6 — own the work graph | `basicly-vkh0` | `v1.0.0` |
 | 7 — factory hardening | `basicly-jr0l` | interleaved as capacity fillers |
 | multi — parallel factory | `basicly-kjc5` | children spread across releases |
-| — | `basicly-tcmy` (2026-08-01 review), `basicly-ze8z` (externalize operator knowledge), `basicly-uhiq` (document disposal), `basicly-ctdz` (own our state) | cross-cutting; children placed by release |
+| — | `basicly-u2hl` (the loop and its plumbing), `basicly-tcmy`, `basicly-ze8z`, `basicly-uhiq`, `basicly-ctdz` | cross-cutting; children placed by release |
 
 Each row names **one epic**, which is the index *into* the tracker rather than a copy of its
-contents: the epic is stable, its children are not. So no row says which children remain, are
-done, or slipped — that is what the queries above answer, and a per-bead status written here
-would be stale by the next close and would put two lanes closing two items in one phase onto
-this single anchor (`basicly-3f76`).
-
-A release epic (`basicly-yc0x` for `v0.7.0`) carries `phase-meta` rather than a phase label,
-because a release is a cut across phases.
+contents. No row says which children remain — that is what the queries above answer, and a per-bead
+status written here would be stale by the next close.
