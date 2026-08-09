@@ -61,6 +61,7 @@ from . import (
     plan_entry,
     policy,
     repair_brief,
+    roles,
     rubrics,
     run_record,
     runner,
@@ -705,7 +706,9 @@ class _Dispatch:
     timeout: float
 
 
-def _run_agent(ctx: _Ctx, issue_id: str, cwd: Path, *, prompt: str | None = None) -> _Dispatch:
+def _run_agent(
+    ctx: _Ctx, issue_id: str, cwd: Path, *, prompt: str | None = None, phase: str = "build"
+) -> _Dispatch:
     """Dispatch *issue_id*'s prompt through the configured runner in *cwd*, recorded.
 
     The prompt is assembled per dispatch, so a lane's sequential sub-tasks each
@@ -734,6 +737,12 @@ def _run_agent(ctx: _Ctx, issue_id: str, cwd: Path, *, prompt: str | None = None
             cwd,
             capture_usage=True,
             timeout=config.runner_timeout,
+            # The engine names the role; the host loads it from the agent root
+            # `basicly install` wrote (basicly-4kdm). None when the phase has no
+            # persona, or the family cannot select one, or the projection is not
+            # there — each falls back to the default runner rather than failing,
+            # so a consumer on an older install still gets a working loop.
+            role=roles.resolve_role(ctx.repo_root, spec, phase),
         )
     record_run(
         ctx.repo_root,
@@ -1630,7 +1639,9 @@ def _repair_in_place(ctx: _Ctx, binding: loop_state.WorktreeBinding) -> AdvanceR
     if brief is None:
         return None
     where = f"worktree {binding.name!r}"
-    dispatch = _run_agent(ctx, brief.issue_id, cwd, prompt=repair_brief.repair_prompt(brief))
+    dispatch = _run_agent(
+        ctx, brief.issue_id, cwd, prompt=repair_brief.repair_prompt(brief), phase="repair"
+    )
     if dispatch.result.handoff:
         return _blocked(
             ctx,

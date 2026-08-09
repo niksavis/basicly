@@ -88,6 +88,15 @@ HELP_FLAG = "--help"
 # How the prompt reaches the agent.
 PROMPT_VIA = ("arg", "stdin")
 
+# How a family spells "dispatch as this role" on its argv (RunnerSpec.agent_style).
+# Both installed families take `--agent <name>` and resolve it against the agent
+# root `basicly install` wrote — verified against claude 2.1.226 and copilot 1.0.78
+# on 2026-08-09, not recalled. Codex is deliberately absent: it ships no subagent
+# root, so a role cannot be selected there and the parity gap is declared at the
+# spec rather than discovered when a flag is silently ignored.
+AGENT_NAME_FLAG = "agent-name"
+AGENT_STYLES = (AGENT_NAME_FLAG,)
+
 # How a family spells a tool denial on its argv (RunnerSpec.deny_style).
 # `--deny-tool=<spec>` once per entry (copilot, verified against its --help),
 # versus a single `--disallowedTools` taking every name after it (claude).
@@ -220,6 +229,10 @@ class RunnerSpec:
     # vocabulary. None means the family has no known tool-deny flag (codex
     # confines with its sandbox instead), and `deny_tools` is then unusable.
     deny_style: str | None = None
+    # How this family selects a projected agent, or None when it cannot. Separate
+    # from `deny_style` because the two are independent: codex denies tools and
+    # cannot select a role.
+    agent_style: str | None = None
     # Invocation-time sandbox/approval guardrails (basicly-t0kt). Codex forbids
     # overriding approval_policy/sandbox_mode at repo scope in .codex/config.toml
     # by design, so safe defaults cannot be projected as committed catalog output;
@@ -278,6 +291,7 @@ BUILTIN_RUNNERS: tuple[RunnerSpec, ...] = (
         HEADLESS,
         ("claude", "-p", PROMPT_PLACEHOLDER),
         deny_style=DISALLOWED_TOOLS_FLAG,
+        agent_style=AGENT_NAME_FLAG,
         usage_format=CLAUDE_STREAM_JSON,
         context_window=_CONTEXT_WINDOWS["claude"],
         context_window_source=ADAPTER_WINDOW,
@@ -297,6 +311,7 @@ BUILTIN_RUNNERS: tuple[RunnerSpec, ...] = (
         HEADLESS,
         ("copilot", "-p", PROMPT_PLACEHOLDER),
         deny_style=DENY_TOOL_FLAG,
+        agent_style=AGENT_NAME_FLAG,
         usage_format=COPILOT_SESSION_STORE,
         context_window=_CONTEXT_WINDOWS["copilot"],
         context_window_source=ADAPTER_WINDOW,
@@ -346,7 +361,12 @@ class RunResult:
 
 
 def format_command(
-    spec: RunnerSpec, prompt: str, *, capture_usage: bool = False, session_id: str | None = None
+    spec: RunnerSpec,
+    prompt: str,
+    *,
+    capture_usage: bool = False,
+    session_id: str | None = None,
+    role: str | None = None,
 ) -> list[str]:
     """Return the exact argv *spec* would execute for *prompt*.
 
@@ -397,8 +417,12 @@ def format_command(
     else:
         argv = list(spec.command)
     # Model outermost so it stays "right after the binary" (its documented
-    # contract); sandbox/approval and deny-tool flags then follow the model.
-    argv = _apply_model(spec, _apply_sandbox(spec, _apply_deny_tools(spec, argv)))
+    # contract); sandbox/approval and deny-tool flags then follow the model. The
+    # role goes outermost of all, so `--agent <role>` reads first on a logged argv
+    # — that line is how an operator tells a specialised dispatch from a default
+    # one, and it is worth nothing if it is buried behind six tool denials.
+    argv = _apply_deny_tools(spec, argv)
+    argv = _apply_role(spec, _apply_model(spec, _apply_sandbox(spec, argv)), role)
     return _apply_usage(spec, argv, session_id) if capture_usage else argv
 
 
@@ -518,6 +542,32 @@ def resolve_model(
             f"serves that tier on the {surface!r} surface"
         ) from exc
     return models.ModelResolution(model=model, tier=tier, source=source)
+
+
+def _apply_role(spec: RunnerSpec, argv: list[str], role: str | None) -> list[str]:
+    """Inject the family's agent-selection flag for *role* (basicly-4kdm).
+
+    No role, or a family with no ``agent_style``, leaves the argv unchanged — which
+    is the codex path and the default-runner path, and both must keep working
+    exactly as they did. A role on a family that cannot select one is **dropped
+    rather than raised**, unlike ``deny_tools``: a denial silently lost is a
+    guarantee silently lost, while a role silently lost is only a dispatch that
+    runs unspecialised. The asymmetry is deliberate and it is the difference
+    between a safety flag and a routing flag.
+
+    The caller is expected to have resolved the role against the projected agent
+    root already (:func:`roles.resolve_role`), because this function cannot see the
+    repository and a name that does not resolve would put a flag on the argv that
+    the host drops without a word.
+    """
+    if role is None or spec.agent_style is None:
+        return argv
+    if spec.agent_style != AGENT_NAME_FLAG:
+        raise ValueError(
+            f"runner {spec.name!r} has agent_style {spec.agent_style!r}; "
+            f"known: {list(AGENT_STYLES)}"
+        )
+    return [argv[0], "--agent", role, *argv[1:]]
 
 
 def _apply_deny_tools(spec: RunnerSpec, argv: list[str]) -> list[str]:
@@ -1368,6 +1418,7 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     timeout: float | None = None,
     on_event: EventSink | None = None,
     bounds: DispatchBounds | None = None,
+    role: str | None = None,
 ) -> RunResult:
     """Invoke *spec* on *prompt* in *cwd*, capturing output.
 
@@ -1431,7 +1482,9 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     session_id = (
         str(uuid.uuid4()) if capture_usage and spec.usage_format == COPILOT_SESSION_STORE else None
     )
-    argv = format_command(spec, prompt, capture_usage=capture_usage, session_id=session_id)
+    argv = format_command(
+        spec, prompt, capture_usage=capture_usage, session_id=session_id, role=role
+    )
     if dry_run:
         return RunResult(
             spec.name,
