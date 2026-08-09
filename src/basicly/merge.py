@@ -36,7 +36,12 @@ one lane's state must not hold the others hostage:
   ``regenerate_command``, and continues. No lane is faulted and no rework is spent,
   because there is no coupling to learn — three lanes editing three different catalog
   sources all legitimately change the projection manifest. One undeclared path in the
-  set and the whole rebase bounces untouched (:func:`_rebuild_generated_conflicts`).
+  set and the whole rebase bounces untouched
+  (:func:`basicly.rebase.rebuild_generated_conflicts`).
+- **A replay never both drops content and reports success** (basicly-5vu4). Getting the
+  branch onto base is :mod:`basicly.rebase`'s whole responsibility, including the two
+  guards that make it honest: a branch carrying a merge commit is refused before the
+  rebase runs, and a replay that loses tracked content is undone and refused after it.
 - **The edge never depends on landing order** (D9, basicly-kjc5.32). Attribution
   runs once the pass is over, over every landing rather than the prefix that
   happened to precede a bounce, and reads declared scopes rather than what each
@@ -57,9 +62,9 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from . import br, decompose, policy, run_record, verify
-from .config import PolicyConfig, load_policy_config, load_worktree_config
-from .worktree import Session, current_branch, git, load_session, run
+from . import br, decompose, policy, rebase, run_record, verify
+from .config import PolicyConfig, load_policy_config
+from .worktree import Session, current_branch, git, load_session
 
 MERGE_GATE = "merge"
 
@@ -71,13 +76,6 @@ CONFLICT_STATUSES = ("rebase-conflicts", "merge-conflicts")
 # with `br sync --merge`). A collision here is engine bookkeeping, never evidence
 # of a coupling the decomposition missed.
 ENGINE_PATHS = (".beads/",)
-
-# Runaway backstop for :func:`_rebuild_generated_conflicts`. Each pass through the
-# loop resolves every unmerged path and advances the rebase by one commit, so a
-# branch needs more commits than this to reach it legitimately; a rebase that has not
-# finished by then is not understood, and an un-understood rebase is aborted rather
-# than driven further.
-MAX_REGENERATED_REBASE_STEPS = 100
 
 # Dependency type for a missed coupling. Deliberately not `blocks`: the edge
 # teaches the next decomposition, and `br blocked` (so `supervise.ready_lanes`)
@@ -134,7 +132,18 @@ ALREADY_LANDED = "already-landed"
 # pre-merge states, and a rebase that stopped. Enumerated here, beside the order it
 # describes, so a caller carrying a one-shot gate override does not have to re-derive
 # from the outside whether the gate was ever reached (basicly-tcmy.6).
-PRE_GATE_STATUSES = ("not-ready", STALE_BRANCH, ALREADY_LANDED, "rebase-conflicts")
+PRE_GATE_STATUSES = (
+    "not-ready",
+    STALE_BRANCH,
+    ALREADY_LANDED,
+    "rebase-conflicts",
+    # Both replay-integrity refusals stop before the gate too, and neither belongs in
+    # CONFLICT_STATUSES: a branch git would mangle is a branch-shape defect, not a scope
+    # collision, so routing it there would record a `related` edge against a lane that
+    # collided with nobody (basicly-5vu4).
+    rebase.MERGE_COMMIT_ON_BRANCH,
+    rebase.REPLAY_DROPPED_PATHS,
+)
 
 
 @dataclass(frozen=True)
@@ -718,25 +727,11 @@ def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing inp
         commit_tracker_state(repo_root, bead)
     _assert_base_ready(repo_root, base)
 
-    # 1. Rebase onto the *current* base so serialized merges stay conflict-free.
-    rebase = git(["rebase", base, branch], cwd=worktree_path, check=False)
-    regenerated: tuple[str, ...] = ()
-    if rebase.returncode != 0:
-        rebuilt = _rebuild_generated_conflicts(repo_root, worktree_path)
-        if rebuilt is None:
-            # Read the collided paths out of the stopped rebase before aborting: the
-            # queue needs them to attribute the missed coupling (D5), and they are
-            # gone once the rebase state is discarded.
-            conflicts = unmerged_paths(worktree_path)
-            git(["rebase", "--abort"], cwd=worktree_path, check=False)
-            where = f" in: {', '.join(conflicts)}" if conflicts else ""
-            return MergeResult(
-                name,
-                "rebase-conflicts",
-                f"rebase of {branch} onto {base} hit conflicts{where}",
-                conflicts=conflicts,
-            )
-        regenerated = rebuilt
+    # 1. Replay onto the *current* base so serialized merges stay conflict-free.
+    replayed = rebase.replay(repo_root, worktree_path, base, branch)
+    if not replayed.ok:
+        return MergeResult(name, replayed.status, replayed.detail, conflicts=replayed.conflicts)
+    regenerated = replayed.regenerated
 
     # 2. Re-verify in the worktree after the rebase.
     if not override_gate:
@@ -793,63 +788,6 @@ class QueueResult:
             or self.result.unreliable
             or self.result.foreign
         )
-
-
-def _rebuild_generated_conflicts(repo_root: Path, worktree_path: Path) -> tuple[str, ...] | None:
-    """Finish a stopped rebase whose conflicts are all declared generated (basicly-lyro).
-
-    Returns the rebuilt paths when the rebase now runs to completion, and None when
-    the caller must abort and bounce — which is every case that is not provably this
-    one. The bound is deliberate and is what keeps the merge queue's "never resolve a
-    conflict here" rule intact for source: this resolves only when *every* unmerged
-    path is named in ``[worktree] generated_paths``, so one undeclared path in the set
-    hands the whole rebase back to the lane untouched.
-
-    Regeneration is not a merge. Both sides are discarded and the artifact is rebuilt
-    from the tree the rebase has actually produced, because a generated file is a
-    function of that tree and picking a side would leave it describing neither parent
-    — which is exactly what a three-lane catalog pass hit on
-    ``.basicly/generated-manifest.json``, spending a lane's whole rework budget.
-
-    A residual staleness is caught rather than shipped: the artifact is rebuilt at
-    each stop, so the last stop that touches it sees the tree the rebase ends with,
-    and anything that slips past that is caught by the post-rebase verify gate (the
-    ``projection-*`` checks fail on a stale projection), which bounces the lane as it
-    does today. Nothing here can land a wrong artifact silently.
-    """
-    config = load_worktree_config(repo_root)
-    declared = frozenset(config.generated_paths)
-    if not declared or not config.regenerate_command:
-        return None
-
-    rebuilt: set[str] = set()
-    for _ in range(MAX_REGENERATED_REBASE_STEPS):
-        conflicts = unmerged_paths(worktree_path)
-        if not conflicts or not declared.issuperset(conflicts):
-            return None
-        if run(list(config.regenerate_command), cwd=worktree_path, check=False).returncode != 0:
-            return None
-        # `git add` on an unmerged path is what marks it resolved, whether or not the
-        # rebuild changed its bytes.
-        if git(["add", "--", *conflicts], cwd=worktree_path, check=False).returncode != 0:
-            return None
-        rebuilt.update(conflicts)
-        # core.editor=true: `rebase --continue` reuses the replayed commit's message
-        # but still opens an editor to confirm it, and nothing is attended here.
-        proceed = git(
-            ["-c", "core.editor=true", "rebase", "--continue"], cwd=worktree_path, check=False
-        )
-        if proceed.returncode == 0:
-            return tuple(sorted(rebuilt))
-    return None
-
-
-def unmerged_paths(cwd: Path) -> tuple[str, ...]:
-    """Paths git currently reports as unmerged in *cwd* (empty when none/unknown)."""
-    proc = git(["diff", "--name-only", "--diff-filter=U"], cwd=cwd, check=False)
-    if proc.returncode != 0:
-        return ()
-    return tuple(line.strip() for line in proc.stdout.splitlines() if line.strip())
 
 
 def blocking_dependencies(repo_root: Path, bead: str) -> frozenset[str]:
