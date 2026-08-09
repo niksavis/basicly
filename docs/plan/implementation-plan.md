@@ -96,6 +96,27 @@ and one default runner serves every phase; **four of the five designed skills** 
 RETROSPECTIVE does not exist; `policy.rework_recorded` reports a cross-gate total that nothing
 enforces.
 
+**Two of those moved on 2026-08-09, and the shape of the gap did not.** `root-cause` shipped, so
+**two** of the five designed skills exist, and a fourth agent (`researcher`) was authored. Both are
+**ad-hoc**: still zero loop agents, still nothing in `src/` that resolves a state to a role. The
+definitions are not the weak link and the counting hides that — measured the same day, the projection
+works and nothing consumes it:
+
+```text
+agents    4 sources · schema ✓ · projected to both families · vendored to consumers
+          dispatch code that reads an agent root                            none
+skills   37 sources · 32 projected                ever exercised    8 of 34 [M 2026-08-08]
+hooks    31 documented host events                mapped by catalog  2  (claude_settings.py:51)
+loop      8 phases named in the requirements      loop_state.PHASES  7, and two of the named
+                                                  ones are not phases at all
+```
+
+A competing harness with strictly worse definitions — hand-written, no schema, no projection, no
+vendoring — beats this repo on all four rows because its definitions are **wired**
+(`factory-loop.md` §11.7). That is not an argument for its design; its loop is the declarative-phase
+pattern this repo already rejected, and §11.7 carries the receipts. It is the argument that the next
+unit of work on this axis is **wiring, not authoring**.
+
 **Four figures this file previously got wrong**, corrected against the tree:
 
 | Was written | Measured 2026-08-08 |
@@ -167,11 +188,11 @@ criteria cannot be trusted. That is the ordering argument, and it is the whole o
 | 3 | `ef7t` · `3w51` | P0 · P1 | Three shared landing anchors — `basicly.toml` checks, `pyproject.toml` frozen lists, and the generated block in this file — bounced three of five lanes. `3w51` is the generated-block half. |
 | 4 | `efw2` | P0 | **One `## Scope` field feeds two gates that want opposite things** — collision detection wants it complete, the band prices what it reads. Declaring honestly took one bead from 78,709 to 197,646 to 245,466 on an unchanged diff, and the ceiling moved twice inside one landing. |
 | 5 | `b9ef` | P0 | **The decider's corpus is the epic's bead text**, which still asserted a claim its own requirements document had refuted. It quoted that claim, reasoned from it, and abstained — wedging two lanes. |
-| 6 | `89hm` | P0 | **The context-window fix never reached consumers.** `runner.py:142` ships `claude: 200_000`; `basicly.toml` overrides to one million *for this repo only*. Every consumer inherits the defect that produced eighteen overrun beads here. |
-| 7 | `ejdm` | P0 | **Hand a dispatched agent the context the session already holds** — §5.1's 254x. The mechanism is the report file (`factory-loop.md` §8.3), not a longer prompt. |
-| 8 | `xjd2` | P0 | **Dispatch through the host agent runtime instead of spawning a headless CLI.** Blocked on `ejdm`. Open question it must answer first: whether the host runtime can be driven non-interactively from a subprocess at all. |
+| 6 | `89hm` | P0 | **The context-window fix never reached consumers.** `runner.py:142` ships `claude: 200_000`; `basicly.toml` overrides to one million *for this repo only*. Every consumer inherits the defect that produced eighteen overrun beads here. **Premise corrected 2026-08-09**: the binary reports its own window on the stream as `modelUsage.<id>.contextWindow`, so the fix is to *read* it, not to ship a second hand-maintained constant that goes stale the same way (`factory-loop.md` §15.5). |
+| 7 | `ejdm` | P0 | **Hand a dispatched agent the context the session already holds** — §5.1's 254x. **The mechanism is now measured, and it is `--resume --fork-session`**: four real dispatches of one seeded session on claude 2.1.226 gave `cache_create 28 / cache_read 21,620` at **$0.0115** against a cold seed's **$0.2165** — **19x on a cache hit**, context confirmed by token recall, with a fresh session id per fork so lanes do not collide. Seed one session with the corpus, fork per lane. **The per-dispatch floor is a cache miss, not tokens**, which is a different fix from the longer prompt this row originally implied. |
+| 8 | `xjd2` | P0 | **Dispatch through the host agent runtime instead of spawning a headless CLI.** Blocked on `ejdm`. **Its open question is answered twice over**: `--fork-session` settles it for our own path, and a competing harness runs exactly this split in production — host-runtime dispatch for the same vendor, subprocess only for cross-vendor delegation (`factory-loop.md` §11.7). It is an existence proof, not a design. |
 | 9 | `esxp` · `o40x` | P1 | Bind the band floor; give a healthy supervisor a stop that does not kill live lanes. |
-| 10 | `4kdm` · `0p8n` · `66ix` | P1 | The specialist agents and skills the states already name (`4kdm`), the harness gates carried into the coding agent's own hooks (`0p8n`), and Copilot hook parity behind it (`66ix` — a Copilot consumer gets the telemetry hook and **not** the `protect-generated` guard). `66ix` is blocked on `4kdm` by an edge. |
+| 10 | `4kdm` · `0p8n` · `66ix` | P1 | The specialist agents and skills the states already name (`4kdm`), the harness gates carried into the coding agent's own hooks (`0p8n`), and Copilot hook parity behind it (`66ix` — a Copilot consumer gets the telemetry hook and **not** the `protect-generated` guard). `66ix` is blocked on `4kdm` by an edge. **Re-ranked in argument, not in order, 2026-08-09**: `0p8n` is enforcement at the *tool-call* boundary, which our gates do not reach at all — every one of them judges an artifact after it exists (`factory-loop.md` §11 item 8). A working shape exists to aim at: one policy kernel plus N host codecs, with a golden-file `--check` gate proving the projection converges (§11.7). Note `claude_settings.py:51` maps **2 of 31** documented hook events, so this row is engine work before it is catalog work. |
 | 11 | `ca42` | P0 | Rescoped: **keep `chars/4`**, record the evidence. `tiktoken` fetches a 3.5 MB vocabulary over HTTPS on first use, which a consumer's git hook cannot do. |
 
 ### 5.3 What remains of the loop
@@ -185,6 +206,19 @@ Open, in the order the dependencies allow: `u2hl.6` skill descriptions · `u2hl.
 reported at plan time · the four remaining handoff schemas · **VALIDATE as a real state**, since it
 is not in `LOOP_PHASES` and the two phase tuples disagree · D10's criterion-derived checks · EARS ·
 RETROSPECTIVE's special-cause signal · `u2hl.17` once `a3ab.1` evicts an always-on line.
+
+**`u2hl.17` no longer waits on that eviction** [D35, 2026-08-09]. The plan behind it — promote
+`python-guidelines` to an always-on fragment — rested on a premise the mechanics research refuted: a
+skill takes a `paths:` glob and triggers on it. What the row should have said all along is that
+`AGENTS.md` is **1,135 characters over** its cap, not 1,225 under, so `a3ab.1`'s audit is more urgent
+than this row and less coupled to it. `a3ab.10` now makes the overrun visible from `basicly check`
+rather than only from `build`, which is what let the figure stay wrong.
+
+**And `u2hl.6` is larger than "descriptions".** A skill's `description` plus `when_to_use` is capped
+at 1,536 characters per entry, the whole listing is budgeted at **1% of the context window**, and on
+overflow the host drops descriptions **starting with the least-invoked skills** [M 2026-08-09]. With
+8 of 34 ever exercised, that is a feedback loop rather than a cost: the skills nobody invokes are the
+first to become uninvokable. `u2hl.45` gates both caps.
 
 Nine `u2hl` children are **band-refused** on read cost rather than on size — the same
 over-declaration `efw2` describes. Narrowing their scopes is about thirty minutes, not nine splits.
@@ -231,6 +265,7 @@ correct firing — depends on the tracker being removed.
 | Forward-version CI job | The floor claim is "3.14+" and CI tests exactly 3.14. Add the next Python so the "+" is tested. |
 | Error-path polish | `basicly check` in a never-installed repo points at `build` instead of `install`; the CLI's blanket handler leaves no `--debug` escape hatch (`tcmy.24`). |
 | The acceptance test | A fresh consumer repo — git plus a uv-provisioned interpreter, no `br` — installs basicly, runs every gate, and drives one unit of work to a landed commit. |
+| The consumer's own scopes are part of the surface | Added 2026-08-09 [M]. `basicly install` writes a consumer's **project** `.claude/skills/`, and skill scope precedence is enterprise > **personal > project** — the *inverse* of agents, which resolve project over user. So a developer's `~/.claude/skills/<same-name>` silently overrides a skill we shipped them, while an identically-named agent would not. A distribution tool cannot freeze a surface it does not know it loses. `u2hl.46` records it; the acceptance test above is where it is exercised. |
 | Final absorption | Both requirements documents folded into architecture and deleted (§9); §3 refreshed one last time. |
 
 **Exit criteria.** The acceptance test passes on a machine that has never seen this repo; the
