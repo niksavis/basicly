@@ -345,15 +345,34 @@ the directory to *delete* files. Authoring the seven loop agents is therefore ne
 sufficient — `basicly-4kdm` owns the sources, and the engine must also learn to resolve a state to
 a role and dispatch it, which is what makes the roster real rather than projected.
 
-| Role | State | Status [M] |
-| --- | --- | --- |
-| `decomposer` | DECOMPOSE | functional equivalent exists unnamed (`loop.py:1057-1094`) |
-| `implementer` (+ **repair mode** [D5]) | BUILD, REPAIR | equivalent exists (`loop.py:663-700`); repair mode does not |
-| `validator` | VALIDATE | equivalent exists (`rubrics._judge`) but never runs for leaves |
-| `reviewer` (by lens) | VALIDATE | **paper only** |
-| `decider` | CLASSIFY, escalations | exists (`decisions.py`) |
-| `retrospector` | RETROSPECTIVE | **paper only** |
-| `curator` | SHIP | **paper only** |
+| Role | State | Source [M 2026-08-09] | Engine |
+| --- | --- | --- | --- |
+| `decomposer` | DECOMPOSE | **authored**, loads `decompose-plan` | unnamed equivalent (`loop.py:1057-1094`) |
+| `implementer` (+ **repair mode** [D5]) | BUILD, REPAIR | **authored**, loads `python-guidelines` + `repair-in-place` | equivalent exists (`loop.py:663-700`); repair mode does not |
+| `validator` | VALIDATE | **authored**, loads `validate-as-consumer` | `rubrics._judge` never runs for leaves |
+| `reviewer` (by lens) | VALIDATE | **authored** | nothing |
+| `decider` | CLASSIFY, escalations | **authored** | exists (`decisions.py`) |
+| `retrospector` | RETROSPECTIVE | **authored**, loads `root-cause` | nothing; the state does not exist |
+| `curator` | SHIP | **authored** | nothing |
+
+**All seven are authored as of 2026-08-09 and none is dispatched.** The column split is
+the point: the catalog half of D27 is done, and the gap this section has measured since
+2026-08-08 is now entirely on the engine side. `basicly-4kdm` covers the sources;
+resolving a state to a role and dispatching it is what remains.
+
+**Authored past the staged-admission rule, on the owner's instruction 2026-08-09.** D5
+admits a role when it differs in tier, tools or artifact, and by that test only
+`decomposer` and `implementer` qualified today — the other five wait on
+`validation-transcript` and `release-record`. The owner directed all seven. What the rule
+still buys is recorded rather than discarded: each of the five carries a contract that
+cannot be exercised until its artifact exists, and that is a debt this table now names
+instead of a gap it hides.
+
+**Unresolved, and §6.2 requires it resolved**: `code-reviewer` (ad-hoc) against `reviewer`
+(loop). They differ in invoker and artifact but not in job. `reviewer` is the stronger
+definition — per-lens, adversarial stance, severity-bounded, no cross-lens ranking — and
+`code-reviewer` is vendored to consumers today, so superseding it is a breaking change to
+a shipped surface. Owner's call; it is not made here.
 
 **Admission is staged, not wholesale** [D5]. A role is authored only when it differs in tier, tools
 or artifact. `decomposer` and `implementer` now qualify — `basicly-u2hl.18` shipped
@@ -463,8 +482,8 @@ in `docs/architecture/architecture.md` rather than only here.
 
 | Class | Bound to | Today [M 2026-08-08] |
 | --- | --- | --- |
-| **Loop skills** | a state, loaded by that state's agent | **2 of 5 exist** (2026-08-09) |
-| **Ad-hoc skills** | nothing — invoked when they fit | 37 sources: 31 model-invoked, 6 user-invoked |
+| **Loop skills** | a state, loaded by that state's agent | **5 of 5 exist** (2026-08-09) |
+| **Ad-hoc skills** | nothing — invoked when they fit | 40 sources: 34 model-invoked, 6 user-invoked |
 
 **Not one of the 37 is named for a loop state.** The ad-hoc class is well populated — `tool-*`
 wrappers, `conventional-commits`, `worktree-isolation`, `test-discipline` — and the state-bound
@@ -473,11 +492,24 @@ it has the same cause: the ad-hoc class is what a human reaches for, so it got b
 
 | Skill | Invoked in | What it carries | Status [M] |
 | --- | --- | --- | --- |
-| `decompose-plan` | DECOMPOSE | testable criteria notation, dependency declaration, budget assignment | **missing** (part of `harness-loop` today) |
-| `validate-as-consumer` | VALIDATE | run it as a consumer would, in the operational environment — never a re-run of the gate suite | **missing** |
-| `repair-in-place` | REPAIR | same worktree, briefed with actual findings, no re-plan | **missing** |
+| `decompose-plan` | DECOMPOSE | testable criteria notation, dependency declaration, budget assignment | **shipped 2026-08-09**, loaded by `decomposer` |
+| `validate-as-consumer` | VALIDATE | run it as a consumer would, in the operational environment — never a re-run of the gate suite | **shipped 2026-08-09**, loaded by `validator` |
+| `repair-in-place` | REPAIR | same worktree, briefed with actual findings, no re-plan | **shipped 2026-08-09**, loaded by `implementer` |
 | `root-cause` | RETROSPECTIVE | iterated-why with every link citing an observation; output is a named control + tier + covered class | **shipped 2026-08-09**, model-invoked, ahead of its state — see below |
 | `python-guidelines` | BUILD, REPAIR | §9.2 — the non-mechanical half | **shipped** (`basicly-u2hl.13`) |
+
+**The pairing is now mechanical, not prose** [2026-08-09]. Each loop skill is named in its
+agent's `claude.skills`, which the host preloads at spawn, and `lint_agent_sources` refuses a
+name that resolves to nothing — verified by planting a typo. So §7.1's "an agent is a
+dispatch contract; a skill is a method that contract can load" is a checked relation rather
+than a sentence, which is what `basicly-u2hl.52` was filed to achieve and what the D36 fence
+made expressible.
+
+**Two costs arrived with the three skills, both measured**: the projected listing went from
+2,081 to **2,342 tokens against a consumer's 2,000-token budget**, and the routing rank-1
+rate fell from 91.1% to **88.9%** against an 85% floor. Neither is a reason to unship them —
+but `basicly-a3ab.12` is now larger than the 81-token overrun it was filed for, and the
+routing headroom is 3.9 points rather than 6.1.
 
 **A loop skill is blocked on its state, not on itself.** `validate-as-consumer` cannot be exercised
 while VALIDATE is not a phase. Authoring one ahead of its state produces a skill nothing invokes,

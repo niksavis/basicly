@@ -1,0 +1,68 @@
+# yaml-language-server: $schema=../../schemas/skill.schema.json
+schema_version: 1
+name: decompose-plan
+invocation: model
+description: >-
+  Cut a unit of work into children the plan gate will accept — testable acceptance
+  criteria in EARS, disjoint or declared scope globs, an acyclic dependency graph, a
+  token budget, an integrity level, and the command that demonstrates each child end
+  to end. Use at DECOMPOSE, when a plan gate has just refused a child, or when a
+  child turns out to have no consumer-visible behaviour to check.
+instructions: |
+  # Decompose a plan the gate will accept
+
+  The plan gate sits on **entry to BUILD**, not exit. Everything below is
+  something it can refuse, and everything it refuses is cheap here and expensive
+  one state later — BUILD is where nearly all tokens go.
+
+  ## The five fields, and what each one is really for
+
+  | Field | Refused when | Why it is on the gate |
+  | --- | --- | --- |
+  | Acceptance criteria | absent, or not in EARS | EARS distinguishes trigger, state, condition, feature-gated and ubiquitous; GWT collapses all five, and that distinction is what makes a check derivable |
+  | Scope globs | absent | Overlap decides what serializes. Two children writing one path collide at the merge queue, at a rework retry each |
+  | Dependencies | cyclic | A cycle is a plan that cannot start |
+  | Token budget | absent | The band prices the lane before it runs |
+  | Integrity level | absent | It selects the gates and the rework allowance |
+
+  ## The sixth field, which is the one that catches real defects
+
+  **Every child names how it is demonstrated end to end** — a command to run, a
+  request to make, or a test that exercises it through the consumer surface. The
+  field is refused on two grounds: absent, and present but naming nothing
+  runnable, where runnable means a backticked span.
+
+  A child that cannot name one has been **sliced horizontally**, and that is the
+  failure this field exists to catch. It is also why criterion-derived checks
+  cannot be satisfied afterwards: a horizontal child has no consumer-visible
+  behaviour, so there is nothing to derive a check from.
+
+  ## Slice vertically, and know why you will not want to
+
+  The tidy cut is horizontal — all the schema in one child, all the tests in
+  another, all the CLI wiring in a third. It is tidy because scope-glob overlap
+  is file adjacency, so a horizontal cut produces the cleanest-looking scopes.
+  It is also the cut where no child does anything a consumer can see.
+
+  Cut along `change-shape` instead. It is derived from the call graph rather
+  than authored, which is exactly why it can express a slice that crosses
+  directories.
+
+  ## Declare the scope honestly even though it costs you
+
+  A scope declared honestly reads as a bigger lane, because the band prices what
+  it reads. Declare it anyway. One bead moved from 78,709 to 197,646 to 245,466
+  tokens on an unchanged diff as its scope was corrected, and the version that
+  under-declared was the version that collided at landing.
+
+  ## Flatten, never deepen
+
+  A child that needs children of its own is a child you cut wrong. Nesting moves
+  the same work behind another gate rather than making any piece smaller, and
+  the WIP bound counts leaves.
+
+  ## Report size, do not refuse it
+
+  A child whose forecast implies a diff far past reviewable is **reported**, not
+  refused. A large diff is sometimes correct — a mechanical rename is one — and
+  the remedy is the author's call while splitting is still cheap.

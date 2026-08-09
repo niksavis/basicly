@@ -96,20 +96,25 @@ and one default runner serves every phase; **four of the five designed skills** 
 RETROSPECTIVE does not exist; `policy.rework_recorded` reports a cross-gate total that nothing
 enforces.
 
-**Two of those moved on 2026-08-09, and the shape of the gap did not.** `root-cause` shipped, so
-**two** of the five designed skills exist, and a fourth agent (`researcher`) was authored. Both are
-**ad-hoc**: still zero loop agents, still nothing in `src/` that resolves a state to a role. The
-definitions are not the weak link and the counting hides that — measured the same day, the projection
-works and nothing consumes it:
+**Rewritten 2026-08-09: the catalog half is done and the engine half is untouched.** All seven
+loop agents and all five loop skills are authored, each agent paired to its skill through a
+reference the catalog lint enforces. Nothing dispatches any of them.
 
 ```text
-agents    4 sources · schema ✓ · projected to both families · vendored to consumers
-          dispatch code that reads an agent root                            none
-skills   37 sources · 32 projected                ever exercised    8 of 34 [M 2026-08-08]
-hooks    31 documented host events                mapped by catalog  2  (claude_settings.py:51)
-loop      8 phases named in the requirements      loop_state.PHASES  7, and two of the named
-                                                  ones are not phases at all
+agents   11 sources · 7 loop + 4 ad-hoc · projected to both families · vendored
+         dispatch code that reads an agent root                            none
+skills   40 sources · 35 projected · 5 of 5 loop skills exist
+         ever exercised                                            10 of 40 [M 2026-08-09]
+         projected listing 2342 tok vs a consumer's 2000 budget    OVER (a3ab.12)
+hooks    31 documented host events               mapped by catalog  2  (claude_settings.py:51)
+loop      8 phases named in the requirements     loop_state.PHASES  7, and two of the named
+                                                 ones are not phases at all
 ```
+
+So the sentence that used to read "the definitions are not the weak link" is now literally
+true rather than rhetorical: **every definition the design names exists, and the engine
+resolves no state to a role.** That is one bead — `basicly-4kdm`'s remaining half — and it
+is item 10 of §5.2.
 
 A competing harness with strictly worse definitions — hand-written, no schema, no projection, no
 vendoring — beats this repo on all four rows because its definitions are **wired**
