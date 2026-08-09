@@ -2312,6 +2312,12 @@ def _approve_checkpoint(repo_root: Path, args: argparse.Namespace) -> int:
         rerun = (
             f"basicly policy checkpoint {args.issue} {args.name} --approve --confirm {result.code}"
         )
+        # Printing the challenge *is* the operator seeing it, so this is the only
+        # honest place to stamp arrival (basicly-u2hl.50, OQ-15). Recorded here and
+        # not inside `approve_checkpoint_guarded`: that function also runs on paths
+        # that never render anything, and a view nobody had would put a fabricated
+        # arrival into the population the split exists to measure.
+        policy.record_first_view(repo_root, policy.wait_id_for_checkpoint(args.issue, args.name))
         return _print_challenge(
             f"checkpoint {args.name}",
             args.issue,
@@ -3490,6 +3496,15 @@ def _print_observation(view: supervise.Observation) -> None:
         f"{_format_duration(view.delegated_wait_s)} delegated "
         f"(dispatch {_format_duration(view.dispatch_s)})"
     )
+    if view.split_events:
+        # Printed only when something recorded a view, because a zero here would
+        # read as "nobody spent time reading" when it means "nobody was measured"
+        # — the same conflation the split exists to end (basicly-u2hl.50, OQ-15).
+        print(
+            f"  of which:  {_format_duration(view.arrival_s)} before anyone looked, "
+            f"{_format_duration(view.read_s)} reading "
+            f"({view.split_events} measured)"
+        )
     if view.done:
         print("done:       yes")
 

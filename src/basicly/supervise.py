@@ -551,6 +551,11 @@ class Observation:
     human_wait_s: int = 0
     delegated_wait_s: int = 0
     dispatch_s: float = 0.0
+    # The OQ-15 split, carried through so it reaches a human (basicly-u2hl.50). A
+    # measurement nobody is shown is the dead-definition problem in a second place.
+    arrival_s: int = 0
+    read_s: int = 0
+    split_events: int = 0
 
     @property
     def supervised(self) -> bool:
@@ -597,6 +602,9 @@ def observe(repo_root: Path, root_issue: str, *, lane_label: str | None = None) 
         token_budget=grant.token_budget if grant is not None else None,
         spent_tokens=policy.session_spend(repo_root, root_issue).measured_tokens,
         human_wait_s=wait.human_wait_s,
+        arrival_s=wait.arrival_s,
+        read_s=wait.read_s,
+        split_events=wait.split_events,
         delegated_wait_s=wait.delegated_wait_s,
         dispatch_s=wait.dispatch_s,
     )

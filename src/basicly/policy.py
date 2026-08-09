@@ -22,6 +22,14 @@ the gate rather than a decision re-taken at its call site, and a gate typed
 :data:`PREFLIGHT` runs with the tracker refused to it (:func:`preflight_gate`).
 """
 
+# module-size-waiver: the OQ-15 wait split (basicly-u2hl.50) adds ~1350 tokens to a
+# module already 8x the cap. The right fix is extracting the wait ledger - 4739
+# tokens, measured - and that is blocked on relocating _parse_ts/_add_comment so the
+# extraction does not cycle back into policy. Owner-approved 2026-08-09 as a parked
+# branch rather than a merge, so this waiver dies with basicly-u2hl.53 and never
+# reaches main. Do not renew it: a waiver that survives its extraction is how these
+# two modules reached 34k in the first place.
+
 from __future__ import annotations
 
 import contextlib
@@ -2323,6 +2331,13 @@ class WaitEvent:
     delegated: bool
     requested_at: str = ""
     answered_at: str = ""
+    # The OQ-15 split (basicly-u2hl.50): ``waited_s`` measures rendezvous, not
+    # reading, and `factory-loop.md` §7.4 carries the distribution that shows it.
+    # -1, never 0, when nothing recorded a view — a wait nobody was shown and a wait
+    # seen instantly are different facts. The raw stamp stays in the marker payload
+    # as provenance rather than becoming a field nothing reads.
+    arrival_s: int = -1  # request -> first view
+    read_s: int = -1  # first view -> answer
 
 
 def wait_id_for_checkpoint(issue_id: str, name: str) -> str:
@@ -2391,7 +2406,21 @@ def _parse_wait_event(text: str, issue_id: str) -> WaitEvent | None:
         delegated=bool(payload.get("delegated", False)),
         requested_at=str(payload.get("requested_at", "")),
         answered_at=str(payload.get("answered_at", "")),
+        arrival_s=_optional_int(payload.get("arrival_s")),
+        read_s=_optional_int(payload.get("read_s")),
     )
+
+
+def _optional_int(value: object) -> int:
+    """A recorded interval, or -1 when the marker carries none.
+
+    -1 rather than 0: a wait nobody was shown and a wait seen instantly are
+    different facts, and averaging the second into a population that contains the
+    first is how the whole measurement stopped meaning anything the first time.
+    """
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return -1
+    return value
 
 
 def wait_events(repo_root: Path, issue_id: str) -> tuple[WaitEvent, ...]:
@@ -2438,6 +2467,59 @@ def _open_wait_stamp(repo_root: Path, issue_id: str, wait_id: str) -> str | None
     return requested_at
 
 
+# First-view stamps, machine-local by design (basicly-u2hl.50). Under
+# ``.basicly/usage/``, which is gitignored: a view is a fact about *this operator's
+# screen*, not about the work, so committing it would publish one machine's habits
+# to every consumer clone and merge-conflict between two people answering the same
+# checkpoint. It is also deliberately not a tracker comment — that would be a `br`
+# write per printed challenge, on a path already measured to re-publish
+# machine-specific paths on every write.
+VIEW_STAMPS_PATH = Path(".basicly/usage/checkpoint-views.json")
+
+
+def _view_stamps(repo_root: Path) -> dict[str, str]:
+    path = repo_root / VIEW_STAMPS_PATH
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}  # a corrupt local cache costs a split, never a wait record
+    return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
+
+
+def record_first_view(repo_root: Path, wait_id: str) -> None:
+    """Stamp *wait_id* as seen now, unless it already carries a stamp.
+
+    **First** view, not latest. A challenge is re-printed on every expired code and
+    every re-run advance, and the question this answers is when the operator
+    arrived — so a later print must not overwrite the arrival it is evidence
+    against. That is the same reasoning ``wait_id_for_checkpoint`` uses to derive
+    rather than mint an id.
+    """
+    stamps = _view_stamps(repo_root)
+    if wait_id in stamps:
+        return
+    stamps[wait_id] = datetime.fromtimestamp(_now(), UTC).isoformat()
+    path = repo_root / VIEW_STAMPS_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(stamps, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _take_view(repo_root: Path, wait_id: str) -> str:
+    """Consume *wait_id*'s view stamp; empty when it has none.
+
+    Consumed rather than read, so the local file tracks open challenges only and
+    does not grow one entry per checkpoint this repo has ever answered.
+    """
+    stamps = _view_stamps(repo_root)
+    stamp = stamps.pop(wait_id, "")
+    if stamp:
+        path = repo_root / VIEW_STAMPS_PATH
+        path.write_text(json.dumps(stamps, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return stamp
+
+
 def record_wait(  # noqa: PLR0913 — one parameter per recorded fact
     repo_root: Path,
     issue_id: str,
@@ -2469,6 +2551,18 @@ def record_wait(  # noqa: PLR0913 — one parameter per recorded fact
     # Clamped: tracker stamps are whole seconds and a machine's clock can step
     # backwards, and a negative wait is not evidence of anything.
     waited_s = max(0, int(now - start.timestamp()))
+    # The split OQ-15 exists for. Clamped the same way waited_s is, and dropped
+    # entirely when the view falls outside [request, answer]: a stamp from a clock
+    # that stepped is not evidence, and a negative "reading time" would poison the
+    # population this field was added to make measurable.
+    viewed_at = _take_view(repo_root, wait_id)
+    viewed = _parse_ts(viewed_at) if viewed_at else None
+    arrival_s = read_s = -1
+    if viewed is not None and start.timestamp() <= viewed.timestamp() <= now:
+        arrival_s = int(viewed.timestamp() - start.timestamp())
+        read_s = int(now - viewed.timestamp())
+    else:
+        viewed_at = ""
     event = WaitEvent(
         wait_id=wait_id,
         issue_id=issue_id,
@@ -2479,6 +2573,8 @@ def record_wait(  # noqa: PLR0913 — one parameter per recorded fact
         delegated=delegated,
         requested_at=start.isoformat(),
         answered_at=datetime.fromtimestamp(now, UTC).isoformat(),
+        arrival_s=arrival_s,
+        read_s=read_s,
     )
     payload = json.dumps(
         {
@@ -2489,6 +2585,11 @@ def record_wait(  # noqa: PLR0913 — one parameter per recorded fact
             "requested_at": event.requested_at,
             "subject": subject,
             "waited_s": waited_s,
+            **(
+                {"arrival_s": arrival_s, "read_s": read_s, "viewed_at": viewed_at}
+                if viewed_at
+                else {}
+            ),
         },
         sort_keys=True,
     )
@@ -2537,6 +2638,30 @@ class WaitSummary:
     # what ``duration_s`` has always meant. Reported beside the waits rather than
     # added to them: conflating the two is the mistake this rollup exists to fix.
     dispatch_s: float
+    # The OQ-15 split, summed over the events that carry one (basicly-u2hl.50).
+    # Reported apart from ``human_wait_s`` rather than replacing it: the two answer
+    # different questions, and a session where nobody was shown a challenge has a
+    # real human wait and no split at all.
+    arrival_s: int = 0
+    read_s: int = 0
+    split_events: int = 0
+
+
+def split_waits(events: tuple[WaitEvent, ...]) -> tuple[int, int, int]:
+    """Sum arrival and reading time over the events that recorded a view.
+
+    Summed rather than merged, unlike :func:`_wall_clock_seconds`. The union is the
+    right question for "how long was the session blocked"; this is the wrong place
+    for it, because two operators reading two challenges concurrently really did
+    spend two readings, and collapsing them would hide the very quantity OQ-15 asks
+    about.
+    """
+    split = [event for event in events if event.arrival_s >= 0 and event.read_s >= 0]
+    return (
+        sum(event.arrival_s for event in split),
+        sum(event.read_s for event in split),
+        len(split),
+    )
 
 
 def _wall_clock_seconds(events: tuple[WaitEvent, ...]) -> int:
@@ -2605,6 +2730,7 @@ def session_wait_summary(
         human_wait_s=_wall_clock_seconds(tuple(e for e in events if not e.delegated)),
         delegated_wait_s=_wall_clock_seconds(tuple(e for e in events if e.delegated)),
         dispatch_s=session_dispatch_seconds(repo_root, root_issue, ids=ids),
+        **dict(zip(("arrival_s", "read_s", "split_events"), split_waits(events), strict=True)),
     )
 
 

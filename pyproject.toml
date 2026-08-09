@@ -143,7 +143,7 @@ ignore_names = [
 # either direction, so a waiver can be added, but only in a diff that also raises this
 # number, and removing the last waiver forces it back down.
 [tool.module_size]
-waiver_count = 1
+waiver_count = 3
 
 # The 79 modules that were already over the cap when the gate landed (2026-08-08), each at
 # its measured go-live token count. A module in this list may only shrink; an entry that
@@ -177,7 +177,6 @@ waiver_count = 1
 "src/basicly/hooks.py" = 7076
 "src/basicly/loop.py" = 31620
 "src/basicly/merge.py" = 15401
-"src/basicly/policy.py" = 32482
 "src/basicly/release.py" = 9897
 "src/basicly/rubrics.py" = 6618
 "src/basicly/run_record.py" = 13835
@@ -216,7 +215,6 @@ waiver_count = 1
 "tests/test_loop.py" = 38745
 "tests/test_loop_state.py" = 4905
 "tests/test_merge.py" = 19737
-"tests/test_policy.py" = 35575
 "tests/test_release.py" = 9763
 "tests/test_rubrics.py" = 7421
 "tests/test_run_record.py" = 10837

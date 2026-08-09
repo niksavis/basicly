@@ -1,5 +1,13 @@
 """Tests for the gate & checkpoint policy engine (onb.3)."""
 
+# module-size-waiver: the OQ-15 wait split (basicly-u2hl.50) adds ~1300 tokens to a
+# module already 9x the cap. The right fix is extracting the wait ledger with the
+# suite that covers it, and that is blocked on relocating _parse_ts/_add_comment so
+# the extraction does not cycle back into policy. Owner-approved 2026-08-09 as a
+# parked branch rather than a merge, so this waiver dies with basicly-u2hl.53 and
+# never reaches main. Do not renew it: a waiver that survives its extraction is how
+# this module reached 37k in the first place.
+
 from __future__ import annotations
 
 import ast
@@ -3390,3 +3398,151 @@ def test_definition_of_ready_still_answers_under_the_ban(
     """
     _install(monkeypatch, _FakeBr(lint_missing=[], acceptance_criteria="given x then y"))
     assert policy.definition_of_ready(tmp_path, "i").ready is True
+
+
+def test_a_recorded_view_splits_the_wait_into_arrival_and_reading(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """OQ-15: the whole point is that waited_s fuses two different quantities.
+
+    Measured over this repo's own 129 human-answered waits, the median is 95s and
+    85% of the total sits in 17 events over 30 minutes — two of them answered in the
+    same second. That distribution is a rendezvous distribution, and no renderer can
+    move a quantity the instrument does not contain. This is the field that contains
+    it.
+    """
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _pin_clocks(monkeypatch, fake, waited_s=600)
+    monkeypatch.setattr(policy, "_now", lambda: _ASKED_AT.timestamp() + 540, raising=True)
+    policy.record_first_view(tmp_path, "i#wait-ship")
+    monkeypatch.setattr(policy, "_now", lambda: _ASKED_AT.timestamp() + 600, raising=True)
+
+    event = policy.record_wait(
+        tmp_path,
+        "i",
+        wait_id="i#wait-ship",
+        kind="checkpoint",
+        subject="ship",
+        requested_at=fake.now,
+        by=policy.HUMAN_BY,
+        delegated=False,
+    )
+
+    assert event is not None
+    assert event.waited_s == 600
+    assert event.arrival_s == 540, "nine minutes of nobody being there"
+    assert event.read_s == 60, "one minute of actually reading it"
+
+
+def test_a_wait_nobody_viewed_records_no_split_rather_than_a_zero(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The control, and the distinction the whole field turns on.
+
+    A wait nobody was shown and a wait seen instantly are different facts. Recording
+    the first as 0 would put a fabricated instant-arrival into the population, which
+    is exactly how the fused number stopped meaning anything.
+    """
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _pin_clocks(monkeypatch, fake, waited_s=600)
+
+    event = policy.record_wait(
+        tmp_path,
+        "i",
+        wait_id="i#wait-ship",
+        kind="checkpoint",
+        subject="ship",
+        requested_at=fake.now,
+        by=policy.HUMAN_BY,
+        delegated=False,
+    )
+
+    assert event is not None
+    assert event.waited_s == 600
+    assert (event.arrival_s, event.read_s) == (-1, -1)
+
+
+def test_a_reprinted_challenge_keeps_the_first_arrival(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A challenge reprints on every expired code; arrival happened once.
+
+    Same reasoning wait_id_for_checkpoint derives rather than mints an id: a later
+    print is evidence *against* the arrival it would otherwise overwrite.
+    """
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _pin_clocks(monkeypatch, fake, waited_s=600)
+    monkeypatch.setattr(policy, "_now", lambda: _ASKED_AT.timestamp() + 100, raising=True)
+    policy.record_first_view(tmp_path, "i#wait-ship")
+    monkeypatch.setattr(policy, "_now", lambda: _ASKED_AT.timestamp() + 500, raising=True)
+    policy.record_first_view(tmp_path, "i#wait-ship")
+    monkeypatch.setattr(policy, "_now", lambda: _ASKED_AT.timestamp() + 600, raising=True)
+
+    event = policy.record_wait(
+        tmp_path,
+        "i",
+        wait_id="i#wait-ship",
+        kind="checkpoint",
+        subject="ship",
+        requested_at=fake.now,
+        by=policy.HUMAN_BY,
+        delegated=False,
+    )
+
+    assert event is not None
+    assert event.arrival_s == 100, "the reprint must not overwrite the arrival"
+
+
+def test_a_view_outside_the_interval_is_dropped_not_recorded_negative(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A stamp from a stepped clock is not evidence, and a negative read time is worse."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _pin_clocks(monkeypatch, fake, waited_s=600)
+    monkeypatch.setattr(policy, "_now", lambda: _ASKED_AT.timestamp() - 300, raising=True)
+    policy.record_first_view(tmp_path, "i#wait-ship")
+    monkeypatch.setattr(policy, "_now", lambda: _ASKED_AT.timestamp() + 600, raising=True)
+
+    event = policy.record_wait(
+        tmp_path,
+        "i",
+        wait_id="i#wait-ship",
+        kind="checkpoint",
+        subject="ship",
+        requested_at=fake.now,
+        by=policy.HUMAN_BY,
+        delegated=False,
+    )
+
+    assert event is not None
+    assert (event.arrival_s, event.read_s) == (-1, -1)
+
+
+def test_the_view_stamp_is_consumed_so_the_local_file_tracks_open_challenges_only(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Otherwise it grows one entry per checkpoint this repo has ever answered."""
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    _pin_clocks(monkeypatch, fake, waited_s=600)
+    monkeypatch.setattr(policy, "_now", lambda: _ASKED_AT.timestamp() + 100, raising=True)
+    policy.record_first_view(tmp_path, "i#wait-ship")
+    assert json.loads((tmp_path / policy.VIEW_STAMPS_PATH).read_text()) != {}
+
+    monkeypatch.setattr(policy, "_now", lambda: _ASKED_AT.timestamp() + 600, raising=True)
+    policy.record_wait(
+        tmp_path,
+        "i",
+        wait_id="i#wait-ship",
+        kind="checkpoint",
+        subject="ship",
+        requested_at=fake.now,
+        by=policy.HUMAN_BY,
+        delegated=False,
+    )
+
+    assert json.loads((tmp_path / policy.VIEW_STAMPS_PATH).read_text()) == {}
