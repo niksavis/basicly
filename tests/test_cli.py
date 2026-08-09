@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -775,6 +776,23 @@ def test_cli_check_fails_after_manual_edit(work_repo: Path) -> None:
     assert "Stale generated files detected" in result.stderr
 
 
+def _set_codex_size_cap(work_repo: Path, value: int) -> None:
+    """Rewrite codex's character cap to *value*, whatever it is set to today.
+
+    Keyed on the field name rather than on the committed number: the number is data and
+    moved once already (basicly-a3ab.1 raised it after measuring that the overrun came
+    from the inlined scoped tier, not from the baseline), which broke the two tests below
+    for a reason that had nothing to do with what they assert.
+    """
+    codex = work_repo / ".basicly" / "core" / "targets" / "codex.yaml"
+    text = codex.read_text(encoding="utf-8")
+    rewritten = re.sub(
+        r"^max_size_warning: \d+$", f"max_size_warning: {value}", text, flags=re.MULTILINE
+    )
+    assert rewritten != text, "no max_size_warning line to rewrite in codex.yaml"
+    codex.write_text(rewritten, encoding="utf-8")
+
+
 def test_cli_check_reports_the_always_on_budget_overrun_build_reports(work_repo: Path) -> None:
     """Check emits the same budget warnings build does, on a tree it declares up to date.
 
@@ -784,14 +802,8 @@ def test_cli_check_reports_the_always_on_budget_overrun_build_reports(work_repo:
     baseline's real size is not this test's business.
     """
     run_basicly(work_repo, "build")
-    codex = work_repo / ".basicly" / "core" / "targets" / "codex.yaml"
     agents_chars = len((work_repo / "AGENTS.md").read_text(encoding="utf-8"))
-    codex.write_text(
-        codex.read_text(encoding="utf-8").replace(
-            "max_size_warning: 12000", f"max_size_warning: {agents_chars - 1}"
-        ),
-        encoding="utf-8",
-    )
+    _set_codex_size_cap(work_repo, agents_chars - 1)
 
     result = run_basicly(work_repo, "check")
 
@@ -807,14 +819,8 @@ def test_cli_check_is_silent_on_a_budget_it_meets(work_repo: Path) -> None:
     assertion above and discriminate nothing.
     """
     run_basicly(work_repo, "build")
-    codex = work_repo / ".basicly" / "core" / "targets" / "codex.yaml"
     agents_chars = len((work_repo / "AGENTS.md").read_text(encoding="utf-8"))
-    codex.write_text(
-        codex.read_text(encoding="utf-8").replace(
-            "max_size_warning: 12000", f"max_size_warning: {agents_chars + 1}"
-        ),
-        encoding="utf-8",
-    )
+    _set_codex_size_cap(work_repo, agents_chars + 1)
 
     result = run_basicly(work_repo, "check")
 
