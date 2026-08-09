@@ -129,8 +129,17 @@ class RunRecord:
     reasoning_tokens: int | None = None
     # AI credits spent, **not** USD. ``cost`` above is USD (claude's
     # total_cost_usd); copilot bills in AIU, which it reports as nano-AIU. Two
-    # currencies, two fields: summing them would be a silent accounting defect,
-    # and a rollup that reads ``cost`` stays in one unit.
+    # units, two fields, so each family's number is recorded as that family
+    # reported it and neither is rewritten on the way in.
+    #
+    # They are nonetheless **convertible at a published fixed rate**: GitHub
+    # documents 1 AI credit = $0.01 USD (verified 2026-08-09 against
+    # docs.github.com/en/copilot/concepts/billing/usage-based-billing-for-individuals,
+    # under usage-based billing since 2026-06-01). So a USD rollup is
+    # ``cost + credits * 0.01`` and is sound — this comment previously said
+    # summing them would be an accounting defect, which was true of two
+    # *floating* currencies and is not true of a fixed rate. The conversion
+    # belongs in the rollup that needs one dimension, never in this record.
     credits: float | None = None
     # --- Reproducible dispatch inputs (D9, basicly-kjc5.28) ------------------
     # What the dispatch actually ran, so two attempts on one node are diffable:

@@ -102,6 +102,13 @@ at build→verify; everything else is checkpoints and lints.
 | D26 [D] | **Route each role to the cheapest tier that can be relied on, priced per landed package** — total tokens, wall clock and human interventions per landed *correct* package, never the price of one dispatch. The predicate for "cheap is safe" is **specification completeness, not work category** | Roster R5 and its 2026-07-26 amendment, absorbed 2026-08-08. A brief carrying the literal code and the literal test cases is transcription and is mechanically verifiable; a brief that is a prose description is not. A cheap dispatch returns as rework, extra review cycles, bounced merges and human attention, all charged to the same package. **Operationally a dispatch with no resolved tier is a bug, not a default** — an omitted model inherits the session's, usually the most expensive, which defeats the rule silently. The four-tier ladder is already shipped (`.basicly/core/models/anchors.yaml`, `schema.MODEL_TIERS`); only this routing rule was unrecorded |
 | D20 [D] | **`change-shape` — the shape of the whole change, derived not authored, emitted by CLASSIFY** | See §8.2. It is the structure `decompose` needs to cut end-to-end instead of by directory, and `basicly-agzx.2` already proposes deriving it from an AST at zero token cost. **Derived, so it is not a state**: states exist to hold a gate and a persona, and a derivation needs neither — DECOMPOSE's entry predicate gains it, nothing else moves |
 | D19 [D] | **Diff size is a plan-time signal, not a review-time discovery** | The sizing governor already forecasts in tokens; a child whose forecast implies a diff far past reviewable is reported when splitting is still cheap. Deliberately **not** a human-review requirement — L1/L2 stay delegable (§4), and a 2,000-line lane is hard to review whether the reader is a human or the next agent |
+| D27 [D] | **Thin engine: the catalog defines, the host executes.** We author agents, skills and hooks as catalog sources and project them to both families; the host runtime spawns the subagent, resolves its tier and fires the boundary hooks. The engine supervises *lanes*, owns the tracker, the gates and the merge queue | Owner, 2026-08-09, against measured host capability rather than the 2026-08-07 assumption that we must build dispatch. Both installed runtimes ship what §6.3 said we had to build: claude 2.1.226 takes `--agents <json>` and `--append-subagent-system-prompt`; copilot 1.0.78 carries `subagents.agents.<name>.{model,effortLevel,contextTier}`. Reimplementing a shipped mechanism is the reuse-before-reinventing rule inverted |
+| D28 [D] | **§6.4's Conductor refusal is amended, not dropped: an agent may spawn only a role the engine authored, and every boundary is gated by a host hook** | The refusal's target was an agent inventing unmetered helpers (§11.3), not delegation as such — and both hosts spawn subagents natively, so a blanket ban is unenforceable prose. The amended form is *stronger*: copilot hooks can intercept a subagent finishing **before its results return to the parent**, and claude's `--include-hook-events` puts hook lifecycle on the stream, so the DSM boundary becomes a runtime gate instead of a process boundary we hope holds |
+| D29 [D] | **Spend caps compose: our grant ceiling is the outer bound, the host's own cap is the inner one**, derived per dispatch from the lane's remaining budget | The grant ceiling has 5 recorded correct firings (§15.7) and stays. What it cannot do is stop a *subagent* mid-flight — it only refuses the next dispatch. `claude --max-budget-usd` counts subagent spend and stops background subagents (v2.1.217+); `copilot --max-ai-credits` is shared by a session's subagents. Note copilot's is explicitly a **soft** cap — usage is known only after a response returns — so it bounds, it does not guarantee |
+| D30 [D] | **A provider model id never appears in an agent file, generated or not.** The source declares a tier; the id is injected at spawn | Owner, 2026-08-09. Not style: our own tier kit records that *"a definition that pins its own `model` is left alone"*, so a projected `model:` line **disables** tier injection rather than implementing it — which is what `basicly-a3yi`'s projection plan would have shipped. Verified the constraint is satisfiable on both families: claude injects the alias at spawn via the hook or `--agents <json>`; copilot 1.0.78 carries the model in **config** (`subagents.agents.<name>.model`), outside the `.agent.md`. The kit's note that copilot is frontmatter-only is stale as of 1.0.78 |
+| D31 [D] | **A tier resolves by declared vendor order, verified at install.** `anchors.yaml` gains a `vendor_order` per tier; resolution walks it and takes the first the map marks available for the surface in effect; `basicly install`/`upgrade` probes each chosen model once and records a rejection | `model-map.json` already resolves tier→vendor→surface and already refuses to substitute another tier's model. Two gaps closed: nothing ranked vendors *within* a tier, and `status: available` is a claim from the generator rather than this consumer's entitlement. Neither host lists its models non-interactively (verified: claude has no `models` subcommand; copilot has `--model`/`auto` and BYOK env vars only), so entitlement must be probed once, not queried per dispatch — which keeps the dispatch path offline and deterministic |
+| D32 [D] | **A handoff artifact is a file on the work's own `harness/<issue>` branch, deleted at teardown; the ledger keeps its kind, digest and gate verdict** | Owner, 2026-08-09, superseding §8's marker-only mechanism. Git is the only transport this design has, so an artifact that must survive a machine hop has to be committed — which rules out a gitignored directory. Committed on the branch it is not dirt, so `merge.foreign_dirt` (`merge.py:469`) is unaffected; deleting the branch is the delete, so `main` never carried it. **Consequence: the harness branch must be created at INTAKE**, not at worktree provisioning (`loop.py:327`), because INTAKE, CLASSIFY and DECOMPOSE all emit artifacts before any worktree exists |
+| D33 [D] | **`docs/` carries only architecture, tutorial, how-to and a contributor guide.** No new requirement or plan document is ever created as a file; a new requirement enters as `01-solution-design.md` on a branch | Owner, 2026-08-09, making §9's register mechanical instead of disciplinary. The four existing requirement/plan documents exit on the triggers already recorded there; the review's Appendix A moves to architecture rather than being deleted, because a licence and provenance register is a decision record. A `docs/` path gate makes the rule a free deterministic check, which the standing constraints already prefer over a judged one |
 
 ### 2.1 Risk accepted on D4
 
@@ -362,7 +369,7 @@ problem:
 | Tester / verifier | verify is deterministic gates; a model running them adds cost and nondeterminism to the one trustworthy part. Authoring tests is the implementer's, and diagnosing a red gate is a capability of its repair dispatch |
 | Scout | a low-tier pre-reader's characteristic error — a slightly incomplete file list — is mechanically undetectable and silently narrows the implementer's view. **Permanently cut as a persona**; the same artifact derived deterministically from an AST is an engine step with no tier and no gate authority, which is D20's `change-shape` |
 | Shipper | version bump, changelog, tag and push are a command; the judged residue is curation, which is `curator` |
-| Conductor | it is code. **No agent spawns agents** — the supervisor dispatches every persona and personas never dispatch each other. If it has a name it is an agent, and its output is a proposal the engine must validate |
+| Conductor | it is code. **Amended by D28** — the original form was "no agent spawns agents", which both installed runtimes contradict by construction. What survives: an agent may spawn only a role the engine authored, personas never invent helpers, and every boundary is gated by a host hook. If it has a name it is an agent, and its output is a proposal the engine must validate |
 
 **Lens output is reported per lens, never merged into one ranked list** — a change can pass one axis
 and fail another, and reranking lets one mask the other.
@@ -946,6 +953,31 @@ populates `cache_read_tokens`/`cache_write_tokens`, though `runner_usage.py:177`
 codex. **0 of 297 dispatch records carry a cache split.** Until that lands, a 40% apparent saving
 that actually broke a cached prefix is indistinguishable from a real win, on the agent that does 76
 of 77 dispatches.
+
+**Corrected 2026-08-09 [M], and the correction shrinks the fix to a parser.** The paragraph above
+reads as though the numbers are unavailable. They are not: claude's `result` event carries
+`cache_creation_input_tokens` and `cache_read_input_tokens` today, and `modelUsage.<id>.contextWindow`
+beside them — captured on a live probe of 2.1.226. So this is a gap in *our* extractor, not in the
+stream. **Copilot's split is already extracted** (`copilot_store.py`, from `session.shutdown`
+`modelMetrics`), which means the family with the worse reputation here has the better telemetry and
+the claim that gated this whole section was ours to close.
+
+**And the economics the section reasons about are now measured rather than argued [M, 2026-08-09],
+on four real dispatches of one seeded session:**
+
+```text
+cold seed              cache_create 21,578   cache_read      0   $0.2165
+--resume  (miss)       cache_create 21,592   cache_read      0   $0.2163
+--resume  (hit)        cache_create     28   cache_read 21,592   $0.0112
+--resume --fork-session               28     cache_read 21,620   $0.0115   <- new session id
+```
+
+**19x on a cache hit, and `--fork-session` inherits the context *and* the cache while issuing a
+fresh session id** — verified by recalling a token seeded in the parent. That is the mechanism
+`basicly-ejdm` and `basicly-xjd2` were both open questions about: seed one session with the corpus,
+fork it per lane, and every lane gets the context at cache-read price with its own session. It also
+relocates the per-dispatch floor — 21.6k tokens of system prompt and tool definitions is a *cache
+miss* cost, not a token cost, so 41 cold dispatches is ~$8.90 of floor against ~$0.46 forked.
 
 ### 15.6 The context ceiling is deleted, not retuned [D]
 
