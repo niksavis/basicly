@@ -96,6 +96,7 @@ def test_manifest_lists_every_catalog_hook() -> None:
         "pre-push-script",
         "protect-generated",
         "protect-generated-commit",
+        "unsplit-loop-guard",
         "tool-usage",
         "tool-usage-copilot",
     }

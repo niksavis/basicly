@@ -76,6 +76,14 @@ hooks:
     script: protect-generated.py
     stage: pretooluse
     manager: claude
+  # The always-on `non-interactive-shell` rule against `for x in $SCALAR` was in context
+  # and was violated anyway, and the failure is silent by construction: the loop runs once
+  # and exits 0 (basicly-m2g3). Guidance that must bind becomes a hook.
+  - id: unsplit-loop-guard
+    script: unsplit-loop-guard.py
+    stage: pretooluse
+    manager: claude
+    matcher: Bash
   # Deterministic, agent-independent commit-time backstop for the fail-open,
   # Claude-only protect-generated PreToolUse guard (basicly-yw28): blocks a
   # commit that stages a generated output whose content diverges from the

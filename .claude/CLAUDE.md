@@ -152,6 +152,7 @@ uv run basicly permissions-check
 - Prefer cross-platform implementations over shell-specific behavior when a choice exists.
 - Use non-interactive flags (`cp -f`, `mv -f`, `rm -f`, package-manager `-y`, `ssh -o BatchMode=yes`) for ops that can hang on a prompt — some shells alias these to interactive mode.
 - Never loop over an unquoted variable (`for x in $LIST`): zsh does not word-split, so it runs once with the whole string and the silent no-op looks like success. Use an inline list, an array (`for x in "${arr[@]}"`), or one batch command — then check the count actually changed.
+- Name the expected site count before a scripted multi-site replace, and reconcile after. More sites than named means it also matched the definition the replacement refers to, rewriting it into a call to itself; a count delta is a stop, not a footnote.
 
 ## Tool Usage
 
