@@ -127,6 +127,11 @@ caught one.
   non-test caller does not ship, and neither does one behind a config field nothing
   reads. gastown's advertised bisecting merge queue was exactly that — the corrected
   conclusion *inverted* the original.
+- **An absolute claim is checked by trying to break it, not by finding the caller.**
+  The inverse defect: a *reachable* feature described too strongly, which no call-site
+  search catches. Measured 2026-08-09 — a harness advertising a floor "not overridable
+  by any config, env var, or permission mode" had two documented escape hatches, each
+  flipping a deny to an allow. A true absolute costs nothing to test.
 - **Read the licence before writing the adopt finding, not after.** Read every
   licence-bearing file, `NOTICE` included, and check for per-directory licences rather
   than assuming a monorepo is uniform. Two restricted repos in this reference set had
