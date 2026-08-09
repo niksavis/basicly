@@ -10,5 +10,5 @@ trigger:
   negative:
     - prompt: "cut a version of this repository"
       owner: release-process
-    - prompt: "proofread the docs for misspellings"
-      owner: tool-typos
+    - prompt: "cut this feature into children that can each be landed"
+      owner: decompose-plan

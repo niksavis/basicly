@@ -8,7 +8,7 @@ trigger:
     - prompt: "install the npm packages this repo needs"
     - prompt: "the markdownlint hook fails from a background job"
   negative:
-    - prompt: "sync the python environment for this project"
-      owner: tool-uv
+    - prompt: "annotate this module's parameters and return types"
+      owner: python
     - prompt: "mount access under /mnt/c is painfully slow"
       owner: wsl

@@ -1,8 +1,7 @@
 # yaml-language-server: $schema=../../schemas/skill.schema.json
 schema_version: 1
 name: tool-jq
-invocation: model
-description: Use jq to parse, filter, and transform JSON in shell pipelines. Trigger when structured JSON extraction or reshaping is needed.
+invocation: user
 instructions: |
   # tool-jq
 

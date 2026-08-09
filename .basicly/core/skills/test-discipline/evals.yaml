@@ -10,5 +10,5 @@ trigger:
   negative:
     - prompt: "add type hints to this module"
       owner: python
-    - prompt: "match this code pattern by its syntax tree"
-      owner: tool-ast-grep
+    - prompt: "exercise this change the way a consumer would run it"
+      owner: validate-as-consumer

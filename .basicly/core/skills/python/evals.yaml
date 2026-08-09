@@ -8,7 +8,7 @@ trigger:
     - prompt: "add type hints and pathlib to this module"
     - prompt: "this except clause looks wrong for an older interpreter"
   negative:
-    - prompt: "sync the locked dependencies for this project"
-      owner: tool-uv
+    - prompt: "npx resolves the wrong binary inside my git hook"
+      owner: node
     - prompt: "my tests leak state into each other and fail when reordered"
       owner: test-discipline

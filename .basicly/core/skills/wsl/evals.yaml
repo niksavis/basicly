@@ -8,7 +8,7 @@ trigger:
     - prompt: "windows and linux interop is breaking my tool"
     - prompt: "it works in my terminal but not from a script"
   negative:
-    - prompt: "orchestrate panes in a terminal multiplexer"
-      owner: tool-tmux
-    - prompt: "check this shell script for quoting bugs"
-      owner: tool-shellcheck
+    - prompt: "add type hints and pathlib usage to this module"
+      owner: python
+    - prompt: "cut a version of this repository"
+      owner: release-process

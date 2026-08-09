@@ -33,27 +33,27 @@ by design: that absence is what keeps it out of the model's always-loaded index.
 | `session-finish` | `model` | any | Close out a working session with a usage-statistics report, a self-improvement retro, and a pickup-clean handoff summary. Use when the user says the session is done ("wrap up", "finish the session", "close out"), before ending a long autonomous run, or whenever a summary of what changed and what the agent actually used is wanted. |
 | `test-discipline` | `model` | any | Write isolated order-independent automated tests that assert on observable behavior rather than private internals. Use when writing reviewing or debugging any test (unit integration or end-to-end) in any language especially when tests share fixtures touch global or filesystem state flake depending on run order or reach into implementation details. |
 | `tier-injection` | `model` | any | Install the portable tier injection kit so a subagent spawns on the model its declared tier resolves to, instead of the host default. Use when setting up tier injection in this or another repository, when a subagent ignores the tier its definition declares, or when deciding whether a host can pin a spawn's model at all. |
-| `tool-ast-grep` | `model` | any | Use ast-grep for structural code search and rewrite based on syntax trees. Trigger when text search is too imprecise for code-aware matching. |
+| `tool-ast-grep` | `user` | any |  |
 | `tool-bat` | `user` | any |  |
 | `tool-br` | `model` | any | Use br (beads_rust) as the primary task/issue tracker for this repo. Trigger when planning work, creating or claiming issues, checking what is ready to work on, or preparing a commit that must reference a beads issue id. |
-| `tool-curl` | `model` | any | Use curl for low-level HTTP requests, headers, and data transfer debugging. Trigger when APIs, webhooks, download checks, or protocol-level diagnostics are required. |
-| `tool-fd` | `model` | any | Use fd or fd-find for fast filename and path discovery with sane defaults. Trigger when listing or enumerating files and directories by name or glob pattern, without complex find syntax. |
+| `tool-curl` | `user` | any |  |
+| `tool-fd` | `user` | any |  |
 | `tool-fzf` | `user` | any |  |
-| `tool-git` | `model` | any | Use git for repository state inspection, safe staging, diff review, and history-aware change management. Trigger when the task involves commits, branches, diffs, or version control decisions. |
+| `tool-git` | `user` | any |  |
 | `tool-git-delta` | `user` | any |  |
-| `tool-jq` | `model` | any | Use jq to parse, filter, and transform JSON in shell pipelines. Trigger when structured JSON extraction or reshaping is needed. |
-| `tool-ripgrep` | `model` | any | Use ripgrep to grep or search a whole repo for text or a regex, extremely fast. Trigger when locating symbols, strings, or patterns at scale. |
-| `tool-sd` | `model` | any | Use sd for fast, readable search-and-replace in files with safer defaults than sed. Trigger when swapping one string for another in a batch of files at once. |
-| `tool-shellcheck` | `model` | any | Use shellcheck to statically analyze shell scripts for bugs, portability issues, and quoting mistakes. Trigger whenever shell scripts are created or modified. |
+| `tool-jq` | `user` | any |  |
+| `tool-ripgrep` | `user` | any |  |
+| `tool-sd` | `user` | any |  |
+| `tool-shellcheck` | `user` | any |  |
 | `tool-starship` | `user` | `starship` |  |
-| `tool-tmux` | `model` | `tmux` | Use tmux for session orchestration, pane/window control, and resilient long-running terminal workflows. Trigger when the task needs terminal multiplexing or keybinding troubleshooting. |
-| `tool-tree` | `model` | any | Use tree to visualize directory layout quickly in a token-efficient form. Trigger when understanding project structure or summarizing file hierarchies. |
-| `tool-typos` | `model` | any | Use typos to detect spelling mistakes and misspelled words in code, comments, and docs with low false positives. Trigger when proofreading source content or enforcing text quality. |
-| `tool-uv` | `model` | `python` | Use uv for fast Python dependency sync, virtualenv and environment management, and command execution. Trigger for Python setup, install, lint, test, and script workflows in this repo. |
+| `tool-tmux` | `user` | `tmux` |  |
+| `tool-tree` | `user` | any |  |
+| `tool-typos` | `user` | any |  |
+| `tool-uv` | `user` | `python` |  |
 | `tool-wezterm` | `user` | `wezterm` |  |
-| `tool-wget` | `model` | any | Use wget for robust non-interactive downloads, retries, and mirror-style fetch operations. Trigger when reliable file retrieval or resumable downloads are needed. |
-| `tool-xh` | `model` | any | Use xh as a user-friendly HTTP client for API testing and response inspection. Trigger when quick REST calls with clean defaults are needed. |
-| `tool-yq` | `model` | any | Use yq for YAML and structured config queries, edits, and transforms. Trigger when CI configs, manifests, or YAML-based settings need precise changes. |
+| `tool-wget` | `user` | any |  |
+| `tool-xh` | `user` | any |  |
+| `tool-yq` | `user` | any |  |
 | `tool-zsh` | `user` | `zsh` |  |
 | `validate-as-consumer` | `model` | any | Exercise a verified change the way a consumer would — in the operational environment, against the requirement that asked for it — instead of re-running the gate suite that already passed. Use at VALIDATE, before claiming a capability on a README or release note, or whenever "the tests pass" is standing in for "the feature works". |
 | `worktree-isolation` | `model` | any | Isolate non-trivial work in a sibling git worktree using `basicly worktree`, covering sibling placement on a harness branch, dependency + git-hook provisioning, and safe cleanup. Use when starting a unit of work that should not touch the main checkout, when parallel tracks would collide, or when deciding whether a change needs its own worktree. |

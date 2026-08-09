@@ -8,7 +8,7 @@ trigger:
     - prompt: "what type and scope should this commit use"
     - prompt: "does this change need a breaking marker in the subject"
   negative:
-    - prompt: "find every reference to this symbol"
-      owner: tool-ripgrep
+    - prompt: "keep this change out of my main checkout"
+      owner: worktree-isolation
     - prompt: "which issues are ready to be claimed"
       owner: tool-br

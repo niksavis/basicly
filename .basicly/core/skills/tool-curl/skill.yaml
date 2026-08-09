@@ -1,8 +1,7 @@
 # yaml-language-server: $schema=../../schemas/skill.schema.json
 schema_version: 1
 name: tool-curl
-invocation: model
-description: Use curl for low-level HTTP requests, headers, and data transfer debugging. Trigger when APIs, webhooks, download checks, or protocol-level diagnostics are required.
+invocation: user
 instructions: |
   # tool-curl
 

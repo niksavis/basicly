@@ -10,5 +10,5 @@ trigger:
   negative:
     - prompt: "what type and scope belong in this commit subject"
       owner: conventional-commits
-    - prompt: "show me what is staged versus what changed"
-      owner: tool-git
+    - prompt: "keep this change out of my main checkout"
+      owner: worktree-isolation

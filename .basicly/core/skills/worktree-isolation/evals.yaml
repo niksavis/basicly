@@ -8,7 +8,7 @@ trigger:
     - prompt: "two parallel tracks would collide, isolate them"
     - prompt: "set up a sibling checkout on a harness branch"
   negative:
-    - prompt: "which branch am I on and what is staged"
-      owner: tool-git
+    - prompt: "what work is ready to pick up"
+      owner: tool-br
     - prompt: "advance this issue past its checkpoint"
       owner: harness-loop

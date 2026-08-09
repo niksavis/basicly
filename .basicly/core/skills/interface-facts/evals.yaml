@@ -8,7 +8,7 @@ trigger:
     - prompt: "what flags does that third-party cli actually accept today"
     - prompt: "confirm the price and limit rather than recalling them"
   negative:
-    - prompt: "send a raw post body and inspect the headers"
-      owner: tool-curl
-    - prompt: "resume this download if the connection drops"
-      owner: tool-wget
+    - prompt: "cut a version of this repository"
+      owner: release-process
+    - prompt: "keep this change out of my main checkout"
+      owner: worktree-isolation
