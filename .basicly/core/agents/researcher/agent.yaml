@@ -117,3 +117,5 @@ slots:
 
         When the question turns out to be underspecified, say which reading you
         researched and what the other reading would need.
+claude:
+  skills: [root-cause]

@@ -10,11 +10,8 @@ from basicly.agents import (
     AGENTS_OUTPUT_ROOTS,
     CLAUDE_AGENTS_ROOT,
     COPILOT_AGENTS_ROOT,
-    COPILOT_TOOL_ALIASES,
     GENERATED_MARKER,
-    MAX_BODY_CHARS,
     SLOT_ORDER,
-    WRITE_TOOLS,
     AgentOutputRoot,
     check_synced_agents,
     compose_body,
@@ -22,12 +19,11 @@ from basicly.agents import (
     default_agent_roots,
     discover_agents,
     discover_blocks,
-    lint_agent_sources,
     render_agent_md,
-    resolve_copilot_tool,
     sync_agents,
     unknown_block_refs,
 )
+from basicly.copilot_tools import WRITE_TOOLS, resolve_copilot_tool
 from basicly.schema import ValidationError
 
 
@@ -247,140 +243,6 @@ def _lint_repo(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def test_lint_clean_sources_pass(tmp_path: Path) -> None:
-    """A coherent agent produces no lint violations."""
-    core = tmp_path / ".basicly/core/agents"
-    _write_block(core, "honesty")
-    _write_agent(core, "code-reviewer")
-    assert lint_agent_sources(tmp_path) == []
-
-
-def test_lint_flags_a_declared_model_and_names_the_tier_field(tmp_path: Path) -> None:
-    """A provider model id is unportable, so the refusal must carry the replacement.
-
-    models.dev spells the same model `claude-haiku-4.5` for Copilot and
-    `claude-haiku-4-5` for Anthropic, so no `model:` value can be projected for
-    every family. The author has to be told the field to use and its values —
-    reaching into our schema to learn what to type is not a migration.
-    """
-    core = tmp_path / ".basicly/core/agents"
-    _write_agent(core, "code-reviewer", _agent_yaml("code-reviewer", extra="model: haiku\n"))
-
-    violations = lint_agent_sources(tmp_path)
-
-    assert len(violations) == 1, violations
-    assert violations[0].startswith(".basicly/core/agents/code-reviewer/agent.yaml: ")
-    assert "model: haiku" in violations[0]
-    # Spelled out, not joined from MODEL_TIERS: an assertion derived from the same
-    # constant as the message would survive the vocabulary changing under it.
-    assert "tier: low | medium | high | maximum" in violations[0]
-
-
-def test_lint_flags_a_declared_model_in_the_overlay(tmp_path: Path) -> None:
-    """The overlay is why this rule lives here: schema validation globs core only."""
-    overlay = tmp_path / ".basicly-local/agents"
-    _write_agent(overlay, "code-reviewer", _agent_yaml("code-reviewer", extra="model: sonnet\n"))
-
-    violations = lint_agent_sources(tmp_path)
-
-    assert len(violations) == 1, violations
-    assert violations[0].startswith(".basicly-local/agents/code-reviewer/agent.yaml: ")
-    assert "tier" in violations[0]
-
-
-def test_lint_reports_a_declared_model_alongside_the_other_defects(tmp_path: Path) -> None:
-    """The rule is not a parse-time raise, so one bad source still yields every finding."""
-    core = tmp_path / ".basicly/core/agents"
-    _write_agent(
-        core,
-        "code-reviewer",
-        _agent_yaml("code-reviewer", tools="[Read, Edit]", extra="model: haiku\n"),
-    )
-
-    violations = lint_agent_sources(tmp_path)
-
-    assert len(violations) == 2, violations
-    assert any("tier" in v for v in violations)
-    assert any("read-only but tools grant Edit" in v for v in violations)
-
-
-def test_lint_accepts_a_declared_model_tier(tmp_path: Path) -> None:
-    """The replacement field is not itself a violation."""
-    core = tmp_path / ".basicly/core/agents"
-    _write_agent(core, "code-reviewer", _agent_yaml("code-reviewer", extra="tier: low\n"))
-    assert lint_agent_sources(tmp_path) == []
-
-
-def test_lint_flags_read_only_posture_with_write_tools(tmp_path: Path) -> None:
-    """Read-only posture with a write tool is a violation."""
-    core = tmp_path / ".basicly/core/agents"
-    _write_agent(core, "code-reviewer", _agent_yaml("code-reviewer", tools="[Read, Edit]"))
-    violations = lint_agent_sources(tmp_path)
-    assert len(violations) == 1
-    assert "read-only but tools grant Edit" in violations[0]
-
-
-@pytest.mark.parametrize("tool", ["edit", "WRITE", "MULTIEDIT", "notebookedit", "create"])
-def test_lint_flags_read_only_posture_with_a_write_tool_in_any_casing(
-    tmp_path: Path, tool: str
-) -> None:
-    """Casing is not a loophole: copilot resolves its tool aliases case insensitively.
-
-    A lowercase `edit` grants the same writes `Edit` does, so an exact-match
-    check would pass a read-only agent that really can write (basicly-e9jc).
-    `create` is copilot's file-creating primary and has no claude spelling at all.
-    """
-    core = tmp_path / ".basicly/core/agents"
-    _write_agent(core, "code-reviewer", _agent_yaml("code-reviewer", tools=f"[Read, {tool}]"))
-
-    violations = lint_agent_sources(tmp_path)
-
-    # Both halves the author needs: the offending tool as authored, and the
-    # posture claim it contradicts. `create` additionally trips the alias
-    # resolution rule (it is absent from GitHub's published table), so the count
-    # is not asserted here.
-    assert any(f"read-only but tools grant {tool}" in v for v in violations), violations
-
-
-def test_lint_accepts_read_tools_in_any_casing(tmp_path: Path) -> None:
-    """Folding the comparison must not turn a read tool into a violation."""
-    core = tmp_path / ".basicly/core/agents"
-    _write_agent(core, "code-reviewer", _agent_yaml("code-reviewer", tools="[read, GREP, Glob]"))
-    assert lint_agent_sources(tmp_path) == []
-
-
-def test_lint_flags_unknown_block_ref(tmp_path: Path) -> None:
-    """A dangling block reference is a violation, not a crash."""
-    core = tmp_path / ".basicly/core/agents"
-    slots = "\n".join(f"  {name}:\n    - text: body" for name in SLOT_ORDER if name != "role")
-    slots = "  role:\n    - block: missing\n" + slots
-    _write_agent(core, "code-reviewer", _agent_yaml("code-reviewer", slots=slots))
-    violations = lint_agent_sources(tmp_path)
-    assert len(violations) == 1
-    assert "unknown block 'missing'" in violations[0]
-
-
-def test_lint_flags_oversized_body(tmp_path: Path) -> None:
-    """A composed body over the portable cap is a violation."""
-    core = tmp_path / ".basicly/core/agents"
-    filler = "x" * (MAX_BODY_CHARS + 10)
-    slots = "\n".join(f"  {name}:\n    - text: body" for name in SLOT_ORDER if name != "process")
-    slots += f"\n  process:\n    - text: {filler}"
-    _write_agent(core, "code-reviewer", _agent_yaml("code-reviewer", slots=slots))
-    violations = lint_agent_sources(tmp_path)
-    assert len(violations) == 1
-    assert "portable cap" in violations[0]
-
-
-def test_lint_reports_load_errors_as_violations(tmp_path: Path) -> None:
-    """A source that fails to load lints as one violation instead of raising."""
-    core = tmp_path / ".basicly/core/agents"
-    _write_agent(core, "code-reviewer", "schema_version: 1\nname: code-reviewer\n")
-    violations = lint_agent_sources(tmp_path)
-    assert len(violations) == 1
-    assert "tools must be a non-empty list" in violations[0]
-
-
 def test_default_agent_roots_are_core_then_overlay(tmp_path: Path) -> None:
     """Roots load core first so the overlay can override."""
     roots = default_agent_roots(tmp_path)
@@ -453,33 +315,6 @@ def test_render_marker_stays_in_protect_generated_window(
     (agent,) = discover_agents(_roots(tmp_path))
     head = render_agent_md(agent, {}, root).split("\n")[:10]
     assert any(GENERATED_MARKER in line for line in head)
-
-
-@pytest.mark.parametrize("root", AGENTS_OUTPUT_ROOTS, ids=lambda root: root.family)
-def test_projected_read_only_agent_grants_no_write_tool(
-    tmp_path: Path, root: AgentOutputRoot
-) -> None:
-    """The read-only posture survives the crossing into every root.
-
-    The source lint refuses a read-only agent that *declares* a write tool, but
-    the renderer is a second place the grant could widen: a per-family `tools`
-    line built from anything but `agent.tools` would defeat the lint silently and
-    no drift check would notice, because the projected file would still match its
-    own renderer. So assert on the projected frontmatter, resolved through the
-    pinned copilot alias table (basicly-8sxf).
-    """
-    _write_agent(tmp_path / "core", "code-reviewer")
-    (agent,) = discover_agents(_roots(tmp_path))
-
-    (line,) = [
-        line for line in render_agent_md(agent, {}, root).split("\n") if line.startswith("tools: ")
-    ]
-    projected = [name.strip() for name in line.removeprefix("tools: ").split(",")]
-
-    assert projected == list(agent.tools)
-    assert [name for name in projected if resolve_copilot_tool(name) == "edit"] == []
-    folded_writes = {tool.casefold() for tool in WRITE_TOOLS}
-    assert [name for name in projected if name.casefold() in folded_writes] == []
 
 
 def test_claude_passthrough_reaches_only_the_claude_root(tmp_path: Path) -> None:
@@ -614,57 +449,28 @@ def test_check_synced_agents_catches_a_hand_edit_in_each_root_alone(
     assert check_synced_agents(repo) == [(target, "missing")]
 
 
-def test_copilot_tool_aliases_resolve_the_names_we_ship() -> None:
-    """The pinned alias table is asserted against, not just documented.
+@pytest.mark.parametrize("root", AGENTS_OUTPUT_ROOTS, ids=lambda root: root.family)
+def test_projected_read_only_agent_grants_no_write_tool(
+    tmp_path: Path, root: AgentOutputRoot
+) -> None:
+    """The read-only posture survives the crossing into every root.
 
-    Every tool our core agents declare must resolve to a copilot primary, because
-    copilot drops an unrecognised entry silently. The expected primaries are
-    spelled out rather than derived from the table, so a wrong edit to the table
-    fails here instead of agreeing with itself.
+    The source lint refuses a read-only agent that *declares* a write tool, but
+    the renderer is a second place the grant could widen: a per-family `tools`
+    line built from anything but `agent.tools` would defeat the lint silently and
+    no drift check would notice, because the projected file would still match its
+    own renderer. So assert on the projected frontmatter, resolved through the
+    pinned copilot alias table (basicly-8sxf).
     """
-    assert resolve_copilot_tool("Read") == "read"
-    assert resolve_copilot_tool("Grep") == "search"
-    assert resolve_copilot_tool("Glob") == "search"
-    assert resolve_copilot_tool("Bash") == "execute"
-    # Case-insensitive per GitHub's published table, and a primary is its own alias.
-    assert resolve_copilot_tool("bASH") == "execute"
-    assert resolve_copilot_tool("read") == "read"
-    assert resolve_copilot_tool("NotAToolAtAll") is None
+    _write_agent(tmp_path / "core", "code-reviewer")
+    (agent,) = discover_agents(_roots(tmp_path))
 
+    (line,) = [
+        line for line in render_agent_md(agent, {}, root).split("\n") if line.startswith("tools: ")
+    ]
+    projected = [name.strip() for name in line.removeprefix("tools: ").split(",")]
 
-def test_every_copilot_edit_alias_fails_the_read_only_posture_check(tmp_path: Path) -> None:
-    """The pinned table drives the posture check, so a new write alias cannot slip in.
-
-    Guards the derivation in `_WRITE_TOOLS_FOLDED`: if GitHub adds an alias to the
-    `edit` primary and someone updates COPILOT_TOOL_ALIASES, the read-only check
-    has to widen with it rather than leave a hole.
-    """
-    core = tmp_path / ".basicly/core/agents"
-    for tool in sorted({"edit", *COPILOT_TOOL_ALIASES["edit"], *WRITE_TOOLS}):
-        _write_agent(core, "code-reviewer", _agent_yaml("code-reviewer", tools=f"[Read, {tool}]"))
-        # Membership, not equality: `Create` is the copilot CLI's internal write
-        # primary and is deliberately absent from GitHub's published alias table,
-        # so it also trips the resolution rule below.
-        assert (
-            ".basicly/core/agents/code-reviewer/agent.yaml: posture declares read-only "
-            f"but tools grant {tool}"
-        ) in lint_agent_sources(tmp_path), tool
-
-
-def test_lint_flags_a_tool_that_resolves_to_nothing_on_copilot(tmp_path: Path) -> None:
-    """A name copilot would silently drop is an authoring defect, reported loudly here.
-
-    Claude Code refuses to launch and names an unresolved entry; copilot drops it
-    with no error, so without this rule a typo would ship as a quietly useless
-    agent on that root (basicly-8sxf).
-    """
-    core = tmp_path / ".basicly/core/agents"
-    _write_agent(core, "code-reviewer", _agent_yaml("code-reviewer", tools="[Read, Raed]"))
-
-    violations = lint_agent_sources(tmp_path)
-
-    assert len(violations) == 1, violations
-    assert "tool(s) Raed resolve to nothing" in violations[0]
-    assert ".github/agents" in violations[0]
-    # The remedy has to name an accepted spelling, not just the refusal.
-    assert "Grep" in violations[0]
+    assert projected == list(agent.tools)
+    assert [name for name in projected if resolve_copilot_tool(name) == "edit"] == []
+    folded_writes = {tool.casefold() for tool in WRITE_TOOLS}
+    assert [name for name in projected if name.casefold() in folded_writes] == []
