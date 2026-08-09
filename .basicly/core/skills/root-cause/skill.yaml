@@ -62,6 +62,22 @@ instructions: |
 
   Then the branch not taken, in one line.
 
+  ## The counterfactual, which is what makes a cause a cause
+
+  A chain that ends somewhere plausible is not the same as a chain that ends somewhere
+  load-bearing. Two questions, and they are cheap because they are answerable from the
+  same observations you already cited:
+
+  - **Per cause: would removing this one block this pathway?** If the failure still
+    reaches the same end with the cause removed, it is a condition you noticed, not a
+    cause you found — say so and keep going.
+  - **At set level: would removing the retained set block the observed failure?** A set
+    that leaves a route open has a link missing, and the missing link is the one worth
+    the control.
+
+  This is the check a second party can run against your chain without re-deriving it,
+  which is why it is here rather than in the prose above.
+
   ## Where the answer goes
 
   Under D25 an agent never lands catalog guidance without a human. The output is a

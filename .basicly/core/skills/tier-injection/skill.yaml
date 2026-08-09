@@ -47,9 +47,12 @@ instructions: |
   `PATH`. Pass `--interpreter` if you have no `uv` — for example
   `--interpreter "py -3"` on a Windows box.
 
-  **Quit and relaunch the host after installing** — the whole CLI process, not just
-  the conversation. Hooks and agent definitions are read when the process starts, so
-  clearing the conversation reloads nothing and the hook will appear to do nothing.
+  **Relaunch only if the installer created a scope the host did not already have** —
+  the whole CLI process, not just the conversation. Hooks and agent definitions are
+  file-watched and reload within seconds of an edit (claude 2.1.226, 2026-08-09); the
+  exception is the first file in a directory that did not exist at startup, which is
+  exactly what a first install writes. Clearing the conversation reloads neither and
+  is the wrong lever — the hook then appears to do nothing while diagnostics pass.
 
   ## What It Does And Does Not Cover
 

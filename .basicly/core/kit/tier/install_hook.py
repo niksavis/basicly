@@ -111,13 +111,15 @@ CANNOT_INTERCEPT = {
 
 HOSTS = ("claude", *sorted(CANNOT_INTERCEPT))
 
-# Printed only after a run that actually wrote a hook. The host loads its hooks
-# once, at process start, and clearing the conversation reloads neither hooks nor
-# agent definitions (measured on basicly-wbsz.3) - so without this line the
-# success report is where a consumer stops, and the hook silently never fires.
+# Printed only after a run that wrote a hook, and narrower than it used to be. The old
+# form said hooks and agent definitions are read once at startup (basicly-wbsz.3, no
+# version pinned); refuted on claude 2.1.226, 2026-08-09 - both are watched and reload
+# in seconds. What still needs a relaunch is what a first install creates: the first
+# file in a scope directory the host did not have at startup.
 RESTART_NOTICE = (
-    "quit and relaunch the host CLI process for this to take effect: hooks are "
-    "read once at startup, and clearing the conversation does not reload them"
+    "if this wrote the first hook or agent into a directory the host did not already "
+    "have, quit and relaunch the CLI process - a later edit reloads on its own, and "
+    "clearing the conversation is not the same thing"
 )
 
 

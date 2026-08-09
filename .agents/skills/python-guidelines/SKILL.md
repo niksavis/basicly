@@ -90,6 +90,28 @@ Test quality is out of scope — `test-discipline` owns it.
   inert and read as "reviewed" to everyone after you. A suppression no tool
   reads is worse than none — write the reasoning as an ordinary comment.
 
+## Comments — the divergence rule
+
+- The code is what runs; a comment is a claim about it. When you change a line,
+  re-read the comment above it. If they disagree the comment is wrong until you
+  show otherwise — PEP 8: "Comments that contradict the code are worse than no
+  comments." Nothing mechanical checks this: `ERA001` catches commented-out code
+  and no rule in the stack reads a comment's meaning.
+- **Do not resolve a divergence by deleting the comment.** The module-size ratchet
+  counts comment tokens: stripping the standalone comments out of `config.py`
+  returns 36.3% of its budget, `merge.py` 17.0% and `loop.py` 11.6% (measured
+  2026-08-09). That makes deletion the cheapest way to pass a size gate, and it is
+  the same gaming shape as splitting into `_part1()`/`_part2()`. Fix the claim.
+- Never narrate the next statement. The Google convention this repo pins
+  (`convention = "google"`) says "never describe the code" — and says it directly
+  after requiring that complicated operations get a few lines of comment first, so
+  it is a rule about *content*, not about existence.
+- Do write the thing the code cannot say: why this branch and not the other one,
+  what a bare `str` is allowed to hold, which incident a guard exists for, what a
+  constant's units are, which measurement a threshold came from. Measured over
+  this tree, that is what the comments already are — 41% contract, 40% why, 16%
+  navigation, 0% narration — so the bar is to keep it that way, not to reach it.
+
 ## Exception design
 
 - Catch only what this frame can act on, and let the handler show it: recover,

@@ -69,10 +69,14 @@ Re-running converges: it never duplicates the hook, and it matches hooks by the
 script they run, so one you wrote yourself is never touched. A `settings.json` that
 exists but cannot be parsed is **refused, never overwritten**.
 
-**Then quit and relaunch the host — the whole CLI process.** Hooks and agent
-definitions are read when the process starts. Clearing the conversation reloads
-neither, so the hook will appear to do nothing while every diagnostic says it is
-correctly installed. This is the first thing a new consumer hits.
+**If this was the first hook or agent written into a directory the host did not
+already have, quit and relaunch — the whole CLI process.** Hooks and agent
+definitions are otherwise file-watched and reload within seconds of an edit
+(measured against claude 2.1.226, 2026-08-09), so a _later_ change needs nothing.
+A _newly created_ scope directory does. Clearing the conversation is not the same
+thing and reloads neither, which is the wrong lever a consumer reaches for first —
+the hook then appears to do nothing while every diagnostic says it is correctly
+installed.
 
 ### The two scopes are written differently, on purpose
 
