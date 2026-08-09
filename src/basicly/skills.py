@@ -57,6 +57,12 @@ DEFAULT_SKILL_ROOTS = (
 # main does not. Listed as tolerant rather than as requiring, so an unrecognised
 # custom root fails safe toward a file that loads.
 DESCRIPTION_OPTIONAL_ROOTS = frozenset({".claude/skills"})
+# Roots that honor a source's `claude:` frontmatter passthrough (basicly-a3ab.11,
+# D36). Everything else receives exactly the portable Agent Skills fields, which
+# is what makes a projected SKILL.md loadable on a host we have not met. An
+# unrecognised root gets the portable form: an unknown key can make a file
+# unloadable, and a missing Claude-only key only makes it less convenient.
+CLAUDE_BLOCK_ROOTS = frozenset({".claude/skills"})
 
 # Roots basicly used to project into; generated-marker files here are pruned on
 # skills-build/install and removed by uninstall.
@@ -73,8 +79,14 @@ GENERATED_MARKER = (
 UNMANAGED_REASON_PREFIX = "unmanaged ("
 
 
-def _optional_frontmatter(skill: SkillDefinition) -> str:
-    """Render the optional spec frontmatter block (empty when none is set)."""
+def _optional_frontmatter(skill: SkillDefinition, *, emit_claude_block: bool = False) -> str:
+    """Render the optional spec frontmatter block (empty when none is set).
+
+    *emit_claude_block* is the destination root's capability, not a style choice:
+    the four spec fields above it are portable to any Agent Skills reader, and the
+    ``claude:`` block is not, so only a root that understands those keys receives
+    them (basicly-a3ab.11).
+    """
     fields: dict[str, object] = {}
     if skill.license is not None:
         fields["license"] = skill.license
@@ -84,12 +96,19 @@ def _optional_frontmatter(skill: SkillDefinition) -> str:
         fields["allowed-tools"] = skill.allowed_tools
     if skill.metadata:
         fields["metadata"] = dict(skill.metadata)
+    if emit_claude_block:
+        fields.update(dict(skill.claude))
     if not fields:
         return ""
     return yaml.safe_dump(fields, sort_keys=False, allow_unicode=True, default_flow_style=False)
 
 
-def render_skill_md(skill: SkillDefinition, *, require_description: bool = False) -> str:
+def render_skill_md(
+    skill: SkillDefinition,
+    *,
+    require_description: bool = False,
+    emit_claude_block: bool = False,
+) -> str:
     """Render the discoverable SKILL.md (frontmatter + generated marker + body).
 
     ``name`` and ``description`` are emitted verbatim (byte-identical to the
@@ -144,9 +163,8 @@ def render_skill_md(skill: SkillDefinition, *, require_description: bool = False
     description = "" if stripped else f"description: {text}\n"
     marker_comment = f"# {GENERATED_MARKER}\n" if stripped else ""
     body_marker = "" if stripped else f"{GENERATED_MARKER}\n\n"
-    header = (
-        f"---\nname: {skill.name}\n{marker_comment}{description}{_optional_frontmatter(skill)}---\n"
-    )
+    optional = _optional_frontmatter(skill, emit_claude_block=emit_claude_block)
+    header = f"---\nname: {skill.name}\n{marker_comment}{description}{optional}---\n"
     return f"{header}{body_marker}{skill.instructions}"
 
 
@@ -189,6 +207,17 @@ def root_requires_description(skill_root: Path) -> bool:
     """
     key = "/".join(skill_root.parts[-2:])
     return key not in DESCRIPTION_OPTIONAL_ROOTS
+
+
+def root_emits_claude_block(skill_root: Path) -> bool:
+    """Whether a skill projected under *skill_root* receives its ``claude:`` block.
+
+    Same last-two-parts keying as :func:`root_requires_description`, for the same
+    reason: it must read identically on POSIX and Windows and for an absolute root
+    as well as a relative one.
+    """
+    key = "/".join(skill_root.parts[-2:])
+    return key in CLAUDE_BLOCK_ROOTS
 
 
 def _is_generated_skill(path: Path) -> bool:
@@ -246,7 +275,9 @@ def _project_skill(skill: SkillDefinition, skill_dir: Path, result: SyncResult) 
 
     skill_md = skill_dir / SKILL_FILE_NAME
     require = root_requires_description(skill_dir.parent)
-    sync_file(skill_md, render_skill_md(skill, require_description=require).encode("utf-8"), result)
+    fenced = root_emits_claude_block(skill_dir.parent)
+    rendered = render_skill_md(skill, require_description=require, emit_claude_block=fenced)
+    sync_file(skill_md, rendered.encode("utf-8"), result)
     expected.add(skill_md)
 
     for rel in _resource_files(skill):
@@ -365,7 +396,10 @@ def _check_projected_skill(skill: SkillDefinition, skill_dir: Path) -> list[tupl
     skill_md = skill_dir / SKILL_FILE_NAME
     expected.add(skill_md)
     require = root_requires_description(skill_dir.parent)
-    rendered = render_skill_md(skill, require_description=require).encode("utf-8")
+    fenced = root_emits_claude_block(skill_dir.parent)
+    rendered = render_skill_md(skill, require_description=require, emit_claude_block=fenced).encode(
+        "utf-8"
+    )
     if not skill_md.exists():
         mismatches.append((skill_md, "missing"))
     elif skill_md.read_bytes() != rendered:

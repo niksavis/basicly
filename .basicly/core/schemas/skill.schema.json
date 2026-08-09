@@ -69,6 +69,10 @@
         "type": "string"
       },
       "description": "Optional Agent Skills frontmatter: arbitrary string key/value map."
+    },
+    "claude": {
+      "type": "object",
+      "description": "Claude-only frontmatter passthrough (paths, context, ...); projected into .claude/skills only, so the open-standard root keeps exactly the portable Agent Skills fields. Mirrors agent.schema.json's fence."
     }
   }
 }

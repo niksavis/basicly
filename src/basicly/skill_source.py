@@ -74,6 +74,13 @@ class SkillDefinition:
     compatibility: str | None = None
     allowed_tools: str | None = None
     metadata: tuple[tuple[str, str], ...] = ()
+    # Claude-only frontmatter, projected into `.claude/skills` and nowhere else
+    # (basicly-a3ab.11, D36). The four fields above are the Agent Skills portable
+    # subset and the whole point of that subset is that a projected SKILL.md loads
+    # on any host; a host-specific key at top level would trade that away for one
+    # behaviour. Fenced, it costs nothing: the open-standard root still receives
+    # exactly the portable fields.
+    claude: tuple[tuple[str, object], ...] = ()
 
     @property
     def source_dir(self) -> Path:
@@ -98,6 +105,33 @@ def _optional_str(
     if max_len is not None and len(value) > max_len:
         raise ValidationError(f"field '{field}' exceeds {max_len} characters", path)
     return value
+
+
+# Frontmatter keys the renderer owns; the claude passthrough may not shadow them.
+# Without this the fence is a back door that rewrites the portable header from a
+# vendor block — the same hole agents.RESERVED_FRONTMATTER_KEYS closes.
+RESERVED_SKILL_FRONTMATTER_KEYS = frozenset({"name", "description"})
+
+
+def _load_claude_passthrough(value: object, path: Path) -> tuple[tuple[str, object], ...]:
+    """Validate the optional Claude-only frontmatter block.
+
+    Values are deliberately untyped: this passes through host frontmatter whose
+    shape is the host's to define (``paths`` is a list, ``context`` a string), and
+    a schema of our own would go stale against a vendor that moves. The keys are
+    checked because those are ours to keep unshadowed.
+    """
+    if value is None:
+        return ()
+    if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
+        raise ValidationError("field 'claude' must be a mapping of frontmatter keys", path)
+    shadowed = sorted(set(value) & RESERVED_SKILL_FRONTMATTER_KEYS)
+    if shadowed:
+        raise ValidationError(
+            f"claude passthrough may not shadow the rendered key(s) {', '.join(shadowed)}",
+            path,
+        )
+    return tuple(value.items())
 
 
 def _load_metadata(value: object, path: Path) -> tuple[tuple[str, str], ...]:
@@ -173,6 +207,7 @@ def discover_skills(
                 ),
                 allowed_tools=_optional_str(data.get("allowed-tools"), "allowed-tools", path),
                 metadata=_load_metadata(data.get("metadata"), path),
+                claude=_load_claude_passthrough(data.get("claude"), path),
             )
         )
 

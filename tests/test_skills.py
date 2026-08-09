@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from basicly.schema import ValidationError
+from basicly.skill_source import discover_skills
 from basicly.skills import (
     GENERATED_MARKER,
     SKILLS_SOURCE_DIR,
@@ -426,3 +428,51 @@ def test_build_and_check_agree_per_root(tmp_path: Path) -> None:
     demanding = (roots[1] / "handrun" / "SKILL.md").read_text(encoding="utf-8")
     assert "description:" not in tolerant.split("---")[1]
     assert "description:" in demanding.split("---")[1]
+
+
+def test_the_claude_fence_reaches_only_the_root_that_understands_it(tmp_path: Path) -> None:
+    """A Claude-only key lands in .claude/skills and nowhere else (basicly-a3ab.11, D36).
+
+    The whole reason the fence exists: `paths` is not in the Agent Skills portable
+    subset, so emitting it at top level would trade every projected SKILL.md's
+    portability for one host's behaviour. Both roots are asserted, because a fence
+    that leaks is indistinguishable from no fence if only the Claude side is read.
+    """
+    _write_skill(tmp_path, "fenced", "fenced", "Do a thing.")
+    path = tmp_path / SKILLS_SOURCE_DIR / "fenced" / "skill.yaml"
+    path.write_text(
+        "schema_version: 1\nname: fenced\ninvocation: model\n"
+        "description: Do a thing.\n"
+        'claude:\n  paths: ["**/*.py"]\n'
+        "instructions: |\n  # x\n",
+        encoding="utf-8",
+    )
+    roots = [tmp_path / ".claude/skills", tmp_path / ".agents/skills"]
+
+    sync_skills(tmp_path, roots)
+
+    fenced = (roots[0] / "fenced" / "SKILL.md").read_text(encoding="utf-8").split("---")[1]
+    portable = (roots[1] / "fenced" / "SKILL.md").read_text(encoding="utf-8").split("---")[1]
+    assert "paths:" in fenced
+    assert "**/*.py" in fenced
+    assert "paths:" not in portable, "a Claude-only key must not reach the open-standard root"
+    assert "description:" in portable, "the portable fields still project"
+    # The check must render identically to the build, or the fenced root reports
+    # permanent drift the way require_description would have.
+    assert check_synced_skills(tmp_path, roots) == []
+
+
+def test_the_claude_fence_may_not_shadow_a_rendered_key(tmp_path: Path) -> None:
+    """Without this the fence is a back door that rewrites the portable header."""
+    _write_skill(tmp_path, "shadow", "shadow", "Do a thing.")
+    path = tmp_path / SKILLS_SOURCE_DIR / "shadow" / "skill.yaml"
+    path.write_text(
+        "schema_version: 1\nname: shadow\ninvocation: model\n"
+        "description: Do a thing.\n"
+        "claude:\n  description: something else\n"
+        "instructions: |\n  # x\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError, match="may not shadow"):
+        discover_skills(tmp_path)
