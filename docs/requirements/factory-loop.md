@@ -402,7 +402,7 @@ unenforceable.
 
 | Class | Bound to | Today [M 2026-08-08] |
 | --- | --- | --- |
-| **Loop skills** | a state, loaded by that state's agent | **1 of 5 exist** |
+| **Loop skills** | a state, loaded by that state's agent | **2 of 5 exist** (2026-08-09) |
 | **Ad-hoc skills** | nothing — invoked when they fit | 37 sources: 31 model-invoked, 6 user-invoked |
 
 **Not one of the 37 is named for a loop state.** The ad-hoc class is well populated — `tool-*`
@@ -415,15 +415,29 @@ it has the same cause: the ad-hoc class is what a human reaches for, so it got b
 | `decompose-plan` | DECOMPOSE | testable criteria notation, dependency declaration, budget assignment | **missing** (part of `harness-loop` today) |
 | `validate-as-consumer` | VALIDATE | run it as a consumer would, in the operational environment — never a re-run of the gate suite | **missing** |
 | `repair-in-place` | REPAIR | same worktree, briefed with actual findings, no re-plan | **missing** |
-| `root-cause` | RETROSPECTIVE | iterated-why with every link citing an observation; output is a named control + tier + covered class | **missing** (the `session-finish` retro section stands in) |
+| `root-cause` | RETROSPECTIVE | iterated-why with every link citing an observation; output is a named control + tier + covered class | **shipped 2026-08-09**, model-invoked, ahead of its state — see below |
 | `python-guidelines` | BUILD, REPAIR | §9.2 — the non-mechanical half | **shipped** (`basicly-u2hl.13`) |
 
 **A loop skill is blocked on its state, not on itself.** `validate-as-consumer` cannot be exercised
-while VALIDATE is not a phase, and `root-cause` cannot fire without the special-cause signal §3.2
-specifies. Authoring one ahead of its state produces a skill nothing invokes, which is the
-unfalsifiable-claim failure the catalog eval exists to catch — 8 of 34 skills had ever been
-exercised when that was last measured. `basicly-4kdm` owns the pairing: a loop skill lands with the
-agent that loads it, or not at all.
+while VALIDATE is not a phase. Authoring one ahead of its state produces a skill nothing invokes,
+which is the unfalsifiable-claim failure the catalog eval exists to catch — 8 of 34 skills had ever
+been exercised when that was last measured. `basicly-4kdm` owns the pairing: a loop skill lands with
+the agent that loads it, or not at all.
+
+**Amended 2026-08-09 by the one exception, which sharpens the rule rather than weakening it.**
+`root-cause` shipped ahead of RETROSPECTIVE, on the owner's instruction and against this
+paragraph's first reading. The reading was too coarse: the failure the rule guards against is a
+skill with **no invoker**, not a skill whose *state* is unbuilt. `root-cause` has two invokers
+today — a human running a retro under `session-finish`, and the `researcher` agent, whose method
+section defers to it — so it is exercised rather than asserted, and it becomes RETROSPECTIVE's
+skill unchanged when that state exists. The sharpened test: **name the invoker before authoring.**
+A loop skill whose only prospective caller is an unbuilt state still fails it.
+
+It also carries the caveat the rest of this document already holds, which is why it is a skill and
+not a slogan: iterated-why yields **one** causal path chosen by the asker and is not reproducible
+between analysts (Card, *BMJ Quality & Safety* 2017, §15), so the skill's output contract requires
+the branch not taken alongside the chain that was. And it inherits §3.2's guard — a single failure
+inside the limits is common cause, and running the analysis on it is tampering.
 
 **Shipped 2026-08-08** (`basicly-u2hl.13`), and **being promoted to a path-scoped fragment** [D]:
 as a model-invoked skill it loads only when an agent thinks to ask, and the agent that most needs
