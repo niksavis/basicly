@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
 import yaml
 
+from basicly import loop_state
 from basicly.catalog_lint import lint_catalog, skill_warnings
 from basicly.schema import MODEL_TIERS
+from basicly.skill_source import discover_skills
 
 REPO = Path(__file__).parent.parent
 VALID_SKILL = (
@@ -470,3 +473,46 @@ def test_a_load_time_failure_reports_the_same_path_style_as_the_lint_walk(
     assert violations[0] == violations[1]
     assert violations[0].startswith(".basicly/core/agents/reviewer/agent.yaml: ")
     assert str(root) not in violations[0]
+
+
+def test_no_skill_description_names_a_phase_the_engine_does_not_have() -> None:
+    """A description is the router, so a phantom phase in one is a false claim.
+
+    `harness-loop` advertised `teardown` and `retro` until 2026-08-09
+    (basicly-u2hl.44). Neither is in ``loop_state.PHASES``: teardown is folded into
+    the ship advance and the retro is a tracker comment, so `basicly loop status`
+    can never report either. A description is what an agent reads to decide whether
+    to load the skill at all, which makes a phase it cannot reach a discoverability
+    defect rather than a wording nit.
+
+    Deliberately narrow. It fires only on a name used *as a phase* — inside an arrow
+    chain — because the words themselves are ordinary English and a skill is free to
+    discuss a retro. Broadening it to any mention would make it unfixable prose
+    policing rather than a claim check.
+    """
+    known = set(loop_state.PHASES)
+    offenders: list[str] = []
+    for skill in discover_skills(Path.cwd()):
+        for chain in re.findall(r"\(([^()]*→[^()]*)\)", skill.description):
+            named = {step.strip().strip("`") for step in chain.split("→")}
+            phantom = sorted(name for name in named if name and name not in known)
+            if phantom:
+                offenders.append(f"{skill.slug}: {', '.join(phantom)}")
+
+    assert offenders == [], (
+        f"skill description(s) name a phase the engine does not have: {offenders}; "
+        f"loop_state.PHASES is {sorted(known)}"
+    )
+
+
+def test_the_phase_check_would_catch_a_phantom() -> None:
+    """The positive control: the assertion above discriminates.
+
+    Without it the check reads identically whether it is enforcing something or
+    matching nothing at all.
+    """
+    known = set(loop_state.PHASES)
+    chain = "intake → classify → build → teardown"
+    named = {step.strip() for step in chain.split("→")}
+
+    assert sorted(name for name in named if name not in known) == ["teardown"]
