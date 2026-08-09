@@ -88,39 +88,42 @@ hand-written copy of them was stale within days:
 
 <!-- docs-claims:end plan-current-state -->
 
-**Not built**, re-verified 2026-08-08 by reading `src/` rather than by counting closed beads:
-**zero of the seven personas** (`rg -w 'dana|kai|vera|remo|juno|lumi|tala' src/` returns nothing),
-and one default runner serves every phase; **four of the five designed skills** are absent, only
-`python-guidelines` ships; **no EARS validation** anywhere; **VALIDATE is not a phase** in either tuple;
-RETROSPECTIVE does not exist; **and one item on this list was never a defect**:
-`loop_state.PHASES` and `config.LOOP_PHASES` were recorded as disagreeing tuples. They
-differ by exactly one element — the terminal `done`, which is absent from `LOOP_PHASES`
-because it has no transition out — the reason is documented at `config.py:369`, and
-`test_loop.py:2811` pins `loop._HANDLERS` to `LOOP_PHASES` so a handler cannot drift from
-the set that validates it. Checked 2026-08-09 before acting on it; `policy.rework_recorded` reports a cross-gate total that nothing
-enforces.
+**Not built**, re-verified against `src/` on 2026-08-09 rather than by counting closed beads:
+**no EARS validation** anywhere; **VALIDATE, REPAIR and RETROSPECTIVE are not phases**;
+`policy.rework_recorded` reports a cross-gate total that nothing enforces; and the four
+remaining handoff schemas are unwritten, which is what blocks four of the seven roles.
 
-**Rewritten 2026-08-09: the catalog half is done and the engine half is untouched.** All seven
-loop agents and all five loop skills are authored, each agent paired to its skill through a
-reference the catalog lint enforces. Nothing dispatches any of them.
+**One item on this list was never a defect, and it sat here for two days.**
+`loop_state.PHASES` and `config.LOOP_PHASES` were recorded as disagreeing tuples. They
+differ by exactly one element — the terminal `done`, absent from `LOOP_PHASES` because it
+has no transition out. The reason is documented at `config.py:369` and `test_loop.py:2811`
+pins `loop._HANDLERS` to `LOOP_PHASES` so a handler cannot drift from the set that
+validates it. Checked 2026-08-09 *before* acting on it. Do not "reconcile" them.
+
+**Three claims this section carried on 2026-08-08 are now false**, and the work that
+falsified them landed the same day it was measured:
+
+| Was written | Now [M 2026-08-09] |
+| --- | --- |
+| zero of the seven personas | **all seven authored**, role-named, projected to both families |
+| four of the five designed skills are absent | **5 of 5 exist** |
+| one default runner serves every phase | a phase resolves to a role and reaches the argv (`roles.resolve_role`) |
 
 ```text
 agents   11 sources · 7 loop + 4 ad-hoc · projected to both families · vendored
-         a phase now resolves to a role and reaches the argv    roles.resolve_role
+         3 of 7 loop roles reachable        classify · decompose · build/repair
+         4 unreachable — their states do not exist          (u2hl.54)
 skills   40 sources · 35 projected · 5 of 5 loop skills exist
-         ever exercised                                            10 of 40 [M 2026-08-09]
-         projected listing 2342 tok vs a consumer's 2000 budget    OVER (a3ab.12)
-hooks    31 documented host events               mapped by catalog  2  (claude_settings.py:51)
-loop      8 phases named in the requirements     loop_state.PHASES  7, and two of the named
-                                                 ones are not phases at all
+         ever exercised                                     10 of 40
+         projected listing 2342 tok vs a consumer's 2000    OVER (a3ab.12)
+hooks    31 documented host events · mapped by catalog  2   (u2hl.49, blocked)
+loop     loop_state.PHASES 7 incl. terminal `done` — correct, not a defect
 ```
 
 Both halves of `basicly-4kdm` landed on 2026-08-09: the definitions and the dispatch that
-reaches them. **What is still missing is the states themselves** — `validator`, `reviewer`,
-`retrospector` and `curator` resolve correctly and will never be invoked, because VALIDATE,
-REPAIR and RETROSPECTIVE are not phases and SHIP has no curator step. Three of the eleven
-roles are reachable today; the rest wait on §5.3's loop work rather than on anything in
-§6 or §7.
+reaches them. **What is missing is now the states, not the roster** — `validator`,
+`reviewer`, `retrospector` and `curator` resolve correctly and can never be invoked. That
+is `basicly-u2hl.54` and it is §5.3's work, not §6's or §7's.
 
 A competing harness with strictly worse definitions — hand-written, no schema, no projection, no
 vendoring — beats this repo on all four rows because its definitions are **wired**

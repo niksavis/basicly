@@ -76,6 +76,15 @@ replacement lands, the module runs against it unchanged.
 
 | **R9.** Destructive flush | A mutating command auto-flushed a **426-record database over a 612-record committed export**, deleting 187 records — 47 of them open — and reported success. `br sync --status` on that same checkout already said `JSONL is newer (import recommended)`: the condition was detected and the write allowed anyway. Measured refinement, 2026-08-06: that status is computed from **timestamps** and fires on a healthy checkout where the content is byte-identical, so it cannot be the guard | Recovered only because the export is committed — the database was the corrupt side. Nothing in the tracker layer noticed; three positive-control tests asserting a gate is not measuring an empty set were the only detection (`basicly-b2n2`) | **A publish never shrinks the artifact silently.** A write that would emit fewer records than the file it overwrites reports the shrink and requires explicit intent, and the comparison is on **content, not timestamps**. With the log authoritative and every other file derived (§4), the disagreeing-stores state cannot arise at all — but the derived snapshot still needs the shrink guard |
 
+**R6 argued itself again on 2026-08-09, and the measurement is the argument.** `br`
+re-populates `source_repo_path` on **every write** — around 715 records — so a single
+session of ordinary work required the scrub to be run by hand **fifteen times**, once
+before nearly every commit, each time after `tracker-path-scan` had already blocked the
+commit. `basicly-vkh0.5` is closed and the gate does bind; what closed was the *mopping*,
+not the leak. That is precisely the distinction R6's requirement column draws —
+portability as a property of the format rather than of a scrubbing pass — and the cost of
+not having it is now a measured per-session figure rather than an argument.
+
 R1, R5, R6, R7, R8 and R9 are already settled in the design (§9.5, §9.4, §12, §9.3, §9.3, §4). R2, R3 and
 R4 are constraints on the command layer that has not been written yet, and this table is where they
 are recorded so it cannot be written without them.
