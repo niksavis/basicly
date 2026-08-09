@@ -108,6 +108,8 @@ at build→verify; everything else is checkpoints and lints.
 | D30 [D] | **A provider model id never appears in an agent file, generated or not.** The source declares a tier; the id is injected at spawn | Owner, 2026-08-09. Not style: our own tier kit records that *"a definition that pins its own `model` is left alone"*, so a projected `model:` line **disables** tier injection rather than implementing it — which is what `basicly-a3yi`'s projection plan would have shipped. Verified the constraint is satisfiable on both families: claude injects the alias at spawn via the hook or `--agents <json>`; copilot 1.0.78 carries the model in **config** (`subagents.agents.<name>.model`), outside the `.agent.md`. The kit's note that copilot is frontmatter-only is stale as of 1.0.78 |
 | D31 [D] | **A tier resolves by declared vendor order, verified at install.** `anchors.yaml` gains a `vendor_order` per tier; resolution walks it and takes the first the map marks available for the surface in effect; `basicly install`/`upgrade` probes each chosen model once and records a rejection | `model-map.json` already resolves tier→vendor→surface and already refuses to substitute another tier's model. Two gaps closed: nothing ranked vendors *within* a tier, and `status: available` is a claim from the generator rather than this consumer's entitlement. Neither host lists its models non-interactively (verified: claude has no `models` subcommand; copilot has `--model`/`auto` and BYOK env vars only), so entitlement must be probed once, not queried per dispatch — which keeps the dispatch path offline and deterministic |
 | D32 [D] | **A handoff artifact is a file on the work's own `harness/<issue>` branch, deleted at teardown; the ledger keeps its kind, digest and gate verdict** | Owner, 2026-08-09, superseding §8's marker-only mechanism. Git is the only transport this design has, so an artifact that must survive a machine hop has to be committed — which rules out a gitignored directory. Committed on the branch it is not dirt, so `merge.foreign_dirt` (`merge.py:469`) is unaffected; deleting the branch is the delete, so `main` never carried it. **Consequence: the harness branch must be created at INTAKE**, not at worktree provisioning (`loop.py:327`), because INTAKE, CLASSIFY and DECOMPOSE all emit artifacts before any worktree exists |
+| D34 [D] | **The comments rule is the divergence rule, and it lives in `python-guidelines`, not in the always-on layer.** A comment that contradicts the code is a defect and the code is what ships; deleting the comment is not the fix. The proposed strong form — "comments that describe the code must not exist" — is **rejected** | Owner, 2026-08-09, choosing against their own initial framing on the measurement. Four independent grounds, any one sufficient. (1) **It targets an empty set here**: a 120-block hand sample over `src/basicly/` and `.basicly/core/` classifies 41% contract, 40% why, 16% navigation, 3% directive, **0% narration**, and two whole-population probes each validated against synthetic narration return 0 narration-opener hits and 9 code-echoing blocks of 1,139, every one a cross-reference [M]. (2) **Its strong form contradicts PEP 8**, which *mandates* a describe-what comment for non-public methods; Google's "never describe the code" — which `.ruff.toml` already pins via `convention = "google"` — is stated immediately after a *requirement* to comment complicated operations. (3) **It arms a live gaming path**: stripping standalone comments returns 36.3% of `config.py`'s §9.3 ratchet tokens, 17.0% of `merge.py`'s and 11.6% of `loop.py`'s [M], and `python-guidelines/skill.yaml:72` already names comment deletion as the way to game that gate — an always-on rule licensing it authorises it on every lane. (4) **No budget**: `AGENTS.md` is 13,135 characters against `codex.yaml`'s 12,000 cap, and the parent epic `basicly-a3ab` exists to *relieve* the always-on layer. Also **not agent-actionable**: "outside of best practices" is an undefined exemption and "if you need to read the comments" is a counterfactual about a reader the agent cannot query — neither is falsifiable, while divergence is checkable against an observation. The literature does not settle it either way: "comments are always failures" traces to *Clean Code* ch.4, a trade book with no cited study, and the measured work is mixed — Nielebock et al. 2018 (n=277) "the real effect of comments on software development remains uncertain", and a 2026 eye-tracking study (n=20) spans a 30% decrease to a 34% increase [S] |
+| D35 [D] | **`python-guidelines` stays a skill and gains `paths: ["**/*.py"]`; it is not demoted to an always-on fragment** | Owner, 2026-08-09, re-taking §7.2's demotion plan because the premise under it is false. That plan rested on "as a model-invoked skill it loads only when an agent thinks to ask" — refuted at claude 2.1.226, where a skill's frontmatter takes a `paths:` glob that limits *and triggers* automatic activation [S, vendor doc, fetched 2026-08-09]. The glob buys the same always-loads-on-`.py` behaviour at **zero** always-on characters, and it unblocks the work from `basicly-a3ab.1`'s eviction, which the fragment plan was waiting on. **The gap it does not close is codex**: it has no glob-based instruction scoping and never loads a nested `AGENTS.md` below the cwd (architecture §7.4), so the fragment remains the only mechanism there — deferred until codex has headroom, rather than paid for now on all three families |
 | D33 [D] | **`docs/` carries only architecture, tutorial, how-to and a contributor guide.** No new requirement or plan document is ever created as a file; a new requirement enters as `01-solution-design.md` on a branch | Owner, 2026-08-09, making §9's register mechanical instead of disciplinary. The four existing requirement/plan documents exit on the triggers already recorded there; the review's Appendix A moves to architecture rather than being deleted, because a licence and provenance register is a decision record. A `docs/` path gate makes the rule a free deterministic check, which the standing constraints already prefer over a judged one |
 
 ### 2.1 Risk accepted on D4
@@ -324,10 +326,16 @@ things with one job.
 
 ```text
 rg -w 'dana|kai|vera|remo|juno|lumi|tala' src/     ->  0 hits
-.basicly/core/agents/                              ->  code-reviewer, security-auditor, test-runner
-.claude/agents/                                    ->  the same three, written by agents.sync()
+.basicly/core/agents/                              ->  code-reviewer, security-auditor, test-runner,
+                                                       researcher (+ blocks/, 4 shared prompt blocks)
+.claude/agents/                                    ->  the same four, written by agents.sync()
 dispatch code that READS an agent root             ->  none
 ```
+
+**Re-measured 2026-08-09**: four agent sources, not three — `researcher` was added this session, and
+`.basicly/core/agents/blocks/` holds four composable prompt blocks (`context-priming`,
+`escalation-honesty`, `evidence-discipline`, `read-only-discipline`) that this section did not
+previously record. All four agents are still ad-hoc; the loop-agent column is still empty.
 
 So the projection works and **nothing consumes it**: every dispatch ends at `Popen` of a CLI with a
 prompt built inline, and the only other consumer of `.claude/agents/` is `cli.py:1261`, which globs
@@ -356,6 +364,40 @@ A role is a **dispatch contract**: role prompt, tool policy, model tier, gate au
 contract. Each judged role additionally carries an explicit adversarial stance and a role-specific
 list of how *that* role goes soft, derived from recorded verdict and rework history rather than
 invented (§11.1) — a generic rigour instruction is a no-op that costs tokens.
+
+**The host already expresses that contract, and we express a third of it** [M, 2026-08-09, claude
+2.1.226]. A subagent definition requires exactly `name` and `description` and accepts seventeen
+optional fields, of which `tools`, `disallowedTools`, `model`, `effort`, `maxTurns`,
+`permissionMode`, `isolation`, `skills`, `hooks` and `background` are each a clause of the contract
+above. Two consequences for §6.1's schema, neither of them a rewrite:
+
+- **`skills:` makes §7.1's "an agent is a dispatch contract; a skill is a method that contract can
+  load" mechanical rather than prose.** The field preloads a skill's full body at subagent startup.
+  It is claude-only, so it belongs under the schema's `claude:` vendor fence. One constraint: a
+  skill with `disable-model-invocation: true` cannot be preloaded.
+- **`--agents <json>` is the wiring this section says the engine must learn.** It supplies a role
+  definition at spawn without the projected-file round-trip, so "dispatch code that READS an agent
+  root -> none" can be closed without teaching the engine to read one. Engine work under D27, not a
+  catalog change.
+
+**Agent definitions hot-reload; they are not read once at process start** [M, refuted 2026-08-09].
+Claude Code watches `~/.claude/agents/` and `.claude/agents/` and picks up an added or edited file
+within seconds, with two exceptions — the *first* agent file in a newly created `agents/` directory,
+and `--disable-slash-commands`. Hook config in settings files is watched too, and a `ConfigChange`
+event exists for exactly this. The first exception is the first-install case, which is why three
+committed places assert the strong form and all three need the narrow rule instead:
+`.basicly/core/kit/tier/install_hook.py:115`, `.basicly/core/kit/tier/README.md:72`,
+`.basicly/core/skills/tier-injection/skill.yaml:50`. The original claim (`basicly-wbsz.3`) pinned no
+version, which is why it cannot be adjudicated as wrong-then or stale-now — and that is the finding.
+
+**A competing harness ships the contract half we lack, from a worse source model** [M, 2026-08-09,
+`Chachamaru127/claude-code-harness` v5.6.0, MIT]. Its four agents are hand-written `.md` with no
+schema, no projection and no consumer vendoring — strictly weaker than §6.1 as a *source*. But each
+one names tools, denied tools, model, effort, turn cap, isolation and a versioned output schema
+(`advisor-response.v1`, `test-wiring-audit.v1`), and each is actually spawned. That is exactly the
+gap this section measures, observed working in another tree. Its `test-wiring-auditor` contract —
+fresh context, inherits no conversation state, emits one JSON object — is a clean model for
+`validator`. Concept only; nothing is ported.
 
 ### 6.4 Deliberately not agents
 
@@ -389,14 +431,31 @@ A rule reaches an agent by exactly one of three routes, and choosing wrong is wh
 | Surface | Loads | Costs | Use when |
 | --- | --- | --- | --- |
 | **Fragment** | always, or on a path glob | always-on budget on every family; `AGENTS.md` has ~1,225 characters of headroom | it must bind even when nobody thought to ask |
-| **Skill** | when the model judges it relevant, or when a human types it | nothing until invoked | it is a *method* — long, situational, and useless when it does not apply |
+| **Skill** | when the model judges it relevant, **when its `paths:` glob matches**, or when a human types it | its description sits in the listing budget; the body costs nothing until invoked | it is a *method* — long, situational, and useless when it does not apply |
 | **Agent** (§6) | when the engine dispatches a state, or on demand | a dispatch | it needs its own tools, tier and output contract, not just words |
 
 The three are not alternatives for the same content. **An agent is a dispatch contract; a skill is a
 method that contract can load.** An implementer agent says who runs, at what tier, with what tools,
 producing `change-summary`; `repair-in-place` says *how* to repair once it is running. Putting the
 method in the agent's prompt makes it unshareable; putting the contract in a skill makes it
-unenforceable.
+unenforceable. The agent frontmatter's `skills:` field makes that pairing mechanical (§6.3).
+
+**A skill is not free, and the cost is in the listing, not the body** [M, 2026-08-09, claude
+2.1.226]. Every skill's `description` + `when_to_use` is capped at **1,536 characters** per entry,
+the whole listing is budgeted at **1% of the context window**, and on overflow descriptions are
+dropped **starting with the least-invoked skills**. That composes with a fact this document already
+records — 8 of 34 skills had ever been exercised when last measured — into a live defect with a
+feedback loop: a rarely-invoked skill is the first whose description is truncated, which makes it
+harder to invoke, which makes it more truncated. It converts §11.6's catalog eval from hygiene into
+a measurable context cost, and both caps are mechanically checkable by `catalog lint` today.
+
+**Skill scope precedence is the inverse of agent scope precedence, and it is unrecorded anywhere in
+this repo** [M, 2026-08-09]. Agents resolve managed > `--agents` > **project > user** > plugin;
+skills resolve enterprise > **personal > project**. `basicly install` writes a consumer's *project*
+`.claude/skills/`, which is the **lowest-priority writable scope** — so any developer's
+`~/.claude/skills/<same-name>` silently overrides a skill we shipped them, while an agent of the
+same name would not. For a distribution tool that is a supply-chain-shaped surprise, and it belongs
+in `docs/architecture/architecture.md` rather than only here.
 
 ### 7.2 Two classes, mirroring §6.2
 
@@ -439,18 +498,106 @@ between analysts (Card, *BMJ Quality & Safety* 2017, §15), so the skill's outpu
 the branch not taken alongside the chain that was. And it inherits §3.2's guard — a single failure
 inside the limits is common cause, and running the analysis on it is tampering.
 
-**Shipped 2026-08-08** (`basicly-u2hl.13`), and **being promoted to a path-scoped fragment** [D]:
-as a model-invoked skill it loads only when an agent thinks to ask, and the agent that most needs
-it is the one that does not. The core rules move to a fragment declaring `paths: ["**/*.py"]`, so
-they load whenever Python is touched. It is free on Claude and Copilot and costs ~1,500 characters
-on `AGENTS.md`, which has ~1,225 characters of headroom — so **one always-on line must leave
-first**, which is `basicly-a3ab.1`'s audit (the no-op test on every baseline line). The skill stays
-for the long-form material; the fragment carries only what must always bind.
+**Shipped 2026-08-08** (`basicly-u2hl.13`). It **stays a skill and gains `paths: ["**/*.py"]`**
+[D35, 2026-08-09] — superseding this paragraph's earlier plan to promote it to a path-scoped
+fragment. That plan's premise was "as a model-invoked skill it loads only when an agent thinks to
+ask, and the agent that most needs it is the one that does not." **The premise is false**: a skill's
+own frontmatter takes a `paths:` glob that limits and triggers automatic activation [M, 2026-08-09,
+claude 2.1.226]. The glob buys the same always-loads-on-Python behaviour for **zero** always-on
+characters and unblocks the work from `basicly-a3ab.1`'s eviction, which the fragment plan was
+queued behind. The headroom figure the plan was sized against was also wrong in the worse direction:
+`AGENTS.md` is **13,135 characters against `codex.yaml`'s 12,000 cap** — 1,135 characters *over*,
+not 1,225 under — and 226 lines against a 200-line warning [M, 2026-08-09].
+
+**What survives of the plan is the codex gap.** Codex has no glob-based instruction scoping and
+never loads a nested `AGENTS.md` below the cwd (architecture §7.4), so a fragment remains the only
+mechanism there. It is deferred rather than dropped: paying ~1,500 characters on all three families
+to reach one, on a file already over its cap, is the wrong order.
+
+**Amended by the counterfactual test** [S, 2026-08-09]. `root-cause` names a control and the class it
+covers, but never asks whether removing it blocks the failure. One sentence closes it — *would
+removing this cause block this pathway?*, and at set level *would removing the retained set block the
+observed failure?* It is checkable by a second party, which is this section's admission test, and it
+is a concept rather than an expression, so it is safe to take from an MIT source without porting.
 
 **Not encoded, deliberately** [S]: *genchi genbutsu* as a principle (its only checkable content is
 "claims carry attached evidence", which the repo already has), "make policies explicit" as
 exhortation, "quality at the source" as a slogan, vendor tollgate checklists, and RPN
 multiplication — deprecated by AIAG-VDA 2019 in favour of an Action Priority lookup.
+
+### 7.3 The 2026-08-09 sweep — 10 declines, 2 adaptations, 0 adoptions
+
+Eleven third-party sources were swept for skills, hooks and agent patterns (`basicly-u2hl.37`).
+**Ten declined.** The result is recorded because a decline is the expensive finding to re-derive:
+without it the same list gets swept again next time someone links it.
+
+| Declined for | Sources |
+| --- | --- |
+| The recommended control is the author's own product | `aipatternbook.com` (225 patterns are LLM engine output serving as a sales demo; the publisher states the editions "don't really exist yet" and invites sponsorship), `ThibautMelen/agentic-ai-systems` (every "executable pattern" is a collaborator's `*.nika.yaml` DSL, CI is their action) |
+| Already carried by our always-on baseline | `multica-ai/andrej-karpathy-skills` — all four of its `CLAUDE.md` sections map onto lines we already ship, licence is **NONE**, and its own README concedes the attributed author did not write it |
+| Rung 6 with nothing our fragments lack | `agentpedia.codes`, `hidekazu-konishi.com`, `WenyuChiou/ai-research-skills`, `kumamaki/Claude-Code-Personalities`, `harperreed/dotfiles` |
+| Premise unestablished (see §7.4) | `nicobailon/visual-explainer` |
+
+Two adaptations, both concept-level and neither a new skill:
+
+- **`tjboudreaux/cc-thinking-skills`** (MIT) — its counterfactual test amends `root-cause` (§7.2).
+  Adopting its 28 skills would be the accretion this section exists to prevent, and its
+  five-whys/TOC/scientific-method skills collide with material we already carry with the Deming
+  common-cause gate and the Card 2017 branch rule attached.
+- **`Piebald-AI/claude-code-system-prompts`** — holds the host's own code-review agent decomposed,
+  pinned to v2.1.226, which is the strongest available evidence for how a subagent dispatch is
+  constructed, and §6.3 records `reviewer` as paper-only. **The licence line must be stated where
+  the finding is used**: MIT © Piebald LLC covers Piebald's tooling and *cannot* license the vendor's
+  copyrighted prompt text. Legitimate to read when authoring `reviewer`'s stance and gate authority;
+  never legitimate to paste into a `.basicly/core/` source.
+
+**A skill graph is the one structural idea worth taking** [S, `claude-code-harness` v5.6.0, MIT].
+Its `SKILL.md` frontmatter carries `shape` (workflow/delegate), `role` (executor/orchestrator),
+`pair` (its counterpart skill) and `base` (the skill it delegates to). That makes "which skill
+answers which, and which one this delegates to" machine-readable — the pairing §7.2 currently states
+in prose and cannot check. Concept for `basicly-u2hl.25` / `basicly-4kdm`; no code is taken.
+
+### 7.4 A rendered artifact does not fix a checkpoint, because the clock is not measuring reading
+
+The owner's framing was that a rendered view may read better than a terminal wherever a human is in
+the loop. Tested against this repo's own ledger rather than argued [M, 2026-08-09]. `policy.py:2293`
+writes `[harness-wait]` markers over `checkpoint` and `decision`; 129 are human-answered.
+
+```text
+n = 129 human-answered        total 145,640 s (40.5 h)
+p25    12 s   median  95 s    p75    378 s
+p90 2,090 s   max  29,012 s   54% answered in <= 120 s
+17 events > 30 min  ->  123,406 s  =  85% of all human wait
+```
+
+The five whys, each link an observation, not an inference:
+
+1. Rendering helps only if reading is slow — refuted at the median. Nobody comprehends a plan in the
+   12 s of p25, and 54% are under two minutes.
+2. The 40.5 h total is real, but 17 events over 30 minutes carry 85% of it. The mass is all tail.
+3. Those 17 are not slow reads. `basicly-hxnf.2` (27,553 s) and `basicly-hxnf.3` (27,510 s) were
+   answered **in the same second** — two decisions cannot be comprehended simultaneously; they were
+   batched on someone's return.
+4. `basicly-sco6` waited 29,012 s; the **next** decision on the same issue, same human, took 81 s.
+   Eight hours asleep, eighty-one seconds awake.
+5. The clock starts when the *engine* asks, not when the human *arrives*, and
+   `CONFIRM_TTL_SECONDS = 900` means every wait past p90 has already expired into a re-challenge.
+
+**Root cause: the checkpoint clock measures rendezvous, not reading.** A renderer cannot move a
+quantity the instrument does not contain. Both recorded checkpoint-comprehension incidents
+(`basicly-kjc5.34`, `basicly-jr0l.39`) were fixed by *saying the missing thing in words* —
+`_CHECKPOINT_MEANING` (`cli.py:2214`) exists because an operator did not know the merge had already
+happened. That is missing information, not unreadable format, and §15.1 records the same shape
+already refuted in the token domain.
+
+**The branch not taken, per the Card 2017 caveat**: this followed *duration*. The other branch is
+*decision quality* — a checkpoint answered in 5 s may be answered wrong, and `cli.py:2219` exists
+because of exactly such an approval. That branch is **not measurable here**: `checkpoint_approved`
+is a boolean, there is no un-approve, and a regretted approval leaves no distinguishable trace.
+
+**The one datum on the other side, stated because it is the honest reason this is "unestablished"
+rather than "refuted":** `wait-decompose` — the only checkpoint with a real artifact to read — ran
+2,490 s, roughly 26× the classify and ship medians, at **n = 1**.
 
 ---
 
@@ -630,8 +777,19 @@ has already spent a round. No linter can check these:
 
 1. **Where to split a module.** If you cannot name it without "and", it is two modules.
 2. **Naming quality.** `N` checks case, not whether the name describes the domain effect.
-3. **Docstring usefulness.** `D` checks shape; a docstring restating the signature passes and is
-   worthless.
+3. **Docstring and comment usefulness.** `D` checks shape; a docstring restating the signature
+   passes and is worthless — PEP 257 names exactly this ("The one-line docstring should NOT be a
+   'signature' reiterating the function/method parameters") [S]. The same test applies to a comment,
+   and it is a test about *content*, not existence: narrating the next statement is the defect,
+   recording why that statement is the one that survived is the artifact. The Google convention this
+   repo already pins (`.ruff.toml`, `convention = "google"`) draws the line in one sentence —
+   "never describe the code" — immediately after mandating one: "Complicated operations get a few
+   lines of comments before the operations commence" [S]. **Measured 2026-08-09** [M]: of 1,389
+   comment blocks under `src/basicly/` and `.basicly/core/`, a 120-block sample classifies 41%
+   contract, 40% why, 16% section navigation, 3% machine directive and **0% narration**; two
+   whole-population probes, each validated against synthetic narration, return 0 narration-opener
+   hits and 9 code-echoing blocks of 1,139, every one a cross-reference. There is no what-comment
+   population here to legislate against, so the rule worth writing is item 10, not a ban [D34].
 4. **Whether an abstraction earns its keep.**
 5. **Fixing the metric versus gaming it.** Extracting `_part1()`/`_part2()` satisfies `C901` and
    makes the code worse. Extract along a nameable responsibility or do not extract.
@@ -641,8 +799,22 @@ has already spent a round. No linter can check these:
 8. **3.14 idiom selection.** PEP 750 t-strings at injection boundaries; PEP 758 paren-free
    `except A, B:` — pick a house direction, no linter enforces either [S].
 9. **Free-threading safety** (PEP 779): stop assuming GIL atomicity. Not mechanically checkable.
+10. **A comment that contradicts the code is a defect, and the code is what ships** [D34]. PEP 8:
+    "Comments that contradict the code are worse than no comments. Always make a priority of keeping
+    the comments up-to-date when the code changes!" [S]. Nothing mechanical checks it — `ERA001`
+    catches commented-out code and **no rule in the stack reads a comment's meaning** — so it is a
+    build obligation: when you change a line, re-read the comment above it; when the two disagree,
+    the comment is wrong until shown otherwise. **Deleting it is not the fix and must not become
+    one.** Comment lines are counted by the §9.3 ratchet: stripping standalone comments returns
+    36.3% of `config.py`'s measured tokens, 17.0% of `merge.py`'s — which is frozen at exactly its
+    current count — and 11.6% of `loop.py`'s [M, 2026-08-09]. "The comments were redundant" is
+    therefore the cheapest route to ratchet headroom in this tree, and it is the same gaming shape
+    item 5 already names.
 
 Test quality is **out of scope** — `test-discipline` already owns it.
+
+**§9.1's "do not re-propose" list does not close the comment question.** It reads as though `ERA001`
+settles comments; `ERA001` covers commented-out code only, and item 10 is the uncovered half.
 
 ### 9.3 The file-size ratchet [D7]
 
@@ -791,6 +963,32 @@ mass [S]:
    definitions are unfalsifiable claims in our own catalogue.
 7. **Evidence binding at SHIP** as a separate pass — the writer of a claim is the wrong context
    to audit it.
+8. **Enforcement at the tool-call boundary, not only at the commit boundary** [M, 2026-08-09].
+   Our gates are git hooks and `basicly verify`: they judge an artifact **after** it exists. A
+   competing harness adjudicates **before** the tool runs, at PreToolUse and PermissionRequest,
+   and this is the single largest capability gap found in the 2026-08-09 sweep. Item 2 above is a
+   special case of it — a termination detector that can only refuse the next dispatch is weaker
+   than one that can refuse the call. See §11.7.
+
+Two of these are now cheaper than when they were written, both at claude 2.1.226 [M, 2026-08-09]:
+
+- **Item 4 has a host-native shape.** Hook types `prompt` (one small-model call returning
+  `{ok, reason}`) and `agent` (a subagent with tools, up to 50 turns) run a verifier **outside the
+  producer's context**, which is the fresh-context property item 4 requires. `type: agent` is
+  vendor-flagged **experimental** and the vendor steers production workflows to command hooks, so
+  it is additive — the deterministic gates stay primary.
+- **Item 2 has a reachable enforcement point.** A `Stop` hook returning `decision: block` fires and
+  continues the turn under our own `claude -p` dispatch — probed, two firings, `stop_hook_active`
+  observed flipping. It is capped at 8 consecutive blocks (OQ-16). This is engine work, not a
+  catalog change: `claude_settings.py:51` maps **2 of the 31 documented hook events**
+  (`pretooluse`, `posttooluse`), so no catalog source can name a `stop` stage until that vocabulary
+  is widened.
+
+**Item 3 is confirmed, and our own document beat a vendor blog on it.** Nesting depth is **3** at
+2.1.226, the `Agent` tool is withheld at the limit, and `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`
+configures it; concurrency is capped at 20 per session. The Anthropic blog post in the same reading
+list still says five — five was the default from v2.1.172 to v2.1.216, and v2.1.219 set 3. Rung
+ordering is what caught it.
 
 ### 11.1 The judged-output contract — the unbuilt half
 
@@ -838,6 +1036,52 @@ named check passes by construction. D10 stands — moving judgement to plan time
 a criterion whose check can be satisfied without the behaviour is the failure mode to watch, and
 D18's end-to-end demonstration is the partial answer already shipped.
 
+### 11.7 A competing harness, and the line it draws [M, 2026-08-09]
+
+`Chachamaru127/claude-code-harness` **v5.6.0**, SPDX **MIT**, no NOTICE, no per-directory licence
+and no rider — read in full before any finding below was written. Verified against the tree and by
+live probe, not against its README. It is **alive and fast**: 1,959 commits, 8 releases in the last
+month, 3,048 stars, issues closed in days. It is also **bus factor 1** — one person on four
+identities is 1,943 of those commits, and 5 of 100 sampled PRs are external.
+
+| Pillar | Us | Them | Overlap |
+| --- | --- | --- | --- |
+| **Catalog** | one YAML source, planner + per-target renderers, drift-gated | hand-written `CLAUDE.md`; `sync` generates only plugin/hook/settings files. Cross-host reuse is **mirroring** with a drift checker | Partial — same goal, opposite direction: we generate, they replicate and detect divergence |
+| **Gates** | git hooks + `basicly verify`, at commit/push/landing time | **agent-runtime**: 27 hook events, a 5-category floor, R01–R15, a tamper-check that refuses to adjudicate rather than fail open, redacted JSONL audit. Their `.githooks/` holds one file | **Barely overlapping, and this is the gap** — they gate the action before it happens, we gate the artifact after |
+| **Loop** | engine code; phase **derived**, worktrees provisioned, dispatch, serial merge queue, bounded rework | **prompt assembly**: the verbs "do NOT call any LLM", they emit a prompt to stdout. The loop is prose in `SKILL.md` the model executes | Same phase vocabulary, **inverted authority**. Theirs: the model executes and the engine vetoes. Ours: the engine executes and the model proposes |
+| **Tracker** | `br` graph, typed dependencies, phase a pure function of state | `Plans.md`, a Markdown table parsed by regex; status is a text marker. SQLite holds session runtime state, **not** the task graph | Weak — they have a ledger, we have a graph. No derived-phase equivalent exists |
+
+**This is evidence for a decision we already took, not against it.** `architecture.md:86-106`
+records phases as engine code and deliberately not configuration, decided 2026-07-30 after reviewing
+two projects that made them declarative. This is a third, larger, better-resourced instance of the
+same pattern, and the cost is observable: their own issue #269 is a `Stop` hook blocking infinitely
+because it keys on `Plans.md` WIP counts. A marker ledger is *remembered*; a graph is *derived*, and
+a compacted or crashed session can re-derive only the second.
+
+**What they solve that we have open** — `basicly-0p8n` (harness gates in the coding-agent hooks) is
+their entire product; `basicly-66ix` (project claude agent hooks to copilot) has a working shape
+there as **one policy kernel + N host codecs**, with a golden-file `--check` gate; `basicly-a3yi`
+(tier into each projected surface) is solved with declared precedence; `basicly-u2hl.24` (plugin
+channel) is shipped; `basicly-tcmy.20` (redaction) is enforced at write time — hash and length only,
+and *nothing at all* for the two most sensitive categories.
+
+**What we solve that they do not attempt**: a tracker as a graph with derived phase; engine-held
+authority (theirs can veto a tool call but cannot refuse to advance a phase, enforce a checkpoint,
+cap rework or rank a ready set — all four are prose); guidance projection from one source into three
+families; multi-lane supervision with a serial merge queue and contention preflight; install/upgrade
+convergence preserving a consumer overlay.
+
+**The `external-review` rule caught the inverse of the gastown case here, and the check was
+different.** gastown advertised a feature that was unreachable — found by looking for callers. This
+repo's defect is a **reachable feature described too strongly**: its README says the runtime floor is
+"Overridable: **No.** Not by any config, env var, or permission mode", and two documented escape
+hatches flip a deny to an allow, with the source file's own comment three clicks away conceding
+"except for their two explicit operator-configured exceptions". Finding it required *exercising the
+override*, not finding the caller. Its README also claims "claims in this README are machine-checked
+… a feature appears here only after a gate proves it is reachable"; the gate asserts version
+consistency and marketing wording, and **no assertion ties a README row to a reachable symbol**.
+That is worth adding to `external-review` as a second worked example.
+
 ---
 
 ## 12. Observability and the two factory modes [D6]
@@ -881,6 +1125,9 @@ read; pass `--forward-subagent-text`; add light mode as a second dispatch path.
 | ~~OQ-8~~ | ~~Kill approval~~ — **resolved**: human at every level (D15) | — |
 | ~~OQ-9~~ | ~~PEP 758 house direction~~ — **resolved 2026-08-08**: paren-free `except A, B:` is the house form, recorded in the `python-guidelines` skill rather than in a linter, since none enforces either direction | — |
 | ~~OQ-10~~ | ~~Plugin channel~~ — **resolved**: second channel, same projected output (D16) | — |
+| **OQ-15** | **Does a checkpoint's artifact take real reading time?** §7.4 shows the clock measures rendezvous, so the question is unanswerable with today's instrument — arrival latency and comprehension are fused in one number. Settled by **one field**: a third marker written when the operator first *views* the checkpoint. That splits the two at near-zero cost and decides the rendering question for good | any rendered-artifact work |
+| **OQ-16** | **How many `Stop`-hook iterations survive under `claude -p`?** One block-and-continue is probed and works; the documented override after **8 consecutive blocks** is not exercised. This bounds any in-dispatch termination gate to 8 turns and must be measured before one is designed on it | an in-dispatch BUILD termination gate |
+| **OQ-17** | **Does comment density causally track module oversize, or only correlate?** Over-cap modules median 9.9 comment lines per 100 code lines against 7.6 under-cap, but the two densest modules are small and under cap [M]. Confounded by age and by larger modules simply accumulating more decisions. It is the branch D34 did not take, and if it holds it argues for decomposition where D34 argues for annotation | nothing today; it would reopen D34 |
 
 ---
 
