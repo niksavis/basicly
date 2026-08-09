@@ -48,6 +48,26 @@ PROJECT_DIR_PLACEHOLDER = "${CLAUDE_PROJECT_DIR}"
 HOOK_INTERPRETER = "uv run --no-project --no-python-downloads python"
 PRE_TOOL_USE_KEY = "PreToolUse"
 # Settings event per manifest stage; a spec's `stage` picks its section.
+#
+# Two of the 31 events Claude Code documents at 2.1.226, and deliberately so [D37].
+# Widening to all 31 was refused on the argument this repo already makes about dead
+# definitions: an unconsumed stage is a surface to keep true against a vendor that
+# moves, bought for nothing. **A stage arrives with the catalog source that uses
+# it** — `test_every_declared_agent_hook_event_has_a_catalog_consumer` enforces that
+# and will fail on a key added ahead of its consumer.
+#
+# Two consumers are known and neither is ready, which is why this map has not moved:
+#   - `Stop` returning `decision: block` gives BUILD an in-dispatch termination gate.
+#     Probed reachable under our own `claude -p`, but it is capped at 8 consecutive
+#     blocks and that bound is unmeasured (basicly-u2hl.51) — designing a control on
+#     an unmeasured ceiling is how a gate ends up looking like it binds.
+#   - basicly-0p8n's enforcement at the tool-call boundary, which is where our gates
+#     do not reach at all today.
+#
+# Whatever lands next is claude-only: `hooks.COPILOT_EVENTS` accepts `preToolUse` and
+# `postToolUse` and nothing else, so a widened stage projects to one family. Declare
+# that gap at the point it is created rather than letting the two families drift
+# silently uneven.
 AGENT_HOOK_EVENTS = {"pretooluse": PRE_TOOL_USE_KEY, "posttooluse": "PostToolUse"}
 # Default tool filter (the file-writing family); a spec's `matcher` overrides.
 # `MultiEdit` is intentionally absent: Claude Code no longer ships that tool.

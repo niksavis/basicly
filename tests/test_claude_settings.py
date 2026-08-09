@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from basicly import claude_settings, cli
-from basicly.hooks import HookSpec
+from basicly.hooks import HookSpec, load_hook_specs
 
 if TYPE_CHECKING:
     import pytest
@@ -222,3 +222,39 @@ def test_consumer_hook_with_same_basename_survives(tmp_path: Path) -> None:
     data = json.loads((tmp_path / claude_settings.CLAUDE_SETTINGS_PATH).read_text())
     commands = [hook["command"] for group in data["hooks"]["PreToolUse"] for hook in group["hooks"]]
     assert commands == ["python scripts/protect-generated.py"]
+
+
+def test_every_declared_agent_hook_event_has_a_catalog_consumer() -> None:
+    """D37's pairing rule, enforced: a stage lands with the source that uses it.
+
+    The vocabulary is deliberately 2 of the 31 events Claude Code documents, and
+    widening it to all 31 was refused on the argument this repo already makes
+    about dead definitions — an unconsumed stage is a surface to keep true against
+    a vendor that moves, for nothing. The rule that keeps it honest is that a stage
+    arrives with its consumer, and nothing enforced that until now.
+
+    Runs over the real catalog, which is the only place the rule means anything.
+    """
+    specs = load_hook_specs()
+    consumed = {spec.stage for spec in specs if spec.manager == "claude"}
+
+    orphans = sorted(set(claude_settings.AGENT_HOOK_EVENTS) - consumed)
+
+    assert orphans == [], (
+        f"agent hook stage(s) {orphans} are mapped but no catalog hook uses them; "
+        "add the stage with the source that consumes it, or drop the stage (D37)"
+    )
+
+
+def test_the_pairing_rule_would_catch_an_unconsumed_stage() -> None:
+    """The positive control: the assertion above discriminates.
+
+    Without this, a rule that happens to hold today reads identically to one that
+    can never fail, and this repo has shipped that mistake before.
+    """
+    specs = load_hook_specs()
+    consumed = {spec.stage for spec in specs if spec.manager == "claude"}
+
+    widened = {**claude_settings.AGENT_HOOK_EVENTS, "stop": "Stop"}
+
+    assert sorted(set(widened) - consumed) == ["stop"]
