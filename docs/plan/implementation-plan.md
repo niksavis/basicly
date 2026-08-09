@@ -91,9 +91,13 @@ hand-written copy of them was stale within days:
 **Not built**, re-verified 2026-08-08 by reading `src/` rather than by counting closed beads:
 **zero of the seven personas** (`rg -w 'dana|kai|vera|remo|juno|lumi|tala' src/` returns nothing),
 and one default runner serves every phase; **four of the five designed skills** are absent, only
-`python-guidelines` ships; **no EARS validation** anywhere; **VALIDATE is not a phase** —
-`config.LOOP_PHASES` has six names and `loop_state.PHASES` has seven, and the two tuples disagree;
-RETROSPECTIVE does not exist; `policy.rework_recorded` reports a cross-gate total that nothing
+`python-guidelines` ships; **no EARS validation** anywhere; **VALIDATE is not a phase** in either tuple;
+RETROSPECTIVE does not exist; **and one item on this list was never a defect**:
+`loop_state.PHASES` and `config.LOOP_PHASES` were recorded as disagreeing tuples. They
+differ by exactly one element — the terminal `done`, which is absent from `LOOP_PHASES`
+because it has no transition out — the reason is documented at `config.py:369`, and
+`test_loop.py:2811` pins `loop._HANDLERS` to `LOOP_PHASES` so a handler cannot drift from
+the set that validates it. Checked 2026-08-09 before acting on it; `policy.rework_recorded` reports a cross-gate total that nothing
 enforces.
 
 **Rewritten 2026-08-09: the catalog half is done and the engine half is untouched.** All seven
@@ -219,8 +223,7 @@ module-size ratchet, the first two handoff artifacts (`implementation-plan`, `ch
 D18 demonstration field, the WIP bound, and the code-quality floor.
 
 Open, in the order the dependencies allow: `u2hl.6` skill descriptions · `u2hl.21` diff size
-reported at plan time · the four remaining handoff schemas · **VALIDATE as a real state**, since it
-is not in `LOOP_PHASES` and the two phase tuples disagree · D10's criterion-derived checks · EARS ·
+reported at plan time · the four remaining handoff schemas · **VALIDATE as a real state** · D10's criterion-derived checks · EARS ·
 RETROSPECTIVE's special-cause signal · `u2hl.17` once `a3ab.1` evicts an always-on line.
 
 **`u2hl.17` no longer waits on that eviction** [D35, 2026-08-09]. The plan behind it — promote
