@@ -142,10 +142,19 @@ the dependency clusters a cut draws from (§12).
 | ~~`v0.8.0`~~ | **SHIPPED 2026-08-07.** Own the work graph — the store, not the floor. `br` is still in the runtime path (§6). | shipped |
 | **`v0.9.0`** | **Make the factory's own plumbing trustworthy, then finish the loop.** §5. The quality floor and five loop features landed on 2026-08-08; the same session measured the plumbing under them failing. Fifteen ordered items, plus what remains of the loop. | 8–12 sessions |
 | **`v0.9.1`** | **The measured evidence layer, when its chain unblocks.** Cost per landed package (`7bur`), AST localisation (`agzx.2`), the remaining Phase 2 gate (`m4zv.3`), parameter learning (`3ifz`). Split out because the whole chain sits behind `u6jq.1`, and holding the loop behind it would ship neither. | 3–5 sessions |
-| **`v0.10.0`** | **The judgment layer and always-on relief.** The roster's routing (`s2xf`) once `7bur` has numbers; the Phase 4 authoring pass and the empty-glob check (`a3ab.1`–`.3`). | 5–8 sessions |
+| **`v0.10.0`** | **The judgment layer and always-on relief.** The roster's routing (`s2xf`) once `7bur` has numbers; the Phase 4 authoring pass and the empty-glob check (`a3ab.1`–`.3`), now joined by `a3ab.10` — `AGENTS.md` is **1,135 characters over** its cap, which makes `a3ab.1`'s eviction audit the gating item of this row rather than a tidy-up. `a3ab.8` closed 2026-08-09 without adding to the always-on layer (D34), so nothing new is queued against that budget. | 5–8 sessions |
 | **`v1.0.0`** | **Stabilize and declare.** §7. Surface audit and semver freeze, the breaking-marker gate, the fresh-consumer acceptance test, `br` out of the runtime path. `1.0` is a promise, so the last release proves it instead of adding capability. | 3–5 sessions |
 
 Sizes are decomposition signals, not commitments.
+
+**These four rows were re-confirmed by the owner on 2026-08-09 against a conflicting claim**, and
+the conflict is recorded because the next reader will hit the same one. A session handover asserted
+that `v0.10.0` had been re-agreed as the *tracker* cut, moving `br` out of the runtime path there
+instead of in `v1.0.0`. Nothing supports it: the ladder above was written 2026-08-08 (`47a7275`),
+`vkh0`'s own 2026-08-07 comment records `br`-out-of-runtime as **carried to `v1.0.0`'s
+fresh-consumer acceptance test** (`vkh0.22`), and a whole-tracker probe finds **zero** mentions of
+`v0.10.0` or `v0.9.1` in any comment — against a positive control that finds `v0.9.0`, `v0.8.0` and
+`v1.0.0`. A handover is inherited claims, not evidence; this file and the tracker are.
 
 ## 5. `v0.9.0` — the plumbing, then the loop
 
