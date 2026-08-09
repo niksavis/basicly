@@ -407,6 +407,12 @@ def cmd_check(_args: argparse.Namespace) -> int:
 
     for item in planned:
         content = _render_planned(repo_root, paths, item)
+        # Emitted here as well as from build, because build is the command nobody runs on
+        # a tree that is already current: measured 2026-08-09, `check` and `agents-check`
+        # both reported clean while AGENTS.md sat 1,135 characters and 27 lines past its
+        # caps. A budget only the writing command reports is one a reader never sees.
+        for line in _budget_warnings(targets, item, content, repo_root):
+            print(line, file=sys.stderr)
         rel_path = item.output_path.relative_to(repo_root).as_posix()
         expected_hash = sha256_of_text(content)
         expected_manifest_outputs[rel_path] = {

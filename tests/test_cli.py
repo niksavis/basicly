@@ -775,6 +775,53 @@ def test_cli_check_fails_after_manual_edit(work_repo: Path) -> None:
     assert "Stale generated files detected" in result.stderr
 
 
+def test_cli_check_reports_the_always_on_budget_overrun_build_reports(work_repo: Path) -> None:
+    """Check emits the same budget warnings build does, on a tree it declares up to date.
+
+    The defect this pins: the warnings existed and were computed only on the writing
+    path, so `check` reported clean while `AGENTS.md` sat past both caps. Driven by
+    lowering the cap rather than by growing the file, because the cap is data and the
+    baseline's real size is not this test's business.
+    """
+    run_basicly(work_repo, "build")
+    codex = work_repo / ".basicly" / "core" / "targets" / "codex.yaml"
+    agents_chars = len((work_repo / "AGENTS.md").read_text(encoding="utf-8"))
+    codex.write_text(
+        codex.read_text(encoding="utf-8").replace(
+            "max_size_warning: 12000", f"max_size_warning: {agents_chars - 1}"
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_basicly(work_repo, "check")
+
+    assert result.returncode == 0, "an over-budget file is a cost to weigh, not a stale tree"
+    assert "up to date" in result.stdout
+    assert f"AGENTS.md exceeds {agents_chars - 1} characters" in result.stderr
+
+
+def test_cli_check_is_silent_on_a_budget_it_meets(work_repo: Path) -> None:
+    """The positive control for the test above: no warning when the cap is not exceeded.
+
+    Without this, a check that printed the warning unconditionally would pass the
+    assertion above and discriminate nothing.
+    """
+    run_basicly(work_repo, "build")
+    codex = work_repo / ".basicly" / "core" / "targets" / "codex.yaml"
+    agents_chars = len((work_repo / "AGENTS.md").read_text(encoding="utf-8"))
+    codex.write_text(
+        codex.read_text(encoding="utf-8").replace(
+            "max_size_warning: 12000", f"max_size_warning: {agents_chars + 1}"
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_basicly(work_repo, "check")
+
+    assert result.returncode == 0
+    assert "characters" not in result.stderr
+
+
 def test_cli_build_target_only(work_repo: Path) -> None:
     """Build --target should only touch that target's outputs but preserve the manifest."""
     run_basicly(work_repo, "build")
