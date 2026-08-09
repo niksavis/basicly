@@ -54,9 +54,17 @@ instructions: |
   ## What It Does And Does Not Cover
 
   - **Claude Code**: installs a `PreToolUse` hook on the `Agent` tool.
-  - **Copilot CLI**: installs nothing and says why. It exposes no hook surface
-    that fires for a spawn, so its working path is static frontmatter plus
-    `copilot --model`. The installer reports this rather than claiming success.
+  - **Copilot CLI**: the installer still installs nothing, and the reason it
+    reports is **stale as of 1.0.78** (re-probed 2026-08-09). It read "no hook
+    surface fires for a spawn, so the working path is static frontmatter plus
+    `copilot --model`". Both halves have moved: copilot ships hooks — including
+    one that intercepts a subagent finishing *before its results reach the
+    parent* — and it carries per-subagent selection in **config**, at
+    `subagents.agents.<name>.{model, effortLevel, contextTier}`, which is
+    outside the agent file. So a spawn there is pinnable without a frontmatter
+    `model`, which is what D30 requires. Wiring it is `basicly-u2hl.41`; until
+    that lands the installer's message is a known-wrong explanation for a
+    correct no-op, and it should not be quoted as evidence.
 
   ## Check A Resolution Without Spawning Anything
 

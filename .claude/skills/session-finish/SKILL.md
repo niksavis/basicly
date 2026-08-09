@@ -59,7 +59,9 @@ Follow the repo's retro rules:
 
 - Only when the session hit a real rejection or a user-corrected mistake:
   find the root cause and propose the exact fragment/skill/hook change
-  that would have prevented it.
+  that would have prevented it. The `root-cause` skill is the method —
+  it carries the signal-not-incident guard, the observation-per-link rule
+  and the branch-not-taken record, none of which this list teaches.
 - Environment/timing/platform traps become a quirks-fragment bullet: one
   incident, one bullet, trap plus avoidance.
 - Present proposals for explicit approval — never self-apply a retro edit.
