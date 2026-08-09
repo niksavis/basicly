@@ -355,10 +355,19 @@ a role and dispatch it, which is what makes the roster real rather than projecte
 | `retrospector` | RETROSPECTIVE | **authored**, loads `root-cause` | nothing; the state does not exist |
 | `curator` | SHIP | **authored** | nothing |
 
-**All seven are authored as of 2026-08-09 and none is dispatched.** The column split is
-the point: the catalog half of D27 is done, and the gap this section has measured since
-2026-08-08 is now entirely on the engine side. `basicly-4kdm` covers the sources;
-resolving a state to a role and dispatching it is what remains.
+**All seven are authored and dispatched as of 2026-08-09.** The gap this section had
+measured since 2026-08-08 — "the projection works and nothing consumes it" — is closed:
+`roles.resolve_role` maps a phase to a role by table lookup and the runner puts
+`--agent <role>` on the argv, verified against claude 2.1.226 and copilot 1.0.78 rather
+than recalled. The `Engine` column above now means "does an equivalent already run at
+that state", not "can a role reach it".
+
+**Resolution fails to None in three places, and each falls back to the default runner
+rather than failing**: a phase with no persona (VERIFY, by D4), a family that cannot
+select one (codex ships no subagent root), and a role whose *projected* file is absent.
+The last is checked against the projected file rather than the catalog source, because
+that is what the host reads — so a consumer on an older install gets an unspecialised
+loop instead of a stopped one.
 
 **Authored past the staged-admission rule, on the owner's instruction 2026-08-09.** D5
 admits a role when it differs in tier, tools or artifact, and by that test only
