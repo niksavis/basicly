@@ -28,6 +28,23 @@ MODELS_DIR = REPO / ".basicly" / "core" / "models"
 ANCHORS_PATH = MODELS_DIR / "anchors.yaml"
 MAP_PATH = MODELS_DIR / "model-map.json"
 SCHEMA_PATH = MODELS_DIR / "model-map.schema.json"
+# Captured from https://models.dev/api.json on 2026-08-09: 48,014 bytes, 5 of the 182
+# published providers, 37 records. Every record is byte-identical to what upstream served
+# that day — the trim selects whole providers and whole models, and never edits one.
+#
+# The trim is deliberate and each part of it earns its place, so re-capture by preserving
+# the selection rather than by re-deriving it:
+#   - the duplicate Claude Haiku 4.5 record (`claude-haiku-4-5` and
+#     `claude-haiku-4-5-20251001`), which is what an alias collision looks like upstream;
+#   - cells with and without `limit.input`, since the generator must tolerate both;
+#   - the real broker coverage gaps, now 2 of 32 cells (`low` on google and moonshotai);
+#   - non-general models a naive tier sweep would pick — image, embedding, tts, video.
+#
+# Two records were dropped on 2026-08-09 because upstream withdrew them
+# (`github-copilot/gemini-2.5-pro`, `github-copilot/gemini-3-flash-preview`) and two added
+# because the anchors now resolve them there (`github-copilot/kimi-k3`,
+# `github-copilot/gemini-3.6-flash`). A fixture that keeps a withdrawn record is no longer
+# a copy of the live document, which is the one property it exists to have.
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "modelsdev-api.json"
 
 # The vendors the map is required to cover, and the broker surface every one of

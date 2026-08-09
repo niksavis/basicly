@@ -122,9 +122,12 @@ vendors:
       maximum: high
     collapse_reason: >-
       Moonshot ships a three-class ladder, so high and maximum resolve to Kimi K3.
-      Note github-copilot serves exactly one Moonshot model (kimi-k2.7-code), so
-      three of the four tiers resolve to unavailable on that surface rather than
-      being quietly substituted.
+      Note github-copilot serves two Moonshot models (kimi-k2.7-code and, since
+      2026-07-16, kimi-k3), so only the low tier resolves to unavailable on that
+      surface rather than being quietly substituted. This sentence said "exactly
+      one" and "three of the four tiers" until 2026-08-09: true of the map as
+      committed, false upstream, which is the drift a re-capture exists to catch
+      (basicly-u2hl.39).
 
   - id: google
     name: Google

@@ -136,16 +136,43 @@ def test_each_surface_spells_the_same_model_its_own_way(payload: dict, anchors) 
     assert surfaces[BROKER_SURFACE]["model"] == "claude-haiku-4.5"
 
 
-def test_cost_is_recorded_per_surface_not_per_vendor(payload: dict, anchors) -> None:
-    """Measured: gpt-5.6-luna is 0.2/1.2 on openai and 1/6 on github-copilot."""
-    tiers = generator.resolve_tiers(payload, anchors)
-    low = tiers["low"]["vendors"]["openai"]["surfaces"]
-    assert low["openai"]["cost_usd_per_mtok"] == {"input": 0.2, "output": 1.2}
-    assert low[BROKER_SURFACE]["cost_usd_per_mtok"] == {"input": 1, "output": 6}
+def test_the_broker_now_prices_every_matched_model_as_its_native_surface(
+    payload: dict, anchors
+) -> None:
+    """Measured 2026-08-09: the per-surface price divergence is gone upstream.
 
-    medium = tiers["medium"]["vendors"]["openai"]["surfaces"]
-    assert medium["openai"]["cost_usd_per_mtok"] == {"input": 2, "output": 12}
-    assert medium[BROKER_SURFACE]["cost_usd_per_mtok"] == {"input": 2.5, "output": 15}
+    This test used to read ``gpt-5.6-luna`` at 0.2/1.2 on openai against 1/6 on the
+    broker, and ``gpt-5.6-terra`` at 2/12 against 2.5/15, as its evidence that cost
+    is stored per *surface* rather than per vendor. Re-captured against live
+    models.dev (basicly-u2hl.39), **all twelve matched models now price identically
+    on both surfaces** — the two terra figures were the last pair to converge.
+
+    So it is inverted deliberately rather than re-pinned to the new numbers. Pinning
+    ``0.2/1.2 == 0.2/1.2`` would assert nothing at all while still looking like a
+    cost test, and the structural claim it used to carry now lives where it can
+    still fail:
+    :func:`tests.test_model_map_generator.test_cost_is_read_per_surface_not_per_vendor`
+    drives a payload where the two genuinely differ.
+
+    What this one is worth keeping for: the convergence is an upstream fact we
+    depend on, and it should not go unnoticed if it reverses.
+    """
+    tiers = generator.resolve_tiers(payload, anchors)
+    diverging = {
+        (tier, vendor)
+        for tier, entry in tiers.items()
+        for vendor, vendor_entry in entry["vendors"].items()
+        for surface, cell in vendor_entry["surfaces"].items()
+        if surface != BROKER_SURFACE
+        and cell.get("status") == "available"
+        and vendor_entry["surfaces"].get(BROKER_SURFACE, {}).get("status") == "available"
+        and cell["cost_usd_per_mtok"]
+        != vendor_entry["surfaces"][BROKER_SURFACE]["cost_usd_per_mtok"]
+    }
+    assert diverging == set(), (
+        "the broker priced a model differently from its native surface again; "
+        "that is an upstream change worth reading, not a test to re-pin"
+    )
 
 
 def test_an_unserved_tier_is_marked_unavailable_with_no_model_key(payload: dict, anchors) -> None:
@@ -162,7 +189,16 @@ def test_an_unserved_tier_is_marked_unavailable_with_no_model_key(payload: dict,
 
 
 def test_the_broker_gaps_are_exactly_the_measured_ones(payload: dict, anchors) -> None:
-    """Pins the 2026-07-31 measurement: five of 32 cells have no model."""
+    """Pins the 2026-08-09 measurement: two of 32 cells have no model.
+
+    Was five, measured 2026-07-31. Three closed when the broker began serving
+    ``kimi-k3`` at high and maximum and ``gemini-3.6-flash`` at medium
+    (basicly-u2hl.39) — a real upstream change, not a trim of the fixture.
+
+    The list is exhaustive on purpose. A gap closing is the interesting direction
+    and a count alone would not name which one, so the assertion moves with the
+    measurement and records what moved.
+    """
     tiers = generator.resolve_tiers(payload, anchors)
     gaps = sorted(
         (tier, vendor)
@@ -171,11 +207,8 @@ def test_the_broker_gaps_are_exactly_the_measured_ones(payload: dict, anchors) -
         if vendor_entry["surfaces"][BROKER_SURFACE]["status"] == "unavailable"
     )
     assert gaps == [
-        ("high", "moonshotai"),
         ("low", "google"),
         ("low", "moonshotai"),
-        ("maximum", "moonshotai"),
-        ("medium", "google"),
     ]
 
 

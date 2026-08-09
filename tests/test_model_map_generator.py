@@ -163,6 +163,31 @@ def test_resolution_rejects_a_non_numeric_upstream_cost(payload: dict, anchors) 
     assert "cost" in str(excinfo.value) and "claude-sonnet-5" in str(excinfo.value)
 
 
+def test_cost_is_read_per_surface_not_per_vendor(payload: dict, anchors) -> None:
+    """A cell takes its price from the surface serving it, not from the vendor.
+
+    Moved here from the committed-artifact suite on 2026-08-09 (basicly-u2hl.39).
+    It used to be evidenced by a real divergence — ``gpt-5.6-luna`` at 0.2/1.2 on
+    openai against 1/6 on the broker — and upstream has since normalised broker
+    pricing to native on every matched model, so the fixture can no longer
+    discriminate. The mechanism is unchanged and this drives it from a payload
+    where the two differ, which is the only way it can still fail.
+    """
+    broker = payload[BROKER_SURFACE]["models"]["gpt-5.6-luna"]
+    native = payload["openai"]["models"]["gpt-5.6-luna"]
+    priced = ("input", "output")  # the only two keys a cell carries; native also has cache_write
+    assert {k: native["cost"][k] for k in priced} == {k: broker["cost"][k] for k in priced}, (
+        "precondition: the surfaces agree before the edit, so the assertion below "
+        "discriminates the edit rather than a difference that was already there"
+    )
+    broker["cost"] = {"input": 1, "output": 6}
+
+    surfaces = generator.resolve_tiers(payload, anchors)["low"]["vendors"]["openai"]["surfaces"]
+
+    assert surfaces["openai"]["cost_usd_per_mtok"] == {"input": 0.2, "output": 1.2}
+    assert surfaces[BROKER_SURFACE]["cost_usd_per_mtok"] == {"input": 1, "output": 6}
+
+
 # --- drift check -------------------------------------------------------------
 
 
