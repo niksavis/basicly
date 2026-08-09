@@ -10,7 +10,7 @@
 # Edit this file to move a tier to a different model, then re-run the generator
 # and review the resulting `model-map.json` diff. Everything else in the map is
 # derived from models.dev and must not be hand-edited.
-schema_version: 2
+schema_version: 3
 
 # Where a resolved model can be written. Each key is a models.dev provider id.
 surfaces:
@@ -47,6 +47,32 @@ general_model_rule:
   require_text_input: true
   require_text_only_output: true
   require_tool_call: true
+
+# The order a tier's vendors are tried when a spawn pins no vendor, first choice
+# first (D31). Reviewed here rather than derived: "which vendor should serve this
+# tier" is a judgement about reliability that no field in the upstream payload
+# answers, and a dispatch recorded months ago has to stay explainable from a
+# committed file rather than from whatever the resolver would decide today.
+#
+# The walk stops at the first vendor whose cell for the surface in effect is
+# `available`. It never falls to another *tier*: a tier with no available vendor
+# on a surface resolves to nothing and says which vendors it tried, which is the
+# same refusal the per-cell `unavailable` status already encodes. Falling to a
+# neighbouring tier would be the silent demotion the map exists to prevent.
+#
+# Declared per tier rather than once, because the right order is not obviously
+# tier-invariant — a cheap tier may want the cheapest serving vendor while the
+# top tier wants the most capable. They are identical today, and that is a
+# reviewed choice rather than a structural limit.
+#
+# Every declared vendor must appear exactly once in every tier's order. The
+# generator fails otherwise, so the order cannot drift from the vendor list
+# below by an addition, a removal or a typo.
+tier_vendor_order:
+  low: [anthropic, openai, google, moonshotai]
+  medium: [anthropic, openai, google, moonshotai]
+  high: [anthropic, openai, google, moonshotai]
+  maximum: [anthropic, openai, google, moonshotai]
 
 # One anchor per (tier, vendor). Every vendor must declare all four tiers.
 #
@@ -96,12 +122,9 @@ vendors:
       maximum: high
     collapse_reason: >-
       Moonshot ships a three-class ladder, so high and maximum resolve to Kimi K3.
-      This note previously read that github-copilot serves exactly one Moonshot
-      model and that three of the four tiers resolve to unavailable there. Stale
-      as of the 2026-08-09 refresh: copilot now serves kimi-k3, so only `low`
-      (Kimi K2.5) is unavailable on that surface. The point the note was making
-      still stands — an unserved tier resolves to unavailable rather than being
-      quietly substituted with a neighbouring tier's model.
+      Note github-copilot serves exactly one Moonshot model (kimi-k2.7-code), so
+      three of the four tiers resolve to unavailable on that surface rather than
+      being quietly substituted.
 
   - id: google
     name: Google

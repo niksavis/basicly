@@ -1,154 +1,32 @@
-"""Tests for the portable tier resolver kit (basicly-wbsz.1).
+"""The tier resolver kit's contract: what a declared tier resolves to.
 
-The kit's whole contract is that it works with **no basicly**, and this suite is
-inside basicly — where `basicly` is importable and on PATH — so a test that merely
-imports the module proves nothing about the constraint. Three kinds of test carry
-it instead:
-
-- an AST gate that the module imports nothing outside the standard library;
-- subprocess tests that copy the two kit files into a consumer project and run
-  them under an interpreter started with ``-S -I`` and an environment built from
-  empty, where the subprocess itself asserts ``basicly`` is neither importable nor
-  on PATH before it resolves anything;
-- a drift gate that the kit and ``basicly.models`` agree on every cell, because
-  the host/surface rule is a deliberate copy and a copy needs a check, not a
-  convention (the pattern ``tests/test_tracker_path_scan.py`` already uses).
-
-Every expected model id is taken from ``basicly.models`` or from the committed map
-indexed directly, never retyped: the map is regenerated data, so a literal here
-would turn a legitimate upstream change into a puzzle in this file.
+Split from the original suite by the module-size ratchet (basicly-u2hl.36). This
+file holds the acceptance criteria — a declared tier resolves for the requested
+host surface, an unavailable cell resolves to nothing rather than to a
+neighbour, and the vendor walk (D31) survives a vendor going dark. Discovery and
+the no-basicly isolation proof live in the sibling suites.
 """
 
 from __future__ import annotations
 
-import ast
-import importlib.util
 import json
-import os
-import shutil
-import subprocess
-import sys
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 
-from basicly import models
 from basicly.schema import MODEL_TIERS
-
-REPO_ROOT = Path(__file__).parent.parent
-KIT = REPO_ROOT / ".basicly/core/kit/tier/tier_resolver.py"
-MAP = REPO_ROOT / ".basicly" / "core" / "models" / "model-map.json"
-REFERENCE_MAP: dict = json.loads(MAP.read_text(encoding="utf-8"))
-
-# A genuine unavailable cell in the shipped map, and the tier next door that does
-# have a model there — the pair that makes "nothing" and "some other tier's
-# model" distinguishable outcomes rather than a claim.
-UNAVAILABLE_VENDOR = "moonshotai"
-UNAVAILABLE_TIER = "low"
-NEIGHBOUR_TIER = "medium"
-COPILOT_SURFACE = "github-copilot"
-
-
-def _load_kit(path: Path = KIT) -> ModuleType:
-    """Load the kit the way a hook does: by file path, as a standalone module.
-
-    Registering the module in ``sys.modules`` before executing it is the recipe
-    the importlib docs give and is not optional here — ``dataclasses`` resolves a
-    string annotation through ``sys.modules[cls.__module__]``, so a module absent
-    from it fails at class-definition time. The kit's docstring says so, and this
-    loader is the pinned copy of that instruction.
-    """
-    name = f"tier_resolver_{path.parent.name}"
-    spec = importlib.util.spec_from_file_location(name, path)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-kit = _load_kit()
-
-
-def _resolver(default_tier: str | None = None):
-    """A resolver over the committed map."""
-    resolver = kit.TierResolver.from_map_path(MAP, default_tier=default_tier)
-    assert resolver is not None
-    return resolver
-
-
-def _definition(path: Path, tier: str | None = None) -> Path:
-    """An agent definition written by a consumer, with or without a tier."""
-    lines = ["---", "name: my-own-agent", "description: An agent basicly never shipped."]
-    if tier is not None:
-        lines.append(f"tier: {tier}")
-    lines += ["---", "", "Do the thing.", ""]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines), encoding="utf-8")
-    return path
-
-
-def _expected(tier: str, vendor: str, surface: str) -> str:
-    """The in-harness resolver's answer for one cell, as the pinned expectation."""
-    return models.model_for(tier, vendor, surface, mapping=REFERENCE_MAP)
-
-
-# --- the constraint: no basicly, standard library only -------------------------
-
-
-def test_the_kit_imports_nothing_but_the_standard_library() -> None:
-    """A third-party or basicly import would break the kit in a consumer repo."""
-    tree = ast.parse(KIT.read_text(encoding="utf-8"))
-    imported: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            imported.update(alias.name.split(".")[0] for alias in node.names)
-        elif isinstance(node, ast.ImportFrom):
-            assert node.level == 0, "a relative import would make the kit need a package"
-            if node.module:
-                imported.add(node.module.split(".")[0])
-    assert imported, "the AST walk found no imports at all, so it proves nothing"
-    assert "basicly" not in imported
-    assert imported <= set(sys.stdlib_module_names), sorted(imported - set(sys.stdlib_module_names))
-
-
-# --- the mirror of the surface/vendor rule ------------------------------------
-
-
-def test_the_host_surface_map_mirrors_the_package_exactly() -> None:
-    """The kit cannot import the rule, so the copy is checked rather than trusted."""
-    assert dict(models.FAMILY_MODEL_SURFACES) == kit.HOST_SURFACES
-
-
-def test_every_cell_resolves_the_same_as_the_in_harness_resolver() -> None:
-    """Both halves answer identically, so the copy cannot become a second rule."""
-    resolver = _resolver()
-    resolved = 0
-    empty = 0
-    for tier in MODEL_TIERS:
-        for vendor in REFERENCE_MAP["vendors"]:
-            for surface, _default_vendor in kit.HOST_SURFACES.values():
-                try:
-                    expected: str | None = _expected(tier, vendor, surface)
-                except models.ModelUnavailableError:
-                    expected = None
-                assert resolver.model_for(tier, vendor, surface) == expected, (
-                    f"{vendor} {tier} on {surface}"
-                )
-                if expected is None:
-                    empty += 1
-                else:
-                    resolved += 1
-    # Positive control: a comparison that only ever saw one branch would pass
-    # while proving nothing about the other.
-    assert resolved > 0 and empty > 0, f"resolved={resolved} empty={empty}"
-
-
-def test_the_tier_vocabulary_comes_from_the_map_not_a_second_copy() -> None:
-    """`tier_order` is read from the map, so no constant here can drift from it."""
-    assert _resolver().tier_order == tuple(MODEL_TIERS)
-
+from tests.kit_resolver_helpers import (
+    COPILOT_SURFACE,
+    MAP,
+    NEIGHBOUR_TIER,
+    REFERENCE_MAP,
+    UNAVAILABLE_TIER,
+    UNAVAILABLE_VENDOR,
+    _definition,
+    _expected,
+    _resolver,
+    kit,
+)
 
 # --- the AC: a declared tier resolves for the requested host surface ----------
 
@@ -242,6 +120,137 @@ def test_an_unavailable_cell_resolves_to_nothing_not_a_neighbouring_tier(
     assert result.model != neighbour
 
 
+# --- the vendor walk (D31, basicly-u2hl.35) -----------------------------------
+#
+# Every cell the walk would fall *to* is available on the shipped map, and every
+# order starts with a vendor that serves every tier on both surfaces — so on real
+# data the walk always stops at the first vendor and the fallback never executes.
+# That is the healthy state, and it is exactly why these tests inject the gap
+# instead of hunting for one: a fallback asserted only against today's map is a
+# test that passes because the feature never ran.
+
+WALK_TIER = "high"
+
+
+def _resolver_over(tmp_path: Path, mutate):
+    """A resolver over a private copy of the committed map, mutated by *mutate*."""
+    mapping = json.loads(MAP.read_text(encoding="utf-8"))
+    mutate(mapping)
+    path = tmp_path / "model-map.json"
+    path.write_text(json.dumps(mapping), encoding="utf-8")
+    resolver = kit.TierResolver.from_map_path(path)
+    assert resolver is not None
+    return resolver
+
+
+def _make_unavailable(mapping: dict, tier: str, vendor: str, surface: str) -> None:
+    """Turn one cell into the same shape the generator writes for an unserved model."""
+    cell = mapping["tiers"][tier]["vendors"][vendor]["surfaces"][surface]
+    cell["status"] = "unavailable"
+    cell.pop("model", None)
+    cell["reason"] = f"injected: {vendor} does not serve {tier} on {surface}"
+
+
+def test_the_walk_falls_to_the_next_vendor_when_the_first_is_unavailable(
+    tmp_path: Path,
+) -> None:
+    """The whole point of D31: a tier survives its first vendor going dark."""
+    order = REFERENCE_MAP["tiers"][WALK_TIER]["vendor_order"]
+    first, second = order[0], order[1]
+    resolver = _resolver_over(
+        tmp_path, lambda m: _make_unavailable(m, WALK_TIER, first, COPILOT_SURFACE)
+    )
+
+    result = resolver.resolve("copilot", tier=WALK_TIER)
+
+    assert result.vendor == second
+    assert result.model == _expected(WALK_TIER, second, COPILOT_SURFACE)
+    assert result.reason is None
+    # The skip is recorded, not silent: landing on the second vendor and landing
+    # on the first are indistinguishable from the model alone.
+    assert [vendor for vendor, _ in result.skipped] == [first]
+    assert "injected" in result.skipped[0][1]
+    # Control: unmutated, the same call stops at the first vendor, so the test
+    # above is measuring the injection rather than the map's ordinary answer.
+    assert _resolver().resolve("copilot", tier=WALK_TIER).vendor == first
+
+
+def test_the_walk_never_reaches_another_tier(tmp_path: Path) -> None:
+    """Sideways across vendors only. A tier resolves to itself or to nothing."""
+    order = REFERENCE_MAP["tiers"][WALK_TIER]["vendor_order"]
+
+    def blackout(mapping: dict) -> None:
+        for vendor in order:
+            _make_unavailable(mapping, WALK_TIER, vendor, COPILOT_SURFACE)
+
+    resolver = _resolver_over(tmp_path, blackout)
+    result = resolver.resolve("copilot", tier=WALK_TIER)
+
+    assert result.model is None
+    assert result.reason is not None
+    for vendor in order:
+        assert vendor in result.reason, f"the refusal must name {vendor} among what it tried"
+    assert [vendor for vendor, _ in result.skipped] == list(order)
+    # Positive control: a neighbouring tier still has models on this surface, so
+    # "nothing" is a refusal rather than an empty map.
+    neighbour = resolver.resolve("copilot", tier=NEIGHBOUR_TIER)
+    assert neighbour.model is not None
+    assert result.model != neighbour.model
+
+
+def test_a_pinned_vendor_never_walks(tmp_path: Path) -> None:
+    """An explicit request is answered or refused on its own terms.
+
+    Serving a different vendor than the caller named would be worse than saying
+    no: the caller pinned it for a reason the resolver cannot see.
+    """
+    order = REFERENCE_MAP["tiers"][WALK_TIER]["vendor_order"]
+    first = order[0]
+    resolver = _resolver_over(
+        tmp_path, lambda m: _make_unavailable(m, WALK_TIER, first, COPILOT_SURFACE)
+    )
+
+    result = resolver.resolve("copilot", tier=WALK_TIER, vendor=first)
+
+    assert result.model is None
+    assert result.vendor == first
+    assert result.skipped == ()
+
+
+def test_a_map_with_no_walk_order_still_resolves_the_hosts_default_vendor(
+    tmp_path: Path,
+) -> None:
+    """The kit is copied into repos that may carry a schema-2 map.
+
+    A tolerant read there degrades to the single-vendor behaviour that map was
+    written for, rather than resolving to nothing and silently un-tiering every
+    spawn in that repository.
+    """
+
+    def strip_order(mapping: dict) -> None:
+        for tier in mapping["tiers"].values():
+            tier.pop("vendor_order", None)
+
+    resolver = _resolver_over(tmp_path, strip_order)
+    result = resolver.resolve("copilot", tier=WALK_TIER)
+
+    assert result.model == _resolver().resolve("copilot", tier=WALK_TIER).model
+    assert result.skipped == ()
+
+
+def test_the_committed_walk_order_lists_every_vendor_exactly_once() -> None:
+    """The invariant the generator enforces, pinned on the shipped artifact.
+
+    Checked here as well as in the generator because the map is consumed by
+    harnesses that never run the generator, and a walk order missing a vendor
+    excludes it from every fallback with no other symptom.
+    """
+    vendors = sorted(REFERENCE_MAP["vendors"])
+    for tier, entry in REFERENCE_MAP["tiers"].items():
+        assert sorted(entry["vendor_order"]) == vendors, f"{tier} walk order is not a permutation"
+        assert sorted(entry["vendors"]) == vendors, f"{tier} vendor cells do not match the roster"
+
+
 def test_an_undeclared_tier_with_no_default_resolves_to_nothing(tmp_path: Path) -> None:
     """No tier and no configured default is a refusal, not the cheapest tier."""
     definition = _definition(tmp_path / "my-own-agent.md")
@@ -303,342 +312,3 @@ def test_an_absent_map_yields_no_resolver(tmp_path: Path) -> None:
     """The case a machine-wide hook hits in every repo that has no map."""
     assert kit.load_map(tmp_path / "model-map.json") is None
     assert kit.TierResolver.from_map_path(tmp_path / "model-map.json") is None
-
-
-# --- reading the declared tier off the definition -----------------------------
-
-
-@pytest.mark.parametrize(
-    ("body", "expected"),
-    [
-        pytest.param("---\ntier: high\n---\n\nBody.\n", "high", id="plain"),
-        pytest.param('---\ntier: "high"\n---\n', "high", id="double-quoted"),
-        pytest.param("---\ntier: 'high'\n---\n", "high", id="single-quoted"),
-        pytest.param("---\ntier:  HIGH \n---\n", "high", id="padded-and-uppercase"),
-        pytest.param("---\ntier: low # cheapest\n---\n", "low", id="trailing-comment"),
-        pytest.param("\ufeff---\ntier: high\n---\n", "high", id="byte-order-mark"),
-        pytest.param("---\nname: a\n---\n\ntier: high\n", None, id="in-the-body-not-frontmatter"),
-        pytest.param("---\nmetadata:\n  tier: high\n---\n", None, id="nested-under-another-key"),
-        pytest.param("---\nname: a\n---\n", None, id="frontmatter-without-a-tier"),
-        pytest.param("tier: high\n", None, id="no-frontmatter-at-all"),
-        pytest.param("---\ntier:\n---\n", None, id="empty-value"),
-        pytest.param("", None, id="empty-file"),
-    ],
-)
-def test_declared_tier_reads_only_a_top_level_frontmatter_scalar(
-    tmp_path: Path, body: str, expected: str | None
-) -> None:
-    """What counts as a declared tier, and what deliberately does not."""
-    path = tmp_path / "definition.md"
-    path.write_text(body, encoding="utf-8")
-    assert kit.declared_tier(path) == expected
-
-
-def test_declared_tier_stops_before_reading_an_unbounded_body(tmp_path: Path) -> None:
-    """An unclosed fence must not make the scanner read a whole long prompt.
-
-    A thousand lines is past any frontmatter cap the module could reasonably
-    use, so this pins the bound existing rather than its exact value.
-    """
-    path = tmp_path / "definition.md"
-    filler = "\n".join(f"line {index}" for index in range(1000))
-    path.write_text(f"---\nname: a\n{filler}\ntier: high\n", encoding="utf-8")
-    assert kit.declared_tier(path) is None
-
-
-def test_declared_tier_survives_bytes_that_are_not_utf8(tmp_path: Path) -> None:
-    """A definition with an undecodable byte still yields its tier, not a crash."""
-    path = tmp_path / "definition.md"
-    path.write_bytes(b"---\ndescription: caf\xe9\ntier: high\n---\n")
-    assert kit.declared_tier(path) == "high"
-
-
-# --- finding a definition by subagent name ------------------------------------
-
-
-def test_find_definition_locates_a_project_level_claude_agent(tmp_path: Path) -> None:
-    """The path claude reads a project agent from."""
-    expected = _definition(tmp_path / ".claude" / "agents" / "my-own-agent.md", tier="high")
-    assert kit.find_definition("my-own-agent", "claude", roots=[tmp_path]) == expected
-
-
-def test_find_definition_locates_a_copilot_agent_file(tmp_path: Path) -> None:
-    """Copilot's own suffix, plus the claude directory VS Code also reads."""
-    expected = _definition(tmp_path / ".github" / "agents" / "my-own-agent.agent.md", tier="high")
-    assert kit.find_definition("my-own-agent", "copilot", roots=[tmp_path]) == expected
-    shared = _definition(tmp_path / ".claude" / "agents" / "shared.md", tier="high")
-    assert kit.find_definition("shared", "copilot", roots=[tmp_path]) == shared
-
-
-def test_find_definition_finds_nothing_for_a_host_with_no_definition_files() -> None:
-    """Codex has no per-agent file, so a tier for it can only be argued or defaulted."""
-    assert kit.find_definition("my-own-agent", "codex", roots=[REPO_ROOT]) is None
-
-
-@pytest.mark.parametrize(
-    ("name", "decoy"),
-    [
-        pytest.param("../../escaped", "escaped.md", id="parent-traversal"),
-        pytest.param("nested/escaped", ".claude/agents/nested/escaped.md", id="posix-separator"),
-        pytest.param(
-            "nested\\escaped", ".claude/agents/nested\\escaped.md", id="windows-separator"
-        ),
-        pytest.param(".hidden", ".claude/agents/.hidden.md", id="leading-dot"),
-        pytest.param("", ".claude/agents/.md", id="empty"),
-        pytest.param("has space", ".claude/agents/has space.md", id="space"),
-    ],
-)
-def test_find_definition_refuses_a_name_that_is_not_an_agent_slug(
-    tmp_path: Path, name: str, decoy: str
-) -> None:
-    """The name comes from the host's tool input, so it is validated, not joined.
-
-    Each rejected name gets a decoy file it *would* reach if the name were joined
-    onto the path unchecked, and a legitimate agent is looked up first so the
-    directories the traversal needs really exist. Without both, a refusal and a
-    plain miss look identical and the test passes on an unvalidated resolver —
-    which is exactly what a mutation run showed before the decoys were added.
-    The separator cases carry their own platform difference as data: one path
-    string names a nested file on Windows and a literal filename on POSIX, and
-    both are created, so neither platform is the one that skips.
-    """
-    control = _definition(tmp_path / ".claude" / "agents" / "legit.md", tier="high")
-    assert kit.find_definition("legit", "claude", roots=[tmp_path]) == control
-    _definition(tmp_path / decoy, tier="high")
-    assert kit.find_definition(name, "claude", roots=[tmp_path]) is None
-
-
-def test_find_definition_falls_back_to_the_user_level_root(tmp_path: Path) -> None:
-    """A user-level agent resolves when the project has none, project first."""
-    user = tmp_path / "home"
-    project = tmp_path / "project"
-    user_agent = _definition(user / ".claude" / "agents" / "my-own-agent.md", tier="low")
-    assert kit.find_definition("my-own-agent", "claude", roots=[project, user]) == user_agent
-    project_agent = _definition(project / ".claude" / "agents" / "my-own-agent.md", tier="high")
-    assert kit.find_definition("my-own-agent", "claude", roots=[project, user]) == project_agent
-
-
-def test_find_definition_tolerates_an_undeterminable_home_directory(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """A hook in a context with no home must miss, not raise.
-
-    ``Path.home()`` raises when neither the environment nor the password
-    database can answer — a real state for a service or container invocation,
-    and one no platform-specific skip can cover.
-    """
-
-    def no_home() -> Path:
-        raise RuntimeError("could not determine home directory")
-
-    monkeypatch.setattr(Path, "home", staticmethod(no_home))
-    monkeypatch.chdir(tmp_path)
-    expected = _definition(tmp_path / ".claude" / "agents" / "my-own-agent.md", tier="high")
-    assert kit.find_definition("my-own-agent", "claude") == expected
-    assert kit.find_definition("absent-agent", "claude") is None
-
-
-# --- finding the map ----------------------------------------------------------
-
-
-def test_find_map_walks_up_to_the_repository_being_worked_in(tmp_path: Path) -> None:
-    """What lets one machine-wide hook answer for whichever repo it runs in."""
-    installed = tmp_path / ".basicly" / "core" / "models" / MAP.name
-    installed.parent.mkdir(parents=True)
-    shutil.copy2(MAP, installed)
-    nested = tmp_path / "src" / "deep"
-    nested.mkdir(parents=True)
-    assert kit.find_map(nested) == installed
-
-
-def test_find_map_falls_back_to_the_map_beside_the_kit(tmp_path: Path) -> None:
-    """A kit installed outside a repo still has its own committed neighbour."""
-    assert kit.find_map(tmp_path) == MAP
-
-
-def test_the_two_files_resolve_from_a_flat_copy_anywhere(tmp_path: Path) -> None:
-    """The plug-and-play claim: copy the module and the map into one directory."""
-    flat = tmp_path / "flat"
-    flat.mkdir()
-    shutil.copy2(KIT, flat / KIT.name)
-    shutil.copy2(MAP, flat / MAP.name)
-    elsewhere = tmp_path / "unrelated"
-    elsewhere.mkdir()
-    copied = _load_kit(flat / KIT.name)
-    assert copied.find_map(elsewhere) == flat / MAP.name
-    resolver = copied.TierResolver.discover(elsewhere)
-    assert resolver is not None
-    assert resolver.resolve("claude", tier="high").model == _expected(
-        "high", "anthropic", "anthropic"
-    )
-
-
-# --- the no-basicly proof, in a subprocess ------------------------------------
-
-# The subprocess asserts the constraint itself, before resolving anything: an
-# environment that quietly still had basicly in it would otherwise make this
-# whole section vacuous.
-_DRIVER = """
-import importlib.util
-import json
-import shutil
-import sys
-from pathlib import Path
-
-assert importlib.util.find_spec("basicly") is None, "basicly is importable"
-assert shutil.which("basicly") is None, "basicly is on PATH"
-
-spec = importlib.util.spec_from_file_location("tier_resolver", sys.argv[1])
-module = importlib.util.module_from_spec(spec)
-sys.modules["tier_resolver"] = module
-spec.loader.exec_module(module)
-
-resolver = module.TierResolver.discover()
-assert resolver is not None, "no map was discovered from the consumer repo"
-definition = module.find_definition(sys.argv[2], "claude", roots=[Path.cwd()])
-assert definition is not None, "the consumer definition was not found"
-print(json.dumps(resolver.resolve("claude", definition=definition).as_dict()))
-"""
-
-
-def _consumer_repo(tmp_path: Path) -> Path:
-    """A project carrying the two kit files and one agent basicly never shipped."""
-    consumer = tmp_path / "consumer"
-    core = consumer / ".basicly" / "core"
-    (core / "kit").mkdir(parents=True)
-    shutil.copy2(KIT, core / "kit" / KIT.name)
-    (core / "models").mkdir(parents=True)
-    shutil.copy2(MAP, core / "models" / MAP.name)
-    _definition(consumer / ".claude" / "agents" / "my-own-agent.md", tier="high")
-    return consumer
-
-
-def _pruned_env(tmp_path: Path) -> dict[str, str]:
-    """An environment with no basicly on PATH and nothing pointing at this repo.
-
-    Built from empty rather than filtered, so nothing inherited can smuggle the
-    package back in — no ``PYTHONPATH``, no ``VIRTUAL_ENV``. The few names copied
-    back are what an interpreter and ``Path.home()`` need on their own platform,
-    which makes the platform difference test data rather than a skip: ``HOME``
-    and ``USERPROFILE`` point at an empty scratch directory, so the user-level
-    agent root is controlled instead of being the developer's real one.
-    """
-    empty = tmp_path / "empty-path-dir"
-    empty.mkdir(exist_ok=True)
-    home = tmp_path / "scratch-home"
-    home.mkdir(exist_ok=True)
-    env = {"PATH": str(empty), "HOME": str(home), "USERPROFILE": str(home)}
-    for name in ("SystemRoot", "SYSTEMROOT", "COMSPEC", "TEMP", "TMP"):
-        value = os.environ.get(name)
-        if value is not None:
-            env[name] = value
-    return env
-
-
-def _run_without_basicly(
-    args: list[str], cwd: Path, tmp_path: Path
-) -> subprocess.CompletedProcess[str]:
-    """Run under an interpreter with no site-packages and no inherited environment.
-
-    ``-S`` drops site-packages, which is where this repo's own ``basicly`` lives,
-    and ``-I`` drops ``PYTHONPATH``, the user site directory and the script's own
-    directory. Together they are the closest thing to a consumer's interpreter
-    that can be started from inside this repo's virtualenv.
-    """
-    return subprocess.run(
-        [sys.executable, "-S", "-I", *args],
-        cwd=cwd,
-        env=_pruned_env(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-
-def test_the_resolver_answers_with_no_basicly_importable_and_none_on_path(
-    tmp_path: Path,
-) -> None:
-    """The bead's hard constraint, exercised the way a consumer would exercise it."""
-    consumer = _consumer_repo(tmp_path)
-    driver = tmp_path / "spawn.py"
-    driver.write_text(_DRIVER, encoding="utf-8")
-    copied_kit = consumer / ".basicly" / "core" / "kit" / KIT.name
-
-    result = _run_without_basicly(
-        [str(driver), str(copied_kit), "my-own-agent"], cwd=consumer, tmp_path=tmp_path
-    )
-
-    assert result.returncode == 0, result.stderr
-    payload = json.loads(result.stdout)
-    assert payload["model"] == _expected("high", "anthropic", "anthropic")
-    assert payload["tier"] == "high"
-    assert payload["source"] == "definition"
-    assert payload["reason"] is None
-
-
-def test_the_kit_command_line_prints_the_resolved_model_without_basicly(
-    tmp_path: Path,
-) -> None:
-    """The invocable surface a spawner in any language can drive."""
-    consumer = _consumer_repo(tmp_path)
-    copied_kit = consumer / ".basicly" / "core" / "kit" / KIT.name
-
-    result = _run_without_basicly(
-        [str(copied_kit), "--host", "claude", "--name", "my-own-agent"],
-        cwd=consumer,
-        tmp_path=tmp_path,
-    )
-
-    assert result.returncode == 0, result.stderr
-    payload = json.loads(result.stdout)
-    assert payload["model"] == _expected("high", "anthropic", "anthropic")
-    assert payload["surface"] == "anthropic"
-
-
-def test_the_kit_command_line_resolves_nothing_for_an_unavailable_cell(
-    tmp_path: Path,
-) -> None:
-    """Fail-closed stays observable without basicly: exit status plus a reason."""
-    consumer = _consumer_repo(tmp_path)
-    copied_kit = consumer / ".basicly" / "core" / "kit" / KIT.name
-
-    result = _run_without_basicly(
-        [
-            str(copied_kit),
-            "--host",
-            "copilot",
-            "--vendor",
-            UNAVAILABLE_VENDOR,
-            "--name",
-            "my-own-agent",
-            "--tier",
-            UNAVAILABLE_TIER,
-        ],
-        cwd=consumer,
-        tmp_path=tmp_path,
-    )
-
-    assert result.returncode == 1, result.stdout
-    payload = json.loads(result.stdout)
-    assert payload["model"] is None
-    assert payload["reason"] is not None and "unavailable" in payload["reason"]
-    neighbour = _expected(NEIGHBOUR_TIER, UNAVAILABLE_VENDOR, COPILOT_SURFACE)
-    assert neighbour not in result.stdout
-
-
-def test_the_kit_command_line_leaves_a_repository_with_no_map_alone(tmp_path: Path) -> None:
-    """The machine-wide-hook case: no map means no answer, not an error trace."""
-    bare = tmp_path / "unrelated-project"
-    bare.mkdir()
-    copied_kit = tmp_path / KIT.name
-    shutil.copy2(KIT, copied_kit)
-
-    result = _run_without_basicly(
-        [str(copied_kit), "--host", "claude", "--tier", "high"], cwd=bare, tmp_path=tmp_path
-    )
-
-    assert result.returncode == 1, result.stdout
-    payload = json.loads(result.stdout)
-    assert payload["model"] is None
-    assert payload["reason"] is not None and MAP.name in payload["reason"]
-    assert result.stderr == ""

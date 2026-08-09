@@ -19,7 +19,7 @@
   "properties": {
     "schema_version": {
       "description": "Version of this artifact's shape, independent of the generator's version. Bumped only when a consumer must change.",
-      "const": 2
+      "const": 3
     },
     "concept": {
       "description": "Self-describing prose so the idea travels with the data.",
@@ -107,9 +107,16 @@
       "minProperties": 1,
       "additionalProperties": {
         "type": "object",
-        "required": ["vendors"],
+        "required": ["vendor_order", "vendors"],
         "additionalProperties": false,
         "properties": {
+          "vendor_order": {
+            "description": "The order this tier's vendors are tried when a spawn pins none. Walk it and take the first vendor whose cell for your surface is available; a tier with no available vendor resolves to nothing, never to another tier. Lists every key of 'vendors' exactly once.",
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "type": "string", "minLength": 1 }
+          },
           "vendors": {
             "type": "object",
             "minProperties": 1,

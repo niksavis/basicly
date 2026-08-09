@@ -185,8 +185,16 @@ class Resolution:
     source: str | None = None
     # Why there is no model. ``None`` whenever there is one.
     reason: str | None = None
+    # The vendors the walk passed over before ``vendor``, in the order it tried
+    # them, with the reason each was skipped (D31). Empty when the first vendor
+    # answered, when a vendor was pinned, or when the map carries no walk order.
+    # Recorded because a resolution that silently landed on the third vendor and
+    # one that landed on the first are indistinguishable from the model alone —
+    # and the second is normal while the first means a vendor stopped serving a
+    # tier, which is a thing an operator should get to see.
+    skipped: tuple[tuple[str, str], ...] = ()
 
-    def as_dict(self) -> dict[str, str | None]:
+    def as_dict(self) -> dict[str, object]:
         """The resolution as plain JSON-ready data, for a non-python caller."""
         return {
             "model": self.model,
@@ -196,6 +204,7 @@ class Resolution:
             "vendor": self.vendor,
             "source": self.source,
             "reason": self.reason,
+            "skipped": [{"vendor": vendor, "reason": why} for vendor, why in self.skipped],
         }
 
 
@@ -303,15 +312,16 @@ class TierResolver:
                 source=source,
                 reason=f"unknown tier {declared!r}; the map declares {', '.join(order)}",
             )
-        model, reason = self._cell(declared, chosen_vendor, surface)
+        model, landed, reason, skipped = self._walk(declared, surface, vendor, default_vendor)
         return Resolution(
             model=model,
             alias=HOST_MODEL_ALIASES.get(host, {}).get(declared) if model else None,
             tier=declared,
             surface=surface,
-            vendor=chosen_vendor,
+            vendor=landed,
             source=source,
             reason=reason,
+            skipped=skipped,
         )
 
     def _tier_for(self, tier: str | None, definition: Path | None) -> tuple[str | None, str | None]:
@@ -348,6 +358,56 @@ class TierResolver:
             reason = cell.get("reason") or "the map marks this cell unavailable"
             return None, f"{vendor} {tier} is unavailable on {surface}: {reason}"
         return model, None
+
+    def _vendor_order(self, tier: str) -> tuple[str, ...]:
+        """The declared walk order for *tier*, or ``()`` when the map carries none.
+
+        Empty for a map written before the order existed (schema 2), which is
+        deliberate rather than an error: the kit is copied into repositories that
+        may carry an older committed map, and a tolerant read there degrades to
+        the single-vendor behaviour that map was written for. A map that *does*
+        carry an order has already had it checked by the generator, which refuses
+        anything but a permutation of the declared vendors.
+        """
+        tiers = self.mapping.get("tiers")
+        entry = tiers.get(tier) if isinstance(tiers, dict) else None
+        order = entry.get("vendor_order") if isinstance(entry, dict) else None
+        if not isinstance(order, list):
+            return ()
+        return tuple(str(vendor) for vendor in order if isinstance(vendor, str))
+
+    def _walk(
+        self, tier: str, surface: str, pinned: str | None, default_vendor: str
+    ) -> tuple[str | None, str, str | None, tuple[tuple[str, str], ...]]:
+        """Find the first vendor serving *tier* on *surface* (D31).
+
+        Returns ``(model, vendor, reason, skipped)``. A *pinned* vendor reads
+        exactly one cell and never walks — an explicit request is answered or
+        refused on its own terms, because silently serving a different vendor
+        than the caller named is worse than saying no.
+
+        The walk only ever moves sideways, across vendors at one tier. It cannot
+        reach another tier, which is the property the map's per-cell refusal
+        exists to protect: a spawn that asked for `maximum` gets `maximum` or
+        gets nothing.
+        """
+        if pinned is not None:
+            model, reason = self._cell(tier, pinned, surface)
+            return model, pinned, reason, ()
+        order = self._vendor_order(tier) or (default_vendor,)
+        skipped: list[tuple[str, str]] = []
+        for vendor in order:
+            model, reason = self._cell(tier, vendor, surface)
+            if model is not None:
+                return model, vendor, None, tuple(skipped)
+            skipped.append((vendor, reason or "no model"))
+        tried = ", ".join(vendor for vendor, _ in skipped)
+        return (
+            None,
+            order[-1],
+            f"no vendor serves {tier} on {surface}; tried {tried}",
+            tuple(skipped),
+        )
 
 
 def find_map(root: Path | None = None, *, beside_the_kit: bool = True) -> Path | None:

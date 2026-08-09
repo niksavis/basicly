@@ -1,6 +1,6 @@
 {
-  "schema_version": 2,
-  "concept": "A capability tier is declared once on an agent source and resolved here to a concrete model per vendor, then to each surface's own spelling of it — because availability, id spelling and cost all vary by surface. tier_order is cheapest first. Read tiers.<tier>.vendors.<vendor>.surfaces.<surface>: when status is 'available' its 'model' is the value that surface's model field accepts, with that surface's own published cost and limits beside it; when status is 'unavailable' there is deliberately NO model key, because substituting another tier's model would be a silent demotion. A 'collapse' entry means the vendor ships a shorter ladder and two tiers intentionally resolve to one model. Plain JSON on purpose: any harness can consume this file without the tool that generated it.",
+  "schema_version": 3,
+  "concept": "A capability tier is declared once on an agent source and resolved here to a concrete model per vendor, then to each surface's own spelling of it — because availability, id spelling and cost all vary by surface. tier_order is cheapest first. Read tiers.<tier>.vendors.<vendor>.surfaces.<surface>: when status is 'available' its 'model' is the value that surface's model field accepts, with that surface's own published cost and limits beside it; when status is 'unavailable' there is deliberately NO model key, because substituting another tier's model would be a silent demotion. A 'collapse' entry means the vendor ships a shorter ladder and two tiers intentionally resolve to one model. When a spawn pins no vendor, walk tiers.<tier>.vendor_order in order and take the first vendor whose cell for your surface is available; it lists every vendor exactly once. A tier with no available vendor on a surface resolves to nothing — never to a neighbouring tier. Plain JSON on purpose: any harness can consume this file without the tool that generated it.",
   "generated_by": ".scripts/generate_model_map.py",
   "tier_order": [
     "low",
@@ -73,13 +73,18 @@
   "provenance": {
     "source_url": "https://models.dev/api.json",
     "fetched_date": "2026-08-09",
-    "payload_sha256": "2d8ccfd8f899c621c3e9bbab247c1c6158410635ace963142b06ea00aafbc88b",
-    "payload_bytes": 3617667,
-    "etag": "\"2d8ccfd8f899c621c3e9bbab247c1c61\"",
+    "payload_sha256": "28792e2d8916791d85158990d4309d73a767881e4740a9dc051b7db40df3e94b",
+    "payload_bytes": 48352,
     "note": "models.dev serves api.json as a CDN-cached generated artifact and publishes no git commit sha: the payload has no commit field and the response has no last-modified header. payload_sha256 plus etag is therefore the strongest available upstream identity, and no commit-sha field is claimed. Per-surface upstream_last_updated is models.dev's record date."
   },
   "tiers": {
     "low": {
+      "vendor_order": [
+        "anthropic",
+        "openai",
+        "google",
+        "moonshotai"
+      ],
       "vendors": {
         "anthropic": {
           "anchor": "claude-haiku-4-5",
@@ -140,8 +145,8 @@
               "status": "available",
               "model": "gpt-5.6-luna",
               "cost_usd_per_mtok": {
-                "input": 0.2,
-                "output": 1.2
+                "input": 1,
+                "output": 6
               },
               "limit_tokens": {
                 "context": 1050000,
@@ -205,6 +210,12 @@
       }
     },
     "medium": {
+      "vendor_order": [
+        "anthropic",
+        "openai",
+        "google",
+        "moonshotai"
+      ],
       "vendors": {
         "anthropic": {
           "anchor": "claude-sonnet-5",
@@ -264,8 +275,8 @@
               "status": "available",
               "model": "gpt-5.6-terra",
               "cost_usd_per_mtok": {
-                "input": 2,
-                "output": 12
+                "input": 2.5,
+                "output": 15
               },
               "limit_tokens": {
                 "context": 1050000,
@@ -331,24 +342,20 @@
               "upstream_last_updated": "2026-07-21"
             },
             "github-copilot": {
-              "status": "available",
-              "model": "gemini-3.6-flash",
-              "cost_usd_per_mtok": {
-                "input": 1.5,
-                "output": 7.5
-              },
-              "limit_tokens": {
-                "context": 1000000,
-                "input": 936000,
-                "output": 64000
-              },
-              "upstream_last_updated": "2026-07-21"
+              "status": "unavailable",
+              "reason": "provider 'github-copilot' serves no model named 'Gemini 3.6 Flash'"
             }
           }
         }
       }
     },
     "high": {
+      "vendor_order": [
+        "anthropic",
+        "openai",
+        "google",
+        "moonshotai"
+      ],
       "vendors": {
         "anthropic": {
           "anchor": "claude-opus-5",
@@ -441,17 +448,8 @@
               "upstream_last_updated": "2026-07-16"
             },
             "github-copilot": {
-              "status": "available",
-              "model": "kimi-k3",
-              "cost_usd_per_mtok": {
-                "input": 3,
-                "output": 15
-              },
-              "limit_tokens": {
-                "context": 1048576,
-                "output": 131072
-              },
-              "upstream_last_updated": "2026-07-16"
+              "status": "unavailable",
+              "reason": "provider 'github-copilot' serves no model named 'Kimi K3'"
             }
           }
         },
@@ -493,6 +491,12 @@
       }
     },
     "maximum": {
+      "vendor_order": [
+        "anthropic",
+        "openai",
+        "google",
+        "moonshotai"
+      ],
       "vendors": {
         "anthropic": {
           "anchor": "claude-fable-5",
@@ -592,17 +596,8 @@
               "upstream_last_updated": "2026-07-16"
             },
             "github-copilot": {
-              "status": "available",
-              "model": "kimi-k3",
-              "cost_usd_per_mtok": {
-                "input": 3,
-                "output": 15
-              },
-              "limit_tokens": {
-                "context": 1048576,
-                "output": 131072
-              },
-              "upstream_last_updated": "2026-07-16"
+              "status": "unavailable",
+              "reason": "provider 'github-copilot' serves no model named 'Kimi K3'"
             }
           }
         },

@@ -1,43 +1,16 @@
-"""Tests for the models.dev model-map generator and its drift check (basicly-kjc5.61).
+"""Offline gates on the committed model map (basicly-kjc5.61).
 
-Two halves. Offline gates on the *committed* artifact — it validates against its
-published schema, covers exactly ``schema.MODEL_TIERS`` for every vendor, and
-agrees with ``anchors.yaml`` — because the drift check needs the network and
-therefore cannot run on every commit. And behavioural tests on the generator
-itself, driven from a captured payload so no test touches the network.
-
-Fixture provenance: ``tests/fixtures/modelsdev-api.json`` is a **real** response
-from ``https://models.dev/api.json``, captured 2026-07-31 (HTTP 200, 3,331,578
-bytes, 176 providers, 5911 model records) and trimmed to five providers. Every
-record is byte-identical to upstream, and
-``test_the_fixture_reproduces_the_committed_tiers`` proves the trim is faithful by
-resolving it and comparing against the map generated from the full live document.
-
-The trim deliberately keeps the parts a hand-written fixture would have smoothed
-away:
-
-* Anthropic's ``claude-haiku-4-5-20251001`` — the second record named "Claude
-  Haiku 4.5", which is why the " (latest)" suffix must stay in the join key.
-* ``github-copilot``'s ``claude-haiku-4.5`` and ``claude-opus-4.5``, which carry
-  ``limit.input``, next to its ``claude-sonnet-5``, which does not.
-* ``github-copilot``'s real coverage gaps: its only Moonshot model
-  (``kimi-k2.7-code``) and its whole four-model Gemini range, so
-  ``kimi-k2.5``/``kimi-k3``/``gemini-3.1-flash-lite``/``gemini-3.6-flash``
-  resolve to genuinely unavailable rather than to a synthesized gap.
-* Non-general noise a sweep would happily pick as a tier: ``gpt-image-2``,
-  ``gpt-realtime-2.1``, ``text-embedding-3-small``, ``gemini-3.1-flash-image``,
-  ``gemini-3.1-flash-tts-preview``, ``gemini-embedding-2``,
-  ``veo-3.1-generate-preview``.
-* ``gpt-5.5-pro``, a model the anchors deliberately do not use.
+The committed artifact half of the original suite, kept when the module-size
+ratchet split it (basicly-u2hl.36): the map validates against its published
+schema, covers exactly ``schema.MODEL_TIERS`` for every vendor, agrees with
+``anchors.yaml``, and carries honest provenance. None of it touches the network,
+which is why it can gate every commit while the drift check cannot.
 """
 
 from __future__ import annotations
 
-import copy
 import hashlib
-import importlib.util
 import json
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -46,95 +19,49 @@ import yaml
 from jsonschema import Draft202012Validator
 
 from basicly.schema import MODEL_TIERS
+from tests import model_map_helpers as helpers
+from tests.model_map_helpers import (
+    ANCHORS_PATH,
+    BROKER_SURFACE,
+    FIXTURE_PATH,
+    MAP_PATH,
+    REQUIRED_VENDORS,
+    SCHEMA_PATH,
+    generator,
+)
 
-REPO = Path(__file__).resolve().parents[1]
-MODELS_DIR = REPO / ".basicly" / "core" / "models"
-ANCHORS_PATH = MODELS_DIR / "anchors.yaml"
-MAP_PATH = MODELS_DIR / "model-map.json"
-SCHEMA_PATH = MODELS_DIR / "model-map.schema.json"
-FIXTURE_PATH = Path(__file__).parent / "fixtures" / "modelsdev-api.json"
-
-# The vendors the map is required to cover, and the broker surface every one of
-# them is also resolved onto. Spelled out rather than read from anchors.yaml: an
-# assertion derived from its subject cannot fail when the subject shrinks.
-REQUIRED_VENDORS = ("anthropic", "openai", "moonshotai", "google")
-BROKER_SURFACE = "github-copilot"
-
-
-def _load_module():
-    """Load the generate-model-map script module from its path.
-
-    Registered in ``sys.modules`` before execution because ``@dataclass``
-    resolves its defining module by name.
-    """
-    script_path = REPO / ".scripts" / "generate_model_map.py"
-    spec = importlib.util.spec_from_file_location("generate_model_map", script_path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-generator = _load_module()
+_cells = helpers.cells
+_run = helpers.run_cli
 
 
 @pytest.fixture
 def payload() -> dict[str, Any]:
     """The captured models.dev document, parsed fresh so a mutation cannot leak."""
-    return json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+    return helpers.read_payload()
 
 
 @pytest.fixture
 def anchors():
-    """The repo's real anchor source — the thing the map is generated from."""
-    return generator.load_anchors(ANCHORS_PATH)
+    """The repo's real anchor source."""
+    return helpers.read_anchors()
 
 
 @pytest.fixture
 def committed() -> dict[str, Any]:
     """The committed map."""
-    return json.loads(MAP_PATH.read_text(encoding="utf-8"))
+    return helpers.read_committed()
 
 
 @pytest.fixture
 def declared() -> dict[str, Any]:
     """The raw anchor source, as a reviewer reads it."""
-    return yaml.safe_load(ANCHORS_PATH.read_text(encoding="utf-8"))
+    return helpers.read_declared()
 
 
 @pytest.fixture
 def workspace(tmp_path: Path) -> Path:
     """A models dir holding the real anchors and a map built from the fixture."""
-    models_dir = tmp_path / "models"
-    models_dir.mkdir()
-    (models_dir / "anchors.yaml").write_text(
-        ANCHORS_PATH.read_text(encoding="utf-8"), encoding="utf-8"
-    )
-    built = generator.build_map(
-        FIXTURE_PATH.read_bytes(), None, generator.load_anchors(ANCHORS_PATH)
-    )
-    (models_dir / "model-map.json").write_text(generator.render(built), encoding="utf-8")
-    return models_dir
-
-
-def _run(models_dir: Path, *extra: str) -> int:
-    """Invoke the script's entry point against a workspace and the fixture."""
-    return generator.main([
-        "--models-dir",
-        str(models_dir),
-        "--payload",
-        str(FIXTURE_PATH),
-        *extra,
-    ])
-
-
-def _cells(document: dict[str, Any]):
-    """Yield every (tier, vendor, surface, entry) cell of a map."""
-    for tier, entry in document["tiers"].items():
-        for vendor, vendor_entry in entry["vendors"].items():
-            for surface, served in vendor_entry["surfaces"].items():
-                yield tier, vendor, surface, served
+    return helpers.make_workspace(tmp_path)
 
 
 # --- the committed artifact (offline gates) ----------------------------------
@@ -289,110 +216,6 @@ def test_a_collapse_without_a_reason_is_rejected(tmp_path: Path) -> None:
     assert "collapse_reason" in str(excinfo.value)
 
 
-# --- the general-model rule --------------------------------------------------
-
-
-def test_the_rule_refuses_a_non_general_anchor(tmp_path: Path, payload: dict) -> None:
-    """A sweep would happily pick an image model; the rule names why it cannot."""
-    path = tmp_path / "anchors.yaml"
-    declared = yaml.safe_load(ANCHORS_PATH.read_text(encoding="utf-8"))
-    next(v for v in declared["vendors"] if v["id"] == "google")["tiers"]["low"] = (
-        "gemini-3.1-flash-image"
-    )
-    path.write_text(yaml.safe_dump(declared), encoding="utf-8")
-
-    with pytest.raises(generator.ResolutionError) as excinfo:
-        generator.resolve_tiers(payload, generator.load_anchors(path))
-    message = str(excinfo.value)
-    assert "gemini-3.1-flash-image" in message
-    assert "tool" in message or "text only" in message
-
-
-@pytest.mark.parametrize(
-    ("provider", "model_id"),
-    [
-        ("openai", "gpt-image-2"),
-        ("openai", "gpt-realtime-2.1"),
-        ("openai", "text-embedding-3-small"),
-        ("google", "gemini-3.1-flash-image"),
-        ("google", "gemini-3.1-flash-tts-preview"),
-        ("google", "gemini-embedding-2"),
-        ("google", "veo-3.1-generate-preview"),
-    ],
-)
-def test_the_rule_excludes_every_non_general_model_in_the_fixture(
-    payload: dict, anchors, provider: str, model_id: str
-) -> None:
-    """Real upstream records, not invented ones: each must fail the rule."""
-    record = payload[provider]["models"][model_id]
-    assert anchors.rule.failures(record), f"{provider}/{model_id} wrongly passes the rule"
-
-
-def test_the_rule_admits_every_committed_anchor(payload: dict, anchors) -> None:
-    """The complement of the exclusion test, so the rule is not merely strict."""
-    for vendor in anchors.vendors:
-        for tier, anchor in vendor.tiers.items():
-            record = payload[vendor.id]["models"][anchor]
-            assert not anchors.rule.failures(record), f"{tier}/{vendor.id} fails the rule"
-
-
-def test_reasoning_is_recorded_but_not_required(payload: dict, anchors) -> None:
-    """Requiring it would exclude general tool-calling models such as gpt-4o."""
-    assert anchors.rule.failures(payload["moonshotai"]["models"]["kimi-k2-turbo-preview"]) == []
-    tiers = generator.resolve_tiers(payload, anchors)
-    assert tiers["high"]["vendors"]["google"]["reasoning"] is True
-
-
-# --- resolution mechanics ----------------------------------------------------
-
-
-def test_resolution_keeps_the_latest_suffix_in_the_join_key(payload: dict, anchors) -> None:
-    """Stripping " (latest)" makes the low anchor match two Anthropic records."""
-    tiers = generator.resolve_tiers(payload, anchors)
-    entry = tiers["low"]["vendors"]["anthropic"]
-    assert entry["model_name"] == "Claude Haiku 4.5 (latest)"
-    assert entry["surfaces"]["anthropic"]["model"] == "claude-haiku-4-5"
-    dated = payload["anthropic"]["models"]["claude-haiku-4-5-20251001"]
-    assert dated["name"] == "Claude Haiku 4.5", "fixture must keep the near-miss record"
-
-
-def test_resolution_treats_the_provider_input_limit_as_optional(payload: dict, anchors) -> None:
-    """Only some providers publish limit.input, and not for every model."""
-    tiers = generator.resolve_tiers(payload, anchors)
-    low = tiers["low"]["vendors"]["anthropic"]["surfaces"]
-    assert low[BROKER_SURFACE]["limit_tokens"]["input"] == 136000
-    assert "input" not in low["anthropic"]["limit_tokens"]
-    medium = tiers["medium"]["vendors"]["anthropic"]["surfaces"]
-    assert "input" not in medium[BROKER_SURFACE]["limit_tokens"]
-
-
-def test_resolution_fails_naming_an_anchor_that_no_longer_resolves(payload: dict, anchors) -> None:
-    """An anchor id pulled upstream must name itself, not vanish silently."""
-    del payload["google"]["models"]["gemini-3.1-pro-preview"]
-    with pytest.raises(generator.ResolutionError) as excinfo:
-        generator.resolve_tiers(payload, anchors)
-    message = str(excinfo.value)
-    assert "gemini-3.1-pro-preview" in message
-    assert "high" in message
-
-
-def test_resolution_rejects_an_ambiguous_name_match(payload: dict, anchors) -> None:
-    """Two records sharing the join key is a guess, so it is an error."""
-    models = payload[BROKER_SURFACE]["models"]
-    models["claude-haiku-4.5-alias"] = copy.deepcopy(models["claude-haiku-4.5"])
-    with pytest.raises(generator.ResolutionError) as excinfo:
-        generator.resolve_tiers(payload, anchors)
-    assert "claude-haiku-4.5-alias" in str(excinfo.value)
-
-
-def test_resolution_rejects_a_non_numeric_upstream_cost(payload: dict, anchors) -> None:
-    """Upstream is community-contributed, so its numbers are validated on arrival."""
-    payload["anthropic"]["models"]["claude-sonnet-5"]["cost"]["input"] = "two dollars"
-    with pytest.raises(generator.ResolutionError) as excinfo:
-        generator.resolve_tiers(payload, anchors)
-    assert "cost" in str(excinfo.value) and "claude-sonnet-5" in str(excinfo.value)
-
-
 # --- provenance --------------------------------------------------------------
 
 
@@ -416,209 +239,3 @@ def test_provenance_records_the_upstream_url_never_a_local_path() -> None:
     """A committed artifact must carry no machine-specific path."""
     stamp = generator.build_provenance(b"{}", None)
     assert stamp["source_url"] == generator.API_URL
-
-
-# --- drift check -------------------------------------------------------------
-
-
-def test_check_passes_when_the_map_matches_upstream(workspace: Path) -> None:
-    """The green path, so the failing paths below are not vacuous."""
-    assert _run(workspace, "--check") == 0
-
-
-def test_check_fails_naming_the_id_and_the_change_when_a_cost_moves(
-    workspace: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """The dated tripwire: medium reverts to 3 dollars per MTok on 2026-09-01."""
-    map_path = workspace / "model-map.json"
-    document = json.loads(map_path.read_text(encoding="utf-8"))
-    cell = document["tiers"]["medium"]["vendors"]["anthropic"]["surfaces"]["anthropic"]
-    cell["cost_usd_per_mtok"]["input"] = 3
-    map_path.write_text(generator.render(document), encoding="utf-8")
-
-    assert _run(workspace, "--check") == 1
-    err = capsys.readouterr().err
-    assert "medium.vendors.anthropic.surfaces.anthropic.cost_usd_per_mtok.input" in err
-    assert "3 -> 2" in err
-    assert "anthropic/claude-sonnet-5" in err
-
-
-def test_check_reports_a_surface_that_stopped_serving_a_tier(
-    workspace: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """A cell flipping available to unavailable is the silent-demotion tripwire."""
-    map_path = workspace / "model-map.json"
-    document = json.loads(map_path.read_text(encoding="utf-8"))
-    document["tiers"]["low"]["vendors"]["moonshotai"]["surfaces"][BROKER_SURFACE] = {
-        "status": "available",
-        "model": "kimi-k2.5",
-        "cost_usd_per_mtok": {"input": 0.6, "output": 3},
-        "limit_tokens": {"context": 262144, "output": 262144},
-        "upstream_last_updated": "2026-01-01",
-    }
-    map_path.write_text(generator.render(document), encoding="utf-8")
-
-    assert _run(workspace, "--check") == 1
-    err = capsys.readouterr().err
-    assert "low.vendors.moonshotai.surfaces.github-copilot.status" in err
-    assert "'available' -> 'unavailable'" in err
-
-
-def test_check_does_not_mutate_the_committed_map(workspace: Path) -> None:
-    """Reporting, never auto-applying: a bad upstream edit must not land silently."""
-    map_path = workspace / "model-map.json"
-    document = json.loads(map_path.read_text(encoding="utf-8"))
-    document["tiers"]["low"]["vendors"]["anthropic"]["surfaces"][BROKER_SURFACE]["model"] = (
-        "claude-haiku-9.9"
-    )
-    before = generator.render(document)
-    map_path.write_text(before, encoding="utf-8")
-
-    assert _run(workspace, "--check") == 1
-    assert map_path.read_text(encoding="utf-8") == before
-
-
-def test_check_names_a_changed_model_id(
-    workspace: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """A re-spelled serving id is drift and both spellings are reported."""
-    map_path = workspace / "model-map.json"
-    document = json.loads(map_path.read_text(encoding="utf-8"))
-    document["tiers"]["low"]["vendors"]["anthropic"]["surfaces"][BROKER_SURFACE]["model"] = (
-        "claude-haiku-9.9"
-    )
-    map_path.write_text(generator.render(document), encoding="utf-8")
-
-    assert _run(workspace, "--check") == 1
-    assert "'claude-haiku-9.9' -> 'claude-haiku-4.5'" in capsys.readouterr().err
-
-
-def test_check_ignores_provenance_drift(workspace: Path) -> None:
-    """The shared upstream document changes daily; only the tiers matter."""
-    map_path = workspace / "model-map.json"
-    document = json.loads(map_path.read_text(encoding="utf-8"))
-    document["provenance"]["payload_sha256"] = "0" * 64
-    document["provenance"]["fetched_date"] = "2000-01-01"
-    document["provenance"]["payload_bytes"] = 1
-    map_path.write_text(generator.render(document), encoding="utf-8")
-
-    assert _run(workspace, "--check") == 0
-
-
-def test_check_fails_and_writes_nothing_when_an_anchor_is_unresolvable(
-    workspace: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """A pinned id that no longer resolves is named, and the map stays put."""
-    anchors_path = workspace / "anchors.yaml"
-    anchors_path.write_text(
-        anchors_path.read_text(encoding="utf-8").replace("kimi-k2.5", "kimi-k2.9"),
-        encoding="utf-8",
-    )
-    before = (workspace / "model-map.json").read_text(encoding="utf-8")
-
-    assert _run(workspace, "--check") == 1
-    assert "kimi-k2.9" in capsys.readouterr().err
-    assert (workspace / "model-map.json").read_text(encoding="utf-8") == before
-
-
-def test_writing_creates_the_map_and_the_check_then_passes(tmp_path: Path) -> None:
-    """The generate path, exercised through the entry point."""
-    models_dir = tmp_path / "models"
-    models_dir.mkdir()
-    (models_dir / "anchors.yaml").write_text(
-        ANCHORS_PATH.read_text(encoding="utf-8"), encoding="utf-8"
-    )
-
-    assert _run(models_dir) == 0
-    written = json.loads((models_dir / "model-map.json").read_text(encoding="utf-8"))
-    assert tuple(written["tiers"]) == MODEL_TIERS
-    assert _run(models_dir, "--check") == 0
-
-
-def test_check_reports_a_missing_map_instead_of_writing_one(tmp_path: Path) -> None:
-    """--check never creates the artifact it is checking."""
-    models_dir = tmp_path / "models"
-    models_dir.mkdir()
-    (models_dir / "anchors.yaml").write_text(
-        ANCHORS_PATH.read_text(encoding="utf-8"), encoding="utf-8"
-    )
-
-    assert _run(models_dir, "--check") == 1
-    assert not (models_dir / "model-map.json").exists()
-
-
-# --- anchor validation -------------------------------------------------------
-
-
-def test_every_vendor_must_declare_exactly_the_tier_vocabulary(tmp_path: Path) -> None:
-    """The vocabulary has one definition; anchors.yaml may not extend or shrink it."""
-    path = tmp_path / "anchors.yaml"
-    declared = yaml.safe_load(ANCHORS_PATH.read_text(encoding="utf-8"))
-    next(v for v in declared["vendors"] if v["id"] == "moonshotai")["tiers"].pop("maximum")
-    path.write_text(yaml.safe_dump(declared), encoding="utf-8")
-
-    with pytest.raises(generator.ResolutionError) as excinfo:
-        generator.load_anchors(path)
-    assert "maximum" in str(excinfo.value) and "moonshotai" in str(excinfo.value)
-
-
-def test_a_vendor_must_list_its_own_surface(tmp_path: Path) -> None:
-    """Without the native price there is no baseline for a broker's markup."""
-    path = tmp_path / "anchors.yaml"
-    declared = yaml.safe_load(ANCHORS_PATH.read_text(encoding="utf-8"))
-    vendor = next(v for v in declared["vendors"] if v["id"] == "openai")
-    vendor["surfaces"] = [BROKER_SURFACE]
-    path.write_text(yaml.safe_dump(declared), encoding="utf-8")
-
-    with pytest.raises(generator.ResolutionError) as excinfo:
-        generator.load_anchors(path)
-    assert "own id" in str(excinfo.value)
-
-
-def test_a_vendor_cannot_reference_an_undeclared_surface(tmp_path: Path) -> None:
-    """A typo'd surface would otherwise resolve to a missing provider at fetch time."""
-    path = tmp_path / "anchors.yaml"
-    declared = yaml.safe_load(ANCHORS_PATH.read_text(encoding="utf-8"))
-    next(v for v in declared["vendors"] if v["id"] == "google")["surfaces"].append("gooogle")
-    path.write_text(yaml.safe_dump(declared), encoding="utf-8")
-
-    with pytest.raises(generator.ResolutionError) as excinfo:
-        generator.load_anchors(path)
-    assert "gooogle" in str(excinfo.value)
-
-
-def test_anchors_reject_a_duplicate_vendor_id(tmp_path: Path) -> None:
-    """Two vendors with one id would silently drop a whole column."""
-    path = tmp_path / "anchors.yaml"
-    declared = yaml.safe_load(ANCHORS_PATH.read_text(encoding="utf-8"))
-    declared["vendors"].append(dict(declared["vendors"][0]))
-    path.write_text(yaml.safe_dump(declared), encoding="utf-8")
-
-    with pytest.raises(generator.ResolutionError) as excinfo:
-        generator.load_anchors(path)
-    assert "duplicate vendor id" in str(excinfo.value)
-
-
-def test_anchors_reject_an_unsupported_schema_version(tmp_path: Path) -> None:
-    """A source authored for a newer generator fails loudly, not by misreading."""
-    path = tmp_path / "anchors.yaml"
-    path.write_text(
-        ANCHORS_PATH.read_text(encoding="utf-8").replace("schema_version: 2", "schema_version: 3"),
-        encoding="utf-8",
-    )
-
-    with pytest.raises(generator.ResolutionError) as excinfo:
-        generator.load_anchors(path)
-    assert "schema_version" in str(excinfo.value)
-
-
-def test_anchors_require_an_explicit_general_model_rule(tmp_path: Path) -> None:
-    """The capability floor must be stated, not defaulted into existence."""
-    path = tmp_path / "anchors.yaml"
-    declared = yaml.safe_load(ANCHORS_PATH.read_text(encoding="utf-8"))
-    declared["general_model_rule"].pop("require_tool_call")
-    path.write_text(yaml.safe_dump(declared), encoding="utf-8")
-
-    with pytest.raises(generator.ResolutionError) as excinfo:
-        generator.load_anchors(path)
-    assert "require_tool_call" in str(excinfo.value)
