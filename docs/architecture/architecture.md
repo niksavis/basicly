@@ -716,10 +716,27 @@ hand-edited — from YAML sources:
   agent's **name and description** load at session start, the **body never enters
   the parent's context**, and **only the final message returns** — a subagent runs
   in an **isolated context window**, so a dispatch's working set is never charged
-  to the session that spawned it. (Host capability of the Claude and Copilot
-  families, recorded 2026-07-26; a capability fact from first-party guidance, not a
-  run this repo executed. It is the fact that refutes any claim that concurrent
-  subagents must share one window — see `factory-loop.md` D24.)
+  to the session that spawned it. (**Verified 2026-08-09 against Claude Code
+  2.1.226**, upgrading this from the first-party-guidance claim it was recorded as
+  on 2026-07-26. All four hold. It is the fact that refutes any claim that
+  concurrent subagents must share one window — see `factory-loop.md` D24.)
+- **Agent and hook definitions hot-reload; they are not read once at process
+  start** [M, 2026-08-09, claude 2.1.226]. Both `~/.claude/agents/` and
+  `.claude/agents/` are watched and an added or edited file is picked up within
+  seconds, as is hook config in a settings file. **One exception, and it is exactly
+  the case a first install creates**: the first file in an `agents/` directory that
+  did not exist at session start. Clearing the conversation reloads neither and is
+  the wrong lever — it is what a consumer reaches for first, so the tier kit's
+  notice says so.
+- **Skill scope precedence is the inverse of agent scope precedence**, and for a
+  distribution tool that asymmetry is load-bearing [M, 2026-08-09]. Agents resolve
+  managed > `--agents` > **project** > user > plugin; skills resolve enterprise >
+  **personal** > **project**. `basicly install` writes a consumer's _project_
+  `.claude/skills/`, which is the **lowest-priority writable scope** — so a
+  developer's `~/.claude/skills/<same-name>` silently overrides a skill we shipped
+  them, while an identically named agent would not. Nothing we ship makes that
+  visible to the consumer, and the surface freeze cannot promise stability for a
+  scope it can lose (`plan` §7).
 - **Tool names** are _not_ translated. GitHub's published alias table accepts
   Claude's PascalCase names as first-class and matches case-insensitively, so the
   names a source declares resolve on both families. The table is pinned as
