@@ -10,7 +10,7 @@ import pytest
 import yaml
 
 from basicly import loop_state
-from basicly.catalog_lint import lint_catalog, skill_warnings
+from basicly.catalog_lint import lint_catalog, listing_budget_warnings, skill_warnings
 from basicly.schema import MODEL_TIERS
 from basicly.skill_source import discover_skills
 
@@ -516,3 +516,76 @@ def test_the_phase_check_would_catch_a_phantom() -> None:
     named = {step.strip() for step in chain.split("→")}
 
     assert sorted(name for name in named if name not in known) == ["teardown"]
+
+
+def test_the_listing_budget_warning_reports_the_arithmetic(tmp_path: Path) -> None:
+    """Over budget warns with the numbers, because "over budget" cannot be acted on.
+
+    The reader needs the entry count, the token total and the budget to decide
+    whether to cut one long description or three dead skills.
+    """
+    root = _catalog(tmp_path)
+    for index in range(40):
+        _skill_source(
+            root,
+            f"filler-{index}",
+            f"schema_version: 1\nname: filler-{index}\ninvocation: model\n"
+            f'description: "{"x" * 400}"\n{_INSTRUCTIONS}',
+        )
+
+    warnings = listing_budget_warnings(root)
+
+    entries = sum(1 for skill in discover_skills(root) if skill.invocation == "model")
+
+    assert len(warnings) == 1
+    assert "skill listing is" in warnings[0]
+    assert "token budget" in warnings[0]
+    # Derived, not literal: the fixture seeds a skill of its own, and a hardcoded
+    # count would break on a change to the fixture rather than to the subject.
+    assert f"{entries} model-invoked entries" in warnings[0]
+    assert "least-invoked first" in warnings[0]
+
+
+def test_the_listing_budget_is_silent_when_it_fits(tmp_path: Path) -> None:
+    """The positive control: the warning above must not fire on a small catalog.
+
+    Without it a warning emitted unconditionally would satisfy the assertions above
+    and discriminate nothing — the failure this repo has shipped before.
+    """
+    root = _catalog(tmp_path)
+    _skill_source(
+        root,
+        "small",
+        f"schema_version: 1\nname: small\ninvocation: model\n"
+        f"description: Does one thing. Use when that thing.\n{_INSTRUCTIONS}",
+    )
+
+    assert listing_budget_warnings(root) == []
+
+
+def test_a_user_invoked_entry_costs_nothing_in_the_listing(tmp_path: Path) -> None:
+    """The saving the invocation axis exists to buy, asserted rather than assumed.
+
+    A user-invoked source carries no description, so it contributes only its name —
+    which is the whole argument for the axis and is worth a check, since a
+    regression here would look like the catalog simply growing.
+    """
+    root = _catalog(tmp_path)
+    for index in range(40):
+        _skill_source(
+            root,
+            f"filler-{index}",
+            f"schema_version: 1\nname: filler-{index}\ninvocation: model\n"
+            f'description: "{"x" * 400}"\n{_INSTRUCTIONS}',
+        )
+    over = listing_budget_warnings(root)
+
+    for index in range(40):
+        _skill_source(
+            root,
+            f"filler-{index}",
+            f"schema_version: 1\nname: filler-{index}\ninvocation: user\n{_INSTRUCTIONS}",
+        )
+
+    assert over != []
+    assert listing_budget_warnings(root) == []

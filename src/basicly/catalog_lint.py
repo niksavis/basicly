@@ -41,7 +41,7 @@ from pathlib import Path
 
 import yaml
 
-from . import agents, routing_evals, rubrics, skill_source
+from . import agents, read_cost, routing_evals, rubrics, skill_source
 from .catalog_source import (
     AGENTS_DIR,
     CORE_DIR,
@@ -54,6 +54,7 @@ from .catalog_source import (
     schema_validator,
     schema_violations,
 )
+from .runner import _CONTEXT_WINDOWS
 from .schema import MODEL_TIERS, TECHNOLOGIES
 
 # Agent Skills spec (https://agentskills.io/specification) name rule: 1-64 chars,
@@ -233,6 +234,11 @@ def _check_skill_spec(repo_root: Path) -> list[str]:
     ``name`` must match the spec regex AND the containing directory; ``metadata``
     values must be strings. Length limits on ``description``/``compatibility`` are
     schema-enforced; the name-vs-directory identity and the regex are not.
+
+    That first sentence was **false for `description` until 2026-08-09**: only
+    ``compatibility`` carried a ``maxLength``. It now carries 1536, the point where
+    the host truncates a listing entry — and truncation takes the tail, which is the
+    "use when" half that does the routing (basicly-u2hl.45).
     """
     violations: list[str] = []
     for path in sorted((repo_root / SKILLS_DIR).glob("*/skill.yaml")):
@@ -303,6 +309,54 @@ def _check_invocation_axis(repo_root: Path) -> list[str]:
     return violations
 
 
+# The host budgets the whole skill listing at 1% of the context window and, on
+# overflow, drops descriptions **starting with the least-invoked skills** (measured
+# against Claude Code 2.1.226, 2026-08-09). Those two facts compose into a feedback
+# loop rather than a flat cost: the entries nobody invokes are the first to lose the
+# description that would let anything invoke them.
+_LISTING_BUDGET_FRACTION = 100
+# Reported against the window a *consumer* gets, not the one this repo runs. The
+# adapter default is what a fresh install inherits; `basicly.toml` raises claude to
+# 1_000_000 here, which hides the overrun entirely from anyone measuring locally —
+# which is exactly how it went unnoticed.
+_LISTING_REFERENCE_FAMILY = "claude"
+
+
+def listing_budget_warnings(repo_root: Path) -> list[str]:
+    """Warn when the projected skill listing overruns the host's listing budget.
+
+    Advisory, deliberately. The overrun is a *cost* to weigh — the remedy is to
+    retire or user-invoke a skill, which is authoring work, and a gate that fails
+    the build over it would block every unrelated commit until someone did it.
+
+    Reported with the arithmetic shown, because a bare "over budget" cannot be acted
+    on: the reader needs the entry count, the token total and the budget to decide
+    whether to cut one long description or three dead skills.
+    """
+    entries = [
+        skill
+        for skill in skill_source.discover_skills(repo_root)
+        if skill.invocation == skill_source.MODEL_INVOKED
+    ]
+    if not entries:
+        return []
+    # Name plus description is what the host lists; a user-invoked entry contributes
+    # only its name, which is the saving the invocation axis exists to buy.
+    listing = "".join(f"{skill.name}\n{skill.description}\n" for skill in entries)
+    tokens = read_cost._text_tokens(listing)
+    window = _CONTEXT_WINDOWS[_LISTING_REFERENCE_FAMILY]
+    budget = window // _LISTING_BUDGET_FRACTION
+    if tokens <= budget:
+        return []
+    return [
+        f"skill listing is {tokens} tokens against a {budget}-token budget "
+        f"(1% of {_LISTING_REFERENCE_FAMILY}'s {window} adapter-default window), "
+        f"from {len(entries)} model-invoked entries. The host drops descriptions "
+        f"least-invoked first, so the entries this overrun silences are the ones "
+        f"already hardest to reach. Retire a dead skill or move it to user-invoked."
+    ]
+
+
 def skill_warnings(repo_root: Path) -> list[str]:
     """Return non-blocking Agent Skills progressive-disclosure advisories.
 
@@ -312,6 +366,7 @@ def skill_warnings(repo_root: Path) -> list[str]:
     early sign of the drift the error ceiling later refuses.
     """
     warnings: list[str] = list(routing_evals.routing_outcome(repo_root).warnings)
+    warnings.extend(listing_budget_warnings(repo_root))
     for path in sorted((repo_root / SKILLS_DIR).glob("*/skill.yaml")):
         data = load_mapping(path)
         if data is None:

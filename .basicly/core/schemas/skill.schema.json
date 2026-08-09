@@ -32,7 +32,8 @@
     "description": {
       "type": "string",
       "minLength": 1,
-      "description": "One-line trigger description used for model discovery. Required for a model-invoked entry and forbidden for a user-invoked one."
+      "description": "Agent Skills frontmatter: what the skill does and when to use it. Capped at 1536 characters because that is where Claude Code truncates a listing entry (measured 2.1.226, 2026-08-09) — past it the tail is silently cut, and the tail is the 'use when' half that does the routing.",
+      "maxLength": 1536
     },
     "instructions": {
       "type": "string",
