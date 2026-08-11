@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
 import subprocess  # nosec B404
 import sys
 from pathlib import Path
+
+import pytest
 
 SCRIPT_PATH = (
     Path(__file__).resolve().parents[2] / ".basicly" / "core" / "hooks" / "unsplit-loop-guard.py"
@@ -61,6 +64,23 @@ def test_the_command_that_filed_this_bead_is_refused() -> None:
     assert "runs ONCE" in result.stderr
 
 
+def _working_shell(shell: str) -> str | None:
+    r"""Return the shell's path only when the binary actually runs a script.
+
+    Being on `PATH` is not enough: on a Windows runner `bash` resolves to
+    `System32\bash.exe`, the WSL launcher, which with no distribution installed prints a
+    UTF-16 install notice and exits non-zero. A positive control is the only thing that
+    tells that apart from a real shell answering the question this test asks.
+    """
+    path = shutil.which(shell)
+    if path is None:
+        return None
+    probe = subprocess.run(  # nosec B603
+        [path, "-c", "echo ok"], capture_output=True, text=True, check=False
+    )
+    return path if probe.returncode == 0 and probe.stdout.strip() == "ok" else None
+
+
 def test_zsh_really_does_run_that_loop_only_once() -> None:
     """The defect is a property of the shell, not a story about it.
 
@@ -68,16 +88,37 @@ def test_zsh_really_does_run_that_loop_only_once() -> None:
     reconsidered — this test is how anyone would find out.
     """
     script = 'V="a b c"\nn=0\nfor x in $V; do n=$((n+1)); done\necho "$n"'
+    exercised = 0
     for shell in ("zsh", "bash"):
-        if not subprocess.run(  # nosec B603 B607
-            ["which", shell], capture_output=True, check=False
-        ).stdout:
+        path = _working_shell(shell)
+        if path is None:
             continue
         out = subprocess.run(  # nosec B603
-            [shell, "-c", script], capture_output=True, text=True, check=False
+            [path, "-c", script], capture_output=True, text=True, check=False
         ).stdout.strip()
         expected = "1" if shell == "zsh" else "3"
         assert out == expected, f"{shell} produced {out!r}, expected {expected!r}"
+        exercised += 1
+    if exercised == 0:
+        pytest.skip("neither zsh nor bash is a working shell on this host")
+
+
+def test_a_launcher_on_path_is_not_a_working_shell(monkeypatch: pytest.MonkeyPatch) -> None:
+    r"""The Windows CI regression, as data rather than as an OS.
+
+    `System32\bash.exe` is on PATH, answers with output, and is not bash. Selecting on
+    "PATH has it" ran the loop question against a WSL install notice and read the notice
+    as bash's answer.
+    """
+    wsl_stub = subprocess.CompletedProcess(
+        args=["bash", "-c", "echo ok"],
+        returncode=1,
+        stdout="W\x00i\x00n\x00d\x00o\x00w\x00s\x00 \x00S\x00u\x00b\x00s\x00y\x00s\x00t\x00e\x00m",
+        stderr="",
+    )
+    monkeypatch.setattr(shutil, "which", lambda _name: "C:\\Windows\\System32\\bash.exe")
+    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: wsl_stub)
+    assert _working_shell("bash") is None
 
 
 def test_the_corrected_forms_are_all_allowed() -> None:
