@@ -109,10 +109,19 @@ falsified them landed the same day it was measured:
 | four of the five designed skills are absent | **5 of 5 exist** |
 | one default runner serves every phase | a phase resolves to a role and reaches the argv (`roles.resolve_role`) |
 
+**That third row is itself half wrong, and the correction is load-bearing** [M 2026-08-09,
+re-verified 2026-08-11 at `e1a43ee`]. A phase does resolve, but only one phase ever asks:
+`resolve_role` is called from `loop.py:745` alone, inside `_run_agent`, whose three call sites
+(`loop.py:594`, `:1642`, `:1758`) are `build`, `repair` and `build`. `classify` and `decompose`
+never call it, so **`implementer` is the only role that has ever reached an argv**. That is
+`basicly-4xmu`, and it is why every decomposition to date was hand-dispatched from the driving
+session.
+
 ```text
 agents   11 sources · 7 loop + 4 ad-hoc · projected to both families · vendored
-         3 of 7 loop roles reachable        classify · decompose · build/repair
-         4 unreachable — their states do not exist          (u2hl.54)
+         1 of 7 loop roles reachable        implementer, via build AND repair
+         6 unreachable — 4 have no state (u2hl.54), 2 are unrouted (4xmu)
+         the projected `tools:` allowlist binds on copilot too   [M 2026-08-11]
 skills   40 sources · 35 projected · 5 of 5 loop skills exist
          ever exercised                                     10 of 40
          projected listing 2342 tok vs a consumer's 2000    OVER (a3ab.12)
