@@ -1,9 +1,9 @@
 {
   "version": "1",
-  "generated_at": "2026-08-09T19:40:53.932923+00:00",
+  "generated_at": "2026-08-11T09:24:36.319073+00:00",
   "outputs": {
     ".claude/CLAUDE.md": {
-      "hash": "sha256:f79c69fd378b82c8742de10f4c171fd5cd2d9067986ebf594acca79ddc01c315",
+      "hash": "sha256:050bd73c2dbc9418d11e700e5ed4bc1c86657ca5ac6409d2507cdfd5f86c26cb",
       "source_fragments": [
         "require-explicit-confirmation",
         "knowledge-priming",
@@ -45,7 +45,7 @@
       ]
     },
     "AGENTS.md": {
-      "hash": "sha256:5b092db02d08579db8cb276b0ed7c859b2acd29d38c2c5bcdd47e42a871d0dae",
+      "hash": "sha256:50baf30fa7079d0aa70b5f64a5c57c2debb3711811cedab35be918d8b4d91cd3",
       "source_fragments": [
         "require-explicit-confirmation",
         "knowledge-priming",
@@ -71,7 +71,7 @@
       ]
     },
     ".github/copilot-instructions.md": {
-      "hash": "sha256:9b596faa50e5a35c4ce35f874123bd698746dff7b50be7681408cb71b5258bd8",
+      "hash": "sha256:dc672ae52043efa6de33bb78177f462508ae05caed6edc9901793c5392ac537c",
       "source_fragments": [
         "require-explicit-confirmation",
         "knowledge-priming",

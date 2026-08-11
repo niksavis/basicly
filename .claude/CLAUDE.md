@@ -91,10 +91,10 @@ uv run basicly permissions-check
 ## External Facts
 
 - **Your training data has a cutoff and third-party interfaces move.** A flag, config
-  key, API field, model id, price, limit or version may have changed since. Fetch the
-  vendor's current docs or interrogate the installed binary; never answer from recall.
-  The `interface-facts` skill is the long form — this line is what must bind when
-  nobody invokes it.
+  key, API field, model id, price, limit or version may have changed since. Grep this
+  repo first — our own adapter is evidence under test — then fetch the vendor's
+  current docs or interrogate the installed binary; never answer from recall. The
+  `interface-facts` skill is the long form.
 - **An empty probe is not evidence of absence.** A search you designed returning
   nothing is ambiguous between "absent" and "wrong probe", and the second is the
   common case. Run a **positive control** that must return something before reporting
