@@ -429,6 +429,27 @@ gap this section measures, observed working in another tree. Its `test-wiring-au
 fresh context, inherits no conversation state, emits one JSON object — is a clean model for
 `validator`. Concept only; nothing is ported.
 
+**The projected `tools:` line binds on copilot, in the claude spellings, in the form we already
+emit** [M, 2026-08-11, copilot CLI 1.0.78]. The concern that `.github/agents/*.agent.md` grants no
+tools off-claude is **refuted**, and by the probe that would have shown it: a throwaway agent
+carrying our exact projected line, `tools: Read, Grep, Glob`, was asked to run `echo` and answered
+*"no shell/bash tool is available to me (only view, grep, glob, sql, and skill tools)"*. The
+positive control that makes that a finding rather than a refusal-shaped coincidence is the same
+agent with `Bash` added, which ran the command. So the comma-scalar form parses, the PascalCase
+names resolve through `copilot_tools.py`'s alias table, and the allowlist is enforced — the two
+extra tools are `sql` and `skill`, which that module already records as ungovernable by any
+allowlist. Skills need no translation either: `copilot skill list` in this repo enumerates all 34
+of our `.claude/skills/` sources as project skills.
+
+**What is not established is the second copilot surface.** Both facts above are the CLI. VS Code
+reads the same two directories and states it *"maps Claude-specific tool names to the corresponding
+VS Code tools"*, accepting both the array and the comma-separated form [S, vendor doc, 2026-08-11]
+— but it publishes no mapping table, its own vocabulary is a third one again (`search/codebase`,
+`edit/editFiles`), and nothing here has ever exercised it. Recorded as OQ-18 rather than as a gap,
+because the cost of the wrong answer is a read-only agent holding write tools on a surface we do
+not measure, and because the alias table itself is hand-pinned from a single 2026-07-31 reading
+with no gate that would notice the vendor moving under it.
+
 ### 6.4 Deliberately not agents
 
 Each refused by a decision rather than by preference (absorbed from the roster design 2026-08-08,
@@ -1170,6 +1191,7 @@ read; pass `--forward-subagent-text`; add light mode as a second dispatch path.
 | ~~OQ-10~~ | ~~Plugin channel~~ — **resolved**: second channel, same projected output (D16) | — |
 | **OQ-15** | **Does a checkpoint's artifact take real reading time?** §7.4 shows the clock measures rendezvous, so the question is unanswerable with today's instrument — arrival latency and comprehension are fused in one number. Settled by **one field**: a third marker written when the operator first *views* the checkpoint. That splits the two at near-zero cost and decides the rendering question for good | any rendered-artifact work |
 | **OQ-16** | **How many `Stop`-hook iterations survive under `claude -p`?** One block-and-continue is probed and works; the documented override after **8 consecutive blocks** is not exercised. This bounds any in-dispatch termination gate to 8 turns and must be measured before one is designed on it | an in-dispatch BUILD termination gate |
+| **OQ-18** | **Does a projected agent's tool allowlist bind in VS Code, and does the alias table stay true?** §6.3 measures the copilot **CLI**: the comma-scalar `tools:` line parses, the PascalCase names resolve, the allowlist enforces. The second surface reads the same files with a third vocabulary and is [S] only — VS Code claims to map claude tool names but publishes no table, and `copilot_tools.py`'s table is hand-pinned from one 2026-07-31 reading with no gate that fails when the vendor moves. The wrong answer costs a read-only agent holding write tools on a surface nothing here exercises | any work that certifies an agent read-only off-claude |
 | ~~OQ-17~~ | ~~Does comment density causally track module oversize?~~ — **resolved 2026-08-09: not separable in this repository, and the number that shows why is the collinearity.** Over 77 modules in `src/basicly/`, density against `log(tokens)` is **r = +0.385**, density against `log(commits touching the file)` is **r = +0.272**, and the two predictors correlate with each other at **r = +0.822** [M]. At that collinearity the data cannot discriminate "large modules are too complex, hence annotated" (D34's branch not taken) from "large modules have lived longer and accumulated more recorded decisions" (the confound). Two further observations point away from the complexity reading: density rises monotonically by size quartile (2.4 → 9.9 → 9.0 → 13.3 per 100 code lines) yet the **single largest module is among the sparsest** — `cli.py`, 50,482 tokens at 4.4 — which is the opposite of what a complexity-drives-annotation mechanism predicts, and the two densest modules (43.9, 42.5) are small and under cap. **D34 is not reopened.** Settling it properly needs per-line age, not per-file commit count, and a repo where size and age are not near-collinear — neither of which this one offers | — |
 
 ---
