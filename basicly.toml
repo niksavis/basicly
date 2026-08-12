@@ -386,6 +386,24 @@ name = "module-size"
 command = ["uv", "run", "python", ".scripts/check_module_size.py"]
 modes = ["fast", "full"]
 
+# Prose density, as a per-module ratchet (basicly-wxr3). The tree measured 39.4% prose —
+# comments plus docstrings, in the same token unit `module-size` uses — with recent commits
+# adding comments at 35.5% of added code lines against 10.5% mid-history. Nothing bound:
+# `ERA001` catches only commented-out code, and no rule in the stack reads a comment.
+#
+# It is a ratchet rather than the purge hook the request started as, and the reason is a
+# measurement: `convention = "google"` makes docstrings mandatory (D101/D102/D103/D105), so
+# stripping `#` comments relocates narration into a docstring the linter demands, and 64
+# comments in this tree are pragmas the lint gates read. A purge would break those gates
+# and hand every frozen `module-size` entry a 12-36% free shrink.
+#
+# No `fix_command`. Which sentence is narration and which is the measurement behind a
+# threshold is the judgment `python-guidelines` owns, and no tool can make it.
+[[verify.checks]]
+name = "comment-density"
+command = ["uv", "run", "python", ".scripts/check_comment_density.py"]
+modes = ["fast", "full"]
+
 # Suppression debt, as a per-code ratchet (basicly-u2hl.12). ruff cannot police its own
 # suppressions — a `# noqa` is the one edit that makes the linter agree with you — so the
 # count lives outside the code, in `[tool.noqa_debt]` in pyproject.toml. §9.1 recorded 46;

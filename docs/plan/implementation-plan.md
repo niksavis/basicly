@@ -80,10 +80,10 @@ hand-written copy of them was stale within days:
 | Measure | Value |
 | --- | --- |
 | Engine modules (`src/basicly/*.py`) | 80 |
-| Test files | 143 |
-| `[[verify.checks]]` declared | 22 |
-| …of which run in `--mode fast` | 17 |
-| …of which run in `--mode full` | 21 |
+| Test files | 144 |
+| `[[verify.checks]]` declared | 23 |
+| …of which run in `--mode fast` | 18 |
+| …of which run in `--mode full` | 22 |
 | …of which run in `--mode staged` | 3 |
 
 <!-- docs-claims:end plan-current-state -->

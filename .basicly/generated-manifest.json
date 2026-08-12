@@ -1,6 +1,6 @@
 {
   "version": "1",
-  "generated_at": "2026-08-11T09:24:36.319073+00:00",
+  "generated_at": "2026-08-12T09:34:58.065089+00:00",
   "outputs": {
     ".claude/CLAUDE.md": {
       "hash": "sha256:050bd73c2dbc9418d11e700e5ed4bc1c86657ca5ac6409d2507cdfd5f86c26cb",
@@ -38,6 +38,12 @@
         "external-review"
       ]
     },
+    ".claude/rules/code-is-authoritative.md": {
+      "hash": "sha256:028b77258a462b348ec64c064ffc249fbd9308387d6aefc3319cf76c875ff112",
+      "source_fragments": [
+        "code-is-authoritative"
+      ]
+    },
     ".claude/rules/platform-hermetic-tests.md": {
       "hash": "sha256:8106a621b151c1da9e9fc29abba3af8a3afa9ac6e2fd7a13430162e28db4c0f7",
       "source_fragments": [
@@ -45,7 +51,7 @@
       ]
     },
     "AGENTS.md": {
-      "hash": "sha256:50baf30fa7079d0aa70b5f64a5c57c2debb3711811cedab35be918d8b4d91cd3",
+      "hash": "sha256:9a64ec51c87233f0457df4c3477c804ab602721a30df268b5f678be2049e1849",
       "source_fragments": [
         "require-explicit-confirmation",
         "knowledge-priming",
@@ -58,6 +64,7 @@
         "external-facts",
         "model-tier-routing",
         "external-review",
+        "code-is-authoritative",
         "core-rules",
         "harness-loop",
         "quality-gate",

@@ -102,6 +102,13 @@ Test quality is out of scope — `test-discipline` owns it.
   returns 36.3% of its budget, `merge.py` 17.0% and `loop.py` 11.6% (measured
   2026-08-09). That makes deletion the cheapest way to pass a size gate, and it is
   the same gaming shape as splitting into `_part1()`/`_part2()`. Fix the claim.
+- **That is not a licence to write more of it.** Measured 2026-08-12 in the same token
+  unit, this tree is 39.4% prose — comments plus docstrings — with a median module at
+  36.3% and 75 modules over 50%, and the last 40 commits added comments at 35.5% of
+  added code lines against 10.5% mid-history. `comment-density` (basicly-wxr3) ratchets
+  that share per module. The two rules meet on *content*: narration is deletable and is
+  what the gate is for; a measurement, a vendor fact or a why is evidence and stays,
+  with `# comment-density-waiver: <reason>` for a module whose payload is provenance.
 - Never narrate the next statement. The Google convention this repo pins
   (`convention = "google"`) says "never describe the code" — and says it directly
   after requiring that complicated operations get a few lines of comment first, so
@@ -110,7 +117,9 @@ Test quality is out of scope — `test-discipline` owns it.
   what a bare `str` is allowed to hold, which incident a guard exists for, what a
   constant's units are, which measurement a threshold came from. Measured over
   this tree, that is what the comments already are — 41% contract, 40% why, 16%
-  navigation, 0% narration — so the bar is to keep it that way, not to reach it.
+  navigation, 0% narration. That is a finding about *kind*, and it says nothing
+  about *volume*: a paragraph of correct "why" is still a paragraph, and the same
+  fact fits in a sentence. Write the shortest form that survives review.
 
 ## Exception design
 

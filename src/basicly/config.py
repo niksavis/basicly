@@ -343,7 +343,7 @@ ENGINE_GATE_PROVIDERS = frozenset({VERIFY_GATE_PROVIDER, RUBRIC_GATE_PROVIDER})
 # split, read every derivation in this block as measuring declaration completeness rather
 # than working set, and do not cite the trend as evidence that lanes are getting bigger.
 DEFAULT_WORKING_SET_MIN = 8_000
-DEFAULT_WORKING_SET_MAX = 248_000
+DEFAULT_WORKING_SET_MAX = 256_000
 # Per-task-class multiplier on scope read-cost. Seeds, and they stay seeds: the
 # telemetry calibration that once overwrote them measured whole-lane spend, which is
 # a different quantity from a working set, and basicly-z2wi removed it. An unlisted

@@ -259,7 +259,7 @@ unreasoned_count = 7
 A002 = 2
 ARG001 = 2
 BLE001 = 3
-E402 = 4
+E402 = 5
 E731 = 1
 PLC0415 = 5
 PLR0911 = 2
@@ -269,6 +269,91 @@ S603 = 15
 S607 = 6
 S701 = 1
 UP017 = 1
+
+# Prose share per module: comments (excluding pragmas) plus docstrings, as a percentage
+# of the module's tokens. 75 of 280 in-scope modules were over the 50.0%
+# cap when the gate landed (2026-08-12, basicly-wxr3); the tree measured 39.4% overall.
+# Each entry may only fall, and one that reaches the cap has graduated and must be deleted
+# with it. The list is closed — an entry is only ever removed.
+[tool.comment_density]
+waiver_count = 0
+
+[tool.comment_density.frozen]
+".basicly/core/hooks/internal-info-scan.py" = 55.0
+".basicly/core/hooks/markdownlint.py" = 62.7
+".basicly/core/hooks/pre-commit.py" = 65.5
+".basicly/core/hooks/shell_tokens.py" = 51.4
+".basicly/core/hooks/unsplit-loop-guard.py" = 57.1
+".basicly/core/kit/tier/claude_tier_hook.py" = 64.5
+".basicly/core/kit/tier/install_hook.py" = 53.6
+".basicly/core/kit/tier/tier_resolver.py" = 56.0
+".basicly/core/kit/tracker/differential.py" = 59.6
+".basicly/core/kit/tracker/events.py" = 57.1
+".basicly/core/kit/tracker/fsck.py" = 51.3
+".basicly/core/kit/tracker/ids.py" = 64.7
+".basicly/core/kit/tracker/provenance.py" = 71.8
+".basicly/core/kit/tracker/scheduler.py" = 71.2
+".basicly/core/kit/tracker/snapshot.py" = 56.2
+".scripts/check_module_size.py" = 50.4
+".scripts/check_test_naming.py" = 57.6
+".scripts/docs_claim_sources.py" = 68.4
+".scripts/kit_deployment.py" = 51.1
+"src/basicly/artifact_record.py" = 69.2
+"src/basicly/br.py" = 67.5
+"src/basicly/capability_proof.py" = 75.7
+"src/basicly/catalog.py" = 57.2
+"src/basicly/catalog_source.py" = 54.5
+"src/basicly/checkout.py" = 54.4
+"src/basicly/classify.py" = 60.4
+"src/basicly/contention.py" = 61.9
+"src/basicly/copilot_store.py" = 61.6
+"src/basicly/copilot_tools.py" = 78.5
+"src/basicly/decider_contract.py" = 53.5
+"src/basicly/decisions.py" = 55.3
+"src/basicly/decompose.py" = 59.9
+"src/basicly/dispatch_phase.py" = 86.4
+"src/basicly/handoff.py" = 69.2
+"src/basicly/integrity.py" = 59.9
+"src/basicly/loop.py" = 52.4
+"src/basicly/loop_state.py" = 58.9
+"src/basicly/merge.py" = 60.1
+"src/basicly/models.py" = 59.7
+"src/basicly/needs_input.py" = 64.4
+"src/basicly/owned_store.py" = 73.8
+"src/basicly/plan_entry.py" = 57.8
+"src/basicly/plan_gate.py" = 56.1
+"src/basicly/plan_record.py" = 51.2
+"src/basicly/policy.py" = 57.6
+"src/basicly/projection.py" = 53.1
+"src/basicly/read_cost.py" = 82.1
+"src/basicly/rebase.py" = 56.9
+"src/basicly/redact.py" = 55.6
+"src/basicly/review.py" = 55.6
+"src/basicly/roles.py" = 75.1
+"src/basicly/run_record.py" = 56.9
+"src/basicly/runner.py" = 59.8
+"src/basicly/runner_envelope.py" = 74.0
+"src/basicly/runner_usage.py" = 56.7
+"src/basicly/session.py" = 76.1
+"src/basicly/spend_calibration.py" = 67.6
+"src/basicly/stemmer.py" = 52.5
+"src/basicly/supervise.py" = 55.9
+"src/basicly/tracker_invocation.py" = 74.9
+"src/basicly/tracker_usage.py" = 59.9
+"src/basicly/usage.py" = 51.3
+"src/basicly/verify.py" = 56.6
+"src/basicly/verify_artifact.py" = 66.2
+"src/basicly/wip.py" = 65.4
+"src/basicly/working_set.py" = 67.3
+"tests/conftest.py" = 68.7
+"tests/kit_resolver_helpers.py" = 50.4
+"tests/model_map_helpers.py" = 50.7
+"tests/test_copilot_tools.py" = 56.9
+"tests/test_dispatch_phase.py" = 51.2
+"tests/test_git_hooks/test_hook_scripts_compile.py" = 51.7
+"tests/test_integration_wait.py" = 51.5
+"tests/test_loop_repair_spend.py" = 56.3
+"tests/test_scaffolds.py" = 50.4
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/basicly"]

@@ -155,6 +155,16 @@ caught one.
   project adopting a design traded away determinism implied a cause that was really
   two independent errors — the decision held, on a different argument.
 
+## Code Is Authoritative
+
+Code is the authority; a comment is a claim about it. Write only what the code cannot
+say — why this branch and not the other, what a unit is, which measurement a threshold
+came from, which incident a guard exists for. Never restate the statement below it.
+
+One sentence, not a paragraph: the same fact fits in a line, and `comment-density`
+ratchets prose share (comments plus docstrings) per module. Needing a comment to explain
+*what* the code does is a defect in the code, not a missing comment.
+
 ## Core Rules
 
 - Minimal diffs; no unrelated refactors.
