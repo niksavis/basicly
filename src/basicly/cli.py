@@ -3656,7 +3656,7 @@ def _announce_land_anyway(item: decisions.DecisionItem) -> str | None:
     """Say what an answered `land anyway` will do, or that it will do nothing.
 
     Unlike ``retry``, this override is carried out by the landing itself
-    (``loop._landing_gate_override``) rather than here, because that is where it is
+    (``landing_gate.gate_override``) rather than here, because that is where it is
     spent. So this reports instead of granting — but an answer whose whole point is
     that the engine now acts on it must not print the same single line as one that
     changed nothing, which is how this defect stayed invisible (basicly-tcmy.6).

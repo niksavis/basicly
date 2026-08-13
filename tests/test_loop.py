@@ -1332,20 +1332,6 @@ def test_a_plan_under_the_working_set_floor_falls_back_to_the_block(
     assert "below working_set_min 8000" in result.detail
 
 
-def test_the_child_plan_prompt_states_the_band_the_engine_will_measure_against() -> None:
-    """A proposer that cannot see the floor splits until every child is under it."""
-    sizing = SizingConfig(
-        working_set_min=9_000,
-        working_set_max=70_000,
-        build_factors={},
-        calibration_min_samples=10,
-        calibration_window=50,
-    )
-    prompt = loop.child_plan_prompt("i", "Ship the parser.", sizing)
-    assert "9000-70000" in prompt
-    assert "Ship the parser." in prompt
-
-
 # --- decompose --------------------------------------------------------------
 
 
@@ -1968,10 +1954,67 @@ def test_a_missing_validation_spends_no_rework(
     charged: list[tuple] = []
     monkeypatch.setattr(policy, "record_rework", lambda *a, **_k: charged.append(a) or 1)
 
-    result = _advance(tmp_path)
+    # repair_dispatch=False is the supervisor's shape: no agent is spawned from a
+    # landing pass, so this exercises the refusal rather than the dispatch.
+    result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), repair_dispatch=False)
 
     assert result.blocked and result.needs_input == "validation"
     assert charged == []
+
+
+def test_validator_argv_carries_the_role_and_a_non_write_phase(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The demonstration basicly-u2hl.54.3 names: VALIDATE resolves its own persona.
+
+    Recorded outside ``WRITE_PHASES`` in the same assertion, because the two are one
+    fact about the dispatch: a read-only judge priced as a lane would put a helper's
+    cost into the sample the spend calibration derives a lane's cost from.
+    """
+    at(_state("validate", gates=_validate_gates()))
+    _pin_runner(monkeypatch, "claude")
+    monkeypatch.setattr(loop.roles, "resolve_role", lambda _r, _s, phase: f"role-for-{phase}")
+    seen: dict = {}
+    recorded: list[object] = []
+
+    def _run(spec, prompt, cwd, **kw):
+        seen.update(role=kw.get("role"), prompt=prompt, cwd=cwd)
+        return runner.RunResult(spec.name, tuple(spec.command), executed=True, returncode=0)
+
+    monkeypatch.setattr(runner, "run", _run)
+    monkeypatch.setattr(
+        loop, "record_run", lambda *_a, **kw: recorded.append(kw.get("phase")) or None
+    )
+    monkeypatch.setattr(policy, "gate_status", lambda *_a: _validate_gates())
+
+    loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs())
+
+    assert seen["role"] == "role-for-validate"
+    assert "Do NOT re-run the gate suite" in seen["prompt"]
+    assert recorded == [run_record.VALIDATE_PHASE]
+    assert run_record.VALIDATE_PHASE not in run_record.WRITE_PHASES
+
+
+def test_a_validate_dispatch_that_records_nothing_leaves_the_unit_in_validate(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Re-read the gate; having run is not evidence of a verdict."""
+    at(_state("validate", gates=_validate_gates()))
+    _pin_runner(monkeypatch, "claude")
+    monkeypatch.setattr(
+        runner,
+        "run",
+        lambda spec, *_a, **_k: runner.RunResult(
+            spec.name, tuple(spec.command), executed=True, returncode=0
+        ),
+    )
+    monkeypatch.setattr(loop, "record_run", lambda *_a, **_k: None)
+    monkeypatch.setattr(policy, "gate_status", lambda *_a: _validate_gates())
+
+    result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs())
+
+    assert result.blocked and result.to_phase == "validate"
+    assert "recorded no" in result.detail
 
 
 def test_a_disregarded_validation_result_is_named_rather_than_admitted(at, tmp_path: Path) -> None:

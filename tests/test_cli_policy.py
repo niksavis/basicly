@@ -507,7 +507,7 @@ def test_answering_land_anyway_says_what_the_next_landing_will_do(
 ) -> None:
     """The reported defect: answering printed the same line as an answer that did nothing.
 
-    The override itself is spent by the landing (``loop._landing_gate_override``), so
+    The override itself is spent by the landing (``landing_gate.gate_override``), so
     this is the confirmation that the engine will act on the answer at all.
     """
     _install_decisions_fake(monkeypatch)
