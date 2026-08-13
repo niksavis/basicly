@@ -1,10 +1,10 @@
 """Config-driven check runner shared by the pre-commit and pre-push hooks.
 
-Reads ``[[verify.checks]]`` from ``basicly.toml`` and runs the checks declared
-for a given mode, so the shipped hooks gate exactly what each consumer repo
-configures — a repo with no checks passes with a note instead of failing on a
-stack it doesn't have. Standalone: stdlib only, no basicly import, usable from
-pre-commit, lefthook, or a bare git hook.
+Reads ``[[verify.checks]]`` from ``basicly.toml`` and the ``basicly.d`` fragments
+beside it, and runs the checks declared for a given mode, so the shipped hooks gate
+exactly what each consumer repo configures — a repo with no checks passes with a note
+instead of failing on a stack it doesn't have. Standalone: stdlib only, no basicly
+import, usable from pre-commit, lefthook, or a bare git hook.
 """
 
 from __future__ import annotations
@@ -16,6 +16,11 @@ import tomllib
 from pathlib import Path
 
 CONFIG_FILE = "basicly.toml"
+
+# Per-lane drop-in fragments, whose checks are appended to the config's own. The same set
+# `basicly.config` assembles, so a check a lane declared in its own fragment gates the commit
+# as well as `basicly verify` (basicly-ef7t; `basicly.d/README.md` is the convention).
+FRAGMENT_DIR = "basicly.d"
 
 
 def project_root() -> Path:
@@ -33,44 +38,49 @@ def project_root() -> Path:
     return cwd
 
 
+def _declared_checks(repo_root: Path) -> list[tuple[str, object]]:
+    """Every declared check with the file it came from: the config, then the fragments.
+
+    Filename order within the fragment directory, so the assembled set is the same on
+    any machine and matches what ``basicly.config`` reads.
+    """
+    found: list[tuple[str, object]] = []
+    for path in (repo_root / CONFIG_FILE, *sorted((repo_root / FRAGMENT_DIR).glob("*.toml"))):
+        if not path.exists():
+            continue
+        section = tomllib.loads(path.read_text(encoding="utf-8")).get("verify", {})
+        checks = section.get("checks") if isinstance(section, dict) else None
+        if isinstance(checks, list):
+            found += [(path.name, entry) for entry in checks]
+    return found
+
+
 def _mode_entries(repo_root: Path, mode: str) -> list[dict]:
     """Return the validated ``[[verify.checks]]`` entries declared for *mode*.
 
     A missing file or section yields no entries. A malformed check entry is a
     loud error (SystemExit) — a lost gate must never pass unnoticed.
     """
-    config_path = repo_root / CONFIG_FILE
-    if not config_path.exists():
-        return []
-
-    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
-    section = data.get("verify", {})
-    raw_checks = section.get("checks") if isinstance(section, dict) else None
-    if not isinstance(raw_checks, list):
-        return []
-
     entries: list[dict] = []
-    for entry in raw_checks:
+    for source, entry in _declared_checks(repo_root):
         if not isinstance(entry, dict):
-            raise SystemExit(f"{CONFIG_FILE}: [[verify.checks]] entry must be a table")
+            raise SystemExit(f"{source}: [[verify.checks]] entry must be a table")
         name = entry.get("name")
         command = entry.get("command")
         modes = entry.get("modes")
         fix_command = entry.get("fix_command")
         if not (isinstance(name, str) and name.strip()):
-            raise SystemExit(f"{CONFIG_FILE}: a [[verify.checks]] entry is missing 'name'")
+            raise SystemExit(f"{source}: a [[verify.checks]] entry is missing 'name'")
         if not (isinstance(command, list) and command and all(isinstance(a, str) for a in command)):
-            raise SystemExit(f"{CONFIG_FILE}: check {name!r} needs a 'command' list of strings")
+            raise SystemExit(f"{source}: check {name!r} needs a 'command' list of strings")
         if not (isinstance(modes, list) and all(isinstance(m, str) for m in modes)):
-            raise SystemExit(f"{CONFIG_FILE}: check {name!r} needs a 'modes' list of strings")
+            raise SystemExit(f"{source}: check {name!r} needs a 'modes' list of strings")
         if fix_command is not None and not (
             isinstance(fix_command, list)
             and fix_command
             and all(isinstance(a, str) for a in fix_command)
         ):
-            raise SystemExit(
-                f"{CONFIG_FILE}: check {name!r} 'fix_command' must be a list of strings"
-            )
+            raise SystemExit(f"{source}: check {name!r} 'fix_command' must be a list of strings")
         if mode in modes:
             entries.append(entry)
     return entries

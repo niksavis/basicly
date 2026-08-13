@@ -63,7 +63,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # by file path through `spec_from_file_location` and so starts with neither entry.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from docs_claim_sources import ClaimError, load_toml, load_yaml, read_text  # noqa: E402
+from docs_claim_sources import ClaimError, load_yaml, read_text  # noqa: E402
 
 ARCHITECTURE_MD = "docs/architecture/architecture.md"
 IMPLEMENTATION_PLAN = "docs/plan/implementation-plan.md"
@@ -225,15 +225,17 @@ def _plan_current_state(root: Path) -> list[str]:
     per-mode, so any single hand-written "an N-check verify" is wrong for at least one
     mode. The plan claimed an 8-check ``full`` declaring nine; it is 15 declared.
     """
-    verify = load_toml(root / "basicly.toml").get("verify") or {}
-    checks = verify.get("checks")
-    if not isinstance(checks, list) or not checks:
+    # Through the engine's loader, not the raw array: a check a lane declared in its own
+    # `basicly.d` fragment is as declared as one in basicly.toml, and counting only the array
+    # would understate the row the moment the mechanism is used (basicly-ef7t).
+    checks = config.load_verify_config(root).checks
+    if not checks:
         raise ClaimError("basicly.toml: [[verify.checks]] must be a non-empty list")
 
     modes: dict[str, int] = {}
     for check in checks:
-        for mode in check.get("modes") or []:
-            modes[str(mode)] = modes.get(str(mode), 0) + 1
+        for mode in check.modes:
+            modes[mode] = modes.get(mode, 0) + 1
 
     test_files = sorted((root / "tests").glob("test_*.py"))
 

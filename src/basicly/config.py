@@ -8,7 +8,7 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from . import __version__, br, permissions, session
+from . import __version__, br, dropin, permissions, session
 from .models import ModelResolutionError
 from .runner import (
     AGENT_TIER,
@@ -456,6 +456,11 @@ _VERIFY_CHECK_TABLE = _Table(
     keys=frozenset({"name", "command", "modes", "staged_suffix", "fix_command"})
 )
 
+# One lane's contribution to a ratchet, in its own basicly.d fragment. `frozen` is open
+# because its keys are the ratcheted entries themselves — a module path, a ruff rule code —
+# which no vocabulary at this layer could enumerate.
+_RATCHET_TABLE = _Table(keys=frozenset({"count_delta"}), tables={"frozen": _OPEN_TABLE})
+
 _RUNNER_AGENT_TABLE = _Table(
     keys=frozenset({
         "name",
@@ -541,6 +546,11 @@ CONFIG_SCHEMA: dict[str, _Table] = {
         })
     ),
     "verify": _Table(arrays={"checks": _VERIFY_CHECK_TABLE}),
+    # Per-lane ratchet deltas, composed by :func:`basicly.dropin.compose` and read by the
+    # gates under `.scripts/`, never by this module — the same reason [[privacy.denied]] is
+    # here. A gate whose baseline this schema refused to carry would have to parse the
+    # fragments itself, which is how two readers of one convention start disagreeing.
+    "ratchet": _Table(tables={"module_size": _RATCHET_TABLE, "noqa_debt": _RATCHET_TABLE}),
     "policy": _Table(
         keys=frozenset({
             "required_gates",
@@ -791,12 +801,20 @@ def _validation_schema(repo_root: Path) -> _Table:
 
 
 def _config_documents(repo_root: Path) -> dict[str, dict]:
-    """Every config file that exists, parsed, keyed by filename, lowest layer first."""
+    """Every config file that exists, parsed, keyed by filename, lowest layer first.
+
+    The drop-in fragments sit between the two files: each carries one lane's own additions
+    (:mod:`basicly.dropin`), while basicly.local.toml stays the top layer because it is the
+    machine's override of whatever the tree declares.
+    """
     documents: dict[str, dict] = {}
-    for filename in (CONFIG_FILE, LOCAL_CONFIG_FILE):
-        config_path = repo_root / filename
-        if config_path.exists():
-            documents[filename] = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    base = repo_root / CONFIG_FILE
+    if base.exists():
+        documents[CONFIG_FILE] = tomllib.loads(base.read_text(encoding="utf-8"))
+    documents.update(dropin.documents(repo_root))
+    local = repo_root / LOCAL_CONFIG_FILE
+    if local.exists():
+        documents[LOCAL_CONFIG_FILE] = tomllib.loads(local.read_text(encoding="utf-8"))
     return documents
 
 
@@ -1170,18 +1188,28 @@ class VerifyConfig:
 
 
 def load_verify_config(repo_root: Path) -> VerifyConfig:
-    """Load ``[verify].checks`` (basicly.toml + local overlay).
+    """Load ``[verify].checks`` (basicly.toml + basicly.d fragments + local overlay).
 
-    Returns an empty config when the files or section are absent. Raises
-    ``ValueError`` on a malformed check entry rather than silently dropping it —
-    a lost gate must never pass unnoticed.
+    A fragment's entries are **appended**, in filename order, which is the one place the
+    layering concatenates rather than replaces: a fragment is one lane's own addition, so
+    replacing would mean the last lane to land silently deleted every earlier lane's gate
+    (basicly-ef7t). basicly.local.toml and a session override still replace the whole list,
+    unchanged — a machine override of a repo's gates is not an addition to them.
+
+    Returns an empty config when the files or section are absent. Raises ``ValueError`` on a
+    malformed check entry rather than silently dropping it — a lost gate must never pass
+    unnoticed.
     """
-    section = _harness_section(repo_root, "verify")
-    raw_checks = section.get("checks")
-    if not isinstance(raw_checks, list):
-        return VerifyConfig(())
-
-    return VerifyConfig(tuple(_parse_verify_check(entry) for entry in raw_checks))
+    declared: list[object] = []
+    for filename, data in _validated_documents(repo_root).items():
+        section = data.get("verify")
+        checks = section.get("checks") if isinstance(section, dict) else None
+        if isinstance(checks, list):
+            declared = list(checks) if filename == LOCAL_CONFIG_FILE else [*declared, *checks]
+    override = session.overrides_for("verify").get("checks")
+    if isinstance(override, list):
+        declared = list(override)
+    return VerifyConfig(tuple(_parse_verify_check(entry) for entry in declared))
 
 
 def _parse_verify_check(entry: object) -> VerifyCheck:

@@ -108,6 +108,11 @@ regenerate_command = ["basicly", "build"]
 # whose repair is purely mechanical also declares fix_command: the pre-commit
 # hook applies it to the staged files (and `basicly verify --fix` before the
 # checks), so the check never reports a failure a script could have fixed.
+#
+# **A lane wires its new check in `basicly.d/<bead-id>.toml`, not here.** The entries below
+# are the assembled base; a fragment's are appended in filename order, by the engine and by
+# the pre-commit hook alike. Three of five lanes bounced on this array on 2026-08-08 because
+# `.12`, `.14` and `.15` each appended to it (basicly-ef7t; `basicly.d/README.md`).
 [[verify.checks]]
 name = "ruff"
 command = ["ruff", "check"]

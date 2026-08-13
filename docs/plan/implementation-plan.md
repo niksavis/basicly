@@ -79,8 +79,8 @@ hand-written copy of them was stale within days:
 
 | Measure | Value |
 | --- | --- |
-| Engine modules (`src/basicly/*.py`) | 80 |
-| Test files | 144 |
+| Engine modules (`src/basicly/*.py`) | 81 |
+| Test files | 146 |
 | `[[verify.checks]]` declared | 23 |
 | …of which run in `--mode fast` | 18 |
 | …of which run in `--mode full` | 22 |
