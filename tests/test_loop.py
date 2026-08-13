@@ -48,6 +48,7 @@ def _state(
     issue_type: str = "task",
     worktree: WorktreeBinding | None = None,
     has_children: bool = False,
+    gates: GateStatus | None = None,
 ) -> NodeState:
     return NodeState(
         issue_id="i",
@@ -55,7 +56,7 @@ def _state(
         issue_type=issue_type,
         phase=phase,
         worktree=worktree,
-        gates=_gate(can_advance=phase == "verify"),
+        gates=gates if gates is not None else _gate(can_advance=phase == "verify"),
         checkpoints=(),
         rework={},
         agent_context=None,
@@ -1899,6 +1900,109 @@ def test_a_collided_landing_records_no_finding_set_in_the_loop(
     result = _advance(tmp_path)
 
     assert recorded == [] and result.blocked
+
+
+# --- validate (basicly-u2hl.54.2) -------------------------------------------
+
+_VGATE = "validate-as-consumer"
+
+
+def _validate_gates(*, failed: bool = False, foreign: str | None = None) -> GateStatus:
+    """A GateStatus for a unit that landed and owes the consumer gate."""
+    disregarded = (policy.GateVerdict(_VGATE, foreign, True),) if foreign is not None else ()
+    return GateStatus(
+        False,
+        ("verify",),
+        (_VGATE,) if failed else (),
+        () if failed else (_VGATE,),
+        (),
+        disregarded,
+    )
+
+
+def test_a_failed_validation_spends_one_bounded_rework_attempt(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A validation that ran and failed is a defect to repair, so the loop is bounded."""
+    at(_state("validate", gates=_validate_gates(failed=True)))
+    charged: list[tuple] = []
+    monkeypatch.setattr(policy, "record_rework", lambda *a, **_k: charged.append(a) or 1)
+
+    result = _advance(tmp_path)
+
+    assert result.blocked
+    assert _VGATE in result.detail
+    assert charged and charged[0][2] == _VGATE
+
+
+def test_a_failed_validation_escalates_at_the_rework_cap(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """At max_rework the loop stops dispatching and asks a human instead."""
+    at(_state("validate", gates=_validate_gates(failed=True)))
+    monkeypatch.setattr(policy, "record_rework", lambda *_a, **_k: 2)  # the CONFIG cap
+    queued: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        loop.decisions,
+        "enqueue",
+        lambda _r, issue, kind, *_a, **_k: queued.append((issue, kind)),
+    )
+
+    result = _advance(tmp_path)
+
+    assert result.action == "escalated" and _VGATE in result.detail
+    # An escalation is a judgment call: it enters the decision queue (kjc5.4).
+    assert queued == [("i", "escalation")]
+
+
+def test_a_missing_validation_spends_no_rework(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Nobody has looked yet, so there is no finding to repair.
+
+    The false-positive half of the pair above: spending an attempt here would burn
+    the budget that exists for repairing findings on the absence of any, and the cap
+    would then escalate a unit whose validation had never been run once.
+    """
+    at(_state("validate", gates=_validate_gates()))
+    charged: list[tuple] = []
+    monkeypatch.setattr(policy, "record_rework", lambda *a, **_k: charged.append(a) or 1)
+
+    result = _advance(tmp_path)
+
+    assert result.blocked and result.needs_input == "validation"
+    assert charged == []
+
+
+def test_a_disregarded_validation_result_is_named_rather_than_admitted(at, tmp_path: Path) -> None:
+    """The gate is still missing, but an operator is told which result was ignored."""
+    at(_state("validate", gates=_validate_gates(foreign="some-agent")))
+
+    result = _advance(tmp_path)
+
+    assert result.blocked and result.needs_input == "validation"
+    assert "some-agent" in result.detail and "disregarded" in result.detail
+
+
+def test_a_refused_validation_advance_has_no_side_effects(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, tracker_commits: list
+) -> None:
+    """No merge, no teardown, no close, no tracker commit while the gate is outstanding."""
+    at(_state("validate", gates=_validate_gates(), worktree=WorktreeBinding("n", "b")))
+    calls: list[list[str]] = []
+    monkeypatch.setattr(loop, "_run_br", lambda _r, args, **_k: calls.append(args))
+    monkeypatch.setattr(
+        loop.worktree, "cleanup", lambda *_a, **_k: pytest.fail("tore down a live worktree")
+    )
+    monkeypatch.setattr(
+        loop.merge, "merge_worktree", lambda *_a, **_k: pytest.fail("merged while refusing")
+    )
+
+    result = _advance(tmp_path)
+
+    assert result.blocked
+    assert not any(args[:1] == ["close"] for args in calls)
+    assert tracker_commits == []
 
 
 # --- verify / ship / done ---------------------------------------------------

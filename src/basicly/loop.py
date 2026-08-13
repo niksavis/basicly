@@ -426,16 +426,41 @@ def _on_validate(ctx: _Ctx) -> AdvanceResult:
     """The unit merged and owes the consumer check its recorded L3 level requires.
 
     Reaching this handler *is* the refusal: ``derive_phase`` returns ``validate``
-    only while the gate is outstanding, so a recorded pass moves the unit on by
-    changing what the next read derives. Bounded rework and escalation are
-    basicly-u2hl.54.2's; this spends nothing.
+    only while the gate is outstanding, so a green result moves the unit on by
+    changing what the next read derives, not by anything decided here.
+
+    **Failed and missing are different refusals, and only failed is rework.** Failed
+    means a validation ran and the change did not survive it, so there is a defect to
+    repair. Missing means nobody has looked yet, and spending an attempt on that burns
+    the budget that exists for repairing findings on the absence of any. Neither branch
+    merges, tears down, closes or commits.
     """
-    return _blocked(
-        ctx,
-        f"{validate_gate.VALIDATE_GATE} is required at the recorded integrity level and "
-        "has no engine result: exercise the change as a consumer would (the "
-        "validate-as-consumer skill), then record the gate",
-        needs_input="validation",
+    gate = validate_gate.VALIDATE_GATE
+    if gate in ctx.state.gates.required_failed:
+        return _rework(ctx, gate, f"{gate} failed: the change did not survive validation")
+    return _blocked(ctx, _validation_missing(ctx, gate), needs_input="validation")
+
+
+def _validation_missing(ctx: _Ctx, gate: str) -> str:
+    """Why the gate reads missing — naming a disregarded result when one exists.
+
+    A foreign provider's result does not satisfy a required gate (the jr0l.51
+    stance), so the gate is still missing; reporting it as plain missing while
+    ``br gate list`` shows a pass leaves an operator nothing to act on.
+    """
+    foreign = sorted({
+        v.provider or "(none)" for v in ctx.state.gates.disregarded if v.gate == gate
+    })
+    if foreign:
+        return (
+            f"{gate} has no engine result: a result from provider {', '.join(foreign)} was "
+            "disregarded because a required gate counts only the engine's own — re-run the "
+            "validation through the harness so the result is the engine's"
+        )
+    return (
+        f"{gate} is required at the recorded integrity level and has no engine result: "
+        "exercise the change as a consumer would (the validate-as-consumer skill), "
+        "then record the gate"
     )
 
 
