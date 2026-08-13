@@ -362,11 +362,25 @@ cited it. Do not trust a register row; run the grep.
 1. **The ceremony threshold's written form** (`imnu.5`). The loop is mandated for "non-trivial
    work", which is the agent's judgment call, so the rule is unenforceable. Needs a written
    threshold **and** a named lightweight path below it that skips ceremony but never hooks.
-2. **Whether losing the github.com Copilot surface is acceptable, per scoped fragment.** Scoping
-   removes a fragment from that surface entirely — a guarantee change, not a refactor. Three
-   fragments are already scoped and the call was never made for any of them.
-3. **Tier 3 of the catalog eval** — the four arms, and the safety tier as a gate rather than a
+2. **Tier 3 of the catalog eval** — the four arms, and the safety tier as a gate rather than a
    metric. Architecture §14.4 names the shape; the arms table is unbuilt and unowned.
+
+**Decided 2026-08-13, recorded here so they are not re-asked:**
+
+- **Losing the github.com Copilot surface for a scoped fragment is accepted.** Not a new
+  trade-off — `.basicly/core/targets/copilot.yaml` has carried it inline since the
+  `.github/instructions/` twin was retired on 2026-07-16 (architecture §858): VS Code loads
+  `.claude/rules/` and `.github/instructions/` with no dedup, so a twin double-loads. The
+  planner already supports a scoped output (`has_scope`, which `claude.yaml` declares and
+  `copilot.yaml` does not), so this is a choice rather than a vendor limit. **Four** fragments
+  are scoped, not three: `platform-hermetic-tests`, `external-review`, `code-is-authoritative`,
+  `model-tier-routing`. What a github.com Copilot user does not get is those four.
+- **`xjd2`'s dispatch shape is hybrid** — host runtime same-vendor, subprocess cross-vendor
+  (§11.7's existence proof). Watch the named failure mode: the vendor-specific path carries the
+  features, so cross-vendor parity rots quietly.
+- **`ca42` is closed and `harness/basicly-ca42` deleted** (tip `aa07505`). `chars/4` stays; the
+  evidence lives on `basicly-y8el`, which carries both measurements.
+- **A 100M L3 grant is live on `basicly-u2hl`**, covering 118 beads.
 
 **Settled and recorded so they are not re-litigated:** the language stays **Python** (the
 TypeScript prevalence in this field is a Linguist artifact, and every committer already needs
