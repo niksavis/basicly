@@ -642,6 +642,22 @@ def _meter_context_ceiling(ctx: _Ctx, dispatch: _Dispatch) -> str:
     )
 
 
+def _spend_refused(ctx: _Ctx) -> AdvanceResult | None:
+    """Refuse a dispatch the grant can no longer pay for — D3's halt, and only that.
+
+    Split out of :func:`_dispatch_refused` so the repair path can bind on the spend
+    ceiling without also inheriting the plan gate and the working-set band, neither of
+    which a repair is admitted against: it is a second attempt at work already planned
+    and already sized (basicly-dbbh).
+    """
+    if ctx.grant_root is None:
+        return None
+    spend = policy.spend_status(ctx.repo_root, ctx.grant_root)
+    if not spend.halted:
+        return None
+    return _blocked(ctx, f"dispatch refused before it started: {spend.detail}", needs_input="grant")
+
+
 def _dispatch_refused(ctx: _Ctx, name: str) -> AdvanceResult | None:
     """Why this dispatch must not start, or None to go ahead (basicly-1th1).
 
@@ -663,13 +679,9 @@ def _dispatch_refused(ctx: _Ctx, name: str) -> AdvanceResult | None:
         return None
     from . import supervise  # noqa: PLC0415 — supervise imports loop; deferred to break it
 
-    spend = policy.spend_status(ctx.repo_root, ctx.grant_root)
-    if spend.halted:
-        return _blocked(
-            ctx,
-            f"dispatch refused before it started: {spend.detail}",
-            needs_input="grant",
-        )
+    halted = _spend_refused(ctx)
+    if halted is not None:
+        return halted
     # The plan gate, on entry to BUILD rather than on exit from DECOMPOSE: inspection
     # belongs before the expensive stage, and BUILD is where nearly all the tokens go.
     #
@@ -1650,9 +1662,37 @@ def _repair_in_place(ctx: _Ctx, binding: loop_state.WorktreeBinding) -> AdvanceR
     if brief is None:
         return None
     where = f"worktree {binding.name!r}"
-    dispatch = _run_agent(
-        ctx, brief.issue_id, cwd, prompt=repair_brief.repair_prompt(brief), phase="repair"
+    # The fourth site D3's halt predicate has to bind at, and the one basicly-1th1 left:
+    # a repair is a full metered dispatch, and a landing that just failed a gate is
+    # exactly when a grant is most likely to be spent (basicly-dbbh).
+    refused = _spend_refused(ctx)
+    if refused is not None:
+        if repair_brief.write_repair_brief(cwd, brief):
+            return refused
+        return _blocked(
+            ctx,
+            f"{refused.detail}; the repair brief for gate {brief.gate!r} could not be "
+            f"put back in {where} and is lost — re-run the landing to raise a fresh one",
+            needs_input="grant",
+        )
+    return _repair_outcome(
+        ctx,
+        _run_agent(
+            ctx, brief.issue_id, cwd, prompt=repair_brief.repair_prompt(brief), phase="repair"
+        ),
+        brief,
+        where,
     )
+
+
+def _repair_outcome(
+    ctx: _Ctx, dispatch: _Dispatch, brief: repair_brief.RepairBrief, where: str
+) -> AdvanceResult:
+    """What a finished repair dispatch leaves the loop blocked on.
+
+    Split out of :func:`_repair_in_place` so admitting the spend gate there did not push
+    it past its return budget: the metric is the shape, not the score (basicly-dbbh).
+    """
     if dispatch.result.handoff:
         return _blocked(
             ctx,
