@@ -27,6 +27,7 @@ layers =
     commit | merge
     rebase | repair_brief | wip | working_set
     classify | decompose | loop_state | plan_entry | rubrics
+    validate_gate
     decisions
     handoff
     plan_gate | policy | routing_evals | tuning | verify

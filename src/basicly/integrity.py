@@ -47,6 +47,10 @@ from pathlib import PurePosixPath
 # consumer surface is a consumer change whatever else it touches.
 LEVELS = ("L1", "L2", "L3")
 
+# The marker an assignment persists under; here, not in its writer, which two tiers
+# that read it back may not import.
+CLASSIFICATION_MARKER = "[harness-classification]"
+
 # How small a diff has to be before an L3 path stops buying the L3 budget.
 #
 # A seed, and it is honest to call it one: D11 fixes the *mechanism* (small diff,

@@ -65,6 +65,7 @@ from . import (
     rubrics,
     run_record,
     runner,
+    validate_gate,
     verify,
     worktree,
 )
@@ -244,6 +245,18 @@ def _record_gate(ctx: _Ctx, issue_id: str, report: verify.VerifyReport) -> str |
 # --- Phase handlers ---------------------------------------------------------
 
 
+def _declared_scope(ctx: _Ctx) -> tuple[str, ...]:
+    """The bead's own ``## Scope`` globs, for the integrity rule to classify.
+
+    Intake never passed these, so ``integrity.assign(())`` hit its ``unclassified``
+    fallback and **every unit the loop classified recorded L2** — measured on
+    basicly-u2hl.54.1, whose twelve globs classify L3. That made L3, and every
+    behaviour gated on it, unreachable. Absent scope still keeps the fallback.
+    """
+    info = decompose.bead_class_and_scope(ctx.repo_root, ctx.issue_id)
+    return info[1] if info is not None else ()
+
+
 def _on_intake(ctx: _Ctx) -> AdvanceResult:
     """Record the agent's proposed work type, then wait for the classify checkpoint.
 
@@ -266,7 +279,7 @@ def _on_intake(ctx: _Ctx) -> AdvanceResult:
                 needs_input="work_type",
             )
         work_type, attributed = proposal.work_type, f" ({proposal.by})"
-    result = classify.classify(ctx.repo_root, ctx.issue_id, work_type)
+    result = classify.classify(ctx.repo_root, ctx.issue_id, work_type, _declared_scope(ctx))
     return _blocked(
         ctx,
         f"recorded work type {result.work_type!r}{attributed}; "
@@ -407,6 +420,23 @@ def _on_verify(ctx: _Ctx) -> AdvanceResult:
     if not policy.checkpoint_approved(ctx.repo_root, ctx.issue_id, "ship"):
         return _blocked(ctx, "ship checkpoint awaiting human approval", checkpoint="ship")
     return _moved(ctx, "ship", "shipped", "ship checkpoint satisfied")
+
+
+def _on_validate(ctx: _Ctx) -> AdvanceResult:
+    """The unit merged and owes the consumer check its recorded L3 level requires.
+
+    Reaching this handler *is* the refusal: ``derive_phase`` returns ``validate``
+    only while the gate is outstanding, so a recorded pass moves the unit on by
+    changing what the next read derives. Bounded rework and escalation are
+    basicly-u2hl.54.2's; this spends nothing.
+    """
+    return _blocked(
+        ctx,
+        f"{validate_gate.VALIDATE_GATE} is required at the recorded integrity level and "
+        "has no engine result: exercise the change as a consumer would (the "
+        "validate-as-consumer skill), then record the gate",
+        needs_input="validation",
+    )
 
 
 def _worktree_landed(repo_root: Path, binding: loop_state.WorktreeBinding) -> bool:
@@ -2457,6 +2487,7 @@ _HANDLERS = {
     "decompose": _on_decompose,
     "build": _on_build,
     "verify": _on_verify,
+    "validate": _on_validate,
     "ship": _on_ship,
 }
 

@@ -29,13 +29,13 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import br, policy
+from . import br, policy, validate_gate
 from .br import run_br as _run_br
 from .config import CHECKPOINTS, PolicyConfig, load_policy_config
 
 # The loop phases, ordered from earliest to latest (architecture §12.2). "done"
 # is terminal (the issue is closed); "intake" is the pre-classify default.
-PHASES = ("intake", "classify", "decompose", "build", "verify", "ship", "done")
+PHASES = ("intake", "classify", "decompose", "build", "verify", "validate", "ship", "done")
 
 # external_ref encoding for an in-flight worktree binding. The state machine
 # (onb.6.3) writes it with format_worktree_ref; this module is its only reader,
@@ -175,13 +175,21 @@ def derive_phase(
     bead with zero work done. The green required gate is what separates the two —
     the build->verify landing records it, and nothing a never-built node has run
     does — so every landed state must carry it.
+
+    Both rungs read the **verify gate itself**, not ``gates.can_advance``: requiring
+    a second gate otherwise dropped a merged node to ``build`` (basicly-u2hl.54.1).
     """
     if status == "closed":
         return "done"
-    verified = gates.can_advance and (worktree is not None or has_children)
-    landed = gates.can_advance and (worktree is None or verified)
+    merged = "verify" in gates.required_passed
+    validating = validate_gate.outstanding(gates)
+    verified = merged and (worktree is not None or has_children)
+    landed = merged and (worktree is None or verified)
     ladder = (
-        ("ship", "ship" in checkpoints and landed),
+        # Approving ship early decides the *next* gate, never waives an unrun one;
+        # `landed` rather than `verified` so a torn-down leaf still owes validation.
+        ("ship", "ship" in checkpoints and landed and not validating),
+        ("validate", landed and validating),
         ("verify", verified),
         ("build", worktree is not None),
         ("decompose", "decompose" in checkpoints or has_children),
@@ -198,6 +206,8 @@ def read_node_state(
 ) -> NodeState:
     """Reconstruct the loop state of *issue_id* purely from ``br`` (no mutation)."""
     config = config or load_policy_config(repo_root)
+    # What this unit owes, so gate read, derived phase and rework tally share one set.
+    config = validate_gate.required_config(repo_root, issue_id, config)
     record = _show(repo_root, issue_id)
 
     worktree = parse_worktree_ref(record.get("external_ref"))
