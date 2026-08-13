@@ -40,9 +40,9 @@ from . import decisions, loop_state
 from .config import load_policy_config
 
 # The loop phases a unit occupies after BUILD has produced its work and before it is
-# done. `intake`/`classify`/`decompose`/`build` are upstream — nothing to review yet —
-# and `done` has landed, so neither counts against the bound.
-DOWNSTREAM_PHASES = ("verify", "ship")
+# done: each has merged and is consuming review capacity. `intake`/`classify`/
+# `decompose`/`build` are upstream and `done` has landed, so neither counts.
+DOWNSTREAM_PHASES = ("verify", "validate", "ship")
 
 # What a human is being asked when the bound admits nothing at all. Phrased as the two
 # things that actually clear it, because "WIP limit reached" tells an operator the

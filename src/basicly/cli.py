@@ -48,6 +48,7 @@ from . import (
     surface_report,
     ui,
     usage_report,
+    validate_gate,
     verify,
     working_set,
     worktree,
@@ -2177,7 +2178,11 @@ def _cmd_policy_scaffold(args: argparse.Namespace) -> int:
 def _cmd_policy_gate(args: argparse.Namespace) -> int:
     """Show gate status and exit 1 (blocking) when a required gate is not green."""
     repo_root = _repo_root()
-    status = policy.gate_status(repo_root, args.issue, load_policy_config(repo_root))
+    # The unit's own required set, the same one `loop status` derives its phase from:
+    # two operator-facing reads disagreeing about whether a gate is owed is worse than
+    # either answer alone (basicly-u2hl.54.1).
+    config = validate_gate.required_config(repo_root, args.issue, load_policy_config(repo_root))
+    status = policy.gate_status(repo_root, args.issue, config)
     print(f"required passed:  {list(status.required_passed)}")
     if status.required_failed:
         print(f"required FAILED:  {list(status.required_failed)}")

@@ -376,8 +376,9 @@ CHECKPOINTS = ("classify", "decompose", "ship")
 # here rather than in ``loop`` so ``[policy.evidence]`` can be validated against
 # the same set ``loop._HANDLERS`` dispatches on — the jr0l.51 stance: a rename
 # must not be able to desynchronise a validator from the thing it validates, and
-# a test pins the two together.
-LOOP_PHASES = ("intake", "classify", "decompose", "build", "verify", "ship")
+# a test pins the two together. ``validate`` sits after ``verify`` per D1: the two
+# are sequential states, and its gate binds at L3 only (basicly-u2hl.54.1).
+LOOP_PHASES = ("intake", "classify", "decompose", "build", "verify", "validate", "ship")
 
 # Autonomy levels for the session grant ledger (factory design D3,
 # basicly-kjc5.3), lowest to highest. [policy] autonomy is the repo's grantable

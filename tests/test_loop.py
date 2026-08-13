@@ -118,7 +118,7 @@ def test_intake_records_type_then_waits_for_checkpoint(
     at(_state("intake"))
     recorded = {}
 
-    def _classify(_r, _i, wt):
+    def _classify(_r, _i, wt, _s):
         recorded["wt"] = wt
         return classify.ClassifyResult("i", wt, DoRResult(True, ()))
 
@@ -955,7 +955,7 @@ def test_intake_proposes_the_work_type_under_a_grant(
     _proposer(monkeypatch, json.dumps({"work_type": "epic", "rationale": "it decomposes"}))
     recorded = {}
 
-    def _classify(_r, _i, wt):
+    def _classify(_r, _i, wt, _s):
         recorded["wt"] = wt
         return classify.ClassifyResult("i", wt, DoRResult(True, ()))
 
@@ -1053,7 +1053,7 @@ def test_the_proposer_dispatch_is_confined_and_metered(
     monkeypatch.setattr(
         classify,
         "classify",
-        lambda _r, _i, wt: classify.ClassifyResult("i", wt, DoRResult(True, ())),
+        lambda _r, _i, wt, _s: classify.ClassifyResult("i", wt, DoRResult(True, ())),
     )
 
     _advance(tmp_path)
@@ -1099,7 +1099,7 @@ def test_the_work_type_proposal_dispatches_as_the_classify_persona(
     monkeypatch.setattr(
         classify,
         "classify",
-        lambda _r, _i, wt: classify.ClassifyResult("i", wt, DoRResult(True, ())),
+        lambda _r, _i, wt, _s: classify.ClassifyResult("i", wt, DoRResult(True, ())),
     )
 
     _advance(tmp_path)
@@ -1147,7 +1147,7 @@ def test_a_family_that_cannot_select_a_persona_dispatches_unspecialised(
     monkeypatch.setattr(
         classify,
         "classify",
-        lambda _r, _i, wt: classify.ClassifyResult("i", wt, DoRResult(True, ())),
+        lambda _r, _i, wt, _s: classify.ClassifyResult("i", wt, DoRResult(True, ())),
     )
 
     _advance(tmp_path)
@@ -2252,7 +2252,7 @@ def test_run_until_blocked_stops_at_first_block(
     monkeypatch.setattr(
         classify,
         "classify",
-        lambda _r, _i, wt: classify.ClassifyResult("i", wt, DoRResult(True, ())),
+        lambda _r, _i, wt, _s: classify.ClassifyResult("i", wt, DoRResult(True, ())),
     )
     results = loop.run_until_blocked(
         tmp_path, "i", config=CONFIG, inputs=loop.Inputs(work_type="task")

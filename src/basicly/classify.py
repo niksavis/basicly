@@ -37,7 +37,7 @@ from .br import read_comments as _read_comments
 from .br import run_br as _run_br
 from .config import WORK_TYPES
 
-CLASSIFICATION_MARKER = "[harness-classification]"
+CLASSIFICATION_MARKER = integrity.CLASSIFICATION_MARKER
 
 
 @dataclass(frozen=True)
