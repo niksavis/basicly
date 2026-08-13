@@ -244,9 +244,33 @@ rule with the diff-size downgrade, Hold and Kill as writes, repair in the lane's
 module-size ratchet, the first two handoff artifacts (`implementation-plan`, `change-summary`), the
 D18 demonstration field, the WIP bound, and the code-quality floor.
 
+Landed 2026-08-13: **VALIDATE as a real state** (`u2hl.54`) — a phase gated at the recorded L3
+level, refusing its advance on a failed or missing consumer gate, dispatching the `validator` and
+pricing that dispatch as a read rather than a write. **Five more handoff schemas** (`r4jm`), so
+seven of the eight named kinds have a contract. And a role's declared `skills:` now reach the
+agent dispatched for it (`ey58`) — measured at ~0.03% of a lane, and reaching all three families
+rather than the one the vendor mechanism serves.
+
 Open, in the order the dependencies allow: `u2hl.6` skill descriptions · `u2hl.21` diff size
-reported at plan time · the four remaining handoff schemas · **VALIDATE as a real state** · D10's criterion-derived checks · EARS ·
-RETROSPECTIVE's special-cause signal · `u2hl.17` once `a3ab.1` evicts an always-on line.
+reported at plan time · D10's criterion-derived checks · EARS · REPAIR and RETROSPECTIVE as
+states, the latter with its special-cause signal · `u2hl.17` once `a3ab.1` evicts an always-on
+line.
+
+**The roster's blocker moved, and the new one is not what the old one was.** Artifacts were what
+held four roles unreachable; that is fixed. Reachable went **1 → 4** (`decider`, `decomposer`,
+`implementer`, `validator`), not 1 → 7, and each of the three that remain fails for its own
+reason: `curator` because `_on_ship` never calls `_run_agent`, `retrospector` because
+RETROSPECTIVE is not a state, and `reviewer` because it has no `ROLE_BY_PHASE` entry at all.
+Two of those three are one-line wirings behind a state that does not exist yet; the third is a
+missing map entry. **Do not plan them as one item.**
+
+**`ejdm` is decomposed and its first child has landed** (`ejdm.1`). The ordering is deliberate and
+should not be shortcut: the bead's causal claim — that a lane's multi-million-token floor is bought
+by the dispatch instruction — had **no instrument behind it**, so the remedy could not have been
+judged. `ejdm.1` records which tool each turn called; `.2` derives the acquisition-vs-implementation
+split; `.3` hands the lane a durable brief assembled from artifacts the engine already holds, which
+does *not* overturn D6's fresh context priming; `.4` measures before against after. Only `.4` is a
+claim, and only after `.2` exists.
 
 **`u2hl.17` no longer waits on that eviction** [D35, 2026-08-09]. The plan behind it — promote
 `python-guidelines` to an always-on fragment — rested on a premise the mechanics research refuted: a
