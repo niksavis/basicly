@@ -24,45 +24,40 @@ if TYPE_CHECKING:
     from .config import SizingConfig
 
 #
-# The sizing governor refuses an out-of-band *plan* at decompose, and nothing used
-# to check the band again when a lane was dispatched — so the band bound only work
-# that arrived through decompose. A supervised pass over pre-existing leaf beads,
-# which is exactly what a supervised pass does over a ready set, started whatever the
-# scheduler ranked first at any size. Re-measured on this repo's own ready set with
-# the band at 8000..64000, the top-ranked lane estimates 108605 working-set tokens —
-# 70% over the ceiling a plan would have been refused for — and three of its
-# siblings are over it too. So the check belongs here, before anything spawns,
-# exactly where ``runner.run`` refuses a dispatch whose model tier resolves to
-# nothing (basicly-kjc5.59): cost is bounded by sizing the work, never by killing a
-# working agent.
+# The sizing governor refuses an out-of-band *plan* at decompose, and nothing used to
+# check the band again at dispatch — so it bound only work that arrived through
+# decompose, while a supervised pass over pre-existing leaf beads started whatever the
+# scheduler ranked first at any size. Re-measured on this repo's own ready set with the
+# band at 8000..64000, the top-ranked lane estimates 108605 working-set tokens — 70% over
+# the ceiling a plan would have been refused for — and three siblings are over it too. So
+# the check belongs here, before anything spawns, where ``runner.run`` refuses a dispatch
+# whose model tier resolves to nothing (basicly-kjc5.59): cost is bounded by sizing the
+# work, never by killing a working agent.
 #
 # The two ends of the band deliberately earn different severities:
 #
 # - **Above the ceiling the dispatch is refused.** The run would overflow the very
-#   window it was sized against, so the tokens buy a partial answer at best. The
-#   remedy — split the package — is a decompose action no engine can take, so the
-#   lane is held by a *pending* queue item until a human takes it.
-# - **Below the floor the dispatch is escalated and then proceeds.** An under-size
-#   lane succeeds; it merely wastes the per-lane overhead that merging it with a
-#   sibling would have saved. Holding it would strand deliverable work behind a
-#   human answer over an economic inefficiency, and a ready set of small beads
-#   would wedge a whole supervised run — the expensive failure in the cheap
-#   direction.
+#   window it was sized against, so the tokens buy a partial answer at best. The remedy
+#   is a decompose action no engine can take, so the lane is held by a *pending* queue
+#   item until a human takes it.
+# - **Below the floor the dispatch is escalated and then proceeds.** An under-size lane
+#   succeeds; it merely wastes the per-lane overhead a merge with a sibling would have
+#   saved. Holding it would strand deliverable work behind a human answer over an
+#   economic inefficiency, and a ready set of small beads would wedge a whole supervised
+#   run — the expensive failure in the cheap direction.
 #
-# A lane whose scope cannot be read at all is **admitted**. That is not the same
-# indeterminate answer as an estimate that lands outside the band: 60 of this
-# repo's 87 open beads carry no ``## Scope`` section — including basicly-jr0l.16
-# itself — so failing closed on a missing estimate would turn a sizing governor
-# into a ban on hand-filed work, strictly worse than the gap it closes. The model
+# A lane whose scope cannot be read at all is **admitted**, which is not the same
+# indeterminate answer as an estimate outside the band: 60 of this repo's 87 open beads
+# carry no ``## Scope`` — including basicly-jr0l.16 itself — so failing closed on a
+# missing estimate would turn a sizing governor into a ban on hand-filed work. The model
 # precedent refuses because a *declared* tier resolved to nothing; an absent scope
 # declares nothing to contradict.
 #
-# It is admitted **visibly**, though, and that is basicly-jr0l.60. Admitting was only
-# half a decision: nothing distinguished a lane the band had checked and passed from
-# one it had never looked at, in the admission, the queue or the pass output. Measured
-# on the 2026-08-01 four-lane proof run, every dispatched lane was unsizeable, so the
-# band checked *nothing* and reported exactly what it reports when everything fits —
-# and all four then overran the context ceiling they were never compared against. So:
+# It is admitted **visibly**, though (basicly-jr0l.60): nothing used to distinguish a
+# lane the band had checked and passed from one it had never looked at, in the
+# admission, the queue or the pass output. Measured on the 2026-08-01 four-lane proof
+# run, every dispatched lane was unsizeable, so the band checked *nothing* and reported
+# what it reports when everything fits — and all four overran. So:
 #
 # * The **undeclared** case (the bead read fine and declares no scope) is a fact about
 #   the bead, and it is escalated: recorded on the lane and named in the pass output,
@@ -101,6 +96,17 @@ _UNSIZED_DISPOSAL = (
     "dispatched anyway: an undeclared scope is the normal state of a hand-filed bead, "
     "so holding it would ban hand-filed work rather than size it — recorded so this "
     "dispatch is not mistaken for one the band checked"
+)
+
+# The other way out of a ceiling refusal, offered only when the estimate priced a
+# ``## Scope``. `check_working_set` says "split it", which is right for a lane that is
+# genuinely that large and wrong for one whose number grew because the merge gate
+# obliged its author to name more ground (basicly-efw2). Which declaration was priced
+# is this module's question, so the alternative is worded here rather than in `policy`.
+_DECLARE_WORKING_SET = (
+    " — or, if completing that declaration for the merge collision gate is what made it "
+    "large, declare the subset the lane must actually read under a `## Working Set` "
+    "heading, which the band prices instead"
 )
 
 
@@ -173,14 +179,12 @@ def admit_working_set(repo_root: Path, issue_id: str, sizing: SizingConfig) -> W
         return WorkingSetAdmission(issue_id, None, unchecked, refused=False, absence=lookup.absence)
     estimate = resolved.estimate
     violation = policy.check_working_set(issue_id, estimate.total, estimate.scope_tokens, sizing)
-    return WorkingSetAdmission(
-        issue_id,
-        resolved,
-        violation,
-        # `check_working_set` still decides *whether* the band was crossed; this
-        # comparison only says which end, because only the ceiling refuses.
-        refused=violation is not None and estimate.total > sizing.working_set_max,
-    )
+    # `check_working_set` still decides *whether* the band was crossed; this comparison
+    # only says which end, because only the ceiling refuses.
+    refused = violation is not None and estimate.total > sizing.working_set_max
+    if refused and resolved.working_set_source == decompose.WORKING_SET_FROM_SCOPE:
+        violation = f"{violation}{_DECLARE_WORKING_SET}"
+    return WorkingSetAdmission(issue_id, resolved, violation, refused=refused)
 
 
 def escalate_working_set(

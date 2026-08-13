@@ -335,14 +335,18 @@ ENGINE_GATE_PROVIDERS = frozenset({VERIFY_GATE_PROVIDER, RUBRIC_GATE_PROVIDER})
 # inside one landing is the evidence, not an embarrassment to be smoothed over. Nothing
 # about the change grew between 197_646 and 245_466: the landing's scope-collision gate
 # named eight further paths the diff touched, declaring them satisfied that gate, and
-# declaring them is what moved the estimate. **One field is serving two masters.** A
-# `## Scope` entry is read both as "the ground this lane owns" (collision detection, which
-# wants the declaration complete) and as "the material this lane reads" (the band, which
-# prices it) — so declaring honestly for the first necessarily inflates the second, and a
-# lane can chase its own tail between the two gates indefinitely. That is a design defect
-# in the field, not a fact about lane size, and it is filed as basicly-efw2. Until it is
-# split, read every derivation in this block as measuring declaration completeness rather
-# than working set, and do not cite the trend as evidence that lanes are getting bigger.
+# declaring them is what moved the estimate. **One field was serving two masters.** A
+# `## Scope` entry was read both as "the ground this lane owns" (collision detection,
+# which wants the declaration complete) and as "the material this lane reads" (the band,
+# which prices it), so declaring honestly for the first necessarily inflated the second.
+#
+# basicly-efw2 split them: the band now prices a bead's `## Working Set` when it declares
+# one, and `## Scope` only as the fallback (`decompose.WORKING_SET_HEADING`). Two things
+# follow for this block. **Every derivation above measured declaration completeness, not
+# working set** — the trend is not evidence that lanes are getting bigger, and none of
+# these numbers may be cited as a lane size. And a raise is no longer the answer to a
+# refusal a corrected declaration caused: the lane declares what it must read instead,
+# which leaves this constant answerable to lanes that really are that large.
 DEFAULT_WORKING_SET_MIN = 8_000
 DEFAULT_WORKING_SET_MAX = 256_000
 # Per-task-class multiplier on scope read-cost. Seeds, and they stay seeds: the
