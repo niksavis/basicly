@@ -9,8 +9,8 @@ without the others — :func:`intake_corpus` fixes the authority boundary,
 Two properties are load-bearing and neither is obvious from the signatures:
 
 * **The bound is prompt-level, not tool-level.** The corpus is the root bead's
-  description plus its ``agent_context`` attachment and nothing else, so "was
-  this derivable?" stays checkable in decision review. Confinement of the agent
+  annotated description plus its ``agent_context`` and nothing else, so "was this
+  derivable?" stays checkable in decision review. Confinement of the agent
   itself is a separate mechanism (``runner.confine_for_decider``), and the two
   together are the mitigation — this half instructs, it does not confine.
 * **Reading the reply is fail-closed.** Anything that is not a well-formed
@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from . import br
+from . import br, corpus_drift
 
 if TYPE_CHECKING:
     from .decision_marker import DecisionItem
@@ -65,7 +65,10 @@ def intake_corpus(repo_root: Path, root_issue: str) -> str:
     record = br.read_record(repo_root, root_issue)
     if record is None:
         return ""
-    parts = [str(record.get("description") or "")]
+    description = corpus_drift.annotate(
+        str(record.get("description") or ""), corpus_drift.children_of_record(record)
+    )
+    parts = [description]
     context = record.get("agent_context")
     if context:
         parts.append(context if isinstance(context, str) else json.dumps(context, sort_keys=True))
