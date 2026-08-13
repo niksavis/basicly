@@ -16,10 +16,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from . import needs_input
+from . import needs_input, roles, skills
 from .config import WORK_TYPES
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+    from pathlib import Path
+
     from .config import SizingConfig
 
 # The gate a validation is recorded under, and the line the engine reads the verdict
@@ -119,3 +122,100 @@ def child_plan_prompt(issue_id: str, corpus: str, sizing: SizingConfig) -> str:
         '"acceptance": ["<given/when/then>", ...], "scope": ["<path glob>", ...], '
         '"shared": ["<literal path already in scope>", ...]}, ...]}'
     )
+
+
+def role_skills(repo_root: Path, family: str, role: str) -> tuple[str, ...]:
+    """The skill names *role*'s projected definition declares for *family*.
+
+    Read from the projected file rather than the catalog source, for the reason
+    :func:`roles.role_is_available` gives: the projected file is what the host loads,
+    so a source that was never built declares nothing the dispatch can honour.
+    """
+    entry = roles.AGENT_ROOTS.get(family)
+    if entry is None:
+        return ()
+    root, suffix = entry
+    path = repo_root / root / f"{role}{suffix}"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return ()
+    return _declared_skills(text)
+
+
+def _declared_skills(text: str) -> tuple[str, ...]:
+    """The `skills:` list of a projected agent's frontmatter (pure).
+
+    Hand-parsed rather than handed to a YAML loader because only the frontmatter is
+    YAML: the body below it is markdown that would fail to load, and splitting on the
+    fence to feed a loader costs more than reading the one list this needs.
+    """
+    names: list[str] = []
+    inside = False
+    for line in text.splitlines():
+        if line.startswith("skills:"):
+            inside = True
+            continue
+        if inside and line.startswith("- "):
+            names.append(line[2:].strip())
+            continue
+        if inside:
+            break
+    return tuple(names)
+
+
+def skill_brief(repo_root: Path, names: Sequence[str]) -> tuple[str, tuple[str, ...]]:
+    """The declared skill bodies as one block, and the names with no readable body.
+
+    A missing body is reported rather than raised: the dispatch is what the operator
+    asked for, and refusing it because one skill of two failed to project would trade
+    a partly-specialised agent for none at all. The caller names the omission so a
+    silently thinner brief cannot read as a complete one.
+    """
+    blocks, missing = [], []
+    for name in names:
+        body = _skill_body(repo_root, name)
+        if body is None:
+            missing.append(name)
+        else:
+            blocks.append(f"<skill name={name!r}>\n{body.strip()}\n</skill>")
+    return "\n\n".join(blocks), tuple(missing)
+
+
+def _skill_body(repo_root: Path, name: str) -> str | None:
+    """*name*'s projected body from the first root that carries it, else None."""
+    for root in skills.DEFAULT_SKILL_ROOTS:
+        path = repo_root / root / name / skills.SKILL_FILE_NAME
+        try:
+            return path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+    return None
+
+
+def with_skills(prompt: str, brief: str, missing: Sequence[str] = ()) -> str:
+    """*prompt* carrying *brief*, or unchanged when the role declared no skills.
+
+    The bodies lead: a dispatch is one turn and the agent reads forward, so guidance
+    arriving after the task was read too late to shape how it is done. Unchanged for a
+    role declaring none, which keeps this invisible to every dispatch that worked
+    before it (basicly-ey58).
+
+    *missing* is named in the prompt rather than logged. The agent is the one that can
+    act on it - by loading the skill through the Skill tool - and a thinner brief that
+    says nothing reads exactly like a complete one.
+    """
+    if not brief and not missing:
+        return prompt
+    parts = []
+    if brief:
+        parts.append(
+            "Your role declares the skills below. Their full text follows, so you "
+            f"already have them and need not load them:\n\n{brief}"
+        )
+    if missing:
+        parts.append(
+            f"Your role also declares {', '.join(missing)}, which could not be read "
+            "from this checkout. Load it with the Skill tool before you rely on it."
+        )
+    return "\n\n".join([*parts, "---", prompt])
