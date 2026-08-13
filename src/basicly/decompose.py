@@ -600,19 +600,17 @@ def collapse_note(collapsing: tuple[CollapsingPath, ...]) -> str:
 
 # --- Context-cost sizing estimator (basicly-kjc5.2, factory design D8) -------
 #
-# What a lane must *read* is measured in :mod:`basicly.read_cost` — this half turns
-# those tokens into an estimate, a frozen verdict and a forecast.
+# :mod:`basicly.read_cost` measures what a lane must *read*; this half turns those
+# tokens into an estimate, a frozen verdict and a forecast.
 
 
-# Where a build factor came from. Recorded with every estimate, on the same rule
-# `forecast_source`, `SpendCalibration` and `unsized_lane_tokens`' source already
-# follow: a declared number must never be readable back as a measured one
-# (basicly-tcmy.5).
+# Where a build factor came from, on the rule `forecast_source`, `SpendCalibration` and
+# `unsized_lane_tokens` already follow: a declared number must never read back as a
+# measured one (basicly-tcmy.5).
 #
-# There is deliberately no ``measured`` member. Nothing in this engine measures a
-# working-set factor: the calibration that appeared to was measuring whole-lane
-# spend, a different quantity, and basicly-z2wi removed it (see the section below).
-# A vocabulary offering the word would invite the next reader to assume a writer.
+# No ``measured`` member, deliberately. Nothing here measures a working-set factor — the
+# calibration that appeared to was measuring whole-lane spend, and basicly-z2wi removed
+# it — and a vocabulary offering the word would invite a reader to assume a writer.
 BUILD_FACTOR_SEED = "seed"  # config.DEFAULT_BUILD_FACTOR_SEEDS
 BUILD_FACTOR_CONFIGURED = "configured"  # declared in [policy.sizing.build_factor]
 
@@ -624,10 +622,8 @@ class CostEstimate:
     scope_tokens: int
     overhead_tokens: int
     build_factor: float
-    # :data:`BUILD_FACTOR_SEED` or :data:`BUILD_FACTOR_CONFIGURED`. Defaulted to the
-    # seed so an estimate parsed back from a marker written before the field existed
-    # keeps the provenance it actually had: at that time no calibration existed to
-    # produce anything else.
+    # :data:`BUILD_FACTOR_SEED` or :data:`BUILD_FACTOR_CONFIGURED`. Defaulted to the seed
+    # because a marker written before the field existed had no other source available.
     build_factor_source: str = BUILD_FACTOR_SEED
 
     @property
@@ -639,9 +635,8 @@ class CostEstimate:
 def _factor_key(task_class: str, factors: dict[str, float]) -> str:
     """Which entry of *factors* answers for *task_class*.
 
-    Split out so the factor and its provenance are looked up by one rule: reading the
-    value from one key and the source from another is how a configured number would
-    end up recorded as a seed.
+    One rule for the factor and its provenance: reading the value from one key and the
+    source from another is how a configured number gets recorded as a seed.
     """
     return task_class if task_class in factors else DEFAULT_CHILD_TYPE
 
@@ -651,8 +646,8 @@ def build_factor_for(task_class: str, factors: dict[str, float]) -> float:
 
     An unlisted task class uses the ``task`` factor (the most conservative seed),
     falling back to :data:`DEFAULT_BUILD_FACTOR` when even that is absent. Shared by
-    :func:`estimate_cost` and :func:`dispatch_sizing` so a plan's estimate and the
-    same package's dispatch-time forecast cannot be computed two different ways.
+    :func:`estimate_cost` and :func:`dispatch_sizing`, so a plan's estimate and the same
+    package's dispatch-time forecast cannot be computed two different ways.
     """
     return factors.get(_factor_key(task_class, factors), DEFAULT_BUILD_FACTOR)
 
@@ -661,8 +656,8 @@ def build_factor_source(task_class: str, sizing: SizingConfig) -> str:
     """Where *task_class*'s build factor came from (:data:`BUILD_FACTOR_SEED` etc).
 
     Keyed on the entry that actually answered, so a class with no factor of its own
-    inherits ``task``'s provenance rather than being reported as seeded while a
-    configured ``task`` factor is what sized it.
+    inherits ``task``'s provenance rather than reading as seeded while a configured
+    ``task`` factor is what sized it.
     """
     key = _factor_key(task_class, sizing.build_factors)
     return BUILD_FACTOR_CONFIGURED if key in sizing.configured_build_factors else BUILD_FACTOR_SEED
@@ -673,9 +668,9 @@ def estimate_cost(
 ) -> CostEstimate:
     """Estimate *spec*'s working-set cost from its declared scope and task class.
 
-    Takes the whole :class:`SizingConfig` rather than its factor map: the estimate
-    now carries where its factor came from, and that provenance lives beside the
-    factors in the config rather than in the map itself.
+    Takes the whole :class:`SizingConfig` rather than its factor map, because the
+    estimate carries where its factor came from and that provenance lives beside the
+    factors in the config.
     """
     return CostEstimate(
         scope_tokens=scope_read_cost(repo_root, spec.scope),
@@ -688,9 +683,9 @@ def estimate_cost(
 def parse_scope_section(description: str) -> tuple[str, ...]:
     """The scope globs recorded under a ``## Scope`` heading, as _child_body writes them.
 
-    Delegates the reading to :func:`plan_record.backticked_entries`, so the section
-    reader the build entry predicate uses and the one every sizing and merge gate uses
-    are the same code — two readers of one recorded form is how the form drifts.
+    Reads through :func:`plan_record.backticked_entries`, so the build entry predicate
+    and every sizing and merge gate share one reader — two readers of one recorded form
+    is how the form drifts.
     """
     return plan_record.backticked_entries(description, plan_record.SCOPE_HEADING)
 
@@ -698,20 +693,14 @@ def parse_scope_section(description: str) -> tuple[str, ...]:
 def unparsed_scope_warning(description: str) -> str | None:
     """What to tell an author whose ``## Scope`` heading yielded no readable glob.
 
-    Heading present, entries absent. That is almost always an authoring error rather
-    than a deliberate empty scope, and nothing downstream can tell the two apart:
-    :func:`parse_scope_section` returns an empty tuple for both, so the bead sizes,
-    groups and lands exactly as one that never declared a scope at all — while its
-    author reads the heading back and believes the lane is sized (basicly-tuy6).
+    Heading present, entries absent, which nothing downstream can tell from a bead with
+    no heading: both parse to an empty tuple, so the lane sizes, groups and lands as
+    unscoped while its author reads the heading back and believes it is sized
+    (basicly-tuy6). Detecting it needs the heading, which the parser discards.
 
-    Detecting it needs the heading, which the parser discards, so the check lives
-    here beside the pattern rather than in the gates that consume the result.
-
-    Returns None when there is nothing to say: no heading (the ordinary state of a
-    bead nobody decomposed, and not an error), or a heading that parsed. **Advisory
-    by construction** — it returns prose, never a verdict. Refusing on it would
-    block most of an existing tracker, which is the objection that settled
-    basicly-vz78.
+    None when there is nothing to say — no heading, or one that parsed. **Advisory by
+    construction**: it returns prose, never a verdict, because refusing here would block
+    most of an existing tracker (basicly-vz78).
     """
     if not plan_record.has_heading(description, plan_record.SCOPE_HEADING):
         return None
@@ -725,46 +714,76 @@ def unparsed_scope_warning(description: str) -> str | None:
     )
 
 
-# Why a bead yields no class-and-scope pair. One None used to answer for both, and
-# the sizing gates read that None as "nothing to compare" and admitted — so the band
-# never once looked at a hand-filed bead (basicly-jr0l.60). The two are not the same
-# answer:
+# What the band prices, split from what the merge gate reads (basicly-efw2). One
+# ``## Scope`` served both, and they pull opposite ways: the collision gate wants every
+# path the diff touches named, the band wants it small because it prices what the
+# declaration *reads*. Measured inside one landing on basicly-u2hl.14 — 13 entries at
+# 78,709, then 27 at 197,646, then 35 at 245,466 — while the diff stayed exactly as
+# wide. Only the declaration moved, and the ceiling was raised twice to let it through.
+#
+# The fallback to ``## Scope`` is deliberate: no bead authored before this section
+# existed has one, and unsizing a whole tracker to force the new form is the
+# ban-by-failing-closed this module refuses everywhere else.
+WORKING_SET_HEADING = "## Working Set"
+
+# Which of the two an estimate priced; a fallback must never read back as a declaration.
+WORKING_SET_DECLARED = "declared"
+WORKING_SET_FROM_SCOPE = "scope"
+
+
+def working_set_for(description: str, scope: tuple[str, ...]) -> tuple[tuple[str, ...], str]:
+    """The globs the band prices for *description*, and which heading they came from."""
+    declared = plan_record.backticked_entries(description, WORKING_SET_HEADING)
+    return (declared, WORKING_SET_DECLARED) if declared else (scope, WORKING_SET_FROM_SCOPE)
+
+
+# Why a bead yields no declarations. One None answered for all three, and the sizing
+# gates read it as "nothing to compare" and admitted — so the band never once looked at
+# a hand-filed bead (basicly-jr0l.60). They are not the same answer:
 #
 # * **unreadable** — the record did not come back, or came back without the fields.
-#   Transient, and it says nothing at all about the lane's size.
+#   Transient, and it says nothing about the lane's size.
 # * **undeclared** — the record read fine and carries no scope
-#   :func:`parse_scope_section` can read: no ``## Scope`` heading, or one whose entries
-#   are prose rather than backticked globs. Structural, and the normal state of a bead
-#   nobody decomposed. A gate can act on it, because re-reading will not change it.
+#   :func:`parse_scope_section` can read. Structural, and the normal state of a bead
+#   nobody decomposed, so a gate can act on it: re-reading will not change it.
 SCOPE_UNREADABLE = "unreadable"
 SCOPE_UNDECLARED = "undeclared"
-# * **greenfield** — the record read fine and its globs are well formed, but every one
-#   of them matches nothing on disk, so :func:`scope_read_cost` returns zero and the
-#   only forecast left is pure overhead. Structural like *undeclared*, and it carries
-#   the same epistemic weight: a forecast against a scope that does not exist yet is
-#   the "invented number" :func:`resolve_dispatch_sizing` already refuses to produce
-#   for a bead declaring no scope at all (basicly-jr0l.69).
+# * **greenfield** — well-formed globs that match nothing on disk, so the only forecast
+#   left is pure overhead. Structural like *undeclared* and the same invented number
+#   :func:`resolve_dispatch_sizing` refuses for an absent scope (basicly-jr0l.69).
 #
-#   Measured 2026-08-06, which is what promoted this from a nicety to a gate failure.
-#   Reading cost is a sound proxy for a lane that *edits* files and inverts for one
-#   that *creates* them — writing a module and its tests from nothing is the expensive
-#   case, not the cheap one:
+#   Read cost proxies a lane that *edits* files and inverts for one that *creates* them,
+#   which promoted this to a gate failure (measured 2026-08-06):
 #
 #     bead        recorded forecast   actual spend   ratio
 #     vkh0.13              657033      13367072     20.3x   <- broke the 10x band
 #     vkh0.12              657033       7730640     11.8x
 #
-#   Against the measured unsized-lane bound instead, every lane of that wave lands
-#   inside the band at 1.24x-3.98x, which is why the answer is to route these to that
-#   bound rather than to widen the band.
+#   Against the measured unsized-lane bound the same wave lands at 1.24x-3.98x, which
+#   is why these route there rather than widening the band.
 SCOPE_GREENFIELD = "greenfield"
 
 
-def _read_class_and_scope(issue: object) -> tuple[tuple[str, tuple[str, ...]] | None, str]:
-    """One issue record's class-and-scope pair, plus which absence explains a missing one.
+@dataclass(frozen=True)
+class BeadScope:
+    """One bead's class, the ground it owns, and the material its band prices.
+
+    The last two are the same globs until the bead declares a ``## Working Set``.
+    """
+
+    task_class: str
+    scope: tuple[str, ...]
+    working_set: tuple[str, ...]
+    # :data:`WORKING_SET_DECLARED` or :data:`WORKING_SET_FROM_SCOPE`.
+    working_set_source: str
+
+
+def _read_class_and_scope(issue: object) -> tuple[BeadScope | None, str]:
+    """One issue record's declarations, plus which absence explains a missing one.
 
     The absence is :data:`SCOPE_UNREADABLE` or :data:`SCOPE_UNDECLARED`, and empty
-    when the pair is there.
+    when they are there. A ``## Working Set`` alone is still undeclared: the merge
+    gate reads the scope, so the band's half by itself lands nothing.
     """
     if not isinstance(issue, dict):
         return None, SCOPE_UNREADABLE
@@ -775,15 +794,13 @@ def _read_class_and_scope(issue: object) -> tuple[tuple[str, tuple[str, ...]] | 
     scope = parse_scope_section(description)
     if not scope:
         return None, SCOPE_UNDECLARED
-    return (task_class, scope), ""
+    return BeadScope(task_class, scope, *working_set_for(description, scope)), ""
 
 
-def _read_bead(repo_root: Path, bead_id: str) -> tuple[tuple[str, tuple[str, ...]] | None, str]:
-    """*bead_id*'s class-and-scope pair from the tracker, with the absence that explains it."""
-    # The seam's None covers every absence this used to catch by exception type — br
-    # off PATH, a non-zero exit, unparseable output, an empty or non-object payload —
-    # so the typed absence is kept while the unwrap is not spelled again
-    # (basicly-tcmy.14).
+def _read_bead(repo_root: Path, bead_id: str) -> tuple[BeadScope | None, str]:
+    """*bead_id*'s declarations from the tracker, with the absence that explains it."""
+    # The seam's None covers every absence this used to catch by exception type — br off
+    # PATH, a non-zero exit, unparseable output, an empty payload (basicly-tcmy.14).
     record = br.read_record(repo_root, bead_id)
     if record is None:
         return None, SCOPE_UNREADABLE
@@ -793,23 +810,24 @@ def _read_bead(repo_root: Path, bead_id: str) -> tuple[tuple[str, tuple[str, ...
 def bead_class_and_scope(repo_root: Path, bead_id: str) -> tuple[str, tuple[str, ...]] | None:
     """The task class and declared scope of *bead_id*, or None when either is absent.
 
-    Callers that must tell an unreadable bead from one declaring no scope want
-    :func:`resolve_dispatch_sizing` — this collapses both to None on purpose, for the
-    callers (grouping, coupling, merge) to which an absent scope is simply an empty one.
+    Always the ownership declaration, never the band's — grouping, coupling and merge
+    all ask which ground a lane owns. Callers that must tell an unreadable bead from
+    one declaring no scope want :func:`resolve_dispatch_sizing`; this collapses both
+    to None on purpose.
     """
-    return _read_bead(repo_root, bead_id)[0]
+    read = _read_bead(repo_root, bead_id)[0]
+    return None if read is None else (read.task_class, read.scope)
 
 
 # --- Why there is no measured build factor (basicly-z2wi) --------------------
 #
-# `build_factor` answers "how big is a lane's working set, per token of scope it
-# must read". The seeds above are that shape. A calibration used to overwrite them
-# with `whole-lane spend / scope read-cost`, and that is a different quantity: a
-# lane's total spend already contains the turn multiplier, which `forecast_spend`
-# owns as `tokens_per_working_set_token` and which its docstring requires to live
-# in exactly one ratio. Calibrating from spend put it in two, so the forecast
-# multiplied it in twice and the band compared a spend number against
-# `working_set_max`, a context-window ceiling.
+# `build_factor` answers "how big is a lane's working set, per token it must read", and
+# the seeds above are that shape. A calibration used to overwrite them with `whole-lane
+# spend / scope read-cost`, a different quantity: total spend already contains the turn
+# multiplier that `forecast_spend` owns as `tokens_per_working_set_token` and requires to
+# live in exactly one ratio. Calibrating from spend put it in two, so the forecast
+# multiplied it in twice and the band compared a spend number against `working_set_max`,
+# a context-window ceiling.
 #
 # It was not a rounding error. On this repo's own history the task factor
 # calibrated to 216.65 against a seed of 3.0, which caps the largest dispatchable
@@ -817,11 +835,10 @@ def bead_class_and_scope(repo_root: Path, bead_id: str) -> tuple[str, tuple[str,
 # successful dispatches are what crossed `calibration_min_samples` and disabled
 # the gate, so the engine broke itself by being used.
 #
-# No run record carries a working-set measure — the fields are `tokens`, `cost`
-# and `duration_s` — so there is nothing to calibrate this against without new
-# telemetry. Until such a measure is recorded, the seeds stand. Do not reintroduce
-# a factor derived from spend; `test_no_working_set_factor_is_derived_from_spend`
-# fails if one is.
+# No run record carries a working-set measure — the fields are `tokens`, `cost` and
+# `duration_s` — so there is nothing to calibrate against without new telemetry, and the
+# seeds stand until there is. Do not reintroduce a factor derived from spend;
+# `test_no_working_set_factor_is_derived_from_spend` fails if one is.
 
 
 # --- Frozen estimates (basicly-kjc5.30, design D9) ---------------------------
@@ -835,13 +852,11 @@ def bead_class_and_scope(repo_root: Path, bead_id: str) -> tuple[str, tuple[str,
 #
 # So the verdict is frozen with the plan that earned it: when the governor accepts
 # a decomposition it records each child's estimate, keyed by the content the
-# estimate is a function of (task class + declared scope). Governing the same plan
+# estimate is a function of (task class + the globs priced). Governing the same plan
 # again reuses those numbers rather than recomputing them, so the answer is stable.
 #
-# Recorded on the *feature*, not the child, because no child exists yet — the
-# governor runs before anything is created, precisely so a refused plan creates
-# nothing. The feature bead is the only carrier in existence at the moment the
-# verdict is made.
+# Recorded on the *feature*, not the child, because the governor runs before any child
+# exists — precisely so a refused plan creates nothing.
 #
 # Evidence, not state (D11): nothing branches on it beyond this reuse, so a
 # missing or malformed marker degrades to recomputing rather than failing.
@@ -850,18 +865,19 @@ _SIZING_MARKER = "[harness-sizing]"
 _SIZING_HEADER = re.compile(rf"^{re.escape(_SIZING_MARKER)} key=(\S+)$")
 
 
-def sizing_key_for(task_class: str, scope: Iterable[str]) -> str:
-    """Content key for the estimate of a task class over a declared scope.
+def sizing_key_for(task_class: str, globs: Iterable[str]) -> str:
+    """Content key for the estimate of a task class over the globs it prices.
 
     Derived from exactly what the estimate is a function of — the task class picks
-    the build factor and the declared scope sets the read cost. Deliberately not
+    the build factor and the priced globs set the read cost. Deliberately not
     the title: retitling a child must not silently re-open a settled verdict.
 
     Takes the content rather than a :class:`ChildSpec` so a *shipped bead* can key
     into the same freeze (basicly-kjc5.50): by then the spec is long gone, but the
-    bead still carries its class and its ``## Scope``.
+    bead still carries its class and its declarations. A plan's children declare no
+    working set, so the split leaves every already-frozen key answering as before.
     """
-    payload = json.dumps({"type": task_class, "scope": sorted(scope)}, sort_keys=True)
+    payload = json.dumps({"type": task_class, "scope": sorted(globs)}, sort_keys=True)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
 
 
@@ -882,10 +898,9 @@ def _parse_sizing_marker(text: str) -> tuple[str, CostEstimate] | None:
             scope_tokens=int(data["scope_tokens"]),
             overhead_tokens=int(data["overhead_tokens"]),
             build_factor=float(data["build_factor"]),
-            # Absent on every marker frozen before the field existed, and the default
-            # is the truth for those: the seeds were the only source there had ever
-            # been. Required would instead discard the frozen verdict and recompute,
-            # which is the drift the freeze exists to prevent (D9).
+            # Absent on markers frozen before the field existed, and the seed default is
+            # the truth for those. Requiring it would discard the frozen verdict and
+            # recompute — the drift the freeze exists to prevent (D9).
             build_factor_source=str(data.get("build_factor_source", BUILD_FACTOR_SEED)),
         )
     except ValueError, TypeError, KeyError:
@@ -896,9 +911,9 @@ def _parse_sizing_marker(text: str) -> tuple[str, CostEstimate] | None:
 def frozen_estimates(repo_root: Path, feature_id: str) -> dict[str, CostEstimate]:
     """Estimates already frozen on *feature_id*, keyed by :func:`sizing_key`.
 
-    First write wins: the earliest freeze is the verdict of record, so a stray
-    later marker cannot re-open it. Best-effort — an unreadable bead or a
-    malformed payload yields nothing and the caller recomputes.
+    First write wins, so a stray later marker cannot re-open a settled verdict.
+    Best-effort: an unreadable bead or a malformed payload yields nothing and the
+    caller recomputes.
     """
     frozen: dict[str, CostEstimate] = {}
     try:
@@ -915,18 +930,21 @@ def frozen_estimates(repo_root: Path, feature_id: str) -> dict[str, CostEstimate
     return frozen
 
 
-def forecast_for(repo_root: Path, task_class: str, scope: tuple[str, ...]) -> CostEstimate | None:
+def forecast_for(repo_root: Path, task_class: str, globs: tuple[str, ...]) -> CostEstimate | None:
     """The estimate frozen anywhere in the tracker export for this content, or None.
 
     A shipped child cannot look up its own forecast by id: the governor freezes
-    estimates on the *feature*, because when it runs no child exists yet. The key
-    is content-derived, though, so the export answers without the parent link —
-    and answers in a fresh clone, which is the point (basicly-kjc5.50).
+    estimates on the *feature*. The key is content-derived, so the export answers
+    without the parent link, and answers in a fresh clone (basicly-kjc5.50).
 
-    First match in export order wins, mirroring :func:`frozen_estimates`' rule that
-    the earliest freeze is the verdict of record.
+    *globs* must be whatever the estimate priced — for a sized lane, its working set.
+    A caller holding only the ownership scope therefore misses on a bead declaring its
+    own ``## Working Set``, and gets a null rather than a forecast over the wrong
+    material.
+
+    First match in export order wins, mirroring :func:`frozen_estimates`' rule.
     """
-    key = sizing_key_for(task_class, scope)
+    key = sizing_key_for(task_class, globs)
     for record in br.export_records(repo_root):
         for text in br.export_comment_texts(record):
             parsed = _parse_sizing_marker(text)
@@ -937,13 +955,12 @@ def forecast_for(repo_root: Path, task_class: str, scope: tuple[str, ...]) -> Co
 
 # --- Sizing carried into the dispatch record (basicly-jr0l.34) ----------------
 #
-# The forecast and the actual were written to disjoint classes of record: the
-# governor's estimate was frozen on a feature at decompose, and the tokens a
-# dispatch really spent landed on a run record that carried no forecast at all
-# (`forecast_tokens` was a declared field with no writer — measured non-null on
-# zero of 149 records). So the forecast error, which is the whole learning signal
-# jr0l.21's calibration needs, has never once been computable. These are the
-# inputs that put both halves on one carrier.
+# The forecast and the actual were written to disjoint classes of record: the estimate
+# was frozen on a feature at decompose, and the tokens a dispatch really spent landed
+# on a run record carrying no forecast at all (`forecast_tokens` measured non-null on
+# zero of 149 records). So the forecast error — the whole learning signal jr0l.21's
+# calibration needs — had never once been computable. These put both halves on one
+# carrier.
 
 # Where a dispatch's forecast came from. A frozen estimate was registered before
 # the work started and is evidence of prediction skill; one computed at dispatch
@@ -961,29 +978,28 @@ class DispatchSizing:
     estimate: CostEstimate
     # :data:`FROZEN_FORECAST` or :data:`DISPATCH_FORECAST`.
     source: str
+    # Which heading the priced globs came from. Absent from :meth:`record_inputs`
+    # because that mapping is splatted into ``runner.record_dispatch``'s keywords.
+    working_set_source: str = WORKING_SET_FROM_SCOPE
 
     def record_inputs(self, repo_root: Path) -> dict[str, object]:
         """These inputs as ``record_dispatch`` keywords.
 
-        On the sizing itself rather than at each dispatch site: both sites record
-        the same fields, and a second copy of this mapping is precisely how
-        the two would drift apart (basicly-jr0l.16).
+        On the sizing itself rather than at each dispatch site: a second copy of this
+        mapping is how the two sites would drift apart (basicly-jr0l.16). The build
+        factor's provenance travels with the forecast it produced (basicly-tcmy.5),
+        or the record carries a number multiplied by a declared constant with no
+        statement that it was declared.
 
-        The build factor's provenance travels with the forecast it produced
-        (basicly-tcmy.5). Without it the record carries a number multiplied by a
-        declared constant and no statement that it was declared, which is the state
-        every sibling field on the record was designed not to be in.
+        Takes *repo_root* for one field: the forecast **spend**, which needs this
+        repo's calibration. A lane's actual is metered in spend, so recording only
+        ``forecast_tokens`` compared a working set against a whole-lane cost — a
+        64x-793x ratio that read as estimator error (basicly-tcmy.34). Both are
+        recorded, and the spend half is what :func:`supervise.admit_pass_spend`
+        refuses a pass on.
 
-        Takes *repo_root* for one field: the forecast **spend**, which needs the
-        calibration this repo's history resolves. A lane's actual is metered in spend,
-        so recording only ``forecast_tokens`` left the pair comparing a working set
-        against a whole-lane cost — a 64x-793x ratio that read as estimator error
-        (basicly-tcmy.34). Both are recorded, and the spend half is the very number
-        :func:`supervise.admit_pass_spend` refuses a pass on.
-
-        Never raises: the calibration reads the tracker, and this is telemetry on the
-        critical path of every dispatch. An unreadable history records a null spend
-        forecast, which is what it is.
+        Never raises: this is telemetry on the critical path of every dispatch, so an
+        unreadable history records a null spend forecast.
         """
         spend: int | None = None
         with contextlib.suppress(RuntimeError, ValueError, OSError):
@@ -1004,9 +1020,8 @@ class DispatchSizing:
 class SizingLookup:
     """A lane's dispatch sizing, or which absence explains it having none.
 
-    The pair exists because a gate has to act differently on the two absences
-    :data:`SCOPE_UNREADABLE` and :data:`SCOPE_UNDECLARED` (basicly-jr0l.60), and a
-    bare None could not tell them apart.
+    A bare None could not tell :data:`SCOPE_UNREADABLE` from :data:`SCOPE_UNDECLARED`,
+    and a gate has to act differently on them (basicly-jr0l.60).
     """
 
     sizing: DispatchSizing | None
@@ -1019,69 +1034,63 @@ def resolve_dispatch_sizing(repo_root: Path, issue_id: str) -> SizingLookup:
 
     Prefers the estimate the governor froze for this content — the forecast of
     record, on :func:`frozen_estimates`' rule that the earliest freeze is the
-    verdict — and otherwise computes one from the current calibrated factors, so a
-    package that never went through ``decompose`` still yields a pairable forecast
-    instead of a null.
+    verdict — and otherwise computes one from the current factors, so a package that
+    never went through ``decompose`` still yields a pairable forecast.
 
-    Unsized when the bead's task class or declared ``## Scope`` is absent: a forecast
-    against an unknown scope would be an invented number, and an absent half is what
-    the error report is built to skip. Which absence it was travels in
-    :attr:`SizingLookup.absence`, because a bead that declares no scope is a fact a
-    gate can act on and a failed read is not.
+    Prices the bead's **working set**: its ``## Working Set`` when it declares one,
+    else its ``## Scope`` (:data:`WORKING_SET_HEADING`). That is what keeps completing
+    an ownership declaration for the merge gate from enlarging the lane the band sees.
 
-    Unsized on the same grounds when every declared glob matches nothing
-    (:data:`SCOPE_GREENFIELD`, basicly-jr0l.69). That case used to yield an
-    overhead-only forecast, which is the very invented number the paragraph above
-    refuses — and it is invented in the *dangerous* direction, because a lane creating
-    a module and its tests from nothing is the expensive case. Measured: two lanes
-    forecast at 657033 spent 13367072 and 7730640, breaking the 10x accuracy band.
+    Unsized when the task class or the ``## Scope`` is absent, and on the same grounds
+    when every priced glob matches nothing (:data:`SCOPE_GREENFIELD`): both would make
+    the forecast an invented number. Which absence it was travels in
+    :attr:`SizingLookup.absence`, because a bead that declares nothing is a fact a gate
+    can act on and a failed read is not.
     """
-    info, absence = _read_bead(repo_root, issue_id)
-    if info is None:
+    read, absence = _read_bead(repo_root, issue_id)
+    if read is None:
         return SizingLookup(None, absence)
-    task_class, scope = info
+    task_class, globs, source = read.task_class, read.working_set, read.working_set_source
     # Checked before the frozen estimate is honoured, not after: the freeze records
     # whatever the scope read at decompose time, so a child whose files did not exist
     # then carries a frozen overhead-only number that looks like a prediction of record
     # (`forecast_source` reads `frozen`) while resting on nothing. Rejecting it here is
     # what makes the accuracy gate's `assumed:` exclusion reach these records.
-    if scope and scope_read_cost(repo_root, scope) == 0:
+    if globs and scope_read_cost(repo_root, globs) == 0:
         return SizingLookup(None, SCOPE_GREENFIELD)
-    frozen = forecast_for(repo_root, task_class, scope)
+    frozen = forecast_for(repo_root, task_class, globs)
     if frozen is not None:
-        return SizingLookup(DispatchSizing(task_class, frozen, FROZEN_FORECAST))
+        return SizingLookup(DispatchSizing(task_class, frozen, FROZEN_FORECAST, source))
     sizing = load_sizing_config(repo_root)
     estimate = CostEstimate(
-        scope_tokens=scope_read_cost(repo_root, scope),
+        scope_tokens=scope_read_cost(repo_root, globs),
         overhead_tokens=instruction_overhead(repo_root),
         build_factor=build_factor_for(task_class, sizing.build_factors),
         build_factor_source=build_factor_source(task_class, sizing),
     )
-    return SizingLookup(DispatchSizing(task_class, estimate, DISPATCH_FORECAST))
+    return SizingLookup(DispatchSizing(task_class, estimate, DISPATCH_FORECAST, source))
 
 
 def dispatch_sizing(repo_root: Path, issue_id: str) -> DispatchSizing | None:
     """*issue_id*'s class and working-set forecast as of now, or None when unsized.
 
-    The sizing alone, for callers that record a forecast rather than gate on one.
-    A caller that gates wants :func:`resolve_dispatch_sizing`, whose absence says
-    whether re-reading could change the answer.
+    The sizing alone, for callers that record a forecast rather than gate on one. A
+    caller that gates wants :func:`resolve_dispatch_sizing`, whose absence says whether
+    re-reading could change the answer.
     """
     return resolve_dispatch_sizing(repo_root, issue_id).sizing
 
 
 # --- Predicted spend beside the working set (basicly-jr0l.21) -----------------
 #
-# The working-set estimate above is an estimate of *context*, and context is not
-# what a run costs (see `run_record`'s spend-forecast section for the measured
-# 160-420x hole). So every sized package now also carries what it is predicted to
-# spend — tokens, USD and wall clock — computed from the same working-set number
-# through ratios calibrated per (model, task class), seeded from a declared prior
-# until enough paired records exist to replace it.
+# The working-set estimate above is an estimate of *context*, and context is not what a
+# run costs (`run_record`'s spend-forecast section records the measured 160-420x hole).
+# So every sized package also carries its predicted spend — tokens, USD and wall clock —
+# from the same working-set number through ratios calibrated per (model, task class),
+# seeded from a declared prior until enough paired records replace it.
 #
-# Alongside, never instead of: the band verdict still governs on the working set,
-# because that is the quantity a context window bounds. Spend is the quantity a
-# budget bounds, and basicly-jr0l.22 is the pass that will admit a lane against it.
+# Alongside, never instead of: the band still governs on the working set, the quantity a
+# context window bounds. Spend is what a budget bounds (basicly-jr0l.22).
 
 
 def forecast_model(repo_root: Path) -> str | None:
@@ -1731,11 +1740,10 @@ def freeze_estimate(
 ) -> None:
     """Record *estimate* under *key* on *feature_id* (best-effort, never fatal).
 
-    *spend* is recorded beside it, prior and all: the marker is the only carrier
-    that survives a clone, and a forecast whose seed is not written down cannot be
-    audited once the seed is replaced. First write still wins, so re-governing the
-    same plan later prints today's calibration but never rewrites the recorded one —
-    the number of record is the one the plan was accepted on (D9).
+    *spend* is recorded beside it, prior and all: the marker is the only carrier that
+    survives a clone, and a forecast whose seed is not written down cannot be audited
+    once the seed is replaced. First write still wins, so re-governing the same plan
+    prints today's calibration but never rewrites the number it was accepted on (D9).
     """
     payload = json.dumps(
         {

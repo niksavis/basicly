@@ -986,18 +986,24 @@ def _lane_estimate(scope_tokens: int, task_class: str) -> int:
 
 
 def _exported_class_and_scope(repo_root: Path) -> dict[str, tuple[str, tuple[str, ...]]]:
-    """Task class and declared scope per bead, from the committed tracker export.
+    """Task class and priced globs per bead, from the committed tracker export.
 
     The export rather than ``br show``, for the same reason the rest of this gate uses
     it: it is what a fresh clone has, it carries closed records, and it costs no
-    subprocess. A bead nobody decomposed has no ``## Scope`` and reads as an empty one.
+    subprocess. A bead nobody decomposed reads as an empty scope.
+
+    Priced globs, not the ownership scope: the ceiling is derived from what a lane reads,
+    and pricing `## Scope` here is what let completing a declaration for the merge gate
+    drag the constant upward (basicly-efw2).
     """
     beads: dict[str, tuple[str, tuple[str, ...]]] = {}
     for record in br.export_records(repo_root):
         description = record.get("description")
+        text = description if isinstance(description, str) else ""
+        scope = decompose.parse_scope_section(text)
         beads[str(record["id"])] = (
             str(record.get("issue_type") or "task"),
-            decompose.parse_scope_section(description) if isinstance(description, str) else (),
+            decompose.working_set_for(text, scope)[0],
         )
     return beads
 
@@ -1005,23 +1011,21 @@ def _exported_class_and_scope(repo_root: Path) -> dict[str, tuple[str, tuple[str
 def _lane_estimates(repo_root: Path, outcome: str) -> dict[str, int]:
     """Estimate per bead for every headless dispatch that ended in *outcome*.
 
-    One function for both populations, sizing every lane the same way: its declared
-    ``## Scope`` read from the tree now, at the seed factor for its class. Two
-    functions is how the ceiling has been wrong twice.
+    One function for both populations, sizing every lane the same way: the globs it
+    prices, read from the tree now, at the seed factor for its class. Two functions is
+    how the ceiling has been wrong twice.
 
-    **Never the record's own ``scope_tokens``**, even where one is present. Those
-    were written by whatever measure was current when the dispatch ran — the ones on
-    this tree are whole-file sums predating basicly-fcls — so preferring them mixes
-    two quantities into one comparison, which is the defect this whole gate exists to
-    catch (basicly-z2wi, basicly-ipx2). Re-deriving is honest about being a
-    re-derivation: it drifts as the scoped files grow, and it is what
+    **Never the record's own ``scope_tokens``**, even where one is present: those were
+    written by whatever measure was current when the dispatch ran (the ones on this tree
+    are whole-file sums predating basicly-fcls), so preferring them mixes two quantities
+    into one comparison — the defect this gate exists to catch (basicly-z2wi,
+    basicly-ipx2). Re-deriving drifts as the scoped files grow, which
     ``RunRecord.context_tokens`` is here to replace.
 
-    Handoff outcomes are excluded on purpose. A handoff means a driving agent or a
-    human carried the work in their own session, so it bounds what a *session* can
-    hold, not what a dispatched lane can — and the ceiling gates dispatch. Forty of
-    the forty-seven recorded lanes are handoffs, so counting them would inflate the
-    evidence roughly fivefold on a question they cannot answer.
+    Handoffs are excluded: a driving agent or human carried that work in their own
+    session, so it bounds what a *session* holds, not what a dispatched lane does. Forty
+    of the forty-seven recorded lanes are handoffs, so counting them would inflate the
+    evidence roughly fivefold.
     """
     beads = _exported_class_and_scope(repo_root)
     estimates: dict[str, int] = {}
@@ -1062,12 +1066,11 @@ def completed_lane_estimates(repo_root: Path) -> dict[str, int]:
 def failed_lane_estimates(repo_root: Path) -> dict[str, int]:
     """Estimate per bead for every lane a headless dispatch failed (basicly-ipx2).
 
-    The half that was missing, and the reason it was missing: the completed side
-    filtered on the record's own ``scope_tokens``, and **every** failed record on
-    this tree carries ``scope_tokens: None`` — the sizing fields landed after those
-    dispatches died. A failure-side query written the same way returns ``{}``, which
-    is exactly how "zero lanes have failed at any size" came to be committed beside
-    the ceiling: the filter had deleted the whole population it was counting.
+    The half that was missing, and why: the completed side filtered on the record's own
+    ``scope_tokens``, and **every** failed record on this tree carries
+    ``scope_tokens: None`` — the sizing fields landed after those dispatches died. A
+    failure-side query written the same way returns ``{}``, which is how "zero lanes have
+    failed at any size" came to be committed beside the ceiling.
     """
     return _lane_estimates(repo_root, run_record.FAILED)
 
@@ -1113,18 +1116,15 @@ def _ceiling_violations(repo_root: Path, ceiling: int) -> list[str]:
 def test_the_ceiling_separates_the_sizes_that_completed_from_the_sizes_that_failed() -> None:
     """The live gate: the band must admit every proven size and no unproven fatal one.
 
-    The lower half is basicly-3w44. `working_set_max` was 64,000 and eighteen recorded
-    lanes exceeded it, every one of which completed — a constant with a 0-for-18 record
-    against the only evidence available, quietly refusing the engine's own proven work.
+    The lower half is basicly-3w44: `working_set_max` was 64,000 and eighteen recorded
+    lanes exceeded it, every one of which completed — 0-for-18 against the only evidence
+    available. The upper half is basicly-ipx2, and it exists because the one-directional
+    version of this test could not contradict the false claim shipped beside it: a
+    ceiling admitting a size only failures have reached licenses it on nothing.
 
-    The upper half is basicly-ipx2, and it exists because the one-directional version
-    of this test could not contradict the false claim shipped beside it. A ceiling
-    that admits a size only failures have reached is licensing it on nothing at all,
-    which is what "no lane has failed yet" quietly did.
-
-    Neither half asserts equality with the observed maximum: a larger lane succeeding
-    is good news and must not turn main red. It fails only when the constant and the
-    record disagree, and it names the value that reconciles them.
+    Neither half asserts equality with the observed maximum: a larger lane succeeding is
+    good news and must not turn main red. It fails only when the constant and the record
+    disagree, and it names the value that reconciles them.
     """
     assert _ceiling_violations(REPO_ROOT, DEFAULT_WORKING_SET_MAX) == []
 
@@ -1144,15 +1144,15 @@ def test_the_recorded_failures_are_visible_to_the_ceiling_gate() -> None:
 def test_no_lane_this_engine_completed_is_refused_by_the_band() -> None:
     """AC: the band admits every size a headless dispatch has actually completed.
 
-    The live half of basicly-fcls' fourth criterion, asserted through the governor
-    the engine really runs rather than through `_ceiling_violations`' arithmetic — a
-    ceiling that reconciles with the record but whose `check_working_set` still
-    refuses would pass that test and fail every lane.
+    The live half of basicly-fcls' fourth criterion, asserted through the governor the
+    engine really runs rather than through `_ceiling_violations`' arithmetic: a ceiling
+    that reconciles with the record but whose `check_working_set` still refuses would
+    pass that test and fail every lane.
 
-    basicly-kjc5.42 is the case that motivates it: it completed, and until this bead
-    it was sized at 136,668 against a ceiling of 112,000. That contradiction was
-    invisible only because the completed-side query dropped it on the `scope_tokens`
-    filter — hence the membership assertion, which is this test's positive control.
+    basicly-kjc5.42 motivates it — it completed, and until that bead was sized at 136,668
+    against a ceiling of 112,000. The contradiction was invisible because the
+    completed-side query dropped it on the `scope_tokens` filter, hence the membership
+    assertion, this test's positive control.
     """
     sizing = _sizing(
         working_set_min=DEFAULT_WORKING_SET_MIN, working_set_max=DEFAULT_WORKING_SET_MAX
@@ -1191,18 +1191,48 @@ def test_the_ceiling_gate_names_the_lane_and_the_value_it_requires(
     assert "raise it to at least 16,000" in violations[0]  # rounded up to a floor-unit
 
 
+def test_completing_a_scope_for_the_merge_gate_does_not_move_the_ceiling(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """AC: a complete declaration above the old ceiling records no ceiling violation.
+
+    basicly-efw2: the collision gate names paths the diff touched, the author declares
+    them, and the estimate grows although the diff did not — 78,709 to 197,646 to
+    245,466 in one landing, two raises. This lane reads one module and owns five.
+    """
+    for name in "abcde":
+        _write(tmp_path, f"src/{name}.py", 16_000)  # 4_000 tokens each, at the read cap
+    owned = "".join(f"- `src/{name}.py`\n" for name in "abcde")
+    narrow = "## Scope\n\n- `src/a.py`\n\n## Working Set\n\n- `src/a.py`\n"
+    complete = f"## Scope\n\n{owned}\n## Working Set\n\n- `src/a.py`\n"
+    _install(monkeypatch, _FakeBrShow({"b-1": ("task", narrow)}))
+    _record_run_tokens(tmp_path, "b-1", 1_000, scope_tokens=4_000)
+
+    sized = []
+    for body in (narrow, complete):
+        _export(tmp_path, {"id": "b-1", "issue_type": "task", "description": body})
+        sized.append(completed_lane_estimates(tmp_path)["b-1"])
+        assert _ceiling_violations(tmp_path, 16_000) == []
+    assert sized == [12_000, 12_000]
+
+    # The control, or an inert gate would pass the assertion above too: the identical
+    # completion does move the ceiling when nothing declares a working set.
+    _export(tmp_path, {"id": "b-1", "issue_type": "task", "description": f"## Scope\n\n{owned}"})
+    assert completed_lane_estimates(tmp_path)["b-1"] == 60_000
+    assert _ceiling_violations(tmp_path, 16_000) != []
+
+
 def test_a_violation_of_this_gate_is_attributed_to_the_lane_it_names(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """The gate's wording is a *contract* with the shared-tracker register (basicly-qorx).
 
     This gate reads the whole tracker, and every lane in a supervised pass shares one
-    `.beads` through the redirect — so when one lane's finishing record fails it, the
-    identical failure appears inside every sibling's landing.
-    ``policy.shared_tracker_gate_failure`` is what keeps that from charging the
-    siblings rework, and it recognises the failure by matching this text and reading
-    the bead id out of it. Reword the violation and that forgiveness goes silently
-    inert, which is a defect no other test here can see.
+    `.beads` through the redirect, so one lane's failing finishing record fails inside
+    every sibling's landing. ``policy.shared_tracker_gate_failure`` keeps that from
+    charging the siblings rework, and it recognises the failure by matching this text and
+    reading the bead id out of it. Reword the violation and that forgiveness goes
+    silently inert — a defect no other test here can see.
     """
     _write(tmp_path, "src/a.py", 16_000)
     body = decompose._child_body(_child("t", "src/a.py"))
@@ -1224,18 +1254,12 @@ def test_a_decider_dispatch_is_not_evidence_about_how_big_a_lane_can_be(
 ) -> None:
     """A decision recorded against a bead must not size that bead as a completed lane.
 
-    The control for the phase filter, and it needs one because the filter's failure
-    mode is silent in the direction that matters: a decider dispatch lands on
-    whichever bead raised the question, an **epic** included, and sizing an epic's
-    scope answers a question about the epic's whole surface. On 2026-08-03 the
-    escalation on basicly-tcmy sized 1,344,546 and demanded a ceiling of 1,352,000
-    — from a dispatch that wrote no code at all.
-
-    It surfaced only when basicly-gczc made those dispatches adapter-measured, so
-    before that the wrong population was there and merely cheap to ignore.
-
-    Same record twice, one field apart: as a lane it is evidence and must be
-    reported, as a decision it is not and must vanish.
+    The control for the phase filter, whose failure mode is silent in the direction that
+    matters: a decider dispatch lands on whichever bead raised the question, an **epic**
+    included, and sizing an epic answers a question about its whole surface. On
+    2026-08-03 the escalation on basicly-tcmy sized 1,344,546 and demanded a ceiling of
+    1,352,000 — from a dispatch that wrote no code. Same record twice, one field apart:
+    as a lane it is evidence and must be reported, as a decision it must vanish.
     """
     _write(tmp_path, "src/a.py", 16_000)
     body = decompose._child_body(_child("t", "src/a.py"))
@@ -1253,15 +1277,12 @@ def test_a_decider_dispatch_is_not_evidence_about_how_big_a_lane_can_be(
 def test_the_ceiling_gate_refuses_to_admit_a_size_a_lane_died_at(tmp_path: Path) -> None:
     """The known-bad control for the upper direction (basicly-ipx2).
 
-    Its counterpart above exists because a one-directional gate is indistinguishable
-    from one measuring an empty set; this one exists because the *new* direction is
-    the one that was empty. The failed lane declares a scope and records no size —
-    the shape of every real failure on this tree — so it is sized from the tree.
-
-    The big lane is ten capped files rather than one huge one (basicly-fcls): under
-    the read cap a single module can no longer reach a fatal size on its own, and a
-    fixture that ignored that would be exercising a shape the estimator can never
-    produce.
+    Its counterpart above exists because a one-directional gate is indistinguishable from
+    one measuring an empty set; this one exists because the *new* direction was the empty
+    one. The failed lane declares a scope and records no size — the shape of every real
+    failure on this tree — so it is sized from the tree. The big lane is ten capped files
+    rather than one huge one (basicly-fcls): under the read cap no single module reaches
+    a fatal size.
     """
     _write(tmp_path, "src/small.py", 16_000)  # 4_000 scope tokens
     for index in range(10):
@@ -1326,13 +1347,12 @@ def test_a_failure_below_a_proven_size_is_not_evidence_about_the_ceiling(tmp_pat
 def test_a_recorded_scope_size_never_overrides_the_current_measure(tmp_path: Path) -> None:
     """Both outcome populations are sized by today's estimator, never by a stored one.
 
-    A recorded `scope_tokens` is denominated in whatever measure was current when
-    that dispatch ran, and every one on this tree is a whole-file sum from before
-    basicly-fcls. Preferring it — which the failure side used to, as the better
-    evidence against a drifting tree — silently mixes two quantities into the one
-    comparison this gate exists to make, which is the shape of both basicly-z2wi and
-    basicly-ipx2. The re-derivation drifts, and that is the honest cost until
-    `RunRecord.context_tokens` has a sample to replace it with.
+    A recorded `scope_tokens` is denominated in whatever measure was current when that
+    dispatch ran, and every one on this tree is a whole-file sum from before
+    basicly-fcls. Preferring it — which the failure side used to, as the better evidence
+    against a drifting tree — mixes two quantities into the one comparison this gate
+    exists to make, the shape of both basicly-z2wi and basicly-ipx2. The re-derivation
+    drifts, the honest cost until `RunRecord.context_tokens` has a sample to replace it.
     """
     _write(tmp_path, "src/big.py", 160_000)  # 40_000 raw, 4_000 once capped
     _export(
@@ -1389,18 +1409,16 @@ def test_no_working_set_factor_is_derived_from_spend(
 ) -> None:
     """Whole-lane spend must never move the build factor, however many lanes land.
 
-    The factor answers "how much working set does a lane need, per token of scope it
-    must read", and it is compared against ``working_set_max`` — a context-window
-    ceiling. A calibration used to overwrite it with ``whole-lane spend / scope``,
-    which is a different quantity and three orders of magnitude larger, because a
-    lane's total spend already contains the turn multiplier that
+    The factor answers "how much working set per token read", and it is compared against
+    ``working_set_max``, a context-window ceiling. A calibration used to overwrite it with
+    ``whole-lane spend / scope``: a different quantity, three orders of magnitude larger,
+    because total spend already contains the turn multiplier
     :func:`run_record.spend_calibration` owns.
 
-    On this repo's own history that reached **216.65** against a seed of 3.0, which
-    caps the largest dispatchable scope at ~295 tokens and refused every task-typed
-    child. Ten real dispatches are what crossed the sample threshold, so the engine
-    broke itself by being used — which is why the guard is behavioural and generous
-    with samples rather than a check on one function's existence.
+    On this repo's history that reached **216.65** against a seed of 3.0, capping the
+    largest dispatchable scope at ~295 tokens and refusing every task-typed child. Ten
+    real dispatches crossed the sample threshold, so the engine broke itself by being
+    used — hence a behavioural guard rather than a check that one function exists.
     """
     _write(tmp_path, "src/a.py", 16_000)  # 4_000 scope tokens x 3.0 = 12_000, in band
     body = decompose._child_body(_child("t", "src/a.py"))
@@ -1467,10 +1485,10 @@ def test_govern_reuses_a_frozen_estimate_when_the_tree_has_grown(
     touched. That is now the *only* drift source: basicly-z2wi removed the build
     factor's calibration, and the seeds are constants.
 
-    The drift has to be real for this to prove anything, and the config it reads has
-    to be the repo's: ``govern_working_set`` calls ``load_sizing_config`` itself, so
-    a ``SizingConfig`` handed to a helper here would never reach it — the first
-    version of this test passed with the reuse path deleted for exactly that reason.
+    The drift has to be real, and the config read has to be the repo's:
+    ``govern_working_set`` calls ``load_sizing_config`` itself, so a ``SizingConfig``
+    handed to a helper here would never reach it — the first version of this test passed
+    with the reuse path deleted for exactly that reason.
     """
     _install(monkeypatch, _FakeBr())
     _write(tmp_path, "src/a.py", 16_000)  # 4_000 scope tokens x 3.0 = 12_000
@@ -1582,14 +1600,13 @@ def test_dry_run_estimate_refuses_exactly_what_the_real_run_refuses(
 ) -> None:
     """The preview has to predict the run: same plan, same refusal, same guidance.
 
-    ``--dry-run`` used to call :func:`decompose.preview` alone, which knows
-    nothing about the sizing band — so an oversized plan previewed clean and was
-    then refused on the real run, and the preview predicted nothing about the
-    thing it previewed (basicly-u6tw).
+    ``--dry-run`` used to call :func:`decompose.preview` alone, which knows nothing about
+    the sizing band, so an oversized plan previewed clean and was then refused on the real
+    run (basicly-u6tw).
 
-    Pinned as an equivalence rather than against a message, so the two paths
-    cannot drift: whatever the governor refuses, the estimate must refuse, with
-    the identical guidance strings.
+    Pinned as an equivalence rather than against a message, so the two paths cannot
+    drift: whatever the governor refuses, the estimate must refuse, with the identical
+    guidance strings.
     """
     fake = _FakeBr()
     _install(monkeypatch, fake)
@@ -1728,14 +1745,14 @@ def test_resolve_dispatch_sizing_calls_a_scope_matching_no_file_greenfield(
 ) -> None:
     """A third absence, and the one that cost a wave (basicly-jr0l.69).
 
-    A declared scope whose globs match nothing reads to zero, so the only forecast left
-    is instruction overhead. That is the same invented number an undeclared scope is
-    refused for, and invented in the dangerous direction: a lane creating a module and
-    its tests from nothing is the expensive case. Measured, two such lanes forecast at
-    657033 spent 13367072 and 7730640 - 20.3x and 11.8x outside the accuracy band.
+    Globs that match nothing read to zero, so the only forecast left is instruction
+    overhead — the same invented number an undeclared scope is refused for, invented in
+    the dangerous direction: a lane creating a module and its tests from nothing is the
+    expensive case. Measured, two such lanes forecast at 657033 spent 13367072 and
+    7730640 - 20.3x and 11.8x outside the accuracy band.
 
-    Distinct from `undeclared`, because the bead did its part: the scope is there and
-    well formed, and the files simply do not exist yet.
+    Distinct from `undeclared`, because the bead did its part: the scope is well formed
+    and the files simply do not exist yet.
     """
     _install(monkeypatch, _scoped_bead("src/created-later.py"))
     greenfield = decompose.resolve_dispatch_sizing(tmp_path, "b-1")
@@ -2046,12 +2063,10 @@ def test_one_pathological_lane_does_not_own_the_unsized_bound(tmp_path: Path) ->
     This once read "a central estimate, not a max, because the population is bimodal" -
     leaves supposedly 856182-4079243 tokens and packages 7674671-20594047. **More data
     refuted that split** (basicly-jr0l.58): four leaf lanes measured 9418977, 10834801,
-    11478450 and 11867602, inside the supposed package band, so the population is one
-    wide spread rather than two clusters. The median that split justified was exceeded
-    by 47% of the 17 recorded actuals.
-
-    What survives is the narrower property this test actually pins: a single outlier
-    sits above the quantile and so does not become every lane's bound.
+    11478450 and 11867602, inside the supposed package band, so the population is one wide
+    spread. The median that split justified was exceeded by 47% of the 17 recorded
+    actuals. What survives is the narrower property pinned here: a single outlier sits
+    above the quantile and does not become every lane's bound.
     """
     for i in range(9):
         _record_lane_tokens(tmp_path, f"b-{i}", 1_000)
@@ -2383,14 +2398,12 @@ def test_the_spend_forecast_lands_within_an_order_of_magnitude_of_recorded_spend
     """The live gate: AC of basicly-tcmy.34, measured on this repo's own ledger.
 
     `basicly-gczc` spent 16,963,245 tokens against a recorded forecast of 66,780 — 254x,
-    and the median across the paired population was 307x, which read as a forecast wrong
-    by two orders of magnitude. It was wrong by *unit*: the recorded number was a working
-    set and the actual is whole-lane spend. Held in one unit, the same records come in at
-    0.19x-2.37x.
+    and the paired median was 307x, reading as a forecast wrong by two orders of
+    magnitude. It was wrong by *unit*: the recorded number was a working set and the
+    actual is whole-lane spend. Held in one unit the same records come in at 0.19x-2.37x.
 
     Not an equality: a lane spending less than forecast is not a defect and must not turn
-    main red. It fails only when a recorded lane departs from its forecast by more than
-    `SPEND_RATIO_BAND`, and it names the lane and the factor.
+    main red. It fails only past `SPEND_RATIO_BAND`, naming the lane and the factor.
     """
     accuracy = decompose.spend_accuracy(REPO_ROOT, load_sizing_config(REPO_ROOT))
 
@@ -2403,8 +2416,7 @@ def test_the_spend_gate_measures_a_populated_ledger() -> None:
     A check whose population is empty passes for the same reason a correct one does, and
     this repo has committed that mistake twice (basicly-ipx2, basicly-fcls). The named
     bead is the one basicly-tcmy.34 was filed on, and it reaches the gate from the
-    committed tracker markers alone — so a fresh clone measures it too, rather than only
-    the machine that happens to hold `.basicly/usage/`.
+    committed tracker markers alone, so a fresh clone measures it too.
     """
     accuracy = decompose.spend_accuracy(REPO_ROOT, load_sizing_config(REPO_ROOT))
 
@@ -2420,10 +2432,10 @@ def test_the_spend_gate_measures_a_populated_ledger() -> None:
 def test_a_lane_that_overran_its_forecast_by_two_orders_is_reported(tmp_path: Path) -> None:
     """The known-bad control: the exact shape of basicly-tcmy.34, on a seeded ledger.
 
-    Without it the live gate is indistinguishable from one that cannot fail — and the
-    figures here are the real ones: the 66,780-token forecast the engine recorded for
-    `basicly-gczc` against the 16,963,245 tokens it spent, recorded in the same unit so
-    the 254x is a forecast error rather than a turn multiplier.
+    Without it the live gate is indistinguishable from one that cannot fail. The figures
+    are the real ones: the 66,780-token forecast recorded for `basicly-gczc` against the
+    16,963,245 it spent, in the same unit so the 254x is a forecast error rather than a
+    turn multiplier.
     """
     _record_spend_pair(tmp_path, "b-1", tokens=16_963_245, forecast_spend_tokens=66_780)
 
