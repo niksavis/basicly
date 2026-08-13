@@ -1066,6 +1066,95 @@ def test_the_proposer_dispatch_is_confined_and_metered(
     assert [r.get("phase") for r in records] == [run_record.PROPOSE_PHASE]
 
 
+def _persona_spy(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Record the phase each dispatch resolves a persona for; return a marker role.
+
+    Spied rather than projected: `tests/test_roles.py` already proves resolution and
+    the argv flag end to end, so what is under test here is which phase each dispatch
+    path asks about (basicly-4xmu).
+    """
+    phases: list[str] = []
+
+    def _resolve(_repo_root, _spec, phase: str) -> str:
+        phases.append(phase)
+        return f"persona-for-{phase}"
+
+    monkeypatch.setattr(loop.roles, "resolve_role", _resolve)
+    return phases
+
+
+def test_the_work_type_proposal_dispatches_as_the_classify_persona(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A work type is a classification judgment, so the decider answers it.
+
+    Before this, `_run_proposer` passed no role at all, so the proposal ran on the
+    default runner unspecialised — which is why 0 of 346 recorded dispatches had ever
+    carried `--agent`.
+    """
+    at(_state("intake"))
+    _delegated(monkeypatch)
+    calls = _proposer(monkeypatch, json.dumps({"work_type": "task"}))
+    phases = _persona_spy(monkeypatch)
+    monkeypatch.setattr(
+        classify,
+        "classify",
+        lambda _r, _i, wt: classify.ClassifyResult("i", wt, DoRResult(True, ())),
+    )
+
+    _advance(tmp_path)
+
+    assert phases == ["classify"]
+    assert calls["kwargs"]["role"] == "persona-for-classify"
+
+
+def test_the_child_plan_proposal_dispatches_as_the_decompose_persona(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """And a child plan is a decomposition, so the decomposer answers that one.
+
+    The two proposals share one dispatch function, so a single role would have given
+    both the same persona; the phase is passed per call site for exactly that reason.
+    """
+    _feature_at_classify(at, monkeypatch)
+    _delegated(monkeypatch)
+    calls = _proposer(monkeypatch, json.dumps(_PLAN))
+    phases = _persona_spy(monkeypatch)
+    monkeypatch.setattr(
+        decompose,
+        "decompose",
+        lambda _r, _f, _c: decompose.DecomposeResult("i", (), (("i.1",),)),
+    )
+
+    _advance(tmp_path)
+
+    assert phases == ["decompose"]
+    assert calls["kwargs"]["role"] == "persona-for-decompose"
+
+
+def test_a_family_that_cannot_select_a_persona_dispatches_unspecialised(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The fail-safe half, asserted against the real resolver rather than a spy.
+
+    The fake spec declares no `agent_style`, so resolution answers None and the
+    dispatch carries no flag — an un-upgraded consumer gets an unspecialised loop
+    rather than a stopped one, and never a flag its host would silently drop.
+    """
+    at(_state("intake"))
+    _delegated(monkeypatch)
+    calls = _proposer(monkeypatch, json.dumps({"work_type": "task"}))
+    monkeypatch.setattr(
+        classify,
+        "classify",
+        lambda _r, _i, wt: classify.ClassifyResult("i", wt, DoRResult(True, ())),
+    )
+
+    _advance(tmp_path)
+
+    assert calls["kwargs"]["role"] is None
+
+
 def test_an_unconfinable_runner_never_dispatches_a_proposer(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

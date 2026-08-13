@@ -999,8 +999,12 @@ def _proposal_payload(text: str) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
-def _run_proposer(ctx: _Ctx, kind: str, prompt: str) -> tuple[str, str]:
+def _run_proposer(ctx: _Ctx, kind: str, prompt: str, *, phase: str) -> tuple[str, str]:
     """Dispatch the proposer for *kind*; return its reply, or "" plus why not.
+
+    *phase* selects the persona, passed per call site rather than derived from *kind*
+    so a third proposal cannot inherit none silently; the **confined** spec is asked,
+    because it is what is dispatched (basicly-4xmu).
 
     Confined with :func:`runner.confine_for_decider` — the proposer answers from
     the bead's recorded requirement exactly as the decider answers from the intake
@@ -1031,7 +1035,12 @@ def _run_proposer(ctx: _Ctx, kind: str, prompt: str) -> tuple[str, str]:
         )
     with runner.process_budget().slot(runner.DECIDER):
         result = runner.run(
-            spec, prompt, ctx.repo_root, capture_usage=True, timeout=config.runner_timeout
+            spec,
+            prompt,
+            ctx.repo_root,
+            capture_usage=True,
+            timeout=config.runner_timeout,
+            role=roles.resolve_role(ctx.repo_root, spec, phase),
         )
     record_run(
         ctx.repo_root,
@@ -1097,7 +1106,9 @@ def _proposed_work_type(ctx: _Ctx) -> _Proposal:
     corpus, missing = _proposer_corpus(ctx, "work type")
     if missing:
         return _Proposal(reason=missing)
-    reply, refused = _run_proposer(ctx, "work-type", work_type_prompt(ctx.issue_id, corpus))
+    reply, refused = _run_proposer(
+        ctx, "work-type", work_type_prompt(ctx.issue_id, corpus), phase="classify"
+    )
     if refused:
         return _Proposal(reason=refused)
     payload = _proposal_payload(reply) or {}
@@ -1131,7 +1142,7 @@ def _proposed_children(  # noqa: PLR0911 — one return per distinct fall-back-t
         return _Proposal(reason=missing)
     sizing = load_sizing_config(ctx.repo_root)
     reply, refused = _run_proposer(
-        ctx, "child-plan", child_plan_prompt(ctx.issue_id, corpus, sizing)
+        ctx, "child-plan", child_plan_prompt(ctx.issue_id, corpus, sizing), phase="decompose"
     )
     if refused:
         return _Proposal(reason=refused)

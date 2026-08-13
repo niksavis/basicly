@@ -1342,6 +1342,44 @@ def test_dispatch_lane_records_the_scheduler_evidence(
     assert captured["scheduler_policy"] == "br.scheduler.v1"
 
 
+def test_dispatch_lane_runs_as_the_build_persona(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A lane is a build dispatch, so it carries build's persona.
+
+    This path passed no role whatsoever — `rg role` over this module returned nothing —
+    which is why the 98-record lane population, the most expensive one, never reached
+    an argv with `--agent` on it (basicly-4xmu).
+    """
+    codex = _codex()
+    _worker_fixture(monkeypatch, tmp_path, stdout=_codex_events(50_000))
+    seen: dict = {}
+    phases: list[str] = []
+
+    def _run(spec, _prompt, _cwd, **kwargs):
+        seen["kwargs"] = kwargs
+        return runner.RunResult(
+            spec.name,
+            (spec.name,),
+            executed=True,
+            returncode=0,
+            stdout=_codex_events(50_000),
+            duration_s=0.1,
+        )
+
+    def _resolve(_repo_root, _spec, phase: str) -> str:
+        phases.append(phase)
+        return f"persona-for-{phase}"
+
+    monkeypatch.setattr(supervise.runner, "run", _run)
+    monkeypatch.setattr(supervise.roles, "resolve_role", _resolve)
+
+    supervise._dispatch_lane(tmp_path, _session(_lane("epic.1")), _lane("epic.1"), codex, _sizing())
+
+    assert phases == ["build"]
+    assert seen["kwargs"]["role"] == "persona-for-build"
+
+
 def test_dispatch_lane_records_the_order_when_br_never_ranked_the_lane(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
