@@ -868,3 +868,26 @@ def test_a_pair_carries_the_phase_and_the_factors_provenance(tmp_path: Path) -> 
     assert stored is not None
     assert stored.build_factor_source == "seed"
     assert run_record.forecast_errors(tmp_path).errors[0].phase == run_record.LANE_PHASE
+
+
+def test_the_cache_split_survives_serialisation_to_disk(tmp_path: Path) -> None:
+    """A parsed cache split must reach the file, not just the dataclass (basicly-p16y).
+
+    `basicly-i4gg` taught the parser claude's four disjoint counts and
+    ``test_runner_usage`` pins that half; nothing pinned the half after it. The
+    failure this guards is a serialiser that elides the pair — it would leave every
+    record cache-blind while the parser looked correct, and the only symptom is a
+    field reading absent, which is also what a dispatch predating the parser looks
+    like. Those two were indistinguishable on 2026-08-13: 0 of 134 records carried
+    the split, and it took the merge timestamps to show why (every dispatch ran six
+    hours before the parser landed).
+
+    The raw JSON is asserted rather than only the round-trip, because
+    ``spend_calibration`` and the cost rollup read the file, not the dataclass.
+    """
+    run_record.record(tmp_path, "b-1", _entry(tokens=21_610, cache_read_tokens=15_496))
+
+    on_disk = json.loads((tmp_path / ".basicly" / "usage" / "run-records.json").read_text())
+    assert on_disk["b-1"][0]["cache_read_tokens"] == 15_496
+    stored = run_record.latest_record(tmp_path, "b-1")
+    assert stored is not None and stored.cache_read_tokens == 15_496
