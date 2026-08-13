@@ -75,6 +75,7 @@ def _record(event: StreamEvent, seq: int) -> dict[str, object]:
         "type": kind if isinstance(kind, str) and kind else RAW_EVENT,
         "subagent": event.subagent,
         "tokens": event.usage.tokens if event.usage is not None else 0,
+        "tools": list(event.tools),
         "text": event.text or ("" if event.data else event.line),
     }
 

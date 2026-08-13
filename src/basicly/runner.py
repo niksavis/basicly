@@ -1068,6 +1068,8 @@ class StreamEvent:
     usage: Usage | None = None
     text: str | None = None
     subagent: str | None = None
+    # Defaulted so every construction written before the field keeps working.
+    tools: tuple[str, ...] = ()
 
 
 # What a caller supplies to observe a dispatch as it happens. Return value
@@ -1208,7 +1210,7 @@ def _emit(spec: RunnerSpec, line: str, on_event: EventSink) -> None:
     """
     text = redact_secrets(line.rstrip("\n"))
     data = stream_object(text)
-    # The three readers are total over any JSON object — each guards every field
+    # The four readers are total over any JSON object — each guards every field
     # with isinstance and returns None rather than raising on a shape it does not
     # recognise. That is not tidiness: they run on the stdout reader thread, so a
     # raise here would end the read with the dispatch still running, leaving the
@@ -1222,6 +1224,7 @@ def _emit(spec: RunnerSpec, line: str, on_event: EventSink) -> None:
             usage=event_usage(spec, data),
             text=event_text(spec, data),
             subagent=event_subagent(spec, data),
+            tools=event_tools(spec, data),
         )
     )
     with contextlib.suppress(Exception):
@@ -1720,6 +1723,32 @@ def event_text(spec: RunnerSpec, event: dict) -> str | None:
         and isinstance(block.get("text"), str)
     ]
     return "\n".join(parts).strip() or None
+
+
+def event_tools(spec: RunnerSpec, event: dict) -> tuple[str, ...]:
+    """The tools *event*'s turn called, in the order it emitted them.
+
+    What separates a turn that read from a turn that wrote, which is the split
+    ``basicly-ejdm`` needs and had no instrument for. Claude only, like its
+    siblings: codex emits no per-tool event this stack parses.
+
+    A caller pricing these must pair them: a ``tool_use`` block is the cost of
+    *emitting* the call, while the tool's result lands in the next turn's
+    ``cache_creation_input_tokens``.
+    """
+    if spec.usage_format != CLAUDE_STREAM_JSON:
+        return ()
+    message = event.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, list):
+        return ()
+    return tuple(
+        block["name"]
+        for block in content
+        if isinstance(block, dict)
+        and block.get("type") == "tool_use"
+        and isinstance(block.get("name"), str)
+    )
 
 
 def event_subagent(spec: RunnerSpec, event: dict) -> str | None:

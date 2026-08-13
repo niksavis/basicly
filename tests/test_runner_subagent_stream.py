@@ -15,6 +15,7 @@ import json
 import sys
 from pathlib import Path
 
+from basicly import runner
 from basicly.runner import (
     BUILTIN_RUNNERS,
     CLAUDE_STREAM_JSON,
@@ -314,3 +315,56 @@ def test_an_unexpected_payload_shape_still_reaches_the_sink(tmp_path: Path) -> N
     assert seen[0].data == odd and seen[0].usage is None and seen[0].text is None
     assert seen[1].text == "DONE" and seen[1].usage is not None
     assert result.returncode == 0
+
+
+# --- Which tool a turn called (basicly-ejdm.1) -------------------------------
+
+
+def test_tool_names_are_read_off_a_real_captured_turn() -> None:
+    """The instrument basicly-ejdm needs, read from the live capture above.
+
+    Asserted against `LANE_SPAWN` rather than a composed dict because the whole
+    point is that the block is really shaped this way in a dispatch we ran.
+    """
+    spec = _claude()
+    assert runner.event_tools(spec, LANE_SPAWN) == ("Agent",)
+
+
+def test_a_turn_calling_no_tool_reports_none_rather_than_an_empty_name() -> None:
+    """Absent and none stay distinguishable: an empty tuple is 'called nothing'."""
+    spec = _claude()
+    text_turn = {"type": "assistant", "message": {"content": [{"type": "text", "text": "hi"}]}}
+    assert runner.event_tools(spec, text_turn) == ()
+
+
+def test_tool_names_keep_the_order_the_turn_emitted_them() -> None:
+    """A turn may batch calls, and order is what pairs a call with its result."""
+    spec = _claude()
+    turn = {
+        "type": "assistant",
+        "message": {
+            "content": [
+                {"type": "tool_use", "name": "Read", "id": "a"},
+                {"type": "text", "text": "then"},
+                {"type": "tool_use", "name": "Edit", "id": "b"},
+            ]
+        },
+    }
+    assert runner.event_tools(spec, turn) == ("Read", "Edit")
+
+
+def test_a_non_list_content_reports_no_tools_rather_than_raising() -> None:
+    """`_CLAUDE_STREAM` carries a user turn whose content is a plain string.
+
+    The readers run on the stdout reader thread, so a raise here would end the
+    read with the dispatch still running and take its totals from a cut transcript.
+    """
+    spec = _claude()
+    assert runner.event_tools(spec, {"type": "user", "message": {"content": "tool result"}}) == ()
+    assert runner.event_tools(spec, {}) == ()
+
+
+def test_a_non_claude_family_reports_no_tools() -> None:
+    """Codex emits no per-tool event this stack parses, so the split is claude-only."""
+    codex = next(s for s in runner.BUILTIN_RUNNERS if s.name == "codex")
+    assert runner.event_tools(codex, LANE_SPAWN) == ()
