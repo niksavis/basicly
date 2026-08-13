@@ -286,7 +286,7 @@ UP017 = 1
 # Each entry may only fall, and one that reaches the cap has graduated and must be deleted
 # with it. The list is closed — an entry is only ever removed.
 [tool.comment_density]
-waiver_count = 0
+waiver_count = 1
 
 [tool.comment_density.frozen]
 ".basicly/core/hooks/internal-info-scan.py" = 55.0

@@ -23,9 +23,9 @@ layers =
     cli
     supervise | usage_report
     loop | release
-    catalog_lint | contention | health
+    catalog_lint | contention | health | landing_gate
     commit | merge
-    rebase | repair_brief | wip | working_set
+    dispatch_brief | rebase | repair_brief | wip | working_set
     classify | decompose | loop_state | plan_entry | rubrics
     validate_gate
     decisions

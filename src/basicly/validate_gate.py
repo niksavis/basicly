@@ -71,3 +71,29 @@ def outstanding(gates: policy.GateStatus) -> bool:
     Per-gate fields rather than ``can_advance``, which cannot say which gate holds.
     """
     return VALIDATE_GATE in gates.required_failed or VALIDATE_GATE in gates.required_missing
+
+
+def has_foreign_result(gates: policy.GateStatus) -> bool:
+    """True when a provider outside the engine's own recorded a validation."""
+    return any(v.gate == VALIDATE_GATE for v in gates.disregarded)
+
+
+def refusal_reason(gates: policy.GateStatus) -> str:
+    """Why the advance out of VALIDATE is refused while the gate is not green.
+
+    A foreign result does not satisfy a required gate (the jr0l.51 stance), so the
+    gate is still missing — but reporting it as plain missing while ``br gate list``
+    shows a pass leaves an operator nothing to act on.
+    """
+    foreign = sorted({v.provider or "(none)" for v in gates.disregarded if v.gate == VALIDATE_GATE})
+    if foreign:
+        return (
+            f"{VALIDATE_GATE} has no engine result: a result from provider "
+            f"{', '.join(foreign)} was disregarded because a required gate counts only "
+            "the engine's own — re-run the validation through the harness"
+        )
+    return (
+        f"{VALIDATE_GATE} is required at the recorded integrity level and has no engine "
+        "result: exercise the change as a consumer would (the validate-as-consumer "
+        "skill), then record the gate"
+    )
