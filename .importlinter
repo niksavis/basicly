@@ -32,6 +32,7 @@ layers =
     plan_gate | policy | routing_evals | tuning | verify
     capability_proof
     config | worktree
+    lane_log
     claude_settings | runner
     agents | catalog_verify | copilot_store | fleet | hooks | loader | models | permissions | planner | renderers | skills | state
     runner_usage

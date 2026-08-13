@@ -522,6 +522,12 @@ runner_timeout = 3600
 # 1800 is 23x that. Tighten it once the passes this ships with have recorded what
 # the real gaps are.
 quiet_after = 1800
+# Sessions of lane transcripts kept under `.basicly/usage/lane-logs/` before the
+# least recently written rotate away (basicly-rrah). Declared here rather than left
+# at the engine default because the figure is uncalibrated: no pass had ever left a
+# transcript to size, so what a session costs on disk is knowable only from the
+# passes this ships with. 20 keeps a fortnight of daily passes greppable.
+lane_log_sessions = 20
 # The model tier every dispatch of this repo resolves through (basicly-tcmy.35).
 # The tier vocabulary (basicly-kjc5.58), the committed map (basicly-kjc5.61) and
 # the pre-spawn refusal (basicly-kjc5.59) all shipped here, and this repo declared

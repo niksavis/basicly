@@ -67,6 +67,7 @@ from . import (
     commit,
     decisions,
     decompose,
+    lane_log,
     loop,
     loop_state,
     merge,
@@ -331,6 +332,19 @@ class SessionState:
     # inside a pass has to reproduce the same lane set — the selector is the one
     # input that is *not* recoverable from the graph.
     lane_label: str | None = None
+    # The supervisor session this pass belongs to, for the directory its lane
+    # transcripts are filed under (basicly-rrah). Minted per supervisor run, so it
+    # is not recoverable from the graph either.
+    session_id: str | None = None
+
+    @property
+    def log_session(self) -> str:
+        """Where this pass's transcripts are filed: its session, or the root issue.
+
+        The fallback keeps an unsupervised dispatch recorded — a transcript skipped
+        for want of an id is the defect this replaced.
+        """
+        return self.session_id or self.root_issue
 
     @property
     def open_children(self) -> tuple[str, ...]:
@@ -417,7 +431,11 @@ def lane_selection(
 
 
 def derive_session(
-    repo_root: Path, root_issue: str, *, lane_label: str | None = None
+    repo_root: Path,
+    root_issue: str,
+    *,
+    lane_label: str | None = None,
+    session_id: str | None = None,
 ) -> SessionState:
     """Rebuild the session's state from ``br`` — the whole crash-recovery story.
 
@@ -475,6 +493,7 @@ def derive_session(
         children=children,
         adopted=tuple(adopted),
         lane_label=lane_label,
+        session_id=session_id,
     )
 
 
@@ -2638,14 +2657,22 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
                 )
             ),
         )
-        with watchdog, live_lane(lane.issue_id, stream), runner.process_budget().slot(runner.LANE):
+        # The same events, kept (basicly-rrah). The meter above forgets them; the
+        # transcript is what leaves a claim about what this lane *did* evidenceable
+        # once the process is gone. In the `with` so it closes on every route out.
+        with (
+            watchdog,
+            live_lane(lane.issue_id, stream),
+            lane_log.lane_transcript(repo_root, session.log_session, lane.issue_id) as transcript,
+            runner.process_budget().slot(runner.LANE),
+        ):
             result = runner.run(
                 spec,
                 bundle.prompt,
                 cwd,
                 capture_usage=True,
                 timeout=runner_config.runner_timeout,
-                on_event=stream,
+                on_event=lane_log.fanout(stream, transcript),
                 bounds=bounds,
             )
     except (RuntimeError, OSError, ValueError) as exc:

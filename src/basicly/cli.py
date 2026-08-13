@@ -30,6 +30,7 @@ from . import (
     decompose,
     fleet,
     health,
+    lane_log,
     loop,
     loop_state,
     merge,
@@ -3233,27 +3234,31 @@ def _apply_session_overrides(repo_root: Path, args: argparse.Namespace) -> tuple
     return session_config.override_pairs()
 
 
-def _print_delegated(delegated: tuple[supervise.DelegatedDecision, ...]) -> None:
+def _print_delegated(
+    delegated: tuple[supervise.DelegatedDecision, ...], say: Callable[[str], None]
+) -> None:
     """Report what the decider disposed of this pass, and what it handed to a human."""
     for decided in delegated:
         verb = "decided" if decided.answered else "to human"
-        print(f"decider:  {decided.decision_id} [{decided.kind}] {verb} - {decided.detail}")
+        say(f"decider:  {decided.decision_id} [{decided.kind}] {verb} - {decided.detail}")
 
 
-def _print_supervise_header(repo_root: Path, session_id: str, overrides: tuple[str, ...]) -> None:
+def _print_supervise_header(
+    repo_root: Path, session_id: str, overrides: tuple[str, ...], say: Callable[[str], None]
+) -> None:
     """The session's opening lines: id, any override, and the process budget.
 
     The override line is printed, not merely recorded: an operator reading a log
     has to be able to see at a glance that this session is not running on the
     repo's committed config (basicly-jr0l.8).
     """
-    print(f"session:  {session_id}")
+    say(f"session:  {session_id}")
     if overrides:
-        print(f"override: {', '.join(overrides)}")
+        say(f"override: {', '.join(overrides)}")
     # D1 puts this one process in charge of the machine's concurrency, so it owns
     # the global agent-process ceiling for the session (component 8).
     budget = supervise.configure_budget(repo_root)
-    print(
+    say(
         f"budget:   {budget.total} agent processes - {budget.lane_slots} lane, "
         f"{budget.decider_slots} decider, {budget.helper_slots} helper"
     )
@@ -3282,7 +3287,21 @@ def _cmd_loop_supervise(args: argparse.Namespace) -> int:
     except supervise.LockHeldError as exc:
         print(f"supervise: refused - {exc}", file=sys.stderr)
         return 1
-    _print_supervise_header(repo_root, session_id, overrides)
+    # The pass's narrative, kept (basicly-rrah). Every line below reaches the
+    # operator's terminal *and* this session's directory, because the terminal copy
+    # is lost with the pane and was the only record of how a pass routed — a claim
+    # about a landing depended on somebody having redirected stdout by hand.
+    keep = load_runner_config(repo_root).lane_log_sessions
+    log = lane_log.open_pass(repo_root, session_id, keep=keep)
+
+    def say(line: str) -> None:
+        """Print one narrative line and keep it."""
+        print(line)
+        log.append(line)
+
+    if log.rotated:
+        say(f"rotated:  {len(log.rotated)} lane-log session(s) dropped past the {keep} kept")
+    _print_supervise_header(repo_root, session_id, overrides, say)
     # Background beats keep the lock fresh through long landings (verify
     # suites easily outlast the staleness horizon); hb.check raises promptly
     # when a contender took over so no two supervisors ever land concurrently.
@@ -3294,77 +3313,98 @@ def _cmd_loop_supervise(args: argparse.Namespace) -> int:
     try:
         while True:
             hb.check()
-            state = supervise.derive_session(repo_root, args.issue, lane_label=args.label)
-            _print_session(state)
+            state = supervise.derive_session(
+                repo_root, args.issue, lane_label=args.label, session_id=session_id
+            )
+            _print_session(state, say)
             if state.done:
-                print("done:     yes")
+                say("done:     yes")
                 return 0
-            # Read the spend ceiling once per pass and hand it to the dispatcher,
-            # so the halt is printed with its numbers instead of looking like an
-            # idle pass (basicly-kjc5.23).
-            admission = policy.spend_status(repo_root, args.issue)
-            # Delegate before dispatching (basicly-kjc5.40): a pending item only
-            # holds its lane, so an item the decider answers now releases that
-            # lane in this same pass instead of the next one.
-            delegated = supervise.delegate_decisions(
-                repo_root, state, beat=hb.check, admission=admission
-            )
-            _print_delegated(delegated)
-            # Let the graph learn from discoveries before this pass reads it
-            # (basicly-kjc5.24): an edge added now gates dispatch and orders the
-            # landings in this same pass, not the next one.
-            for bead, coupled_to, dep_type in supervise.propose_coupling_edges(repo_root, state):
-                print(f"coupling: {bead} -> {coupled_to} ({dep_type}) - from a found-info record")
-            # Dispose of bindings that outlived their worktrees before anything reads
-            # the lane set again (basicly-1koh): such a lane derives `build` off the
-            # ref alone, so it is invisible to dispatch and to the parked advance, and
-            # left alone it is re-adopted and re-discarded every pass forever. Folded
-            # into `routed` below so a pass that only repaired still counts as
-            # progress and re-derives instead of reporting itself blocked.
-            repaired = supervise.repair_stale_bindings(repo_root, state)
-            # Then provision lanes if the pass still has nothing to dispatch
-            # (basicly-t73d). After the repair, so a cleared binding is re-provisioned
-            # in the same pass rather than the next one; before dispatch, because the
-            # whole point is that `loop supervise <root>` on a cold root used to report
-            # "nothing to land" while its children sat at intake.
-            repaired += supervise.seed_lanes(repo_root, state, skip=carried, admission=admission)
-            outcomes = supervise.dispatch_lanes(
-                repo_root,
-                state,
-                beat=hb.check,
-                skip=carried,
-                admission=admission,
-                report=print,
-            )
-            _print_dispatch(outcomes, carried=carried, admission=admission)
-            routed = repaired + supervise.route_outcomes(
-                repo_root, state, outcomes, beat=hb.check, carried=carried
-            )
-            routed += supervise.advance_parked(repo_root, state, beat=hb.check)
+            routed = _supervise_pass(repo_root, state, hb=hb, carried=carried, say=say)
             carried = supervise.carried_forward(routed)
             for routing in routed:
-                print(f"routed:   {routing.issue_id} -> {routing.route} - {routing.detail}")
+                say(f"routed:   {routing.issue_id} -> {routing.route} - {routing.detail}")
             if not supervise.should_continue(routed):
-                pending = decisions.pending(repo_root, args.issue)
-                if pending:
-                    print(
-                        f"blocked:  {len(pending)} decision(s) await a human "
-                        "(basicly loop decisions)"
-                    )
-                else:
-                    print("blocked:  no ready lanes and nothing to land")
+                _print_blocked(repo_root, args.issue, say)
                 return 1
     except supervise.LaneSelectionError as exc:
         # Refused rather than reported blocked: an empty selection is a mistyped
         # selector, not a session with nothing to do.
+        log.append(f"refused:  {exc}")
         print(f"supervise: refused - {exc}", file=sys.stderr)
         return 1
     except supervise.LockLostError as exc:
+        # On the log as well as on stderr: how a pass ended is the last thing its
+        # narrative has to say, and a takeover is not visible anywhere else.
+        log.append(f"stopped:  {exc}")
         print(f"supervise: stopped - {exc}", file=sys.stderr)
         return 1
     finally:
         hb.stop()
         supervise.release(lock, session_id)
+        log.close()
+
+
+def _print_blocked(repo_root: Path, issue: str, say: Callable[[str], None]) -> None:
+    """Why a pass that made no progress stopped: a human's queue, or nothing to do."""
+    pending = decisions.pending(repo_root, issue)
+    if pending:
+        say(f"blocked:  {len(pending)} decision(s) await a human (basicly loop decisions)")
+    else:
+        say("blocked:  no ready lanes and nothing to land")
+
+
+def _supervise_pass(
+    repo_root: Path,
+    state: supervise.SessionState,
+    *,
+    hb: supervise.HeartbeatThread,
+    carried: frozenset[str],
+    say: Callable[[str], None],
+) -> tuple[supervise.RoutedOutcome, ...]:
+    """One iteration of the standing loop: delegate, seed, dispatch, route.
+
+    Split out of :func:`_cmd_loop_supervise` so the command is the session's
+    lifecycle — lock, narrative, heartbeat, exit code — and this is what a pass
+    does. Returns the routed outcomes; the caller decides whether they continue.
+    The pass reads its root off *state* rather than off the command's arguments,
+    which is the same object every step below already derives from.
+    """
+    # Read the spend ceiling once per pass and hand it to the dispatcher, so the
+    # halt is printed with its numbers instead of looking like an idle pass
+    # (basicly-kjc5.23).
+    admission = policy.spend_status(repo_root, state.root_issue)
+    # Delegate before dispatching (basicly-kjc5.40): a pending item only holds its
+    # lane, so an item the decider answers now releases that lane in this same pass
+    # instead of the next one.
+    delegated = supervise.delegate_decisions(repo_root, state, beat=hb.check, admission=admission)
+    _print_delegated(delegated, say)
+    # Let the graph learn from discoveries before this pass reads it
+    # (basicly-kjc5.24): an edge added now gates dispatch and orders the landings in
+    # this same pass, not the next one.
+    for bead, coupled_to, dep_type in supervise.propose_coupling_edges(repo_root, state):
+        say(f"coupling: {bead} -> {coupled_to} ({dep_type}) - from a found-info record")
+    # Dispose of bindings that outlived their worktrees before anything reads the
+    # lane set again (basicly-1koh): such a lane derives `build` off the ref alone,
+    # so it is invisible to dispatch and to the parked advance, and left alone it is
+    # re-adopted and re-discarded every pass forever. Folded into `routed` below so a
+    # pass that only repaired still counts as progress and re-derives instead of
+    # reporting itself blocked.
+    repaired = supervise.repair_stale_bindings(repo_root, state)
+    # Then provision lanes if the pass still has nothing to dispatch (basicly-t73d).
+    # After the repair, so a cleared binding is re-provisioned in the same pass rather
+    # than the next one; before dispatch, because the whole point is that `loop
+    # supervise <root>` on a cold root used to report "nothing to land" while its
+    # children sat at intake.
+    repaired += supervise.seed_lanes(repo_root, state, skip=carried, admission=admission)
+    outcomes = supervise.dispatch_lanes(
+        repo_root, state, beat=hb.check, skip=carried, admission=admission, report=say
+    )
+    _print_dispatch(outcomes, carried=carried, admission=admission, say=say)
+    routed = repaired + supervise.route_outcomes(
+        repo_root, state, outcomes, beat=hb.check, carried=carried
+    )
+    return routed + supervise.advance_parked(repo_root, state, beat=hb.check)
 
 
 def _print_dispatch(
@@ -3372,44 +3412,45 @@ def _print_dispatch(
     *,
     carried: frozenset[str],
     admission: policy.SpendStatus,
+    say: Callable[[str], None],
 ) -> None:
     """Report one pass's dispatch: carried lanes, a spend halt, or each runner."""
     if carried:
-        print(f"carried:  {', '.join(sorted(carried))} - landing without a new dispatch")
+        say(f"carried:  {', '.join(sorted(carried))} - landing without a new dispatch")
     if admission.halted:
         # Distinct from an idle pass on purpose: the lanes were ready and the
         # ceiling stopped them (basicly-kjc5.23).
-        print(f"halted:   {admission.detail}")
+        say(f"halted:   {admission.detail}")
     elif not outcomes and not carried:
-        print("dispatch: (no ready build-phase lanes)")
+        say("dispatch: (no ready build-phase lanes)")
     for outcome in outcomes:
         occupancy = f", context {outcome.occupancy} tokens" if outcome.occupancy is not None else ""
         # The adapter name alone said nothing about which model ran (basicly-e5a6).
         note = f" [{outcome.model_note}]" if outcome.model_note else ""
-        print(
+        say(
             f"dispatch: {outcome.issue_id} via {outcome.runner_name}{note} - "
             f"{outcome.detail}{occupancy}"
         )
 
 
-def _print_session(state: supervise.SessionState) -> None:
-    print(f"root:     {state.root_issue} ({state.root_status})")
+def _print_session(state: supervise.SessionState, say: Callable[[str], None]) -> None:
+    say(f"root:     {state.root_issue} ({state.root_status})")
     open_children = state.open_children
     if state.lane_label is not None:
         # Which session these counts describe, printed for the same reason the config
         # override is: a log has to show that the lanes are a labelled cut and not the
         # root's own children (basicly-1lpo).
-        print(f"select:   label {state.lane_label!r}")
-    print(f"children: {len(state.children)} total, {len(open_children)} open")
+        say(f"select:   label {state.lane_label!r}")
+    say(f"children: {len(state.children)} total, {len(open_children)} open")
     if state.adopted:
         for lane in state.adopted:
             liveness = "live" if lane.live else "worktree missing"
-            print(
+            say(
                 f"adopted:  {lane.issue_id} ({lane.status}) -> "
                 f"{lane.binding.name} on {lane.binding.branch} [{liveness}]"
             )
     else:
-        print("adopted:  (no in-flight lanes)")
+        say("adopted:  (no in-flight lanes)")
 
 
 def _cmd_loop_session(args: argparse.Namespace) -> int:
