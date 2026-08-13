@@ -277,6 +277,11 @@ def test_the_gate_fails_end_to_end_on_an_unannounced_suppression(tmp_path: Path)
     A scratch repository rather than a mutation of this one: the gate resolves its root from
     its own location, so copying it into a tmp tree exercises `git ls-files`, the tokenizer
     and the TOML read together without putting a deliberate defect in the working tree.
+
+    The gate is a two-file unit since basicly-ef7t — it imports :mod:`basicly.dropin` off the
+    ``src`` it derives from its own path — so the scratch tree carries that module too. Only
+    that module: it declares no suppression of its own, whereas copying the whole package
+    would put every suppression in `basicly` inside a tree whose record freezes ``E731 = 1``.
     """
     scripts = tmp_path / ".scripts"
     scripts.mkdir()
@@ -292,6 +297,10 @@ def test_the_gate_fails_end_to_end_on_an_unannounced_suppression(tmp_path: Path)
         "g = lambda y: y  # noqa: E731 - one more than the record allows\n",
         encoding="utf-8",
     )
+    package = src / "basicly"
+    package.mkdir()
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    shutil.copy(REPO_ROOT / "src" / "basicly" / "dropin.py", package / "dropin.py")
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
 
