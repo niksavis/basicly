@@ -74,6 +74,7 @@ from . import (
     needs_input,
     policy,
     repair_brief,
+    roles,
     run_record,
     runner,
     wip,
@@ -2674,6 +2675,8 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
                 timeout=runner_config.runner_timeout,
                 on_event=lane_log.fanout(stream, transcript),
                 bounds=bounds,
+                # Passed no role at all until basicly-4xmu: 0 of 346 reached an argv.
+                role=roles.resolve_role(repo_root, spec, "build"),
             )
     except (RuntimeError, OSError, ValueError) as exc:
         record_unstarted_dispatch(repo_root, lane.issue_id, spec, exc)
