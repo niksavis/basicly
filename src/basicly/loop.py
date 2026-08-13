@@ -466,6 +466,11 @@ def _dispatch_validation(ctx: _Ctx, gate: str) -> AdvanceResult | None:
     held = _runner_block(ctx, dispatch, issue_id=ctx.issue_id, target="the merged checkout")
     if held is not None:
         return held
+    verdict = validate_gate.verdict_from_reply(
+        runner.result_text(dispatch.spec, dispatch.result.stdout)
+    )
+    if verdict is not None:
+        validate_gate.record_verdict(ctx.repo_root, ctx.issue_id, passed=verdict)
     # Re-read rather than assume: a dispatch that recorded nothing must leave the unit
     # resting here, not advance on the strength of having run.
     if gate in policy.gate_status(ctx.repo_root, ctx.issue_id, ctx.config).required_passed:

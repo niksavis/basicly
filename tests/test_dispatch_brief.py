@@ -55,8 +55,17 @@ def test_the_validate_prompt_forbids_re_running_the_gate_suite() -> None:
     assert "consumer" in prompt
 
 
-def test_the_validate_prompt_names_the_gate_command_and_refuses_a_pass_on_tests() -> None:
-    """A verdict the engine cannot read is not a verdict, and tests alone are not consumer use."""
+def test_the_validate_prompt_asks_for_a_verdict_line_not_a_tracker_write() -> None:
+    """The agent states the verdict; the engine records it.
+
+    `br gate report` requires `--provider` and authenticates nothing, so an agent
+    told to report the gate itself would either error and record nothing, or
+    self-certify a required gate (basicly-jr0l.51). Neither is acceptable, so the
+    contract is a line the engine reads.
+    """
     prompt = dispatch_brief.validate_prompt("i")
-    assert f"--gate {dispatch_brief.VALIDATE_GATE} --status pass|fail" in prompt
-    assert "report fail with the reason rather than passing on the tests alone" in prompt
+    assert f"{dispatch_brief.VERDICT_PREFIX} PASS" in prompt
+    assert f"{dispatch_brief.VERDICT_PREFIX} FAIL" in prompt
+    assert "Do not report the gate" in prompt
+    assert "br gate report" not in prompt
+    assert "answer FAIL with the reason rather than passing on the tests alone" in prompt

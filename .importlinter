@@ -25,9 +25,10 @@ layers =
     loop | release
     catalog_lint | contention | health | landing_gate
     commit | merge
-    dispatch_brief | rebase | repair_brief | wip | working_set
+    rebase | repair_brief | wip | working_set
     classify | decompose | loop_state | plan_entry | rubrics
     validate_gate
+    dispatch_brief
     decisions
     handoff
     plan_gate | policy | routing_evals | tuning | verify
