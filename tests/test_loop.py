@@ -1888,6 +1888,47 @@ def test_a_collided_landing_records_no_finding_set_in_the_loop(
     assert recorded == [] and result.blocked
 
 
+# --- a role's declared skills reach its dispatch (basicly-ey58) --------------
+
+
+def test_skill_canary_reaches_the_dispatched_prompt(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A token existing only inside a declared skill body arrives at `runner.run`.
+
+    The end-to-end half of basicly-ey58: the unit tests prove the prompt is composed,
+    this proves the composed prompt is the one actually dispatched. Those are different
+    claims, and the defect being fixed was precisely that the declaration existed and
+    never reached the spawn.
+    """
+    agents = tmp_path / ".claude" / "agents"
+    agents.mkdir(parents=True)
+    (agents / "implementer.md").write_text(
+        "---\nname: implementer\nskills:\n- python-guidelines\n---\n\nBody.\n",
+        encoding="utf-8",
+    )
+    skill = tmp_path / ".claude" / "skills" / "python-guidelines"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("CANARY-EY58-DISPATCH", encoding="utf-8")
+
+    _ready_leaf(at, monkeypatch)
+    _pin_runner(monkeypatch, "claude")
+    monkeypatch.setattr(loop.roles, "resolve_role", lambda *_a: "implementer")
+    seen: dict = {}
+
+    def _run(spec, prompt, *_a, **_k):
+        seen["prompt"] = prompt
+        return runner.RunResult(spec.name, tuple(spec.command), executed=True, returncode=0)
+
+    monkeypatch.setattr(runner, "run", _run)
+    _advance(tmp_path)
+
+    assert "CANARY-EY58-DISPATCH" in seen["prompt"]
+    # The task survives the preamble; a brief that replaced the work would also pass
+    # the canary assertion above.
+    assert "br show i" in seen["prompt"]
+
+
 # --- validate (basicly-u2hl.54.2) -------------------------------------------
 
 _VGATE = "validate-as-consumer"

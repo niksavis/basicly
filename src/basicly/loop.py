@@ -815,6 +815,8 @@ def _run_agent(
     sizing = sizing_at_dispatch(ctx.repo_root, issue_id)
     # A sub-task runner is the lane's own write agent (D7), so it draws on the
     # lane reservation like any lane dispatch (component 8, basicly-kjc5.11).
+    role = roles.resolve_role(ctx.repo_root, spec, phase)
+    prompt = _with_role_skills(ctx.repo_root, spec, role, prompt)
     with runner.process_budget().slot(runner.LANE):
         result = runner.run(
             spec,
@@ -827,7 +829,7 @@ def _run_agent(
             # persona, or the family cannot select one, or the projection is not
             # there — each falls back to the default runner rather than failing,
             # so a consumer on an older install still gets a working loop.
-            role=roles.resolve_role(ctx.repo_root, spec, phase),
+            role=role,
         )
     record_run(
         ctx.repo_root,
@@ -841,6 +843,24 @@ def _run_agent(
         **sizing,
     )
     return _Dispatch(spec=spec, result=result, cwd=cwd, timeout=config.runner_timeout)
+
+
+def _with_role_skills(
+    repo_root: Path, spec: runner.RunnerSpec, role: str | None, prompt: str
+) -> str:
+    """*prompt* carrying the bodies of the skills *role* declares (basicly-ey58).
+
+    A declared ``skills:`` is inert under the headless spawn shape - probed twice on
+    claude 2.1.231 with a positive control - so a specialist ran without its
+    specialism. Injecting the bodies costs about 0.03% of a lane and reaches every
+    family, where the vendor's own mechanism reaches one.
+    """
+    if role is None:
+        return prompt
+    brief, missing = dispatch_brief.skill_brief(
+        repo_root, dispatch_brief.role_skills(repo_root, spec.name, role)
+    )
+    return dispatch_brief.with_skills(prompt, brief, missing)
 
 
 def sizing_at_dispatch(repo_root: Path, issue_id: str) -> dict[str, object]:
@@ -1039,6 +1059,8 @@ def _run_proposer(ctx: _Ctx, kind: str, prompt: str, *, phase: str) -> tuple[str
             f"runner {selected.name!r} has no known tool-confinement overlay, so the {kind} "
             "proposer cannot be bounded to the issue's own requirement"
         )
+    role = roles.resolve_role(ctx.repo_root, spec, phase)
+    prompt = _with_role_skills(ctx.repo_root, spec, role, prompt)
     with runner.process_budget().slot(runner.DECIDER):
         result = runner.run(
             spec,
@@ -1046,7 +1068,7 @@ def _run_proposer(ctx: _Ctx, kind: str, prompt: str, *, phase: str) -> tuple[str
             ctx.repo_root,
             capture_usage=True,
             timeout=config.runner_timeout,
-            role=roles.resolve_role(ctx.repo_root, spec, phase),
+            role=role,
         )
     record_run(
         ctx.repo_root,
