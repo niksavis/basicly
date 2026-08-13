@@ -453,6 +453,28 @@ name = "test-naming"
 command = ["uv", "run", "python", ".scripts/check_test_naming.py"]
 modes = ["fast", "full"]
 
+# Problem-statement drift (basicly-b9ef). An epic's `## Context` bullets are the decider's
+# whole authority (`decider_contract.intake_corpus`), so a bullet its own closed children
+# superseded is read as a current fact by a machine. Measured 2026-08-08 on `basicly-u2hl`:
+# four of eight bullets were superseded and one refuted, and two escalations quoted the
+# refuted one verbatim, abstained, and held two already-mergeable lanes in `build`.
+#
+# The gate reads the committed export, not the tracker binary, so it runs in a fresh clone
+# and reports what a reviewer sees in the same diff as the correction. Its population is
+# open parents with at least one closed child: measured over this tracker on 2026-08-13, 14
+# parents qualify and one states its problem as bullets. That one bead's four bullets are
+# recorded in `[tool.corpus_drift.frozen]` and may only fall — correcting them is a tracker
+# write, which does not belong in a lane's worktree. `--strict` ignores the baseline and is
+# what an author runs to see what a decider is still being told.
+#
+# No `fix_command`. Whether a bullet is dead or still standing is exactly the judgment the
+# gate exists to force; a script that marked every bullet unverified would pass it and
+# strip the corpus of every fact the decider legitimately has.
+[[verify.checks]]
+name = "corpus-drift"
+command = ["uv", "run", "python", ".scripts/check_corpus_drift.py"]
+modes = ["fast", "full"]
+
 # Loop gate/checkpoint policy: which gates block advancement and the rework cap.
 [policy]
 # Gate names (from [verify] / br gate report) that MUST pass to advance. Any

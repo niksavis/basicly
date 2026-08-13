@@ -77,6 +77,38 @@ def test_intake_corpus_is_description_plus_agent_context(
     assert '"db": "postgres"' in corpus
 
 
+def test_intake_corpus_marks_a_claim_a_closed_child_may_have_superseded(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The corpus is the decider's whole fact base, so a stale bullet cannot read as current.
+
+    Measured on `basicly-u2hl` (2026-08-08): two escalations quoted a bullet its own
+    closed child had refuted, reasoned from it and abstained, while both lanes were
+    already mergeable (basicly-b9ef).
+    """
+    fake = _FakeBr(
+        records={
+            "epic": {
+                "status": "open",
+                "description": (
+                    "## Context\n\n"
+                    "- park re-admits the lane, a fail-open on a human control point\n"
+                    "- SHIPPED 2026-08-08 (epic.2): repair runs in the lane's own worktree\n"
+                ),
+                "dependents": [
+                    {"id": "epic.1", "status": "closed", "dependency_type": "parent-child"},
+                    {"id": "epic.2", "status": "closed", "dependency_type": "parent-child"},
+                ],
+            }
+        }
+    )
+    _install(monkeypatch, fake)
+    corpus = decider_contract.intake_corpus(tmp_path, "epic")
+    assert "UNVERIFIED" in corpus
+    assert "possibly superseded, not a current fact] park re-admits the lane" in corpus
+    assert "- SHIPPED 2026-08-08 (epic.2): repair runs" in corpus
+
+
 def test_decider_prompt_binds_authority_to_the_corpus() -> None:
     """The invocation is a pure function: item + corpus + the abstain contract."""
     item = decision_marker.DecisionItem(

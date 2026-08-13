@@ -269,7 +269,7 @@ unreasoned_count = 7
 A002 = 2
 ARG001 = 2
 BLE001 = 3
-E402 = 5
+E402 = 6
 E731 = 1
 PLC0415 = 5
 PLR0911 = 2
@@ -363,6 +363,23 @@ waiver_count = 0
 "tests/test_integration_wait.py" = 51.5
 "tests/test_loop_repair_spend.py" = 56.3
 "tests/test_scaffolds.py" = 50.4
+
+# Problem-statement debt (basicly-b9ef). The gate is `.scripts/check_corpus_drift.py`, wired
+# as the `corpus-drift` [[verify.checks]] entry. A bead's `## Context` bullets are the
+# decider's whole authority, so each one has to name a child of its own bead or be marked
+# UNVERIFIED; the number here is how many named neither when the gate landed (2026-08-13).
+#
+# **The list is closed** — a bead absent from it may not carry a single unaccounted bullet,
+# which is what makes this a debt that only falls. The one entry is not a lint finding to
+# shave: correcting `basicly-u2hl`'s statement is a tracker write, and a tracker write does
+# not belong in a lane's worktree, so it is recorded here where a reviewer reads it rather
+# than left to fail every lane's verify.
+#
+# A count that falls has to be banked in the same diff and an entry that reaches zero is
+# deleted, for the reason [tool.module_size.frozen] states: leaving the higher number
+# licenses regrowth back to it for free.
+[tool.corpus_drift.frozen]
+"basicly-u2hl" = 4
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/basicly"]
