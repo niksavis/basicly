@@ -1305,6 +1305,46 @@ fork it per lane, and every lane gets the context at cache-read price with its o
 relocates the per-dispatch floor — 21.6k tokens of system prompt and tool definitions is a *cache
 miss* cost, not a token cost, so 41 cold dispatches is ~$8.90 of floor against ~$0.46 forked.
 
+**Two corrections to the figure above, both measured on claude 2.1.231, 2026-08-13**
+[M, basicly-w20y]. Neither retracts the mechanism; both change how a lane is sized against it.
+
+**The 19x denominator is the host floor, not a repo corpus.** The ~21,800 cached tokens are the
+system prompt plus tool definitions. Cache reads bill at roughly 10% of the standard input rate, so
+forking a *corpus* is nearer **10x on that corpus** than 19x. Quoting 19x for corpus reuse
+over-promises by about half.
+
+**The cross-directory penalty is one-time per working directory, not per fork.** A fork whose cwd
+differs from the seed's pays a partial read once, because cwd, platform and a git-status snapshot sit
+inside the cached prefix — and the vendor notes this "includes worktrees of the same repository".
+Every later fork into that *same* directory reads the prefix whole:
+
+```text
+dir B  1st fork    cache_create 2,768   cache_read 19,075   $0.0376   (87.3% read)
+dir B  4th fork    cache_create     0   cache_read 21,843   $0.0113   (100%  read)
+dir C  1st fork    cache_create 5,578   cache_read 16,265   $0.0643   (74.5% read)
+dir C  2nd fork    cache_create     0   cache_read 21,843   $0.0113   (100%  read)
+```
+
+The earlier "5.4x degradation, ~87% recovery" figure was a **first-fork measurement read as a steady
+state**. The position control is what separates the two: re-running the *identical* no-flag command
+later in the sequence returned `cache_create 0`, so the create cost belongs to the directory rather
+than to the command.
+
+For lane sizing that means a worktree-per-lane design pays the penalty once per worktree, so a lane
+dispatched **once** pays it whole and a lane dispatched repeatedly — repair, sub-tasks — amortises
+it. The penalty is a function of dispatches-per-worktree, which is a number the engine controls.
+
+**`--agent` composes with `--resume --fork-session`.** Measured: a fork carrying
+`--agent implementer` returned the parent's seeded canary, so an agent-scoped fork still inherits the
+context.
+
+**Whether `--exclude-dynamic-system-prompt-sections` composes with `--agent` remains
+unestablished.** A probe was run and is deliberately *not* reported as a result: its arms ran
+sequentially against one warming prefix, and the position control above shows ordering alone
+reproduces the whole effect the flag appeared to have. Settling it needs one fresh directory per arm
+with the arm order randomised. `--help` still says the flag is ignored with `--system-prompt`, and
+`--agent` is documented as replacing the system prompt the same way, but that chain is inference.
+
 ### 15.6 The context ceiling is deleted, not retuned [D]
 
 `DEFAULT_CONTEXT_CEILING = 0.6` against a declared 1,000,000 window is 600,000, and **0 of 79
