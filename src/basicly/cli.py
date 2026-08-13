@@ -3600,6 +3600,14 @@ def _carry_out_rework_retry(repo_root: Path, item: decisions.DecisionItem) -> st
     return f"granted one further attempt on gate '{gate}' (rework now {charged}/{cap})"
 
 
+# Every question that offers the route ends with it, in five wordings across
+# `policy.rework_escalation_question` and `supervise._capped_dispatch` — "retry or
+# park?", "re-scope it, serialize it, or park?" and three more. The carrier binds on
+# this suffix rather than on a decision kind, which is what let a `stall` offer the
+# route and have the answer silently do nothing (basicly-vkjt).
+_OFFERS_PARK = "or park?"
+
+
 def _carry_out_rework_hold(repo_root: Path, item: decisions.DecisionItem) -> str | None:
     """Park the lane when *item* is an escalation answered ``park`` (D3's Hold).
 
@@ -3611,16 +3619,18 @@ def _carry_out_rework_hold(repo_root: Path, item: decisions.DecisionItem) -> str
     already outside ``loop_state.DISPATCHABLE_STATUSES`` and
     ``supervise.ready_lanes`` already refuses on it. The missing half was here.
 
-    Every escalation kind, not only the rework cap, because ``park`` is offered by
-    all three question shapes ``supervise._capped_dispatch`` raises and the answer
-    means the same thing in each. The gate is recorded when the question names one.
+    Bound on the question, not on the decision kind. That distinction is the whole
+    of basicly-vkjt: this said "every escalation kind, not only the rework cap" while
+    guarding on ``kind == REWORK_ESCALATION_KIND``, so a ``stall`` whose question
+    offered ``park`` accepted the answer and did nothing with it. The gate is recorded
+    when the question names one, and a stall names none.
 
     Refused for a delegated answer, like ``land anyway``. A deferred child leaves
     the open-child set, so it stops holding its parent open: a model that could
     park its own lane could drop a requirement and let the package close over the
     hole — the same authority D15 keeps human for Kill.
     """
-    if item.kind != policy.REWORK_ESCALATION_KIND:
+    if _OFFERS_PARK not in item.question.lower():
         return None
     if not policy.answer_holds(item.answer or ""):
         return None
