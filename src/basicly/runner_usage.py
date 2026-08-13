@@ -107,6 +107,7 @@ def claude_json_usage(stdout: str) -> Usage | None:
         tokens=sum(values),
         cost=float(cost) if isinstance(cost, int | float) else None,
         estimated=False,
+        **_claude_usage_split(usage),
     )
 
 
@@ -129,7 +130,7 @@ def claude_turn_usage(event: dict) -> Usage | None:
     values = [usage[key] for key in CLAUDE_TOKEN_KEYS if isinstance(usage.get(key), int)]
     if not values:
         return None
-    return Usage(tokens=sum(values), cost=None, estimated=False)
+    return Usage(tokens=sum(values), cost=None, estimated=False, **_claude_usage_split(usage))
 
 
 def codex_turn_usage(event: dict) -> Usage | None:
@@ -195,3 +196,34 @@ def _codex_usage_split(usages: list[dict]) -> dict[str, int | None]:
             if isinstance(value, int) and not isinstance(value, bool):
                 split[field] = (split[field] or 0) + value
     return split
+
+
+def _claude_usage_split(usage: dict) -> dict[str, int | None]:
+    """Fold one claude usage block onto Usage's split, normalising to the superset.
+
+    Claude's four counts are **disjoint** — `runner_envelope.CLAUDE_TOKEN_KEYS` sums
+    every one of them into the total — where codex's `input_tokens` already contains
+    its cached portion. Storing claude's raw `input_tokens` would therefore make one
+    field mean two things and leave `input_tokens - cache_read_tokens` wrong for this
+    provider, so the cached and written portions are added back in here (basicly-i4gg).
+
+    An absent count stays None rather than 0, for the reason
+    :func:`_codex_usage_split` records: a real 0 is a measurement.
+    """
+
+    def count(key: str) -> int | None:
+        value = usage.get(key)
+        return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+    read, written, raw = (
+        count("cache_read_input_tokens"),
+        count("cache_creation_input_tokens"),
+        count("input_tokens"),
+    )
+    parts = [part for part in (raw, written, read) if part is not None]
+    return {
+        "input_tokens": sum(parts) if parts else None,
+        "output_tokens": count("output_tokens"),
+        "cache_read_tokens": read,
+        "cache_write_tokens": written,
+    }
