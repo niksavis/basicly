@@ -138,11 +138,55 @@ def test_extract_usage_claude_reads_tokens_and_cost() -> None:
 
 
 def test_extract_usage_claude_without_cost_field() -> None:
-    """A usage block without total_cost_usd still reports tokens, cost null."""
+    """A usage block without total_cost_usd still reports tokens, cost null.
+
+    Also pins the cache fields as null rather than 0 for a block that omits them: a
+    turn that really read no cache reports a genuine 0, so a fabricated 0 here would
+    be indistinguishable from that measurement (basicly-i4gg).
+    """
     stdout = json.dumps({"usage": {"input_tokens": 10, "output_tokens": 5}})
     spec = _claude_json_spec()
     usage = runner.extract_usage(spec, _executed(spec, stdout))
-    assert usage == runner.Usage(tokens=15, cost=None, estimated=False)
+    assert usage == runner.Usage(
+        tokens=15,
+        cost=None,
+        estimated=False,
+        input_tokens=10,
+        output_tokens=5,
+        cache_read_tokens=None,
+        cache_write_tokens=None,
+    )
+
+
+def test_extract_usage_claude_carries_the_cache_split() -> None:
+    """The observed result object's cache portions reach the record's split fields.
+
+    The whole reason this matters: every economic claim about dispatch caching is a
+    hit ratio, and 0 of 345 recorded dispatches could express one before this.
+    """
+    spec = _claude_json_spec()
+    usage = runner.extract_usage(spec, _executed(spec, _CLAUDE_RESULT))
+    assert usage is not None
+    assert usage.cache_read_tokens == 15496
+    assert usage.cache_write_tokens == 5960
+    assert usage.output_tokens == 17
+
+
+def test_extract_usage_claude_normalises_input_to_the_superset() -> None:
+    """Claude's disjoint counts are folded so `input - cache_read` is uncached input.
+
+    Claude reports `input_tokens` exclusive of both cache figures — which is why
+    `CLAUDE_TOKEN_KEYS` sums all four into the total — while codex reports it
+    inclusive. Storing the raw 2 would make one field mean two things across
+    providers, so the assertion below is what discriminates a fold from a passthrough.
+    """
+    spec = _claude_json_spec()
+    usage = runner.extract_usage(spec, _executed(spec, _CLAUDE_RESULT))
+    assert usage is not None
+    assert usage.input_tokens == 2 + 5960 + 15496
+    assert usage.input_tokens != 2, "the raw field was stored, not the folded superset"
+    assert usage.cache_read_tokens is not None
+    assert usage.input_tokens - usage.cache_read_tokens == 2 + 5960
 
 
 def test_extract_usage_claude_unparseable_falls_back_to_estimate() -> None:
