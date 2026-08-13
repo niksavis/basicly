@@ -667,8 +667,8 @@ rather than "refuted":** `wait-decompose` — the only checkpoint with a real ar
 
 ## 8. Handoff artifact schemas [D4]
 
-Six schemas. Each is a validated artifact the producing state must emit and the consuming state
-must accept. `needs-input.json` is the existing precedent for a schema-validated handoff.
+Eight artifacts, of which seven now have a schema [M 2026-08-13, basicly-r4jm]. Each is a
+validated artifact the producing state must emit and the consuming state must accept. `needs-input.json` is the existing precedent for a schema-validated handoff.
 
 | Artifact | Produced by | Must carry |
 | --- | --- | --- |
@@ -679,6 +679,12 @@ must accept. `needs-input.json` is the existing precedent for a schema-validated
 | `change-summary` | BUILD | what changed and why; self-check result; the commit |
 | `verification-evidence` | VERIFY | per required gate: the check, the command, the result; per acceptance criterion: the derived check and its result |
 | `validation-transcript` | VALIDATE | how the change was exercised as a consumer, and against which original requirement |
+| `release-record` | SHIP | each claim with the evidence for it; each unsupported claim named and dropped; the post-ship action pre-declared before the tag moves |
+
+`release-record` had no row here until 2026-08-13 while the curator's output contract named it,
+which is why it was the last of the set to be noticed. `solution-design` remains the one kind with
+no schema: it is specified as *markdown sections* rather than a JSON payload, so whether it is a
+handoff artifact of the same family is an open question rather than an omission (`basicly-32qz`).
 
 **Storage** is OQ-5. `[policy.evidence]` already exists as a per-phase artifact-path gate but is
 presence-only — "the engine never opens it" [M] `verify.py:243-249` — and unconfigured here.
