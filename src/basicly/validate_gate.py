@@ -19,6 +19,9 @@ from typing import TYPE_CHECKING
 
 from . import integrity, policy
 from .br import read_comments as _read_comments
+from .br import run_br as _run_br
+from .config import VERIFY_GATE_PROVIDER
+from .dispatch_brief import VERDICT_PREFIX
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -96,4 +99,48 @@ def refusal_reason(gates: policy.GateStatus) -> str:
         f"{VALIDATE_GATE} is required at the recorded integrity level and has no engine "
         "result: exercise the change as a consumer would (the validate-as-consumer "
         "skill), then record the gate"
+    )
+
+
+def verdict_from_reply(text: str) -> bool | None:
+    """The validator's stated verdict, or None when its reply carries none (pure).
+
+    Read off the agent's own words rather than its exit code: a validator that ran
+    cleanly and found the change unusable exits 0, so the process outcome answers a
+    different question. A reply with no verdict line returns None, which leaves the
+    unit in VALIDATE instead of guessing at what it meant.
+    """
+    for line in reversed(text.splitlines()):
+        stripped = line.strip().strip("`").strip()
+        if not stripped.upper().startswith(VERDICT_PREFIX):
+            continue
+        answer = stripped[len(VERDICT_PREFIX) :].strip().upper()
+        if answer.startswith("PASS"):
+            return True
+        if answer.startswith("FAIL"):
+            return False
+    return None
+
+
+def record_verdict(repo_root: Path, issue_id: str, *, passed: bool) -> None:
+    """Record *passed* as the engine's own validate gate.
+
+    The engine writes it, never the agent: `br gate report` authenticates nothing and
+    a dispatched agent reaches the real tracker, so an agent-written result on a
+    required gate is self-certification (basicly-jr0l.51). Reported under the engine's
+    provider for the same reason `gate_status` counts only that one.
+    """
+    _run_br(
+        repo_root,
+        [
+            "gate",
+            "report",
+            issue_id,
+            "--gate",
+            VALIDATE_GATE,
+            "--provider",
+            VERIFY_GATE_PROVIDER,
+            "--status",
+            "pass" if passed else "fail",
+        ],
     )

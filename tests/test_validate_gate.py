@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from basicly import br, integrity, loop, loop_state, policy, validate_gate, wip
-from basicly.config import LOOP_PHASES, VERIFY_GATE_PROVIDER, PolicyConfig
+from basicly.config import ENGINE_GATE_PROVIDERS, LOOP_PHASES, VERIFY_GATE_PROVIDER, PolicyConfig
 from basicly.loop_state import WorktreeBinding
 from basicly.policy import GateStatus
 
@@ -281,3 +281,52 @@ def test_a_foreign_validation_result_does_not_satisfy_the_gate(
     state = loop_state.read_node_state(tmp_path, "i", CONFIG)
     assert state.phase == "validate"
     assert [v.gate for v in state.gates.disregarded] == [GATE]
+
+
+# --- The verdict the engine records on the agent's behalf --------------------
+
+
+@pytest.mark.parametrize(
+    ("reply", "expected"),
+    [
+        ("ran the cli, it printed the table\nVALIDATION: PASS", True),
+        ("could not launch it\nVALIDATION: FAIL", False),
+        ("`VALIDATION: PASS`", True),
+        ("validation: pass", True),
+        # The last verdict wins: an agent that reconsiders states it again.
+        ("VALIDATION: PASS\nactually no\nVALIDATION: FAIL", False),
+        # No verdict at all leaves the unit resting rather than guessing.
+        ("I ran the tests and they passed", None),
+        ("", None),
+        ("VALIDATION: probably fine", None),
+    ],
+)
+def test_the_verdict_is_read_from_the_reply(reply: str, expected: bool | None) -> None:
+    """The agent's words, not its exit code.
+
+    A validator that found the change unusable still exits 0, so the process outcome
+    answers a different question than the one the gate asks.
+    """
+    assert validate_gate.verdict_from_reply(reply) is expected
+
+
+def test_the_engine_records_the_verdict_under_its_own_provider(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A dispatched agent reaching the real tracker must not satisfy its own gate.
+
+    `br gate report` authenticates nothing (basicly-jr0l.51), so the provider is what
+    separates an engine result from a self-certified one. It is also *required* by br
+    — a report without it errors and records nothing, which is why the agent is asked
+    for a verdict line instead of a tracker write.
+    """
+    calls: list[list[str]] = []
+    monkeypatch.setattr(validate_gate, "_run_br", lambda _r, args: calls.append(args))
+
+    validate_gate.record_verdict(tmp_path, "i", passed=True)
+
+    assert calls[0][:3] == ["gate", "report", "i"]
+    assert "--provider" in calls[0]
+    provider = calls[0][calls[0].index("--provider") + 1]
+    assert provider in ENGINE_GATE_PROVIDERS
+    assert calls[0][calls[0].index("--status") + 1] == "pass"

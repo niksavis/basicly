@@ -14,3 +14,10 @@ Two extractions the size and density ratchets forced, both real seams: `dispatch
 the prompts the loop dispatches with, and `landing_gate` holds the reading of an answered gate
 escalation and what it authorises. `landing_gate` carries a stated `comment-density-waiver` — its
 four functions are small and their docstrings are the incident history that makes them correct.
+
+The verdict is recorded by the engine, not by the validator. `br gate report` requires
+`--provider` and authenticates nothing, so an agent told to report its own gate would
+either error and record nothing — leaving the unit in `validate` forever while believing
+it had reported — or self-certify a required gate. The validator now ends its reply with
+`VALIDATION: PASS` or `VALIDATION: FAIL` and the engine writes the result under its own
+provider.

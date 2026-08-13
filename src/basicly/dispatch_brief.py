@@ -22,8 +22,11 @@ from .config import WORK_TYPES
 if TYPE_CHECKING:
     from .config import SizingConfig
 
-# The gate a validator reports its verdict under.
+# The gate a validation is recorded under, and the line the engine reads the verdict
+# from. The agent states it; the engine records it - a dispatched agent sharing the
+# real tracker must not be able to satisfy its own required gate (basicly-jr0l.51).
 VALIDATE_GATE = "validate-as-consumer"
+VERDICT_PREFIX = "VALIDATION:"
 
 
 def validate_prompt(issue_id: str) -> str:
@@ -38,10 +41,11 @@ def validate_prompt(issue_id: str) -> str:
         "checkout, against the requirement that asked for it. Run "
         f"`br show {issue_id}` for that requirement and its demonstration command. Follow "
         "the validate-as-consumer skill. Do NOT re-run the gate suite - it has already "
-        "passed and re-running it records nothing new. Report the verdict with "
-        f"`br gate report {issue_id} --gate {VALIDATE_GATE} --status pass|fail`, quoting "
-        "what you ran and what it printed. If you cannot exercise it as a consumer, "
-        "report fail with the reason rather than passing on the tests alone."
+        "passed and re-running it records nothing new. Quote what you ran and what it "
+        "printed, then end your reply with one line on its own, either "
+        f"`{VERDICT_PREFIX} PASS` or `{VERDICT_PREFIX} FAIL`. Do not report the gate "
+        "yourself - the engine records it from that line. If you cannot exercise it as "
+        "a consumer, answer FAIL with the reason rather than passing on the tests alone."
     )
 
 
