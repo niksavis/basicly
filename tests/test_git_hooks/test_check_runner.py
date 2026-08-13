@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from basicly.config import load_verify_config
+
 # Stand-in for a formatter: with --check it reports unformatted files (exit 1),
 # without it rewrites them. Real ruff is not used so the test proves the
 # apply-then-check mechanism rather than a tool's behavior.
@@ -240,3 +242,62 @@ def test_apply_fixes_outside_a_repo_is_a_reported_noop(
     module.apply_fixes(tmp_path, "fast")
 
     assert "cannot read the git index" in capsys.readouterr().err
+
+
+# --- The hook reads the drop-in fragments too (basicly-ef7t) ------------------------------
+
+
+def _write_fragment(repo: Path, stem: str, body: str) -> None:
+    (repo / "basicly.d").mkdir(exist_ok=True)
+    (repo / "basicly.d" / f"{stem}.toml").write_text(body, encoding="utf-8")
+
+
+def test_a_check_declared_in_a_fragment_gates_the_commit(tmp_path: Path) -> None:
+    """A lane's own gate has to run in the hook, or the fragment split is a way to lose one.
+
+    The engine assembling the fragments is not enough on its own: this runner is standalone
+    by contract (a consumer's pre-commit imports nothing from basicly), so it is a second
+    reader of the same convention and would otherwise silently gate less than `verify` does.
+    """
+    module = _load_check_runner()
+    _write_config(
+        tmp_path, '[[verify.checks]]\nname = "in-config"\ncommand = ["true"]\nmodes = ["fast"]\n'
+    )
+    _write_fragment(
+        tmp_path,
+        "basicly-lane",
+        '[[verify.checks]]\nname = "in-fragment"\ncommand = ["true"]\nmodes = ["fast"]\n',
+    )
+
+    assert [name for name, _ in module.load_checks(tmp_path, "fast")] == [
+        "in-config",
+        "in-fragment",
+    ]
+
+
+def test_a_malformed_fragment_check_names_the_fragment_not_the_config(tmp_path: Path) -> None:
+    """Which file to fix, when the entry that is wrong is not in basicly.toml."""
+    module = _load_check_runner()
+    _write_config(tmp_path, "[worktree]\nconcurrency = 2\n")
+    _write_fragment(
+        tmp_path, "basicly-lane", '[[verify.checks]]\nname = "no-command"\nmodes = ["fast"]\n'
+    )
+
+    with pytest.raises(
+        SystemExit, match=r"basicly-lane.toml: check 'no-command' needs a 'command'"
+    ):
+        module.load_checks(tmp_path, "fast")
+
+
+def test_the_hook_and_the_engine_assemble_the_same_set_for_this_repo() -> None:
+    """Two readers of one convention, pinned to agree on the tree they both really run on.
+
+    The failure this excludes is the split drifting: a fragment the engine reads and the
+    hook does not (or the reverse) makes `basicly verify` and the pre-commit gate disagree
+    about what this repo's fast mode is, which is exactly the silence a lost gate needs.
+    """
+    module = _load_check_runner()
+    repo_root = Path(__file__).resolve().parents[2]
+    engine = [check.name for check in load_verify_config(repo_root).for_mode("fast")]
+
+    assert [name for name, _ in module.load_checks(repo_root, "fast")] == engine

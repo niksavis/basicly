@@ -44,7 +44,7 @@ layers =
     owned_store
     dispatch_phase
     runner_envelope
-    catalog | catalog_routing | catalog_source | checkout | copilot_tools | integrity | needs_input | plan_record | precommit_config | projection | read_cost | redact | review | roles | scaffolds | schema | session | tracker_surface | tracker_usage | ui | usage | verify_artifact
+    catalog | catalog_routing | catalog_source | checkout | copilot_tools | dropin | integrity | needs_input | plan_record | precommit_config | projection | read_cost | redact | review | roles | scaffolds | schema | session | tracker_surface | tracker_usage | ui | usage | verify_artifact
     tracker_invocation
     stemmer
 # Two cycles survive as function-level imports carrying `# noqa: PLC0415`; the

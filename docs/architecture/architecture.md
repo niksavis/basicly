@@ -548,6 +548,20 @@ set locally replaces the shared key wholesale (a local `checks`/`agents` list is
 concatenated). Projection config (`[paths]`, `[catalog]`) shapes repo-committed
 outputs, so it is repo-level only and never reads the overlay.
 
+**Per-lane drop-in fragments — `basicly.d/<bead-id>.toml`** (committed, layered
+between the two files above): a lane declares the `[[verify.checks]]` entry it wires
+and the `[ratchet.<gate>]` numbers its change moved in a file named after its own
+bead, so two lanes can never write one file — the same construction `changelog.d`
+uses for `CHANGELOG.md` (`basicly-4746`), applied to the two anchors that bounced
+three of five lanes on the 2026-08-08 pass (`basicly-ef7t`). Checks are **appended**
+in filename order rather than replacing, because a fragment is one lane's addition;
+the overlay above still replaces, because that is the machine saying _instead_. Every
+ratchet number is a **delta** (`basicly.dropin`), never a total: two lanes each adding
+one suppression both record the total 16 and the merged tree holds 17, whereas
+addition composes in any landing order. Each fragment goes through the same schema as
+`basicly.toml`, so a typo there is refused rather than ignored, and the pre-commit
+hook runner assembles the same set so a lane's gate binds at commit time too.
+
 **Both files are schema-checked on every load** (`config.CONFIG_SCHEMA`): an
 unrecognised section or key raises, naming the file, the containing section, what
 that section accepts, and which sections accept a name like it. A key the engine

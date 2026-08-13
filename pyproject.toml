@@ -140,8 +140,13 @@ ignore_names = [
 # `waiver_count` is the number of modules carrying a column-0 `module-size-waiver:` comment.
 # It is here for the same reason [tool.vulture]'s ignore list is: a suppression nobody
 # counts becomes a blanket exemption. The gate fails when the count and the tree disagree in
-# either direction, so a waiver can be added, but only in a diff that also raises this
+# either direction, so a waiver can be added, but only in a diff that also moves this
 # number, and removing the last waiver forces it back down.
+#
+# **A lane does not edit the number here.** It records `count_delta` in its own
+# `basicly.d/<bead-id>.toml`, which the gate adds to this one — a total does not compose, so
+# two lanes both rewriting this line is a conflict neither of them can see coming
+# (basicly-ef7t; `basicly.d/README.md`). This stays the go-live base.
 [tool.module_size]
 waiver_count = 1
 
@@ -248,9 +253,14 @@ unreasoned_count = 7
 # the line, which is what makes each new suppression a reviewer-visible decision instead of
 # one comment inside a 5,000-line module.
 #
-# A count that falls has to be banked here in the same diff. Leaving the higher number would
+# A count that falls has to be banked in the same diff. Leaving the higher number would
 # license regrowth back to it for free, which is the fail-open shape the module-size ratchet
 # names; an entry that reaches zero is deleted rather than set to 0.
+#
+# Banked as a delta in the lane's own `basicly.d/<bead-id>.toml`, not by editing a line here:
+# `[ratchet.noqa_debt.frozen] S603 = +1` for a suppression added, `-1` for one removed, and
+# the gate sums them onto this base. Three of five lanes bounced on this table and
+# `[[verify.checks]]` on 2026-08-08 before that existed (basicly-ef7t).
 #
 # `S603`/`S607` (21 of the 76) are the subprocess pair, and `PLR0913` (32) is argument count
 # on functions that mirror the CLI surface. Both are debts with a decomposition track behind
@@ -294,7 +304,6 @@ waiver_count = 0
 ".basicly/core/kit/tracker/provenance.py" = 71.8
 ".basicly/core/kit/tracker/scheduler.py" = 71.2
 ".basicly/core/kit/tracker/snapshot.py" = 56.2
-".scripts/check_module_size.py" = 50.4
 ".scripts/check_test_naming.py" = 57.6
 ".scripts/docs_claim_sources.py" = 68.4
 ".scripts/kit_deployment.py" = 51.1

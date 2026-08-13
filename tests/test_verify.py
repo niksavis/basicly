@@ -7,12 +7,13 @@ import re
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path, PurePosixPath
 
 import pytest
 import yaml
 
-from basicly import br, cli, policy, usage, verify
+from basicly import br, cli, dropin, policy, usage, verify
 from basicly.config import VerifyCheck, VerifyConfig, load_verify_config
 
 
@@ -1369,3 +1370,100 @@ def test_a_path_reading_check_needs_no_uv_run_prefix() -> None:
     assert "src" in by_name["vulture"].command, (
         "vulture is being cited as a path-reading check, so it must name the paths it reads"
     )
+
+
+# --- The check set is assembled from the drop-in fragments too (basicly-ef7t) -----------
+
+_FRAGMENT_CONFIG = """\
+[[verify.checks]]
+name = "declared-in-the-config"
+command = ["true"]
+modes = ["fast", "full"]
+"""
+
+
+def _fragment_repo(root: Path, **fragments: str) -> Path:
+    """A repo declaring one check in basicly.toml and *fragments* keyed by filename stem."""
+    (root / "basicly.toml").write_text(_FRAGMENT_CONFIG, encoding="utf-8")
+    (root / "basicly.d").mkdir(exist_ok=True)
+    for stem, body in fragments.items():
+        (root / "basicly.d" / f"{stem}.toml").write_text(body, encoding="utf-8")
+    return root
+
+
+def _declared_check(name: str) -> str:
+    return f'[[verify.checks]]\nname = "{name}"\ncommand = ["true"]\nmodes = ["fast"]\n'
+
+
+def test_a_fragment_check_is_appended_to_the_configs_own_in_filename_order(tmp_path: Path) -> None:
+    """A lane's own file contributes a check, and the order does not depend on the reader.
+
+    Filename order rather than directory order, so two machines assemble the same set —
+    and after the config's own entries, so a fragment cannot reorder the gates a repo
+    already declared.
+    """
+    repo = _fragment_repo(
+        tmp_path,
+        **{
+            "basicly-zzzz": _declared_check("last-lane"),
+            "basicly-aaaa": _declared_check("first-lane"),
+        },
+    )
+
+    assert [check.name for check in load_verify_config(repo).checks] == [
+        "declared-in-the-config",
+        "first-lane",
+        "last-lane",
+    ]
+
+
+def test_a_fragment_is_appended_where_the_machine_overlay_still_replaces(tmp_path: Path) -> None:
+    """The one asymmetry: a lane adds, a machine overrides.
+
+    A fragment is one lane's addition, so appending is the only reading under which two
+    lanes both keep their gate. basicly.local.toml is the machine saying *instead*, which
+    is what it has always meant, and this pins that the fragment change did not quietly
+    turn it into an addition as well.
+    """
+    repo = _fragment_repo(tmp_path, **{"basicly-lane": _declared_check("lane-gate")})
+    (repo / "basicly.local.toml").write_text(_declared_check("only-on-this-machine"), "utf-8")
+
+    assert [check.name for check in load_verify_config(repo).checks] == ["only-on-this-machine"]
+
+
+def test_an_unknown_key_in_a_fragment_is_refused_and_names_the_fragment(tmp_path: Path) -> None:
+    """A fragment goes through the same schema as basicly.toml, and fails the same way.
+
+    Without this the fragment directory would be the one place in the config layering where
+    a typo is silently ignored — the hole basicly-1piy closed for the two files.
+    """
+    repo = _fragment_repo(
+        tmp_path, **{"basicly-lane": '[[verify.checks]]\nname = "x"\ncomand = ["true"]\n'}
+    )
+
+    with pytest.raises(ValueError, match=r"basicly.d/basicly-lane.toml: unknown key 'comand'"):
+        load_verify_config(repo)
+
+
+def test_a_fragment_that_is_not_toml_refuses_instead_of_being_skipped(tmp_path: Path) -> None:
+    """An unreadable fragment must not degrade to "this lane declared nothing"."""
+    repo = _fragment_repo(tmp_path, **{"basicly-lane": "[[verify.checks]\nname = 'x'\n"})
+
+    with pytest.raises(dropin.FragmentError, match=r"basicly.d/basicly-lane.toml"):
+        load_verify_config(repo)
+
+
+def test_this_repo_declares_its_whole_check_set_between_the_config_and_the_fragments() -> None:
+    """The assembled set is exactly what the two sources declare, nothing lost in between.
+
+    The second acceptance criterion: assembling from fragments must run the same checks as
+    the single array did. Compared against the raw TOML rather than a frozen list of names,
+    so adding a check keeps the assertion true and *removing* one from the reader's answer
+    still fails it.
+    """
+    declared = tomllib.loads((_REPO_ROOT / "basicly.toml").read_text(encoding="utf-8"))
+    names = [check["name"] for check in declared["verify"]["checks"]]
+    for document in dropin.documents(_REPO_ROOT).values():
+        names += [check["name"] for check in (document.get("verify") or {}).get("checks", [])]
+
+    assert [check.name for check in load_verify_config(_REPO_ROOT).checks] == names

@@ -237,7 +237,7 @@ def test_the_waiver_count_ratchet_fails_when_a_waiver_appears_unannounced() -> N
 
     assert len(findings) == 1
     assert "src/basicly/big.py" in findings[0].detail
-    assert "waiver_count = 1" in findings[0].remedy
+    assert "`count_delta = +1`" in findings[0].remedy
 
 
 def test_the_waiver_count_ratchet_fails_when_the_last_waiver_disappears() -> None:
@@ -245,7 +245,7 @@ def test_the_waiver_count_ratchet_fails_when_the_last_waiver_disappears() -> Non
     findings = gate.collect([_module("src/basicly/small.py", 10)], _ratchet(waivers=1))
 
     assert len(findings) == 1
-    assert "waiver_count = 0" in findings[0].remedy
+    assert "`count_delta = -1`" in findings[0].remedy
 
 
 def test_neither_the_gate_nor_this_test_carries_a_waiver() -> None:

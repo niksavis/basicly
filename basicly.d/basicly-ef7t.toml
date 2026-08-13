@@ -1,0 +1,5 @@
+# The first fragment, and it is this lane's own: the two ratchet gates each import
+# `basicly.dropin` after the `sys.path.insert` that makes it importable, which is one
+# `# noqa: E402` each. Both carry a reason, so `unreasoned_count` does not move.
+[ratchet.noqa_debt.frozen]
+E402 = 2

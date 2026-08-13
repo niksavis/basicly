@@ -154,7 +154,7 @@ def test_an_added_suppression_fails_naming_the_code_and_both_counts() -> None:
     assert findings[0].subject == "PLR0913"
     assert "3 suppressions of PLR0913" in findings[0].detail
     assert "frozen 2" in findings[0].detail
-    assert "PLR0913 to 3" in findings[0].remedy
+    assert "`PLR0913 = +1`" in findings[0].remedy
 
 
 def test_a_code_the_table_never_recorded_is_refused() -> None:
@@ -163,7 +163,7 @@ def test_a_code_the_table_never_recorded_is_refused() -> None:
 
     assert [finding.subject for finding in findings] == ["N806"]
     assert "does not record" in findings[0].detail
-    assert "`N806 = 1`" in findings[0].remedy
+    assert "`N806 = +1`" in findings[0].remedy
 
 
 def test_a_blanket_suppression_is_refused_and_cannot_be_recorded_away() -> None:
@@ -172,7 +172,7 @@ def test_a_blanket_suppression_is_refused_and_cannot_be_recorded_away() -> None:
 
     assert [finding.subject for finding in findings] == [gate.BLANKET]
     assert "every rule on its line" in findings[0].detail
-    assert gate.FROZEN_TABLE not in findings[0].remedy
+    assert gate.FROZEN_FRAGMENT not in findings[0].remedy
 
 
 def test_a_count_that_fell_must_be_banked_in_the_same_diff() -> None:
@@ -181,16 +181,20 @@ def test_a_count_that_fell_must_be_banked_in_the_same_diff() -> None:
 
     assert len(findings) == 1
     assert "down from the frozen 4" in findings[0].detail
-    assert "`PLR0913 = 1`" in findings[0].remedy
+    assert "`PLR0913 = -3`" in findings[0].remedy
 
 
 def test_the_last_suppression_of_a_code_deletes_its_entry() -> None:
-    """Zeroing it would keep a licence for a rule this tree no longer suppresses at all."""
+    """Zeroing it would keep a licence for a rule this tree no longer suppresses at all.
+
+    The delta the remedy names composes to zero, and :func:`basicly.dropin.compose` drops an
+    entry that reaches zero rather than recording it, so banking it *is* deleting it.
+    """
     findings = gate.collect([], _ratchet({"E731": 1}))
 
     assert len(findings) == 1
-    assert "delete" in findings[0].remedy
-    assert gate.FROZEN_TABLE in findings[0].remedy
+    assert "`E731 = -1`" in findings[0].remedy
+    assert gate.FROZEN_FRAGMENT in findings[0].remedy
 
 
 def test_a_blanket_suppression_is_not_counted_against_the_reason_ratchet() -> None:
@@ -210,7 +214,7 @@ def test_a_reasonless_suppression_fails_naming_where_it_is() -> None:
 
     assert len(findings) == 1
     assert "src/basicly/mod.py:42" in findings[0].detail
-    assert "unreasoned_count = 1" in findings[0].remedy
+    assert "`count_delta = +1`" in findings[0].remedy
     assert "reason" in findings[0].remedy
 
 
@@ -219,7 +223,7 @@ def test_the_reason_ratchet_fails_when_the_last_unargued_one_is_justified() -> N
     findings = gate.collect([_found("E731")], _ratchet({"E731": 1}, unreasoned=1))
 
     assert len(findings) == 1
-    assert "unreasoned_count = 0" in findings[0].remedy
+    assert "`count_delta = -1`" in findings[0].remedy
 
 
 def test_an_unargued_suppression_cannot_be_swapped_for_another_one() -> None:
@@ -273,6 +277,11 @@ def test_the_gate_fails_end_to_end_on_an_unannounced_suppression(tmp_path: Path)
     A scratch repository rather than a mutation of this one: the gate resolves its root from
     its own location, so copying it into a tmp tree exercises `git ls-files`, the tokenizer
     and the TOML read together without putting a deliberate defect in the working tree.
+
+    The gate is a two-file unit since basicly-ef7t — it imports :mod:`basicly.dropin` off the
+    ``src`` it derives from its own path — so the scratch tree carries that module too. Only
+    that module: it declares no suppression of its own, whereas copying the whole package
+    would put every suppression in `basicly` inside a tree whose record freezes ``E731 = 1``.
     """
     scripts = tmp_path / ".scripts"
     scripts.mkdir()
@@ -288,6 +297,10 @@ def test_the_gate_fails_end_to_end_on_an_unannounced_suppression(tmp_path: Path)
         "g = lambda y: y  # noqa: E731 - one more than the record allows\n",
         encoding="utf-8",
     )
+    package = src / "basicly"
+    package.mkdir()
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    shutil.copy(REPO_ROOT / "src" / "basicly" / "dropin.py", package / "dropin.py")
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
 
@@ -299,10 +312,20 @@ def test_the_gate_fails_end_to_end_on_an_unannounced_suppression(tmp_path: Path)
     assert "2 suppressions of E731, up from the frozen 1" in completed.stderr
 
 
-def test_neither_the_gate_nor_this_test_declares_a_suppression() -> None:
-    """Both spell the marker throughout; neither may thereby inflate the debt it measures."""
-    for path in (SCRIPT, Path(__file__)):
-        assert gate.suppressions(path.name, path.read_text(encoding="utf-8")) == [], path
+def test_only_the_suppression_the_gate_really_declares_is_counted() -> None:
+    """Both files spell the marker throughout; only a real directive may reach the debt.
+
+    The gate declares exactly one — the ``basicly.dropin`` import that has to follow the
+    ``sys.path`` line (basicly-ef7t) — against dozens of mentions in its prose and its
+    regexes, so a reading that counted mentions would fail here rather than inflate the
+    count it measures. The test file declares none at all.
+    """
+    declared = gate.suppressions(SCRIPT.name, SCRIPT.read_text(encoding="utf-8"))
+
+    assert [(item.code, item.reason) for item in declared] == [
+        ("E402", "the path above comes first")
+    ]
+    assert gate.suppressions("test_check_noqa_debt.py", Path(__file__).read_text("utf-8")) == []
 
 
 def test_the_gate_is_declared_as_a_verify_check() -> None:

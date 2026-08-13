@@ -62,14 +62,26 @@ from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT / "src"))
+
+from basicly.dropin import (  # noqa: E402 - the path above comes first
+    COUNT_DELTA,
+    FRAGMENT_DIR,
+    RATCHET_SECTION,
+    FragmentError,
+    compose,
+)
 
 # Every directory whose Python this repo authors, as `check_module_size.py` scopes it: the
 # kit and the hooks ship to consumers, so a suppression there has the widest blast radius.
 SCOPE_ROOTS = ("src", "tests", ".scripts", ".basicly/core")
 
-# Where the ratchet is recorded, and how a failure names it.
+# Where the ratchet is recorded, how a failure names it, and where a lane records a change to
+# it instead of editing those shared tables (basicly-ef7t).
 RATCHET_TABLE = "[tool.noqa_debt]"
 FROZEN_TABLE = "[tool.noqa_debt.frozen]"
+FRAGMENT = f"[{RATCHET_SECTION}.noqa_debt] in {FRAGMENT_DIR}/<bead-id>.toml"
+FROZEN_FRAGMENT = f"[{RATCHET_SECTION}.noqa_debt.frozen] in {FRAGMENT_DIR}/<bead-id>.toml"
 
 # What a codeless directive is counted as. Lowercase, so it can never collide with a ruff
 # code, and absent from the frozen table, so it fails on sight.
@@ -182,13 +194,7 @@ def suppressions(path: str, text: str) -> list[Suppression]:
 
 
 def load_ratchet(repo: Path) -> Ratchet:
-    """Read the recorded baseline out of ``pyproject.toml``.
-
-    Args:
-        repo: The repository root.
-
-    Returns:
-        The frozen per-code counts and the declared unreasoned count.
+    """The baseline in ``pyproject.toml``, with the ``basicly.d`` fragments applied.
 
     Raises:
         RatchetError: The table is absent or malformed — the gate must not pass by
@@ -207,7 +213,8 @@ def load_ratchet(repo: Path) -> Ratchet:
         raise RatchetError(f"{FROZEN_TABLE} must map each rule code to its go-live count")
     if not isinstance(count, int):
         raise RatchetError(f"{RATCHET_TABLE} must declare unreasoned_count as an integer")
-    return Ratchet(frozen=frozen, unreasoned_count=count)
+    baseline = compose(repo, "noqa_debt", frozen=frozen, count=count)
+    return Ratchet(frozen=baseline.frozen, unreasoned_count=baseline.count)
 
 
 def tracked_suppressions(repo: Path) -> list[Suppression]:
@@ -261,7 +268,7 @@ def _unlisted(code: str, count: int) -> Finding:
             f"{count} suppression(s) of {code}, which {RATCHET_TABLE} does not record; this "
             "rule has never been suppressed in this tree"
         ),
-        remedy=f"remove it, or record `{code} = {count}` in {FROZEN_TABLE} in the same diff",
+        remedy=f"remove it, or record `{code} = {count:+d}` in {FROZEN_FRAGMENT}",
     )
 
 
@@ -272,25 +279,24 @@ def _rose(code: str, count: int, baseline: int) -> Finding:
         detail=f"{count} suppressions of {code}, up from the frozen {baseline}",
         remedy=(
             f"fix what it silences, or give it a `# noqa: {code} - reason` naming the "
-            f"alternative rejected and raise {code} to {count} in {FROZEN_TABLE}"
+            f"alternative rejected and record `{code} = {count - baseline:+d}` in "
+            f"{FROZEN_FRAGMENT}"
         ),
     )
 
 
 def _fell(code: str, count: int, baseline: int) -> Finding:
     """The debt fell and the record did not, so it still licenses the old number."""
-    repair = (
-        f"delete `{code}` from {FROZEN_TABLE}"
-        if count == 0
-        else f"set `{code} = {count}` in {FROZEN_TABLE}"
-    )
     return Finding(
         subject=code,
         detail=(
             f"{count} suppressions of {code}, down from the frozen {baseline}; the record "
             f"still licenses {baseline}"
         ),
-        remedy=f"{repair} — a debt that fell has to be banked or it grows back for free",
+        remedy=(
+            f"record `{code} = {count - baseline:+d}` in {FROZEN_FRAGMENT} — a debt that fell "
+            "has to be banked or it grows back for free"
+        ),
     )
 
 
@@ -299,12 +305,13 @@ def _unreasoned(sites: list[str], ratchet: Ratchet) -> list[Finding]:
 
     A count rather than a list, matching `[tool.module_size]`'s `waiver_count`: the point is
     that an unargued suppression cannot appear, and cannot be swapped for another one, in a
-    diff that does not touch `pyproject.toml`.
+    diff that does not say so.
     """
     if len(sites) == ratchet.unreasoned_count:
         return []
     grew = len(sites) > ratchet.unreasoned_count
-    repair = f"set unreasoned_count = {len(sites)} in {RATCHET_TABLE}"
+    moved = len(sites) - ratchet.unreasoned_count
+    repair = f"record `{COUNT_DELTA} = {moved:+d}` in {FRAGMENT}"
     return [
         Finding(
             subject="pyproject.toml",
@@ -359,7 +366,7 @@ def main() -> int:
     try:
         ratchet = load_ratchet(REPO_ROOT)
         found = tracked_suppressions(REPO_ROOT)
-    except RatchetError as exc:
+    except (RatchetError, FragmentError) as exc:
         print(f"{_LABEL}: {exc}", file=sys.stderr)
         return 1
 

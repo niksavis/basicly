@@ -29,20 +29,18 @@ may only *shrink*. Three consequences, each its own finding:
   Leaving the entry would license regrowth back to the go-live number, which is the
   fail-open shape this repo keeps paying for.
 
-**Top-level imports are not counted** (:func:`module_tokens`). Counting them made the
-ratchet charge for the one change it exists to force: a split adds an import line to every
-module that imports the new one, and those modules are frozen too. The frozen baselines
-were recomputed once on the same measure, so nothing is forgiven except the import block —
-a module that grew by real content still fails to the token.
+**Top-level imports are not counted** — :func:`module_tokens` holds the measurement that
+forced that, and the frozen baselines were recomputed once on the same measure, so nothing
+is forgiven except the import block.
 
 **Waivers, and why they are counted.** A genuinely cohesive module may exceed the cap
 deliberately by carrying a one-line reason as a column-0 comment: the marker is
-``module-size-waiver:`` followed by the reason. The waiver count is itself ratcheted
-against `waiver_count` in the same table — exactly as `[tool.vulture]`'s suppression list
-is policed by `wired_or_deleted.py` — so a waiver may be added, but only in a diff that
-also raises the number. The reason must be non-empty and the marker must start the line,
-which is what keeps a mention of it inside a string or a docstring from waiving the file
-that mentions it.
+``module-size-waiver:`` followed by the reason. The count is itself ratcheted against
+`waiver_count` — exactly as `[tool.vulture]`'s suppression list is policed by
+`wired_or_deleted.py` — so a waiver may be added only in a diff that moves the count, which
+a lane does with a `count_delta` in its own fragment (basicly-ef7t). The reason must be
+non-empty and the marker must start the line, which is what keeps a mention of it inside a
+string or a docstring from waiving the file that mentions it.
 
 Scope is every tracked ``.py`` under :data:`SCOPE_ROOTS`. Tracked, from `git ls-files`,
 because an untracked scratch file is not something a gate should have an opinion about.
@@ -67,6 +65,13 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
+from basicly.dropin import (  # noqa: E402 - the path above comes first
+    COUNT_DELTA,
+    FRAGMENT_DIR,
+    RATCHET_SECTION,
+    FragmentError,
+    compose,
+)
 from basicly.read_cost import SCOPE_FILE_READ_CAP, _text_tokens  # noqa: E402  (path set above)
 
 # Every directory whose Python this repo authors. `.basicly/core` is here because the kit
@@ -74,9 +79,11 @@ from basicly.read_cost import SCOPE_FILE_READ_CAP, _text_tokens  # noqa: E402  (
 # the code with the widest blast radius.
 SCOPE_ROOTS = ("src", "tests", ".scripts", ".basicly/core")
 
-# Where the ratchet is recorded, and how a failure names it.
+# Where the ratchet is recorded, how a failure names it, and where a lane records a change to
+# the count instead of editing that shared table (basicly-ef7t).
 RATCHET_TABLE = "[tool.module_size]"
 FROZEN_TABLE = "[tool.module_size.frozen]"
+FRAGMENT = f"[{RATCHET_SECTION}.module_size] in {FRAGMENT_DIR}/<bead-id>.toml"
 
 # A waiver, as a module may spell one. Column-0 comment, non-empty reason: a marker quoted
 # inside a string or indented in a docstring is a mention, not a waiver, so this script and
@@ -147,12 +154,9 @@ def module_tokens(text: str) -> int:
     to read whole, and code growth is still measured to the token. A module that grew by
     real content still fails — only the import block is free.
 
-    Args:
-        text: The module's source.
-
     Returns:
-        The token count of the source with top-level ``import``/``from`` statements, and
-        the continuation lines of a parenthesised ``from ... import (`` block, removed.
+        The count with top-level ``import``/``from`` statements, and the continuation lines
+        of a parenthesised ``from ... import (`` block, removed.
     """
     kept: list[str] = []
     depth = 0
@@ -168,13 +172,7 @@ def module_tokens(text: str) -> int:
 
 
 def load_ratchet(repo: Path) -> Ratchet:
-    """Read the recorded baseline out of ``pyproject.toml``.
-
-    Args:
-        repo: The repository root.
-
-    Returns:
-        The frozen module sizes and the declared waiver count.
+    """The baseline in ``pyproject.toml``, with the ``basicly.d`` fragments applied.
 
     Raises:
         RatchetError: The table is absent or malformed — the gate must not pass by
@@ -193,14 +191,12 @@ def load_ratchet(repo: Path) -> Ratchet:
         raise RatchetError(f"{FROZEN_TABLE} must map each path to its go-live token count")
     if not isinstance(count, int):
         raise RatchetError(f"{RATCHET_TABLE} must declare waiver_count as an integer")
-    return Ratchet(frozen=frozen, waiver_count=count)
+    baseline = compose(repo, "module_size", frozen=frozen, count=count)
+    return Ratchet(frozen=baseline.frozen, waiver_count=baseline.count)
 
 
 def tracked_modules(repo: Path) -> list[Module]:
     """Every tracked ``.py`` under :data:`SCOPE_ROOTS`, measured.
-
-    Args:
-        repo: The repository root.
 
     Returns:
         The modules, ordered by path. A tracked path with no readable file — deleted in the
@@ -238,8 +234,8 @@ def _over_cap(module: Module, cap: int) -> Finding:
         detail=f"{module.tokens} tokens, over the {cap}-token cap",
         remedy=(
             "split it along a nameable responsibility (not into _part1/_part2), or waive it "
-            f"with a column-0 `# module-size-waiver: <reason>` and raise waiver_count in "
-            f"{RATCHET_TABLE}"
+            f"with a column-0 `# module-size-waiver: <reason>` and record `{COUNT_DELTA} = 1` "
+            f"under {FRAGMENT}"
         ),
     )
 
@@ -323,7 +319,10 @@ def _waiver_findings(waived: Collection[str], ratchet: Ratchet) -> list[Finding]
                 f"{ratchet.waiver_count} — a waiver was {direction} without saying so "
                 f"(waived: {listed})"
             ),
-            remedy=f"set waiver_count = {len(listed_paths)} in {RATCHET_TABLE}",
+            remedy=(
+                f"record `{COUNT_DELTA} = {len(listed_paths) - ratchet.waiver_count:+d}` "
+                f"under {FRAGMENT}"
+            ),
         )
     ]
 
@@ -371,7 +370,7 @@ def main() -> int:
     try:
         ratchet = load_ratchet(REPO_ROOT)
         modules = tracked_modules(REPO_ROOT)
-    except RatchetError as exc:
+    except (RatchetError, FragmentError) as exc:
         print(f"{_LABEL}: {exc}", file=sys.stderr)
         return 1
 
