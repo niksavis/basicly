@@ -88,10 +88,18 @@ hand-written copy of them was stale within days:
 
 <!-- docs-claims:end plan-current-state -->
 
-**Not built**, re-verified against `src/` on 2026-08-09 rather than by counting closed beads:
-**no EARS validation** anywhere; **VALIDATE, REPAIR and RETROSPECTIVE are not phases**;
-`policy.rework_recorded` reports a cross-gate total that nothing enforces; and the four
-remaining handoff schemas are unwritten, which is what blocks four of the seven roles.
+**Not built**, re-verified against `src/` on 2026-08-13 rather than by counting closed beads:
+**no EARS validation** anywhere; **REPAIR and RETROSPECTIVE are not phases** (VALIDATE now is,
+`basicly-u2hl.54`); and `policy.rework_recorded` reports a cross-gate total that nothing
+enforces.
+
+**Two entries left this list on 2026-08-13 and the reason matters more than the fact.** VALIDATE
+is a phase, gated at the recorded L3 level, with the validator dispatched from it and priced as a
+read rather than a write. And the handoff schemas are written: seven of the eight named kinds now
+have one, so the four unreachable roles are no longer blocked *by their contract*. `curator` and
+`retrospector` remain unreachable for a different reason — `_on_ship` never dispatches, and
+RETROSPECTIVE has no state — and `reviewer` has no `ROLE_BY_PHASE` entry at all. **Do not read
+"schemas written" as "roles reachable".**
 
 **One item on this list was never a defect, and it sat here for two days.**
 `loop_state.PHASES` and `config.LOOP_PHASES` were recorded as disagreeing tuples. They
@@ -119,8 +127,10 @@ session.
 
 ```text
 agents   11 sources · 7 loop + 4 ad-hoc · projected to both families · vendored
-         1 of 7 loop roles reachable        implementer, via build AND repair
-         6 unreachable — 4 have no state (u2hl.54), 2 are unrouted (4xmu)
+         4 of 7 loop roles reachable        decider, decomposer, implementer, validator
+         3 unreachable — curator (ship never dispatches), retrospector (no
+         state), reviewer (no ROLE_BY_PHASE entry at all)   [M 2026-08-13]
+         5 of 5 roles declaring `skills:` now receive them  (basicly-ey58)
          the projected `tools:` allowlist binds on copilot too   [M 2026-08-11]
 skills   40 sources · 35 projected · 5 of 5 loop skills exist
          ever exercised                                     10 of 40
