@@ -293,3 +293,46 @@ def test_a_two_lane_pass_leaves_every_routed_outcome_in_its_narrative(
     ):
         assert expected in narrative, narrative
         assert expected in out
+
+
+# --- Which tool the turn called (basicly-ejdm.1) -----------------------------
+
+
+def test_a_transcript_line_names_the_tools_its_turn_called(tmp_path: Path) -> None:
+    """The split basicly-ejdm needs starts here: a turn that read vs one that wrote."""
+    path = tmp_path / "lane.jsonl"
+    transcript = lane_log.LaneTranscript(path)
+    transcript(runner.StreamEvent(line="{}", data={"type": "assistant"}, tools=("Read", "Edit")))
+    transcript.close()
+
+    line = json.loads(path.read_text(encoding="utf-8").splitlines()[0])
+    assert line["tools"] == ["Read", "Edit"]
+
+
+def test_a_turn_that_called_nothing_records_an_empty_list(tmp_path: Path) -> None:
+    """Called-nothing is a measurement; it must not read as unmeasured."""
+    path = tmp_path / "lane.jsonl"
+    transcript = lane_log.LaneTranscript(path)
+    transcript(runner.StreamEvent(line="{}", data={"type": "assistant"}))
+    transcript.close()
+
+    line = json.loads(path.read_text(encoding="utf-8").splitlines()[0])
+    assert line["tools"] == []
+
+
+def test_a_line_written_before_the_field_reads_as_unknown_not_as_no_tools(
+    tmp_path: Path,
+) -> None:
+    """Every transcript on disk today predates this field.
+
+    A reader that defaults a missing key to `[]` would count every historical lane
+    as having called no tools, which is indistinguishable from a lane that only
+    thought — and would silently classify the whole existing corpus as pure
+    implementation. The absent key must stay absent so a consumer can tell.
+    """
+    path = tmp_path / "old.jsonl"
+    path.write_text(json.dumps({"seq": 0, "type": "assistant", "tokens": 5}) + "\n")
+
+    line = json.loads(path.read_text(encoding="utf-8").splitlines()[0])
+    assert "tools" not in line
+    assert line.get("tools") is None
