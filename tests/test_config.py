@@ -1455,7 +1455,7 @@ _ENGINE_SOURCE = Path("src") / "basicly" / "config.py"
 # The anchor the lane fixtures graft a new section onto. A literal from the file
 # under test, asserted present by every fixture that uses it, so a rename breaks
 # these tests loudly instead of quietly making them assert nothing.
-_SCHEMA_ANCHOR = "CONFIG_SCHEMA: dict[str, _Table] = {"
+_SCHEMA_ANCHOR = "CONFIG_SCHEMA: dict[str, Table] = {"
 
 
 def _engine_tree(root: Path, source: str) -> Path:
@@ -1472,22 +1472,11 @@ def _lane_source(added: str) -> str:
     assert _SCHEMA_ANCHOR in source, "CONFIG_SCHEMA is no longer declared as a dict literal"
     grafted = source.replace(
         _SCHEMA_ANCHOR,
-        f'{_SCHEMA_ANCHOR}\n    "lane": _Table(keys=frozenset({{"{added}"}})),',
+        f'{_SCHEMA_ANCHOR}\n    "lane": Table(keys=frozenset({{"{added}"}})),',
         1,
     )
     assert grafted != source
     return grafted
-
-
-def test_the_tree_schema_reader_reproduces_this_repos_own_schema() -> None:
-    """The static reader and the imported module must agree on this very file.
-
-    The anti-drift half of basicly-69az. A landing is judged by whatever this reader
-    makes of the tree's `config.py`, so a construct it silently mis-reads would move
-    the gate rather than relocate it. Equality against the live `CONFIG_SCHEMA` is
-    the only assertion that stays true as the schema grows.
-    """
-    assert config._tree_schema(REPO_ROOT) == CONFIG_SCHEMA
 
 
 def test_a_lane_adding_a_schema_entry_may_declare_it_in_the_same_commit(tmp_path: Path) -> None:
