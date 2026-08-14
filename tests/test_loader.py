@@ -193,6 +193,61 @@ def test_load_from_core_and_overlay_roots(tmp_path: Path) -> None:
     assert by_id["user-rule"].source == "user"
 
 
+def test_source_inference_ignores_a_user_component_in_the_checkout_path(tmp_path: Path) -> None:
+    """A checkout under a directory named `user` still loads its fragments as core.
+
+    Regression (basicly-n6uu): inference folded every component of the absolute
+    path, so a home directory named `user` (or `/Users/user`, or `/srv/User`)
+    made every fragment loaded without a source hint an overlay. Overlay
+    provenance downgrades an unknown `replaces` from an error to a warning and
+    lets `planner._apply_user_replacements` drop the named core fragment — so a
+    core rule would vanish from every agent's projected guidance, silently, and
+    only on machines whose path happened to spell it.
+    """
+    root = tmp_path / "home" / "user" / "checkout" / ".basicly" / "fragments"
+    root.mkdir(parents=True)
+    _wf(
+        root / "core.fragment.yaml",
+        "id: core-rule\ndescription: Core\ncategory: project\napplies_to: [all]",
+    )
+
+    fragments = load_fragments(root, {"claude"})
+
+    assert [f.source for f in fragments] == ["core"]
+
+
+def test_source_inference_reads_the_legacy_user_subdir_of_a_root(tmp_path: Path) -> None:
+    """The pre-migration overlay location — `user/` *inside* a root — still infers user.
+
+    `install` migrates `.basicly/fragments/user/` into the overlay, but a repo
+    that has not run it yet loads that root with no hint (cli._fragment_roots).
+    """
+    root = tmp_path / "user" / ".basicly" / "fragments"
+    (root / "user").mkdir(parents=True)
+    _wf(
+        root / "user" / "overlay.fragment.yaml",
+        "id: user-rule\ndescription: User\ncategory: project\napplies_to: [all]",
+    )
+
+    fragments = load_fragments(root, {"claude"})
+
+    assert [f.source for f in fragments] == ["user"]
+
+
+def test_source_inference_reads_the_overlay_marker_root(tmp_path: Path) -> None:
+    """A root under the declared `.basicly-local` overlay infers user without a hint."""
+    root = tmp_path / "user" / ".basicly-local" / "fragments"
+    root.mkdir(parents=True)
+    _wf(
+        root / "overlay.fragment.yaml",
+        "id: user-rule\ndescription: User\ncategory: project\napplies_to: [all]",
+    )
+
+    fragments = load_fragments(root, {"claude"})
+
+    assert [f.source for f in fragments] == ["user"]
+
+
 def test_replaces_missing_override_is_rejected(tmp_path: Path) -> None:
     """A fragment that lists replaces without override: true is a hard error."""
     _wf(
