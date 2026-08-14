@@ -6,6 +6,688 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.9.0 - 2026-08-14
+
+Delta: v0.8.0..v0.9.0
+
+### Added
+
+- **`basicly usage tuning` advises every governed factory parameter from the outcomes it
+  actually produced.** Almost every number governing the factory was set by judgment and then
+  never revisited; this is the readable half of the feedback loop the exceptions already had.
+  It reads the dispatch ledger from **both** corpora — the self-ignored local run records and
+  the committed `[harness-run]` markers, deduplicated so a dispatch in both is one sample —
+  and names which corpus each sample came from. Per parameter it reports the value in force
+  for the dispatches it summarises (a session override puts its dispatches in their own
+  cohort with their own outcome distribution) and a recommendation with its sample size:
+  `measured` at or above `[policy.sizing] calibration_min_samples`, otherwise `seeded`, where
+  the declared prior stands and the row names the in-force value it would displace — never a
+  number fitted to three samples wearing a "seeded" label. A parameter the ledger records
+  nothing about still prints, with a sample size of zero, no recommendation and the reason it
+  has none: `stall_after`, `quiet_after`, `max_agent_processes`, `[worktree] concurrency` and
+  the two calibration bounds are all in that state, and a bound nothing records is a bound
+  nobody can tighten. **It is advisory and writes nothing** — applying a recommendation stays
+  a human's or a gate's call (basicly-3ifz.1).
+
+- **Seven specialist roles drive the loop, and the engine now dispatches them by phase.** The
+  factory's states have named their specialists in prose since the requirements were written, and
+  nothing consumed the names: every dispatch ended at a bare `claude -p`, so one default runner
+  served every phase. `basicly.roles` closes that with a table — `classify` → `decider`,
+  `decompose` → `decomposer`, `build` and `repair` → `implementer`, `validate` → `validator`,
+  `ship` → `curator`, `retrospective` → `retrospector` — and the runner puts `--agent <role>` on
+  the argv.
+
+  The map is **data, not judgment**: a phase resolves to exactly one role by lookup, so the choice
+  costs no tokens, cannot drift between lanes and is not gameable. Resolution falls to the default
+  runner rather than failing in three cases, each deliberate — a phase with no persona (verify is
+  deterministic gates by decision), a family that cannot select one (codex ships no subagent root),
+  and a role whose *projected* file is absent, checked against the file the host reads rather than
+  the catalog source. A consumer on an older install therefore gets an unspecialised loop instead
+  of a stopped one.
+
+  Eleven agents are authored as catalog sources under `.basicly/core/agents/`, projected into both
+  agent roots by `basicly agents-build` and **vendored to consumers by `basicly install`**: the
+  seven loop roles above plus `code-reviewer`, `security-auditor`, `test-runner` and `researcher`.
+  The projected `tools:` allowlist was verified to bind on copilot as well as claude, in the
+  spellings we already emit, against a positive control (`basicly-4kdm`, `basicly-4xmu`).
+
+- **Five loop skills, each paired to the role that loads it.** `decompose-plan`,
+  `validate-as-consumer`, `repair-in-place`, `root-cause` and `python-guidelines` ship as catalog
+  sources and are named in their agent's declared skills. `catalog lint` refuses a name that
+  resolves to nothing, so the pairing is a checked relation rather than a sentence in a document
+  (`basicly-4kdm`, `basicly-u2hl.52`).
+
+A dispatched lane's transcript now names the tools each turn called, so a lane's token
+spend can be split into context acquisition and implementation. That split is what
+`basicly-ejdm` reasons about and had no instrument for: the claim that a lane's
+multi-million-token floor is "bought by the instruction" was unfalsifiable without it.
+
+Claude only — codex emits no per-tool event this stack parses, and the report that
+consumes this must say so rather than implying coverage. A turn that called nothing
+records an empty list; a transcript line written before the field stays absent, so a
+reader can tell "called no tools" from "predates the measurement" rather than
+classifying the entire historical corpus as pure implementation.
+
+- **`basicly tracker shadow` runs the work-tracker cutover's shadow differential against the
+  live tracker.** Step 2 of `docs/design/work-tracker.md` §5 had every piece of machinery and
+  no driver: the comparison could only be constructed by a test. The command folds the owned
+  event log under `.basicly/ledger/` and holds its answers to phase derivation, the ready set
+  and gate status against `br` itself — `br list -a`, one `br show` per hundred ids, and
+  `br gate list` for the query no export can answer, since a `gate report` row is absent from
+  the JSONL export. The reference is live and never a re-import, which the kit enforces by
+  perturbing the ledger and refusing a source whose answers move with it; the reference
+  therefore re-reads the tracker rather than caching, because a memoised answer would clear
+  that probe without being independent. The run writes to neither store and reports `clean`
+  and `conclusive` as two verdicts, so agreement on a query every record answered identically
+  cannot be read as evidence. First run against this repo's 643-record ledger: 331 gate
+  disagreements (no export carries a gate row, so the import could not have carried one), one
+  phase disagreement on a bead whose worktree binding never reached the committed export, and
+  three records the tracker holds that the ledger does not (basicly-f6th).
+
+- **A consumer now has a written path from `basicly install` to a first shipped bead.**
+  `docs/` carried a reference (the architecture file) and explanation (design and research),
+  and nothing else — a repo could install the harness, read the whole architecture, and still
+  not know which command comes after `install`. The new layer closes the two missing Diátaxis
+  quadrants: a tutorial (`docs/tutorial/first-loop.md`) that walks a scratch repo from install
+  through filing a bead, the classify checkpoint, building in the provisioned worktree, the
+  landing and the ship approval; and six task-focused how-tos (`docs/how-to/`) for the
+  recurring operations — customizing the catalog through the overlay, wiring the verify gate
+  (which passes *vacuously* until you declare checks), unblocking a commit a hook refused,
+  upgrading and detecting drift, running parallel lanes, and resuming or handing over a track.
+  Every command and quoted output in the tutorial was executed against a fresh repo before it
+  was written, which is how it came to document the two gates that refuse a fresh install's own
+  first commit: `catalog-lint` demanding a `[catalog] rank1_floor`, and the missing beads issue
+  id. README and architecture §13.1 point at the layer; §15's roadmap row moves to `shipped`
+  (basicly-imnu.2).
+
+- **A `PreToolUse` guard refuses a for-loop over an unsplit scalar.** zsh does not word-split an
+  unquoted scalar, so `V="a b c"; for x in $V` runs the body once with the whole string and exits
+  0 — writing nothing while reading as success. The guard blocks that shape at tool time and names
+  the variable. It matches only an assignment and its loop in the same command, which is complete
+  because shell state does not persist between tool calls, and leaves arrays, inline lists, quoted
+  expansions and command substitution alone.
+
+- **Catalog routing is gated deterministically, at zero token cost.** `basicly catalog lint`
+  now ranks every model-invoked entry's description with a stemmed TF-IDF ranker (pure Python,
+  no new dependency, no embeddings) and enforces three assertions: a positive prompt ranks its
+  owning entry in the top-k, a negative prompt is outranked by the different entry it declares
+  as `owner`, and no two descriptions exceed a pairwise similarity ceiling (error at 75%,
+  warning at 50%). The evidence is a per-entry `evals.yaml` colocated with the catalog source
+  and never projected into a skill root. The CI metric is the **rank-1 rate**, printed on every
+  run and checked against `[catalog] rank1_floor` in `basicly.toml`; a companion
+  `rank1_floor_high_water` ratchets that floor so it can be raised but never lowered, because
+  lowering a floor to make a regression pass is deleting the test while looking like
+  maintenance. A prompt that scores zero fails instead of passing on a tie-break, so an
+  assertion cannot report coverage it never had. Authoring the corpus found five descriptions
+  missing vocabulary users actually say — `tool-fd`, `tool-ripgrep`, `tool-sd`, `tool-typos`
+  and `tool-uv` — and one stemmer defect that stopped "what branch am I on" reaching `tool-git`
+  (basicly-m4zv.2).
+
+- **A judged finding must carry a severity, and a reviewer bundle may not pre-judge the review.**
+  Two deterministic checks, both free at CI time. A judged rubric check answering `no` is now a
+  finding that must classify itself `BLOCKER` / `IMPORTANT` / `MINOR`; one that does not is
+  rejected as a schema violation and re-requested once with the violation named, exactly as an
+  unparseable reply would be, rather than accepted as a dispute nobody can triage. The invariant
+  sits on the verdict record itself, so there is no path — parse, construct, or report — to a
+  severity-less judged finding, and the severity rides onto both the `rubric-judged` gate note and
+  the queued validate decision. Separately, every reviewer bundle the engine assembles (the
+  semantic-review prompt and the rubric judge prompt) is linted for finding-suppressing directives
+  — "do not flag", "don't treat X as a defect", "at most Minor", "the plan chose" — and refused
+  rather than emitted weakened; the lint covers the material under review as well as the task
+  text, because a reviewer reads one prompt and cannot tell instruction from evidence
+  (basicly-m4zv.4).
+
+- **Every gate is classified by type, so "what happens when this one fails" is answered by the type
+  rather than per call site.** `policy.GATE_TYPE_BY_GATE` types each gate the engine names as
+  pre-flight, revision, escalation or abort, and defaults an unnamed one to revision. A pre-flight
+  gate is additionally refused the tracker while it runs, so it cannot write state before the work
+  it guards exists.
+
+  The two rules that govern adding one are recorded with it: selection starts at pre-flight and
+  moves only when a check must run after work is produced, and a cap is sized to the cost of one
+  iteration — a landing bounce and a re-review of a three-line fix must not share a budget
+  (`basicly-m4zv.6`).
+
+Five of the seven unbuilt handoff artifact kinds now have schemas: `classification`,
+`change-shape`, `verification-evidence`, `validation-transcript` and `release-record`.
+Their absence is why `validator`, `curator`, `retrospector` and `reviewer` were authored
+and unreachable — a role with no schema has nothing a state can validate, so no state
+dispatches it.
+
+Each is strict in the same way the two existing schemas are: `additionalProperties: false`
+at every object level, a `required` array naming every declared property, and
+`schema_version` pinned. `classification` is asserted against a payload built from
+`integrity.assign()` rather than a hand-written example, because a schema agreeing with an
+example someone wrote for it proves nothing.
+
+The requirements' artifact table said "Six schemas" while listing seven rows and omitting
+`release-record` entirely — corrected, with the row added. `solution-design` is the one
+remaining kind with no schema, and deliberately: D17 specifies it as markdown sections
+rather than a JSON payload, so whether it belongs to this family is an open question
+(`basicly-32qz`) rather than an omission.
+
+- **Every supervised dispatch now leaves a transcript.** A lane's `stream-json` output was read
+  into memory, spent entirely on token accounting and dropped when the process exited: measured
+  on 2026-08-08, 32 dispatches costing $122.41 left records of what each one cost and nothing of
+  what it did, so no claim about lane behaviour could be evidenced after the fact. Each dispatch
+  now writes `.basicly/usage/lane-logs/<session>/<bead>.jsonl` as the events arrive, flushed per
+  event so a lane stopped by a quiet bound, a spend ceiling or a hard kill keeps what it had
+  already said. The supervisor's own narrative — the session header, every dispatch line and
+  every routed outcome — is teed to `pass.log` in the same directory, where before it existed
+  only in a terminal pane. Both are redacted, both sit under the self-ignored `.basicly/usage/`
+  tree, and `[runner] lane_log_sessions` bounds how many sessions are kept before the least
+  recently written rotate away.
+
+- **A plan gate on entry to BUILD refuses a unit of work the loop cannot hold to.** Every child
+  in a plan must now declare all five of: acceptance criteria, at least one scope glob, a
+  dependency list, a token budget (`budget_tokens`) and an integrity level (`integrity`, one of
+  `L1`/`L2`/`L3`). A plan missing any of them is refused when it is loaded — by
+  `basicly decompose --plan`, by `--children`, and by the loop's own child-plan proposer, which
+  blocks for a human rather than recording it — and the refusal names every missing field on
+  every child in one message instead of one per round trip. The inspection sits before BUILD,
+  which is where nearly all the tokens go, so a plan defect is found while it is still cheap.
+- **Decompose emits a dependency graph instead of deriving one from scope overlap alone.** A
+  child's `depends_on` names sibling titles (the plan is written before any issue exists), and
+  each declared edge is recorded on the tracker as a `blocks` dependency, so `br dep tree`
+  carries ordering that no glob comparison can express — B needing A's decision when the two
+  touch no common file. Declared edges are unioned with the scope-derived serial chain and
+  deduplicated. A cycle in the declared graph is refused **naming its members**, and no issue is
+  created: a half-recorded decomposition is worse than none. An empty `depends_on` is a
+  declaration; an absent one is not, and is refused.
+- **Each created child records its plan fields in a `## Plan` section**, and
+  `plan_gate.build_entry_verdict` reads them back to decide whether a lane may be dispatched,
+  naming the field a unit is missing. It fails closed on an unreadable record (`basicly-u2hl.1`).
+
+- **`noqa-debt` is a `[[verify.checks]]` entry: lint suppressions are ratcheted per code and cannot
+  grow silently.** `.scripts/check_noqa_debt.py` counts `# noqa` by rule code and fails on an
+  increase against the counts frozen in `[tool.noqa_debt]`. Counting is by `tokenize` comment and
+  ruff's own directive grammar rather than by substring, so a comment that *looks* like a
+  suppression and suppresses nothing is not credited as one.
+
+  It also ratchets `unreasoned_count` in both directions, against a house form of
+  `# noqa: CODE — reason`. The argument the gate makes is its own history: the figure was stale
+  twice while it was prose, and every suppression it now counts arrived through a green gate
+  (`basicly-u2hl.12`).
+
+- **The `python-guidelines` skill carries the design calls no linter makes, and it activates on
+  Python files rather than waiting to be asked.** Where an oversized module splits, whether a name
+  or a docstring carries meaning, whether an abstraction earns its keep, `noqa` legitimacy,
+  exception design, 3.14 idiom selection, free-threading safety, and the rule that a comment
+  contradicting the code is a defect in which the code is what ships — none of which any rule in
+  the stack can read.
+
+  It stays a skill and takes a `paths: ["**/*.py"]` glob, which limits *and triggers* automatic
+  activation, so it binds on every Python edit for **zero** always-on characters. The glob sits
+  under the skill schema's `claude:` vendor fence because `paths` is outside the portable Agent
+  Skills subset, which keeps every projected `SKILL.md` portable while still expressing the
+  host-specific capability. Codex has no glob-based instruction scoping and still relies on model
+  invocation there — a parity gap declared rather than papered over (`basicly-u2hl.13`,
+  `basicly-u2hl.17`).
+
+- **A source module with no test file named after it now fails a gate, by name.** `§9.4` of
+  `docs/design/factory-loop-requirements.md` states the convention — `test_<module>.py`, or
+  `test_<module>_<aspect>.py` when one module's tests justify a split — and records that it was
+  *emergent* when it was measured: 48 modules, 84 test files, every module covered. Nothing made
+  it binding, so the first module splits broke it. Measured on this tree before the fix: 73 source
+  units and **11 with no test file named after them**, ten of them created on 2026-08-08. Their
+  tests were never missing; they stayed in the file named after the module they were extracted
+  from, which is exactly the drift the convention existed to stop. `.scripts/check_test_naming.py`
+  is now a `[[verify.checks]]` entry (`test-naming`, in `fast`, `full` and `staged`) and the
+  eleven are placed: `artifact_record`, `capability_proof`, `catalog_source`, `dispatch_phase`,
+  `mirror`, `owned_store`, `repair_brief`, `skill_source`, `spend_calibration`, `surface_report`
+  and `ui` each have their own file (basicly-u2hl.14).
+- **The gate runs forward only, and says so.** A source unit must have a test file; a test file
+  need not have a source unit — `tests/` legitimately covers `.scripts/`, the git hooks, the
+  shipped kit and whole-loop integration paths, none of which are modules, and failing on those
+  would make the gate unrunnable rather than stricter. The unit is what the package exposes: a
+  top-level module is one unit and a subpackage is one unit, so `renderers/claude.py` is covered
+  by `tests/test_renderers.py`. A derived name that is already another unit's own test file does
+  not count, which closes the hole where splitting a module and deleting its test file would read
+  as covered under the very form the split created.
+- **`[sizing] working_set_max` raised from 132,000 to 200,000.** The ceiling is derived from the
+  dispatch record, not chosen, and `basicly-u2hl.14` itself completed at a re-derived estimate of
+  197,646 — a 27-path scope costing 65,882 to read at the feature seed. A second instance of the
+  `basicly-tcmy.5` shape by a new route: this lane did not widen its scope, it *wrote into* the
+  scope it was admitted on, being a gate whose deliverable is new test files under paths its own
+  scope already named. `src/basicly/config.py` carries the derivation and what the number is not
+  (basicly-u2hl.14).
+
+- **DECOMPOSE and BUILD now hand on a schema-validated artifact, and the next state refuses
+  one that does not validate.** The first two of the six handoff artifacts
+  `docs/design/factory-loop-requirements.md` §8 specifies, and deliberately only two: §2.1
+  accepted a risk on D4 against a recommendation to prove one schema first, and its mitigation
+  is to sequence `decompose->build` and let the other four be built to a shape that has
+  survived contact. `implementation-plan` (`.basicly/core/schemas/implementation-plan.schema.json`)
+  carries, per planned child, the five fields the plan gate already refuses a unit for —
+  acceptance criteria, scope globs, declared dependencies, token budget, integrity level —
+  resolved onto the ids the decomposition created, plus the parallel groups those ids were
+  placed in; `decompose` records it on the feature and the fan-out into BUILD refuses to start
+  when it does not validate, naming the failing field and its JSON path
+  (`$.tasks[0].integrity: 'L4' is not one of ['L1', 'L2', 'L3']`). `change-summary`
+  (`.basicly/core/schemas/change-summary.schema.json`) carries what changed and why, the commit
+  and the landing's own self-check verdict; a finished build records it and VERIFY's entry
+  refuses a broken one before it spends a check run. Every field of both is **derived** — the
+  bead's title, the branch head and changed paths read before the merge, the landing verdict —
+  so neither artifact asks a model to satisfy an output contract, which the research found is
+  the least standardised element in this field.
+- **Where a handoff artifact is stored, decided.** D13 resolves storage as typed events in the
+  owned ledger; this reaches that through `br.add_comment`/`br.read_comments` as a
+  `[harness-artifact]` marker rather than by appending to `.basicly/ledger/` directly. A new
+  event kind would have no writer while the repo runs `[tracker] mode = "external"`, whereas
+  the marker seam writes on every rung and becomes a ledger `comment` event at the flip; and a
+  direct ledger append would leave dirt the advance cannot sweep (it commits only `.beads/`),
+  wedging the very landing the artifact exists to gate. So `basicly-u4xu` and `basicly-vkh0.23`
+  are no longer prerequisites of §8. Measured bound: below `owned` the marker is one argv
+  element and Windows caps a command line at 32,767 characters, against 21,890 for this repo's
+  largest real decomposition — it fails loudly if a plan ever crosses, and the ceiling
+  disappears at `owned`.
+- **Both ends of the contract turn on together.** The schemas are catalog sources, so a repo
+  that has not installed them writes no artifact and refuses none — the producer and the
+  consumer each resolve the schema before anything else, which is what keeps a skipped write
+  from becoming a refusal one state later. A unit carrying no artifact is likewise admitted:
+  the gate binds on the marker its own producer writes, so a feature decomposed before this
+  existed still builds, and only a present-and-invalid artifact is a defect (basicly-u2hl.18).
+
+- **Every unit of work is assigned an integrity level, by a deterministic rule over its declared
+  paths.** Three levels, and the level — not a judgement and not a prompt — selects the gate set,
+  the model tier and the rework allowance a package earns, read from one record rather than
+  re-derived per caller. L3 is the five consumer surfaces the semver freeze names (the CLI,
+  `basicly.toml` and its overlay, the catalog source schemas, the generated-file/manifest
+  contract, the owned ledger format); L1 is docs and tests; everything else, including a path the
+  rule has never been taught, is L2. The rule is total and single-valued: every path a repo can
+  hold resolves, and no path is claimed by two clauses. Because a path rule alone over-classifies,
+  a change to a consumer surface that is under the configured line threshold and alters no public
+  signature is downgraded to L2 with the reason recorded. Classify assigns the level from the
+  scope it is given and records it as a `[harness-classification]` comment, so the verdict travels
+  with a clone (basicly-u2hl.2).
+
+- **The plan gate refuses a planned child that cannot name its end-to-end demonstration.**
+  Every child in a plan now declares a sixth field, `demonstration`: how it is exercised through
+  the consumer surface — a command to run, a request to make, or a test — with the runnable part
+  in backticks. A child that names none is refused at plan time by `basicly decompose --plan`, by
+  `--children`, and by the loop's child-plan proposer, naming the child; so is one whose
+  demonstration is prose naming nothing runnable, on the same rule that already refuses a `## Scope`
+  entry that is not a backticked glob. A child with no consumer-visible behaviour is a horizontal
+  slice, and a horizontal slice leaves verify nothing to derive a check from — the refusal moves
+  that discovery to the point where splitting the plan is still cheap. The field is recorded in the
+  child's `## Plan` section and reads back with the rest (`basicly-u2hl.20`).
+- **`basicly.plan_entry`** now holds the build-entry predicate that decides whether a recorded bead
+  may be dispatched (`build_entry_verdict`, `entry_verdict_for`, `EntryVerdict`), split out of
+  `basicly.plan_gate` along the boundary that module's docstring already drew: judging a proposed
+  plan against reading a recorded one back. It deliberately does **not** require a demonstration —
+  every bead recorded before the field existed carries a `## Plan` heading without one, so on that
+  population its absence cannot be told from a defect (`basicly-u2hl.20`).
+
+- **BUILD's downstream-WIP entry predicate now exists and binds.** Requirements 3.1 states
+  BUILD's entry condition as *plan gate green **and** downstream WIP below limit*, and only
+  the first half was implemented: `[worktree] concurrency` bounds how many lanes run at once,
+  and nothing bounded how much finished-but-unlanded work piled up behind them. A supervised
+  pass that landed five lanes faster than anyone reviewed them produced five lanes' worth of
+  unreviewed surface, and neither the spend ceiling nor the concurrency cap could see it —
+  the quantity that actually runs out is review capacity, counted in units rather than
+  tokens. `[policy] max_downstream_wip` (default 5) is that bound: `basicly.wip` counts the
+  session's units parked in `verify` or `ship` — the same population `advance_parked` drains
+  each pass, so the bound cannot wedge — and a pass starts only what the remaining headroom
+  admits. Lanes past it are returned unstarted and `refused`, so they route to the decision
+  queue rather than burning a rework attempt, and each says which limit holds it and which
+  units to land to clear it. Reported on every pass, refused or not (`wip: 2/5 unlanded
+  downstream of build; …`), because an unbounded pass must never again look like a checked
+  one; a pass the bound holds entirely also queues an escalation on the session root, so a
+  client reading only the queue does not see it as an idle pass (basicly-u2hl.23).
+
+- **The Hold and Kill gate verbs now do something.** Every escalation the supervisor raises has
+  always offered `park` as a route and nothing anywhere carried it out, so an operator who parked
+  a lane watched the next pass dispatch it again; `kill` had no surface at all. Answering an
+  escalation `park` (or `hold`) now sets the lane `deferred` and records the reason on the bead,
+  which is what makes `loop_state.is_dispatchable` refuse it and stops it holding its parent open
+  — so it is human-only, like `land anyway`, and a delegated answer says plainly that it parked
+  nothing. New `basicly loop kill <id> --reason "<why>"` tears the lane's worktree down and closes
+  the bead won't-do-this-way. Run bare it refuses, mints a one-time code and writes nothing: kill
+  is the only verb that removes a *requirement*, so a human is required at every integrity level
+  and neither an autonomy grant nor an interactive terminal substitutes for the relay. The
+  teardown runs before the close, so a refusal can never leave a closed bead bound to a live
+  worktree, and committed work is left on the `harness/` branch unless `--discard` is passed.
+  The requirements document's §5 blamed this on the status vocabulary — `deferred` was already
+  excluded from `DISPATCHABLE_STATUSES` — and now records the correction with the real gap
+  (basicly-u2hl.3).
+
+- **A failed lane is repaired in its own worktree, briefed with the findings that rejected it.**
+  Rework used to dispatch a fresh agent with the same fixed prompt every attempt — the same tier,
+  the same framing, and no knowledge of why the last attempt failed — so a lane spent its rework cap
+  without changing a variable. `basicly.repair_brief` assembles the actual gate evidence (the check,
+  the command, the result) and `loop` dispatches the implementer in **repair mode** into the
+  worktree that already holds the work.
+
+  Repair is a mode of the implementer rather than a new role: it differs in prompt alone, not in
+  tier, tools or artifact, so it maps to `implementer` and the mode travels in the brief
+  (`basicly-u2hl.4`).
+
+- **Module size is now gated as a token ratchet, and cyclomatic complexity is linted.**
+  Nothing in this stack measured module length — ruff has no rule for it — so `cli.py` reached
+  53,095 tokens with every gate green. The new `module-size` check (`.scripts/check_module_size.py`,
+  wired into the `fast` and `full` verify sets, so it runs at commit time) measures every tracked
+  `.py` under `src/`, `tests/`, `.scripts/` and `.basicly/core/` in tokens and refuses one that
+  crosses `decompose.SCOPE_FILE_READ_CAP` — imported, never respelled, so the size a lane is
+  refused at is the size the sizing governor budgets with. It is a ratchet rather than a hard cap:
+  the 78 modules already over the cap are recorded at their go-live counts in
+  `[tool.module_size.frozen]` and may only shrink, an entry that reaches the cap is deleted rather
+  than lowered, and a deliberately cohesive module may carry a one-line `module-size-waiver:`
+  reason whose count is itself ratcheted in both directions. Read it as an agent working-set gate,
+  not a defect-density claim — the defect literature argues the other way, and the gate's docstring
+  says which studies must not be cited in its support. Separately, ruff now selects `C90` with
+  `max-complexity = 15`, measured at 0 violations on the tree it landed on and 14 at 10, so it
+  binds the next function that crosses instead of arriving with a backlog and an argument
+  (basicly-u2hl.5).
+
+`validate` is a real loop phase, sequential after `verify` and before `ship`, with its
+own handler and an entry in `[policy.evidence]`. Its gate, `validate-as-consumer`, binds
+only where a unit's recorded `[harness-classification]` marker names L3 — L1 and L2 cross
+the state in the advance they always did, and a unit carrying no marker is unaffected, so
+work already in flight neither gains a rung nor is refused. A unit resting in `validate`
+counts against the downstream WIP bound.
+
+Two supporting fixes this rests on. The `verify` and `ship` rungs are now derived from the
+per-gate fields of `GateStatus` rather than the aggregate `can_advance`, so requiring a
+second gate no longer drops a merged unit back to `build` and re-runs a landing that
+already succeeded. And intake now passes the bead's declared `## Scope` to `classify`,
+which it never did: `integrity.assign(())` hit its `unclassified` fallback, so **every
+unit the loop had ever classified was recorded L2** and no L3-gated behaviour could fire.
+
+The advance out of `validate` now refuses on a failed or missing consumer gate, and the two
+refusals are different. A `validate-as-consumer` result recorded **failed** by an engine
+provider spends one bounded rework attempt through the existing `_rework` path and escalates
+into the decision queue at `max_rework`. A **missing** result blocks without spending an
+attempt — nobody has looked yet, so there is no finding to repair, and charging it would burn
+the budget that exists for repairing findings and then escalate a unit whose validation had
+never run. A result whose provider is outside `ENGINE_GATE_PROVIDERS` still leaves the gate
+missing, but is now named in the refusal rather than silently ignored. Neither refusal merges,
+tears down a worktree, closes the bead or commits tracker state.
+
+VALIDATE now dispatches the `validator` role. The dispatch resolves its persona through
+`roles.resolve_role` exactly as the repair dispatch does, falls back to the default runner when
+the family cannot load the role rather than emitting a flag the host would drop, and runs in the
+base checkout because a consumer exercises the merged product rather than the branch that made
+it. It is metered like any other dispatch, so it binds the spend ceiling as a fifth site. When it
+returns, the engine re-reads the gate instead of assuming a verdict was recorded — a dispatch
+that recorded nothing leaves the unit resting in `validate`.
+
+A validate dispatch is now recorded under `run_record.VALIDATE_PHASE` rather than `BUILD_PHASE`.
+Every dispatch through `loop._run_agent` was previously labelled a build, which would have put a
+read-only judge's cost into the write-dispatch sample the spend calibration prices a lane from.
+
+Two extractions the size and density ratchets forced, both real seams: `dispatch_brief` now holds
+the prompts the loop dispatches with, and `landing_gate` holds the reading of an answered gate
+escalation and what it authorises. `landing_gate` carries a stated `comment-density-waiver` — its
+four functions are small and their docstrings are the incident history that makes them correct.
+
+The verdict is recorded by the engine, not by the validator. `br gate report` requires
+`--provider` and authenticates nothing, so an agent told to report its own gate would
+either error and record nothing — leaving the unit in `validate` forever while believing
+it had reported — or self-certify a required gate. The validator now ends its reply with
+`VALIDATION: PASS` or `VALIDATION: FAIL` and the engine writes the result under its own
+provider.
+
+- **The loop originates the work type and the child plan instead of waiting for one.**
+  Under a grant whose level permits it (L2+), `loop advance` dispatches a corpus-bounded,
+  tool-confined proposer for the input a phase needs, validates what comes back against the
+  same plan schema and working-set band `basicly decompose` already enforces, and continues
+  through the phase. No grant, an unconfinable runner, or a proposal that fails validation
+  falls back to the existing needs-input block, naming which input is missing and why nothing
+  was proposed. `basicly policy grant` now reports the two authorities separately —
+  `approves checkpoints:` and `originates proposals:` — so a level that approves the decompose
+  checkpoint but may not propose the plan says so (basicly-u6jq.2).
+
+### Changed
+
+- **A lane declares a verify check and a ratchet delta in its own file.** `basicly.d/<bead-id>.toml`
+  now carries a lane's `[[verify.checks]]` entries and its `[ratchet.<gate>]` contributions, and
+  `basicly verify`, the pre-commit hook runner and the two ratchet gates all assemble the
+  fragments on top of `basicly.toml` and `pyproject.toml`. Every ratchet number in a fragment is a
+  delta rather than a total, so lanes compose by addition in any landing order. Appending to those
+  two shared anchors bounced three of five lanes on the 2026-08-08 pass; the collision is now
+  impossible by construction rather than detected, as `changelog.d` already made it for
+  `CHANGELOG.md` (`basicly-ef7t`).
+
+- **The harness's `[harness-*]` markers are carried as owned-ledger events instead of `br`
+  comments.** Step 5 of `docs/design/work-tracker.md` §5, and the step that actually removes
+  `br` from the engine rather than merely making it non-authoritative. `comments` was the
+  largest remaining dependency — 26 of the engine's 55 `br` call sites and 45% of all recorded
+  tracker traffic — and measured over the live tracker, 1646 of its 1834 comments (89%) are
+  harness markers using a beads comment purely as transport: checkpoint approvals, gate
+  records, grants, rework counters, needs-input, the human-wait clock, dispatch records and
+  spend rollups. Three new seams carry them — `br.add_comment`/`br.try_add_comment` to write,
+  `br.read_comments`/`br.try_read_comments` to read one bead, `br.all_comment_texts` for the
+  whole-tracker evidence read — and with `[tracker] mode = "owned"` each answers out of the
+  event log under `.basicly/ledger/` with no `br` spawned at all. The two contracts are
+  deliberately split: a counter or a refusal reads the hard function, which raises when the
+  store cannot answer rather than reporting "no markers" and letting the loop advance past the
+  gate the marker existed to hold, while an idempotency or telemetry read takes the soft one.
+  The read-only ban that a pre-flight gate runs under is now enforced at the seam itself, so it
+  still refuses a marker write on the rung where there is no `br` call underneath to inherit it
+  from. Below `owned` nothing changes: the write still goes to `br` and the dual write still
+  mirrors it. The 188 human comments are untouched — a human writing prose runs `br` directly
+  and the engine never spawns that. Two `comments list` spawns remain at their own call site
+  (`decompose`'s sizing markers, `supervise`'s found-info records), each writing and reading
+  the same store; retiring them is `basicly-wpc8` (basicly-s5li).
+
+- **The ruff rule families the stack was leaving off are enabled, and security lint now reaches
+  `src/`.** `TRY`, `PERF`, `FURB`, `A`, `RET`, `TC`, `TID`, `DTZ` and `BLE` are adopted; `S` is
+  adopted over `src/` and per-file-ignored elsewhere so bandit keeps the trees it already scans.
+  `TRY003` and `TC003` are deliberately ignored with the reason recorded in `.ruff.toml` — style at
+  scale, not a defect class — and `S101` mirrors the existing bandit `B101` skip rather than
+  inventing a second answer.
+
+  **Consumers inherit a stricter gate.** The change is called out here rather than filed as a chore
+  because a repo that installs basicly gets these families on its next upgrade. What made `S` over
+  `src/` worth the churn is measurable: `src/` carried 21 `# nosec` comments that no scanner read —
+  bandit was configured over `.scripts`, `.basicly/core/hooks` and `.basicly/core/kit` and never
+  `src/` — including an `autoescape=False,  # nosec B701`. An inert suppression reads as "reviewed"
+  and is not; 21 of the 25 findings landed on exactly those sites (`basicly-u2hl.11`,
+  `basicly-u2hl.16`).
+
+- **The tier injection kit moves into its own directory.** `.basicly/core/kit/` now holds one
+  directory per kit — `tier/` beside `tracker/` — instead of one foldered kit and three loose
+  modules. **Breaking for an installed consumer**: a Claude settings hook written by
+  `install_hook.py` names the old path and stops resolving until the installer is re-run from
+  the new location, `python3 .basicly/core/kit/tier/install_hook.py --user`. The directory is
+  not cosmetic — `kit-deployment` and `kit-boundary` scope themselves by it, so the three loose
+  modules had no gate looking at them.
+
+### Fixed
+
+A dispatched classify, decompose or lane run now carries the persona its phase declares.
+`resolve_role` had exactly one caller, inside `_run_agent`, whose only call sites are build and
+repair — so the two proposal dispatches and the supervised lane dispatch all ran on the default
+runner unspecialised, and no recorded dispatch had ever reached an argv with `--agent` on it.
+The work-type proposal now resolves classify's persona, the child-plan proposal decompose's, and
+a lane build's. The phase is passed per call site rather than derived from the proposal's label,
+so a third proposal cannot silently inherit no persona; and resolution still answers None for a
+family that cannot select a role, so an un-upgraded consumer gets an unspecialised loop rather
+than a flag its host would drop without a word.
+
+- **A landing no longer silently discards a lane's merge resolution.** `git rebase` skips merge
+  commits unless `--rebase-merges` is passed, so a lane that resolved a conflict with
+  `git merge` — producing content held in neither parent — had that content deleted while the
+  rebase reported success and exited 0. It happened twice in one session here, and on one of
+  them the test suite stayed **green** afterwards, because the feature and the tests covering it
+  were dropped together: a consistent tree that no longer did the thing it shipped. No gate can
+  catch that shape, because nothing is left to fail. The merge queue now refuses such a branch
+  before rebasing it, naming the merge commit and telling the lane to linearize; the lane keeps
+  every commit it had. A second guard compares the tracked paths either side of the replay and
+  restores the branch if anything was lost to a cause nobody enumerated, so the queue can no
+  longer both drop work and report success.
+
+- **A lane that adds a config key can now declare it in the same commit.** A repo's
+  `basicly.toml` is validated against the `CONFIG_SCHEMA` that repo's *own tree* ships, not
+  against the schema of whichever engine happens to be running. This unblocks the landing:
+  `basicly loop advance` runs from the base checkout, so the process validating a lane's config
+  is the pre-merge engine, and a single commit that taught `CONFIG_SCHEMA` a name and declared
+  it was refused for a key introduced by the code one line away — four times in the field
+  (`[worktree] append_only_paths`, `[runner] quiet_after`, `[tracker] mode`,
+  `[catalog] rank1_floor`), each time dying before verify ran with a message that read as a
+  config typo. The tree's schema is read statically, so nothing imports an unmerged engine, and
+  it fails closed: a tree whose schema this reader cannot parse falls back to the running
+  engine's and the refusal then names the ordering rule (schema first, declaration next) rather
+  than leaving the operator to work it out. The strict refusal itself is unchanged — a checkout
+  with no schema change is judged by exactly the schema it was before, and a consumer repo,
+  which ships no engine source, is unaffected (basicly-69az).
+
+- **The projected skill listing fits the budget a consumer actually gets.** A host caps each skill's
+  `description` plus `when_to_use` at 1,536 characters and budgets the whole listing at 1% of the
+  context window; on overflow it drops descriptions **starting with the least-invoked skills**,
+  which is a feedback loop rather than a cost — the skills nobody invokes are the first to become
+  uninvokable. The listing had grown past a 2,000-token consumer budget. `catalog lint` now gates
+  both caps and the listing is back under (`basicly-a3ab.12`, `basicly-u2hl.45`).
+
+- **`AGENTS.md` is back under its size cap, and the check runs from `basicly check` rather than only
+  from `build`.** The audit behind it found the overrun was not the always-on baseline: the extra
+  characters are the path-scoped tier that claude and copilot receive as separate rules files and
+  Codex, which has no glob-based instruction scoping, must inline. Evicting baseline lines would
+  have charged all three families to fix one and left the cause standing, so the Codex cap moved to
+  16,000 characters instead. What that trades away is stated where the cap lives: it also stood
+  proxy for a vendor claim that adherence degrades with length, which this repo has not measured
+  (`basicly-a3ab.1`, `basicly-a3ab.10`).
+
+- **A claim an epic's own closed children superseded no longer reaches a decider as a current
+  fact.** An epic's `## Context` bullets are the whole authority a delegated decision runs on
+  (`decider_contract.intake_corpus`), and they are the one part of a bead nothing revisits.
+  Measured on `basicly-u2hl` (2026-08-08): four of eight bullets had been superseded by its own
+  closed children and one was refuted outright, after which two escalations quoted the refuted
+  bullet verbatim, reasoned from it and abstained to a human — while `git merge-tree` reported
+  both lanes already mergeable, so both sat in `build` holding live worktrees. The corpus now
+  marks every bullet that names no child of its own bead as `UNVERIFIED — possibly superseded`,
+  in place at the head of the claim, because a decider reads top to bottom and a correction
+  anywhere else is one it never reaches.
+- **A bullet is accounted for by naming a child, never by resembling one.** Attribution by text
+  similarity was measured against that same case and refused: TF-IDF over the closed children's
+  titles ranked the true superseder first for 1 of the 4 known pairs and scored an unsuperseded
+  bullet at 0.50 against an unrelated child; term coverage over their full descriptions reached
+  2 of 4 with false pairs at 0.78. So nothing guesses which child killed which bullet — a claim
+  either names a child of its own bead (the form the hand correction already used, `SHIPPED
+  2026-08-08 (basicly-u2hl.4): ...`) or is marked unverified, and anything else is flagged.
+- **The `corpus-drift` verify check reports it before a decider ever sees it.** It reads the
+  committed tracker export, so it runs in a fresh clone with no tracker binary, and covers open
+  parents with at least one closed child. `--strict` names every unaccounted bullet and exits
+  non-zero; the wired gate ratchets against `[tool.corpus_drift.frozen]`, which records the one
+  bead already unaccounted for when it landed and may only fall (`basicly-b9ef`).
+
+A repair dispatch is now refused when the grant cannot pay for it. D3's halt predicate had three
+enforcing call sites — delegated approval, supervised lane admission and decider delegation — and
+`basicly-1th1` added a fourth for the interactive build dispatch, but the repair path reached
+`runner.run` past all of them. So a landing that failed a gate briefed and spawned a metered agent
+on an exhausted grant, which is exactly when a grant is most likely to be spent. The spend ceiling
+is now checked before the repair spawns, and the brief is written back on refusal rather than
+consumed, so "no budget" does not turn into "the failure is forgotten". D3's halt was split out of
+the composite refusal for this, because a repair is a second attempt at work already planned and
+already sized and must not be re-admitted against the plan gate or the working-set band.
+
+- **Completing a bead's `## Scope` no longer makes its lane look bigger.** One field was serving
+  two gates that want opposite things: the merge scope-collision gate wants the declaration
+  complete — every path the diff touches — while the sizing band wants it small, because it prices
+  what the declaration *reads*. Declaring honestly for the first necessarily inflated the second.
+  Measured inside a single landing on `basicly-u2hl.14`: 13 scope entries estimated 78,709 and the
+  merge refused 16 undeclared paths; 27 entries estimated 197,646; 35 entries estimated 245,466 —
+  and the diff was exactly as wide throughout. Only the declaration moved, and the working-set
+  ceiling was raised twice to let it through, which is a ratchet moved by an artifact rather than
+  by evidence. A bead may now declare a `## Working Set` section — the subset of globs the lane
+  must actually read, written as backticked globs like `## Scope` — and the band, the dispatch
+  forecast and the ceiling derivation price that instead. `## Scope` stays the ownership
+  declaration the merge gate reads and the collision graph learns from, complete and free. A bead
+  that declares no working set is priced from its scope exactly as before, so nothing already
+  authored changes; a ceiling refusal now names declaring one as the alternative to splitting a
+  lane that has not grown (basicly-efw2).
+
+A role's declared `skills:` now reach the agent that was dispatched for it. The field is
+documented and typed, but it is honoured only when a definition is spawned as a subagent —
+under `claude --agent <name> -p`, the shape the engine dispatches with, it does nothing
+(probed twice on claude 2.1.231 with a positive control). Five of eleven projected roles
+declare skills, so every one of them ran without its specialism.
+
+The engine now reads the bodies a role declares and carries them in the dispatch prompt,
+ahead of the task. Measured against the alternative before choosing it: the largest role's
+skills are 3,261 tokens where a lane costs 8–11 million, so this is about 0.03% of a lane —
+and unlike the vendor's own mechanism it reaches codex and copilot too, which matters for a
+harness that advertises three families. A role declaring no skills gets a byte-identical
+prompt. A declared skill with no readable body is named in the prompt rather than logged,
+because the agent is what can act on it by loading the skill itself.
+
+This also gives `catalog_lint`'s skill/role pairing a runtime effect it did not have before,
+so the lint now enforces something real.
+
+A claude dispatch record now carries its cache split. `claude_json_usage` and
+`claude_turn_usage` summed the four reported token counts into the total and discarded the
+breakdown, so every claude run record read `cache_read_tokens: null` and no cache-hit ratio
+could be derived from the ledger at all. Claude reports its counts disjoint from each other
+where codex reports `input_tokens` inclusive of the cached portion, so the claude extractor
+folds them to the same provider-neutral convention rather than storing the raw field — which
+keeps `input_tokens - cache_read_tokens` a valid uncached figure whoever produced the numbers.
+A usage block that omits a cache key records null rather than 0, because a turn that really
+read no cache reports a genuine 0.
+
+- **The type checker now analyses the scripts and hooks it had been silently skipping.**
+  pyright's default `exclude` is `["**/node_modules", "**/__pycache__", "**/.*"]`, and that last
+  pattern dropped `.scripts/` and `.basicly/core/` — including the git hooks that ship to consumers
+  via `basicly install` and the kit modules that run in the dispatch path, which is the code with
+  the widest blast radius — from every mode this repo runs. Nothing failed, because a checker
+  cannot report on a file it never opened. `[tool.pyright]` now spells out both `include` and
+  `exclude`: an `include` alone would not have been a fix, since `exclude` is applied on top of it
+  and wins, and it filters files named explicitly on the command line too (`pyright
+  .scripts/check_module_size.py` analysed 0 files). Coverage goes from 204 files to 242 — the 38
+  tracked modules under those two trees — and the four errors that were hiding there are fixed: an
+  `ast.AST` walked without narrowing to `ast.expr` before reading `.lineno` (`kit-boundary.py`), a
+  `__doc__.splitlines()` on the `str | None` module
+  docstring in two argparse setups, and a `modalities.get()` narrowed on a second call rather than
+  on the value. `tests/test_type_checking.py` sweeps the whole tracked tree against both lists, so
+  the next directory of first-party Python fails there instead of inheriting the silence, and runs
+  pyright over a bad module under `.scripts/` to prove the coverage is real — with the config minus
+  its `exclude` override as the discriminator, which analyses nothing and exits 0 (basicly-u2hl.15).
+- **The spend-accuracy gate now measures a bead, not one attempt at a bead.**
+  `forecast_spend_tokens` is derived from a bead's `## Scope`, so every dispatch of that bead
+  records the identical number — what getting the whole bead done should cost — while
+  `decompose.spend_accuracy` compared it against each dispatch separately. A bead dispatched more
+  than once therefore had every attempt after the first scored against a forecast that covers work
+  an earlier attempt already did, which is a structural under-spend rather than a forecast error:
+  `basicly-u2hl.14` ran 30,139,416 then 2,785,270 then 1,512,403 tokens against a 26,320,290
+  forecast, and the third attempt alone read as 0.057x and turned `main` red while the lane itself
+  came in at 1.31x. The same unit error as basicly-tcmy.34, one level up — a number held against a
+  quantity it does not denominate. A bead's comparable dispatches are now summed into one
+  `SpendPair`, the forecast taken from the latest of them (a re-dispatch re-reads the bead, so four
+  of the eight multiply-dispatched beads in this ledger carry forecasts differing by 2.5-9.7% across
+  their attempts; each lands in band under either end, so no verdict turns on the choice), and
+  `attempts` is carried on the pair and named in the violation — "spent
+  17,000,000 tokens over 4 dispatches" — so an aggregate can never read as one runaway lane. The
+  live gate goes from one violation to none across 60 lanes, and an overrun spread across four
+  dispatches still fires (basicly-u2hl.15).
+
+- **The `chars/4` token estimator is constrained to prose, and the scope reader stops parsing
+  binaries as text.** The estimate is calibrated on English and is wrong by a wide margin on
+  anything else, which fed a sizing governor that decides whether a unit of work earns a lane at
+  all. It now applies where it is valid and reports rather than guessing where it is not.
+
+  The tokenizer itself deliberately stays `chars/4`: a real one fetches a 3.5 MB vocabulary over
+  HTTPS on first use, which a consumer's git hook cannot do. That is a decision with its error band
+  recorded rather than an unmeasured default (`basicly-u2hl.32`, `basicly-ca42`).
+
+Answering `park` on a stalled lane now parks it. Five question shapes across
+`policy.rework_escalation_question` and `supervise._capped_dispatch` offer that route, but the
+carrier accepted the answer only from a decision of kind `escalation` — so an operator who parked
+a stalled lane saw `answered <id> by human`, the bead stayed `open` and dispatchable, and the next
+supervised pass ran it again. The carrier now binds on the `or park?` suffix every one of those
+questions ends with, so it cannot accept a route its producer offers and then drop it. Answering
+`park` on a question that offers no routes still holds nothing, and a delegated answer still
+cannot park a lane.
+
+Corrected the `--resume --fork-session` economics recorded in the requirements and the
+implementation plan, re-measured on claude 2.1.231. The mechanism stands; two figures a lane
+would have been sized against did not. The 19x headline is denominated in the ~21,800-token
+host floor rather than a repo corpus, so corpus reuse is nearer 10x. And the cross-directory
+penalty is one-time **per working directory**, not per fork — a first fork into a fresh
+worktree reads 74–87%, every later fork into that same directory reads 100% — so the earlier
+"5.4x degradation" was a first-fork measurement read as a steady state. Whether
+`--exclude-dynamic-system-prompt-sections` composes with `--agent` is now recorded as
+unestablished rather than inferred: that probe was confounded by arm ordering, which a
+position control demonstrated.
+
 ## v0.8.0 - 2026-08-07
 
 Delta: v0.7.1..v0.8.0
