@@ -365,8 +365,19 @@ def test_no_shipped_agent_source_declares_a_model() -> None:
     for path in sorted((REPO / ".basicly/core/agents").glob("*/agent.yaml")):
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
         assert "model" not in data, f"{path.parent.name} pins a provider model id"
-        tier = data.get("tier")
-        assert tier is None or tier in MODEL_TIERS, f"{path.parent.name} has an unknown model tier"
+
+
+def test_every_shipped_agent_source_declares_a_model_tier() -> None:
+    """D26: a dispatch with no resolved tier is a bug, not a default.
+
+    `code-reviewer` and `security-auditor` shipped with no tier until
+    basicly-plhx, and `basicly install` vendors both to consumers, so the
+    omission travelled. An omitted tier does not fall back to a cheap model - it
+    inherits the session's, usually the most expensive one.
+    """
+    for path in sorted((REPO / ".basicly/core/agents").glob("*/agent.yaml")):
+        tier = yaml.safe_load(path.read_text(encoding="utf-8")).get("tier")
+        assert tier in MODEL_TIERS, f"{path.parent.name} declares no usable model tier: {tier!r}"
 
 
 def test_the_agent_schema_tier_enum_matches_the_model_tier_vocabulary() -> None:
@@ -375,6 +386,38 @@ def test_the_agent_schema_tier_enum_matches_the_model_tier_vocabulary() -> None:
         (REPO / ".basicly/core/schemas/agent.schema.json").read_text(encoding="utf-8")
     )
     assert schema["properties"]["tier"]["enum"] == list(MODEL_TIERS)
+
+
+def test_the_agent_schema_requires_a_tier() -> None:
+    """The schema is the half of the rule an editor and `install` both read."""
+    schema = json.loads(
+        (REPO / ".basicly/core/schemas/agent.schema.json").read_text(encoding="utf-8")
+    )
+    assert "tier" in schema["required"]
+
+
+@pytest.mark.parametrize("agents_dir", [".basicly/core/agents", ".basicly-local/agents"])
+def test_an_agent_source_declaring_no_tier_fails_the_catalog_lint(
+    tmp_path: Path, agents_dir: str
+) -> None:
+    """Both roots refuse it, and both say the same thing.
+
+    The schema's own "'tier' is a required property" line is suppressed
+    (`_TIER_OWNED_REQUIRED`) because it names neither the vocabulary nor the
+    reason, and it never reached the overlay root at all - which is the same
+    asymmetry basicly-axqe closed for the vocabulary check.
+    """
+    root = _catalog(tmp_path)
+    _agent_source(root, "reviewer", "", agents_dir)
+
+    violations = [v for v in lint_catalog(root) if "reviewer" in v]
+
+    assert len(violations) == 1, f"one defect must yield one diagnostic: {violations}"
+    assert f"{agents_dir}/reviewer/agent.yaml" in violations[0]
+    # Spelled out rather than joined from MODEL_TIERS, matching the overlay
+    # vocabulary test: an assertion derived from the same constant as the
+    # message would survive the vocabulary changing.
+    assert "tier: low | medium | high | maximum" in violations[0]
 
 
 # --- The tier vocabulary reaches the overlay too (basicly-axqe) ----------------

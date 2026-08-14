@@ -72,6 +72,10 @@ _MAX_SKILL_BODY_LINES = 500
 # raw jsonschema "is a required property" line is dropped for them.
 _AXIS_OWNED_REQUIRED = frozenset({"invocation"})
 
+# Agent properties whose absence _check_agent_tier_declared reports in full, for
+# the same reason and with the same effect on the diagnostic count.
+_TIER_OWNED_REQUIRED = frozenset({"tier"})
+
 
 def _check_enforcement_pointer(path: Path, repo_root: Path) -> list[str]:
     """Flag enforced_by commands (§3.1) that the fragment body does not cite."""
@@ -99,7 +103,9 @@ def _validate_agent_schemas(repo_root: Path) -> list[str]:
     if agent_sources:
         validator = schema_validator(repo_root, "agent.schema.json")
         for path in agent_sources:
-            violations.extend(schema_violations(path, validator, repo_root))
+            violations.extend(
+                schema_violations(path, validator, repo_root, owned_required=_TIER_OWNED_REQUIRED)
+            )
     block_sources = sorted(
         (repo_root / AGENTS_DIR / agents.BLOCKS_DIR_NAME).glob(agents.BLOCK_SOURCE_GLOB)
     )
@@ -122,7 +128,7 @@ def _tier_violations(path: Path, data: object, repo_root: Path) -> list[str]:
         return []  # the agent lint (rule 5) reports a malformed source as a violation
     tier = data.get("tier")
     if tier is None:
-        return []  # `tier` is optional; absent means the runner's configured default
+        return []  # absence is _check_agent_tier_declared's diagnostic, on every root
     if not isinstance(tier, str) or tier.strip() not in MODEL_TIERS:
         return [
             f"{rel(path, repo_root)}: model tier {tier!r} is not in the portable "
@@ -156,6 +162,37 @@ def _check_overlay_agent_tiers(repo_root: Path) -> list[str]:
             except yaml.YAMLError:
                 continue  # rule 5 reports malformed YAML as a violation of its own
             violations.extend(_tier_violations(path, data, repo_root))
+    return violations
+
+
+def _check_agent_tier_declared(repo_root: Path) -> list[str]:
+    """Refuse an agent source that declares no model tier, on every agent root.
+
+    An omitted tier is not a cheap default: the spawned agent inherits the
+    session's model, usually the most expensive one, so the routing rule defeats
+    itself silently (factory-loop D26). ``agent.schema.json`` carries the same
+    rule as ``required``, but its "'tier' is a required property" line names
+    neither the vocabulary nor the reason and reaches the core root only, so it
+    is suppressed (``_TIER_OWNED_REQUIRED``) and this owns the message — core and
+    overlay then read identically.
+
+    A source pinning the deprecated ``model:`` is left alone: the agent lint
+    already tells it to declare ``tier:`` instead, and one defect yields one
+    diagnostic.
+    """
+    violations: list[str] = []
+    for root, _source in agents.default_agent_roots(repo_root):
+        if not root.is_dir():
+            continue
+        for path in sorted(root.glob(f"*/{agents.AGENT_SOURCE_FILE}")):
+            data = load_mapping(path)  # None when malformed; rule 5 reports that
+            if data is None or "tier" in data or agents.DEPRECATED_MODEL_KEY in data:
+                continue
+            violations.append(
+                f"{rel(path, repo_root)}: no model tier declared; an omitted tier "
+                "inherits the spawning session's model rather than defaulting to a "
+                f"cheap one — declare `tier: {' | '.join(MODEL_TIERS)}`"
+            )
     return violations
 
 
@@ -203,6 +240,7 @@ def lint_catalog(repo_root: Path) -> list[str]:
         violations.extend(schema_violations(path, fragment_validator, repo_root))
 
     violations.extend(_validate_agent_schemas(repo_root))
+    violations.extend(_check_agent_tier_declared(repo_root))
     violations.extend(_check_overlay_agent_tiers(repo_root))
     violations.extend(_validate_rubrics(repo_root))
 

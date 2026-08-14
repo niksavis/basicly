@@ -5,6 +5,14 @@ purpose: Audits a diff or component for security weaknesses at trust boundaries.
 triggers: Use proactively before shipping changes that touch input handling, credentials, subprocess or network calls.
 returns: Returns severity-rated findings with path:line evidence and the stated coverage boundary.
 posture: Read-only.
+# The medium roles all have an external oracle deciding for them: `decider`
+# applies a rule, `validator` reads what a run printed, `curator` matches a claim
+# to evidence that exists. This one has none - no Bash, so it cannot run a
+# scanner or an exploit, and its whole output is inference from reading, whose
+# failure mode is a silent false negative that ships. It is also the lens
+# `reviewer` already runs at high. Not maximum, for the reason its own startup
+# gives: the scope is exactly the diff or paths named, never the whole tree.
+tier: high
 tools: [Read, Grep, Glob]
 slots:
   role:
