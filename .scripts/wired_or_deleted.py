@@ -165,6 +165,9 @@ BASELINE: frozenset[str] = frozenset({
     "command:catalog list",
     "command:catalog review",
     "command:catalog verify",
+    # basicly-zdtx wired the health *module* into the supervisor pass line; this entry is
+    # the other finding and still reproduces — nothing *invokes the command*, and the pass
+    # line reads `health_report` in process rather than shelling out or becoming a check.
     "command:health",
     "command:rubric eval",
     "command:runner list",
@@ -172,8 +175,9 @@ BASELINE: frozenset[str] = frozenset({
     "command:status",
     "command:usage forecast",
     "command:usage tracker",
-    # Record fields read only by their own module or by a test (36). Was 41 — the
-    # headline count had not been updated for the six the 2026-08-08 splits retired.
+    # Record fields read only by their own module or by a test (29). Was 36 — the seven
+    # `health` fields gained a reader in the supervisor pass line (basicly-zdtx). Was 41 —
+    # the headline count had not been updated for the six the 2026-08-08 splits retired.
     # Was 43: both
     # `HookSpec` fields gained a reader when `_hook_entry` moved to `precommit_config`.
     # Was 45: `RunRecord.config_overrides` acquired a consumer when `tuning` began
@@ -204,13 +208,6 @@ BASELINE: frozenset[str] = frozenset({
     "record-field:basicly.decompose.CollapsingPath.groups_without",
     "record-field:basicly.decompose.CollapsingPath.neutralized",
     "record-field:basicly.decompose.CostEstimate.overhead_tokens",
-    "record-field:basicly.health.AgentHealth.rework_beads",
-    "record-field:basicly.health.AgentDrift.baseline_runs",
-    "record-field:basicly.health.AgentDrift.recent_runs",
-    "record-field:basicly.health.AgentDrift.baseline_failure_rate",
-    "record-field:basicly.health.AgentDrift.recent_failure_rate",
-    "record-field:basicly.health.AgentDrift.delta",
-    "record-field:basicly.health.AgentDrift.regressed",
     "record-field:basicly.loop_state.Ranking.nodes",
     "record-field:basicly.loop_state.Ranking.fallback_sort",
     "record-field:basicly.policy.Grant.unmetered_at_issue",

@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from basicly import cli, health, run_record
+from basicly import cli, health, run_record, supervise
 
 if TYPE_CHECKING:
     import pytest
@@ -234,3 +234,47 @@ def test_cmd_health_text_no_records(
     monkeypatch.setattr(cli, "_repo_root", lambda: tmp_path)
     assert cli.cmd_health(_args()) == 0
     assert "no run-records" in capsys.readouterr().out
+
+
+# --- the supervisor pass line -----------------------------------------------
+
+
+def _coverage_lines(repo: Path) -> list[str]:
+    """The pass report `supervise` emits before it dispatches anything."""
+    lines: list[str] = []
+    spend = supervise.PassSpendAdmission(None, None, (), (), None)
+    supervise._report_coverage(lines.append, repo, (), spend)
+    return lines
+
+
+def test_pass_report_carries_agent_health_and_drift(tmp_path: Path) -> None:
+    """The pass line states the runners' own reliability (basicly-zdtx).
+
+    The report had no operational caller, so an agent whose failure rate had moved was
+    visible only to whoever ran `basicly health` — never to whoever reads a pass, where
+    every other pass-level number already is. Both halves are asserted, including the
+    two window sizes, because a drift flag without its sample is not falsifiable.
+    """
+    entries = [_entry("claude", "executed", _ts(i)) for i in range(1, 6)]
+    entries += [_entry("claude", "failed", _ts(i)) for i in range(6, 11)]
+    _write_records(tmp_path, {"basicly-a": entries})
+
+    lines = _coverage_lines(tmp_path)
+
+    assert "health:   claude 0.35 over 10 runs" in lines[2]
+    assert "(fail 50%, rework 100% — 1 bead(s) re-dispatched)" in lines[2]
+    assert lines[3] == (
+        "drift:    REGRESSED claude: fail 100% over the recent 5 vs 0% over 5 baseline runs (+1.00)"
+    )
+
+
+def test_pass_report_health_survives_a_repo_with_no_records(tmp_path: Path) -> None:
+    """No log is a reported absence, never a raise and never a refusal.
+
+    The wiring is observability: it reports on the pass line and returns nothing a
+    caller can gate on, so a pass over a fresh repo still says what it could not read.
+    """
+    lines = _coverage_lines(tmp_path)
+
+    assert lines[2] == "health:   no run-records yet"
+    assert lines[3] == "drift:    no history to drift against"
