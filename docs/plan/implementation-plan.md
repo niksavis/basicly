@@ -392,6 +392,36 @@ What is open, in the order the dependencies allow:
 | 9 | `esxp` · `o40x` | P1 | Bind the band floor; give a healthy supervisor a stop that does not kill live lanes. |
 | 10 | `0p8n` · `66ix` | P1 | The harness gates carried into the coding agent's own hooks (`0p8n`), and Copilot hook parity behind it (`66ix` — a Copilot consumer gets the telemetry hook and **not** the `protect-generated` guard). `66ix` was blocked on `4kdm`, which is closed. **Re-ranked in argument, not in order, 2026-08-09**: `0p8n` is enforcement at the *tool-call* boundary, which our gates do not reach at all — every one of them judges an artifact after it exists (`factory-loop.md` §11 item 8). A working shape exists to aim at: one policy kernel plus N host codecs, with a golden-file `--check` gate proving the projection converges (§11.7). Note `claude_settings.py:51` maps **2 of 31** documented hook events, so this row is engine work before it is catalog work. |
 
+### 5.2.1 Landed 2026-08-14, after the release
+
+Recorded as one block rather than as rows, under §1.6: a row written in the present tense of a
+fixed defect sends the next reader to re-do it.
+
+```text
+jn1x     the recorded argv, so role injection is falsifiable at all
+c357     the flip boundary the shadow differential is judged on
+vkh0.23  `basicly tracker import`, re-runnable, refusing a post-flip ledger
+ejdm.2   the acquisition/implementation split over a lane transcript
+e2mz.6   the improvement controller's independent call site
+48d1     architecture reconciled against the tree; 1xz1 the same for §5A
+```
+
+**Three of those changed what a later reader may believe, so they are stated rather than listed.**
+`jn1x` measured **0 of 357** dispatch records carrying `--agent` against a positive control of 163
+carrying `-p`: the record *re-derived* its command instead of copying what ran, so it omitted flags
+the lane passes and asserted flags the decider never carried. The instrument exists now; **the
+reading does not**, because the 357 historical records are unchanged. `c357` settles that step 2
+proves the **dual write** agrees rather than that history agrees, and makes an empty in-scope
+population **inconclusive** so it cannot license `u4xu` over zero records. `vkh0.23` gives the
+import an entry point but is **deliberately not run here** — closing the gap is `u4xu`'s call, and
+the sequence that makes both consistent is recorded on that bead.
+
+**What the measurement bought, which is the reason §5.3's ordering said not to shortcut it.**
+`ejdm.2`'s first pairing rule passed nine unit tests and reported a real captured lane as **100%
+unattributed**. Only the demonstration — run against a transcript built by driving the real writer
+with a live captured stream — falsified it. A hand-built fixture encodes the format its author
+believes in (`basicly-zqgg`).
+
 ### 5.3 What remains of the loop
 
 Landed 2026-08-08 and unreleased: the plan gate on entry to BUILD, integrity levels from a path
@@ -557,6 +587,17 @@ Rules any release must honour. Each exists because breaking it cost a session or
 - **A recurring follow-up shape is a symptom, not a workload.** Twelve beads named one truncation and
   none asked why the trigger fired; five survivors were killed on 2026-08-08 after probing that each
   original had in fact delivered.
+- **A hand-picked set of checks is not the gate, and looks exactly like it.** Five green checker
+  scripts and a green suite were reported as "all gates green" on 2026-08-14; the commit was then
+  refused on two checks nobody had run. Only a runner that prints its own count — `20/20` — makes a
+  subset visible (`basicly-lkzq`).
+- **Measure both ratchets before writing prose, never one.** Module size is the trap this file
+  records most, which is why it is the one that gets measured and density is the one that refuses.
+  Three changes in one session paid for that, one of them by having its placement redesigned
+  (`basicly-co64`).
+- **A hand-built fixture encodes the format its author believes in.** Where a live capture exists
+  in the tree, drive it: nine unit tests passed against a parser that was wrong on every real
+  transcript, and the demonstration is what caught it (`basicly-zqgg`).
 - **A bulk find-replace needs a line-by-line audit.** One on 2026-08-08 rewrote references to
   *deleted* files into paths that never existed; the diff caught it and nothing else would have.
 

@@ -636,11 +636,25 @@ working the whole time.
 
 1. **Import** the existing beads JSONL — it is already the format we would read. **Ran once,
    2026-08-07 (`b97a653`): 643 records as 3,775 events, every one carrying provenance
-   `EXTRACTED`.** But `migrate.import_snapshot` has no caller in `src/`, `.scripts/` or
-   `.basicly/`, no `main()`, and no CLI surface — `basicly tracker` lists `shadow` only — so it
-   is a **one-shot that cannot be repeated**, and it had already drifted 24 records behind the
-   export by the following day. Nothing a fresh consumer runs can build the ledger at all.
-   `basicly-vkh0.23`.
+   `EXTRACTED`.** `migrate.import_snapshot` had no caller, no `main()` and no CLI surface, so it
+   was a **one-shot that could not be repeated** — it had drifted 24 records behind the export by
+   the following day and 200 behind by 2026-08-14.
+
+   **Fixed 2026-08-14 (`basicly-vkh0.23`): `basicly tracker import [--dry-run]`.** The dry run
+   reports how far behind the ledger is and writes nothing; the real run brings it up to the
+   export and reports what it added. It **refuses a ledger that already holds a post-flip
+   record**, and the dry run reports that same refusal rather than a count, because a preview
+   saying "would add 200" for a run that will refuse is worse than no preview. No `actor` is
+   recorded — `basicly-r166` is open on the ledger committing a username in every event.
+
+   **The import is deliberately not run on this repo**: closing the gap is a cutover step
+   `basicly-u4xu` owns, and the order that makes it consistent with that bead's do-not-re-import
+   rule is import while still `external`, declare the residual baseline, then flip.
+
+   The entry point is the CLI rather than a kit `main()`, on a measurement rather than a
+   preference — `migrate.py` has three tokens of size headroom and none on density. So §4's
+   promise that the kit is consumable with **zero basicly imports and nothing on PATH** still has
+   no entry point of its own, and that is a named gap rather than a closed one.
 2. **Shadow mode**: the new tracker reads the same ledger and answers the same queries
    read-only; a differential test asserts identical verdicts for phase derivation, ready set,
    and gate status.

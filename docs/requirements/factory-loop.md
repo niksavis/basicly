@@ -356,12 +356,25 @@ a role and dispatch it, which is what makes the roster real rather than projecte
 | `retrospector` | RETROSPECTIVE | **authored**, loads `root-cause` | nothing; the state does not exist |
 | `curator` | SHIP | **authored** | nothing |
 
-**All seven are authored and dispatched as of 2026-08-09.** The gap this section had
-measured since 2026-08-08 — "the projection works and nothing consumes it" — is closed:
-`roles.resolve_role` maps a phase to a role by table lookup and the runner puts
-`--agent <role>` on the argv, verified against claude 2.1.226 and copilot 1.0.78 rather
-than recalled. The `Engine` column above now means "does an equivalent already run at
-that state", not "can a role reach it".
+**All seven are authored, and six are reachable in code.** The gap this section had
+measured since 2026-08-08 — "the projection works and nothing consumes it" — is closed in
+the wiring: `roles.resolve_role` maps a phase to a role by table lookup from three call
+sites and the runner puts `--agent <role>` on the argv, verified against claude 2.1.226 and
+copilot 1.0.78 rather than recalled. `curator` is the seventh and maps to `ship`, a live
+phase whose handler never calls `_run_agent`. The `Engine` column above now means "does an
+equivalent already run at that state", not "can a role reach it".
+
+**This paragraph read "authored and dispatched" for five days and the ledger refuted it**
+[M 2026-08-14, `basicly-jn1x`]. **0 of 357 dispatch records carried `--agent`**, against a
+positive control of 163 carrying `-p`. The cause was not the wiring: `record_dispatch`
+*re-derived* its command from the spec instead of copying what ran, so the record omitted
+flags the lane passes and asserted usage flags the decider never carried — wrong in both
+directions, and invisible from the record itself. The record copies the real argv now.
+
+**Read that as an instrument, not a reading.** The 357 historical records are unchanged and
+still name no role, so a before/after measurement of role injection begins with the next
+supervised pass. "Reachable in code" and "observed in the ledger" are two claims and only
+the first is made here.
 
 **Resolution fails to None in three places, and each falls back to the default runner
 rather than failing**: a phase with no persona (VERIFY, by D4), a family that cannot
@@ -1194,6 +1207,41 @@ hallucination**: output that satisfies the stated constraint while defeating its
 named check passes by construction. D10 stands — moving judgement to plan time is still right — but
 a criterion whose check can be satisfied without the behaviour is the failure mode to watch, and
 D18's end-to-end demonstration is the partial answer already shipped.
+
+### 11.2 The acquisition/implementation split, and what it cost to get right
+
+Item 1's instrument for `basicly-ejdm`, shipped as `basicly usage lane-split`
+(`basicly-ejdm.2`). The ordering the plan protects is `.1` record the tools, `.2` derive the
+split, `.3` brief the lane, `.4` measure — and **only `.4` is a claim**, because until `.2`
+existed the causal claim had nothing behind it and its remedy could not have been judged.
+
+**The pairing rule is the whole arithmetic and two naive versions are wrong.** A `tool_use`
+turn's usage is the cost of *emitting* the call; the result lands in the **next turn that
+carries usage**. Summing tokens on the turns that called the tools counts the request and
+misses the answer. Pairing against the immediately preceding *line* fails too, because a real
+transcript forwards the result as a `user` event carrying no usage:
+
+```text
+assistant  tokens= 26234 tools=[Agent]   <- the call
+user       tokens=     0 tools=[]        <- the forwarded result, no usage
+assistant  tokens=     0 tools=[]
+assistant  tokens= 26635 tools=[]        <- the turn that pays for the answer
+```
+
+That second version was written first and reported a real captured lane **100% unattributed**
+— a confident figure measuring nothing — with **nine unit tests green against it** [M
+2026-08-14]. Every fixture was hand-built, and a hand-built fixture encodes the format its
+author believes in. The demonstration caught it.
+
+**Three refusals, because a guess inside the instrument is worse than a gap.** A tool that is
+neither read nor write is `unclassified` rather than bucketed — `Bash` runs `git status` and
+`mv` alike. A transcript predating the tool field is **unclassifiable** rather than fully
+implementation. A lane with no transcript is **missing** rather than a zero split.
+
+**Shares lead and tokens follow, labelled.** Per-turn stream usage over-reports the run record
+by **1.46x–1.79x** [M 2026-08-13, four lanes], so a stream-derived absolute is in a different
+denomination from the grant it would be metered against. Claude only: no other family emits
+the per-tool event it reads.
 
 ### 11.7 A competing harness, and the line it draws [M, 2026-08-09]
 
