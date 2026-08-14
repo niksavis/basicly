@@ -16,34 +16,17 @@ gate** and must not be read as a defect-density claim — the defect literature 
 other way (Hatton 1997 found mid-size components best; Koru 2008 found smaller modules
 proportionally *more* defect-prone). See `docs/requirements/factory-loop.md` §9.3.
 
-**A ratchet, not a hard cap.** 78 of 179 tracked modules were already over the cap when
-this landed, and failing all of them would have meant turning the gate off. Instead each
-one's go-live token count is recorded in `[tool.module_size.frozen]`, and a frozen module
-may only *shrink*. Three consequences, each its own finding:
-
-* A module not in the list may never cross the cap. The list is closed — an entry is only
-  ever removed.
-* A frozen module that grew fails, naming both counts. Adding a line to `cli.py` is
-  therefore a failing commit until something else in it goes — with one exception below.
-* A frozen module that has fallen to the cap has graduated, and its entry must go with it.
-  Leaving the entry would license regrowth back to the go-live number, which is the
-  fail-open shape this repo keeps paying for.
+**A ratchet, not a hard cap**, and `ratchet.py` holds that mechanism for all three gates:
+78 of 179 tracked modules were already over the cap when this landed, so each one's go-live
+token count is recorded in `[tool.module_size.frozen]` and a frozen module may only
+*shrink*. Adding a line to `cli.py` is therefore a failing commit until something else in
+it goes — with one exception below. A cohesive module may exceed the cap deliberately with a
+column-0 ``module-size-waiver:`` comment, against a counted `waiver_count`.
 
 **Top-level imports are not counted** — :func:`module_tokens` holds the measurement that
 forced that, and the frozen baselines were recomputed once on the same measure, so nothing
 is forgiven except the import block.
 
-**Waivers, and why they are counted.** A genuinely cohesive module may exceed the cap
-deliberately by carrying a one-line reason as a column-0 comment: the marker is
-``module-size-waiver:`` followed by the reason. The count is itself ratcheted against
-`waiver_count` — exactly as `[tool.vulture]`'s suppression list is policed by
-`wired_or_deleted.py` — so a waiver may be added only in a diff that moves the count, which
-a lane does with a `count_delta` in its own fragment (basicly-ef7t). The reason must be
-non-empty and the marker must start the line, which is what keeps a mention of it inside a
-string or a docstring from waiving the file that mentions it.
-
-Scope is every tracked ``.py`` under :data:`SCOPE_ROOTS`. Tracked, from `git ls-files`,
-because an untracked scratch file is not something a gate should have an opinion about.
 Tests are in scope and are the larger half of the debt (42 of the 78 frozen entries, and
 the worst single offender) — they will not fall out of a `src/` refactor as a side effect.
 
@@ -55,40 +38,40 @@ Run::
 from __future__ import annotations
 
 import re
-import subprocess  # nosec B404
 import sys
-import tomllib
-from collections.abc import Collection, Iterable, Mapping
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
+sys.path.insert(0, str(SCRIPT_DIR))
 
-from basicly.dropin import (  # noqa: E402 - the path above comes first
-    COUNT_DELTA,
-    FRAGMENT_DIR,
-    RATCHET_SECTION,
-    FragmentError,
-    compose,
+from ratchet import (  # noqa: E402 - the path above comes first
+    Finding,
+    Ratchet,
+    RatchetError,
+    compose_ratchet,
+    count_delta_remedy,
+    frozen_table,
+    report,
+    stale,
+    tracked_sources,
+    waiver_findings,
+    waiver_reason,
 )
+
 from basicly.read_cost import SCOPE_FILE_READ_CAP, _text_tokens  # noqa: E402  (path set above)
 
-# Every directory whose Python this repo authors. `.basicly/core` is here because the kit
-# and the hooks ship to consumers and run in the dispatch path; omitting it would exempt
-# the code with the widest blast radius.
-SCOPE_ROOTS = ("src", "tests", ".scripts", ".basicly/core")
+# The gate, as `[tool.module_size]` and `[ratchet.module_size]` spell it, and the table a
+# `_graduated` finding tells a reviewer to delete an entry from.
+_GATE = "module_size"
+FROZEN_TABLE = frozen_table(_GATE)
 
-# Where the ratchet is recorded, how a failure names it, and where a lane records a change to
-# the count instead of editing that shared table (basicly-ef7t).
-RATCHET_TABLE = "[tool.module_size]"
-FROZEN_TABLE = "[tool.module_size.frozen]"
-FRAGMENT = f"[{RATCHET_SECTION}.module_size] in {FRAGMENT_DIR}/<bead-id>.toml"
-
-# A waiver, as a module may spell one. Column-0 comment, non-empty reason: a marker quoted
-# inside a string or indented in a docstring is a mention, not a waiver, so this script and
-# its tests can name the marker without waiving themselves.
-_WAIVER = re.compile(r"^#[ \t]*module-size-waiver:[ \t]*(\S.*?)[ \t]*$", re.MULTILINE)
+# The waiver marker, without its colon. Spelled as a string rather than a column-0 comment so
+# that this script and its tests can name it without waiving themselves.
+_WAIVER_MARKER = "module-size-waiver"
 
 _LABEL = "module-size"
 
@@ -102,10 +85,6 @@ _BRING_UNDER_MULTIPLE = 2
 _IMPORT_LINE = re.compile(r"^(?:import|from)\s")
 
 
-class RatchetError(Exception):
-    """The gate could not reach an answer: no ratchet to read, or git refused the question."""
-
-
 @dataclass(frozen=True)
 class Module:
     """One tracked module: its repo-relative path, its size, and its waiver if it has one."""
@@ -113,29 +92,6 @@ class Module:
     path: str
     tokens: int
     waiver: str | None = None
-
-
-@dataclass(frozen=True)
-class Ratchet:
-    """The recorded state a change is measured against."""
-
-    frozen: Mapping[str, int]
-    waiver_count: int
-
-
-@dataclass(frozen=True)
-class Finding:
-    """One way the tree disagrees with the ratchet, with the repair named."""
-
-    path: str
-    detail: str
-    remedy: str
-
-
-def waiver_reason(text: str) -> str | None:
-    """The reason a module waives the cap with, or ``None`` if it does not waive it."""
-    match = _WAIVER.search(text)
-    return match.group(1) if match else None
 
 
 def module_tokens(text: str) -> int:
@@ -171,71 +127,37 @@ def module_tokens(text: str) -> int:
     return _text_tokens("".join(kept))
 
 
-def load_ratchet(repo: Path) -> Ratchet:
-    """The baseline in ``pyproject.toml``, with the ``basicly.d`` fragments applied.
-
-    Raises:
-        RatchetError: The table is absent or malformed — the gate must not pass by
-            defaulting to an empty baseline, which would fail every frozen module at once.
-    """
-    try:
-        data = tomllib.loads((repo / "pyproject.toml").read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError) as exc:
-        raise RatchetError(f"could not read pyproject.toml: {exc}") from exc
-    table = data.get("tool", {}).get("module_size")
-    if not isinstance(table, dict):
-        raise RatchetError(f"no {RATCHET_TABLE} in pyproject.toml")
-    frozen = table.get("frozen", {})
-    count = table.get("waiver_count")
-    if not isinstance(frozen, dict) or not all(isinstance(v, int) for v in frozen.values()):
-        raise RatchetError(f"{FROZEN_TABLE} must map each path to its go-live token count")
-    if not isinstance(count, int):
-        raise RatchetError(f"{RATCHET_TABLE} must declare waiver_count as an integer")
-    baseline = compose(repo, "module_size", frozen=frozen, count=count)
-    return Ratchet(frozen=baseline.frozen, waiver_count=baseline.count)
+def load_ratchet(repo: Path) -> Ratchet[int]:
+    """This gate's baseline: token counts, and a waiver count that is a count of modules."""
+    return compose_ratchet(repo, _GATE, count_key="waiver_count", entry_type=int)
 
 
 def tracked_modules(repo: Path) -> list[Module]:
-    """Every tracked ``.py`` under :data:`SCOPE_ROOTS`, measured.
-
-    Returns:
-        The modules, ordered by path. A tracked path with no readable file — deleted in the
-        working tree, or unreadable — is skipped; a frozen entry for it is then reported as
-        stale rather than silently satisfied.
+    """Every tracked ``.py`` in scope, measured, ordered by path.
 
     Raises:
         RatchetError: git refused to list the tree.
     """
-    completed = subprocess.run(  # nosec B603 B607
-        ["git", "-C", str(repo), "ls-files", "-z", "--", *SCOPE_ROOTS],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if completed.returncode != 0:
-        detail = completed.stderr.strip() or f"git exited {completed.returncode}"
-        raise RatchetError(f"could not list tracked files: {detail}")
-    modules = []
-    for name in completed.stdout.split("\0"):
-        if not name.endswith(".py"):
-            continue
-        try:
-            text = (repo / name).read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        modules.append(Module(path=name, tokens=module_tokens(text), waiver=waiver_reason(text)))
+    modules = [
+        Module(
+            path=name,
+            tokens=module_tokens(text),
+            waiver=waiver_reason(text, _WAIVER_MARKER),
+        )
+        for name, text in tracked_sources(repo)
+    ]
     return sorted(modules, key=lambda module: module.path)
 
 
 def _over_cap(module: Module, cap: int) -> Finding:
     """A module the closed frozen list does not cover has crossed the cap."""
     return Finding(
-        path=module.path,
+        subject=module.path,
         detail=f"{module.tokens} tokens, over the {cap}-token cap",
         remedy=(
             "split it along a nameable responsibility (not into _part1/_part2), or waive it "
-            f"with a column-0 `# module-size-waiver: <reason>` and record `{COUNT_DELTA} = 1` "
-            f"under {FRAGMENT}"
+            f"with a column-0 `# {_WAIVER_MARKER}: <reason>` and "
+            f"{count_delta_remedy(_GATE, 1)}"
         ),
     )
 
@@ -243,7 +165,7 @@ def _over_cap(module: Module, cap: int) -> Finding:
 def _grew(module: Module, baseline: int, cap: int) -> Finding:
     """A frozen module went the wrong way."""
     return Finding(
-        path=module.path,
+        subject=module.path,
         detail=(
             f"{module.tokens} tokens, up from the frozen {baseline}; a module over the "
             f"{cap}-token cap may only shrink"
@@ -271,7 +193,7 @@ def _shrink_remedy(baseline: int, cap: int) -> str:
 def _graduated(module: Module, baseline: int, cap: int) -> Finding:
     """A frozen module reached the cap, so its licence to be large has expired."""
     return Finding(
-        path=module.path,
+        subject=module.path,
         detail=(
             f"{module.tokens} tokens is within the {cap}-token cap, but it is still frozen "
             f"at {baseline}, which licenses it to grow back"
@@ -280,12 +202,7 @@ def _graduated(module: Module, baseline: int, cap: int) -> Finding:
     )
 
 
-def _stale(path: str, detail: str) -> Finding:
-    """A frozen entry that no longer describes anything."""
-    return Finding(path=path, detail=detail, remedy=f'delete `"{path}"` from {FROZEN_TABLE}')
-
-
-def _module_finding(module: Module, ratchet: Ratchet, cap: int) -> Finding | None:
+def _module_finding(module: Module, ratchet: Ratchet[int], cap: int) -> Finding | None:
     """How one module disagrees with the ratchet, or ``None`` if it agrees."""
     if module.waiver is not None:
         return None
@@ -299,36 +216,8 @@ def _module_finding(module: Module, ratchet: Ratchet, cap: int) -> Finding | Non
     return None
 
 
-def _waiver_findings(waived: Collection[str], ratchet: Ratchet) -> list[Finding]:
-    """The waiver-count ratchet, which moves only in a diff that says it moved.
-
-    The frozen list needs no equivalent, and the asymmetry is the point: an entry added
-    there is a line in ``pyproject.toml`` that a reviewer sees, while a waiver is one
-    comment somewhere inside a 5,000-line module that nobody would find.
-    """
-    listed_paths = sorted(waived)
-    if len(listed_paths) == ratchet.waiver_count:
-        return []
-    direction = "added" if len(listed_paths) > ratchet.waiver_count else "removed"
-    listed = ", ".join(listed_paths) or "none"
-    return [
-        Finding(
-            path="pyproject.toml",
-            detail=(
-                f"{len(listed_paths)} module(s) carry a waiver but waiver_count is "
-                f"{ratchet.waiver_count} — a waiver was {direction} without saying so "
-                f"(waived: {listed})"
-            ),
-            remedy=(
-                f"record `{COUNT_DELTA} = {len(listed_paths) - ratchet.waiver_count:+d}` "
-                f"under {FRAGMENT}"
-            ),
-        )
-    ]
-
-
 def collect(
-    modules: Iterable[Module], ratchet: Ratchet, cap: int = SCOPE_FILE_READ_CAP
+    modules: Iterable[Module], ratchet: Ratchet[int], cap: int = SCOPE_FILE_READ_CAP
 ) -> list[Finding]:
     """Every disagreement between the tree and the recorded ratchet.
 
@@ -338,7 +227,7 @@ def collect(
         cap: The token cap; defaults to the sizing governor's own constant.
 
     Returns:
-        The findings, ordered by path then detail.
+        The findings, ordered by subject then detail.
     """
     modules = list(modules)
     present = {module.path: module for module in modules}
@@ -351,18 +240,13 @@ def collect(
     ]
     for path in sorted(ratchet.frozen):
         if path in waived:
-            findings.append(_stale(path, "it carries a waiver, which replaces the frozen entry"))
+            findings.append(
+                stale(_GATE, path, "it carries a waiver, which replaces the frozen entry")
+            )
         elif path not in present:
-            findings.append(_stale(path, "no readable tracked module is at this path"))
-    findings.extend(_waiver_findings(waived, ratchet))
-    return sorted(findings, key=lambda finding: (finding.path, finding.detail))
-
-
-def report(findings: Iterable[Finding]) -> None:
-    """Print each finding as the disagreement, then how to repair it."""
-    for finding in findings:
-        print(f"{_LABEL}: {finding.path}: {finding.detail}", file=sys.stderr)
-        print(f"{_LABEL}:   {finding.remedy}", file=sys.stderr)
+            findings.append(stale(_GATE, path, "no readable tracked module is at this path"))
+    findings.extend(waiver_findings(_GATE, waived, ratchet.count))
+    return sorted(findings, key=lambda finding: (finding.subject, finding.detail))
 
 
 def main() -> int:
@@ -370,13 +254,13 @@ def main() -> int:
     try:
         ratchet = load_ratchet(REPO_ROOT)
         modules = tracked_modules(REPO_ROOT)
-    except (RatchetError, FragmentError) as exc:
+    except RatchetError as exc:
         print(f"{_LABEL}: {exc}", file=sys.stderr)
         return 1
 
     findings = collect(modules, ratchet)
     if findings:
-        report(findings)
+        report(_LABEL, findings)
         return 1
     waived = sum(1 for module in modules if module.waiver is not None)
     print(

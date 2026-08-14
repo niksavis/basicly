@@ -7,8 +7,9 @@ the one edit that makes a linter quieter, so the only thing that can police it i
 kept outside the code — this is that count, wired as a `[[verify.checks]]` fast entry beside
 `module-size`.
 
-**A ratchet, not a ban.** Each code's go-live count is recorded in `[tool.noqa_debt.frozen]`
-and the tree must agree with it exactly. Four ways it can disagree, each its own finding:
+**A ratchet, not a ban**, and `ratchet.py` holds that mechanism for all three gates: each
+code's go-live count is recorded in `[tool.noqa_debt.frozen]` and the tree must agree with
+it exactly. Four ways it can disagree, each its own finding:
 
 * A code's count **rose**: a suppression was added. Legitimate ones are added by raising the
   number in the same diff, which is a line in `pyproject.toml` a reviewer reads.
@@ -16,8 +17,7 @@ and the tree must agree with it exactly. Four ways it can disagree, each its own
   default, because "we already suppress that one" is the argument this gate exists to make
   someone write down.
 * A code's count **fell** and the table did not: the record still licenses the higher number,
-  which is the regrowth licence `check_module_size.py` names as this repo's fail-open shape.
-  An entry that reaches zero is deleted, not zeroed.
+  which is this repo's fail-open shape. An entry that reaches zero is deleted, not zeroed.
 * A suppression carries **no reason**, against the house form `# noqa: CODE - reason`. Seven
   do; `unreasoned_count` ratchets them in both directions exactly as `[tool.module_size]`'s
   `waiver_count` does, so one can neither appear nor be quietly swapped for another.
@@ -41,8 +41,6 @@ table does not record, so it is refused by the absent-from-the-table finding. Ru
 this itself: `RUF100` only catches a blanket directive that suppresses *nothing*, and one
 that suppresses everything on its line passes.
 
-Scope is every tracked ``.py`` under :data:`SCOPE_ROOTS`, matching `check_module_size.py`.
-
 Run::
 
     uv run python .scripts/check_noqa_debt.py
@@ -52,36 +50,34 @@ from __future__ import annotations
 
 import io
 import re
-import subprocess  # nosec B404
 import sys
 import tokenize
-import tomllib
 from collections import Counter
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
+sys.path.insert(0, str(SCRIPT_DIR))
 
-from basicly.dropin import (  # noqa: E402 - the path above comes first
-    COUNT_DELTA,
-    FRAGMENT_DIR,
-    RATCHET_SECTION,
-    FragmentError,
-    compose,
+from ratchet import (  # noqa: E402 - the path above comes first
+    Finding,
+    Ratchet,
+    RatchetError,
+    compose_ratchet,
+    count_delta_remedy,
+    fragment,
+    report,
+    tracked_sources,
 )
 
-# Every directory whose Python this repo authors, as `check_module_size.py` scopes it: the
-# kit and the hooks ship to consumers, so a suppression there has the widest blast radius.
-SCOPE_ROOTS = ("src", "tests", ".scripts", ".basicly/core")
-
-# Where the ratchet is recorded, how a failure names it, and where a lane records a change to
-# it instead of editing those shared tables (basicly-ef7t).
-RATCHET_TABLE = "[tool.noqa_debt]"
-FROZEN_TABLE = "[tool.noqa_debt.frozen]"
-FRAGMENT = f"[{RATCHET_SECTION}.noqa_debt] in {FRAGMENT_DIR}/<bead-id>.toml"
-FROZEN_FRAGMENT = f"[{RATCHET_SECTION}.noqa_debt.frozen] in {FRAGMENT_DIR}/<bead-id>.toml"
+# The gate, as `[tool.noqa_debt]` and `[ratchet.noqa_debt]` spell it, how a failure names the
+# table, and where a lane records a change to it instead of editing that shared table.
+_GATE = "noqa_debt"
+RATCHET_TABLE = f"[tool.{_GATE}]"
+FROZEN_FRAGMENT = fragment(f"{_GATE}.frozen")
 
 # What a codeless directive is counted as. Lowercase, so it can never collide with a ruff
 # code, and absent from the frozen table, so it fails on sight.
@@ -102,10 +98,6 @@ _REASON_LEAD = " \t-:\N{EN DASH}\N{EM DASH}"
 _LABEL = "noqa-debt"
 
 
-class RatchetError(Exception):
-    """The gate could not reach an answer: no ratchet to read, or a file it cannot parse."""
-
-
 @dataclass(frozen=True)
 class Suppression:
     """One suppressed code at one place, with the reason it carries if it carries one."""
@@ -119,23 +111,6 @@ class Suppression:
     def site(self) -> str:
         """Where a reader has to go to act on it."""
         return f"{self.path}:{self.line}"
-
-
-@dataclass(frozen=True)
-class Ratchet:
-    """The recorded state a change is measured against."""
-
-    frozen: Mapping[str, int]
-    unreasoned_count: int
-
-
-@dataclass(frozen=True)
-class Finding:
-    """One way the tree disagrees with the ratchet, with the repair named."""
-
-    subject: str
-    detail: str
-    remedy: str
 
 
 def _codes(body: str) -> tuple[list[str], str]:
@@ -193,60 +168,19 @@ def suppressions(path: str, text: str) -> list[Suppression]:
     ]
 
 
-def load_ratchet(repo: Path) -> Ratchet:
-    """The baseline in ``pyproject.toml``, with the ``basicly.d`` fragments applied.
-
-    Raises:
-        RatchetError: The table is absent or malformed — the gate must not pass by
-            defaulting to an empty baseline, which would report the whole debt as new.
-    """
-    try:
-        data = tomllib.loads((repo / "pyproject.toml").read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError) as exc:
-        raise RatchetError(f"could not read pyproject.toml: {exc}") from exc
-    table = data.get("tool", {}).get("noqa_debt")
-    if not isinstance(table, dict):
-        raise RatchetError(f"no {RATCHET_TABLE} in pyproject.toml")
-    frozen = table.get("frozen", {})
-    count = table.get("unreasoned_count")
-    if not isinstance(frozen, dict) or not all(isinstance(v, int) for v in frozen.values()):
-        raise RatchetError(f"{FROZEN_TABLE} must map each rule code to its go-live count")
-    if not isinstance(count, int):
-        raise RatchetError(f"{RATCHET_TABLE} must declare unreasoned_count as an integer")
-    baseline = compose(repo, "noqa_debt", frozen=frozen, count=count)
-    return Ratchet(frozen=baseline.frozen, unreasoned_count=baseline.count)
+def load_ratchet(repo: Path) -> Ratchet[int]:
+    """This gate's baseline: per-code counts, and a count of unreasoned suppressions."""
+    return compose_ratchet(repo, _GATE, count_key="unreasoned_count", entry_type=int)
 
 
 def tracked_suppressions(repo: Path) -> list[Suppression]:
-    """Every suppression in every tracked ``.py`` under :data:`SCOPE_ROOTS`.
-
-    Args:
-        repo: The repository root.
-
-    Returns:
-        The suppressions, ordered by path then line. A tracked path with no readable file —
-        deleted in the working tree — contributes nothing rather than failing the run.
+    """Every suppression in every tracked ``.py`` in scope, ordered by path then line.
 
     Raises:
         RatchetError: git refused to list the tree, or a listed module does not tokenize.
     """
-    completed = subprocess.run(  # nosec B603 B607
-        ["git", "-C", str(repo), "ls-files", "-z", "--", *SCOPE_ROOTS],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if completed.returncode != 0:
-        detail = completed.stderr.strip() or f"git exited {completed.returncode}"
-        raise RatchetError(f"could not list tracked files: {detail}")
     found: list[Suppression] = []
-    for name in sorted(completed.stdout.split("\0")):
-        if not name.endswith(".py"):
-            continue
-        try:
-            text = (repo / name).read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
+    for name, text in sorted(tracked_sources(repo)):
         found.extend(suppressions(name, text))
     return found
 
@@ -300,24 +234,23 @@ def _fell(code: str, count: int, baseline: int) -> Finding:
     )
 
 
-def _unreasoned(sites: list[str], ratchet: Ratchet) -> list[Finding]:
+def _unreasoned(sites: list[str], ratchet: Ratchet[int]) -> list[Finding]:
     """The reason ratchet, which moves only in a diff that says it moved.
 
     A count rather than a list, matching `[tool.module_size]`'s `waiver_count`: the point is
     that an unargued suppression cannot appear, and cannot be swapped for another one, in a
     diff that does not say so.
     """
-    if len(sites) == ratchet.unreasoned_count:
+    if len(sites) == ratchet.count:
         return []
-    grew = len(sites) > ratchet.unreasoned_count
-    moved = len(sites) - ratchet.unreasoned_count
-    repair = f"record `{COUNT_DELTA} = {moved:+d}` in {FRAGMENT}"
+    grew = len(sites) > ratchet.count
+    repair = count_delta_remedy(_GATE, len(sites) - ratchet.count)
     return [
         Finding(
             subject="pyproject.toml",
             detail=(
                 f"{len(sites)} suppression(s) carry no reason but unreasoned_count is "
-                f"{ratchet.unreasoned_count} — one was {'added' if grew else 'justified'} "
+                f"{ratchet.count} — one was {'added' if grew else 'justified'} "
                 f"without saying so (at: {', '.join(sites) or 'none'})"
             ),
             remedy=(
@@ -327,7 +260,7 @@ def _unreasoned(sites: list[str], ratchet: Ratchet) -> list[Finding]:
     ]
 
 
-def collect(found: Iterable[Suppression], ratchet: Ratchet) -> list[Finding]:
+def collect(found: Iterable[Suppression], ratchet: Ratchet[int]) -> list[Finding]:
     """Every disagreement between the tree and the recorded ratchet.
 
     Args:
@@ -354,29 +287,22 @@ def collect(found: Iterable[Suppression], ratchet: Ratchet) -> list[Finding]:
     return sorted(findings, key=lambda finding: (finding.subject, finding.detail))
 
 
-def report(findings: Iterable[Finding]) -> None:
-    """Print each finding as the disagreement, then how to repair it."""
-    for finding in findings:
-        print(f"{_LABEL}: {finding.subject}: {finding.detail}", file=sys.stderr)
-        print(f"{_LABEL}:   {finding.remedy}", file=sys.stderr)
-
-
 def main() -> int:
     """Entry point: report every code whose suppression count left its recorded baseline."""
     try:
         ratchet = load_ratchet(REPO_ROOT)
         found = tracked_suppressions(REPO_ROOT)
-    except (RatchetError, FragmentError) as exc:
+    except RatchetError as exc:
         print(f"{_LABEL}: {exc}", file=sys.stderr)
         return 1
 
     findings = collect(found, ratchet)
     if findings:
-        report(findings)
+        report(_LABEL, findings)
         return 1
     print(
         f"{_LABEL}: {len(found)} suppressions across {len(ratchet.frozen)} codes, each at its "
-        f"frozen count ({ratchet.unreasoned_count} carrying no reason)"
+        f"frozen count ({ratchet.count} carrying no reason)"
     )
     return 0
 

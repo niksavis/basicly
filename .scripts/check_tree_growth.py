@@ -58,11 +58,10 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from check_module_size import (  # noqa: E402 - the path above comes first
+from check_module_size import module_tokens, tracked_modules  # noqa: E402 - path set above
+from ratchet import (  # noqa: E402 - the path above comes first
     SCOPE_ROOTS,
     RatchetError,
-    module_tokens,
-    tracked_modules,
 )
 
 if TYPE_CHECKING:
