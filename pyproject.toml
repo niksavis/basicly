@@ -285,8 +285,11 @@ UP017 = 1
 # cap when the gate landed (2026-08-12, basicly-wxr3); the tree measured 39.4% overall.
 # Each entry may only fall, and one that reaches the cap has graduated and must be deleted
 # with it. The list is closed — an entry is only ever removed.
+#
+# Unlike `[tool.module_size]`, this gate reads the number here directly and composes no
+# `basicly.d/` fragment, so a lane raising it edits this anchor (basicly-feje).
 [tool.comment_density]
-waiver_count = 1
+waiver_count = 2
 
 [tool.comment_density.frozen]
 ".basicly/core/hooks/internal-info-scan.py" = 55.0

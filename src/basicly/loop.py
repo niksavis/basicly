@@ -57,6 +57,7 @@ from . import (
     dispatch_brief,
     handoff,
     landing_gate,
+    lens_review,
     loop_state,
     merge,
     needs_input,
@@ -471,6 +472,9 @@ def _dispatch_validation(ctx: _Ctx, gate: str) -> AdvanceResult | None:
     )
     if verdict is not None:
         validate_gate.record_verdict(ctx.repo_root, ctx.issue_id, passed=verdict)
+    # After the verdict is recorded, never before: a review that could not reach the
+    # tracker would otherwise throw away the validator's own answer along with its cost.
+    _dispatch_reviews(ctx)
     # Re-read rather than assume: a dispatch that recorded nothing must leave the unit
     # resting here, not advance on the strength of having run.
     if gate in policy.gate_status(ctx.repo_root, ctx.issue_id, ctx.config).required_passed:
@@ -480,6 +484,36 @@ def _dispatch_validation(ctx: _Ctx, gate: str) -> AdvanceResult | None:
         f"the validator recorded no {gate} result; the unit stays in validate",
         needs_input="validation",
     )
+
+
+def _dispatch_reviews(ctx: _Ctx) -> None:
+    """Dispatch one reviewer per declared lens, beside the validator (§3.1, §6.5).
+
+    Advisory by decision: nothing here reads a verdict or touches a gate. The validator
+    owns the gate, so a reviewer records a finding for a human and never blocks a landing
+    on its own authority. Each lens gets its own prompt, run record and recorded finding,
+    and no code path merges two of them (§6.4).
+
+    Priced as a read: ``phase="validate"`` records outside ``WRITE_PHASES``, so a
+    read-only judge cannot leak into the sample a lane's cost is calibrated from. Reached
+    past the validator's spend halt and block triage, so a session the grant refuses pays
+    for none of these.
+    """
+    for dispatch in roles.lens_dispatches("validate"):
+        run = _run_agent(
+            ctx,
+            ctx.issue_id,
+            ctx.repo_root,
+            prompt=dispatch_brief.review_prompt(ctx.issue_id, dispatch.lens),
+            phase="validate",
+            role=dispatch.role,
+        )
+        lens_review.record(
+            ctx.repo_root,
+            ctx.issue_id,
+            dispatch.lens,
+            repair_brief.clip_output(runner.result_text(run.spec, run.result.stdout)),
+        )
 
 
 def _worktree_landed(repo_root: Path, binding: loop_state.WorktreeBinding) -> bool:
@@ -791,8 +825,14 @@ class _Dispatch:
     timeout: float
 
 
-def _run_agent(
-    ctx: _Ctx, issue_id: str, cwd: Path, *, prompt: str | None = None, phase: str = "build"
+def _run_agent(  # noqa: PLR0913 — one keyword per independent fact about the dispatch
+    ctx: _Ctx,
+    issue_id: str,
+    cwd: Path,
+    *,
+    prompt: str | None = None,
+    phase: str = "build",
+    role: str | None = None,
 ) -> _Dispatch:
     """Dispatch *issue_id*'s prompt through the configured runner in *cwd*, recorded.
 
@@ -801,6 +841,11 @@ def _run_agent(
     made (D6/D7). *prompt* overrides it for the one dispatch that is not a build:
     a repair run, which is briefed with the gate that rejected the work rather
     than with the requirement (:func:`repair_brief.repair_prompt`, D5).
+
+    *role* names the persona explicitly, for a phase that dispatches more than one:
+    VALIDATE runs a reviewer per lens beside the validator its table names, so the phase
+    alone no longer identifies which role a dispatch is. Left None it resolves from the
+    phase as every other dispatch does.
 
     The sizing is measured *before* the agent runs and recorded with the dispatch
     (basicly-kjc5.30, basicly-jr0l.34). The scope read-cost is the denominator of
@@ -815,7 +860,11 @@ def _run_agent(
     sizing = sizing_at_dispatch(ctx.repo_root, issue_id)
     # A sub-task runner is the lane's own write agent (D7), so it draws on the
     # lane reservation like any lane dispatch (component 8, basicly-kjc5.11).
-    role = roles.resolve_role(ctx.repo_root, spec, phase)
+    role = (
+        roles.resolve_role(ctx.repo_root, spec, phase)
+        if role is None
+        else roles.resolve_named_role(ctx.repo_root, spec, role)
+    )
     prompt = _with_role_skills(ctx.repo_root, spec, role, prompt)
     with runner.process_budget().slot(runner.LANE):
         result = runner.run(

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from . import needs_input, roles, skills
+from . import needs_input, review, roles, skills
 from .config import WORK_TYPES
 
 if TYPE_CHECKING:
@@ -50,6 +50,35 @@ def validate_prompt(issue_id: str) -> str:
         "yourself - the engine records it from that line. If you cannot exercise it as "
         "a consumer, answer FAIL with the reason rather than passing on the tests alone."
     )
+
+
+def review_prompt(issue_id: str, lens: str) -> str:
+    """Review the merged change along *lens* alone, reporting on that axis only.
+
+    Passed through the no-pre-judging lint before it is returned, the rule
+    :mod:`basicly.review` states for every reviewer bundle this repo assembles: a
+    bundle that tells the reviewer what to leave out is a review whose result was
+    written before it ran, and it is refused rather than emitted weaker.
+
+    Raises:
+        review.PreJudgingError: the assembled brief pre-judges its own review.
+    """
+    prompt = (
+        f"The change for {issue_id} has merged and its gates are green. Review it along "
+        f"one axis and one only: {lens}. Run `br show {issue_id}` for the requirement and "
+        "the acceptance criteria it was built against, read the diff that closed it, and "
+        "read enough of the surrounding code to know the invariants the files already "
+        f"hold. Every finding on the {lens} axis carries a `path:line`, a severity, and "
+        "the input that makes it fail — a finding you could not make fail is a preference "
+        "and costs the author the same attention as a defect. Other lenses are dispatched "
+        "separately, each on its own axis, and their output is never merged with yours "
+        "into one ranking, so weigh nothing against what another lens might say. Finding "
+        f"nothing on {lens} is a complete answer: state it in one line rather than padding "
+        "it. State the boundary of what you covered. You are read-only: change no file, "
+        "and record no gate — the engine records what you report."
+    )
+    review.reject_pre_judging(prompt)
+    return prompt
 
 
 def dispatch_prompt(issue_id: str) -> str:

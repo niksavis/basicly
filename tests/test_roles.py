@@ -35,9 +35,80 @@ def test_every_mapped_role_is_a_role_this_catalog_actually_ships() -> None:
     """
     authored = {path.parent.name for path in Path(".basicly/core/agents").glob("*/agent.yaml")}
 
-    unknown = sorted(set(roles.ROLE_BY_PHASE.values()) - authored)
+    mapped = set(roles.ROLE_BY_PHASE.values()) | set(roles.LENS_ROLE_BY_PHASE.values())
+
+    unknown = sorted(mapped - authored)
 
     assert unknown == [], f"phase map names role(s) with no source: {unknown}"
+
+
+def test_every_loop_role_is_reachable_from_one_of_the_phase_tables() -> None:
+    """basicly-feje's AC: an authored loop role nothing routes to is context with no reach.
+
+    The loop-role set is §6.2's, spelled out rather than derived, because nothing in an
+    agent source declares whether it is engine-dispatched or ad-hoc — and an ad-hoc agent
+    (`architect`, `code-reviewer`, `researcher`, `security-auditor`, `test-runner`) is
+    invoked by a human and must not appear in a phase table at all.
+
+    `reviewer` is why this exists: it was authored, projected to both agent roots and
+    vendored to consumers while `ROLE_BY_PHASE` was phase-to-one-role, so no phase string
+    could ever resolve it.
+    """
+    loop_roles = {
+        "decomposer",
+        "implementer",
+        "validator",
+        "reviewer",
+        "decider",
+        "retrospector",
+        "curator",
+    }
+
+    routed = set(roles.ROLE_BY_PHASE.values()) | set(roles.LENS_ROLE_BY_PHASE.values())
+
+    assert sorted(loop_roles - routed) == []
+
+
+def test_validate_resolves_to_more_than_one_role_and_each_review_carries_its_lens() -> None:
+    """§3.1 gives VALIDATE `validator` **and** `reviewer` by lens; both must be reachable.
+
+    The lens is what makes the second dispatchable more than once: a phase-to-one-role map
+    can express neither, which is the shape defect basicly-feje was filed on.
+    """
+    assert roles.role_for_phase("validate") == "validator"
+
+    reviews = roles.lens_dispatches("validate")
+
+    assert [dispatch.role for dispatch in reviews] == ["reviewer"] * len(roles.REVIEW_LENSES)
+    assert [dispatch.lens for dispatch in reviews] == list(roles.REVIEW_LENSES)
+    assert len(roles.REVIEW_LENSES) == len(set(roles.REVIEW_LENSES))
+
+
+def test_no_other_phase_pays_for_a_lens_dispatch() -> None:
+    """Every lens is a paid dispatch, so a phase that fans out over nothing costs nothing.
+
+    BUILD and REPAIR are where a lane's budget actually goes and VERIFY is deterministic
+    gates by decision — a review dispatched at any of them is spend with no state that
+    consumes it.
+    """
+    fanned_out = [phase for phase in roles.ROLE_BY_PHASE if roles.lens_dispatches(phase)]
+
+    assert fanned_out == ["validate"]
+    assert roles.lens_dispatches("verify") == ()
+
+
+def test_a_named_role_resolves_only_when_its_family_can_load_it(tmp_path: Path) -> None:
+    """The fan-out uses the explicit resolver, so it inherits the same two refusals.
+
+    A reviewer whose projected file is absent falls back to the default runner rather than
+    putting a flag on the argv the host drops without a word.
+    """
+    assert roles.resolve_named_role(tmp_path, _spec("claude"), "reviewer") is None
+
+    _project(tmp_path, "claude", "reviewer")
+
+    assert roles.resolve_named_role(tmp_path, _spec("claude"), "reviewer") == "reviewer"
+    assert roles.resolve_named_role(tmp_path, _spec("codex"), "reviewer") is None
 
 
 def test_a_phase_with_no_persona_resolves_to_nothing(tmp_path: Path) -> None:
