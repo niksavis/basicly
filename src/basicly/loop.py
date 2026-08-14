@@ -432,10 +432,14 @@ def _on_validate(ctx: _Ctx) -> AdvanceResult:
     **Failed and missing are different refusals, and only failed is rework.** Failed
     means a validation ran and the change did not survive it. Missing means nobody has
     looked yet, and charging that burns the budget that exists for repairing findings
-    on the absence of any. Neither branch merges, tears down, closes or commits.
+    on the absence of any. Failed is also the one branch that merges, because a repair
+    commits on the lane's branch. Nothing here tears down, closes or commits.
     """
     gate = validate_gate.VALIDATE_GATE
     if gate in ctx.state.gates.required_failed:
+        repaired = _repair_from_validate(ctx, gate)
+        if repaired is not None:
+            return repaired
         return _rework(ctx, gate, f"{gate} failed: the change did not survive validation")
     dispatched = _dispatch_validation(ctx, gate)
     return (
@@ -443,6 +447,42 @@ def _on_validate(ctx: _Ctx) -> AdvanceResult:
         if dispatched is not None
         else _blocked(ctx, validate_gate.refusal_reason(ctx.state.gates), needs_input="validation")
     )
+
+
+def _repair_from_validate(ctx: _Ctx, gate: str) -> AdvanceResult | None:
+    """Repair a red consumer gate in the lane's worktree and re-land it, or None.
+
+    The route a failed validation had none: :func:`_repair_in_place` is reached only
+    from :func:`_on_build`, so a red gate spun on :func:`_rework` and escalated with
+    the brief unread (basicly-e2mz.4).
+
+    **The phase does not move.** Falling back to ``build`` hands the unit a phase whose
+    work base already holds, so the repair commits on a branch nothing merges again —
+    the shape that stranded work before basicly-5vu4. The re-land is done here instead,
+    split on the ancestry proof ``_on_ship`` refuses on: a branch base does not hold
+    carries the repair's commit and is merged before the validator re-runs against it;
+    otherwise the waiting brief goes out under the same spend gate (basicly-xab3).
+    """
+    binding = ctx.state.worktree
+    if binding is None:
+        return None
+    if _worktree_landed(ctx.repo_root, binding):
+        return _repair_in_place(ctx, binding)
+    mode = ctx.inputs.verify_mode
+    landed = merge.merge_worktree(ctx.repo_root, binding.name, bead=ctx.issue_id, verify_mode=mode)
+    if not landed.merged:
+        return _rework(
+            ctx,
+            merge.MERGE_GATE,
+            f"re-landing the repair failed: {landed.detail}",
+            landing=landed,
+            findings=_landing_findings(landed),
+            evidence=_landing_evidence(landed, mode),
+        )
+    revalidated = _dispatch_validation(ctx, gate)
+    if revalidated is not None:
+        return revalidated
+    return _blocked(ctx, f"the repair landed; {gate} was not re-run", needs_input="validation")
 
 
 def _dispatch_validation(ctx: _Ctx, gate: str) -> AdvanceResult | None:

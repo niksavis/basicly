@@ -20,6 +20,7 @@ from basicly import (
     classify,
     decisions,
     decompose,
+    dispatch_brief,
     loop,
     loop_state,
     merge,
@@ -1969,8 +1970,11 @@ def test_a_failed_validation_spends_one_bounded_rework_attempt(
 def test_a_failed_validation_escalates_at_the_rework_cap(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """At max_rework the loop stops dispatching and asks a human instead."""
-    at(_state("validate", gates=_validate_gates(failed=True)))
+    """At max_rework the loop stops dispatching and asks a human instead.
+
+    An escalated round leaves no brief, so basicly-e2mz.4's repair route cannot run.
+    """
+    seen, _ = _validate_repair(at, monkeypatch, tmp_path, brief=False)
     monkeypatch.setattr(policy, "record_rework", lambda *_a, **_k: 2)  # the CONFIG cap
     queued: list[tuple[str, str]] = []
     monkeypatch.setattr(
@@ -1981,7 +1985,7 @@ def test_a_failed_validation_escalates_at_the_rework_cap(
 
     result = _advance(tmp_path)
 
-    assert result.action == "escalated" and _VGATE in result.detail
+    assert seen == [] and result.action == "escalated" and _VGATE in result.detail
     # An escalation is a judgment call: it enters the decision queue (kjc5.4).
     assert queued == [("i", "escalation")]
 
@@ -2302,6 +2306,61 @@ def test_a_repair_after_a_failed_verify_is_briefed_as_it_always_was(
 
     assert brief is not None and brief.gate == verify.DEFAULT_GATE
     assert brief.reviews == ()
+
+
+def _validate_repair(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, landed: bool = True, brief: bool = True
+) -> tuple[list[dict], list[str]]:
+    """A landed unit in validate with a red gate: its dispatches, and the roots read.
+
+    ``_worktree_landed`` runs for real over stubbed git: that ancestry is the split.
+    """
+    at(_state("validate", gates=_validate_gates(failed=True), worktree=WorktreeBinding("i", "b")))
+    path = tmp_path / "wt"
+    path.mkdir()
+    if brief:
+        lens = loop.lens_review.LensFindings
+        reviews = (lens("correctness", "off-by-one"), lens("security", "shell injection"))
+        repair_brief.write_repair_brief(
+            path, repair_brief.RepairBrief("i", _VGATE, "not survived", reviews=reviews)
+        )
+    session = replace(_session(), worktree_path=str(path))
+    monkeypatch.setattr(loop.worktree, "load_session", lambda *_a, **_k: session)
+    monkeypatch.setattr(loop.worktree, "git", lambda *_a, **_k: SimpleNamespace(returncode=0))
+    monkeypatch.setattr(loop.merge, "is_ancestor", lambda *_a: landed)
+    seen = _retro_dispatch(monkeypatch, tmp_path)
+    roots: list[str] = []
+    monkeypatch.setattr(policy, "spend_status", lambda _r, root: roots.append(root) or _unhalted())
+    return seen, roots
+
+
+def test_a_failed_validation_repairs_against_the_brief_then_re_lands_the_commit(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """basicly-e2mz.4, both advances of one round: the brief basicly-w88t fills is read.
+
+    Nothing dispatched from validate before, so a red gate spun on rework to its cap with
+    both lenses unread; each dispatch asks the spend halt under the grant first (xab3).
+    The second advance is the hazard: once the repair commits, the merged unit's tip is no
+    longer an ancestor of base, and nothing else in the loop would ever merge it again.
+    """
+    seen, roots = _validate_repair(at, monkeypatch, tmp_path)
+    done = merge.MergeResult("i", "merged", "landed @ def5678")
+    merged: list[str] = []
+    monkeypatch.setattr(loop.merge, "merge_worktree", lambda _r, n, **_k: merged.append(n) or done)
+    monkeypatch.setattr(loop, "_dispatch_reviews", lambda _ctx: None)
+    monkeypatch.setattr(policy, "gate_status", lambda *_a: _validate_gates())
+
+    repair = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="root")
+    monkeypatch.setattr(loop.merge, "is_ancestor", lambda *_a: False)  # the repair committed
+    reland = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="root")
+
+    assert roots == ["root", "root"]
+    assert [call["cwd"] for call in seen] == [tmp_path / "wt", tmp_path]
+    assert "off-by-one" in seen[0]["prompt"] and "shell injection" in seen[0]["prompt"]
+    assert seen[1]["prompt"] == dispatch_brief.validate_prompt("i")
+    assert merged == ["i"], "the repair commit must not strand"
+    assert _VGATE in repair.detail and reland.to_phase == "validate"
 
 
 # --- verify / ship / done ---------------------------------------------------
