@@ -1,0 +1,21 @@
+# The three ratchet gates each defined `Ratchet`, `Finding`, `RatchetError`, the loader, the
+# git walk and `SCOPE_ROOTS` for themselves, so the scope roots agreed by luck: a fourth root
+# added to one gate silently unscoped the other two. `.scripts/ratchet.py` now holds all of
+# it once (basicly-2j5a).
+#
+# Two suppressions, both `E402` and both the shape the four fragments before this one record:
+# `.scripts` is not a package, so a sibling module is reachable only after `sys.path` names
+# its directory, and the import therefore cannot precede the statement that makes it
+# resolvable. One is `ratchet.py`'s own `basicly.dropin` import; the other is
+# `check_tree_growth.py`, which imported `SCOPE_ROOTS` from `check_module_size` and now takes
+# it from the module that owns it. The three gates' own counts are unchanged - each traded a
+# `basicly.dropin` import for a `ratchet` one. Both name their reason, so `unreasoned_count`
+# does not move.
+[ratchet.noqa_debt.frozen]
+E402 = 2
+
+# `.scripts/ratchet.py` states the mechanism the three gates share, which is why it measures
+# 58.4% prose against 1264 tokens of code. The waiver is in the file with its reason; this is
+# the count moving in the same diff, which is what makes it reviewable.
+[ratchet.comment_density]
+count_delta = 1

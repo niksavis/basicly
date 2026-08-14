@@ -43,6 +43,9 @@ REPO_ROOT = Path(__file__).parent.parent
 SCRIPT = REPO_ROOT / ".scripts" / "check_module_size.py"
 CAP = SCOPE_FILE_READ_CAP
 
+# The marker the gate reads, without its colon; `ratchet.waiver_reason` takes it as data.
+WAIVER_MARKER = "module-size-waiver"
+
 
 def _load(path: Path, name: str) -> ModuleType:
     """Load a standalone script by path, the way `uv run python` does."""
@@ -62,7 +65,7 @@ def _module(path: str, tokens: int, waiver: str | None = None) -> object:
 
 
 def _ratchet(frozen: dict[str, int] | None = None, waivers: int = 0) -> object:
-    return gate.Ratchet(frozen=frozen or {}, waiver_count=waivers)
+    return gate.Ratchet(frozen=frozen or {}, count=waivers)
 
 
 # --- the cap ------------------------------------------------------------------------
@@ -73,7 +76,7 @@ def test_a_module_over_the_cap_fails_naming_the_file_its_tokens_and_the_cap() ->
     findings = gate.collect([_module("src/basicly/new.py", CAP + 1)], _ratchet())
 
     assert len(findings) == 1
-    assert findings[0].path == "src/basicly/new.py"
+    assert findings[0].subject == "src/basicly/new.py"
     assert str(CAP + 1) in findings[0].detail
     assert str(CAP) in findings[0].detail
 
@@ -185,7 +188,7 @@ def test_a_frozen_entry_naming_no_module_fails() -> None:
     """A renamed or deleted module leaves an entry that would silently cover a new file."""
     findings = gate.collect([], _ratchet({"src/basicly/gone.py": 9_000}))
 
-    assert [f.path for f in findings] == ["src/basicly/gone.py"]
+    assert [f.subject for f in findings] == ["src/basicly/gone.py"]
     assert "no readable tracked module" in findings[0].detail
 
 
@@ -227,7 +230,7 @@ def test_a_waiver_is_a_column_zero_comment_carrying_a_reason(line: str, reason: 
     argument. Column zero is what lets the gate and its tests name the marker without
     waiving themselves, which a substring search would not.
     """
-    assert gate.waiver_reason(f"x = 1\n{line}\ny = 2\n") == reason
+    assert gate.waiver_reason(f"x = 1\n{line}\ny = 2\n", WAIVER_MARKER) == reason
 
 
 def test_the_waiver_count_ratchet_fails_when_a_waiver_appears_unannounced() -> None:
@@ -251,7 +254,7 @@ def test_the_waiver_count_ratchet_fails_when_the_last_waiver_disappears() -> Non
 def test_neither_the_gate_nor_this_test_carries_a_waiver() -> None:
     """Both name the marker repeatedly; neither may thereby exempt itself."""
     for path in (SCRIPT, Path(__file__)):
-        assert gate.waiver_reason(path.read_text(encoding="utf-8")) is None, path
+        assert gate.waiver_reason(path.read_text(encoding="utf-8"), WAIVER_MARKER) is None, path
 
 
 # --- the recorded state, and the wiring ---------------------------------------------

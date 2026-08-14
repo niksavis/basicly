@@ -31,6 +31,7 @@ from basicly import dropin
 
 REPO_ROOT = Path(__file__).parent.parent
 SCRIPT = REPO_ROOT / ".scripts" / "check_comment_density.py"
+RATCHET = REPO_ROOT / ".scripts" / "ratchet.py"
 
 
 def _load(path: Path, name: str) -> ModuleType:
@@ -46,13 +47,16 @@ def _load(path: Path, name: str) -> ModuleType:
 gate = _load(SCRIPT, "check_comment_density")
 CAP = gate.CAP
 
+# The marker the gate reads, without its colon; `ratchet.waiver_reason` takes it as data.
+WAIVER_MARKER = "comment-density-waiver"
+
 
 def _module(path: str, share: float, waiver: str | None = None) -> object:
     return gate.Module(path=path, share=share, tokens=1000, waiver=waiver)
 
 
 def _ratchet(frozen: dict[str, float] | None = None, waivers: int = 0) -> object:
-    return gate.Ratchet(frozen=frozen or {}, waiver_count=waivers)
+    return gate.Ratchet(frozen=frozen or {}, count=waivers)
 
 
 def test_a_docstring_counts_as_prose() -> None:
@@ -141,15 +145,16 @@ def test_the_waiver_count_is_ratcheted_in_both_directions(
     """A count that only rises decays into a blanket exemption nobody reads."""
     modules = [_module(f"w{i}.py", 90.0, waiver="reason") for i in range(waivers)]
     findings = gate.collect(modules, _ratchet(waivers=declared))
-    counted = next(finding for finding in findings if finding.path == "pyproject.toml")
+    counted = next(finding for finding in findings if finding.subject == "pyproject.toml")
     assert direction in counted.detail
 
 
 def test_a_waiver_must_start_the_line_and_carry_a_reason() -> None:
     """Otherwise a file that merely mentions the marker waives itself."""
-    assert gate.waiver_reason("    # comment-density-waiver: indented") is None
-    assert gate.waiver_reason("# comment-density-waiver:") is None
-    assert gate.waiver_reason("# comment-density-waiver: vendor data") == "vendor data"
+    assert gate.waiver_reason("    # comment-density-waiver: indented", WAIVER_MARKER) is None
+    assert gate.waiver_reason("# comment-density-waiver:", WAIVER_MARKER) is None
+    reason = gate.waiver_reason("# comment-density-waiver: vendor data", WAIVER_MARKER)
+    assert reason == "vendor data"
 
 
 def test_a_missing_ratchet_table_raises_rather_than_defaulting_to_empty(tmp_path: Path) -> None:
@@ -175,20 +180,21 @@ def _prose_module(marker: str = "") -> str:
 
 
 def _scratch_repo(tmp_path: Path, module: str, *, frozen: str = "", waiver_count: int = 0) -> Path:
-    """A tiny git repo holding the gate, the composer it reads through, and *module*.
+    """A tiny git repo holding the gate, the two modules it reads through, and *module*.
 
     The gate resolves its root from its own location, so a copy of it in a tmp tree
     exercises `git ls-files`, the tokenizer, the TOML read and the fragments together
     without putting a deliberate defect in this working tree.
 
-    Only the measured modules are added to the index. `src` is in the gate's scope roots,
-    so tracking the two engine modules the copy has to import would measure them too —
-    `read_cost.py` is 82% prose against a record that freezes nothing, and every case here
-    would report it. Importing does not need git; measuring does.
+    Only the measured modules are added to the index. `src` and `.scripts` are both in the
+    gate's scope roots, so tracking the modules the copy has to import would measure them
+    too — `read_cost.py` is 82% prose against a record that freezes nothing, and every case
+    here would report it. Importing does not need git; measuring does.
     """
     scripts = tmp_path / ".scripts"
     scripts.mkdir()
-    shutil.copy(SCRIPT, scripts / SCRIPT.name)
+    for script in (SCRIPT, RATCHET):
+        shutil.copy(script, scripts / script.name)
     package = tmp_path / "src" / "basicly"
     package.mkdir(parents=True)
     (package / "__init__.py").write_text("", encoding="utf-8")
@@ -272,7 +278,7 @@ def test_the_waiver_ratchet_still_binds_when_a_fragment_is_missing(tmp_path: Pat
 
     assert completed.returncode == 1
     assert "waiver was added without saying so" in completed.stderr
-    assert f"under {gate.FRAGMENT}" in completed.stderr
+    assert "under [ratchet.comment_density] in basicly.d/<bead-id>.toml" in completed.stderr
 
 
 def test_a_fragment_that_is_not_a_delta_stops_the_gate(tmp_path: Path) -> None:
@@ -311,7 +317,7 @@ def test_the_gate_composes_the_fragments_the_other_ratchets_do(tmp_path: Path) -
     ratchet = gate.load_ratchet(tmp_path)
 
     assert ratchet.frozen == {"a.py": 58.6}
-    assert ratchet.waiver_count == 2
+    assert ratchet.count == 2
 
 
 def test_a_small_module_is_out_of_scope() -> None:
@@ -349,4 +355,4 @@ def test_the_gate_is_wired_to_something_that_runs_it() -> None:
 def test_neither_the_gate_nor_this_test_carries_a_waiver() -> None:
     """Both files name the marker repeatedly; a column-0 one would exempt them."""
     for path in (SCRIPT, Path(__file__)):
-        assert gate.waiver_reason(path.read_text(encoding="utf-8")) is None
+        assert gate.waiver_reason(path.read_text(encoding="utf-8"), WAIVER_MARKER) is None
