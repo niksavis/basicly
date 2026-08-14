@@ -18,7 +18,8 @@ ambient PATH either way — ``test_runner.py`` drives both resolutions through
 ``is_available``/``select_runner``'s injected ``which``, which is where a unit test
 should express it.
 
-``work_repo`` is the same rule applied to the filesystem, and the process-global
+``work_repo`` is the same rule applied to the filesystem, the ambient ``GIT_*``
+scrub is the same rule applied to the environment, and the process-global
 registries are the same rule applied to whatever test happened to run first.
 """
 
@@ -27,6 +28,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -39,6 +41,97 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # basicly.runner on purpose: if a rename ever desynchronizes the two, the suite
 # should start seeing an ambient CLI and fail loudly, not silently stop pinning.
 AGENT_BINARIES = frozenset({"claude", "codex", "copilot"})
+
+# The `GIT_*` variables a test run may keep. Everything else is dropped, because git
+# resolves *which repository it is talking to* from the environment first and from `cwd`
+# only afterwards: an inherited `GIT_DIR` makes every fixture's `git init`, `git config`
+# and `git worktree add` operate on the repository the environment names, whatever tmp
+# path the fixture passed. Measured 2026-08-14 in a throwaway clone (basicly-e2mz.15):
+# `GIT_DIR=<clone>/.git pytest -q -n 4` wrote `user.name`/`user.email` and
+# `basicly.identityAllowEmail` into the clone's config, created four `harness/*`
+# branches, registered four worktrees under `/tmp/pytest-of-*`, and moved `main` — the
+# signature of the incident that filed the bead. The same run with this scrub in place
+# leaves config, refs and the worktree registry byte-identical.
+#
+# The set is pre-commit's own `no_git_env` allowlist (`pre_commit/git.py`, which
+# documents the same class of leak) minus `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_*`/
+# `GIT_CONFIG_VALUE_*`: pre-commit keeps those to *forward* config into hooks, and
+# injecting config into every git call a test makes is the same defect one layer down.
+GIT_ENV_KEPT = frozenset({
+    "GIT_ALLOW_PROTOCOL",
+    "GIT_ASKPASS",
+    "GIT_EXEC_PATH",
+    "GIT_HTTP_PROXY_AUTHMETHOD",
+    "GIT_SSH",
+    "GIT_SSH_COMMAND",
+    "GIT_SSL_CAINFO",
+    "GIT_SSL_NO_VERIFY",
+})
+
+
+def _drop_ambient_git_env() -> None:
+    """Remove every inherited ``GIT_*`` outside :data:`GIT_ENV_KEPT` from this process.
+
+    At import rather than in a fixture, and that is not a style choice: collection and
+    the session-scoped ``_tracked_repo_files`` both shell out to git before the first
+    function-scoped fixture runs, and a subprocess inherits whatever ``os.environ`` holds
+    at the moment it is spawned. Under xdist every worker imports this file, so each one
+    scrubs its own environment.
+    """
+    for name in [
+        name for name in os.environ if name.startswith("GIT_") and name not in GIT_ENV_KEPT
+    ]:
+        del os.environ[name]
+
+
+_drop_ambient_git_env()
+
+
+def _shared_git_config() -> Path | None:
+    """The config file every checkout of this repo shares, or ``None`` outside git.
+
+    Read from the git *common* dir, not ``REPO_ROOT/.git``: a linked worktree has no
+    config of its own, so the incident's writes landed in the parent checkout's file and
+    a suite running from a lane worktree has to watch that one.
+    """
+    proc = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "rev-parse", "--git-common-dir"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        return None
+    common = Path(proc.stdout.strip())
+    if not common.is_absolute():
+        common = REPO_ROOT / common
+    return common / "config"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _shared_git_config_untouched() -> Iterator[None]:
+    """Fail the session when something in it rewrote the config of the repo under test.
+
+    The acceptance criterion of basicly-e2mz.15 read literally. What made the incident a
+    P0 was three keys in the shared config — ``core.bare = true`` detached the working
+    tree, and an identity plus ``basicly.identityAllowEmail`` retargeted every gate — so
+    the file's bytes are the thing to hold still.
+
+    Refs and the worktree registry are deliberately *not* asserted here. A supervised
+    pass runs this suite inside one lane while other lanes commit and provision worktrees
+    in the same repository, so both would move for reasons that have nothing to do with
+    the suite. ``tests/test_repo_isolation.py`` asserts all three against a repository
+    that only it can touch.
+    """
+    config = _shared_git_config()
+    before = config.read_text(encoding="utf-8") if config is not None else None
+    yield
+    if config is None:
+        return
+    assert config.read_text(encoding="utf-8") == before, (
+        f"the suite rewrote {config}. A test reached the repository under test instead of"
+        " its own fixture — see tests/test_repo_isolation.py (basicly-e2mz.15)."
+    )
 
 
 @pytest.fixture(autouse=True)
