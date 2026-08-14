@@ -1,0 +1,36 @@
+# Tree growth, as observability (basicly-5p49). Every other structural gate is a per-file
+# predicate, so a tree can add fifty compliant modules with all of them green — and the
+# cheapest way to satisfy `module-size` is to add a module, which is the action this
+# measures. It never fails: D23 (`docs/requirements/factory-loop.md` §15.7) makes a sizing
+# control with no recorded correct firing observability, and this one has no firing history
+# at all. It earns a threshold after it has refused something correctly.
+#
+# `fast` as well as `full` on the same grounds as `test-naming`: measured 0.14s, of which
+# the work is one `git cat-file --batch` over the baseline tree's ~300 blobs. In CI's
+# depth-1 matrix checkout no commit is a week old, so it reports the window as uncovered
+# and still exits 0.
+#
+# No `fix_command`. There is nothing to repair — the line is a number, not a verdict.
+[[verify.checks]]
+name = "tree-growth"
+command = ["uv", "run", "python", ".scripts/check_tree_growth.py"]
+modes = ["fast", "full"]
+
+# The one suppression the gate adds. `.scripts` is not a package, so a sibling script is
+# reachable only after `sys.path` names its directory, and the import therefore cannot
+# precede the statement that makes it resolvable — the same E402 `check_module_size.py` and
+# `check_comment_density.py` each already carry for the same reason. The alternative
+# rejected was respelling `module_tokens` and `SCOPE_ROOTS` locally, which is a second
+# spelling of the measurement the two gates have to agree on.
+[ratchet.noqa_debt.frozen]
+E402 = 1
+
+# `tests/test_docs_claims.py` graduated. It was frozen at 4031 against a 4000-token cap —
+# 31 tokens of headroom, and correcting the check-count recount needed more than that, so
+# the ratchet made the file unfixable rather than merely large. The repair is the split the
+# gate asks for: `tests/test_plan_claims.py` now owns what the implementation plan claims
+# about the tree, `tests/doc_blocks.py` owns reading a marked block out of a document, and
+# what is left is the docs-claims gate's own behaviour at 3120 tokens. A module that has
+# reached the cap must leave the frozen list or its entry licenses regrowth.
+[ratchet.module_size.frozen]
+"tests/test_docs_claims.py" = -4031
