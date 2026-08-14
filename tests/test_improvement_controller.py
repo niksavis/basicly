@@ -1,6 +1,6 @@
 """Tests for the codebase-improvement loop's controller and actuator (basicly-u2hl.27).
 
-Three properties carry the whole bead and each is pinned here:
+Four properties carry the whole bead and each is pinned here:
 
 * **The engine disposes.** Selection is arithmetic over the sensor's measurements, so
   two runs over one tree pick the same target. The tie-break test is what proves the
@@ -10,6 +10,9 @@ Three properties carry the whole bead and each is pinned here:
   ever admits is indistinguishable from no bound at all.
 * **The drop is reported.** One run selects one of sixty-nine candidates, and a top-1
   that says nothing about the other sixty-eight reads as "nothing else is over the cap".
+* **The scope names something.** Every rendered glob resolves against the tree or is the
+  target's own extraction pattern (basicly-e2mz.7), checked over every tracked module
+  rather than over the one target whose scope was found wrong.
 
 The logic tests drive the module's functions with synthetic ``Module`` records rather
 than building trees: what a given measurement produces is the observable behaviour, and
@@ -148,7 +151,9 @@ def test_open_lanes_is_empty_when_no_bead_carries_the_label(
 
 def test_the_filed_lane_declares_the_measurement_its_scope_and_its_plan() -> None:
     """A target with no number on it, or no scope, is not a dispatchable lane."""
-    body = ctl.lane_body(ctl.Candidate("src/basicly/cli.py", CAP + 47078, 47078), dropped=68)
+    body = ctl.lane_body(
+        REPO_ROOT, ctl.Candidate("src/basicly/cli.py", CAP + 47078, 47078), dropped=68
+    )
 
     assert "47078" in body and str(CAP + 47078) in body
     assert "68 other candidate(s)" in body
@@ -157,6 +162,65 @@ def test_the_filed_lane_declares_the_measurement_its_scope_and_its_plan() -> Non
     assert "- `tests/test_cli*.py`" in body
     for heading in ("## Acceptance Criteria", "## Scope", "## Plan"):
         assert heading in body
+
+
+def test_a_target_already_named_test_renders_no_double_prefixed_glob() -> None:
+    """basicly-j73p's defect exactly: `test_` prefixed onto a stem that already had it.
+
+    Three entries, not four. The dropped one was `tests/test_test_supervise*.py`, and
+    what replaces it is nothing: a test module's tests are the module, already declared
+    as the target.
+    """
+    target = ctl.Candidate("tests/test_supervise.py", CAP + 56089, 56089)
+
+    assert ctl.lane_scope(REPO_ROOT, target) == (
+        "tests/test_supervise.py",
+        "tests/test_supervise_*.py",
+        "pyproject.toml",
+    )
+
+
+def test_a_source_target_still_declares_the_tests_that_move_with_it() -> None:
+    """The other direction: the narrowing drops dead entries and nothing else."""
+    scope = ctl.lane_scope(REPO_ROOT, ctl.Candidate("src/basicly/cli.py", CAP + 1, 1))
+
+    assert scope == (
+        "src/basicly/cli.py",
+        "src/basicly/cli_*.py",
+        "tests/test_cli*.py",
+        "pyproject.toml",
+    )
+
+
+def test_every_rendered_glob_names_something_or_names_what_the_lane_will_create() -> None:
+    """The general rule, checked over every tracked module rather than the one bug.
+
+    The derivation missed twice -- a target already called `test_*`, and the vendored
+    kit modules with no `tests/test_*.py` beside them -- so a regression test pinned to
+    the first case would let the second through and the next one after it.
+
+    The exemption is decided from the target alone, which is what keeps the check from
+    passing vacuously: `split_pattern` names the siblings an extraction from *this*
+    target creates, so `tests/test_supervise_*.py` is admitted while matching nothing,
+    and `tests/test_test_supervise*.py` -- which is no target's own stem extended -- is
+    not. Everything else has to resolve against the tree as it stands.
+    """
+    modules = ctl.sensor.tracked_modules(REPO_ROOT)
+    assert len(modules) > 100, "empty population: a green here would be the probe, not the property"
+    assert ctl.resolves(REPO_ROOT, "pyproject.toml")
+    assert not ctl.resolves(REPO_ROOT, "tests/test_test_supervise*.py")
+
+    dead: list[tuple[str, str]] = []
+    for module in modules:
+        target = ctl.Candidate(module.path, module.tokens, module.tokens - CAP)
+        exempt = {target.path, ctl.split_pattern(target)}
+        dead += [
+            (target.path, glob)
+            for glob in ctl.lane_scope(REPO_ROOT, target)
+            if glob not in exempt and not ctl.resolves(REPO_ROOT, glob)
+        ]
+
+    assert dead == []
 
 
 def _fake_br(recorded: list[list[str]]) -> object:
@@ -236,7 +300,13 @@ def test_a_run_reports_the_candidates_it_dropped(
 
 
 def test_the_controller_runs_against_the_real_tree() -> None:
-    """End to end, read-only: the loop has to survive this repo's actual measurements."""
+    """End to end, read-only: the loop has to survive this repo's actual measurements.
+
+    Which branch it takes is not asserted here. The bound reads the tracker the loop
+    itself writes to, so pinning `selected:` pinned "no improvement lane is open" -- a
+    fact the loop falsified the first time it filed one, turning main red. The branch
+    that renders a scope is reached deterministically below instead.
+    """
     proc = subprocess.run(
         [sys.executable, str(SCRIPT), "--dry-run"],
         cwd=REPO_ROOT,
@@ -246,5 +316,23 @@ def test_the_controller_runs_against_the_real_tree() -> None:
     )
 
     assert proc.returncode == 0, proc.stderr
-    assert "selected:" in proc.stdout
-    assert "dry run:" in proc.stdout
+    assert "sensor:" in proc.stdout
+    assert ("dry run:" in proc.stdout) != ("no-op:" in proc.stdout), proc.stdout
+
+
+def test_a_dry_run_prints_the_scope_it_would_have_filed(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The real tree's real worst offender, with the bound emptied so it is reached.
+
+    The scope prints on a dry run and nowhere else, because a dry run that names the
+    target but not the globs is not something a scope defect can be caught on -- which
+    is how the double prefix reached a filed bead instead of this output.
+    """
+    monkeypatch.setattr(ctl.supervise, "lane_selection", lambda _root, _label: ())
+    target = ctl.candidates(ctl.sensor.tracked_modules(REPO_ROOT))[0]
+
+    assert ctl.main(["--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert f"scope:     {', '.join(ctl.lane_scope(REPO_ROOT, target))}" in out
+    assert "test_test_" not in out
