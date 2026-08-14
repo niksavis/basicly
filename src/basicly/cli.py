@@ -8,6 +8,7 @@ import json
 import re
 import shlex
 import shutil
+import subprocess
 import sys
 import time
 import tomllib
@@ -2677,8 +2678,47 @@ def cmd_loop(args: argparse.Namespace) -> int:
         "decide": _cmd_loop_decide,
         "kill": _cmd_loop_kill,
         "watch": _cmd_loop_watch,
+        "improve": _cmd_loop_improve,
     }
     return _dispatch(args, "loop_command", handlers, group="loop")
+
+
+# The repo's improvement controller, relative to the repo root the command operates
+# on. Held as a path rather than imported: `.scripts/` is not a package (the same
+# constraint `br.PINNED_VERSION` records), and the controller is a repo-local script
+# like every `[[verify.checks]]` command rather than engine code.
+IMPROVEMENT_CONTROLLER = Path(".scripts") / "improvement_controller.py"
+
+
+def _cmd_loop_improve(args: argparse.Namespace) -> int:
+    """Run the repo's improvement controller: one sensor reading, one lane.
+
+    The scheduled entry point for the second loop shape (basicly-u2hl.27) — the one
+    that drives a *property of the codebase* toward a set point rather than shipping a
+    requirement. Every decision it makes lives in the controller script, beside the
+    sensor it reads; this is the front door a cron or a workflow calls, and it passes
+    the script's exit code straight through so a schedule can branch on it.
+
+    A repo that declares no controller is refused by name. The loop is opt-in per repo,
+    and an absent script is the one state that would otherwise be indistinguishable
+    from a run that measured everything and found nothing to do.
+    """
+    repo_root = _repo_root()
+    script = repo_root / IMPROVEMENT_CONTROLLER
+    if not script.is_file():
+        print(
+            f"improve: refused - this repo declares no improvement controller at "
+            f"{IMPROVEMENT_CONTROLLER.as_posix()}",
+            file=sys.stderr,
+        )
+        return 1
+    command = [sys.executable, str(script), *(["--dry-run"] if args.dry_run else [])]
+    # This process's interpreter plus a repo-declared path: inside the trust boundary,
+    # exactly like `verify._run`'s check commands. `shell=False` keeps a repo root with
+    # a space in it one argv element.
+    return subprocess.run(  # noqa: S603 — repo-declared script, list form, no shell
+        command, cwd=repo_root, check=False
+    ).returncode
 
 
 def _loop_inputs(args: argparse.Namespace) -> loop.Inputs:
@@ -4589,6 +4629,14 @@ def _add_loop_parser(subparsers: argparse._SubParsersAction) -> None:
     l_watch.add_argument("issue", help="Session root issue")
     l_watch.add_argument("--interval", type=float, default=15.0, help="Poll seconds")
     l_watch.add_argument("--once", action="store_true", help="One pass, then exit")
+    l_improve = loop_sub.add_parser(
+        "improve",
+        help="Run the repo's improvement controller: measure one declared property, "
+        "select one target, dispatch at most one lane",
+    )
+    l_improve.add_argument(
+        "--dry-run", action="store_true", help="Select and print, but file no lane"
+    )
 
 
 _HELP_EPILOG = """\
