@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import ast
 import tomllib
-from collections.abc import Iterator, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from . import __version__, br, dropin, permissions, session
+from . import __version__, br, dropin, permissions, session, tree_schema
 from .lane_log import DEFAULT_RETAINED_SESSIONS
 from .models import ModelResolutionError
 from .runner import (
@@ -31,6 +30,7 @@ from .runner import (
     resolve_model,
 )
 from .schema import MODEL_TIERS, TECHNOLOGIES
+from .tree_schema import Table
 
 COPILOT_RUNNER = "copilot"
 
@@ -441,33 +441,18 @@ class ProjectPaths:
         return self.core_root.parent / "state" / "install.json"
 
 
-@dataclass(frozen=True)
-class _Table:
-    """The shape one TOML table accepts: keys, sub-tables, and arrays of tables."""
+_OPEN_TABLE = Table(open_keys=True)
 
-    keys: frozenset[str] = frozenset()
-    tables: dict[str, _Table] = field(default_factory=dict)
-    arrays: dict[str, _Table] = field(default_factory=dict)
-    # The key names here are the consumer's to choose — an agent name, a loop
-    # phase, a task class — so there is no vocabulary to check them against at
-    # this layer. Each such table has its own validator downstream that names what
-    # it will accept ([runner] context_windows raises on an unknown agent;
-    # policy.evidence_status refuses an unusable phase).
-    open_keys: bool = False
-
-
-_OPEN_TABLE = _Table(open_keys=True)
-
-_VERIFY_CHECK_TABLE = _Table(
+_VERIFY_CHECK_TABLE = Table(
     keys=frozenset({"name", "command", "modes", "staged_suffix", "fix_command"})
 )
 
 # One lane's contribution to a ratchet, in its own basicly.d fragment. `frozen` is open
 # because its keys are the ratcheted entries themselves — a module path, a ruff rule code —
 # which no vocabulary at this layer could enumerate.
-_RATCHET_TABLE = _Table(keys=frozenset({"count_delta"}), tables={"frozen": _OPEN_TABLE})
+_RATCHET_TABLE = Table(keys=frozenset({"count_delta"}), tables={"frozen": _OPEN_TABLE})
 
-_RUNNER_AGENT_TABLE = _Table(
+_RUNNER_AGENT_TABLE = Table(
     keys=frozenset({
         "name",
         "command",
@@ -485,7 +470,7 @@ _RUNNER_AGENT_TABLE = _Table(
     })
 )
 
-_SIZING_TABLE = _Table(
+_SIZING_TABLE = Table(
     keys=frozenset({
         "working_set_min",
         "working_set_max",
@@ -537,23 +522,23 @@ _SIZING_TABLE = _Table(
 # What makes the strict stance survivable is the message: it names the file, the
 # name, the sections that do accept it, and this engine's version, so the
 # version-skew case is diagnosed by the failure itself rather than investigated.
-CONFIG_SCHEMA: dict[str, _Table] = {
-    "paths": _Table(
+CONFIG_SCHEMA: dict[str, Table] = {
+    "paths": Table(
         keys=frozenset({"core_fragments", "overlay_fragments", "targets", "templates", "manifest"})
     ),
-    "catalog": _Table(keys=frozenset({"technologies", "rank1_floor", "rank1_floor_high_water"})),
-    "worktree": _Table(
+    "catalog": Table(keys=frozenset({"technologies", "rank1_floor", "rank1_floor_high_water"})),
+    "worktree": Table(
         keys=frozenset({"base_branch", "concurrency", "append_only_paths"}),
         # Open because its keys are the generated paths; `_regenerate_commands` validates.
         tables={"regenerate_commands": _OPEN_TABLE},
     ),
-    "verify": _Table(arrays={"checks": _VERIFY_CHECK_TABLE}),
+    "verify": Table(arrays={"checks": _VERIFY_CHECK_TABLE}),
     # Per-lane ratchet deltas, composed by :func:`basicly.dropin.compose` and read by the
     # gates under `.scripts/`, never by this module — the same reason [[privacy.denied]] is
     # here. A gate whose baseline this schema refused to carry would have to parse the
     # fragments itself, which is how two readers of one convention start disagreeing.
-    "ratchet": _Table(tables={"module_size": _RATCHET_TABLE, "noqa_debt": _RATCHET_TABLE}),
-    "policy": _Table(
+    "ratchet": Table(tables={"module_size": _RATCHET_TABLE, "noqa_debt": _RATCHET_TABLE}),
+    "policy": Table(
         keys=frozenset({
             "required_gates",
             "max_rework",
@@ -566,7 +551,7 @@ CONFIG_SCHEMA: dict[str, _Table] = {
         }),
         tables={"evidence": _OPEN_TABLE, "sizing": _SIZING_TABLE},
     ),
-    "runner": _Table(
+    "runner": Table(
         keys=frozenset({
             "default",
             "decider",
@@ -583,207 +568,17 @@ CONFIG_SCHEMA: dict[str, _Table] = {
     ),
     # Which step of the work-tracker cutover this repo is on (basicly-vkh0.19).
     # Read by :func:`load_tracker_mode` and acted on inside `basicly.br`.
-    "tracker": _Table(keys=frozenset({"mode"})),
+    "tracker": Table(keys=frozenset({"mode"})),
     # Read by .basicly/core/hooks/internal-info-scan.py, never by this module: the
     # denylist is machine-local by design, so the only file it can live in is the
     # gitignored overlay this schema also governs.
-    "privacy": _Table(arrays={"denied": _Table(keys=frozenset({"name", "token"}))}),
+    "privacy": Table(arrays={"denied": Table(keys=frozenset({"name", "token"}))}),
 }
 
-_ROOT_TABLE = _Table(tables=CONFIG_SCHEMA)
-
-# Where a basicly *source checkout* keeps the schema above. A consumer repo has no
-# such file and never reaches any of the tree-schema code below.
-_ENGINE_SOURCE = Path("src") / "basicly" / "config.py"
-
-# The ordering rule the refusal names when the tree ships a schema we could not read
-# statically, so the caller is told the shape of the failure rather than left with a
-# message that reads as a config typo (basicly-69az).
-_ORDERING_RULE = (
-    "This tree ships its own src/basicly/config.py but its CONFIG_SCHEMA could not be "
-    "read statically, so the name was checked against the running engine's schema "
-    "instead. If the name is one this tree adds, land the schema change first and the "
-    "basicly.toml declaration in a following commit."
-)
+_ROOT_TABLE = Table(tables=CONFIG_SCHEMA)
 
 
-class _UnreadableSchemaError(Exception):
-    """A construct in a tree's ``CONFIG_SCHEMA`` this static reader does not model."""
-
-
-# One entry per tree, invalidated on (mtime, size): a landing rewrites base's
-# config.py mid-process, and a cache that missed that would answer with the schema
-# from before the merge — the very staleness this whole path exists to remove.
-_TREE_SCHEMA_CACHE: dict[Path, tuple[int, int, dict[str, _Table] | None]] = {}
-
-
-def _ships_engine_source(repo_root: Path) -> bool:
-    """True when *repo_root* is a basicly source checkout rather than a consumer repo."""
-    return (repo_root / _ENGINE_SOURCE).is_file()
-
-
-def _tree_schema(repo_root: Path) -> dict[str, _Table] | None:
-    """``CONFIG_SCHEMA`` as *repo_root*'s own source declares it, or None.
-
-    None means either "not a basicly checkout" or "declared in a way this reader
-    cannot model"; both fall back to the running engine's schema, and only the
-    second is worth saying out loud (:data:`_ORDERING_RULE`).
-    """
-    path = repo_root / _ENGINE_SOURCE
-    try:
-        stat = path.stat()
-    except OSError:
-        return None
-    cached = _TREE_SCHEMA_CACHE.get(path)
-    if cached is not None and cached[:2] == (stat.st_mtime_ns, stat.st_size):
-        return cached[2]
-    try:
-        schema = _parse_schema(path.read_text(encoding="utf-8"))
-    except OSError:
-        return None
-    _TREE_SCHEMA_CACHE[path] = (stat.st_mtime_ns, stat.st_size, schema)
-    return schema
-
-
-def _parse_schema(source: str) -> dict[str, _Table] | None:
-    """The ``CONFIG_SCHEMA`` *source* declares, read statically; None if unreadable.
-
-    Static on purpose. The tree whose schema this is has not been merged yet, so
-    importing it would run a second copy of the engine inside the process that is
-    landing it, and the answer needed here is a set of names — not behaviour.
-
-    Fails closed: any construct :func:`_evaluate` does not model, any missing
-    module-level name, and any shape :class:`_Table` will not accept all yield None,
-    which restores the running engine's schema and the refusal that goes with it.
-    """
-    try:
-        module = ast.parse(source)
-    except SyntaxError, ValueError:
-        return None
-    names: dict[str, object] = {}
-    for statement in module.body:
-        target, value = _assigned(statement)
-        if target is None or value is None:
-            continue
-        try:
-            names[target] = _evaluate(value, names)
-        except _UnreadableSchemaError, TypeError:
-            # Only fatal for the schema itself: this module has plenty of
-            # module-level assignments (defaults, the scaffold string) that are
-            # neither readable this way nor part of the answer.
-            if target == "CONFIG_SCHEMA":
-                return None
-    try:
-        schema = _table_map(names.get("CONFIG_SCHEMA"))
-    except _UnreadableSchemaError:
-        return None
-    return schema or None
-
-
-def _assigned(statement: ast.stmt) -> tuple[str | None, ast.expr | None]:
-    """The single module-level name *statement* binds and its value expression."""
-    if isinstance(statement, ast.AnnAssign) and isinstance(statement.target, ast.Name):
-        return statement.target.id, statement.value
-    if isinstance(statement, ast.Assign) and len(statement.targets) == 1:
-        target = statement.targets[0]
-        if isinstance(target, ast.Name):
-            return target.id, statement.value
-    return None, None
-
-
-def _evaluate(node: ast.expr, names: Mapping[str, object]) -> object:
-    """One schema expression's value, or :class:`_UnreadableSchemaError`.
-
-    Models exactly the vocabulary :data:`CONFIG_SCHEMA` is written in: string and
-    bool constants, set/list/tuple/dict literals, references to module-level names
-    already bound, ``frozenset(...)`` and ``_Table(...)``.
-    """
-    match node:
-        case ast.Constant(value=bool() | str() as value):
-            return value
-        case ast.Name(id=name) if name in names:
-            return names[name]
-        case ast.Set(elts=elts) | ast.List(elts=elts) | ast.Tuple(elts=elts):
-            return [_evaluate(element, names) for element in elts]
-        case ast.Dict(keys=keys, values=values) if all(k is not None for k in keys):
-            # `k is not None` is re-asserted for the type checker; the guard above
-            # has already rejected a `**expansion`, which is what a None key is.
-            return {
-                _evaluate(k, names): _evaluate(v, names)
-                for k, v in zip(keys, values, strict=True)
-                if k is not None
-            }
-        case ast.Call(func=ast.Name(id="frozenset"), args=args, keywords=[]) if len(args) <= 1:
-            return frozenset(_sequence(_evaluate(args[0], names)) if args else ())
-        case ast.Call(func=ast.Name(id="_Table"), args=[], keywords=keywords):
-            return _table(dict(_declared(keywords, names)))
-    raise _UnreadableSchemaError(ast.dump(node)[:120])
-
-
-def _declared(
-    keywords: list[ast.keyword], names: Mapping[str, object]
-) -> Iterator[tuple[str, object]]:
-    """Each ``_Table(...)`` keyword's name and evaluated value; ``**kwargs`` is refused."""
-    for keyword in keywords:
-        if keyword.arg is None:
-            raise _UnreadableSchemaError("_Table(**expansion)")
-        yield keyword.arg, _evaluate(keyword.value, names)
-
-
-# The fields a `_Table(...)` call may set, with the value an omitted one takes.
-# Indexed rather than read with `.get("...")` on purpose: in this module that call
-# shape means "read a config name", and `test_every_config_key_a_loader_reads_is_in_
-# the_schema` scrapes for it — these are constructor keywords, not config keys.
-_TABLE_FIELDS: dict[str, object] = {
-    "keys": frozenset(),
-    "tables": {},
-    "arrays": {},
-    "open_keys": False,
-}
-
-
-def _table(declared: dict[str, object]) -> _Table:
-    """A :class:`_Table` from evaluated keyword values, refusing anything off-shape.
-
-    Every field is re-derived rather than cast: the source is a tree that has not
-    been reviewed by this process, so a value that merely *looks* like a schema must
-    not reach the walk as one.
-    """
-    if unmodelled := set(declared) - set(_TABLE_FIELDS):
-        raise _UnreadableSchemaError(f"_Table({', '.join(sorted(unmodelled))}=...)")
-    fields = _TABLE_FIELDS | declared
-    keys, open_keys = fields["keys"], fields["open_keys"]
-    if not isinstance(keys, frozenset) or not isinstance(open_keys, bool):
-        raise _UnreadableSchemaError("_Table(keys=|open_keys=)")
-    named = frozenset(key for key in keys if isinstance(key, str))
-    if len(named) != len(keys):
-        raise _UnreadableSchemaError("_Table(keys=) holds a non-string")
-    return _Table(
-        keys=named,
-        tables=_table_map(fields["tables"]),
-        arrays=_table_map(fields["arrays"]),
-        open_keys=open_keys,
-    )
-
-
-def _table_map(value: object) -> dict[str, _Table]:
-    """*value* as a ``{name: _Table}`` mapping, or :class:`_UnreadableSchemaError`."""
-    if not isinstance(value, dict):
-        raise _UnreadableSchemaError(f"expected a table mapping, got {type(value).__name__}")
-    mapped = {k: v for k, v in value.items() if isinstance(k, str) and isinstance(v, _Table)}
-    if len(mapped) != len(value):
-        raise _UnreadableSchemaError("a table mapping holds a non-_Table")
-    return mapped
-
-
-def _sequence(value: object) -> list[object]:
-    """*value* as the list a set/list/tuple literal evaluates to."""
-    if not isinstance(value, list):
-        raise _UnreadableSchemaError(f"expected a sequence literal, got {type(value).__name__}")
-    return value
-
-
-def _validation_schema(repo_root: Path) -> _Table:
+def _validation_schema(repo_root: Path) -> Table:
     """The root table *repo_root*'s config is checked against (basicly-69az).
 
     A tree that ships its own ``src/basicly/config.py`` is checked against *that*
@@ -799,8 +594,8 @@ def _validation_schema(repo_root: Path) -> _Table:
     schema *is* the running engine's, so a typo is refused exactly as before; in a
     consumer repo there is no engine source and nothing changes at all.
     """
-    schema = _tree_schema(repo_root)
-    return _ROOT_TABLE if schema is None else _Table(tables=schema)
+    schema = tree_schema.read(repo_root)
+    return _ROOT_TABLE if schema is None else Table(tables=schema)
 
 
 def _config_documents(repo_root: Path) -> dict[str, dict]:
@@ -847,10 +642,10 @@ class _Pass:
     """
 
     filename: str
-    root: _Table
+    root: Table
 
 
-def _problems(documents: dict[str, dict], root: _Table) -> list[str]:
+def _problems(documents: dict[str, dict], root: Table) -> list[str]:
     """Every name across already-parsed *documents* that *root*'s schema rejects."""
     return [
         problem
@@ -859,7 +654,7 @@ def _problems(documents: dict[str, dict], root: _Table) -> list[str]:
     ]
 
 
-def _unknown_in_table(walk: _Pass, table: dict, schema: _Table, path: str) -> list[str]:
+def _unknown_in_table(walk: _Pass, table: dict, schema: Table, path: str) -> list[str]:
     """Recursively collect the names *table* declares that *schema* does not accept."""
     problems: list[str] = []
     for name, value in table.items():
@@ -880,7 +675,7 @@ def _unknown_in_table(walk: _Pass, table: dict, schema: _Table, path: str) -> li
     return problems
 
 
-def _unknown_message(walk: _Pass, name: object, value: object, schema: _Table, path: str) -> str:
+def _unknown_message(walk: _Pass, name: object, value: object, schema: Table, path: str) -> str:
     """The refusal for one unrecognised *name*, including where it would be accepted."""
     kind = "section" if isinstance(value, dict) else "key"
     if path:
@@ -903,17 +698,17 @@ def _unknown_message(walk: _Pass, name: object, value: object, schema: _Table, p
     return message
 
 
-def _accepting_clause(name: object, prefix: str, root: _Table) -> list[str]:
+def _accepting_clause(name: object, prefix: str, root: Table) -> list[str]:
     """``["its 'concurrency' is accepted in [worktree]"]``, or empty if nothing accepts it."""
     where = _accepting(name, root)
     return [f"{prefix}{name!r} is accepted in {', '.join(where)}"] if where else []
 
 
-def _accepting(name: object, root: _Table) -> list[str]:
+def _accepting(name: object, root: Table) -> list[str]:
     """Rendered paths of every schema table that accepts a key called *name*."""
     found: list[str] = []
 
-    def walk(schema: _Table, path: str, array: bool) -> None:
+    def walk(schema: Table, path: str, array: bool) -> None:
         if name in schema.keys:
             found.append(f"[[{path}]]" if array else f"[{path}]")
         for child, table in schema.tables.items():
@@ -936,13 +731,16 @@ def _validated_documents(repo_root: Path) -> dict[str, dict]:
     """
     documents = _config_documents(repo_root)
     if problems := _problems(documents, _validation_schema(repo_root)):
-        unreadable = _ships_engine_source(repo_root) and _tree_schema(repo_root) is None
+        unreadable = (
+            tree_schema.ships_engine_source(repo_root) and tree_schema.read(repo_root) is None
+        )
         raise ValueError(
             "\n".join(problems)
             + f"\nbasicly {__version__} refuses a config name it cannot honour rather than "
             "ignoring it, because an ignored key leaves the file stating one behaviour and "
             "the engine performing another. Remove or correct the name, or upgrade basicly "
-            "if it comes from a newer version." + (f"\n{_ORDERING_RULE}" if unreadable else "")
+            "if it comes from a newer version."
+            + (f"\n{tree_schema.ORDERING_RULE}" if unreadable else "")
         )
     return documents
 
