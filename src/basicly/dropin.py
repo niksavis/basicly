@@ -21,6 +21,7 @@ import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 # The Unix drop-in convention `changelog.d` already follows: `<name>.d` is a directory of
 # fragments that compose into `<name>`.
@@ -37,10 +38,10 @@ class FragmentError(Exception):
 
 
 @dataclass(frozen=True)
-class Baseline:
+class Baseline[Number: (int, float)]:
     """A ratchet's recorded state with every fragment's contribution applied."""
 
-    frozen: dict[str, int]
+    frozen: dict[str, Number]
     count: int
 
 
@@ -67,7 +68,14 @@ def documents(repo_root: Path) -> dict[str, dict]:
     return parsed
 
 
-def compose(repo_root: Path, gate: str, *, frozen: Mapping[str, int], count: int) -> Baseline:
+def compose[Number: (int, float)](
+    repo_root: Path,
+    gate: str,
+    *,
+    frozen: Mapping[str, Number],
+    count: int,
+    fractional: bool = False,
+) -> Baseline[Number]:
     """*gate*'s recorded baseline with every fragment's deltas added to it.
 
     *gate* is named as ``[tool.<gate>]`` in ``pyproject.toml`` spells it, and *frozen* and
@@ -75,15 +83,21 @@ def compose(repo_root: Path, gate: str, *, frozen: Mapping[str, int], count: int
     rather than recorded as ``0``, which is the rule those tables already state for a debt
     that has been paid off.
 
+    Set *fractional* when the entries are shares rather than counts, as
+    ``comment_density``'s are; ``count_delta`` counts entries and stays whole either way.
+    ``basicly.d/README.md`` says why it is a parameter and not read off *frozen*.
+
     Raises:
-        FragmentError: A fragment declares a delta that is not an integer.
+        FragmentError: A fragment declares a delta of the wrong kind.
     """
-    composed = dict(frozen)
+    composed: dict[str, Number] = dict(frozen)
     total = count
     for name, table in _ratchet_tables(repo_root, gate):
-        total += _delta(name, gate, table.get(COUNT_DELTA, 0), COUNT_DELTA)
+        total += _delta(name, gate, table.get(COUNT_DELTA, 0), COUNT_DELTA, fractional=False)
         for entry, value in _frozen_table(name, gate, table).items():
-            composed[entry] = composed.get(entry, 0) + _delta(name, gate, value, entry)
+            composed[entry] = composed.get(entry, 0) + _delta(
+                name, gate, value, entry, fractional=fractional
+            )
     return Baseline({key: value for key, value in composed.items() if value != 0}, total)
 
 
@@ -106,11 +120,17 @@ def _frozen_table(name: str, gate: str, table: dict) -> dict:
     return frozen
 
 
-def _delta(name: str, gate: str, value: object, key: str) -> int:
-    """*value* as a delta, refusing a bool because ``isinstance(True, int)`` is true."""
-    if not isinstance(value, int) or isinstance(value, bool):
+def _delta(name: str, gate: str, value: object, key: str, *, fractional: bool) -> Any:
+    """*value* as a delta, refusing a bool because ``isinstance(True, int)`` is true.
+
+    ``Any``, not ``int | float``: the union would widen a counting ratchet's composed
+    baseline to a float at the type level. The refusal below is the guarantee.
+    """
+    permitted = (int, float) if fractional else (int,)
+    if not isinstance(value, permitted) or isinstance(value, bool):
+        kind = "a numeric" if fractional else "an integer"
         raise FragmentError(
-            f"{name}: [{RATCHET_SECTION}.{gate}] {key} must be an integer delta, "
+            f"{name}: [{RATCHET_SECTION}.{gate}] {key} must be {kind} delta, "
             f"got {value!r} — a fragment records what it changed, never a new total"
         )
     return value

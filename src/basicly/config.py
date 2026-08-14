@@ -537,7 +537,13 @@ CONFIG_SCHEMA: dict[str, Table] = {
     # gates under `.scripts/`, never by this module — the same reason [[privacy.denied]] is
     # here. A gate whose baseline this schema refused to carry would have to parse the
     # fragments itself, which is how two readers of one convention start disagreeing.
-    "ratchet": Table(tables={"module_size": _RATCHET_TABLE, "noqa_debt": _RATCHET_TABLE}),
+    "ratchet": Table(
+        tables={
+            "comment_density": _RATCHET_TABLE,
+            "module_size": _RATCHET_TABLE,
+            "noqa_debt": _RATCHET_TABLE,
+        }
+    ),
     "policy": Table(
         keys=frozenset({
             "required_gates",

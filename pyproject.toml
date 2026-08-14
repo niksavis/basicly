@@ -286,8 +286,9 @@ UP017 = 1
 # Each entry may only fall, and one that reaches the cap has graduated and must be deleted
 # with it. The list is closed — an entry is only ever removed.
 #
-# Unlike `[tool.module_size]`, this gate reads the number here directly and composes no
-# `basicly.d/` fragment, so a lane raising it edits this anchor (basicly-feje).
+# Like `[tool.module_size]`, this gate composes the `basicly.d/` fragments over the numbers
+# here, so a lane raising the count or lowering an entry writes a fragment and leaves this
+# anchor alone (basicly-05g0; basicly-feje is the lane that paid for the gap).
 [tool.comment_density]
 waiver_count = 2
 
