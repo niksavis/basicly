@@ -64,6 +64,7 @@ from . import (
     plan_entry,
     policy,
     repair_brief,
+    retrospective,
     roles,
     rubrics,
     run_record,
@@ -887,9 +888,10 @@ def _run_agent(  # noqa: PLR0913 — one keyword per independent fact about the 
         spec,
         result,
         prompt=prompt,
-        # A validate dispatch reads and judges; recording it as a write would put a
-        # helper's cost into the sample a lane is priced from (basicly-u2hl.54.3).
-        phase=run_record.VALIDATE_PHASE if phase == "validate" else run_record.BUILD_PHASE,
+        # The phase it ran for, against the closed `run_record.WRITE_PHASES`: a validate
+        # or retrospective dispatch reads and judges, and recording it as a write would
+        # put a helper's cost into the sample a lane is priced from (basicly-u2hl.54.3).
+        phase=phase,
         **sizing,
     )
     return _Dispatch(spec=spec, result=result, cwd=cwd, timeout=config.runner_timeout)
@@ -2143,6 +2145,10 @@ def _rework(  # noqa: PLR0913 — one parameter per recorded fact
     """
     target = issue_id or ctx.issue_id
     attempts = policy.record_rework(ctx.repo_root, target, gate)
+    # The marker above is the ledger's only writer, so this is the one moment the
+    # special-cause signal can turn over. Appended to *reason* rather than to the
+    # returned detail so the escalation paths below carry it too.
+    reason += _retrospective(ctx)
     convergence = (
         policy.record_finding_set(ctx.repo_root, target, gate, findings) if findings else None
     )
@@ -2180,6 +2186,47 @@ def _rework(  # noqa: PLR0913 — one parameter per recorded fact
         f"{reason} (rework {attempts}/{ctx.config.max_rework}){suffix}",
         action=action,
         landing=landing,
+    )
+
+
+def _retrospective(ctx: _Ctx) -> str:
+    """Fire a retrospective when the session's ledger shows a special cause (§3.2).
+
+    Not a phase, not a transition and never a rung: nothing here moves the unit and no
+    ladder carries it. The returned suffix is empty on the expected answer — one failure
+    inside the limits is common cause, and acting on it is tampering.
+
+    Inert three ways, each matching a dispatch gate the loop already has: no
+    ``grant_root`` means no session to read a ledger over, ``repair_dispatch`` is off
+    under the supervisor whose landing pass must not spawn an agent, and D3's spend halt
+    refuses a run the grant cannot pay for — asked before the claim, so a signal a
+    refused session could not act on survives for the next pass.
+    """
+    root = ctx.grant_root
+    if root is None or not ctx.repair_dispatch:
+        return ""
+    signal = retrospective.evaluate(retrospective.read_ledger(ctx.repo_root, root))
+    if not signal.fires or _spend_refused(ctx) is not None:
+        return ""
+    if not retrospective.claim(ctx.repo_root, root, signal):
+        return ""
+    dispatch = _run_agent(
+        ctx,
+        root,
+        ctx.repo_root,
+        prompt=retrospective.prompt(root, signal),
+        phase=retrospective.PHASE,
+    )
+    outcome = retrospective.settle(
+        ctx.repo_root, root, runner.result_text(dispatch.spec, dispatch.result.stdout)
+    )
+    # The signal *and its inputs*: an advance result is where an operator meets a fired
+    # retrospective first, and the chart is what makes the verdict checkable there.
+    chart = signal.chart
+    return (
+        f"; retrospective fired ({signal.rule} on {signal.point}): {signal.detail} "
+        f"[{chart.observations} units, centre {chart.centre:.2f}, sigma "
+        f"{chart.sigma:.2f}, upper limit {chart.upper:.2f}]; outcome: {outcome}"
     )
 
 

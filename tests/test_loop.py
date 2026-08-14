@@ -26,6 +26,7 @@ from basicly import (
     needs_input,
     policy,
     repair_brief,
+    retrospective,
     roles,
     run_record,
     runner,
@@ -3608,3 +3609,159 @@ def test_sizing_at_dispatch_never_raises_on_a_tracker_failure(
 
     monkeypatch.setattr(decompose, "dispatch_sizing", _boom)
     assert loop.sizing_at_dispatch(tmp_path, "i") == {}
+
+
+# --- RETROSPECTIVE: a conditional process fired by a special cause (§3.2) -----
+
+
+def _ledger(monkeypatch: pytest.MonkeyPatch, *counts: int) -> None:
+    """Seed the session's gate-failure ledger with one point per count."""
+    points = tuple(retrospective.Point(f"u{i}", n) for i, n in enumerate(counts))
+    monkeypatch.setattr(loop.retrospective, "read_ledger", lambda *_a: points)
+
+
+def _retro_dispatch(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> list[dict]:
+    """Wire a failed validate gate under a granted session; return the dispatch calls."""
+    monkeypatch.setattr(policy, "record_rework", lambda *_a, **_k: 1)
+    monkeypatch.setattr(policy, "spend_status", lambda *_a, **_k: _unhalted())
+    monkeypatch.setattr(loop.retrospective, "claim", lambda *_a: True)
+    monkeypatch.setattr(loop.retrospective, "settle", lambda *_a: "control tier: a gate")
+    _pin_runner(monkeypatch, "claude")
+    agents = tmp_path / ".claude" / "agents"
+    agents.mkdir(parents=True, exist_ok=True)
+    (agents / "retrospector.md").write_text("---\nname: retrospector\n---\n", encoding="utf-8")
+    seen: list[dict] = []
+
+    def _run(spec, prompt, cwd, **kw):
+        seen.append({"role": kw.get("role"), "prompt": prompt, "cwd": cwd})
+        return runner.RunResult(spec.name, tuple(spec.command), executed=True, returncode=0)
+
+    monkeypatch.setattr(runner, "run", _run)
+    return seen
+
+
+def test_a_special_cause_dispatches_the_retrospector_and_prices_it_as_a_read(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The demonstration basicly-xmhc names, end to end from the ledger to the argv.
+
+    Nine clean units and one carrying three gate failures is the shape `basicly-u2hl.54`
+    left behind. The role reaches `runner.run` through the real `roles.resolve_role`,
+    not a stub, because the defect being fixed was that `retrospector` was authored,
+    projected and vendored with no route to a dispatch at all.
+
+    Recorded outside ``WRITE_PHASES`` in the same test: a retrospective reads and
+    judges, so pricing it as a lane would put a helper's cost into the sample a lane is
+    calibrated from.
+    """
+    at(_state("validate", gates=_validate_gates(failed=True)))
+    seen = _retro_dispatch(monkeypatch, tmp_path)
+    _ledger(monkeypatch, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3)
+    recorded: list[object] = []
+    monkeypatch.setattr(loop, "record_run", lambda *_a, **kw: recorded.append(kw.get("phase")))
+
+    result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="root")
+
+    assert [call["role"] for call in seen] == ["retrospector"]
+    assert "rule: beyond-limits" in seen[0]["prompt"] and "point: u9" in seen[0]["prompt"]
+    assert recorded == [retrospective.PHASE]
+    assert retrospective.PHASE not in run_record.WRITE_PHASES
+    # The signal and its inputs on the surface an operator meets it on: the chart is
+    # what makes "this was a special cause" checkable rather than asserted.
+    assert "retrospective fired (beyond-limits on u9)" in result.detail
+    assert "[10 units, centre 0.30, sigma 0.55, upper limit 1.94]" in result.detail
+    assert "outcome: control tier: a gate" in result.detail
+
+
+def test_a_single_gate_failure_dispatches_no_retrospective(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The suppression, asserted where it costs money: no dispatch, and no marker.
+
+    The same session with one failure instead of three. Acting on it is tampering
+    (§3.2), and the rework message must read exactly as it did before this mechanism
+    existed — a lane whose ledger is stable pays nothing for the check.
+    """
+    at(_state("validate", gates=_validate_gates(failed=True)))
+    seen = _retro_dispatch(monkeypatch, tmp_path)
+    claimed: list[object] = []
+    monkeypatch.setattr(loop.retrospective, "claim", lambda *a: claimed.append(a) or True)
+    _ledger(monkeypatch, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)
+
+    result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="root")
+
+    assert seen == [] and claimed == []
+    assert "retrospective" not in result.detail
+
+
+def test_a_claimed_signal_is_never_dispatched_twice(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """One assignable cause buys one retrospective, however many failures follow it."""
+    at(_state("validate", gates=_validate_gates(failed=True)))
+    seen = _retro_dispatch(monkeypatch, tmp_path)
+    monkeypatch.setattr(loop.retrospective, "claim", lambda *_a: False)
+    _ledger(monkeypatch, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3)
+
+    loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="root")
+
+    assert seen == []
+
+
+def test_the_supervised_landing_pass_fires_no_retrospective(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`repair_dispatch=False` is the supervisor's shape: no agent spawns from a landing.
+
+    Same bound the repair and validate dispatches carry, and for the same reason — that
+    pass has no watchdog and no stream meter of its own (basicly-xab3).
+    """
+    at(_state("validate", gates=_validate_gates(failed=True)))
+    seen = _retro_dispatch(monkeypatch, tmp_path)
+    _ledger(monkeypatch, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3)
+
+    loop.advance(
+        tmp_path,
+        "i",
+        config=CONFIG,
+        inputs=loop.Inputs(),
+        grant_root="root",
+        repair_dispatch=False,
+    )
+
+    assert seen == []
+
+
+def test_a_session_that_named_no_root_reads_no_ledger(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Inert without a grant root, like every other metered gate on this path."""
+    at(_state("validate", gates=_validate_gates(failed=True)))
+    seen = _retro_dispatch(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        loop.retrospective, "read_ledger", lambda *_a: pytest.fail("no session, no ledger")
+    )
+
+    loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs())
+
+    assert seen == []
+
+
+def test_a_halted_grant_pays_for_no_retrospective(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """D3's spend halt, asked before the claim so the signal survives for the next pass."""
+    at(_state("validate", gates=_validate_gates(failed=True)))
+    seen = _retro_dispatch(monkeypatch, tmp_path)
+    _ledger(monkeypatch, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3)
+    claimed: list[object] = []
+    monkeypatch.setattr(loop.retrospective, "claim", lambda *a: claimed.append(a) or True)
+    monkeypatch.setattr(
+        policy,
+        "spend_status",
+        lambda *_a, **_k: replace(_unhalted(), halted=True, detail="grant exhausted"),
+    )
+
+    loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="root")
+
+    assert seen == [] and claimed == []
