@@ -1712,17 +1712,21 @@ def test_a_registered_subcommand_with_no_handler_fails_loudly(
 # --- the shadow differential command (basicly-vkh0.18) ------------------------
 
 KIT_REPORT = cli.br.kit(REPO_ROOT)
+KIT_SCOPE = cli.br.kit(REPO_ROOT, cli.br.BASELINE_MODULE)
 
 
 def _shadow_report(**fields: object):
-    """A kit ``DifferentialReport``, the real class rather than a stand-in.
+    """A kit ``ScopedReport``, the real class rather than a stand-in.
 
     The command's whole contract is how it reads ``clean`` and ``conclusive``, and both
     are derived properties: a hand-rolled double would let the two drift apart from the
     definitions the flip is licensed by, which is the one thing these tests exist to
-    pin.
+    pin. It is the *scoped* report because that is what the command reads since
+    basicly-c357 — the boundary's own rules are pinned in
+    ``tests/test_kit_tracker_baseline.py``.
     """
-    return KIT_REPORT.DifferentialReport(records=2, compared=2, **fields)
+    fields.setdefault("in_scope", ("seam-0001",))
+    return KIT_SCOPE.ScopedReport(**fields)
 
 
 @pytest.mark.parametrize(
@@ -1730,14 +1734,14 @@ def _shadow_report(**fields: object):
     [
         ({}, ("yes", "yes", 0)),
         (
-            {"inconclusive": [KIT_REPORT.Inconclusive(KIT_REPORT.QUERY_GATES, "no gate rows")]},
+            {"inconclusive": ("gates: no gate rows",)},
             ("yes", "no", 1),
         ),
         (
             {
-                "disagreements": [
-                    KIT_REPORT.Disagreement("seam-0001", KIT_REPORT.QUERY_PHASE, "build", "verify")
-                ]
+                "disagreements": (
+                    KIT_REPORT.Disagreement("seam-0001", KIT_REPORT.QUERY_PHASE, "build", "verify"),
+                )
             },
             ("no", "yes", 1),
         ),
@@ -1760,7 +1764,7 @@ def test_tracker_shadow_reports_clean_and_conclusive_as_two_answers(
     """
     clean, conclusive, code = verdicts
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli.br, "shadow_differential", lambda *_a, **_kw: _shadow_report(**fields))
+    monkeypatch.setattr(cli.br, "scoped_differential", lambda *_a, **_kw: _shadow_report(**fields))
 
     assert cli.main(["tracker", "shadow"]) == code
 
@@ -1782,7 +1786,7 @@ def test_tracker_shadow_names_the_refusal_beside_the_agreement_it_voids(
     monkeypatch.chdir(tmp_path)
     refusal = KIT_REPORT.Refusal(KIT_REPORT.RULE_DERIVED_FROM_LEDGER, "the answers moved")
     monkeypatch.setattr(
-        cli.br, "shadow_differential", lambda *_a, **_kw: _shadow_report(refusals=[refusal])
+        cli.br, "scoped_differential", lambda *_a, **_kw: _shadow_report(refusals=(refusal,))
     )
 
     assert cli.main(["tracker", "shadow"]) == 1
@@ -1811,7 +1815,7 @@ def test_tracker_shadow_compares_on_the_engines_own_vocabulary(
         seen.update(vocabulary)
         return _shadow_report()
 
-    monkeypatch.setattr(cli.br, "shadow_differential", capture)
+    monkeypatch.setattr(cli.br, "scoped_differential", capture)
 
     assert cli.main(["tracker", "shadow"]) == 0
     assert seen["required_gates"] == ("verify", "rubric")

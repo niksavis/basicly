@@ -1632,7 +1632,7 @@ def _differential_vocabulary(repo_root: Path) -> dict[str, Any]:
     }
 
 
-def _cmd_tracker_shadow(_args: argparse.Namespace) -> int:
+def _cmd_tracker_shadow(args: argparse.Namespace) -> int:
     """Run the shadow differential and report ``clean`` and ``conclusive`` separately.
 
     Step 2 of the cutover (`docs/requirements/work-tracker.md` §5). The two verdicts are
@@ -1644,9 +1644,19 @@ def _cmd_tracker_shadow(_args: argparse.Namespace) -> int:
     A refused reference is reported in the same breath as the agreement it voids —
     ``summary()`` carries the refusal — so a run that proves nothing cannot read as a
     run that proved something.
+
+    The run is judged on records created after the flip (basicly-c357). ``--declare-history``
+    records today's delta as that boundary and writes nothing else; it is a one-time
+    declaration made at the flip, so it prints the count it captured rather than a verdict.
     """
     repo_root = _repo_root()
-    report = br.shadow_differential(repo_root, _differential_vocabulary(repo_root))
+    vocabulary = _differential_vocabulary(repo_root)
+    if args.declare_history:
+        stamp = datetime.now(UTC).date().isoformat()
+        declared = br.declare_differential_baseline(repo_root, stamp, vocabulary)
+        ui.say(f"declared {len(declared.records)} historical record(s) on {stamp}", style="ok")
+        return 0
+    report = br.scoped_differential(repo_root, vocabulary)
     ui.say(report.summary())
     ui.say(f"clean:      {'yes' if report.clean else 'no'}")
     ui.say(f"conclusive: {'yes' if report.conclusive else 'no'}")
@@ -4765,9 +4775,14 @@ def _add_tracker_parser(subparsers: argparse._SubParsersAction) -> None:
         help="The owned work tracker's cutover (docs/requirements/work-tracker.md §5)",
     )
     tracker_sub = tracker_parser.add_subparsers(dest="tracker_command", required=True)
-    tracker_sub.add_parser(
+    t_shadow = tracker_sub.add_parser(
         "shadow",
         help="Compare the owned ledger against the live br, read-only (§5 step 2)",
+    )
+    t_shadow.add_argument(
+        "--declare-history",
+        action="store_true",
+        help="Record today's pre-flip delta as the declared baseline and exit (run once)",
     )
 
 

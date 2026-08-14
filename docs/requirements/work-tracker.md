@@ -643,7 +643,28 @@ working the whole time.
    `basicly-vkh0.23`.
 2. **Shadow mode**: the new tracker reads the same ledger and answers the same queries
    read-only; a differential test asserts identical verdicts for phase derivation, ready set,
-   and gate status across the live tracker's whole history.
+   and gate status.
+
+   **Not "across the whole history", and that clause was the deadlock** (`basicly-c357`,
+   landed 2026-08-14). Step 2 proves **the dual write agrees**, not that history agrees.
+   `vkh0.23` was right that a consumer needs a re-runnable import and `u4xu` was right that
+   closing this repo's historical gap by re-importing would leave the owned side tracking
+   the external one — both hold, because they are about different records. The run is now
+   judged on records created after the flip, and the pre-existing delta is **declared**:
+
+   - A record the **ledger** holds is classified by the marker its own producer wrote —
+     `migrate.py` stamps every extracted event with `imported_from`, so no flip point has to
+     be kept in step with the tree. All 643 carry it [M 2026-08-14].
+   - A record the **reference** holds and the ledger does not has no ledger event to
+     classify, so `basicly tracker shadow --declare-history` captures that set once, at the
+     flip, into a committed sidecar. A **second declaration is refused**: re-declaring after
+     the dual write has begun would absorb a genuine failure into history, which is the same
+     shape `u4xu` refuses re-importing for, one artifact over.
+   - **An empty in-scope population is inconclusive, never clean.** Scoping leaves it empty
+     until the flip happens, so the run still refuses to license step 3 — measured today at
+     0 in scope, 643 imported, 375 disagreements excused as history and 200 undeclared.
+   - A **refused reference voids the run whatever the scoping says.** The boundary decides
+     which records are judged, never whether the reference was the live tracker.
 3. **Dual-write** for one release, with the old tracker still authoritative.
 4. **Flip** the source of truth once the differential test is clean and the telemetry (§6) shows
    no unimplemented surface in use.

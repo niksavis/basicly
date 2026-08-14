@@ -1068,3 +1068,34 @@ def test_the_shadow_read_writes_nothing_to_either_store(tmp_path: Path, fake_br:
     surfaces = {" ".join(_surface_words(call)) for call in fake_br.calls}
     assert surfaces <= {"list", "show", "gate list"}
     assert len(_ledger_events(repo)) == before
+
+
+def test_the_scoped_run_forwards_the_engines_vocabulary_to_the_comparison(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_br: _FakeBr
+) -> None:
+    """The boundary must not swallow the names the caller configured (basicly-c357).
+
+    `cli` is the layer allowed to read the engine's configured gate names, and it hands
+    them to the scoped run rather than the raw one now. If the forwarding broke, the
+    comparison would silently fall back to the kit's defaults — which mirror the engine's
+    today, so it would look identical and diverge the first time a repo configures its own
+    required gates. That is the failure this asserts against, not the scoping.
+    """
+    repo = _repo(tmp_path, br.MODE_DUAL)
+    _population(repo, with_gates=True)
+    fake_br.calls.clear()
+    seen: dict[str, object] = {}
+
+    # Bound before the patch, or `capture` calls itself: the seam reaches the comparison
+    # through the module attribute this test replaces.
+    real = br.shadow_differential
+
+    def capture(_root: Path, vocabulary: dict[str, object] | None):
+        seen["vocabulary"] = vocabulary
+        return real(_root, vocabulary)
+
+    monkeypatch.setattr(br, "shadow_differential", capture)
+
+    br.scoped_differential(repo, {"required_gates": ("verify", "rubric")})
+
+    assert seen["vocabulary"] == {"required_gates": ("verify", "rubric")}

@@ -584,6 +584,10 @@ def owned_record(repo_root: Path, issue_id: str) -> dict | None:
 # `migrate.RESERVED_KEYS`, so it is dropped again when a record is rendered back.
 OWNED_PROVENANCE = "engine"
 
+# The kit module holding the flip boundary. Named rather than reached through the
+# differential because it sits beside it, the way the scheduler does (:func:`kit`).
+BASELINE_MODULE = "baseline"
+
 # The two keys a comment row carries, in br's spelling. The owned ledger holds the
 # body under the same ``text`` key (`events.KIND_COMMENT`) and the stamp as the
 # event's ``ts``, so the rendering below is a rename of one field rather than a
@@ -1263,6 +1267,36 @@ def shadow_differential(repo_root: Path, vocabulary: Mapping[str, Any] | None = 
     kit_module = kit(repo_root)
     names = kit_module.Vocabulary(**dict(vocabulary or {}))
     return kit_module.run_differential(ledger_dir(repo_root), _live_reference(repo_root), names)
+
+
+def scoped_differential(repo_root: Path, vocabulary: Mapping[str, Any] | None = None) -> Any:
+    """The shadow differential judged only on records created after the flip.
+
+    Step 2 proves the dual write agrees, not that history agrees (basicly-c357). The kit's
+    ``baseline`` module holds the boundary and the reasoning; this is the seam that hands
+    it the ledger, so no module outside this one reaches the owned store.
+    """
+    boundary = kit(repo_root, BASELINE_MODULE)
+    directory = ledger_dir(repo_root)
+    return boundary.scope(
+        shadow_differential(repo_root, vocabulary),
+        kit(repo_root).read_ledger(directory),
+        boundary.read_baseline(directory),
+    )
+
+
+def declare_differential_baseline(
+    repo_root: Path, declared: str, vocabulary: Mapping[str, Any] | None = None
+) -> Any:
+    """Declare the records the reference holds and the ledger does not as history.
+
+    *declared* is the caller's stamp, recorded as evidence; the kit reads no clock (§9.5).
+    Run once, at the flip: every id it captures was created in the external tracker before
+    the dual write existed, so no later run can mistake one for a dual-write failure.
+    """
+    boundary = kit(repo_root, BASELINE_MODULE)
+    report = shadow_differential(repo_root, vocabulary)
+    return boundary.write_baseline(ledger_dir(repo_root), report.unknown, declared)
 
 
 def _redact_paths(value: object) -> object:
