@@ -5,6 +5,12 @@ purpose: Reviews a diff or named component for correctness, security, and mainta
 triggers: Use proactively after writing a non-trivial change, before committing.
 returns: Returns prioritized findings with path:line evidence, not a rewrite.
 posture: Read-only.
+# `reviewer` runs one named lens for the engine at high; this is the ad-hoc
+# caller's entry to that same judgment over four lenses at once, so anything
+# cheaper makes the hand-invoked path weaker than the engine path on the same
+# diff. Not maximum: `architect` holds that rung alone for whole-codebase
+# structural work, and its own triggers delegate a diff back to here.
+tier: high
 tools: [Read, Grep, Glob, Bash]
 slots:
   role:
