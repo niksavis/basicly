@@ -450,7 +450,8 @@ def _dispatch_validation(ctx: _Ctx, gate: str) -> AdvanceResult | None:
     In ``repo_root``, not the worktree: a consumer exercises the merged product. Bound
     by D3's halt as a fifth metered site (basicly-dbbh), and by ``repair_dispatch`` for
     the reason that gates a repair — under the supervisor this runs inside a landing
-    pass, which has no spend gate, watchdog or stream meter of its own.
+    pass, which names the session as its grant root but has no watchdog or stream
+    meter of its own (basicly-xab3).
     """
     if not ctx.repair_dispatch or validate_gate.has_foreign_result(ctx.state.gates):
         return None
@@ -2490,12 +2491,13 @@ def advance(  # noqa: PLR0913 — one keyword per independent driver choice
     return _HANDLERS[state.phase](ctx)
 
 
-def run_until_blocked(
+def run_until_blocked(  # noqa: PLR0913 — a thin driver carries advance's driver choices
     repo_root: Path,
     issue_id: str,
     *,
     config: PolicyConfig | None = None,
     inputs: Inputs | None = None,
+    grant_root: str | None = None,
     max_steps: int = 20,
 ) -> list[AdvanceResult]:
     """Advance repeatedly until the track blocks, finishes, or hits *max_steps*.
@@ -2505,10 +2507,13 @@ def run_until_blocked(
     human/agent then resolves the block and re-invokes. A lane mini-loop step
     neither blocks nor changes phase, so a headless lane runs its sub-tasks in
     sequence within one call (bounded by *max_steps*).
+
+    *grant_root* is forwarded to :func:`advance`: a driver whose steps can reach a
+    metered dispatch names its session, and D3's halt is inert without one.
     """
     results: list[AdvanceResult] = []
     for _ in range(max_steps):
-        result = advance(repo_root, issue_id, config=config, inputs=inputs)
+        result = advance(repo_root, issue_id, config=config, inputs=inputs, grant_root=grant_root)
         results.append(result)
         if result.blocked or result.to_phase == "done":
             break

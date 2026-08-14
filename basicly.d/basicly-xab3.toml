@@ -1,0 +1,7 @@
+# `loop.run_until_blocked` gained a `grant_root` keyword so the supervisor's landing
+# pass can name its session: without it D3's halt is inert on the validate and repair
+# dispatches that pass now reaches. That is a sixth argument on a driver that mirrors
+# `loop.advance`, which carries the same suppression for the same reason. It has a
+# reason, so `unreasoned_count` does not move.
+[ratchet.noqa_debt.frozen]
+PLR0913 = 1

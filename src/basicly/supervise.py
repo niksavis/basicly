@@ -3404,16 +3404,15 @@ def advance_parked(
 ) -> tuple[RoutedOutcome, ...]:
     """Advance lanes the engine drives without a top-level runner dispatch.
 
-    Two shapes qualify. A lane routed ``merged`` parks in verify until its ship
-    checkpoint is approved (by a human after the queued request, or by a later
-    grant); once approvable, the only correct move is more ``loop.advance`` —
-    never a fresh dispatch against an already-merged branch. A lane still in
-    build that carries sub-task beads is a mini-loop lane (basicly-kjc5.9): its
-    sub-tasks are dispatched one at a time from inside ``loop.advance``, so the
-    supervisor advances it here instead of dispatching the lane bead itself.
-    Lanes with a pending judgment stay parked. A lane whose worktree is gone is not
-    advanced here either — it is disposed of by :func:`repair_stale_bindings` before
-    the pass reaches this point (basicly-1koh).
+    Two shapes qualify. A lane past build parks in :data:`wip.DOWNSTREAM_PHASES`,
+    imported so the bound's population and this one are one set (basicly-xab3); there
+    the only correct move is more ``loop.advance``, never a fresh dispatch against an
+    already-merged branch. A lane still in build that carries sub-task beads is a
+    mini-loop lane (basicly-kjc5.9): its sub-tasks are dispatched one at a time from
+    inside ``loop.advance``, so the supervisor advances it here instead of dispatching
+    the lane bead itself. Lanes with a pending judgment stay parked. A lane whose
+    worktree is gone is not advanced here either — it is disposed of by
+    :func:`repair_stale_bindings` before the pass reaches this point (basicly-1koh).
     """
     routed: list[RoutedOutcome] = []
     for lane in session.adopted:
@@ -3424,9 +3423,9 @@ def advance_parked(
         try:
             phase = _phase_of(repo_root, lane.issue_id)
             mini_loop = phase == "build" and _has_subtasks(repo_root, lane.issue_id)
-            if phase not in ("verify", "ship") and not mini_loop:
+            if phase not in wip.DOWNSTREAM_PHASES and not mini_loop:
                 continue
-            steps = loop.run_until_blocked(repo_root, lane.issue_id)
+            steps = loop.run_until_blocked(repo_root, lane.issue_id, grant_root=session.root_issue)
         except (RuntimeError, OSError, ValueError) as exc:
             routed.append(
                 RoutedOutcome(lane.issue_id, "error", f"advancing parked lane failed: {exc}")
@@ -3898,7 +3897,8 @@ def _land_green(
             "merged",
             f"landed; ship awaits a human ({item.decision_id})",
         )
-    shipped = loop.run_until_blocked(repo_root, outcome.issue_id)
+    # An L3 unit rests in validate, not ship: this drive spawns a validator (basicly-xab3).
+    shipped = loop.run_until_blocked(repo_root, outcome.issue_id, grant_root=session.root_issue)
     final = shipped[-1] if shipped else landing
     if final.to_phase == "done":
         return RoutedOutcome(outcome.issue_id, "shipped", final.detail)
