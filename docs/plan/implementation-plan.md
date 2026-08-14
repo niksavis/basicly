@@ -209,10 +209,33 @@ fresh-consumer acceptance test** (`vkh0.22`), and a whole-tracker probe finds **
 `v0.10.0` or `v0.9.1` in any comment — against a positive control that finds `v0.9.0`, `v0.8.0` and
 `v1.0.0`. A handover is inherited claims, not evidence; this file and the tracker are.
 
-## 5A. `v0.9.1` first half — the architectural backlog. **Start here.**
+## 5A. `v0.9.1` first half — the architectural backlog
 
-Tracked by `basicly-e2mz`. **34 open children, 21 of them ready**, and this is the priority for the
-next session and the ones after it until the epic closes.
+Tracked by `basicly-e2mz`.
+
+**The "start here until the epic closes" instruction is withdrawn, by owner decision 2026-08-14, and
+the reason is the epic's own argument.** §5A.1 states that a read-only pass emitting a prioritised
+list is something this repo can already produce, and that what it cannot do is *drain* the list — which
+is why `basicly-u2hl.27`, the controller and the actuator, "is not an item in the backlog but the thing
+that decides whether the backlog is worth having".
+
+**`u2hl.27` landed on 2026-08-14 and has filed its first real bead.** The precondition is met, so the
+ordering that followed from it no longer does. The remaining backlog is mostly P2/P3, and hand-picking
+those is doing by hand what the controller was built to select.
+
+The order is now:
+
+1. **`basicly-e2mz.6`** — give the improvement loop a caller. `workflow_dispatch` only, no cron yet
+   (owner, 2026-08-14): it makes the wiring non-circular, and the actuator has run live exactly once.
+2. **`basicly-u2hl` and `basicly-vkh0`** — where `v1.0.0` actually lives. Three consumer-facing P0s sit
+   there: `89hm` ships a context-window defect to every consumer, `vkh0.23` means nothing a fresh
+   consumer runs can build the ledger at all, and `ejdm`→`xjd2` is §5.1's measured 254x.
+3. **The tail of `e2mz`, `tcmy` and `jr0l`** — roughly 70 items — drains through the controller rather
+   than through a human's queue.
+
+What does **not** change: the four live defects §5A.3 names are all closed, and the mechanism half of
+§5A.2's pass 2 is complete. This is a change of *who dispatches* the remainder, not a decision to stop
+draining it.
 
 ### 5A.1 Why a backlog and not a second audit
 
@@ -538,11 +561,24 @@ cited it. Do not trust a register row; run the grep.
 
 ## 10. Owner decisions still owed
 
-1. **The ceremony threshold's written form** (`imnu.5`). The loop is mandated for "non-trivial
-   work", which is the agent's judgment call, so the rule is unenforceable. Needs a written
-   threshold **and** a named lightweight path below it that skips ceremony but never hooks.
-2. **Tier 3 of the catalog eval** — the four arms, and the safety tier as a gate rather than a
-   metric. Architecture §14.4 names the shape; the arms table is unbuilt and unowned.
+**Both rows below are now owned, so this section is empty of unowned decisions.** It is kept because
+the owed-then-taken pair is the useful record: row 1 was decided on 2026-07-26 and sat here for six
+weeks reading as pending, which is the shape §3's roster paragraph took for five days.
+
+1. ~~**The ceremony threshold's written form**~~ — **decided** 2026-07-26, and `imnu.5` implements it:
+   the threshold is the touched path. The loop is required for any change touching `src/**` or catalog
+   sources under `.basicly/**`; a docs-only, tracker-only or config-only change may take the
+   lightweight path. Chosen because it is the only form a hook can check.
+2. ~~**Tier 3 of the catalog eval**~~ — **taken 2026-08-14: design the arms now**, against a
+   recommendation to defer it past `v1.0.0`. `basicly-imnu.13` owns it. Two things are owed: the four
+   arms, each declaring its guidance configuration and what a difference from its neighbour would
+   establish; and whether the safety tier gates or reports. D23 supplies the rule for the second — a
+   control with no recorded correct firing becomes observability — so the real question is whether
+   safety is the exception to it. **The isolation assertion is the instrument**: §11 already requires
+   the harness to read back what guidance is live in a cell and fail if it does not match the arm's
+   declaration, and without that every number the eval produces is unfalsifiable. Note the design must
+   also state what it depends on for a sound exercised-count, since `basicly-4grf` made the 8-of-34
+   figure unsound.
 
 **Decided 2026-08-13, recorded here so they are not re-asked:**
 
