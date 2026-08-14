@@ -2007,48 +2007,32 @@ def test_a_foreign_models_history_leaves_the_forecast_seeded(
 # --- The unsizeable-lane bound (basicly-vz78) ----------------------------------
 
 
-def _record_lane_tokens(
-    repo: Path,
-    bead_id: str,
-    tokens: int,
-    *,
-    estimated: bool = False,
-    phase: str | None = run_record.LANE_PHASE,
-) -> None:
-    """One adapter-reported *lane* dispatch — the shape the bound harvests."""
-    run_record.record(
-        repo,
-        bead_id,
-        run_record.build_record(
-            agent="claude",
-            handoff=False,
-            returncode=0,
-            duration_s=1.0,
-            command=("claude",),
-            tokens=tokens,
-            estimated=estimated,
-            phase=phase,
-        ),
-    )
-
-
 def test_the_unsized_bound_falls_back_to_the_declared_seed(tmp_path: Path) -> None:
-    """With no lane history there is nothing to measure, and it says so."""
+    """With neither store holding a dispatch there is nothing to measure, and it says so."""
     tokens, source = decompose.unsized_lane_tokens(tmp_path, _sizing())
 
     assert (tokens, source) == (decompose.UNSIZED_LANE_TOKENS_SEED, "seed")
 
 
+def test_the_unsized_bound_measures_the_committed_markers_alone(tmp_path: Path) -> None:
+    """AC: a checkout with no local record of its own measures the bound (basicly-izpi)."""
+    body = json.dumps({"phase": run_record.LANE_PHASE, "tokens": 9_000_000, "estimated": False})
+    text = f"{run_record.MARKER} id=b-1 phase=lane\n{body}"
+    _export(tmp_path, {"id": "b-1", "comments": [{"text": text}]})
+
+    assert run_record.load_run_records(tmp_path) is None
+    assert decompose.unsized_lane_tokens(tmp_path, _sizing()) == (9_000_000, "measured")
+
+
 def test_the_unsized_bound_is_a_sample_some_lane_really_incurred(tmp_path: Path) -> None:
     """A quantile *of the samples*, so the figure is a real observation, never a mean.
 
-    The statistic moved from the median to ``unsized_lane_quantile`` (basicly-jr0l.58);
-    what must not change is that the bound is a spend some lane actually incurred, so
-    it needs no rounding rule and can always be pointed back at a run record.
+    What no change of statistic may alter: the bound is a spend some lane actually
+    incurred, so it needs no rounding rule and points back at a run record.
     """
-    _record_lane_tokens(tmp_path, "b-1", 1_000)
-    _record_lane_tokens(tmp_path, "b-2", 9_000)
-    _record_lane_tokens(tmp_path, "b-3", 2_000)
+    _record_run_tokens(tmp_path, "b-1", 1_000)
+    _record_run_tokens(tmp_path, "b-2", 9_000)
+    _record_run_tokens(tmp_path, "b-3", 2_000)
 
     tokens, source = decompose.unsized_lane_tokens(tmp_path, _sizing())
 
@@ -2064,29 +2048,26 @@ def test_one_pathological_lane_does_not_own_the_unsized_bound(tmp_path: Path) ->
     leaves supposedly 856182-4079243 tokens and packages 7674671-20594047. **More data
     refuted that split** (basicly-jr0l.58): four leaf lanes measured 9418977, 10834801,
     11478450 and 11867602, inside the supposed package band, so the population is one wide
-    spread. The median that split justified was exceeded by 47% of the 17 recorded
-    actuals. What survives is the narrower property pinned here: a single outlier sits
+    spread. What survives is the narrower property pinned here: a single outlier sits
     above the quantile and does not become every lane's bound.
     """
     for i in range(9):
-        _record_lane_tokens(tmp_path, f"b-{i}", 1_000)
-    _record_lane_tokens(tmp_path, "b-outlier", 20_000_000)
+        _record_run_tokens(tmp_path, f"b-{i}", 1_000)
+    _record_run_tokens(tmp_path, "b-outlier", 20_000_000)
 
     tokens, _source = decompose.unsized_lane_tokens(tmp_path, _sizing())
 
     assert tokens == 1_000, "a single outlier must not become the bound for every lane"
 
 
-def test_the_unsized_bound_still_refuses_the_overrun_that_motivated_it(
-    tmp_path: Path,
-) -> None:
+def test_the_unsized_bound_still_refuses_the_overrun_that_motivated_it(tmp_path: Path) -> None:
     """The one case that must not regress, in its measured numbers (basicly-vz78).
 
     One lane spent 4079243 tokens against a 3000000 remainder and the gate admitted it,
     because an unsizeable lane contributed nothing to the pass total. Whatever statistic
     the bound uses, that pass has to refuse.
     """
-    _record_lane_tokens(tmp_path, "b-1", 4_079_243)
+    _record_run_tokens(tmp_path, "b-1", 4_079_243)
 
     tokens, _source = decompose.unsized_lane_tokens(tmp_path, _sizing())
 
@@ -2107,7 +2088,7 @@ def test_the_unsized_bound_is_exceeded_by_at_most_the_quantiles_tail(tmp_path: P
         11_478_450, 11_867_602, 16_002_352, 20_594_047,
     )  # fmt: skip
     for index, tokens in enumerate(actuals):
-        _record_lane_tokens(tmp_path, f"b-{index}", tokens)
+        _record_run_tokens(tmp_path, f"b-{index}", tokens)
 
     bound, _source = decompose.unsized_lane_tokens(tmp_path, _sizing())
 
@@ -2116,12 +2097,14 @@ def test_the_unsized_bound_is_exceeded_by_at_most_the_quantiles_tail(tmp_path: P
     # And the statistic is not merely the max, which would price every lane off the
     # single worst run and refuse passes that genuinely fit.
     assert bound < max(actuals)
+    # The seed answers to it too: at 4000000, 11 of these 17 exceeded it (basicly-izpi).
+    assert sum(t > decompose.UNSIZED_LANE_TOKENS_SEED for t in actuals) / len(actuals) <= 0.1
 
 
 def test_the_unsized_bound_follows_the_configured_quantile(tmp_path: Path) -> None:
     """The quantile is config, so a consumer can trade throughput against overrun."""
     for index, tokens in enumerate((1_000, 2_000, 3_000, 4_000, 100_000)):
-        _record_lane_tokens(tmp_path, f"b-{index}", tokens)
+        _record_run_tokens(tmp_path, f"b-{index}", tokens)
 
     low, _ = decompose.unsized_lane_tokens(tmp_path, _sizing(unsized_lane_quantile=0.2))
     high, _ = decompose.unsized_lane_tokens(tmp_path, _sizing(unsized_lane_quantile=1.0))
@@ -2132,8 +2115,8 @@ def test_the_unsized_bound_follows_the_configured_quantile(tmp_path: Path) -> No
 
 def test_the_unsized_bound_ignores_an_estimated_sample(tmp_path: Path) -> None:
     """A chars/4 figure is not an observation, so it must not set the ceiling."""
-    _record_lane_tokens(tmp_path, "b-1", 5_000)
-    _record_lane_tokens(tmp_path, "b-2", 90_000, estimated=True)
+    _record_run_tokens(tmp_path, "b-1", 5_000)
+    _record_run_tokens(tmp_path, "b-2", 90_000, estimated=True)
 
     assert decompose.unsized_lane_tokens(tmp_path, _sizing()) == (5_000, "measured")
 
@@ -2141,11 +2124,10 @@ def test_the_unsized_bound_ignores_an_estimated_sample(tmp_path: Path) -> None:
 def test_the_unsized_bound_needs_no_declared_scope(tmp_path: Path) -> None:
     """The point of the bound: an actual is an observation whatever the scope says.
 
-    Calibration needs a readable ``## Scope`` because it divides tokens by scope
-    read-cost. A raw ceiling does not, which is why this can bound the very beads
-    ``dispatch_sizing`` refuses to size (basicly-vz78).
+    A raw ceiling needs no readable ``## Scope`` the way calibration does, which is why
+    it can bound the very beads ``dispatch_sizing`` refuses to size (basicly-vz78).
     """
-    _record_lane_tokens(tmp_path, "b-1", 7_000)
+    _record_run_tokens(tmp_path, "b-1", 7_000)
 
     # No tracker at all under tmp_path, so no bead here has a readable scope.
     assert decompose.unsized_lane_tokens(tmp_path, _sizing()) == (7_000, "measured")
@@ -2157,37 +2139,37 @@ def test_the_unsized_bound_needs_no_declared_scope(tmp_path: Path) -> None:
 def test_the_unsized_bound_counts_a_write_dispatch_from_either_path(tmp_path: Path) -> None:
     """AC: the interactive build and the supervised lane are both a lane's cost.
 
-    The bound required ``phase == "lane"``, so every dispatch of the interactive path -
-    the documented default on a single-operator machine, and 128 of this repo's 214
-    records - was invisible to the ceiling that bounds an unsizeable lane. Asserted at
-    the quantile so the build sample has to be *in the population*, not merely not
-    crash it: at 1.0 the bound is the largest sample of whichever set was harvested.
+    The bound required ``phase == "lane"``, so the interactive path — 128 of this repo's
+    214 records — was invisible to the ceiling. Asserted at the quantile so the build
+    sample has to be *in the population*, not merely not crash it: at 1.0 the bound is
+    the largest sample of whichever set was harvested.
     """
-    _record_lane_tokens(tmp_path, "b-lane", 5_000, phase=run_record.LANE_PHASE)
-    _record_lane_tokens(tmp_path, "b-build", 40_000, phase=run_record.BUILD_PHASE)
+    _record_run_tokens(tmp_path, "b-lane", 5_000, phase=run_record.LANE_PHASE)
+    _record_run_tokens(tmp_path, "b-build", 40_000, phase=run_record.BUILD_PHASE)
 
     bound, source = decompose.unsized_lane_tokens(tmp_path, _sizing(unsized_lane_quantile=1.0))
 
     assert (bound, source) == (40_000, "measured")
 
 
-def test_the_unsized_bound_ignores_a_helper_or_unphased_dispatch(tmp_path: Path) -> None:
-    """A judge, the decider, and a record with no phase are not evidence of a lane.
+def test_the_unsized_bound_ignores_a_helper_unphased_or_dying_dispatch(tmp_path: Path) -> None:
+    """A judge, the decider, a record with no phase and a dying attempt are not a lane.
 
     The other half of one named phase set: widening it to both write phases must not
     widen it to *every* dispatch. A rubric judge is cheap and read-only, so admitting
     one would drag the ceiling down; a record whose phase was never written cannot be
-    shown to be a lane at all and fails closed.
+    shown to be a lane at all and fails closed; and what a dying attempt spent is not
+    what the work costs — `spend_accuracy`'s own exclusion (basicly-5xcj).
     """
-    _record_lane_tokens(tmp_path, "b-lane", 5_000)
-    _record_lane_tokens(tmp_path, "b-judge", 90_000, phase=run_record.VALIDATE_PHASE)
-    _record_lane_tokens(tmp_path, "b-decide", 90_000, phase=run_record.DECIDE_PHASE)
-    _record_lane_tokens(tmp_path, "b-legacy", 90_000, phase=None)
+    _record_run_tokens(tmp_path, "b-lane", 5_000)
+    _record_run_tokens(tmp_path, "b-judge", 90_000, phase=run_record.VALIDATE_PHASE)
+    _record_run_tokens(tmp_path, "b-decide", 90_000, phase=run_record.DECIDE_PHASE)
+    _record_run_tokens(tmp_path, "b-legacy", 90_000, phase=None)
+    _record_run_tokens(tmp_path, "b-died", 90_000, returncode=1)
 
-    assert decompose.unsized_lane_tokens(tmp_path, _sizing(unsized_lane_quantile=1.0)) == (
-        5_000,
-        "measured",
-    )
+    bound = decompose.unsized_lane_tokens(tmp_path, _sizing(unsized_lane_quantile=1.0))
+
+    assert bound == (5_000, "measured")
 
 
 # --- A declared build factor is recorded as declared (basicly-tcmy.5) ---------

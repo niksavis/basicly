@@ -1326,14 +1326,16 @@ def dispatch_spend_forecasts(
     )
 
 
-# The spend assumed for a lane whose scope cannot be read, when no measured lane
-# actual exists yet to bound it with. Seeded from the first supervised lane this
-# repo ever measured — 4079243 tokens for one leaf bug (basicly-jr0l.40,
-# 2026-08-01) — and rounded down to a flat figure so it never reads as a
-# measurement. Deliberately high: this feeds a *ceiling* check, where erring low
-# admits an unbounded pass and erring high only asks a human to widen the grant or
-# scope the bead. That asymmetry is the whole reason a seed is acceptable here.
-UNSIZED_LANE_TOKENS_SEED = 4_000_000
+# The spend assumed for a lane whose scope cannot be read, when no measured actual
+# exists anywhere to bound it with. Stated against the statistic the measured path
+# returns: the 0.9 quantile of this repo's 106 committed non-failed write-phase samples
+# was 19235769 tokens on 2026-08-14, rounded down here so it never reads as a
+# measurement. It was 4000000 — the first lane this repo measured, 2026-08-01 — until
+# that ledger refuted it at 1.9x under the corpus median and exceeded by 11 of the 17
+# actuals the bound is replayed against (basicly-izpi). Erring high is the tolerable
+# direction: this feeds a *ceiling* check, where erring low admits an unbounded pass and
+# erring high only asks a human to widen the grant or scope the bead.
+UNSIZED_LANE_TOKENS_SEED = 19_000_000
 
 
 def unsized_lane_tokens(repo_root: Path, sizing: SizingConfig) -> tuple[int, str]:
@@ -1347,69 +1349,60 @@ def unsized_lane_tokens(repo_root: Path, sizing: SizingConfig) -> tuple[int, str
 
     The bound does not need the scope. Calibration does — it divides tokens by scope
     read-cost to get a ratio — but a raw *actual* is already an observation of what a
-    lane costs, whatever the tracker says about its scope. So this reads the measured
-    lane actuals directly, over the most recent window.
+    lane costs, whatever the tracker says about its scope.
 
-    The sample set is every dispatch recorded under :data:`run_record.WRITE_PHASES` —
-    both the supervised lane and the interactive build, because they are the same kind
-    of work and the bound is a statement about what that work costs. It required
-    ``phase == "lane"`` alone until basicly-tcmy.5, and the interactive path is the
-    documented default on a single-operator machine: on this repo's own history that
-    filter saw 24 of the 32 adapter-metered write dispatches and bounded a lane at
-    15245717 tokens where the whole population gives 15830484. A helper dispatch (a
-    rubric judge, the decider) is still excluded, and so is one whose phase was never
-    recorded — neither is evidence of what a lane costs.
+    The corpus is :func:`run_record.dispatch_history` — committed markers unioned with
+    local records, minus failed attempts — the same corpus under the same exclusion
+    :func:`spend_accuracy` samples, so a fresh clone measures the same thing and the two
+    cannot come to disagree about what a lane costs. Reading ``load_run_records`` alone
+    read a git-ignored directory: every checkout but the one that ran the lanes saw 0
+    records and took the seed, against 126 marker samples saying 22189847 on 2026-08-14
+    (basicly-izpi). basicly-tcmy.15 owns the second ledger read this costs.
+
+    Within that, the sample set is every dispatch under :data:`run_record.WRITE_PHASES`
+    — the supervised lane and the interactive build, which are the same kind of work. It
+    required ``phase == "lane"`` until basicly-tcmy.5: the interactive path is the
+    documented default on a single-operator machine, and that filter saw 24 of the 32
+    adapter-metered write dispatches, bounding a lane at 15245717 tokens where the whole
+    population gives 15830484. A helper dispatch (a rubric judge, the decider) is still
+    excluded, and so is one whose phase was never recorded — neither is evidence of what
+    a lane costs.
 
     The statistic is the **quantile at** ``[policy.sizing] unsized_lane_quantile``
-    (default 0.9), because this is a *ceiling* and a ceiling wants a high-water mark.
-    It replaced a median, which was chosen when the recorded population looked bimodal
-    — leaves apparently running 856182 to 4079243 tokens and lane *packages* driving
-    sub-tasks running 7674671 to 20594047, with nothing in a run record telling them
-    apart, so any high quantile would have bounded a leaf at a package's cost.
+    (default 0.9), because this is a *ceiling* and a ceiling wants a high-water mark. The
+    median it replaced was chosen against an apparently bimodal population that more data
+    refuted (basicly-jr0l.58, replayed in the tests): one wide spread from 856182 to
+    20594047, whose midpoint 47% of the 17 recorded actuals exceeded — and a pass of four
+    lanes forecast at 16316972 tokens spent 43599830 against a 21000000 grant. A high
+    quantile costs throughput when it is wrong and money when it is not there at all: a
+    refused pass costs one re-grant, an admitted overrun doubled a real bill.
 
-    **That split did not survive contact with more data** (basicly-jr0l.58). Four leaf
-    lanes measured 9418977, 10834801, 11478450 and 11867602 tokens — squarely inside
-    the supposed package band — so the population is not two clusters but one wide
-    spread from 856182 to 20594047. The median was therefore not a central estimate of
-    a tight cluster but the midpoint of an order-of-magnitude range: 47% of the 17
-    recorded actuals exceeded it, and a pass of four lanes forecast at 16316972 tokens
-    spent 43599830 against a 21000000 grant.
-
-    A high quantile costs throughput when it is wrong, and money when it is not there
-    at all. The asymmetry favours the quantile: a refused pass costs one re-grant,
-    while an admitted overrun doubled a real bill.
-
-    This remains one layer of three, and the only one that is an estimate:
-
-    * **forward, here** — keeps a pass's forecast total inside the grant, now aiming to
-      be exceeded by at most one lane in ten rather than by half of them.
-    * **hard, per lane** — ``[runner] runner_timeout``. Note the rate is not the ~7850
-      tokens per second previously recorded here: measured rates rise with duration
-      (4377/s at 196s up to 13872/s at 1485s) as context accumulates, so a 1800s cap
-      bounds one lane nearer 25M than 14M.
-    * **hard, per session** — the retrospective halt in :func:`policy.spend_status`,
-      which stops the *next* pass once recorded spend reaches the budget.
+    This remains one layer of three, and the only one that is an estimate: **forward,
+    here**, keeping a pass's forecast total inside the grant and aiming to be exceeded by
+    at most one lane in ten rather than by half of them; **hard, per lane**, ``[runner]
+    runner_timeout`` — not the ~7850 tokens per second once recorded here, because
+    measured rates rise with duration (4377/s at 196s up to 13872/s at 1485s) as context
+    accumulates, so a 1800s cap bounds one lane nearer 25M than 14M; and **hard, per
+    session**, the retrospective halt in :func:`policy.spend_status`, which stops the
+    *next* pass once recorded spend reaches the budget.
 
     Ordered by the record's own timestamp before the window is taken. Slicing the flat
-    list would have windowed by whatever order the records file enumerates, which is
-    per-bead and not chronological — so "recent" would not have meant recent.
+    list would have windowed by whatever order the ledger enumerates, which is per-bead
+    and not chronological — so "recent" would not have meant recent.
 
     Returns ``(tokens, source)`` where *source* is ``"measured"`` or ``"seed"``, so a
     caller can report which it used and never present the seed as evidence.
     """
-    records = run_record.load_run_records(repo_root) or {}
     observed: list[tuple[str, int]] = []
-    for history in records.values():
-        if not isinstance(history, list):
-            continue
+    # No shape guard: `dispatch_history` yields only the dict entries it could parse.
+    for history in run_record.dispatch_history(repo_root).values():
         for entry in history:
-            if not isinstance(entry, dict):
-                continue
             tokens = entry.get("tokens")
-            # Adapter-reported only: a chars/4 estimate is not an observation, and a
-            # helper or handoff dispatch is not a lane.
+            # Adapter-reported only: a chars/4 estimate is not an observation, a helper
+            # or handoff dispatch is not a lane, and a dying attempt did not do the work.
             if (
                 entry.get("estimated") is False
+                and entry.get("outcome") != run_record.FAILED
                 and run_record.is_write_phase(entry.get("phase"))
                 and isinstance(tokens, int)
                 and tokens > 0
@@ -1649,7 +1642,7 @@ def spend_accuracy(repo_root: Path, sizing: SizingConfig) -> SpendAccuracy:
             if actual is None or entry.get("estimated") is not False:
                 unmetered += 1
                 continue
-            if entry.get("outcome") == "failed":
+            if entry.get("outcome") == run_record.FAILED:
                 # What a dying attempt spent is not what the work costs.
                 aborted += 1
                 continue
