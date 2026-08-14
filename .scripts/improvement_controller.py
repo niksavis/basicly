@@ -164,24 +164,42 @@ def lane_title(target: Candidate) -> str:
     return f"Bring {target.path} under the {SCOPE_FILE_READ_CAP}-token module size cap"
 
 
-def lane_scope(target: Candidate) -> tuple[str, ...]:
+def split_pattern(target: Candidate) -> str:
+    """The siblings an extraction from *target* would create, as a glob.
+
+    The one scope entry that legitimately matches nothing: it names output the lane has
+    not produced yet.
+    """
+    path = Path(target.path)
+    return f"{path.parent.as_posix()}/{path.stem}_*.py"
+
+
+def resolves(repo_root: Path, glob: str) -> bool:
+    """Whether *glob* names at least one path in the tree as it stands."""
+    return next(repo_root.glob(glob), None) is not None
+
+
+def lane_scope(repo_root: Path, target: Candidate) -> tuple[str, ...]:
     """The globs a filed lane may touch, narrow enough to run beside another lane.
 
-    Four entries, and each earns its place: the module itself; the siblings an
+    Up to four entries, each earning its place: the module itself; the siblings an
     extraction creates, named after their origin so the lane's own output stays inside
     the scope it declared; the module's tests, which move with the code it holds; and
     ``pyproject.toml``, where the frozen entry that must expire lives.
+
+    **A derived entry that names nothing is dropped, not carried** (basicly-j73p): a
+    scope carrying what it cannot resolve reads as wider than it is. This is a
+    narrowing, so nothing replaces what it drops.
     """
-    path = Path(target.path)
+    derived = (f"tests/test_{Path(target.path).stem}*.py", "pyproject.toml")
     return (
         target.path,
-        f"{path.parent.as_posix()}/{path.stem}_*.py",
-        f"tests/test_{path.stem}*.py",
-        "pyproject.toml",
+        split_pattern(target),
+        *(glob for glob in derived if resolves(repo_root, glob)),
     )
 
 
-def lane_body(target: Candidate, dropped: int) -> str:
+def lane_body(repo_root: Path, target: Candidate, dropped: int) -> str:
     """The bead body a filed lane carries: the DoR sections, the scope, and the plan.
 
     Built through :func:`policy.compose_body`, so a lane this loop files carries the
@@ -202,7 +220,9 @@ def lane_body(target: Candidate, dropped: int) -> str:
                 f"`uv run python .scripts/check_module_size.py` passes after that entry is "
                 f"deleted"
             ),
-            plan_record.SCOPE_HEADING: "\n".join(f"- `{glob}`" for glob in lane_scope(target)),
+            plan_record.SCOPE_HEADING: "\n".join(
+                f"- `{glob}`" for glob in lane_scope(repo_root, target)
+            ),
             plan_record.PLAN_HEADING: plan_record.render_plan_section(
                 (), LANE_BUDGET_TOKENS, LANE_INTEGRITY, demonstration
             ),
@@ -233,7 +253,7 @@ def dispatch(repo_root: Path, target: Candidate, dropped: int) -> str:
             "-l",
             LANE_LABEL,
             "-d",
-            lane_body(target, dropped),
+            lane_body(repo_root, target, dropped),
             "--json",
         ],
     )
@@ -307,7 +327,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     target = admission.admitted[0]
     if args.dry_run:
-        _say([*lines, f"dry run:   no lane filed for {target.path}"])
+        # A dry run that names the target but not its globs cannot be used to check a
+        # scope before it is filed, which is how the double prefix reached a real bead.
+        scope = ", ".join(lane_scope(REPO_ROOT, target))
+        _say([*lines, f"scope:     {scope}", f"dry run:   no lane filed for {target.path}"])
         return 0
     issue_id = dispatch(REPO_ROOT, target, len(ranked) - 1)
     _say([*lines, f"dispatch:  {issue_id} filed, labelled {LANE_LABEL}"])
