@@ -40,7 +40,7 @@ layers =
     runner_usage
     decider_contract
     corpus_drift | decision_marker
-    artifact_record | run_record | skill_source | surface_report
+    artifact_record | lens_review | run_record | skill_source | surface_report
     spend_calibration
     br
     mirror

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from basicly import dispatch_brief, needs_input
+from basicly import dispatch_brief, needs_input, review, roles
 from basicly.config import WORK_TYPES, SizingConfig
 
 SIZING = SizingConfig(
@@ -55,6 +55,31 @@ def test_the_validate_prompt_forbids_re_running_the_gate_suite() -> None:
     prompt = dispatch_brief.validate_prompt("i")
     assert "Do NOT re-run the gate suite" in prompt
     assert "consumer" in prompt
+
+
+def test_the_review_prompt_names_one_lens_and_forbids_ranking_across_them() -> None:
+    """§6.4: a reviewer reviews one axis, and weighs it against no other (basicly-feje).
+
+    The lens must reach the prompt, because it is the only thing that distinguishes two
+    dispatches of the same role — a reviewer told to think broadly is one dispatch whose
+    strong axis masks its weak one, which is what the fan-out exists to prevent.
+    """
+    prompt = dispatch_brief.review_prompt("i", "security")
+
+    assert "one axis and one only: security" in prompt
+    assert "never merged with yours" in prompt
+    assert "correctness" not in prompt
+
+
+def test_the_review_prompt_passes_the_no_pre_judging_lint() -> None:
+    """Every reviewer bundle this repo assembles is refused rather than emitted weaker.
+
+    Held on `find_pre_judging` rather than on "it did not raise", so the assertion says
+    which property is being claimed: the emitted brief carries no directive that decides
+    the review's result before it runs (basicly-qps §5.3).
+    """
+    for lens in roles.REVIEW_LENSES:
+        assert review.find_pre_judging(dispatch_brief.review_prompt("i", lens)) == ()
 
 
 def test_the_validate_prompt_asks_for_a_verdict_line_not_a_tracker_write() -> None:

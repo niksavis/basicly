@@ -21,9 +21,11 @@ from basicly import (
     decisions,
     decompose,
     loop,
+    loop_state,
     merge,
     needs_input,
     policy,
+    roles,
     run_record,
     runner,
     supervise,
@@ -2011,15 +2013,19 @@ def test_validator_argv_carries_the_role_and_a_non_write_phase(
     Recorded outside ``WRITE_PHASES`` in the same assertion, because the two are one
     fact about the dispatch: a read-only judge priced as a lane would put a helper's
     cost into the sample the spend calibration derives a lane's cost from.
+
+    The validator is the **first** dispatch VALIDATE makes, not the only one: the lens
+    reviews beside it are basicly-feje's, and every dispatch the state makes is priced
+    the same read-only way, which is what the recorded phases assert.
     """
     at(_state("validate", gates=_validate_gates()))
     _pin_runner(monkeypatch, "claude")
     monkeypatch.setattr(loop.roles, "resolve_role", lambda _r, _s, phase: f"role-for-{phase}")
-    seen: dict = {}
+    seen: list[dict] = []
     recorded: list[object] = []
 
     def _run(spec, prompt, cwd, **kw):
-        seen.update(role=kw.get("role"), prompt=prompt, cwd=cwd)
+        seen.append({"role": kw.get("role"), "prompt": prompt, "cwd": cwd})
         return runner.RunResult(spec.name, tuple(spec.command), executed=True, returncode=0)
 
     monkeypatch.setattr(runner, "run", _run)
@@ -2030,10 +2036,96 @@ def test_validator_argv_carries_the_role_and_a_non_write_phase(
 
     loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs())
 
-    assert seen["role"] == "role-for-validate"
-    assert "Do NOT re-run the gate suite" in seen["prompt"]
-    assert recorded == [run_record.VALIDATE_PHASE]
+    assert seen[0]["role"] == "role-for-validate"
+    assert "Do NOT re-run the gate suite" in seen[0]["prompt"]
+    assert set(recorded) == {run_record.VALIDATE_PHASE}
     assert run_record.VALIDATE_PHASE not in run_record.WRITE_PHASES
+
+
+def test_validate_dispatches_one_reviewer_per_lens_each_carrying_its_own_lens(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """basicly-feje's demonstration: `reviewer` is reachable, once per declared lens.
+
+    Before this, `ROLE_BY_PHASE` was phase-to-one-role and VALIDATE resolved `validator`
+    alone, so an authored, projected, vendored agent had no route at all. Each review
+    must carry *its own* lens — one dispatch told to think broadly is the thing §6.4
+    refuses, because one axis then masks the other.
+    """
+    at(_state("validate", gates=_validate_gates()))
+    _pin_runner(monkeypatch, "claude")
+    monkeypatch.setattr(loop.roles, "resolve_named_role", lambda _r, _s, role: role)
+    seen: list[dict] = []
+    recorded: list[object] = []
+
+    def _run(spec, prompt, cwd, **kw):
+        seen.append({"role": kw.get("role"), "prompt": prompt, "cwd": cwd})
+        return runner.RunResult(spec.name, tuple(spec.command), executed=True, returncode=0)
+
+    monkeypatch.setattr(runner, "run", _run)
+    monkeypatch.setattr(loop, "record_run", lambda *_a, **kw: recorded.append(kw.get("phase")))
+    monkeypatch.setattr(policy, "gate_status", lambda *_a: _validate_gates())
+
+    loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs())
+
+    reviews = [call for call in seen if call["role"] == "reviewer"]
+    assert len(reviews) == len(roles.REVIEW_LENSES)
+    for call, lens in zip(reviews, roles.REVIEW_LENSES, strict=True):
+        assert f"one axis and one only: {lens}" in call["prompt"]
+    # Every dispatch this state makes is read-priced, reviews included.
+    assert recorded == [run_record.VALIDATE_PHASE] * (1 + len(roles.REVIEW_LENSES))
+
+
+def test_each_lens_records_its_own_findings_and_nothing_merges_them(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """§6.4: lens output is reported per lens, never merged into one ranked list.
+
+    A change can pass one axis and fail another, so a merged report lets the strong axis
+    mask the weak one. Asserted on the recorded findings rather than on the prompt,
+    because the prompt is an instruction and the record is the guarantee.
+    """
+    at(_state("validate", gates=_validate_gates()))
+    _pin_runner(monkeypatch, "claude")
+    monkeypatch.setattr(loop.roles, "resolve_named_role", lambda _r, _s, role: role)
+    monkeypatch.setattr(loop, "record_run", lambda *_a, **_k: None)
+    monkeypatch.setattr(policy, "gate_status", lambda *_a: _validate_gates())
+    lenses = iter(roles.REVIEW_LENSES)
+
+    def _run(spec, _prompt, _cwd, **kw):
+        reply = f"finding on {next(lenses)}" if kw.get("role") == "reviewer" else ""
+        return runner.RunResult(
+            spec.name, tuple(spec.command), executed=True, returncode=0, stdout=reply
+        )
+
+    monkeypatch.setattr(runner, "run", _run)
+    comments: list[str] = []
+    monkeypatch.setattr(loop.lens_review.br, "add_comment", lambda _r, _i, b: comments.append(b))
+
+    loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs())
+
+    assert len(comments) == len(roles.REVIEW_LENSES)
+    for body, lens in zip(comments, roles.REVIEW_LENSES, strict=True):
+        assert body.startswith(f"{loop.lens_review.MARKER} lens={lens}\n")
+        assert body.count(loop.lens_review.MARKER) == 1
+        assert f"finding on {lens}" in body
+
+
+def test_an_l1_or_l2_unit_never_reaches_the_phase_that_pays_for_a_review() -> None:
+    """The cost bound: a lens dispatch is charged to L3 units and to nothing else.
+
+    ``validate`` is derived only while ``validate-as-consumer`` is outstanding, and
+    ``validate_gate.required_config`` promotes that gate only at a level whose selection
+    carries it — so an L1 or L2 unit lands straight at ship and the fan-out below it is
+    never consulted. Both halves are asserted: the phase it does derive, and that the
+    phase buys no review.
+    """
+    landed = GateStatus(True, ("verify",), (), (), (), ())
+
+    phase = loop_state.derive_phase("in_progress", ("ship",), None, landed, False)
+
+    assert phase == "ship"
+    assert roles.lens_dispatches(phase) == ()
 
 
 def test_a_validate_dispatch_that_records_nothing_leaves_the_unit_in_validate(

@@ -350,7 +350,7 @@ a role and dispatch it, which is what makes the roster real rather than projecte
 | `decomposer` | DECOMPOSE | **authored**, loads `decompose-plan` | unnamed equivalent (`loop.py:1057-1094`) |
 | `implementer` (+ **repair mode** [D5]) | BUILD, REPAIR | **authored**, loads `python-guidelines` + `repair-in-place` | equivalent exists (`loop.py:663-700`); repair mode does not |
 | `validator` | VALIDATE | **authored**, loads `validate-as-consumer` | **dispatched** (`loop.py:459`, `u2hl.54.3`) |
-| `reviewer` (by lens) | VALIDATE | **authored** | **nothing — and no `ROLE_BY_PHASE` entry**, so it cannot resolve at all |
+| `reviewer` (by lens) | VALIDATE | **authored** | **dispatched once per lens** (`loop._dispatch_reviews`, `roles.LENS_ROLE_BY_PHASE`, `basicly-feje`) |
 | `decider` | CLASSIFY, escalations | **authored** | exists (`decisions.py`) |
 | `retrospector` | RETROSPECTIVE | **authored**, loads `root-cause` | nothing; the state does not exist |
 | `curator` | SHIP | **authored** | nothing |
@@ -466,6 +466,40 @@ problem:
 
 **Lens output is reported per lens, never merged into one ranked list** — a change can pass one axis
 and fail another, and reranking lets one mask the other.
+
+### 6.5 VALIDATE fans out, and what that costs [decided 2026-08-14, `basicly-feje`]
+
+§3.1 gives VALIDATE two roles — `validator`, and `reviewer` **by lens**. `roles.ROLE_BY_PHASE` was
+phase-to-one-role, so the second could not be reached: `reviewer` was authored, projected to both
+agent roots and vendored to consumers while no code path could name it. The resolution is the first
+of the two the defect offered — VALIDATE dispatches more than one role — and it is recorded here
+because it changes the map's shape.
+
+**Two tables, both data.** `ROLE_BY_PHASE` keeps its one entry per phase and now means the role that
+*drives* the phase: the one whose reply the engine acts on, which at VALIDATE is the validator and
+its gate. `LENS_ROLE_BY_PHASE` names the role a phase fans out beside it, dispatched once per entry
+in `REVIEW_LENSES`. Both are lookups; neither asks a model which role to run, which is the property
+the original map was built for.
+
+**The lens vocabulary is two, and the count is the decision.** Every lens is a paid dispatch on every
+L3 unit, so a lens whose axis a gate already covers spends tokens to restate a green check.
+`correctness` is kept because the gates prove the code runs and the validator exercises the
+demonstration line, so the input that breaks it is checked by nobody. `security` is kept because
+`basicly.toml` scopes bandit to `.scripts`, `.basicly/core/hooks` and `.basicly/core/kit`, leaving
+`src/` with no security instrument at all. Maintainability is refused: ruff, pyright, vulture,
+`lint-imports`, `module-size`, `comment-density` and `noqa-debt` ratchet that axis mechanically.
+
+**The reviewer is advisory and the validator owns the gate.** A reviewer records findings under
+`[harness-review] lens=<lens>` on the unit, one comment per lens, and nothing reads two of them
+together — the no-rerank rule above holds by construction rather than by instruction. Each dispatch
+is recorded under the `validate` phase, outside `WRITE_PHASES`, so a read-only judge never enters
+the sample a lane's cost is calibrated from.
+
+**What it costs.** Two extra read-priced dispatches per VALIDATE advance, on L3 units only: L1 and
+L2 never derive the phase, because `loop_state` reaches `validate` only while the
+`validate-as-consumer` gate their level did not promote is outstanding. Nothing is dispatched under
+the supervisor's landing pass (`repair_dispatch=False`) or past a halted grant, on the same
+reasoning that bounds the validator dispatch.
 
 ---
 

@@ -7,11 +7,14 @@ the host to run one — every dispatch ended at a bare ``claude -p <prompt>``.
 
 Three properties, and each is a decision rather than an implementation detail.
 
-**The map is data, not judgment.** A phase resolves to exactly one role by table
-lookup, so the choice is not gameable, costs no tokens and cannot drift between
-lanes. It mirrors the state table in ``factory-loop.md`` §3.1, which is the point:
-a reader who knows the state knows the role, and a role that is not in the state
-table has no business being dispatched by the engine.
+**The map is data, not judgment.** A phase resolves by table lookup, so the choice
+is not gameable, costs no tokens and cannot drift between lanes. It mirrors the
+state table in ``factory-loop.md`` §3.1, which is the point: a reader who knows the
+state knows the role, and a role that is not in the state table has no business
+being dispatched by the engine. Two tables, because §3.1 gives VALIDATE two roles:
+:data:`ROLE_BY_PHASE` names the one role that *drives* a phase and whose reply the
+engine acts on, and :data:`LENS_ROLE_BY_PHASE` the one it fans out beside it, once
+per entry in :data:`REVIEW_LENSES`.
 
 **A role that is not projected resolves to nothing.** The engine names a role, the
 host loads it from the agent root ``basicly install`` wrote, and a missing file
@@ -28,6 +31,7 @@ brief.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
@@ -70,6 +74,32 @@ ROLE_BY_PHASE: dict[str, str] = {
     "ship": "curator",
 }
 
+
+@dataclass(frozen=True)
+class RoleDispatch:
+    """One role dispatched beside a phase's driving role, and the lens it reviews.
+
+    The lens is a required field rather than an optional one: a dispatch with no
+    lens is the driving role, which :data:`ROLE_BY_PHASE` already answers.
+    """
+
+    role: str
+    lens: str
+
+
+# The whole lens vocabulary: an axis absent here is never dispatched. Two, and the
+# count is the decision — each lens is a paid dispatch on every L3 unit, so an axis a
+# gate already covers spends tokens restating a green check. `security` is here
+# because `basicly.toml` scopes bandit away from `src/` entirely; maintainability is
+# refused because ruff, pyright, vulture and the size ratchets bind it mechanically.
+# factory-loop.md §6.5 carries the argument per axis.
+REVIEW_LENSES: tuple[str, ...] = ("correctness", "security")
+
+# The role a phase dispatches once per lens, beside the role that drives it. VALIDATE
+# is the only such phase (§3.1); a dict rather than a branch, so "no other phase fans
+# out" stays a lookup on data like the table above it.
+LENS_ROLE_BY_PHASE: dict[str, str] = {"validate": "reviewer"}
+
 # Where a projected agent lands per family, relative to the repo root. Both roots
 # are written by `basicly agents-build` and vendored by `basicly install`; a family
 # absent from this map cannot select a role at all (codex ships no subagent root),
@@ -88,6 +118,20 @@ def role_for_phase(phase: str) -> str | None:
     default runner exactly as it does today.
     """
     return ROLE_BY_PHASE.get(phase.strip().lower())
+
+
+def lens_dispatches(phase: str) -> tuple[RoleDispatch, ...]:
+    """Every per-lens review *phase* fans out to, in vocabulary order (a lookup).
+
+    Empty for a phase that fans out over nothing — every phase but VALIDATE today —
+    so a caller iterates it unconditionally and pays for nothing. The tuple is a
+    dispatch list and never a ranking: §6.4 forbids merging lenses, because a change
+    can pass one axis and fail another and reranking lets the strong one mask it.
+    """
+    role = LENS_ROLE_BY_PHASE.get(phase.strip().lower())
+    if role is None:
+        return ()
+    return tuple(RoleDispatch(role, lens) for lens in REVIEW_LENSES)
 
 
 def role_is_available(repo_root: Path, family: str, role: str) -> bool:
@@ -118,9 +162,18 @@ def resolve_role(repo_root: Path, spec: HasAgentStyle, phase: str) -> str | None
     encoded a second time here. Two copies of that fact would drift, and the
     direction they drift in is a flag emitted for a host that ignores it.
     """
+    role = role_for_phase(phase)
+    return None if role is None else resolve_named_role(repo_root, spec, role)
+
+
+def resolve_named_role(repo_root: Path, spec: HasAgentStyle, role: str) -> str | None:
+    """*role* when *spec*'s family can load it, else None — the explicit form.
+
+    :func:`resolve_role` answers for the role a phase's table names; this answers for
+    a role the caller already holds, which is what a fan-out needs: at VALIDATE the
+    reviewer is dispatched once per lens, and the phase alone no longer identifies
+    which role a given dispatch is.
+    """
     if spec.agent_style is None:
         return None
-    role = role_for_phase(phase)
-    if role is None or not role_is_available(repo_root, spec.name, role):
-        return None
-    return role
+    return role if role_is_available(repo_root, spec.name, role) else None

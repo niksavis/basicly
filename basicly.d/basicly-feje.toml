@@ -1,0 +1,7 @@
+# `_run_agent` gained a `role` keyword so VALIDATE can dispatch a reviewer per lens
+# beside the validator, which takes it to six parameters. The suppression carries its
+# reason, so `unreasoned_count` does not move; the alternative — bundling prompt, phase
+# and role into one record — was rejected because the inlined keywords read better at
+# the four call sites, so the bundle would exist only to move the count.
+[ratchet.noqa_debt.frozen]
+PLR0913 = 1
