@@ -2267,10 +2267,27 @@ def _brief_repair(  # noqa: PLR0913 — one parameter per recorded fact
         reason=reason,
         findings=tuple(findings),
         evidence=tuple(evidence)[: repair_brief.MAX_REPAIR_EVIDENCE],
+        reviews=_recorded_reviews(ctx, target, gate),
     )
     if not repair_brief.write_repair_brief(Path(session.worktree_path), brief):
         return ""
     return f"; briefed a repair for gate {gate!r} in worktree {ctx.state.worktree.name!r}"
+
+
+def _recorded_reviews(ctx: _Ctx, target: str, gate: str) -> tuple[lens_review.LensFindings, ...]:
+    """The lens reviews a repair after a failed *validation* is briefed with.
+
+    Keyed on the gate, never on whether a marker happens to exist: the reviews judged
+    the merged product, so a repair after a red verify or rubric is briefed exactly as
+    it was before (basicly-w88t). Clipped per lens on a gate output's bound, because a
+    marker that reached the tracker some other way must not overflow the prompt.
+    """
+    if gate != validate_gate.VALIDATE_GATE:
+        return ()
+    return tuple(
+        lens_review.LensFindings(review.lens, repair_brief.clip_output(review.findings))
+        for review in lens_review.latest_per_lens(ctx.repo_root, target)
+    )
 
 
 def _bound_session(ctx: _Ctx, binding: loop_state.WorktreeBinding) -> worktree.Session | None:

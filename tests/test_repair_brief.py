@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from basicly import repair_brief, rubrics, verify
+from basicly import lens_review, repair_brief, rubrics, validate_gate, verify
 
 # A check that always fails and prints something recognisable, so the brief's command
 # and output are read off a real run rather than invented.
@@ -34,6 +34,14 @@ def _worktree(tmp_path: Path, *, checks: str = "") -> Path:
     if checks:
         (path / "basicly.toml").write_text(checks, encoding="utf-8")
     return path
+
+
+# Two lenses whose findings disagree about severity, so an implementation that ranked
+# them would have to put the blocker first and the assertions below would catch it.
+_REVIEWS = (
+    lens_review.LensFindings("correctness", "off-by-one at parse.py:12 (major)"),
+    lens_review.LensFindings("security", "shell injection at run.py:4 (blocker)"),
+)
 
 
 def _brief(**overrides) -> repair_brief.RepairBrief:
@@ -206,11 +214,102 @@ def test_an_evidence_entry_with_nothing_to_say_is_left_out_of_the_prompt() -> No
 
 
 def test_a_collision_is_not_one_of_the_gates_a_repair_run_can_act_on() -> None:
-    """The two that judge the lane's own diff, and the landing status that is a red verify.
+    """The three that judge the lane's own work, and the landing status that is a red verify.
 
     The merge gate is deliberately absent: a conflict is not a defect in the work, and
-    `supervise._bounce_lane` briefs its owner from the conflicting paths instead.
+    `supervise._bounce_lane` briefs its owner from the conflicting paths instead. The
+    consumer validation is present: it judged this diff, so its failure is a defect a
+    repair run can act on (basicly-w88t).
     """
-    assert repair_brief.REPAIR_GATES == (verify.DEFAULT_GATE, rubrics.RUBRIC_GATE)
+    assert repair_brief.REPAIR_GATES == (
+        verify.DEFAULT_GATE,
+        rubrics.RUBRIC_GATE,
+        validate_gate.VALIDATE_GATE,
+    )
     assert "merge" not in repair_brief.REPAIR_GATES
     assert repair_brief.LANDING_VERIFY_FAILED == "verify-failed"
+
+
+# --- the reviews a judged gate hands over (basicly-w88t) ------------------------
+
+
+def test_each_lens_gets_its_own_section_and_nothing_ranks_one_against_the_other() -> None:
+    """§6.4: lens output is reported per lens and never merged into one ranked list.
+
+    Asserted positionally rather than by membership: each lens's text has to fall
+    between its own heading and whatever follows, which a merged or severity-ordered
+    list would fail — the blocker is recorded second here and must stay second.
+    """
+    prompt = repair_brief.repair_prompt(_brief(reviews=_REVIEWS))
+    correctness = prompt.index("Lens: correctness")
+    security = prompt.index("Lens: security")
+
+    assert correctness < prompt.index("off-by-one at parse.py:12 (major)") < security
+    assert security < prompt.index("shell injection at run.py:4 (blocker)")
+    assert "neither merged nor ranked against each other" in prompt
+
+
+def test_the_reviews_are_handed_over_as_advice_rather_than_as_a_gate() -> None:
+    """§6.5: the validator owns the gate, so a finding never becomes a precondition.
+
+    The named gate is what the repair has to satisfy; a run that read these as gates
+    would either widen the repair or refuse to finish while one stayed unaddressed.
+    """
+    prompt = repair_brief.repair_prompt(_brief(reviews=_REVIEWS))
+
+    assert "They are advisory" in prompt
+    assert "no finding here is a gate of its own or a precondition" in prompt
+
+
+def test_a_lens_that_recorded_nothing_is_named_rather_than_left_out() -> None:
+    """A lens missing from the brief reads as a lens that was never asked."""
+    reviews = (_REVIEWS[0], lens_review.LensFindings("security"))
+
+    prompt = repair_brief.repair_prompt(_brief(reviews=reviews))
+
+    assert f"Lens: security\n{repair_brief.NO_REVIEW}" in prompt
+
+
+def test_a_brief_with_no_reviews_is_the_prompt_it_always_was() -> None:
+    """A repair after a red verify is briefed exactly as it was before basicly-w88t."""
+    prompt = repair_brief.repair_prompt(_brief())
+
+    assert "one section per lens" not in prompt
+    assert "Lens:" not in prompt
+
+
+def test_the_reviews_survive_the_worktree_the_same_way_the_evidence_does(
+    tmp_path: Path,
+) -> None:
+    """The brief is a file between two processes, so the lens split has to survive JSON."""
+    cwd = _worktree(tmp_path)
+    brief = _brief(gate=validate_gate.VALIDATE_GATE, reviews=_REVIEWS)
+
+    assert repair_brief.write_repair_brief(cwd, brief)
+
+    assert repair_brief.take_repair_brief(cwd) == brief
+
+
+def test_a_review_entry_with_no_lens_name_is_dropped_rather_than_merged(
+    tmp_path: Path,
+) -> None:
+    """The name is the whole of what keeps two lenses apart, so a nameless one is not one.
+
+    The tolerant direction the module takes everywhere else: a garbled entry costs its
+    own findings, never the dispatch.
+    """
+    cwd = _worktree(tmp_path)
+    (cwd / repair_brief.REPAIR_BRIEF_FILE).parent.mkdir(parents=True)
+    (cwd / repair_brief.REPAIR_BRIEF_FILE).write_text(
+        json.dumps({
+            "issue_id": "i",
+            "gate": validate_gate.VALIDATE_GATE,
+            "reviews": [{"lens": " ", "findings": "orphaned"}, {"lens": "security", "f": 1}],
+        }),
+        encoding="utf-8",
+    )
+
+    brief = repair_brief.take_repair_brief(cwd)
+
+    assert brief is not None
+    assert brief.reviews == (lens_review.LensFindings("security", ""),)

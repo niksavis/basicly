@@ -25,6 +25,7 @@ from basicly import (
     merge,
     needs_input,
     policy,
+    repair_brief,
     roles,
     run_record,
     runner,
@@ -2179,6 +2180,127 @@ def test_a_refused_validation_advance_has_no_side_effects(
     assert result.blocked
     assert not any(args[:1] == ["close"] for args in calls)
     assert tracker_commits == []
+
+
+def _brief_after_rework(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    reviews: tuple[tuple[str, str], ...] = (),
+) -> repair_brief.RepairBrief | None:
+    """Run one rework round against a real worktree and return the brief it left.
+
+    Real on disk, because the brief is a file in the tree: a fake path would make the
+    write a no-op and every assertion against it would pass over nothing.
+    """
+    path = tmp_path / "wt"
+    path.mkdir()
+    monkeypatch.setattr(
+        loop.worktree,
+        "load_session",
+        lambda *_a, **_k: replace(_session(), worktree_path=str(path)),
+    )
+    monkeypatch.setattr(policy, "record_rework", lambda *_a, **_k: 1)  # under the CONFIG cap
+    monkeypatch.setattr(loop, "lane_rework_spent", lambda *_a, **_k: 1)
+    monkeypatch.setattr(
+        loop.lens_review.br,
+        "try_read_comments",
+        lambda *_a: [
+            {"text": f"{loop.lens_review.MARKER} lens={lens}\n{text}"} for lens, text in reviews
+        ],
+    )
+
+    _advance(tmp_path)
+
+    return repair_brief.take_repair_brief(path)
+
+
+def test_a_failed_validation_briefs_its_repair_with_the_findings_per_lens(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """basicly-w88t: what the reviewers said reaches the run that has to fix it.
+
+    Before this, `[harness-review]` markers reached a human who opened the bead and no
+    code, so the repair after a failed validation started from the same framing as the
+    attempt that failed — §11.1's "spending the cap without changing a variable".
+
+    Both lenses come back under their own names, in vocabulary order rather than by
+    severity: the blocker was recorded first and is reported second.
+    """
+    at(_state("validate", gates=_validate_gates(failed=True), worktree=WorktreeBinding("i", "b")))
+
+    brief = _brief_after_rework(
+        monkeypatch,
+        tmp_path,
+        reviews=(("security", "shell injection (blocker)"), ("correctness", "off-by-one (major)")),
+    )
+
+    assert brief is not None and brief.gate == _VGATE
+    assert brief.reviews == (
+        loop.lens_review.LensFindings("correctness", "off-by-one (major)"),
+        loop.lens_review.LensFindings("security", "shell injection (blocker)"),
+    )
+
+
+def test_a_lens_that_recorded_nothing_is_briefed_as_such(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A lens dropped from the brief would read as an axis nobody reviewed."""
+    at(_state("validate", gates=_validate_gates(failed=True), worktree=WorktreeBinding("i", "b")))
+
+    brief = _brief_after_rework(
+        monkeypatch, tmp_path, reviews=(("correctness", "off-by-one (major)"),)
+    )
+
+    assert brief is not None
+    assert [entry.lens for entry in brief.reviews] == list(roles.REVIEW_LENSES)
+    assert repair_brief.NO_REVIEW in repair_brief.repair_prompt(brief)
+
+
+def test_a_repair_after_a_failed_verify_is_briefed_as_it_always_was(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The false-positive half: only the gate the reviewers judged carries their findings.
+
+    A red verify named the defect itself, so folding a judged remark into that brief
+    would widen the repair past what its own gate reported — and the markers exist here,
+    so an implementation keyed on their presence rather than on the gate fails this.
+    """
+    at(_state("build", worktree=WorktreeBinding("i", "b"), has_children=True))
+    _pin_runner(monkeypatch, "claude")
+    monkeypatch.setattr(
+        runner,
+        "run",
+        lambda spec, *_a, **_k: runner.RunResult(
+            spec.name, tuple(spec.command), executed=True, returncode=0
+        ),
+    )
+    monkeypatch.setattr(loop, "record_run", lambda *_a, **_k: None)
+    monkeypatch.setattr(loop, "_child_states", lambda _ctx: [("i.1", "open")])
+    monkeypatch.setattr(loop.loop_state, "blocked_ids", lambda *_a: ())
+    monkeypatch.setattr(loop.decisions, "has_pending", lambda *_a, **_k: False)
+    monkeypatch.setattr(loop, "_subtask_committed", lambda *_a: True)
+    monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: SimpleNamespace(stdout="{}"))
+    monkeypatch.setattr(
+        verify,
+        "run_verify",
+        lambda _r, m, *_a, **_k: verify.VerifyReport(m, (verify.CheckResult("pytest", "fail", 1),)),
+    )
+    monkeypatch.setattr(verify, "report_gate", lambda *_a, **_k: (True, "ok"))
+    monkeypatch.setattr(
+        policy,
+        "record_finding_set",
+        lambda _r, _i, _g, found: policy.Convergence(
+            policy.PROGRESSING, policy.finding_signature(found), (), 0
+        ),
+    )
+
+    brief = _brief_after_rework(
+        monkeypatch, tmp_path, reviews=(("correctness", "off-by-one (major)"),)
+    )
+
+    assert brief is not None and brief.gate == verify.DEFAULT_GATE
+    assert brief.reviews == ()
 
 
 # --- verify / ship / done ---------------------------------------------------
