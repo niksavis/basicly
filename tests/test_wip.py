@@ -67,7 +67,6 @@ def _phases(monkeypatch: pytest.MonkeyPatch, phases: dict[str, str]) -> None:
             gates=policy.GateStatus(True, ("verify",), (), (), ()),
             checkpoints=(),
             rework={},
-            agent_context=None,
             has_children=False,
         ),
     )

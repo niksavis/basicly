@@ -64,7 +64,6 @@ def _state(
         gates=gates if gates is not None else _gate(can_advance=phase == "verify"),
         checkpoints=(),
         rework={},
-        agent_context=None,
         has_children=has_children,
     )
 
@@ -2462,7 +2461,6 @@ def test_advance_refuses_to_close_a_leaf_that_never_built(
             gates=gates,
             checkpoints=checkpoints,
             rework={},
-            agent_context=None,
             has_children=False,
         )
     )
@@ -2782,7 +2780,7 @@ def test_run_ceremony_keeps_driving_after_a_step_that_did_not_block(
     result = loop.run_ceremony(tmp_path, "i", config=CONFIG)
     assert asked == ["ship"]
     assert [step.action for step in result.steps] == ["merged", "blocked", "tore-down"]
-    assert [approval.checkpoint for approval in result.approvals] == ["ship"]
+    assert result.events[2] == loop.CheckpointApproval("ship")
     assert not result.blocked
 
 
@@ -2836,7 +2834,7 @@ def test_run_ceremony_stops_on_a_refused_checkpoint(
     _script_approval(monkeypatch, policy.ApprovalResult("rejected", detail="invalid code"))
     result = loop.run_ceremony(tmp_path, "i", config=CONFIG, confirms={"ship": "nope"})
     assert result.refused == ("ship", "invalid code")
-    assert result.approvals == () and result.blocked
+    assert result.events == result.steps and result.blocked
 
 
 def test_run_ceremony_leaves_a_non_checkpoint_block_alone(

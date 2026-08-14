@@ -598,11 +598,6 @@ def grant_rework_allowance(repo_root: Path, issue_id: str, gate: str) -> int:
     return rework_charged(repo_root, issue_id, gate)
 
 
-def should_escalate(repo_root: Path, issue_id: str, gate: str, config: PolicyConfig) -> bool:
-    """True when charged rework attempts have reached the cap and the node must escalate."""
-    return rework_charged(repo_root, issue_id, gate) >= config.max_rework
-
-
 def _unreliable_gate_marker(gate: str) -> str:
     return f"{MARKER} gate-unreliable gate={gate}"
 

@@ -17,10 +17,6 @@ and the ranked ready set through ``br.read_ranking``, the seam that answers out 
 ``br scheduler`` or out of the owned scorer depending on how far the cutover has
 reached (basicly-vkh0.20). §12.3's rule survives the flip in the form that
 mattered: ranking is the tracker's job and this module only reads the answer.
-
-Inherited ``agent_context`` is surfaced when present and simply reads as
-``None`` when the tracker has ``inherited_context`` disabled — its absence is a
-supported state, never an error.
 """
 
 from __future__ import annotations
@@ -123,7 +119,6 @@ class NodeState:
     gates: policy.GateStatus
     checkpoints: tuple[str, ...]
     rework: dict[str, int]
-    agent_context: str | None
     has_children: bool
     # The issue's own title, carried so a state that has to say *why* a change was made
     # reads it off the state it already folded rather than paying a second tracker read
@@ -230,7 +225,6 @@ def read_node_state(
         gates=gates,
         checkpoints=checkpoints,
         rework=rework,
-        agent_context=record.get("agent_context"),
         has_children=has_children,
         title=str(record.get("title", "")),
     )

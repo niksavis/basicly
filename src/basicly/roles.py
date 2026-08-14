@@ -60,10 +60,10 @@ class HasAgentStyle(Protocol):
 # VERIFY is deterministic gates with no persona by decision, and `done` is a
 # terminal marker rather than work.
 #
-# The three states with a role and no phase yet — VALIDATE, REPAIR, RETROSPECTIVE
-# — are recorded here anyway. They cost nothing while unreachable and they are the
-# thing that makes this table reviewable against §3.1 rather than against
-# `loop_state.PHASES`, which is the narrower of the two and the one that is behind.
+# All three of VALIDATE, REPAIR and RETROSPECTIVE are dispatched today, each as a `phase=`
+# on `loop._run_agent`. Only VALIDATE is a rung of the ladder, so this table is reviewed
+# against §3.1 and not against `config.LOOP_PHASES` or `loop_state.PHASES` (the same ladder
+# plus the terminal `done`) — neither of those names repair or retrospective at all.
 ROLE_BY_PHASE: dict[str, str] = {
     "classify": "decider",
     "decompose": "decomposer",

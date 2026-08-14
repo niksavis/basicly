@@ -47,7 +47,7 @@ def overrides_for(section: str) -> Mapping[str, object]:
 
 
 def clear_overrides() -> None:
-    """Drop every override. Used between tests, and when a session ends."""
+    """Drop every override. A test seam; no production caller ends a session."""
     _OVERRIDES.clear()
 
 

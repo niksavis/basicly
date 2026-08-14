@@ -80,7 +80,6 @@ def _state(phase: str, **kw) -> NodeState:
         gates=GateStatus(phase == "verify", (), (), (), ()),
         checkpoints=(),
         rework={},
-        agent_context=None,
         has_children=kw.pop("has_children", False),
         title=kw.pop("title", "carry the plan into build"),
     )

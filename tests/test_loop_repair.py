@@ -61,7 +61,6 @@ def _state(*, has_children: bool = False) -> NodeState:
         gates=GateStatus(False, (), (), ("verify",), ()),
         checkpoints=(),
         rework={},
-        agent_context=None,
         has_children=has_children,
     )
 
