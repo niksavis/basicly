@@ -9,6 +9,17 @@ re-dispatch appends another record for the same bead, so run-record outcomes are
 a durable proxy for the gate-fail + rework signal without coupling to ``br``'s
 non-historical gate state.
 
+A run a terminal bound stopped (``run_record.stopped_bound``: the grant spend
+ceiling, the quiet-stream bound) is **not** scored against the agent. The harness
+killed that dispatch; what the agent would have done with it was never observed,
+so it is dropped from the failure rate and counted under its bound instead. This
+is the same population rule :func:`decompose.unsized_lane_tokens` and
+:func:`decompose.spend_accuracy` apply one layer down — a lane that never
+finished is not evidence — and health was the third reader of the field and the
+only one that did not separate the causes: 9 of claude's 29 recorded failures
+were the ceiling doing its job, and the four it stopped within 96ms on
+2026-08-13 were flagged as a behavioral regression (basicly-e2mz.3).
+
 Two signals, both computed as pure functions of the record map:
 
 - **Health** — per agent: dispatch failure rate, a rework signal (beads the agent
@@ -17,8 +28,8 @@ Two signals, both computed as pure functions of the record map:
   agent's most-recent ``window`` dispatched runs (the *recent* window) are
   compared against everything older (the *baseline* window). A behavioral
   regression is flagged when the recent failure rate exceeds the baseline by
-  :data:`REGRESSION_DELTA`, with :data:`MIN_WINDOW_SAMPLE` dispatched runs in each
-  window so a couple of runs cannot trip it.
+  :data:`REGRESSION_DELTA`, with :data:`MIN_WINDOW_SAMPLE` scored runs in each
+  window — counted after the bound exclusion — so a couple of runs cannot trip it.
 
 Everything here is read-only, advisory (nothing gates on a score), and
 deterministic — no wall-clock enters a payload, so a given log always scores the
@@ -36,8 +47,11 @@ from . import fleet, run_record
 from .run_record import EXECUTED, FAILED
 
 # Bump only on a breaking change to the health payload shape — a consumer keys on
-# it to detect a schema it does not understand.
-HEALTH_SCHEMA_VERSION = 1
+# it to detect a schema it does not understand. 2: ``failed`` narrowed to the runs
+# no terminal bound stopped, and ``stopped``/``stopped_bounds`` carry the rest
+# (basicly-e2mz.3) — a consumer reading v1's ``failed`` reads a different
+# population, which is what makes the narrowing breaking rather than additive.
+HEALTH_SCHEMA_VERSION = 2
 
 # Default number of most-recent dispatched runs that form an agent's recent
 # window for drift; the rest are its baseline.
@@ -65,6 +79,10 @@ class AgentHealth:
     executed: int
     failed: int
     handoff: int
+    # Runs a terminal bound stopped, per bound name, so the count that left the
+    # failure rate is stated beside it rather than folded into it or lost.
+    stopped: int
+    stopped_bounds: dict[str, int]
     failure_rate: float
     rework_beads: int
     rework_rate: float
@@ -87,10 +105,11 @@ class AgentDrift:
 def _agent_entries(records_by_bead: dict[str, list]) -> dict[str, dict[str, Any]]:
     """Group the record map by agent: time-ordered outcomes and per-bead counts.
 
-    Returns ``{agent: {"entries": [(timestamp, outcome), ...],
+    Returns ``{agent: {"entries": [(timestamp, outcome, stopped_bound), ...],
     "bead_counts": {bead_id: n}}}``. Tolerant of a corrupt/tampered map: any entry
     that is not a dict, or lacks a string ``agent``/``outcome``, is skipped rather
-    than raising — the log is telemetry and must never fail a read.
+    than raising — the log is telemetry and must never fail a read. A
+    ``stopped_bound`` that is not a string reads as no bound, for the same reason.
     """
     agents: dict[str, dict[str, Any]] = {}
     for bead_id, history in records_by_bead.items():
@@ -105,10 +124,31 @@ def _agent_entries(records_by_bead: dict[str, list]) -> dict[str, dict[str, Any]
                 continue
             timestamp = entry.get("timestamp")
             timestamp = timestamp if isinstance(timestamp, str) else ""
+            bound = entry.get("stopped_bound")
+            bound = bound if isinstance(bound, str) and bound else None
             bucket = agents.setdefault(agent, {"entries": [], "bead_counts": {}})
-            bucket["entries"].append((timestamp, outcome))
+            bucket["entries"].append((timestamp, outcome, bound))
             bucket["bead_counts"][bead_id] = bucket["bead_counts"].get(bead_id, 0) + 1
     return agents
+
+
+def _scored(entries: list[tuple[str, str, str | None]]) -> list[str]:
+    """The outcomes in *entries* that say something about the agent that ran them.
+
+    Everything a terminal bound stopped is dropped: the harness killed that run, by
+    design (``factory-loop.md`` 15.7), so scoring it as a failed dispatch reports a
+    degrading runner every time the budget runs out.
+    """
+    return [outcome for _timestamp, outcome, bound in entries if bound is None]
+
+
+def _stopped_bounds(entries: list[tuple[str, str, str | None]]) -> dict[str, int]:
+    """How many runs each terminal bound stopped, by bound name (sorted)."""
+    counts: dict[str, int] = {}
+    for _timestamp, _outcome, bound in entries:
+        if bound is not None:
+            counts[bound] = counts.get(bound, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def _failure_rate(outcomes: list[str]) -> tuple[int, float]:
@@ -121,10 +161,16 @@ def _failure_rate(outcomes: list[str]) -> tuple[int, float]:
 
 
 def agent_health(records_by_bead: dict[str, list]) -> list[AgentHealth]:
-    """Per-agent health aggregated across every bead, sorted by agent name."""
+    """Per-agent health aggregated across every bead, sorted by agent name.
+
+    ``runs`` stays the whole record count, so nothing disappears: it is
+    ``executed + failed + handoff + stopped``, and only the last of those is
+    outside the failure rate.
+    """
     result: list[AgentHealth] = []
     for agent, bucket in _agent_entries(records_by_bead).items():
-        outcomes = [outcome for _timestamp, outcome in bucket["entries"]]
+        outcomes = _scored(bucket["entries"])
+        stopped_bounds = _stopped_bounds(bucket["entries"])
         executed = sum(1 for o in outcomes if o == EXECUTED)
         failed = sum(1 for o in outcomes if o == FAILED)
         handoff = len(outcomes) - executed - failed
@@ -139,10 +185,12 @@ def agent_health(records_by_bead: dict[str, list]) -> list[AgentHealth]:
         result.append(
             AgentHealth(
                 agent=agent,
-                runs=len(outcomes),
+                runs=len(bucket["entries"]),
                 executed=executed,
                 failed=failed,
                 handoff=handoff,
+                stopped=sum(stopped_bounds.values()),
+                stopped_bounds=stopped_bounds,
                 failure_rate=round(failure_rate, 3),
                 rework_beads=rework_beads,
                 rework_rate=round(rework_rate, 3),
@@ -162,6 +210,13 @@ def agent_drift(
     baseline. A regression is flagged only when both windows hold at least
     :data:`MIN_WINDOW_SAMPLE` runs and the recent failure rate exceeds the
     baseline by :data:`REGRESSION_DELTA`.
+
+    Both windows are then stripped of the runs a terminal bound stopped, and the
+    minimum-sample rule applies to what survives — never to the raw window. Cutting
+    by timestamp first keeps *recent* meaning recent rather than reaching back past
+    a bounded pass to refill itself, and checking the sample afterwards is what
+    makes a window a bound emptied unable to flag: the 2026-08-13 grant halt leaves
+    one executed run and four bounded stops.
     """
     result: list[AgentDrift] = []
     for agent, bucket in _agent_entries(records_by_bead).items():
@@ -172,8 +227,8 @@ def agent_drift(
         recent = dispatched[-window:] if window > 0 else []
         baseline = dispatched[: len(dispatched) - len(recent)]
 
-        base_n, base_fr = _failure_rate([o for _t, o in baseline])
-        recent_n, recent_fr = _failure_rate([o for _t, o in recent])
+        base_n, base_fr = _failure_rate(_scored(baseline))
+        recent_n, recent_fr = _failure_rate(_scored(recent))
         regressed = (
             base_n >= MIN_WINDOW_SAMPLE
             and recent_n >= MIN_WINDOW_SAMPLE
