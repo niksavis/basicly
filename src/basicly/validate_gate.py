@@ -23,12 +23,15 @@ from .br import run_br as _run_br
 from .config import VERIFY_GATE_PROVIDER
 from .dispatch_brief import VERDICT_PREFIX
 
+# Re-exported rather than respelled: consumers read ``validate_gate.VALIDATE_GATE``,
+# and the name belongs to :mod:`basicly.integrity`, which decides the gate set a
+# level selects (basicly-7jb5).
+from .integrity import VALIDATE_GATE
+
 if TYPE_CHECKING:
     from pathlib import Path
 
     from .config import PolicyConfig
-
-VALIDATE_GATE = "validate-as-consumer"
 
 _LEVEL_FIELD = "level="
 

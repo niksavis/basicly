@@ -172,6 +172,9 @@ class Selection:
     ship: str
 
 
+# L3's extra gate, imported not respelled (basicly-7jb5).
+VALIDATE_GATE = "validate-as-consumer"
+
 _SELECTIONS: dict[str, Selection] = {
     "L1": Selection(gates=("fast",), model_tier="medium", rework_allowance=1, ship="delegable"),
     "L2": Selection(gates=("full",), model_tier="high", rework_allowance=2, ship="delegable"),
@@ -179,7 +182,7 @@ _SELECTIONS: dict[str, Selection] = {
     # cannot hold both, and the surface that reaches consumers is where the
     # cheaper half of that pair is the false economy.
     "L3": Selection(
-        gates=("full", "validate-as-consumer", "evidence-binding"),
+        gates=("full", VALIDATE_GATE, "evidence-binding"),
         model_tier="maximum",
         rework_allowance=2,
         ship="human",

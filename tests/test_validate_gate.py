@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 
@@ -330,3 +331,50 @@ def test_the_engine_records_the_verdict_under_its_own_provider(
     provider = calls[0][calls[0].index("--provider") + 1]
     assert provider in ENGINE_GATE_PROVIDERS
     assert calls[0][calls[0].index("--status") + 1] == "pass"
+
+
+# --- One definition of the gate name (basicly-7jb5) --------------------------
+
+
+def _modules_spelling_the_gate() -> dict[str, int]:
+    """Every module under ``src/basicly`` that spells the gate name, and how often.
+
+    Read as string *constants* through :mod:`ast` rather than as text: several
+    docstrings and one dispatched prompt name the `validate-as-consumer` skill inside
+    a sentence, and a prose mention is not a name a rename has to reach.
+    """
+    found: dict[str, int] = {}
+    for path in sorted(Path(integrity.__file__).parent.glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        spellings = sum(
+            1
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value == GATE
+        )
+        if spellings:
+            found[path.name] = spellings
+    return found
+
+
+def test_the_gate_name_is_spelled_once_in_the_engine() -> None:
+    """One definition, and every consumer imports it (basicly-7jb5).
+
+    It was spelled three times: `dispatch_brief` held a copy with no consumer at all,
+    `validate_gate` held the one every consumer reads, and `integrity` spelled it a
+    third time inside L3's gate tuple. That third one is the expensive copy — a rename
+    that reached `validate_gate` and not `integrity` leaves
+    :func:`~basicly.validate_gate.requires_validation` silently not requiring
+    validation, which is a fail-open on the gate itself.
+    """
+    assert _modules_spelling_the_gate() == {"integrity.py": 1}
+    assert validate_gate.VALIDATE_GATE == integrity.VALIDATE_GATE
+
+
+def test_the_gate_taxonomy_classifies_the_validate_gate() -> None:
+    """``GATE_TYPE_BY_GATE`` claims to hold every gate the engine names, so it must.
+
+    Indexed rather than asked through :func:`~basicly.policy.gate_type`: an absent
+    gate falls to the :data:`~basicly.policy.REVISION` default, so the function
+    answered correctly while the map's completeness claim was false.
+    """
+    assert policy.GATE_TYPE_BY_GATE[GATE] == policy.REVISION
