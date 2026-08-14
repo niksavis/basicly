@@ -2955,10 +2955,7 @@ def _print_preflight_contention(repo_root: Path, state: supervise.SessionState) 
     for line in lines[1:]:
         print(line)
 
-    worktree_config = load_worktree_config(repo_root)
-    regen = contention.generated_report(
-        worktree_config.generated_paths, worktree_config.regenerate_command
-    )
+    regen = contention.generated_report(load_worktree_config(repo_root).regenerate_commands)
     print(f"regen:     {regen[0]}")
     for line in regen[1:]:
         print(line)

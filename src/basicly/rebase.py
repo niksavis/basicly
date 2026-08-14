@@ -32,6 +32,8 @@ cause only covers the cause that is known.
 
 from __future__ import annotations
 
+import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -56,6 +58,8 @@ REPLAY_DROPPED_PATHS = "rebase-dropped-paths"
 # then is not understood, and an un-understood rebase is aborted rather than driven
 # further.
 MAX_REGENERATED_REBASE_STEPS = 100
+
+_CONFLICT_MARKER = re.compile(rb"^(?:<{7}|>{7})", re.MULTILINE)
 
 
 @dataclass(frozen=True)
@@ -139,6 +143,31 @@ def dropped_paths(cwd: Path, before: str, base: str) -> tuple[str, ...]:
     return tuple(sorted(lost - (forked_paths - base_paths)))
 
 
+def unresolved(path: Path) -> bool:
+    """True when *path* still carries a conflict marker the rebuild did not remove.
+
+    What makes a *partly* generated file declarable (basicly-3w51): a rebuild writing
+    only its own block leaves the prose around it conflicted, and staging that commits
+    markers over a hand-written change. Bytes at column 0 and only the two unambiguous
+    markers, since ``=======`` is a legal setext rule; an unreadable path carries none.
+    """
+    try:
+        blob = path.read_bytes()
+    except OSError:
+        return False
+    return _CONFLICT_MARKER.search(blob) is not None
+
+
+def _rebuilt_clean(
+    worktree_path: Path, conflicts: tuple[str, ...], commands: Mapping[str, tuple[str, ...]]
+) -> bool:
+    """Run each conflicted path's own rebuild; True when none of them still conflicts."""
+    for path in conflicts:
+        if run(list(commands[path]), cwd=worktree_path, check=False).returncode != 0:
+            return False
+    return not any(unresolved(worktree_path / path) for path in conflicts)
+
+
 def rebuild_generated_conflicts(repo_root: Path, worktree_path: Path) -> tuple[str, ...] | None:
     """Finish a stopped rebase whose conflicts are all declared generated (basicly-lyro).
 
@@ -146,8 +175,8 @@ def rebuild_generated_conflicts(repo_root: Path, worktree_path: Path) -> tuple[s
     the caller must abort and bounce — which is every case that is not provably this
     one. The bound is deliberate and is what keeps the merge queue's "never resolve a
     conflict here" rule intact for source: this resolves only when *every* unmerged
-    path is named in ``[worktree] generated_paths``, so one undeclared path in the set
-    hands the whole rebase back to the lane untouched.
+    path is keyed in ``[worktree.regenerate_commands]``, so one undeclared path in the
+    set hands the whole rebase back to the lane untouched.
 
     Regeneration is not a merge. Both sides are discarded and the artifact is rebuilt
     from the tree the rebase has actually produced, because a generated file is a
@@ -161,17 +190,16 @@ def rebuild_generated_conflicts(repo_root: Path, worktree_path: Path) -> tuple[s
     ``projection-*`` checks fail on a stale projection), which bounces the lane as it
     does today. Nothing here can land a wrong artifact silently.
     """
-    config = load_worktree_config(repo_root)
-    declared = frozenset(config.generated_paths)
-    if not declared or not config.regenerate_command:
+    commands = load_worktree_config(repo_root).regenerate_commands
+    if not commands:
         return None
 
     rebuilt: set[str] = set()
     for _ in range(MAX_REGENERATED_REBASE_STEPS):
         conflicts = unmerged_paths(worktree_path)
-        if not conflicts or not declared.issuperset(conflicts):
+        if not conflicts or not commands.keys() >= set(conflicts):
             return None
-        if run(list(config.regenerate_command), cwd=worktree_path, check=False).returncode != 0:
+        if not _rebuilt_clean(worktree_path, conflicts, commands):
             return None
         # `git add` on an unmerged path is what marks it resolved, whether or not the
         # rebuild changed its bytes.

@@ -1651,6 +1651,34 @@ sources = sorted(p.name for p in pathlib.Path("sources").glob("*.txt"))
 pathlib.Path("manifest.json").write_text(json.dumps(sources, indent=2) + "\\n", encoding="utf-8")
 """
 
+# The second artifact, and the one the whole-path mechanism could not carry: only the
+# marked block is generated, the rest is hand-authored (basicly-3w51).
+_REBUILD_PLAN = """\
+import pathlib
+
+names = sorted(p.stem for p in pathlib.Path("sources").glob("*.txt"))
+plan = pathlib.Path("plan.md")
+head, _, rest = plan.read_text(encoding="utf-8").partition("<!-- begin -->\\n")
+_, _, tail = rest.partition("<!-- end -->\\n")
+body = "sources: " + ", ".join(names) + "\\n"
+plan.write_text(head + "<!-- begin -->\\n" + body + "<!-- end -->\\n" + tail, encoding="utf-8")
+"""
+
+_PLAN_SEED = """\
+# Plan
+
+hand-authored line
+
+filler the lanes never touch, so git sees two hunks
+and not one spanning the marker
+and a third line of it
+
+<!-- begin -->
+<!-- end -->
+
+trailing prose
+"""
+
 
 def _git_here(cwd: Path, *args: str) -> str:
     proc = subprocess.run(  # nosec B603 B607
@@ -1660,13 +1688,21 @@ def _git_here(cwd: Path, *args: str) -> str:
 
 
 def _add_source(tree: Path, name: str) -> None:
-    """Add one catalog-style source and rebuild the manifest it feeds, as a lane would."""
+    """Add one catalog-style source and rebuild what it feeds, as a lane would."""
     (tree / "sources" / f"{name}.txt").write_text(f"{name}\n", encoding="utf-8")
-    subprocess.run(  # nosec B603
-        [sys.executable, "rebuild.py"], cwd=tree, check=True, capture_output=True
-    )
+    for script in ("rebuild.py", "rebuild_plan.py"):
+        subprocess.run(  # nosec B603
+            [sys.executable, script], cwd=tree, check=True, capture_output=True
+        )
     _git_here(tree, "add", "-A")
     _git_here(tree, "commit", "-m", f"add {name}")
+
+
+def _edit_prose(tree: Path, word: str) -> None:
+    """Rewrite the plan's hand-authored line, the half no rebuild owns."""
+    plan = tree / "plan.md"
+    plan.write_text(plan.read_text(encoding="utf-8").replace("hand-", f"{word}-"), encoding="utf-8")
+    _git_here(tree, "commit", "-am", f"{word} edits the prose")
 
 
 @pytest.fixture
@@ -1678,10 +1714,12 @@ def diverged_lane(tmp_path: Path) -> tuple[Path, Session]:
     _git_here(repo, "config", "user.email", "tester@example.invalid")
     _git_here(repo, "config", "user.name", "tester")
     (repo / "rebuild.py").write_text(_REBUILD_SCRIPT, encoding="utf-8")
+    (repo / "rebuild_plan.py").write_text(_REBUILD_PLAN, encoding="utf-8")
+    (repo / "plan.md").write_text(_PLAN_SEED, encoding="utf-8")
     (repo / "basicly.toml").write_text(
-        "[worktree]\n"
-        'generated_paths = ["manifest.json"]\n'
-        f'regenerate_command = [{json.dumps(sys.executable)}, "rebuild.py"]\n',
+        "[worktree.regenerate_commands]\n"
+        f'"manifest.json" = [{json.dumps(sys.executable)}, "rebuild.py"]\n'
+        f'"plan.md" = [{json.dumps(sys.executable)}, "rebuild_plan.py"]\n',
         encoding="utf-8",
     )
     _add_source(repo, "a")
@@ -1722,6 +1760,49 @@ def test_two_lanes_that_rebuild_one_manifest_land_without_bouncing(
         "c.txt",
     ]
     assert "manifest.json" in result.detail
+
+
+def test_a_partly_generated_doc_is_rebuilt_while_the_lane_prose_edit_survives(
+    monkeypatch: pytest.MonkeyPatch, diverged_lane: tuple[Path, Session]
+) -> None:
+    """The demonstration for basicly-3w51, against real git and its own rebuild command."""
+    repo, session = diverged_lane
+    _edit_prose(Path(session.path), "lane")
+    monkeypatch.setattr(merge, "load_session", lambda _n, _r: session)
+    monkeypatch.setattr(merge, "reconcile_beads", lambda _r: None)
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
+    monkeypatch.setattr(
+        merge.policy, "record_rework", lambda *_a: pytest.fail("the landing spent rework")
+    )
+
+    result = merge.merge_worktree(repo, "feat", bead="basicly-3w51")
+
+    assert result.status == "merged", result.detail
+    landed = (repo / "plan.md").read_text(encoding="utf-8")
+    # Neither parent's block says this: base's had a and b, the lane's had a and c.
+    assert "sources: a, b, c" in landed
+    # And the half no rebuild owns is still the lane's, which is what declaring the
+    # whole path would have discarded along with both sides of the block.
+    assert "lane-authored line" in landed
+    assert "plan.md" in result.detail
+
+
+def test_a_conflict_in_the_hand_authored_half_still_bounces_to_the_lane(
+    monkeypatch: pytest.MonkeyPatch, diverged_lane: tuple[Path, Session]
+) -> None:
+    """Declaring a partly generated path authorises rebuilding its block, nothing else."""
+    repo, session = diverged_lane
+    _edit_prose(Path(session.path), "lane")
+    _edit_prose(repo, "base")
+    monkeypatch.setattr(merge, "load_session", lambda _n, _r: session)
+    monkeypatch.setattr(merge, "reconcile_beads", lambda _r: None)
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
+
+    result = merge.merge_worktree(repo, "feat", bead="basicly-3w51")
+
+    assert result.status == "rebase-conflicts"
+    assert "plan.md" in result.conflicts
+    assert "base-authored line" in (repo / "plan.md").read_text(encoding="utf-8")
 
 
 def test_the_same_pass_still_bounces_when_a_source_really_conflicts(
