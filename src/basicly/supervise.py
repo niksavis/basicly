@@ -67,6 +67,7 @@ from . import (
     commit,
     decisions,
     decompose,
+    health,
     lane_log,
     loop,
     loop_state,
@@ -1335,21 +1336,68 @@ def admit_pass_spend(
     )
 
 
+def health_coverage(repo_root: Path) -> tuple[str, str]:
+    """What each agent's own record says, and whether drift flags a regression.
+
+    A pure read over the run-record log the engine already writes
+    (:func:`health.health_report`): it spawns nothing, meters nothing and reaches no
+    model. It is also **never** a gate — ``basicly health`` has no recorded correct
+    firing, so under D23 it is observability, surfaced on the pass line and
+    falsifiable against the ledger rather than allowed to refuse a lane
+    (basicly-zdtx).
+
+    Two strings, health then drift, because they answer the same question in two
+    halves the way :func:`band_coverage` and :attr:`PassSpendAdmission.coverage` do:
+    what an agent's whole history is, then whether its *recent* window has moved
+    against that history. The drift half names its two window sizes, since the flag
+    only means something at :data:`health.MIN_WINDOW_SAMPLE` runs on each side.
+    """
+    report = health.health_report(repo_root)
+    agents = report["agents"]
+    if not agents:
+        return "no run-records yet", "no history to drift against"
+    scored = "; ".join(
+        f"{agent['agent']} {agent['health_score']:.2f} over {agent['runs']} runs "
+        f"(fail {agent['failure_rate']:.0%}, rework {agent['rework_rate']:.0%} — "
+        f"{agent['rework_beads']} bead(s) re-dispatched)"
+        for agent in agents
+    )
+    drift = report["drift"]
+    regressed = [entry for entry in drift if entry["regressed"]]
+    if not regressed:
+        return scored, f"no behavioral regression across {len(drift)} agent(s)"
+    return scored, "; ".join(
+        f"REGRESSED {entry['agent']}: fail {entry['recent_failure_rate']:.0%} over the "
+        f"recent {entry['recent_runs']} vs {entry['baseline_failure_rate']:.0%} over "
+        f"{entry['baseline_runs']} baseline runs ({entry['delta']:+.2f})"
+        for entry in regressed
+    )
+
+
 def _report_coverage(
     report: Callable[[str], None] | None,
+    repo_root: Path,
     working_sets: tuple[WorkingSetAdmission, ...],
     pass_spend: PassSpendAdmission,
 ) -> None:
     """Emit what each cost gate covered, before the pass dispatches anything.
 
-    Both lines together, because they answer one question in two halves — what the
-    band measured, and what the spend total is made of — and an operator who sees only
-    one of them is back to reading a partial check as a complete one.
+    The band and spend lines together, because they answer one question in two halves
+    — what the band measured, and what the spend total is made of — and an operator
+    who sees only one of them is back to reading a partial check as a complete one.
+
+    The health and drift lines beside them for the mirror reason (:func:`health_coverage`):
+    a runner whose own failure rate has moved is a pass-level number, and printed
+    anywhere but here it is read by whoever ran a gate rather than by whoever reads
+    the pass. They report and never refuse.
     """
     if report is None:
         return
     report(f"band:     {band_coverage(working_sets)}")
     report(f"spend:    {pass_spend.coverage}")
+    scored, drifted = health_coverage(repo_root)
+    report(f"health:   {scored}")
+    report(f"drift:    {drifted}")
 
 
 UNGRANTED_QUESTION = (
@@ -1867,7 +1915,8 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
     the spend total was reached and which lanes are counted at an assumed bound rather
     than a real forecast. Emitted on the admitted path too, deliberately: the defect
     both close was that an unbounded pass looked exactly like a checked one
-    (basicly-vz78).
+    (basicly-vz78). It then receives the runners' own health and drift
+    (:func:`health_coverage`), which report and never refuse.
     """
     lanes = ready_lanes(repo_root, session, skip=skip)
     if not lanes:
@@ -1905,7 +1954,7 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
     # about the pass rather than the lane.
     working_sets = tuple(admit_working_set(repo_root, lane.issue_id, sizing) for lane in lanes)
     pass_spend = admit_pass_spend(repo_root, working_sets, admission, sizing)
-    _report_coverage(report, working_sets, pass_spend)
+    _report_coverage(report, repo_root, working_sets, pass_spend)
     if pass_spend.refused:
         record_pass_refusal(repo_root, session.root_issue, pass_spend)
         return held
