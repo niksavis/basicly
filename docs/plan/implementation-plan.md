@@ -271,9 +271,16 @@ Sibling worktrees, one lane each, through `basicly worktree create` and `worktre
 They land outside the repo at `basicly.worktrees/`, which is what keeps them clear of the trap where
 an agent worktree sits inside the tree and stales every whole-tree baseline.
 
-**Do `basicly-3w51` first.** It is one line of configuration and it has already cost an aborted merge
-and a hand-resolved rebase: two lanes forked from one base both regenerated the plan's generated
-block and neither value was right afterwards. Every remaining lane forks from the same base.
+**`basicly-3w51` landed first, and it was not one line of configuration.** This paragraph said it
+was, and so did the bead's own summary; the bead body refuted both under a heading naming two
+reasons. The file is only *partly* generated, and the merge mechanism discards both sides of a
+declared path, so declaring the whole path would have destroyed the hand-authored ladder prose
+around the block. And `basicly build` could not rebuild it: `.scripts/docs_claims.py` is named from
+`basicly.toml` and from nowhere under `src/basicly/`, so the one repo-wide `regenerate_command` was
+a no-op for that block. What shipped is a keyed `[worktree.regenerate_commands]` table plus a
+conflict-marker guard that refuses to stage a path whose rebuild left a marker behind — the marker
+being the proof that the conflict sat in the half no rebuild owns. **A sizing claim inherited from a
+summary line is a claim.**
 
 ## 5. `v0.9.0` — shipped 2026-08-14
 
@@ -320,7 +327,8 @@ live defect is worse than noise — it sends the next reader to re-do it.
 ```text
 landed   rrah  lane transcripts persist        efw2  the scope field split in two
          5vu4  the rebase loses no work        b9ef  the decider's corpus kept honest
-         ef7t  landing anchors collision-proof (3w51, the generated-block half, is open)
+         ef7t  landing anchors collision-proof  3w51  each generated path rebuilds
+                                                      with its own command
          4kdm  the specialist agents and the dispatch that reaches them
          ca42  chars/4 kept, evidence recorded on basicly-y8el
 ```
@@ -329,7 +337,6 @@ What is open, in the order the dependencies allow:
 
 | # | Bead | P | What it fixes |
 | --- | --- | --- | --- |
-| 3 | `3w51` | P1 | The generated block in this file is a shared landing anchor and is **not** in `[worktree] generated_paths`, which holds `.basicly/generated-manifest.json` alone — so two lanes touching §3 collide on a file neither authored. |
 | 6 | `89hm` | P0 | **The context-window fix never reached consumers.** `runner.py:142` ships `claude: 200_000`; `basicly.toml` overrides to one million *for this repo only*. Every consumer inherits the defect that produced eighteen overrun beads here. **Premise corrected 2026-08-09**: the binary reports its own window on the stream as `modelUsage.<id>.contextWindow`, so the fix is to *read* it, not to ship a second hand-maintained constant that goes stale the same way (`factory-loop.md` §15.5). |
 | 7 | `ejdm` | P0 | **Hand a dispatched agent the context the session already holds** — §5.1's 254x. **The mechanism is now measured, and it is `--resume --fork-session`**: four real dispatches of one seeded session on claude 2.1.226 gave `cache_create 28 / cache_read 21,620` at **$0.0115** against a cold seed's **$0.2165** — **19x on a cache hit**, context confirmed by token recall, with a fresh session id per fork so lanes do not collide. Seed one session with the corpus, fork per lane. **The per-dispatch floor is a cache miss, not tokens**, which is a different fix from the longer prompt this row originally implied. **Size it against the corrected figures, not the headline** [M 2026-08-13, claude 2.1.231, `basicly-w20y`]: the 19x denominator is the ~21,800-token host floor rather than a repo corpus, so corpus reuse is nearer **10x**; and the cross-directory penalty is **one-time per working directory, not per fork** — a first fork into a fresh worktree reads 74–87% (`$0.0376`–`$0.0643`), every later fork into that same directory reads 100% (`$0.0113`). A worktree-per-lane design therefore pays it once per worktree, so the cost is a function of dispatches-per-worktree. `--agent` composes with the fork; the `--exclude-dynamic-system-prompt-sections` interaction is **unestablished** — that probe was confounded by arm ordering. See `factory-loop.md` §15.5. |
 | 8 | `xjd2` | P0 | **Dispatch through the host agent runtime instead of spawning a headless CLI.** Blocked on `ejdm`. **Its open question is answered twice over**: `--fork-session` settles it for our own path, and a competing harness runs exactly this split in production — host-runtime dispatch for the same vendor, subprocess only for cross-vendor delegation (`factory-loop.md` §11.7). It is an existence proof, not a design. |
