@@ -26,6 +26,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -587,6 +588,12 @@ OWNED_PROVENANCE = "engine"
 # The kit module holding the flip boundary. Named rather than reached through the
 # differential because it sits beside it, the way the scheduler does (:func:`kit`).
 BASELINE_MODULE = "baseline"
+
+# The export's file name, and the label every imported event carries as
+# `migrate.SOURCE_KEY`. One value, because a second label would split the marker the flip
+# boundary classifies history by (`baseline.IMPORT_MARKER`).
+EXPORT_NAME = "issues.jsonl"
+IMPORT_SOURCE = "beads-export"
 
 # The two keys a comment row carries, in br's spelling. The owned ledger holds the
 # body under the same ``text`` key (`events.KIND_COMMENT`) and the stamp as the
@@ -1282,6 +1289,77 @@ def scoped_differential(repo_root: Path, vocabulary: Mapping[str, Any] | None = 
         shadow_differential(repo_root, vocabulary),
         kit(repo_root).read_ledger(directory),
         boundary.read_baseline(directory),
+    )
+
+
+@dataclass(frozen=True)
+class ImportPreview:
+    """How far the owned ledger is behind the export, and what an import would add.
+
+    Attributes:
+        ledger: Records the ledger holds.
+        export: Records the committed export holds.
+        adds: Ids the export holds and the ledger does not.
+        native: Ledger records created after the flip, which refuse the import.
+    """
+
+    ledger: int = 0
+    export: int = 0
+    adds: tuple[str, ...] = ()
+    native: tuple[str, ...] = ()
+
+
+def import_preview(repo_root: Path) -> ImportPreview:
+    """What `basicly tracker import` would do, without writing anything.
+
+    The refusal `basicly-c357` requires is computed here rather than at the write, so a
+    ``--dry-run`` says the same thing the real run would: once the ledger holds a record
+    the dual write created, re-importing would close the historical gap the differential
+    is judged against and the agreement would prove nothing (`basicly-u4xu`).
+    """
+    boundary = kit(repo_root, BASELINE_MODULE)
+    directory = ledger_dir(repo_root)
+    events = kit(repo_root).read_ledger(directory)
+    held = {str(event.record) for event in events}
+    snapshot = _export_snapshot(repo_root)
+    ids = [str(record.get("id")) for record in snapshot.records if record.get("id")]
+    return ImportPreview(
+        ledger=len(held),
+        export=len(ids),
+        adds=tuple(sorted(set(ids) - held)),
+        native=tuple(sorted(held - boundary.imported_records(events))),
+    )
+
+
+def import_export(repo_root: Path, actor: str = "") -> Any:
+    """Bring the owned ledger up to the committed export, and report what it added.
+
+    The entry point `migrate.import_snapshot` never had (`basicly-vkh0.23`): it was run
+    once by hand and could not be repeated, so the ledger drifted and no fresh consumer
+    could build one at all.
+
+    Raises:
+        TrackerDivergenceError: the ledger already holds a post-flip record.
+    """
+    preview = import_preview(repo_root)
+    if preview.native:
+        raise TrackerDivergenceError(
+            f"the ledger holds {len(preview.native)} record(s) created after the flip "
+            f"({', '.join(preview.native[:3])}); re-importing would close the historical "
+            "gap the differential is judged against"
+        )
+    return kit(repo_root).migrate.import_snapshot(
+        ledger_dir(repo_root),
+        _export_snapshot(repo_root),
+        actor=actor,
+        redact=redact.redact_machine_paths,
+    )
+
+
+def _export_snapshot(repo_root: Path) -> Any:
+    """The committed export, parsed and labelled with the one import source name."""
+    return kit(repo_root).migrate.read_snapshot(
+        beads_dir(repo_root) / EXPORT_NAME, name=IMPORT_SOURCE
     )
 
 

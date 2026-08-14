@@ -56,17 +56,28 @@ rank1_floor_high_water = 0.85
 #             the engine spawns still read out of it.
 #
 # **This repo is on `external`, and the rung above it is not a config edit.** Step 1
-# of §5 is the import, and it ran on 2026-08-07: `.basicly/ledger/events-0001.jsonl`
-# holds 3775 events over 643 records, every one carrying the export's digest. Step 2
-# is the shadow differential, and the command is `basicly tracker shadow` — it reads
-# the owned ledger against the **live** br, writes to neither, and answers `clean`
-# and `conclusive` as two separate verdicts. Live and not a re-import, because an
-# import cannot express a deletion and two derivatives of one lossy snapshot agree
-# with each other and prove nothing (§5.1). What is left: `dual`, then a run that comes
-# back clean **and** conclusive, then `owned`. The first run (2026-08-07) is conclusive
-# and **not** clean: 331 of 643 compared records carry a passing `verify` gate row on the
-# live tracker and none on the ledger, because no export carries a gate field for the
-# import to have read — so only the dual write can close that gap.
+# of §5 is the import: it ran on 2026-08-07 and `.basicly/ledger/events-0001.jsonl`
+# holds 3775 events over 643 records, every one carrying the export's digest. It is
+# re-runnable as `basicly tracker import` since basicly-vkh0.23 — before that it was a
+# hand-run one-shot, so the ledger drifted and no fresh consumer could build one at all.
+# `--dry-run` reports how far behind the ledger is and writes nothing.
+#
+# Step 2 is the shadow differential, `basicly tracker shadow` — it reads the owned
+# ledger against the **live** br, writes to neither, and answers `clean` and
+# `conclusive` as two separate verdicts. Live and not a re-import, because an import
+# cannot express a deletion and two derivatives of one lossy snapshot agree with each
+# other and prove nothing (§5.1).
+#
+# **The run is judged on records created after the flip** (basicly-c357). History is
+# excused: 331 of 643 compared records carry a passing `verify` gate row on the live
+# tracker and none on the ledger, because no export carries a gate field for the import
+# to have read. The pre-flip delta the ledger never received is **declared** once, at
+# the flip, by `basicly tracker shadow --declare-history`; a second declaration is
+# refused, and the import refuses a ledger that already holds a post-flip record — both
+# because closing that gap after the dual write starts would make the agreement prove
+# nothing. Today the run reads 0 in scope and is therefore **inconclusive**, which is
+# the correct refusal: what is left is `dual`, then a run that is clean **and**
+# conclusive over a non-empty scope, then `owned`.
 [tracker]
 mode = "external"
 

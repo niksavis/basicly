@@ -1670,9 +1670,42 @@ def _cmd_tracker_shadow(args: argparse.Namespace) -> int:
     return 1
 
 
+def _cmd_tracker_import(args: argparse.Namespace) -> int:
+    """Bring the owned ledger up to the committed export (§5 step 1).
+
+    The entry point the import never had (`basicly-vkh0.23`): it was run once by hand in a
+    python one-liner, so the ledger drifted 24 records behind within a day and nothing a
+    fresh consumer runs could build one at all.
+
+    ``--dry-run`` reports the same refusal the write would, rather than only the counts: a
+    preview that says "would add 200" for a run that will refuse is worse than no preview.
+    """
+    repo_root = _repo_root()
+    preview = br.import_preview(repo_root)
+    ui.say(f"ledger {preview.ledger} records, export {preview.export}")
+    if preview.native:
+        ui.say(
+            f"refused: the ledger holds {len(preview.native)} record(s) created after the "
+            "flip, so re-importing would close the gap the differential is judged against",
+            style="warn",
+        )
+        return 1
+    if args.dry_run:
+        ui.say(f"would add {len(preview.adds)} records, 0 tombstones")
+        return 0
+    # No actor: `basicly-r166` is open on the ledger committing a username in every event,
+    # so this entry point does not add a second producer of the same defect.
+    report = br.import_export(repo_root)
+    ui.say(f"added {len(report.imported)} records, {len(report.tombstoned)} tombstones")
+    for record in report.diverged:
+        ui.say(f"  diverged, left as it stands: {record}")
+    return 0
+
+
 def cmd_tracker(args: argparse.Namespace) -> int:
-    """Dispatch the owned work tracker's cutover subcommands (shadow)."""
-    return _dispatch(args, "tracker_command", {"shadow": _cmd_tracker_shadow}, group="tracker")
+    """Dispatch the owned work tracker's cutover subcommands (import, shadow)."""
+    handlers = {"import": _cmd_tracker_import, "shadow": _cmd_tracker_shadow}
+    return _dispatch(args, "tracker_command", handlers, group="tracker")
 
 
 def cmd_skills_list(_args: argparse.Namespace) -> int:
@@ -4775,6 +4808,15 @@ def _add_tracker_parser(subparsers: argparse._SubParsersAction) -> None:
         help="The owned work tracker's cutover (docs/requirements/work-tracker.md §5)",
     )
     tracker_sub = tracker_parser.add_subparsers(dest="tracker_command", required=True)
+    t_import = tracker_sub.add_parser(
+        "import",
+        help="Bring the owned ledger up to the committed export (§5 step 1)",
+    )
+    t_import.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report how far the ledger is behind and what an import would add",
+    )
     t_shadow = tracker_sub.add_parser(
         "shadow",
         help="Compare the owned ledger against the live br, read-only (§5 step 2)",
