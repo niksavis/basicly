@@ -697,7 +697,11 @@ def test_dispatch_writes_a_run_record_keyed_by_bead(
         runner,
         "run",
         lambda spec, *_a, **_k: runner.RunResult(
-            spec.name, tuple(spec.command), executed=True, returncode=0, duration_s=0.5
+            spec.name,
+            tuple(runner.format_command(spec, _a[0])),
+            executed=True,
+            returncode=0,
+            duration_s=0.5,
         ),
     )
     _advance(tmp_path)
@@ -709,7 +713,6 @@ def test_dispatch_writes_a_run_record_keyed_by_bead(
     assert entry["outcome"] == "executed"
     assert entry["duration_s"] == 0.5
     assert entry["model"] is None  # this runner pins no model
-    # Redaction: the persisted command carries the placeholder, never the prompt.
     assert run_record.REDACTED_PROMPT in entry["command"]
     assert not any("AGENTS.md" in part for part in entry["command"])
 
@@ -797,7 +800,11 @@ def test_dispatch_record_captures_token_telemetry(
     def _run(spec, _prompt, _cwd, **kwargs):
         seen["capture_usage"] = kwargs.get("capture_usage")
         return runner.RunResult(
-            spec.name, tuple(spec.command), executed=True, returncode=0, stdout=stdout
+            spec.name,
+            tuple(runner.format_command(spec, _prompt, capture_usage=True)),
+            executed=True,
+            returncode=0,
+            stdout=stdout,
         )
 
     monkeypatch.setattr(runner, "run", _run)

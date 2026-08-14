@@ -962,6 +962,9 @@ _COPILOT_EVENTS = "\n".join([
 # that escapes its tmp_path must miss, never quietly succeed against the
 # developer's own `~/.copilot` (conftest hides the agent CLIs but not HOME).
 _COPILOT_SESSION = "00000000-0000-4000-8000-000000000001"
+# The prompt the record-dispatch fixtures hand in, so a fixture's argv carries the
+# same string the caller passes as `prompt=` and the redaction has something to hit.
+_PROMPT = "p"
 
 
 def _copilot_spec(store: Path) -> RunnerSpec:
@@ -979,10 +982,16 @@ def _copilot_store(root: Path, events: str, session_id: str = _COPILOT_SESSION) 
 
 
 def _copilot_run(spec: RunnerSpec, session_id: str | None = _COPILOT_SESSION) -> RunResult:
-    """An executed copilot dispatch that keyed *session_id*, with plain-text stdout."""
+    """An executed copilot dispatch that keyed *session_id*, with plain-text stdout.
+
+    The argv is the one the spec really produces, not the bare binary name it used to
+    be. A record copies the command off the result now rather than re-deriving it
+    (basicly-jn1x), so a fixture whose result carries no prompt cannot show that the
+    prompt is redacted — it would pass whether the redaction worked or not.
+    """
     return RunResult(
         spec.name,
-        (spec.name,),
+        tuple(runner.format_command(spec, _PROMPT, capture_usage=True)),
         executed=True,
         returncode=0,
         stdout="done" * 25,
@@ -3096,3 +3105,88 @@ def test_the_quiet_bound_default_leaves_room_for_the_longest_real_tool_call(
     # 1712s is the longest *successful* lane on this repo's ledger. A backstop at or
     # below it is a backstop that fires in normal operation.
     assert declared.runner_timeout > 1712
+
+
+def test_a_record_names_the_role_and_model_a_lane_dispatch_carried(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The measurement basicly-jn1x exists to make possible.
+
+    0 of 357 recorded dispatches named `--agent`, against a positive control of 163
+    naming `-p`, so the ledger could not tell "the lane path does not apply the role"
+    from "it does and the record does not capture it". Both are defects and neither
+    was distinguishable from the data kept — which is why this asserts the record
+    rather than the argv builder: `format_command` was never in doubt.
+    """
+    spec = _claude_spec()
+    argv = runner.format_command(spec, _PROMPT, capture_usage=True, role="implementer")
+    monkeypatch.setattr(runner.run_record, "record_marker", lambda *_a, **_k: None)
+
+    runner.record_dispatch(
+        tmp_path,
+        "basicly-jn1x",
+        spec,
+        RunResult(spec.name, tuple(argv), executed=True, returncode=0, stdout=_CLAUDE_RESULT),
+        prompt=_PROMPT,
+        phase="lane",
+    )
+
+    (entry,) = (runner.run_record.load_run_records(tmp_path) or {})["basicly-jn1x"]
+    assert "--agent" in entry["command"]
+    assert "implementer" in entry["command"]
+    assert _PROMPT not in entry["command"]
+    assert runner.run_record.REDACTED_PROMPT in entry["command"]
+
+
+def test_a_record_omits_the_usage_flags_a_dispatch_did_not_carry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same defect from the opposite direction (basicly-tcmy.33).
+
+    The decider dispatches with `capture_usage` unset while the old re-derivation
+    hard-coded it true, so every `decide` record ended in usage flags that were never
+    on the real argv. A record that can be wrong in both directions is not evidence,
+    so the negative half is asserted beside the positive one — without it, a record
+    that simply appended every known flag would pass the test above.
+    """
+    spec = _claude_spec()
+    argv = runner.format_command(spec, _PROMPT)
+    assert "--output-format" in runner.format_command(spec, _PROMPT, capture_usage=True)
+    monkeypatch.setattr(runner.run_record, "record_marker", lambda *_a, **_k: None)
+
+    runner.record_dispatch(
+        tmp_path,
+        "basicly-tcmy.33",
+        spec,
+        RunResult(spec.name, tuple(argv), executed=True, returncode=0, stdout="plain"),
+        prompt=_PROMPT,
+        phase="decide",
+    )
+
+    (entry,) = (runner.run_record.load_run_records(tmp_path) or {})["basicly-tcmy.33"]
+    assert "--output-format" not in entry["command"]
+
+
+def test_an_unknown_prompt_records_no_argv_at_all(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Failing closed, because a leaked prompt cannot be walked back.
+
+    The redaction keys on the prompt the caller dispatched, so a caller that omits it
+    leaves nothing to key on. Recording the argv unredacted would publish a prompt
+    into a committed ledger, which is the one defect class that survives its own fix.
+    """
+    spec = _claude_spec()
+    argv = runner.format_command(spec, "a secret prompt")
+    monkeypatch.setattr(runner.run_record, "record_marker", lambda *_a, **_k: None)
+
+    runner.record_dispatch(
+        tmp_path,
+        "basicly-jn1x.2",
+        spec,
+        RunResult(spec.name, tuple(argv), executed=True, returncode=0, stdout="plain"),
+        phase="lane",
+    )
+
+    (entry,) = (runner.run_record.load_run_records(tmp_path) or {})["basicly-jn1x.2"]
+    assert entry["command"] == []

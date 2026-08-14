@@ -1725,13 +1725,19 @@ trigger landed (§12.13). `curator` is the one that is not, and its cause is one
 than a design gap: it maps to `ship`, which is a live phase with a live handler that never
 calls `_run_agent`.
 
-**The ledger cannot yet falsify any of this, and that is a recorded P0** (`basicly-jn1x`).
-Re-measured 2026-08-14: **0 of 357 dispatch records carry `--agent`**, against a positive
-control of 163 carrying `-p`. Every claim above is read from the code; the artifact a
-before/after measurement would use holds no trace of a role. Two readings fit — the lane path
-does not apply the role, or it does and the record does not capture it — and **they are not
-distinguishable from the data we keep**, which is the finding rather than the fix. Read §12.11
-as a statement about reachable wiring, never about observed dispatch.
+**The ledger could not falsify any of this until the record learned to copy the argv**
+(`basicly-jn1x`). Measured 2026-08-14: **0 of 357 dispatch records carry `--agent`**, against a
+positive control of 163 carrying `-p`. The record _re-derived_ its command from the spec rather
+than copying what ran, so it was wrong in both directions at once — it omitted the role flag the
+lane passes, and it appended usage flags the decider's argv never had. A record that can be
+wrong both ways is not evidence, and neither error is visible from the record itself.
+`record_dispatch` now copies `result.command` with the dispatched prompt elided by equality,
+recording no argv at all when the prompt is unknown rather than publishing one.
+
+**That builds the instrument; it does not supply the reading.** The 357 historical records are
+unchanged and still name no role, so a before/after measurement of role injection begins with the
+next supervised pass. Until one runs, read §12.11 as a statement about reachable wiring, never
+about observed dispatch.
 
 Every role declares a **tier**, and `catalog lint` refuses a source that does not
 (`basicly-plhx`). No projected agent file carries a provider model id — a projected `model:`
@@ -2196,7 +2202,7 @@ Pillar 03 — **the loop**:
 | A supervised multi-lane run with zero human interventions caused by a harness defect | `building` | Plan Phase 0 exit criterion |
 | VALIDATE as a rung with its own gate, dispatching a validator plus a reviewer per lens | `shipped` | §12.2.1 |
 | Hold and Kill as writes an operator's answer actually carries out | `shipped` | §12.2.2 |
-| A named role per judgment step, each with its own instructions, tool policy, tier and output contract | `shipped` | §12.11 — six of seven roles reachable in code; `curator` is one wiring behind a live `ship` handler, a declared tier is inert at spawn until `basicly-a3yi`, and **no dispatch record carries the flag**, so the ledger cannot yet falsify it (`basicly-jn1x`) |
+| A named role per judgment step, each with its own instructions, tool policy, tier and output contract | `shipped` | §12.11 — six of seven roles reachable in code; `curator` is one wiring behind a live `ship` handler, a declared tier is inert at spawn until `basicly-a3yi`, and the ledger only became able to falsify it when the record started copying the real argv (`basicly-jn1x`) — no supervised pass has yet written one |
 | A schema-validated handoff artifact at each state boundary | `building` | §12.12 — seven of eight kinds carry a schema; `solution-design` is markdown sections and its family membership is open |
 | RETROSPECTIVE on a computed special cause, never on a single failure | `shipped` | §12.13 |
 | An improvement controller that drives a codebase property to a set point | `shipped` | §12.14 — it has run live and filed a bead; it has no scheduled caller yet |
