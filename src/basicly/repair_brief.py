@@ -29,19 +29,20 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import needs_input, rubrics, verify
+from . import lens_review, needs_input, rubrics, validate_gate, verify
 
 # The brief a failed gate leaves for the run that repairs it, relative to the
 # worktree root.
 REPAIR_BRIEF_FILE = Path(".basicly/usage/repair-brief.json")
 
-# The gates whose failure a repair run can act on: the two that judge the lane's
-# own diff. The merge gate is not one of them — a collision is not a defect in
-# the work, and ``supervise._bounce_lane`` briefs its owner from the conflicting
-# paths instead. A landing that failed on its *verify* gate is admitted through
-# :data:`LANDING_VERIFY_FAILED`, because that one is a red gate on this diff
+# The gates whose failure a repair run can act on: the three that judge the lane's
+# own work — its deterministic suite, its behavioural rubric, and the consumer
+# validation of what it merged. The merge gate is not one of them — a collision is
+# not a defect in the work, and ``supervise._bounce_lane`` briefs its owner from the
+# conflicting paths instead. A landing that failed on its *verify* gate is admitted
+# through :data:`LANDING_VERIFY_FAILED`, because that one is a red gate on this diff
 # whatever the record happens to be keyed under.
-REPAIR_GATES = (verify.DEFAULT_GATE, rubrics.RUBRIC_GATE)
+REPAIR_GATES = (verify.DEFAULT_GATE, rubrics.RUBRIC_GATE, validate_gate.VALIDATE_GATE)
 
 # The landing status that is a red verify rather than a collision or a state
 # (``merge.MergeResult.status``).
@@ -53,6 +54,22 @@ LANDING_VERIFY_FAILED = "verify-failed"
 # reports at the end) and the number of checks is capped.
 MAX_REPAIR_EVIDENCE = 5
 MAX_REPAIR_OUTPUT_CHARS = 2000
+
+# The heading the recorded reviews sit under. Both halves are load-bearing: §6.4
+# forbids merging lens output into one ranked list and §6.5 keeps the reviewer
+# advisory, so dropping either hands the repair a move the design refuses.
+REVIEW_HEADER = (
+    "Review findings recorded when this unit was validated, one section per lens. They "
+    "are advisory: the gate named above is what rejected the work, and no finding here "
+    "is a gate of its own or a precondition on finishing this repair. Read each lens on "
+    "its own terms — they are deliberately neither merged nor ranked against each other, "
+    "because a change can pass one axis and fail another and a single ordering lets the "
+    "strong axis hide the weak one."
+)
+
+# What a lens that recorded no review says: a lens missing from the brief would
+# read as a lens that was never asked.
+NO_REVIEW = "No review was recorded on this lens."
 
 
 @dataclass(frozen=True)
@@ -71,6 +88,9 @@ class RepairBrief:
     *issue_id* is the bead the failure is attributed to, which is not always the
     node holding the worktree: a lane's sub-task fails on its own record and is
     repaired in the lane's tree.
+
+    *reviews* is one entry per lens, never flattened into *findings* — that set is the
+    gate's own and the convergence detector compares it round to round (basicly-w88t).
     """
 
     issue_id: str
@@ -78,6 +98,7 @@ class RepairBrief:
     reason: str
     findings: tuple[str, ...] = ()
     evidence: tuple[GateEvidence, ...] = ()
+    reviews: tuple[lens_review.LensFindings, ...] = ()
 
     def as_dict(self) -> dict[str, object]:
         """The JSON shape written to the worktree."""
@@ -89,6 +110,7 @@ class RepairBrief:
             "evidence": [
                 {"check": e.check, "command": e.command, "output": e.output} for e in self.evidence
             ],
+            "reviews": [{"lens": r.lens, "findings": r.findings} for r in self.reviews],
         }
 
 
@@ -131,6 +153,23 @@ def _parse_repair_brief(data: object) -> RepairBrief | None:
         reason=reason.strip() if isinstance(reason, str) else "",
         findings=findings,
         evidence=evidence,
+        reviews=_parse_reviews(data.get("reviews")),
+    )
+
+
+def _parse_reviews(raw: object) -> tuple[lens_review.LensFindings, ...]:
+    """The per-lens reviews *raw* describes, in the order the writer recorded them.
+
+    Never re-sorted: §6.4 says the sequence is not a ranking, so re-deriving one here
+    would be a second opinion about it. An entry with no lens name is dropped — the
+    name is the whole of what keeps two lenses apart.
+    """
+    if not isinstance(raw, list):
+        return ()
+    return tuple(
+        lens_review.LensFindings(str(r.get("lens", "")).strip(), str(r.get("findings", "")))
+        for r in raw
+        if isinstance(r, dict) and str(r.get("lens", "")).strip()
     )
 
 
@@ -228,6 +267,10 @@ def repair_prompt(brief: RepairBrief) -> str:
     command and its output — the three things the fixed text carried none of — and
     an explicit refusal of the two moves that turn a repair back into a build:
     re-planning the work, and starting somewhere else.
+
+    Where a judged gate rejected it, the reviewers' findings follow, one section per
+    lens (:data:`REVIEW_HEADER`). That is the variable §11.1 says a rework round must
+    change: without them, attempt N+1 is attempt N's framing re-sent to the same tier.
     """
     lines = [
         f"You are in the existing git worktree for the tracked issue {brief.issue_id}. "
@@ -254,6 +297,10 @@ def repair_prompt(brief: RepairBrief) -> str:
         lines += ["", header]
         if item.output:
             lines += ["", "```", item.output, "```"]
+    if brief.reviews:
+        lines += ["", REVIEW_HEADER]
+    for review in brief.reviews:
+        lines += ["", f"Lens: {review.lens}", review.findings or NO_REVIEW]
     lines += [
         "",
         "Fix the cause the gate names and re-run its command until it passes, then "
