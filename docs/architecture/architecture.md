@@ -950,6 +950,7 @@ names were removed, not aliased).
 | `basicly usage report` | Reports the tool/skill counts recorded by the `tool-usage` agent hook (token-free telemetry in `.basicly/usage/`) and names never-used catalog skills — the culling input (§4.3) |
 | `basicly usage forecast` | Reports the forecast error per dispatch — actual spend over forecast working set, per bead/class/model, with a median — from the run records and the committed `[harness-run]` markers. Refuses to compute an error for a record missing either half and reports those as unpaired counts, so an empty report explains itself (§12.8.1, `basicly-jr0l.34`) |
 | `basicly usage tuning` | Advises every governed factory parameter from the recorded dispatches, over the local run records **and** the committed `[harness-run]` markers, naming which corpus each sample came from. Per parameter it prints the value in force for the dispatches it summarises (a session override puts its dispatches in their own cohort), the outcome distribution under that value, and a recommendation with its sample size labelled `measured` or `seeded` — below `[policy.sizing] calibration_min_samples` the declared prior stands and the row names the in-force value it would displace. A parameter the ledger records nothing about still prints, with a sample size of zero, no recommendation and the reason it has none. **Advisory only: it writes nothing** (§12.8.3, `basicly-3ifz.1`) |
+| `basicly usage lane-split` | Splits each persisted lane transcript into a **context acquisition** share and an **implementation** share, so `basicly-ejdm`'s causal claim — that a lane's floor is bought by the dispatch instruction rather than by the work — has an instrument behind it before a remedy is judged by it (§12.8.4, `basicly-ejdm.2`) |
 | `basicly usage tracker [--promote] [--refresh-surface] [--as-json]` | Reports the measured `br`/`bv` surface Phase 6 freezes its replacement scope from. `--promote` folds the spool into the committed ledger before reporting, `--refresh-surface` re-probes `br`/`bv` `--help` and rewrites the committed surface inventory (needs `br` on PATH), `--as-json` emits the whole report for the freeze |
 | `basicly catalog list [fragment\|skill\|agent]` | Table of catalog sources of the given kind (default `fragment`); the authoring/inspection verbs live under the `catalog` group |
 | `basicly catalog new <fragment\|skill\|agent> NAME [--category C] [--description D]` | Scaffold a new `<id>.fragment.yaml` / `skill.yaml` / `agent.yaml` source (§4.2 source format); `--category` sets a fragment's category, `--description` seeds the one-line summary |
@@ -1593,6 +1594,38 @@ spend, which is working set times a turn count nothing models (§12.8.2, `basicl
 A session override is the one per-dispatch record of a parameter's value (`config_overrides`), so
 dispatches run under one form their own **cohort** with their own outcome distribution; pooling
 them would report outcomes under a value that never governed half of them.
+
+**12.8.4 A lane's spend split into acquisition and implementation** (`basicly-ejdm.2`).
+`basicly-ejdm` claims a lane's multi-million-token floor is bought by the dispatch
+instruction rather than by the work. That claim had **no instrument behind it**, so its
+remedy could not have been judged — which is why the ordering is `.1` record the tools,
+`.2` derive the split, `.3` brief the lane, `.4` measure, and only `.4` is a claim.
+`basicly usage lane-split` (`lane_split.py`) is `.2`.
+
+**The pairing rule is the whole arithmetic, and two naive versions measure the wrong
+thing.** A `tool_use` turn's usage is the cost of _emitting_ the call; the tool's result
+lands in the **next turn that carries usage**. So summing tokens on the turns that called
+the tools counts the request and misses the answer — and pairing against the immediately
+preceding _line_ fails too, because a real transcript forwards the tool result as a `user`
+event carrying no usage, which sits between the call and its answer. That second version
+was written first here and attributed a real captured lane **100% to unattributed**, a
+confident figure measuring nothing; the demonstration caught it, not the unit tests. A
+turn's tokens are attributed to the last tools emitted before it, and a turn with none is
+unattributed rather than guessed at.
+
+**Three things it refuses to guess.** A tool that is neither read nor write is
+`unclassified`, not bucketed — `Bash` runs `git status` and `mv` alike, and a majority
+rule over a mixed turn would put a guess inside the number the remedy is judged by. A
+transcript written before `basicly-ejdm.1` added the tool field is **unclassifiable**
+rather than fully implementation, because absent is unknown and `[]` is "called nothing".
+And a lane with no transcript is reported as missing rather than as a zero split.
+
+**Shares lead, tokens follow, and the report says why.** Per-turn stream usage
+over-reports against the run record by **1.46x-1.79x** [M 2026-08-13, four lanes], so a
+stream-derived absolute is in a different denomination from the grant it would be
+compared against — a mixture that has already cost this repo a lane. The report also
+states that it is **claude-only**: no other family emits the per-tool event it reads,
+which matches a ledger holding only claude and manual dispatches.
 
 **Fleet rollup (`basicly-h0f0`).** `basicly status --fleet [--root PATH]` (`fleet.py`) is the
 cross-repo view dimension 3 calls for: it discovers the basicly-installed repos under a workspace

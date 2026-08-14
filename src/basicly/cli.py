@@ -32,6 +32,7 @@ from . import (
     fleet,
     health,
     lane_log,
+    lane_split,
     loop,
     loop_state,
     merge,
@@ -1595,6 +1596,37 @@ def _resolve_skill_output_roots(args: argparse.Namespace, repo_root: Path) -> li
     )
 
 
+def _cmd_usage_lane_split(_args: argparse.Namespace) -> int:
+    """Report each lane's spend split into context acquisition and implementation.
+
+    The instrument `basicly-ejdm`'s causal claim never had (`basicly-ejdm.2`). Shares lead
+    and tokens follow, because per-turn stream usage is in a different denomination from
+    the run record the grant is metered in — the report says so rather than leaving a
+    reader to compare two numbers that do not compare.
+    """
+    splits = lane_split.lane_splits(_repo_root())
+    if not splits:
+        ui.say("no lane transcript is persisted, so there is no split to report")
+        return 0
+    ui.say("claude only: no other family emits the per-tool event this reads")
+    ui.say("tokens are stream-denominated and over-report the run record by 1.46x-1.79x")
+    for split in splits:
+        if split.unclassifiable:
+            ui.say(f"{split.issue}: unclassifiable - {split.unclassifiable}")
+            continue
+        shares = "  ".join(
+            f"{name} {split.share(name):.0%} ({split.tokens.get(name, 0)})"
+            for name in (
+                lane_split.ACQUISITION,
+                lane_split.IMPLEMENTATION,
+                lane_split.UNCLASSIFIED,
+                lane_split.UNATTRIBUTED,
+            )
+        )
+        ui.say(f"{split.issue}: {shares}")
+    return 0
+
+
 def cmd_usage(args: argparse.Namespace) -> int:
     """Dispatch the usage telemetry subcommands (report / tracker / forecast / tuning)."""
     handlers = {
@@ -1602,6 +1634,7 @@ def cmd_usage(args: argparse.Namespace) -> int:
         "tracker": surface_report.cmd_tracker,
         "forecast": usage_report.cmd_forecast,
         "tuning": usage_report.cmd_tuning,
+        "lane-split": _cmd_usage_lane_split,
     }
     return _dispatch(args, "usage_command", handlers, group="usage")
 
@@ -4776,6 +4809,10 @@ def _add_usage_parser(subparsers: argparse._SubParsersAction) -> None:
     usage_sub.add_parser(
         "tuning",
         help="Advise each governed parameter from recorded outcomes (changes no config)",
+    )
+    usage_sub.add_parser(
+        "lane-split",
+        help="Split each persisted lane transcript into acquisition and implementation",
     )
     tracker_parser = usage_sub.add_parser(
         "tracker", help="Report the measured br/bv surface Phase 6 freezes its scope from"

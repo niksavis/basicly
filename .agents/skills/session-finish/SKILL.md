@@ -53,6 +53,21 @@ basicly usage tuning
   declared prior stands — do not cite it as a measurement. A row with zero
   samples is naming a bound nothing records, which is itself the finding.
 
+Where a supervised pass persisted lane transcripts, one more question is
+answerable and is worth asking before a briefing change is proposed:
+
+```sh
+basicly usage lane-split
+```
+
+- Per lane, the share of spend that went on **acquiring context** against
+  the share that went on **implementing**. Read the shares, never the
+  tokens: those are stream-denominated and over-report the run record by
+  1.46x-1.79x, which is a different unit from the one a grant is metered in.
+- A lane reported `unclassifiable` predates the tool-name field; it is not a
+  lane that did no reading. A lane with no transcript is missing, not zero.
+- Claude only. No other family emits the per-tool event it reads.
+
 ## 2) Self-improvement retro
 
 Follow the repo's retro rules:
