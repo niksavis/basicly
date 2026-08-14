@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import br, decisions, policy, rubrics, run_record, verify
+from basicly import br, decisions, integrity, policy, rubrics, run_record, verify
 from basicly.config import (
     ENGINE_GATE_PROVIDERS,
     LOOP_PHASES,
@@ -3175,11 +3175,10 @@ def test_check_pass_spend_admits_when_no_ceiling_applies() -> None:
 def test_the_classified_gates_are_the_engine_s_own_gate_names() -> None:
     """Every key is a name some check really carries — none invented, none missed.
 
-    Two of the keys are literals in ``policy`` because the import contract forbids
-    it from importing :mod:`basicly.verify` (a sibling) or :mod:`basicly.rubrics`
-    (its senior). This test is what keeps them in step with the constants they copy
-    — renaming a gate at its own call site fails here rather than silently leaving
-    it unclassified.
+    Three keys are literals in ``policy``: the import contract forbids importing
+    :mod:`basicly.verify` (a sibling) or :mod:`basicly.rubrics` (its senior). This
+    test keeps them in step with the constants they copy — renaming a gate at its
+    own call site fails here rather than leaving it silently unclassified.
     """
     assert set(policy.GATE_TYPE_BY_GATE) == {
         policy.DOR_GATE,
@@ -3187,6 +3186,7 @@ def test_the_classified_gates_are_the_engine_s_own_gate_names() -> None:
         verify.DEFAULT_GATE,
         rubrics.RUBRIC_GATE,
         rubrics.RUBRIC_JUDGED_GATE,
+        integrity.VALIDATE_GATE,
     }
 
 

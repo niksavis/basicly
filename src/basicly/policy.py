@@ -48,6 +48,7 @@ from .config import (
     SizingConfig,
     load_policy_config,
 )
+from .integrity import VALIDATE_GATE
 from .plan_record import ACCEPTANCE_HEADING, has_heading
 
 # Prefix for the harness's own comment markers, so they are both machine-parseable
@@ -74,17 +75,17 @@ ABORT = "abort"  # halts to prevent damage or waste, preserving state
 DOR_GATE = "dor"  # blocks the classify->decompose advance
 LINKED_WORKTREE_GATE = "linked-worktree"  # basicly.verify.linked_worktree_guard
 
-# Every gate the engine names, and its type. The three recorded ones are keyed by
+# Every gate the engine names, and its type. The four recorded ones are keyed by
 # the exact name they carry in ``br gate report``, so a reader of a bead's gate
 # list can look one up.
 #
-# Spelled as literals rather than imported. ``verify`` is
-# :data:`basicly.verify.DEFAULT_GATE` and the two rubric halves are
-# :data:`basicly.rubrics.RUBRIC_GATE` / :data:`RUBRIC_JUDGED_GATE`, but the import
-# contract (`.importlinter`) makes :mod:`basicly.verify` this module's sibling and
-# :mod:`basicly.rubrics` its senior, so neither can be imported from here. A test
-# pins the keys to those constants, which is how the other set this module cannot
-# import (``_TYPE_SECTIONS``) is kept in step.
+# Three are literals: `.importlinter` makes :mod:`basicly.verify` this module's
+# sibling and :mod:`basicly.rubrics` its senior, so ``verify``
+# (:data:`~basicly.verify.DEFAULT_GATE`) and the rubric halves
+# (:data:`~basicly.rubrics.RUBRIC_GATE` / :data:`~RUBRIC_JUDGED_GATE`) cannot be
+# imported here. A test pins the keys to those constants, which is how the other
+# set this module cannot import (``_TYPE_SECTIONS``) is kept in step. The fourth
+# is imported: :mod:`basicly.integrity` is junior.
 #
 # Bounded to the gates the engine gives a *name*. The rest of §1.1's mapping — the
 # commit-msg and secret-scan hooks, the projection checks, the ship preconditions,
@@ -102,6 +103,7 @@ GATE_TYPE_BY_GATE: dict[str, str] = {
     # instead of failing the lane, which is why it must stay out of
     # ``[policy] required_gates``.
     "rubric-judged": ESCALATION,
+    VALIDATE_GATE: REVISION,
     # :func:`basicly.verify.linked_worktree_guard`: recording from an unredirected
     # linked worktree would lose the gate at landing, so the check halts the record
     # and reports the remedy rather than looping or enqueuing.

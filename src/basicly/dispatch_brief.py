@@ -25,10 +25,11 @@ if TYPE_CHECKING:
 
     from .config import SizingConfig
 
-# The gate a validation is recorded under, and the line the engine reads the verdict
-# from. The agent states it; the engine records it - a dispatched agent sharing the
-# real tracker must not be able to satisfy its own required gate (basicly-jr0l.51).
-VALIDATE_GATE = "validate-as-consumer"
+# The line the engine reads the verdict from. The agent states it; the engine records
+# it - a dispatched agent sharing the real tracker must not be able to satisfy its own
+# required gate (basicly-jr0l.51). The gate it is recorded under is named once, at
+# :data:`basicly.integrity.VALIDATE_GATE`; this module held a second copy with no
+# consumer, which vulture could not see because the name matched a live one elsewhere.
 VERDICT_PREFIX = "VALIDATION:"
 
 
