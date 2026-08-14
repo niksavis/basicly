@@ -52,6 +52,7 @@ def _load(path: Path, name: str) -> ModuleType:
 
 
 ctl = _load(SCRIPT, "improvement_controller")
+wired = _load(REPO_ROOT / ".scripts" / "wired_or_deleted.py", "wired_or_deleted")
 
 
 def _module(path: str, tokens: int, waiver: str | None = None) -> object:
@@ -336,3 +337,37 @@ def test_a_dry_run_prints_the_scope_it_would_have_filed(
     out = capsys.readouterr().out
     assert f"scope:     {', '.join(ctl.lane_scope(REPO_ROOT, target))}" in out
     assert "test_test_" not in out
+
+
+def test_the_workflow_alone_credits_the_improve_command() -> None:
+    """The control assertion for basicly-e2mz.6: the wiring credit is not circular.
+
+    `wired-or-deleted` credited `basicly loop improve` from `.scripts/*`, which is a
+    command-site glob, so the controller's own docstring named the command that runs
+    the controller. A gate satisfied by its own subject reports a wiring that does not
+    exist, and the failure is invisible because it looks exactly like a pass.
+
+    So the workflow's text is passed as the *entire* wiring corpus. Nothing under
+    `.scripts/` contributes, which is what makes this a control rather than a
+    restatement -- without it, deleting the workflow would leave the gate green and
+    nothing would say so.
+    """
+    wiring = (REPO_ROOT / ".github" / "workflows" / "improvement-loop.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert wired.command_findings([("loop", "improve")], wiring) == []
+
+
+def test_the_workflow_credits_no_command_it_does_not_name() -> None:
+    """The negative half: the corpus above is not a blanket pass.
+
+    A control that only ever returns "credited" cannot tell a real wiring from an
+    empty string, which is the same fail-open shape the test above exists to catch --
+    one layer down, in the instrument itself.
+    """
+    wiring = (REPO_ROOT / ".github" / "workflows" / "improvement-loop.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert len(wired.command_findings([("loop", "supervise")], wiring)) == 1

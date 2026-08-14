@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: improvement-loop
+
+# The second loop shape's call site (basicly-e2mz.6). The delivery loop takes a
+# requirement and ships a change; this one drives a property of the codebase
+# toward a set point.
+#
+# `workflow_dispatch` only, by owner decision 2026-08-14, and the absence of a
+# `schedule:` trigger is deliberate rather than unfinished. Two reasons, and the
+# first is why this file exists at all:
+#
+#   1. It makes the wiring non-circular. `wired-or-deleted` credited
+#      `basicly loop improve` because `.scripts/*` is a command-site glob and the
+#      controller's own docstring names the command — the script named the command
+#      and the command ran the script, which is a gate reporting a wiring that did
+#      not exist. This entry is an independent call site, and
+#      `test_the_workflow_alone_credits_the_improve_command` is the control
+#      assertion: it credits the command from this file with `.scripts/*`
+#      contributing nothing.
+#   2. The actuator has filed exactly one bead ever. Watching it file a few more
+#      under a human's hand before it runs unattended is cheap, and the one-lane
+#      bound has itself only been observed once.
+#
+# Adding cron later is a one-line change to this file. It would be this
+# repository's first scheduled workflow and needs its own confirmation.
+"on":
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    name: Measure the property and print the selection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - name: Install Python dependencies
+        run: uv sync
+      # The controller reads its one-lane bound off the live tracker even when it
+      # files nothing, so `br` is a requirement of the dry run and not only of the
+      # actuator. Pinned by version and content hash, as in quality-gates.
+      - name: Install the beads tracker (br)
+        run: uv run python .scripts/install_br.py --bin-dir "${{ runner.temp }}/br-bin"
+      # `--dry-run` is the whole job, and the reason is that a live run here would
+      # be lost. The actuator files a bead into this checkout's `.beads/`, which is
+      # ephemeral — persisting it would need `contents: write` and a push to main
+      # from CI, which is well past what this entry was confirmed for. Filing stays
+      # a human running `basicly loop improve` from the base checkout.
+      - name: Run the improvement controller
+        run: uv run basicly loop improve --dry-run
