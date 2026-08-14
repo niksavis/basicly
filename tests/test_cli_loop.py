@@ -324,10 +324,9 @@ class _Preflight:
     # deciding unrelated assertions — and the scopes are a real `br show` per lane.
     append_only: tuple[str, ...] = ()
     scopes: dict[str, tuple[str, ...]] = field(default_factory=dict)
-    # The configured generated artifacts and their rebuild, for the `regen:` line
+    # The configured generated artifacts and their rebuilds, for the `regen:` line
     # (basicly-lyro). Pinned for the same reason `append_only` is.
-    generated: tuple[str, ...] = ()
-    regenerate: tuple[str, ...] = ()
+    generated: dict[str, tuple[str, ...]] = field(default_factory=dict)
     # The bead ids a grant on the root covers, for the coverage line a labelled cut
     # gets (basicly-1lpo). Pinned because the real walk is a `br show` per node; the
     # default covers every lane this fixture selects, so only a test about coverage
@@ -389,15 +388,12 @@ def _preflight_fixture(monkeypatch: pytest.MonkeyPatch, pinned: _Preflight) -> N
     )
     monkeypatch.setattr(cli.supervise, "metered_without_a_budget", lambda *_a: metered)
     monkeypatch.setattr(cli.supervise, "ready_lanes", lambda *_a, **_k: lanes)
-    cap, generated, regenerate = pinned.cap, pinned.generated, pinned.regenerate
+    cap, generated = pinned.cap, pinned.generated
     monkeypatch.setattr(
         cli,
         "load_worktree_config",
         lambda *_a: WorktreeConfig(
-            base_branch=None,
-            concurrency=cap,
-            generated_paths=generated,
-            regenerate_command=regenerate,
+            base_branch=None, concurrency=cap, regenerate_commands=generated
         ),
     )
     monkeypatch.setattr(cli.policy, "session_issue_ids", lambda *_a: pinned.covered)
@@ -733,16 +729,22 @@ def test_preflight_reports_the_artifacts_a_landing_rebuilds_instead_of_bouncing(
         _Preflight(
             grant=Grant(level="L1", token_budget=10_000),
             children=(("c.1", "open"), ("c.2", "open")),
-            generated=(".basicly/generated-manifest.json",),
-            regenerate=("basicly", "build"),
+            generated={
+                ".basicly/generated-manifest.json": ("basicly", "build"),
+                "docs/plan/implementation-plan.md": ("docs_claims.py", "--fix"),
+            },
         ),
     )
 
     cli._cmd_loop_preflight(_preflight_args())
 
     out = capsys.readouterr().out
-    assert "regen:     generated: `.basicly/generated-manifest.json`" in out
-    assert "rebuilt with `basicly build`" in out and "spending no rework" in out
+    assert "regen:     generated: a landing conflict confined to these" in out
+    assert "spending no rework" in out
+    # One line per path with its own rebuild: a repo-wide command would have read as
+    # if it rebuilt both, and for one of them it rebuilt nothing (basicly-3w51).
+    assert "`.basicly/generated-manifest.json` <- `basicly build`" in out
+    assert "`docs/plan/implementation-plan.md` <- `docs_claims.py --fix`" in out
 
 
 def test_preflight_says_the_rebuild_check_is_inert_when_nothing_is_declared(

@@ -33,6 +33,7 @@ REPO = Path(__file__).resolve().parents[1]
 ARCHITECTURE_MD = "docs/architecture/architecture.md"
 SKILLS_README = ".basicly/core/skills/README.md"
 HOOKS_README = ".basicly/core/hooks/README.md"
+IMPLEMENTATION_PLAN = "docs/plan/implementation-plan.md"
 
 
 def _load_module():
@@ -95,6 +96,31 @@ def test_fix_regenerates_a_drifted_block_and_the_check_then_passes(work_repo: Pa
     assert _run(work_repo, "--fix") == 0
     assert path.read_text(encoding="utf-8") == original
     assert _run(work_repo, "--check") == 0
+
+
+def test_fix_scoped_to_one_block_leaves_the_other_documents_untouched(work_repo: Path) -> None:
+    """What the landing rebuild needs (basicly-3w51): repair the conflicted path only.
+
+    The merge queue runs this against a stopped rebase, so a run that also rewrote a
+    second document would leave it modified outside the conflict it was resolving.
+    """
+    plan = work_repo / IMPLEMENTATION_PLAN
+    skills = work_repo / SKILLS_README
+    current = plan.read_text(encoding="utf-8")
+    plan.write_text(current.replace("| Test files |", "| Test files (stale) |"), encoding="utf-8")
+    drifted = skills.read_text(encoding="utf-8").replace("| `tool-jq` |", "| `tool-nope` |")
+    skills.write_text(drifted, encoding="utf-8")
+
+    assert claims.main(["--fix", "--block", "plan-current-state", "--root", str(work_repo)]) == 0
+
+    assert plan.read_text(encoding="utf-8") == current
+    assert skills.read_text(encoding="utf-8") == drifted
+
+
+def test_an_unknown_block_name_is_refused_rather_than_checking_nothing(work_repo: Path) -> None:
+    """A typo'd name would otherwise select no block and report every claim current."""
+    with pytest.raises(SystemExit):
+        claims.main(["--check", "--block", "plan-currrent-state", "--root", str(work_repo)])
 
 
 def test_check_reports_a_missing_marker_pair_instead_of_skipping_it(

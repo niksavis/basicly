@@ -100,8 +100,31 @@ append_only_paths = []
 # Deliberately not in `append_only_paths`: that list makes lanes serialize, which is
 # the right answer for prose nobody can auto-merge and the wrong one here. Nothing
 # needs serializing — the file just needs rebuilding once on the merged tree.
-generated_paths = [".basicly/generated-manifest.json"]
-regenerate_command = ["basicly", "build"]
+#
+# The second entry is the `docs-claims` block in the implementation plan, and it is why
+# this is a table keyed by path rather than one list and one command (basicly-3w51). The
+# block holds the module count, the test-file count and the verify-check counts, so every
+# lane that adds a module or a test file rewrites it: measured on 2026-08-14, two lanes
+# forked from one base produced `87/157/24` and `86/158/25` where the merged tree is
+# `87/159/25`, a value neither lane could have written, costing one aborted merge and one
+# hand-resolved rebase. `basicly build` cannot write that block — nothing under
+# `src/basicly/` knows about `.scripts/docs_claims.py` — so declaring the path under a
+# single repo-wide command would have been a silent no-op.
+#
+# `--block` scopes the rebuild to that one marked region. The rest of the file is
+# hand-authored ladder prose, and the merge queue refuses to stage a path the rebuild
+# left a conflict marker in, so a lane's prose edit is never discarded by this entry.
+[worktree.regenerate_commands]
+".basicly/generated-manifest.json" = ["basicly", "build"]
+"docs/plan/implementation-plan.md" = [
+  "uv",
+  "run",
+  "python",
+  ".scripts/docs_claims.py",
+  "--fix",
+  "--block",
+  "plan-current-state",
+]
 
 # Deterministic verify gate. Each check runs in the listed modes; a "staged"
 # check with staged_suffix runs only against staged files of that suffix. A check

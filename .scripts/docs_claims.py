@@ -460,10 +460,10 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8", newline=newline)
 
 
-def _run_blocks(root: Path, *, fix: bool) -> list[str]:
-    """Compare (and optionally rewrite) every generated block; return failure lines."""
+def _run_blocks(root: Path, blocks: tuple[Block, ...], *, fix: bool) -> list[str]:
+    """Compare (and optionally rewrite) each of *blocks*; return failure lines."""
     failures: list[str] = []
-    for block in BLOCKS:
+    for block in blocks:
         path = root / block.path
         try:
             current = read_text(path)
@@ -512,15 +512,25 @@ def main(argv: list[str] | None = None) -> int:
         default=REPO_ROOT,
         help="Repository root to evaluate (default: this script's repo)",
     )
+    # Scoped for the merge queue's regeneration (basicly-3w51): a wider rebuild would
+    # modify documents outside the conflict it resolved. Assertions go with it.
+    parser.add_argument("--block", help="Only this block")
     args = parser.parse_args(argv)
 
     root = args.root.resolve()
-    failures = _run_blocks(root, fix=args.fix) + _run_assertions(root)
+    blocks = tuple(b for b in BLOCKS if args.block in (None, b.name))
+    if not blocks:
+        parser.error(f"unknown block {args.block!r}")
+    failures = _run_blocks(root, blocks, fix=args.fix)
+    summary = _count(blocks, "generated block")
+    if not args.block:
+        failures += _run_assertions(root)
+        summary += f", {_count(ASSERTIONS, 'assertion')}"
     if failures:
         for failure in failures:
             print(f"docs-claims: {failure}", file=sys.stderr)
         return 1
-    print(f"docs-claims: {_count(BLOCKS, 'generated block')}, {_count(ASSERTIONS, 'assertion')}")
+    print(f"docs-claims: {summary}")
     return 0
 
 

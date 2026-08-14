@@ -145,7 +145,7 @@ forecast:  ~8000000 tokens if all 2 lanes start (per-lane x min(cap 5, 2 open))
 band:      8000..132000 working-set tokens
   myrepo-9vf.2      unsized      no scope the estimator can read
 contend:   no append-only path declared ([worktree] append_only_paths)
-regen:     no generated path declared ([worktree] generated_paths)
+regen:     no generated path declared ([worktree.regenerate_commands])
 VERDICT:   not ready - base checkout is dirty; a metered runner needs a grant with a token budget; the root's decompose checkpoint blocks provisioning
 ```
 
@@ -213,13 +213,15 @@ whose message you did not predict.
 
 ## 6. Declare the files every lane touches
 
-Two config keys prevent the collision class that kills unattended runs:
+Two config declarations prevent the collision class that kills unattended runs:
 
 ```toml
 [worktree]
 append_only_paths = ["CHANGELOG.md"]
-generated_paths = [".basicly/generated-manifest.json"]
-regenerate_command = ["basicly", "build"]
+
+[worktree.regenerate_commands]
+".basicly/generated-manifest.json" = ["basicly", "build"]
+"docs/plan.md" = ["python", "gen_plan.py", "--fix", "--block", "counts"]
 ```
 
 - **`append_only_paths`** — a file your convention has every lane append its own
@@ -227,11 +229,13 @@ regenerate_command = ["basicly", "build"]
   *serializes* the lanes that would collide there and makes preflight warn
   (`contend:`). Without it the collision is invisible until the merge queue
   bounces the later lanes — one rework attempt each.
-- **`generated_paths` + `regenerate_command`** — artifacts that are a function
-  of the tree (a manifest, a lockfile). A landing rebase whose conflicts are
-  *all* in this list is resolved by re-running the command in the lane's
-  worktree; a conflict touching anything else still bounces to the lane. Both
-  keys or neither.
+- **`[worktree.regenerate_commands]`** — artifacts that are a function of the
+  tree (a manifest, a lockfile, a generated block). A landing rebase whose
+  conflicts are *all* keyed here is resolved by re-running **each path's own**
+  command in the lane's worktree; a conflict touching anything else still
+  bounces to the lane. A path only partly generated is safe to declare: if the
+  rebuild leaves a conflict marker behind — the conflict was in the
+  hand-authored half — the landing bounces instead of staging it.
 
 Serializing is the second-best answer. Where the shared file can be split —
 one changelog fragment per bead instead of one `CHANGELOG.md` — split it, and

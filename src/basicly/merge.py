@@ -30,14 +30,14 @@ one lane's state must not hold the others hostage:
   (:func:`record_pass_couplings`), and the lane's own agent re-applies its intent
   on the new base at the next dispatch.
 - **A generated artifact is rebuilt, not bounced** (basicly-lyro). The one exception
-  to the rule above, and it is not a resolution of anything: a path declared in
-  ``[worktree] generated_paths`` is a function of the tree, so when *every* unmerged
-  path is on that list the rebase discards both sides, re-runs the repo's
-  ``regenerate_command``, and continues. No lane is faulted and no rework is spent,
-  because there is no coupling to learn — three lanes editing three different catalog
-  sources all legitimately change the projection manifest. One undeclared path in the
-  set and the whole rebase bounces untouched
-  (:func:`basicly.rebase.rebuild_generated_conflicts`).
+  to the rule above, and it is not a resolution of anything: a path keyed in
+  ``[worktree.regenerate_commands]`` is a function of the tree, so when *every*
+  unmerged path is in that table the rebase discards both sides, re-runs **that
+  path's** rebuild, and continues. No lane is faulted and no rework is spent, because
+  there is no coupling to learn — three lanes editing three different catalog sources
+  all legitimately change the projection manifest. One undeclared path, or one the
+  rebuild left a conflict marker in, and the whole rebase bounces untouched
+  (basicly-3w51, :func:`basicly.rebase.rebuild_generated_conflicts`).
 - **A replay never both drops content and reports success** (basicly-5vu4). Getting the
   branch onto base is :mod:`basicly.rebase`'s whole responsibility, including the two
   guards that make it honest: a branch carrying a merge commit is refused before the

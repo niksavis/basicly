@@ -26,6 +26,7 @@ that is why the split leaves no import back into the module it came from.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 from . import merge
@@ -72,7 +73,7 @@ def append_only_report(
     return tuple(lines)
 
 
-def generated_report(paths: tuple[str, ...], command: tuple[str, ...]) -> tuple[str, ...]:
+def generated_report(commands: Mapping[str, tuple[str, ...]]) -> tuple[str, ...]:
     """What this pass will do with a landing conflict on a rebuildable artifact.
 
     Reported beside :func:`append_only_report` because the two are the same collision
@@ -82,13 +83,16 @@ def generated_report(paths: tuple[str, ...], command: tuple[str, ...]) -> tuple[
     Says so when nothing is declared, for the reason that report does: the undeclared
     state is the one that costs a lane its rework budget, and it is only ever
     discovered at the merge queue, after the money is spent.
+
+    One line per path, since each carries its own rebuild command (basicly-3w51).
     """
-    if not paths:
+    if not commands:
         return (
-            "no generated path declared ([worktree] generated_paths) - a landing conflict "
+            "no generated path declared ([worktree.regenerate_commands]) - a landing conflict "
             "on an artifact every lane rebuilds bounces the lane instead of being rebuilt",
         )
     return (
-        f"generated: {', '.join(f'`{path}`' for path in paths)} - a landing conflict confined "
-        f"to these is rebuilt with `{' '.join(command)}` and continues, spending no rework",
+        "generated: a landing conflict confined to these is rebuilt and continues, "
+        "spending no rework",
+        *(f"           `{path}` <- `{' '.join(argv)}`" for path, argv in sorted(commands.items())),
     )

@@ -69,11 +69,9 @@ def _replay(repo_root: Path) -> rebase.ReplayOutcome:
 
 def _declare_generated(repo_root: Path, *paths: str, command: str = '["true"]') -> None:
     """Write a `[worktree]` config declaring *paths* rebuildable by *command*."""
+    entries = "".join(f'"{path}" = {command}\n' for path in paths)
     (repo_root / "basicly.toml").write_text(
-        f"[worktree]\ngenerated_paths = {list(paths)!r}\nregenerate_command = {command}\n".replace(
-            "'", '"'
-        ),
-        encoding="utf-8",
+        f"[worktree.regenerate_commands]\n{entries}", encoding="utf-8"
     )
 
 
@@ -137,6 +135,22 @@ def test_a_conflict_on_a_generated_path_bounces_while_nothing_is_declared(
     monkeypatch.setattr(
         rebase, "run", lambda *_a, **_k: pytest.fail("the rebuild ran with nothing declared")
     )
+
+    outcome = _replay(tmp_path)
+
+    assert outcome.status == "rebase-conflicts"
+    assert ["rebase", "--abort"] in fake.calls
+
+
+def test_a_conflict_marker_the_rebuild_left_bounces_rather_than_being_staged(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The conflict was in the prose, not the block the rebuild owns."""
+    _declare_generated(tmp_path, "plan.md")
+    (tmp_path / "plan.md").write_text("<<<<<<< HEAD\n", encoding="utf-8")
+    stubs = {"diff": _Proc(0, "plan.md\n"), "add": _Proc(0), _REBASE_RESUMED: _Proc(0)}
+    fake = _fake(monkeypatch, **{**_REBASE_STOPPED, **stubs})
+    monkeypatch.setattr(rebase, "run", lambda *_a, **_k: _Proc(0))
 
     outcome = _replay(tmp_path)
 
