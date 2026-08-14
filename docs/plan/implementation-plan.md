@@ -117,13 +117,22 @@ falsified them landed the same day it was measured:
 | four of the five designed skills are absent | **5 of 5 exist** |
 | one default runner serves every phase | a phase resolves to a role and reaches the argv (`roles.resolve_role`) |
 
-**That third row is itself half wrong, and the correction is load-bearing** [M 2026-08-09,
-re-verified 2026-08-11 at `e1a43ee`]. A phase does resolve, but only one phase ever asks:
-`resolve_role` is called from `loop.py:745` alone, inside `_run_agent`, whose three call sites
-(`loop.py:594`, `:1642`, `:1758`) are `build`, `repair` and `build`. `classify` and `decompose`
-never call it, so **`implementer` is the only role that has ever reached an argv**. That is
-`basicly-4xmu`, and it is why every decomposition to date was hand-dispatched from the driving
-session.
+**That third row carried a correction of its own, and it outlived the bead that fixed it by five
+days.** As written on 2026-08-09 it said `resolve_role` was called from one site inside
+`_run_agent`, so `implementer` was the only role ever to reach an argv — true then, and
+`basicly-4xmu` **closed** against it. Re-measured 2026-08-14: three call sites in `src/`, and the
+two the row said never ask now do.
+
+```text
+roles.resolve_role      loop.py:818   _run_agent      → validate · build · repair · sub-task build
+                        loop.py:1062  _run_proposer   → classify (:1138) · decompose (:1173)
+                        supervise.py:2679             → lane build
+_run_agent call sites   loop.py:459 validate · :667 build · :1610 repair · :1739 sub-task
+```
+
+The lesson is the one below it, not the wiring: a paragraph naming a **closed** bead reads as live
+work to the next reader, and this section is where a decider looks first. Re-check a `file:line`
+and a bead status together, or the correction becomes the stale claim.
 
 ```text
 agents   11 sources · 7 loop + 4 ad-hoc · projected to both families · vendored
@@ -133,9 +142,10 @@ agents   11 sources · 7 loop + 4 ad-hoc · projected to both families · vendor
          5 of 5 roles declaring `skills:` now receive them  (basicly-ey58)
          the projected `tools:` allowlist binds on copilot too   [M 2026-08-11]
 skills   40 sources · 35 projected · 5 of 5 loop skills exist
-         ever exercised                                     10 of 40
-         projected listing 2342 tok vs a consumer's 2000    OVER (a3ab.12)
+         ever exercised                                     report unsound (basicly-4grf)
+         projected listing under a consumer's budget        UNDER (a3ab.12 closed)
 hooks    31 documented host events · mapped by catalog  2   (u2hl.49, blocked)
+always-on  AGENTS.md 14,428 chars / 242 lines vs 16,000 / 320   UNDER  [M 2026-08-14]
 loop     loop_state.PHASES 7 incl. terminal `done` — correct, not a defect
 ```
 
@@ -155,14 +165,15 @@ unit of work on this axis is **wiring, not authoring**.
 | Was written | Measured 2026-08-08 |
 | --- | --- |
 | "Step 1 has not been run… `.basicly/ledger/` holds no `events-*.jsonl`" | the import **ran** (`b97a653`): 3,775 events over 643 records |
-| `br` spawn sites 43 / 44 | **31**, across 11 modules — the old count included `from .br import` lines and docstrings |
-| 20 verify checks | **22** |
+| `br` spawn sites 43 / 44 | **32**, across 12 modules [M 2026-08-14, `rg 'run_br\(' src/basicly/*.py` less `br.py`] — the 43/44 count included `from .br import` lines and docstrings, and 31/11 was this row's own reading one week stale |
+| 20 verify checks | **24** — and this row is why §3's figures moved into a generated block |
 | `basicly-tcmy.34` "the remaining P0" | **closed** 2026-08-05 |
 
 **And one that matters more than the rest**: `basicly-u6jq.1` — `v0.7.0`'s unmet exit criterion 5,
 the unattended multi-lane proof — is **unblocked and scheduler-ranked first**, and has been. All 22
 of its `blocks` edges point at closed beads, and `br` computes readiness from target status rather
-than edge presence, so nothing was ever holding it. It is deliberately **not** run yet: see §5.4.
+than edge presence, so nothing was ever holding it. It was held on a stated precondition, and that
+precondition is now met: see §5.4.
 
 ## 4. The release ladder
 
@@ -175,7 +186,7 @@ the dependency clusters a cut draws from (§12).
 | ~~`v0.8.0`~~ | **SHIPPED 2026-08-07.** Own the work graph — the store, not the floor. `br` is still in the runtime path (§6). | shipped |
 | **`v0.9.0`** | **Make the factory's own plumbing trustworthy, then finish the loop.** §5. The quality floor and five loop features landed on 2026-08-08; the same session measured the plumbing under them failing. Fifteen ordered items, plus what remains of the loop. | 8–12 sessions |
 | **`v0.9.1`** | **The measured evidence layer, when its chain unblocks.** Cost per landed package (`7bur`), AST localisation (`agzx.2`), the remaining Phase 2 gate (`m4zv.3`), parameter learning (`3ifz`). Split out because the whole chain sits behind `u6jq.1`, and holding the loop behind it would ship neither. | 3–5 sessions |
-| **`v0.10.0`** | **The judgment layer and always-on relief.** The roster's routing (`s2xf`) once `7bur` has numbers; the Phase 4 authoring pass and the empty-glob check (`a3ab.1`–`.3`), now joined by `a3ab.10` — `AGENTS.md` is **1,135 characters over** its cap, which makes `a3ab.1`'s eviction audit the gating item of this row rather than a tidy-up. `a3ab.8` closed 2026-08-09 without adding to the always-on layer (D34), so nothing new is queued against that budget. | 5–8 sessions |
+| **`v0.10.0`** | **The judgment layer and always-on relief.** The roster's routing (`s2xf`) once `7bur` has numbers; the Phase 4 authoring pass and the empty-glob check (`a3ab.2`–`.3`). **This row had a gating item and no longer does** [M 2026-08-14]: `a3ab.1`, `.10` and `.12` are all closed, and `AGENTS.md` is **14,428 characters against a 16,000 cap** — 1,572 under, not 1,135 over. The audit `a3ab.1` ran found the overrun was the *scoped tier* Codex cannot receive as separate `paths:` rules files, so evicting always-on lines would have cost all three families to fix one; `codex.yaml:9` records the cap moving 12,000→16,000 instead. Three documents outlived that by five days — see §3's note on correcting a `file:line` and a bead status together. | 5–8 sessions |
 | **`v1.0.0`** | **Stabilize and declare.** §7. Surface audit and semver freeze, the breaking-marker gate, the fresh-consumer acceptance test, `br` out of the runtime path. `1.0` is a promise, so the last release proves it instead of adding capability. | 3–5 sessions |
 
 Sizes are decomposition signals, not commitments.
@@ -223,19 +234,29 @@ criteria cannot be trusted. That is the ordering argument, and it is the whole o
 
 ### 5.2 The plumbing track, in order
 
+**Five of the eleven rows are closed, and with them every P0 §5.1's ordering argument rested on**
+[M 2026-08-14, against `.beads/issues.jsonl`]. They are recorded as one line rather than five rows,
+under §1.6: a row describing shipped code is noise, and a row written in the present tense of a
+live defect is worse than noise — it sends the next reader to re-do it.
+
+```text
+landed   rrah  lane transcripts persist        efw2  the scope field split in two
+         5vu4  the rebase loses no work        b9ef  the decider's corpus kept honest
+         ef7t  landing anchors collision-proof (3w51, the generated-block half, is open)
+         4kdm  the specialist agents and the dispatch that reaches them
+         ca42  chars/4 kept, evidence recorded on basicly-y8el
+```
+
+What is open, in the order the dependencies allow:
+
 | # | Bead | P | What it fixes |
 | --- | --- | --- | --- |
-| 1 | `rrah` | P0 | **No lane transcript is persisted anywhere.** The stream is read into an in-memory sink and spent on token accounting; `.basicly/usage/` holds totals and nothing about what a lane did. Until this lands, no claim about a lane is checkable after it ends — including every claim in this section. |
-| 2 | `5vu4` | P0 | **The landing rebase silently discards a lane's merge-commit conflict resolution.** `git rebase` skips merge commits and reports success. Twice on 2026-08-08; the suite is not a backstop. |
-| 3 | `ef7t` · `3w51` | P0 · P1 | Three shared landing anchors — `basicly.toml` checks, `pyproject.toml` frozen lists, and the generated block in this file — bounced three of five lanes. `3w51` is the generated-block half. |
-| 4 | `efw2` | P0 | **One `## Scope` field feeds two gates that want opposite things** — collision detection wants it complete, the band prices what it reads. Declaring honestly took one bead from 78,709 to 197,646 to 245,466 on an unchanged diff, and the ceiling moved twice inside one landing. |
-| 5 | `b9ef` | P0 | **The decider's corpus is the epic's bead text**, which still asserted a claim its own requirements document had refuted. It quoted that claim, reasoned from it, and abstained — wedging two lanes. |
+| 3 | `3w51` | P1 | The generated block in this file is a shared landing anchor and is **not** in `[worktree] generated_paths`, which holds `.basicly/generated-manifest.json` alone — so two lanes touching §3 collide on a file neither authored. |
 | 6 | `89hm` | P0 | **The context-window fix never reached consumers.** `runner.py:142` ships `claude: 200_000`; `basicly.toml` overrides to one million *for this repo only*. Every consumer inherits the defect that produced eighteen overrun beads here. **Premise corrected 2026-08-09**: the binary reports its own window on the stream as `modelUsage.<id>.contextWindow`, so the fix is to *read* it, not to ship a second hand-maintained constant that goes stale the same way (`factory-loop.md` §15.5). |
 | 7 | `ejdm` | P0 | **Hand a dispatched agent the context the session already holds** — §5.1's 254x. **The mechanism is now measured, and it is `--resume --fork-session`**: four real dispatches of one seeded session on claude 2.1.226 gave `cache_create 28 / cache_read 21,620` at **$0.0115** against a cold seed's **$0.2165** — **19x on a cache hit**, context confirmed by token recall, with a fresh session id per fork so lanes do not collide. Seed one session with the corpus, fork per lane. **The per-dispatch floor is a cache miss, not tokens**, which is a different fix from the longer prompt this row originally implied. **Size it against the corrected figures, not the headline** [M 2026-08-13, claude 2.1.231, `basicly-w20y`]: the 19x denominator is the ~21,800-token host floor rather than a repo corpus, so corpus reuse is nearer **10x**; and the cross-directory penalty is **one-time per working directory, not per fork** — a first fork into a fresh worktree reads 74–87% (`$0.0376`–`$0.0643`), every later fork into that same directory reads 100% (`$0.0113`). A worktree-per-lane design therefore pays it once per worktree, so the cost is a function of dispatches-per-worktree. `--agent` composes with the fork; the `--exclude-dynamic-system-prompt-sections` interaction is **unestablished** — that probe was confounded by arm ordering. See `factory-loop.md` §15.5. |
 | 8 | `xjd2` | P0 | **Dispatch through the host agent runtime instead of spawning a headless CLI.** Blocked on `ejdm`. **Its open question is answered twice over**: `--fork-session` settles it for our own path, and a competing harness runs exactly this split in production — host-runtime dispatch for the same vendor, subprocess only for cross-vendor delegation (`factory-loop.md` §11.7). It is an existence proof, not a design. |
 | 9 | `esxp` · `o40x` | P1 | Bind the band floor; give a healthy supervisor a stop that does not kill live lanes. |
-| 10 | `4kdm` · `0p8n` · `66ix` | P1 | The specialist agents and skills the states already name (`4kdm`), the harness gates carried into the coding agent's own hooks (`0p8n`), and Copilot hook parity behind it (`66ix` — a Copilot consumer gets the telemetry hook and **not** the `protect-generated` guard). `66ix` is blocked on `4kdm` by an edge. **Re-ranked in argument, not in order, 2026-08-09**: `0p8n` is enforcement at the *tool-call* boundary, which our gates do not reach at all — every one of them judges an artifact after it exists (`factory-loop.md` §11 item 8). A working shape exists to aim at: one policy kernel plus N host codecs, with a golden-file `--check` gate proving the projection converges (§11.7). Note `claude_settings.py:51` maps **2 of 31** documented hook events, so this row is engine work before it is catalog work. |
-| 11 | `ca42` | P0 | Rescoped: **keep `chars/4`**, record the evidence. `tiktoken` fetches a 3.5 MB vocabulary over HTTPS on first use, which a consumer's git hook cannot do. |
+| 10 | `0p8n` · `66ix` | P1 | The harness gates carried into the coding agent's own hooks (`0p8n`), and Copilot hook parity behind it (`66ix` — a Copilot consumer gets the telemetry hook and **not** the `protect-generated` guard). `66ix` was blocked on `4kdm`, which is closed. **Re-ranked in argument, not in order, 2026-08-09**: `0p8n` is enforcement at the *tool-call* boundary, which our gates do not reach at all — every one of them judges an artifact after it exists (`factory-loop.md` §11 item 8). A working shape exists to aim at: one policy kernel plus N host codecs, with a golden-file `--check` gate proving the projection converges (§11.7). Note `claude_settings.py:51` maps **2 of 31** documented hook events, so this row is engine work before it is catalog work. |
 
 ### 5.3 What remains of the loop
 
@@ -252,9 +273,14 @@ agent dispatched for it (`ey58`) — measured at ~0.03% of a lane, and reaching 
 rather than the one the vendor mechanism serves.
 
 Open, in the order the dependencies allow: `u2hl.6` skill descriptions · `u2hl.21` diff size
-reported at plan time · D10's criterion-derived checks · EARS · REPAIR and RETROSPECTIVE as
-states, the latter with its special-cause signal · `u2hl.17` once `a3ab.1` evicts an always-on
-line.
+reported at plan time · `u2hl.22` `change-shape` derived from an AST · D10's criterion-derived
+checks · EARS · REPAIR and RETROSPECTIVE as states, the latter with its special-cause signal.
+
+**Two rows left this list because the work landed and the bead did not close** [M 2026-08-14].
+`u2hl.17` is closed — `python-guidelines` carries its `paths:` glob. `u2hl.40` is open and the
+`root-cause` skill is authored and projected. `u2hl.54` is open with `.1`, `.2` and `.3` all
+closed and VALIDATE live in `loop._HANDLERS`. A bead that outlives its landing is the same defect
+as a document that does, one layer down, and the tracker is the layer a scheduler reads.
 
 **The roster's blocker moved, and the new one is not what the old one was.** Artifacts were what
 held four roles unreachable; that is fixed. Reachable went **1 → 4** (`decider`, `decomposer`,
@@ -272,28 +298,40 @@ split; `.3` hands the lane a durable brief assembled from artifacts the engine a
 does *not* overturn D6's fresh context priming; `.4` measures before against after. Only `.4` is a
 claim, and only after `.2` exists.
 
-**`u2hl.17` no longer waits on that eviction** [D35, 2026-08-09]. The plan behind it — promote
-`python-guidelines` to an always-on fragment — rested on a premise the mechanics research refuted: a
-skill takes a `paths:` glob and triggers on it. What the row should have said all along is that
-`AGENTS.md` is **1,135 characters over** its cap, not 1,225 under, so `a3ab.1`'s audit is more urgent
-than this row and less coupled to it. `a3ab.10` now makes the overrun visible from `basicly check`
-rather than only from `build`, which is what let the figure stay wrong.
+**`u2hl.17` shipped on D35's mechanism, and the always-on overrun it was queued behind was never
+what it looked like** [closed; audit `a3ab.1` closed 2026-08-14]. The original plan — promote
+`python-guidelines` to an always-on fragment — rested on a premise the mechanics research refuted:
+a skill takes a `paths:` glob that both limits and triggers activation, so the scoping cost zero
+always-on characters. The audit then found the `AGENTS.md` overrun was **structural to Codex**:
+the extra characters are the scoped tier that claude and copilot receive as separate `paths:`-carrying
+rules files and Codex cannot, so evicting baseline lines would have charged all three families to fix
+one and left the cause. `codex.yaml:9` records the cap moving 12,000→16,000 instead, and `a3ab.10`
+put the check on `basicly check` rather than only on `build`.
 
 **And `u2hl.6` is larger than "descriptions".** A skill's `description` plus `when_to_use` is capped
 at 1,536 characters per entry, the whole listing is budgeted at **1% of the context window**, and on
-overflow the host drops descriptions **starting with the least-invoked skills** [M 2026-08-09]. With
-8 of 34 ever exercised, that is a feedback loop rather than a cost: the skills nobody invokes are the
-first to become uninvokable. `u2hl.45` gates both caps.
+overflow the host drops descriptions **starting with the least-invoked skills** [M 2026-08-09]. That
+is a feedback loop rather than a cost: the skills nobody invokes are the first to become uninvokable.
+`u2hl.45` gates both caps and `a3ab.12` brought the listing under budget. **The exercised-count that
+sized this row is now unsound** — `basicly-4grf`: since `ey58` injects a role's skills into the
+dispatch prompt, the never-used report cannot tell an uninvoked skill from an injected one, so
+"8 of 34" has no successor figure until that is fixed.
 
 Nine `u2hl` children are **band-refused** on read cost rather than on size — the same
 over-declaration `efw2` describes. Narrowing their scopes is about thirty minutes, not nine splits.
 
-### 5.4 Do not start here
+### 5.4 The hold on `u6jq.1` is discharged
 
-**`u6jq.1` is unblocked and ranked first, and is deliberately held.** It is the proof that a
-supervised pass completes with zero interventions attributable to a harness defect. Running it
-against a 17.2% lane failure rate and two known silent data losses would measure the defects in
-§5.2 rather than the factory. It becomes the right move after `rrah` and `5vu4`.
+**It was held on a stated precondition, and that precondition is met** [M 2026-08-14]. `u6jq.1` is
+the proof that a supervised pass completes with zero interventions attributable to a harness
+defect. This section held it because running it against a 17.2% lane failure rate and two known
+silent data losses would have measured §5.2's defects rather than the factory, and it named the
+release condition exactly: *"it becomes the right move after `rrah` and `5vu4`."* **Both closed.**
+
+So the hold has no argument left behind it. That is not the same as "run it next" — it means the
+next reader owes a *new* reason or a dispatch, not a repeat of this one. A hold whose stated
+condition has been met and which is still written as a hold is indistinguishable from a decision
+nobody re-examined, which is the shape §3's roster paragraph took for five days.
 
 ## 6. What is left of the `br` cut
 
@@ -311,12 +349,18 @@ The migration is five steps and they did not run in order:
 5 native markers  LANDED 2026-08-07, before steps 2-4
 ```
 
-**31 spawn sites** across 11 modules behind the one seam in `br.py`. Only `show`, `scheduler` and
-comments have owned equivalents. **Five operations have none at all**, and each is a design
-question rather than a port: `lint` (which means owning the validation rules — requirement R3),
-`dep cycles`, `list --label`, id minting (`ids.mint_root_id` exists and nothing calls it), and
-`gate list` (the owned side reads `missing` on 331 of 643 records because only the dual write
-populates it).
+**32 spawn sites across 12 modules** behind the one seam in `br.py` [M 2026-08-14,
+`rg 'run_br\(' src/basicly/*.py` less `br.py` itself: `supervise` 8, `decompose` 6, `loop` 4,
+`policy` 4, `merge` 3, then one each in `classify`, `loop_state`, `cli`, `rubrics`, `worktree`,
+`verify`, `validate_gate`]. Only `show`, `scheduler` and comments have owned equivalents. **Five
+operations have none at all**, and each is a design question rather than a port: `lint` (which
+means owning the validation rules — requirement R3), `dep cycles`, `list --label`, id minting
+(`ids.mint_root_id` exists and only tests call it), and `gate list` (the owned side reads
+`missing` on 331 of 643 records because only the dual write populates it).
+
+**This is also the largest single dead-code event left on the ladder**, which is why it bounds the
+scope of any architectural audit run before it: 32 call sites, the `br.py` seam and its parsers all
+leave the tree at step 4. Auditing them is auditing a scheduled deletion.
 
 Rework state lives in `br` comments, so the rework cap — one of only two controls with a recorded
 correct firing — depends on the tracker being removed.

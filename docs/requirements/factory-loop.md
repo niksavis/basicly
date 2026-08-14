@@ -349,8 +349,8 @@ a role and dispatch it, which is what makes the roster real rather than projecte
 | --- | --- | --- | --- |
 | `decomposer` | DECOMPOSE | **authored**, loads `decompose-plan` | unnamed equivalent (`loop.py:1057-1094`) |
 | `implementer` (+ **repair mode** [D5]) | BUILD, REPAIR | **authored**, loads `python-guidelines` + `repair-in-place` | equivalent exists (`loop.py:663-700`); repair mode does not |
-| `validator` | VALIDATE | **authored**, loads `validate-as-consumer` | `rubrics._judge` never runs for leaves |
-| `reviewer` (by lens) | VALIDATE | **authored** | nothing |
+| `validator` | VALIDATE | **authored**, loads `validate-as-consumer` | **dispatched** (`loop.py:459`, `u2hl.54.3`) |
+| `reviewer` (by lens) | VALIDATE | **authored** | **nothing — and no `ROLE_BY_PHASE` entry**, so it cannot resolve at all |
 | `decider` | CLASSIFY, escalations | **authored** | exists (`decisions.py`) |
 | `retrospector` | RETROSPECTIVE | **authored**, loads `root-cause` | nothing; the state does not exist |
 | `curator` | SHIP | **authored** | nothing |
@@ -481,7 +481,7 @@ A rule reaches an agent by exactly one of three routes, and choosing wrong is wh
 
 | Surface | Loads | Costs | Use when |
 | --- | --- | --- | --- |
-| **Fragment** | always, or on a path glob | always-on budget on every family; `AGENTS.md` has ~1,225 characters of headroom | it must bind even when nobody thought to ask |
+| **Fragment** | always, or on a path glob | always-on budget on every family; `AGENTS.md` is 14,428 characters against a 16,000 cap — **1,572 of headroom** [M 2026-08-14] | it must bind even when nobody thought to ask |
 | **Skill** | when the model judges it relevant, **when its `paths:` glob matches**, or when a human types it | its description sits in the listing budget; the body costs nothing until invoked | it is a *method* — long, situational, and useless when it does not apply |
 | **Agent** (§6) | when the engine dispatches a state, or on demand | a dispatch | it needs its own tools, tier and output contract, not just words |
 
@@ -569,9 +569,17 @@ ask, and the agent that most needs it is the one that does not." **The premise i
 own frontmatter takes a `paths:` glob that limits and triggers automatic activation [M, 2026-08-09,
 claude 2.1.226]. The glob buys the same always-loads-on-Python behaviour for **zero** always-on
 characters and unblocks the work from `basicly-a3ab.1`'s eviction, which the fragment plan was
-queued behind. The headroom figure the plan was sized against was also wrong in the worse direction:
-`AGENTS.md` is **13,135 characters against `codex.yaml`'s 12,000 cap** — 1,135 characters *over*,
-not 1,225 under — and 226 lines against a 200-line warning [M, 2026-08-09].
+queued behind. **Shipped: `basicly-u2hl.17` is closed.**
+
+**The overrun this paragraph was sized against was real and its cause was not what it looked like**
+[M 2026-08-14, `a3ab.1` closed]. It read 13,135 characters against a 12,000 cap. The audit found the
+excess is the **scoped tier**: claude and copilot receive those four fragments as separate
+`paths:`-carrying rules files, Codex has no glob-based instruction scoping and inlines them, so the
+gap is structural to this one target. Evicting always-on lines would have charged all three families
+to fix one and left the cause standing. `codex.yaml:9` records the cap moving to **16,000 / 320**
+instead, and `AGENTS.md` is now 14,428 characters over 242 lines — under both. What that trades away
+is stated at the same site: the cap also stood proxy for the vendor's claim that adherence degrades
+with length, which this repo has never measured (`basicly-agzx.1`).
 
 **What survives of the plan is the codex gap.** Codex has no glob-based instruction scoping and
 never loads a nested `AGENTS.md` below the cwd (architecture §7.4), so a fragment remains the only
@@ -812,9 +820,15 @@ holds, because a durable artifact is neither a replayed window nor a cold start.
 
 ## 9. Code quality
 
-The owner's stated pain is module bloat. **Nothing in the stack measures it** [M]: ruff has no
-module-length rule, and `C90` is not enabled. `cli.py` is **5,097 lines**; `src/basicly/` totals
-**36,641**.
+The owner's stated pain is module bloat. **Nothing in the stack measured it** when this section was
+written [M 2026-08-07]: ruff has no module-length rule, and `C90` was not enabled. `cli.py` was
+5,097 lines; `src/basicly/` totalled 36,641.
+
+**Both instruments now exist and the tree grew anyway** [M 2026-08-14]: `C901` is enabled at 15
+(§9.1) and §9.3's token ratchet is live with 78 frozen baselines, while `cli.py` is **4,911 lines**
+and `src/basicly/` is **42,966** — **+17% in one week**. A ratchet bounds a *file*; it does not bound
+a *tree*, and nothing here counts modules. That is the gap an architectural pass has to close with a
+gate rather than with one audit.
 
 ### 9.1 Deterministic — gate it
 
@@ -1156,10 +1170,12 @@ That is worth adding to `external-review` as a second worked example.
 
 ## 12. Observability and the two factory modes [D6]
 
-**Measured** [M]: the harness already defaults claude dispatch to `--output-format stream-json
---verbose` (`runner.py:278`) and reads it line by line (`runner.py:1180`). It spends the stream
-entirely on token accounting. `--forward-subagent-text` — verified present on Claude Code
-2.1.224 — is **passed nowhere**.
+**Measured** [M]: the harness defaults claude dispatch to `--output-format stream-json --verbose`
+and reads it line by line. **The "spends the stream entirely on token accounting" half is now
+false** [M 2026-08-14]: `--forward-subagent-text` is passed at `runner.py:179`, and `basicly-rrah`
+persists each lane's transcript, so the stream reaches a durable artifact rather than an in-memory
+sink. What this section still describes correctly is the third item below — light mode as a second
+dispatch path — which is `basicly-xjd2`.
 
 | | Dark factory (`claude -p`) | Light factory (one session, built-in subagents) |
 | --- | --- | --- |

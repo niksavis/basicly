@@ -1,12 +1,27 @@
 # Work Tracker — Owning the Harness's Core Dependency
 
-Status: **initialization — information gathering, not a build plan.** Opened 2026-07-25; updated
-2026-07-26 from the state-of-the-art review
+Status: **partially built against an unfrozen design.** Opened 2026-07-25; updated 2026-07-26 from
+the state-of-the-art review
 ([`research/2026-07-26-sota-review.md`](../research/2026-07-26-sota-review.md) §2.10); updated
-2026-07-28 with the cross-repo topology decision in §8.1. No schema is
-frozen and no implementation starts from this document; its job is to record why we must own this
-component, what our own usage already tells us it must do, and what we still need to measure
-before committing to a design. The decision point is named in §7.
+2026-07-28 with the cross-repo topology decision in §8.1; **status corrected 2026-08-14.**
+
+**This header said "initialization — no implementation starts from this document" for three weeks
+after implementation started, and that is the finding, not a typo** [M 2026-08-14]:
+
+```text
+.basicly/core/kit/tracker/    events 50k · snapshot 42k · differential 44k · fsck 34k
+                              migrate 30k · provenance 29k · ids 18k · scheduler 17k
+src/basicly/owned_store.py    TRACKER_MODES = (external, dual, owned)
+landed                        the import ran (b97a653) · ranking owned (vkh0.20)
+                              harness markers native (s5li)
+```
+
+So the document's job has changed under it. **Still true**: no schema is frozen, the surface list is
+not declared, and the cache decision is unmade — which is why §7's gate on those three has not
+lifted. **No longer true**: that nothing has been built. Code was written to this document's
+reasoning without the document being promoted to the design §7 requires, which means the built half
+is specified only by its own tests. Reconciling the two is `basicly-vkh0`'s work and it is named in
+§7.
 
 **Read §7 first if you are about to start work.** It carries a licence correction — `beads_rust`
 is *not* MIT, and a clean-room boundary now applies to this component. The 2026-07-26 additions
@@ -692,6 +707,27 @@ with: a frozen surface list, the ledger schema, the cache decision, and a compon
 sized by D8. Until then, no implementation of the tracker itself and no schema freeze. Work that
 improves the *current* tracker's use — recording the scheduler score (`basicly-vkh0.3`), stopping
 the path leak (`basicly-vkh0.5`) — is not blocked by this and lands against the existing tracker.
+
+**The trigger fired and the upgrade did not happen** [M 2026-08-14]. `basicly-kjc5.22` is
+**closed**, so the condition above was met — and instead of the promotion it gates, eight kit
+modules landed against the reasoning in §§4–4.6 with no frozen surface, no declared schema and no
+cache decision. The paragraph above is left standing because the wrong outcome is the more useful
+record: **a gate written as prose is not a gate.** Nothing read `kjc5.22`'s status, nothing refused
+a commit under `kit/tracker/`, and the condition was discharged by a bead closing somewhere else
+entirely. Compare the gates that did bind over the same period — `tracker-path-scan`, the module-size
+ratchet, `kit-boundary.py` — each of which is a script wired to a hook.
+
+**What the promotion still owes, and the order it runs in.** The three deliverables above are
+unchanged, and they are now *reverse-engineering* work over eight built modules rather than design
+ahead of code: enumerate the surface the kit already exposes, declare the event schema `events.py`
+already writes, and decide the cache question §10 defers on the fold cost `snapshot.py` already
+pays. It sequences with the cutover — `basicly-c357` (scope the shadow differential),
+`basicly-vkh0.23` (give the import an entry point), `basicly-u4xu` (flip to dual) — because the
+differential in §5 step 2 is what would falsify a schema declared from a read.
+
+**Until it runs, `kit/tracker/` is outside the scope of any architectural audit of this repo.** Not
+because it is exempt, but because an audit needs a specification to judge against, and this section
+is the record that one does not exist yet.
 
 **Correction, 2026-07-26: the licence claim that stood here was wrong.** This section previously
 read "Reading beads_rust and bv sources for reference is explicitly sanctioned while they are
