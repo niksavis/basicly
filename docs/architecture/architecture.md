@@ -51,9 +51,11 @@ useful and only jointly sufficient:
    pipeline, which mechanically block a bad commit, push, or landing regardless of
    whether the model read or followed the guidance (§4.2, §6).
 3. **The loop — an SDLC of its own** (deterministic engine, agent-supplied
-   judgment). Intake → classify → decompose → build → verify → ship → teardown →
-   retro, driven by `basicly loop` over the tracker, run single-track or as
-   parallel lanes behind a supervisor and a serial merge queue (§12).
+   judgment). Intake → classify → decompose → build → verify → validate → ship,
+   driven by `basicly loop` over the tracker, run single-track or as
+   parallel lanes behind a supervisor and a serial merge queue (§12). Teardown is
+   folded into the ship advance and the retrospective is a conditional process over
+   the gate-failure ledger, not a rung (§12.13); neither is a phase.
 4. **The tracker — work state as a graph.** Issues, dependencies, gates,
    checkpoints and evidence, from which the loop **derives** the current phase
    rather than remembering it (§12.1).
@@ -839,12 +841,19 @@ inherits that failure.
 
    So **`copilot-instructions.md` is the tightest always-on surface** and binds for an
    always-on fragment, while **`AGENTS.md` binds for the path-scoped tier** — a scoped
-   fragment costs `AGENTS.md` 900-1600 chars (measured 869, 1462 and 1614 for the three
-   that exist) and costs the other two nothing. The codex headroom above is now into the
-   low tens of characters, spent deliberately: `model-tier-routing` was written to the
-   budget that was left rather than at its natural length. The **next** scoped fragment does not fit,
-   so it needs the cap recalibrated on measured evidence (the `basicly-c5to` precedent)
-   rather than a round-number trim of guidance.
+   fragment costs `AGENTS.md` 900-1600 chars and costs the other two nothing. **Four
+   fragments are scoped, not three** [M 2026-08-14]: `platform-hermetic-tests`,
+   `external-review`, `code-is-authoritative` and `model-tier-routing`.
+
+   **The codex cap moved from 12,000 to 16,000, and the reason is a finding rather than
+   an allowance** (`basicly-a3ab.1`, `codex.yaml:9`). The audit run on the 13,135-character
+   overrun found the excess **is** the scoped tier: claude and copilot receive those four
+   fragments as separate `paths:`-carrying rules files, codex has no glob-based instruction
+   scoping and inlines them, so the gap is structural to one target. Evicting always-on
+   lines would have charged all three families to fix one and left the cause standing. What
+   the move trades away is stated where it was made: the old cap also stood proxy for the
+   vendor's claim that adherence degrades with length, which this repo has never measured
+   (`basicly-agzx.1`).
 2. **Enforced vs. judgment split**: enforced rules are one line pointing at the
    command/config; judgment rules are prose, and should be the shorter of the two
    sections.
@@ -1149,15 +1158,14 @@ type) → _[human checkpoint]_ → **Decompose** into child issues + a `br dep` 
 `policy.definition_of_ready`, not upstream, basicly-58iu)
 → _[human checkpoint]_ → **fan-out build** (one worktree per dependency-unblocked node, ranked
 by `br scheduler`, concurrency-capped) with a **serial merge queue** on the way back →
-**Verify** (deterministic, blocking) + **Validate** (acceptance/traceability) → _[human
-checkpoint]_ → **Ship** + **Teardown** → **epic retro**. A failed node enters a bounded
+**Verify** (deterministic, blocking) → **Validate** → _[human
+checkpoint]_ → **Ship** (teardown folded into the same advance). A failed node enters a bounded
 **rework loop (n=2)** then escalates to a human; any track can **escalate a tier** (carry work
 forward, re-hit only the Decomposition checkpoint) without restarting. Default is
 task-by-task; one-shot mode collapses the middle checkpoint. The concurrency cap is
 `[worktree].concurrency`, whose default is `config.DEFAULT_WORKTREE_CONCURRENCY` and is
 deliberately not restated here — a document that repeats it goes stale silently
-(`basicly-tcmy.9`). The retro emits a findings list; per finding the user picks ignore / fix-now /
-fix-later, and a bead is created for everything not ignored. Each _[human checkpoint]_
+(`basicly-tcmy.9`). Each _[human checkpoint]_
 approval (`policy checkpoint <issue> <name> --approve`) is gated on an interactive terminal:
 off a TTY — as any tool-invoked Bash runs — the command refuses and issues a one-time
 confirm code that a human must echo back with `--confirm`, so a subagent driving the loop
@@ -1183,15 +1191,56 @@ into its binary and no read-only `br` command reports them, so `policy._TYPE_SEC
 the set and `tests/test_integration_dor_scaffold.py` pins it against the installed `br`
 (basicly-kjc5.44).
 
+**12.2.1 VALIDATE is a rung, not a lint** (`basicly-u2hl.54`). `config.LOOP_PHASES` reads
+`intake · classify · decompose · build · verify · validate · ship`, and `loop_state.PHASES`
+adds the terminal `done`, which has no transition out. The two tuples differ by exactly that
+one element **on purpose** — `config.py:369` records the reason and `tests/test_loop.py` pins
+`loop._HANDLERS` to `LOOP_PHASES` so a handler cannot drift from the set that validates it.
+Do not reconcile them.
+
+The phase is gated at the recorded L3 level: it refuses its advance on a failed or missing
+consumer gate, dispatches the `validator` role, and prices that dispatch as a **read** rather
+than a write, so a judge never enters the sample a lane's cost is calibrated from (§12.8.2).
+`reviewer` fans out beside it, once per entry in `roles.REVIEW_LENSES` — `correctness` and
+`security`, and the vocabulary is pinned by a literal tripwire rather than by a length check.
+Both are advisory: a reviewer records findings under a `[harness-review] lens=<lens>` marker
+and the validator owns the gate, so §6's no-rerank rule holds by construction rather than by
+instruction. Maintainability is deliberately not a lens — ruff, pyright, vulture,
+`lint-imports`, `module-size`, `comment-density` and `noqa-debt` ratchet that axis
+mechanically, and a lens restating a green check is a paid dispatch on every L3 unit.
+
+**12.2.2 Four gate verbs, all four of which now write.** Go and Recycle (bounded rework in the
+lane's own worktree) were the loop as first built. **Hold** and **Kill** were words an escalation
+offered that no answer carried out (`basicly-u2hl.3`): an operator who answered `park` changed no
+status, and the next supervised pass dispatched the lane again. Both are writes today — an
+answered `park` defers the lane and records the reason (`cli._carry_out_rework_hold` →
+`policy.hold_lane`), and `basicly loop kill` tears the worktree down and closes the bead behind a
+one-time confirm code that no grant and no TTY can substitute for (`policy.authorize_kill` →
+`policy.kill_lane`). Kill requires a human at **every** integrity level, because it is the only
+verb that removes a requirement rather than routing work.
+
 **12.3 Components — build vs reuse.** The engine we build is thin: worktree lifecycle; merge
 orchestrator + serial merge queue + conflict-resolver; a **verify runner** (runs the
 consumer's configured checks — adapted from beads-blueprint's `validate.py`, made
 config-driven rather than Python-specific); the loop state machine + checkpoints; the
 classifier; the concurrency cap. Everything else is delegated to `br`: **gate ledger**
-(`br gate report`/`br gate list`, with required-gate status), **scheduling** (`br scheduler`,
-explainable additive scoring), **dependency graph + readiness** (`br dep`/`br ready`/
-`br blocked`), **Definition-of-Ready** (`br lint`), **retro capture** (`br comments`), and
-**swarm/stale-claim diagnosis** (`br coordination`). basicly reimplements none of these.
+(`br gate report`/`br gate list`, with required-gate status), **dependency graph + readiness**
+(`br dep`/`br ready`/`br blocked`), **Definition-of-Ready** (`br lint`), and
+**swarm/stale-claim diagnosis** (`br coordination`).
+
+**Two of those surfaces have already left the list, and the delegation claim above is
+narrower than it reads** [M 2026-08-14]. **Ranking is owned**: `kit/tracker/scheduler.py`
+sits behind `br.read_ranking` and emits `schema: basicly.scheduler.v1` — unblocked only, then
+priority, then descending count of still-live blocking dependents, then id, every term a pure
+function of the graph, with `created_at` dropped because age-based ordering makes dispatch
+order clock-dependent for an unchanged graph. **Harness markers are native**
+(`basicly-s5li`): 89% of the live tracker's comments are `[harness-*]` markers using a beads
+comment purely as transport, and in `owned` mode those twelve families are written and read as
+`comment` events with no `br` spawned at all. What is left is **32 `run_br` call sites across
+12 modules** behind the one seam in `br.py` — `supervise` 8, `decompose` 6, `loop` 4,
+`policy` 4, `merge` 3, then one each in `classify`, `loop_state`, `cli`, `rubrics`, `worktree`,
+`verify` and `validate_gate`. The repo still runs `[tracker] mode = "external"`, so none of
+the owned path is authoritative here yet; §14.5 and `work-tracker.md` §5 carry the cutover.
 
 **12.4 Gates — deterministic blocks, semantic advises.** Deterministic checks (tests, lint,
 type, build; the existing commit-msg/identity/beads hooks) report a **required** gate via
@@ -1640,7 +1689,124 @@ cleanup) as a reference, while keeping the **`br`-wrapping engine + agent-agnost
 installable composable distribution** as the differentiators. From beads-blueprint, adapt
 the `validate.py` gate-runner structure into the verify runner. `bv` (beads-viewer) is an
 **optional human viewer only** — redundant with `br scheduler` at runtime, never a harness
-dependency.
+dependency. Measured over 1,568 recorded invocations, **0 of `bv`'s 141 surfaces** have ever
+been called programmatically, which is what makes it a viewer rather than a dependency.
+
+**12.11 The role map — a phase resolves to a named agent.** For two days this section could
+have read "the projection works and nothing consumes it": twelve agent sources were authored,
+rendered into both agent roots and vendored to consumers, and every dispatch ended at a bare
+`claude -p <prompt>`. That is closed. `roles.resolve_role` maps a phase to a role by **table
+lookup** and the runner puts `--agent <role>` on the argv, verified against claude 2.1.226 and
+copilot 1.0.78 rather than recalled.
+
+Two tables, because the state table gives VALIDATE two roles. `ROLE_BY_PHASE` names the role
+that **drives** a phase — the one whose reply the engine acts on — and `LENS_ROLE_BY_PHASE`
+the one it fans out beside it (§12.2.1). Three properties are decisions rather than
+implementation detail:
+
+- **The map is data, not judgment.** The choice is not gameable, costs no tokens and cannot
+  drift between lanes.
+- **A role that is not projected resolves to nothing**, and the dispatch falls back to the
+  default runner rather than failing. The check is against the **projected** file, not the
+  catalog source, because that is what the host reads — so a consumer on an older install gets
+  an unspecialised loop instead of a stopped one. Resolution also fails to `None` for a phase
+  with no persona (VERIFY, by decision) and for a family that cannot select one (codex ships
+  no subagent root).
+- **Repair is the implementer's second state, not a role.** A persona is admitted only when it
+  differs in tier, tools or artifact; repair differs in none of them, only in prompt. So REPAIR
+  maps to `implementer` too and the mode travels in the brief, carrying the gate evidence that
+  rejected the work.
+
+Three `resolve_role` call sites reach an argv: `loop.py:818` (`_run_agent` — validate, build,
+repair, sub-task build), `loop.py:1062` (`_run_proposer` — classify, decompose) and
+`supervise.py:2679` (lane build). **Six of the seven loop roles are reachable today** —
+`decider`, `decomposer`, `implementer`, `validator`, `reviewer`, and `retrospector` once its
+trigger landed (§12.13). `curator` is the one that is not, and its cause is one wiring rather
+than a design gap: it maps to `ship`, which is a live phase with a live handler that never
+calls `_run_agent`.
+
+**The ledger cannot yet falsify any of this, and that is a recorded P0** (`basicly-jn1x`).
+Re-measured 2026-08-14: **0 of 357 dispatch records carry `--agent`**, against a positive
+control of 163 carrying `-p`. Every claim above is read from the code; the artifact a
+before/after measurement would use holds no trace of a role. Two readings fit — the lane path
+does not apply the role, or it does and the record does not capture it — and **they are not
+distinguishable from the data we keep**, which is the finding rather than the fix. Read §12.11
+as a statement about reachable wiring, never about observed dispatch.
+
+Every role declares a **tier**, and `catalog lint` refuses a source that does not
+(`basicly-plhx`). No projected agent file carries a provider model id — a projected `model:`
+line would _disable_ tier injection rather than implement it — so the tier is declared, gated
+and, until `basicly-a3yi` lands the injection, **inert at spawn** (§14.2). A role's declared
+`skills:` do reach the agent dispatched for it (`basicly-ey58`), measured at ~0.03% of a lane
+and reaching all three families rather than the one the vendor mechanism serves.
+
+**12.12 Handoff artifacts — a schema at each state boundary.** Eight artifact kinds are named
+and **seven carry a JSON schema** under `.basicly/core/schemas/`: `classification`,
+`change-shape`, `implementation-plan`, `change-summary`, `verification-evidence`,
+`validation-transcript` and `release-record`. `solution-design` is the one without, because it
+is specified as **markdown with six machine-checked sections** rather than a JSON payload —
+problem in the requester's terms, success as an observable, a consumer transcript, out of
+scope, constraints, and open questions — so whether it belongs to the same family is an open
+question (`basicly-32qz`) rather than an omission.
+
+Two mechanisms carry them, and the second is the one a reader gets wrong. The schemas are
+**catalog sources**, so a repo that has not installed them runs _neither_ end of the contract;
+both producer and consumer resolve the schema first, which is what keeps a skipped write from
+becoming a refusal downstream. And the artifacts travel as `[harness-artifact]` comment
+markers through `br.add_comment`/`br.read_comments` — **not** by appending to
+`.basicly/ledger/` directly. A direct ledger append would refuse the landing it precedes: the
+advance sweeps base-checkout dirt only under `.beads/`, and anything else blocks the merge, so
+an artifact written into the committed ledger on the way into BUILD would wedge the very
+landing it gates. The marker seam writes on every rung and _becomes_ a ledger `comment` event
+at the flip.
+
+Schemas written is **not** roles reachable. Five of the seven roles carry a contract that
+cannot be exercised until its artifact has run in anger, and that is a debt this section names
+rather than a gap it hides.
+
+**12.13 RETROSPECTIVE fires on a special cause, and is deliberately not a phase**
+(`basicly-xmhc`). `retrospective.py` reads the gate-failure ledger and fires only on a
+**computed** signal — a point beyond three sigma, or a non-random run or trend within the
+limits. A single failure inside the limits is common cause and fires nothing: acting on it is
+tampering, which "invariably increases variation in the results of a stable process". This is
+the first mechanism in the harness that decides to **suppress** work, and it is a correction to
+this repo's own practice, which filed beads off single occurrences.
+
+`LOOP_PHASES` and `loop._HANDLERS` are untouched by it. A state exists to hold an entry
+predicate, an exit gate and a persona; a conditional process over a ledger needs none of the
+three, and adding a rung that never blocks anything would be ceremony around a function call.
+The dispatch is recorded under a `retrospective` phase for role resolution and cost
+attribution only (`retrospective.PHASE`), outside `WRITE_PHASES`.
+
+One arithmetic trap is fixed in the module and is worth stating because the naive form looks
+right: a c-chart's control limit falls **below 1** at low mean failure counts, so raw
+arithmetic flags every isolated failure — at roughly 36× the rate a three-sigma tail admits.
+The limit is floored at 2.
+
+The output contract is **not** the why-chain. Three things: a named control that would have
+refused the defect, its tier (control / warning / documentation), and the class of defects it
+covers — plus the branch of the analysis not taken, because iterated-why yields one causal path
+chosen by the asker and is not reproducible between analysts. A documentation-tier outcome is
+recorded as a downgrade with the reason no stronger control was available. A retrospective's
+output is a **diff against catalog YAML**, never prose advice, and no autonomy grant disposes
+it: an agent that can amend the catalog under a grant widens its own constraints, and the next
+session inherits the widening as ground truth.
+
+**12.14 The second loop shape — an improvement controller** (`basicly-u2hl.27`). Everything
+above drives a _requirement_ to a landed change. `basicly loop improve` drives a **property of
+the codebase** toward a set point: one sensor reading, one lane. It is the actuator behind the
+ratchets, which bound a file and cannot themselves repair one.
+
+Three properties keep it inside the engine-disposes rule. The controller is a **repo-declared
+script** at a fixed path, run with this process's own interpreter and `shell=False`; a repo
+that declares none is **refused by name**, because an absent script is the one state otherwise
+indistinguishable from a run that measured everything and found nothing to do. Its exit code
+passes straight through, so a schedule can branch on it. And it holds a **one-lane bound**: it
+files one bead and does not file another until that one lands.
+
+It has run live and filed its first real bead. What it does not have is a caller —
+`basicly-e2mz.6` gives it one, `workflow_dispatch` only, which is what makes the wiring
+non-circular.
 
 ## 13) References
 
@@ -1716,12 +1882,12 @@ this harness is measurably better than the others that also believe it.
 
 **14.1 Pillar maturity.**
 
-| Pillar | Today | Target | Owning design doc |
+| Pillar | Today [M 2026-08-14] | Target | Owning design doc |
 | --- | --- | --- | --- |
-| Catalog (guidance) | projected + structurally gated; the path-scoped tier in use on three fragments | routing and behaviour measured per entry | §14.4 |
-| Gates (enforcement) | deterministic, per-site behaviour | classified by type, with stall detection and a severity contract | [`factory-loop-requirements` §5.1](../requirements/factory-loop.md) |
-| Loop / factory (SDLC) | parallel lanes, autonomy grants, merge queue — dogfooded | named roles per judgment step; release automation reachable under a grant | §14.3 |
-| Tracker (state) | external `br` binary in the critical path | owned, in-process, append-only event log | [`work-tracker`](../requirements/work-tracker.md) |
+| Catalog (guidance) | projected + structurally gated; the path-scoped tier in use on **four** fragments; routing measured (tiers 1 and 2 ship as `catalog lint` rules) | behaviour measured per entry — tier 3 | §14.4 |
+| Gates (enforcement) | deterministic, per-site behaviour, typed by `policy.GATE_TYPE_BY_GATE` for the five gates the engine names; 25 `[[verify.checks]]` including four ratchets | every gate classified by type, with a severity contract on judged output | [`factory-loop-requirements` §5.1](../requirements/factory-loop.md) |
+| Loop / factory (SDLC) | parallel lanes, autonomy grants, merge queue, **VALIDATE as a rung, six of seven roles reachable, seven of eight artifact schemas** — dogfooded | the seventh role wired; the judged half hardened; release automation reachable under a grant | §14.3 |
+| Tracker (state) | external `br` binary in the critical path, **32 call sites behind one seam**; ranking and harness markers already owned; repo runs `mode = "external"` | owned, in-process, append-only event log | [`work-tracker`](../requirements/work-tracker.md) |
 
 **14.2 The factory — built, and its remaining honesty gaps.** The supervisor,
 autonomy grant ledger, decision queue, lane mini-loop, and merge queue v2 have
@@ -1738,18 +1904,29 @@ reaches no spawn.** No projected agent file carries a model id, by decision D30,
 injection that would resolve one at spawn is `basicly-a3yi`, still open. So the tier is
 declared, gated and inert. One recorded gap remains, and it matters
 because a reader would otherwise believe the design is enforced: coupling attribution
-still depends on intra-pass landing order, which the determinism rule forbids. `factory-design` §9 is the authoritative
-reconciliation of decision against code.
+still depends on intra-pass landing order, which the determinism rule forbids.
+**The pointer that stood here is dead**: `factory-design.md` lost tiebreaker authority
+and was deleted. Authority now runs **measured evidence in this repo, then the two
+requirements documents, then nothing else**.
 
-**14.3 The judgment layer — designed, unbuilt.** Today the factory dispatches one
-generic prompt shape for every lane. The target replaces that with **named roles**,
-each carrying its own instructions, tool policy, model tier, and output contract, so
-the engine routes each judgment step to the role built for it. Three decisions
-constrain it, and all three are deliberately conservative:
+**14.3 The judgment layer — built at the routing seam, unbuilt at the judged half.**
+**This section read "designed, unbuilt" and that is now false** [M 2026-08-14]. The
+factory no longer dispatches one generic prompt shape for every lane: a phase
+resolves to a named role by table lookup, the role reaches the argv, and six of the
+seven loop roles are reachable (§12.11). What is described below as the target is
+therefore split — the **routing** is running code in §§12.11–12.12, and what remains
+open is the seventh wiring plus the judged-output contract this section closes on.
+Three decisions constrain the design, and all three are deliberately conservative:
 
-- **No agent spawns agents.** The supervisor is code and stays unnamed precisely so
-  nobody treats the thing that enforces the rules as something that can be
-  persuaded. Reviewers are read-only; a separate actor fixes.
+- **An agent may spawn only a role the engine authored.** The supervisor is code and
+  stays unnamed precisely so nobody treats the thing that enforces the rules as
+  something that can be persuaded. Reviewers are read-only; a separate actor fixes.
+  **Amended 2026-08-09**: the original form was "no agent spawns agents", which both
+  installed runtimes contradict by construction — a blanket ban is unenforceable
+  prose. The amended form is stronger, because a host hook can intercept a subagent
+  finishing _before_ its results return to the parent, so the boundary is a runtime
+  gate rather than a process boundary we hope holds. Personas still never invent
+  unmetered helpers, and any output is a proposal the engine validates.
 - **Admission is a test, not a preference.** A role becomes a persona only if the
   work is genuine judgment, has a checkable success criterion, _and_ needs a
   materially different tool policy or model tier than its neighbours. Otherwise it
@@ -1766,6 +1943,22 @@ adversarial stance plus a **role-specific list of how that role goes soft**, der
 from observed failures rather than invented. Reviewer conflict-avoidance —
 downgrading a blocker to a warning to avoid disagreeing with the producer — is a
 predictable failure mode and is named rather than hoped away.
+
+**What is still unbuilt here is deterministic engine code, not a persona**, which is
+why it survives the routing landing above. The reviewer must be **structurally
+incapable** of receiving the producer's conclusion — bundles are assembled by code, so
+the assembler can guarantee it rather than a rule requesting it. The review base must
+be **recorded before the producer is dispatched**, never derived as `HEAD~1`, which
+silently truncates a multi-commit unit and reviews its last commit while reporting on
+the whole. A re-review is **scoped to the fix range**, verdicting each open finding
+addressed or not, so an out-of-scope observation becomes a deferred minor with a named
+consumer instead of extending the loop. Late rework rounds **escalate a tier** with the
+prior attempt's record, rather than bouncing to the same tier with the same framing and
+spending the cap without changing a variable — which yields a measurable signal, since
+if late-round bumps routinely succeed the initial tier was wrong. And two degenerate
+reviewers are currently invisible and both are computable from data already recorded:
+the rubber stamp, whose advisory green is worthless, and the noise generator, whose
+findings are nearly all adjudicated contestable.
 
 **14.4 The evidence layer — the largest gap.** Roughly thirty catalog entries ship
 today and there is behavioural evidence about **one** of them, from a single-task
@@ -1815,10 +2008,30 @@ open.
 
 Relatedly, and cheaper than the design documents assume: the **path-scoped tier is
 already built** — targets declare a `scoped_rules` output and the planner routes
-fragments carrying a `scope` — and **two fragments now declare one**: `external-review`
-on `docs/research/**` + `docs/requirements/**`, and `platform-hermetic-tests` on `tests/**`.
-Moving conditional guidance (subprocess discipline, test isolation, catalog authoring)
-out of the always-on baseline is therefore authoring work, not engine work.
+fragments carrying a `scope` — and **four fragments now declare one** [M 2026-08-14]:
+`external-review`, `platform-hermetic-tests`, `code-is-authoritative` and
+`model-tier-routing`. Moving conditional guidance out of the always-on baseline is
+therefore authoring work, not engine work.
+
+**A skill takes the same glob, and that refuted a plan this section was queued
+behind.** A skill's frontmatter accepts a `paths:` glob that both limits _and triggers_
+automatic activation, so scoping `python-guidelines` cost **zero** always-on characters
+and did not need a fragment at all. The key is not in the portable Agent Skills subset,
+so it is declared under a per-target vendor fence and emitted only into the roots that
+understand it — `.agents/` gets the portable six, `.claude/` gets the six plus its
+fenced keys. **The gap that survives is codex**, which has no glob-based instruction
+scoping and never loads a nested `AGENTS.md` below the cwd (§7 detail 4), so a fragment
+remains the only mechanism there.
+
+**A skill is not free, and the cost is in the listing rather than the body.** Every
+skill's `description` plus `when_to_use` is capped per entry and the whole listing is
+budgeted at 1% of the context window; on overflow the host drops descriptions
+**starting with the least-invoked skills**. That is a feedback loop rather than a cost:
+a rarely-invoked skill is the first to be truncated, which makes it harder to invoke.
+Both caps are gated. The exercised-count that sized this — 8 of 34 skills ever invoked —
+is **now unsound and has no successor figure**: since a role injects its skills into the
+dispatch, the never-used report cannot tell an uninvoked skill from an injected one
+(`basicly-4grf`).
 
 Its cost effect is **asymmetric across families, not a blanket improvement** (§7
 detail 1): scoping removes a fragment from the Claude and Copilot baselines and
@@ -1849,6 +2062,28 @@ boundary** applies (the licence of the binary we currently depend on carries a r
 restricting a class of users, which is itself the strongest argument for owning the
 component), and the alternative of adopting a versioned database is rejected because
 it reintroduces exactly the unowned-binary upgrade surface being removed.
+
+**The migration is five steps and they did not run in order** [M 2026-08-14]. Step 1,
+the import, **ran once by hand** — 643 records as 3,775 events, every one carrying
+provenance — but `migrate.import_snapshot` has no caller, no `main()` and no CLI, so it
+is a one-shot that cannot be repeated and **nothing a fresh consumer runs can build the
+ledger at all** (`basicly-vkh0.23`, P0). Step 5, native harness markers, **landed
+before steps 2–4** (§12.3). Steps 2 (shadow), 3 (dual-write) and 4 (flip) are unrun,
+and the repo is `mode = "external"`. That order costs one binding constraint rather
+than a defect today: the shadow differential's comment comparison diverges **by
+construction** at `owned`, because the marker families no longer reach the external
+tracker there — so it must be run on `dual`, and a run that finds comment divergence at
+`owned` is measuring the ordering, not a bug.
+
+**Five operations have no owned equivalent at all**, and each is a design question
+rather than a port: `lint` (which means owning the validation rules), `dep cycles`,
+`list --label`, id minting (`ids.mint_root_id` exists and only tests call it), and
+`gate list`. **The kit is also outside the scope of any architectural audit until its
+own promotion runs**: eight kit modules landed against reasoning in `work-tracker.md`
+that was never promoted to a design, so there is no frozen surface, no declared schema
+and no cache decision to judge them against — and an audit needs a specification. That
+gate was written as prose, nothing read it, and the condition was discharged by a bead
+closing somewhere else. **A gate written as prose is not a gate.**
 
 **14.6 Asserted, not yet earned.** Recorded explicitly so it is not mistaken for
 established fact. The structural leads are real: enforcement is code and hooks
@@ -1923,9 +2158,9 @@ Pillar 01 — **guidance**:
 | --- | --- | --- |
 | One catalog projected to Claude, Codex and Copilot — instructions, skills, subagents, permissions | `shipped` | §§4–7, §9 |
 | Drift gate (`basicly check`) run by CI | `shipped` | §6 |
-| Path-scoped rules tier, so conditional guidance loads on a matching file instead of always | `shipped` | §7 detail 4 — engine built, three fragments use it today; cost falls for claude and copilot and rises for codex (§14.4) |
+| Path-scoped rules tier, so conditional guidance loads on a matching file instead of always | `shipped` | §7 detail 4 — engine built, **four** fragments use it today, plus a `paths:` glob on a skill at zero always-on cost; cost falls for claude and copilot and rises for codex (§14.4) |
 | Invocation axis per entry: model-invoked pays context load, user-invoked does not | `shipped` | §4.2 (skills) — declared on skill sources today, not yet on fragments |
-| Deterministic lexical routing evals — rank-1 rate in CI, no embeddings | `building` | §14.4 |
+| Deterministic lexical routing evals — rank-1 rate in CI, no embeddings | `shipped` | §14.4 — `catalog lint` rules 8 and 9 on every commit, with a ratcheting rank-1 floor that cannot be lowered |
 | An eval case file per catalog entry, enforced as a structural failure | `building` | §14.4 |
 | Relieve the always-on baseline by scoping what is conditional | `building` | §7, §14.4 |
 | Tutorial and how-to layer, so a new consumer has a path from install to first shipped unit | `shipped` | §13.1 — the tutorial was executed end to end on a fresh repo before it was written |
@@ -1939,9 +2174,11 @@ Pillar 02 — **gates**:
 | Git hook floor across pre-commit, commit-msg and pre-push | `shipped` | §4.2 |
 | Agent hooks for Claude Code and Copilot | `shipped` | §4.2 |
 | Verify pipeline with `fast`, `full` and `staged` modes | `shipped` | §6, §12 |
-| Every gate classified by type, and a pre-flight gate that writes nothing | `building` | [`factory-loop-requirements` §5.1](../requirements/factory-loop.md) |
-| Severity required on judged output, plus a lint refusing a pre-judging reviewer bundle | `building` | §14.3, `gates-and-rework` |
-| Rework convergence detection from the open-finding set rather than the count | `building` | `gates-and-rework` |
+| Every gate classified by type, and a pre-flight gate that writes nothing | `building` | [`factory-loop-requirements` §5.1](../requirements/factory-loop.md) — the five gates the engine names are typed; the unnamed ones are classified in prose because they have nothing to key on |
+| Severity required on judged output, plus a lint refusing a pre-judging reviewer bundle | `shipped` | §14.3 — severity as a required field, the no-pre-judging lint, the composite rubric gate and the convergence detector all landed; the deterministic half listed in §14.3 did not |
+| Rework convergence detection from the open-finding set rather than the count | `shipped` | §14.3 |
+| Agent-context ratchets: module size, comment density, suppression debt, tree growth | `shipped` | §12 — four `[[verify.checks]]` entries over all `.py`, frozen per file; tree growth reports rather than blocks because it has no firing history yet |
+| Enforcement at the tool-call boundary, not only at the commit boundary | `designed` | [`factory-loop`](../requirements/factory-loop.md) §11 item 8 — every gate here judges an artifact _after_ it exists; `claude_settings.py` maps 2 of 31 documented host hook events, so this is engine work before it is catalog work |
 | `basicly install` reporting the capability tier it actually delivered | `building` | Plan Phase 3 — enforcement is plugin-tier; on an instruction-tier host the harness degrades to advice, and we currently say so nowhere |
 
 Pillar 03 — **the loop**:
@@ -1957,7 +2194,12 @@ Pillar 03 — **the loop**:
 | Measured context occupancy recorded beside the forecast on every dispatch | `shipped` | §12 — `RunRecord.context_tokens`, the first measurement of the quantity the band gates on |
 | Per-model spend and wall-clock forecast, enforced when a supervisor pass is admitted | `building` | Plan Phase 1 — the current forecast models working set, not turn count, and that is now **measured** rather than suspected: declared scope predicts occupancy at R² = 0.095 against 0.863 for turn count |
 | A supervised multi-lane run with zero human interventions caused by a harness defect | `building` | Plan Phase 0 exit criterion |
-| A named role per judgment step, each with its own instructions, tool policy, tier and output contract | `designed` | §14.3, [`factory-loop` §6](../requirements/factory-loop.md) |
+| VALIDATE as a rung with its own gate, dispatching a validator plus a reviewer per lens | `shipped` | §12.2.1 |
+| Hold and Kill as writes an operator's answer actually carries out | `shipped` | §12.2.2 |
+| A named role per judgment step, each with its own instructions, tool policy, tier and output contract | `shipped` | §12.11 — six of seven roles reachable in code; `curator` is one wiring behind a live `ship` handler, a declared tier is inert at spawn until `basicly-a3yi`, and **no dispatch record carries the flag**, so the ledger cannot yet falsify it (`basicly-jn1x`) |
+| A schema-validated handoff artifact at each state boundary | `building` | §12.12 — seven of eight kinds carry a schema; `solution-design` is markdown sections and its family membership is open |
+| RETROSPECTIVE on a computed special cause, never on a single failure | `shipped` | §12.13 |
+| An improvement controller that drives a codebase property to a set point | `shipped` | §12.14 — it has run live and filed a bead; it has no scheduled caller yet |
 | Cost per landed package — the instrument the tier claims rest on | `researching` | §14.6 |
 | Whether deterministic AST localisation cuts an implementer's pre-first-edit cost | `researching` | Plan Phase 1c |
 
@@ -1968,8 +2210,10 @@ Pillar 04 — **the work graph**:
 | Issues, dependencies, gate results, checkpoints and evidence in a tracked graph | `shipped` | §12.1 |
 | Phase derived from tracker state, so resume is a read rather than a replay | `shipped` | §12.1 |
 | Atomic publish of the shared tracker export, and a store error charged to the store rather than to the lane's rework budget | `shipped` | §12.1, [`work-tracker`](../requirements/work-tracker.md) R7 — gated by four reader processes against a live writer |
-| The scheduler score and rank recorded behind each dispatch | `building` | [`work-tracker`](../requirements/work-tracker.md) |
-| Owned in-process append-only event log, removing the external binary from the critical path | `designed` | §14.5, `work-tracker` |
+| The scheduler score and rank recorded behind each dispatch | `shipped` | [`work-tracker`](../requirements/work-tracker.md) §9.2 — every `[harness-run]` marker carries the rank, fallback rank, score and the schema version that makes the score interpretable, plus the dispatch order actually used, since a provisioned lane is claimed and the external scheduler has no opinion on it |
+| A pure, age-free ranking function owned in-process | `shipped` | §12.3 — `kit/tracker/scheduler.py` behind `br.read_ranking`, emitting `basicly.scheduler.v1` |
+| Owned in-process append-only event log, removing the external binary from the critical path | `building` | §14.5, `work-tracker` — eight kit modules exist and the import ran once; steps 2–4 of the cutover are unrun and the repo is `mode = "external"`, so none of it is authoritative |
+| A repeatable ledger import a fresh consumer can run | `building` | §14.5 — `basicly-vkh0.23`, P0: the import is a one-shot with no entry point |
 | Provenance on every edge — extracted, inferred, ambiguous | `designed` | §14.5 |
 | `fsck` and `rebuild`, so "the log is the truth" is a claim someone can check | `designed` | §14.5 |
 | Cross-repo work offers as self-writes in each repo's own ledger, read-only across the boundary | `deferred` | `work-tracker` |
