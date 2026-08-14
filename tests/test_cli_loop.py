@@ -44,7 +44,6 @@ def _node_state(**overrides: object) -> NodeState:
         "gates": GateStatus(False, ("lint",), ("verify",), (), ()),
         "checkpoints": ("classify",),
         "rework": {"verify": 1},
-        "agent_context": None,
         "has_children": False,
     }
     defaults.update(overrides)

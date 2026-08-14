@@ -98,8 +98,6 @@ skips = ["B101"]
 ignore_names = [
   "PERMISSION_TARGETS",
   "PHASES",
-  "agent_context",
-  "approvals",
   "baseline_failure_rate",
   "baseline_runs",
   "can_leave_classify",
@@ -119,7 +117,6 @@ ignore_names = [
   "recent_failure_rate",
   "recent_runs",
   "reset_process_budget",
-  "should_escalate",
   "stale_sessions",
   "tagged",
   "tags",

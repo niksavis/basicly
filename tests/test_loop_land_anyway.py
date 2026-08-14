@@ -49,7 +49,6 @@ def _state(
         gates=_gate(can_advance=phase == "verify"),
         checkpoints=(),
         rework={},
-        agent_context=None,
         has_children=has_children,
     )
 

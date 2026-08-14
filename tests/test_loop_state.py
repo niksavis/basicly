@@ -49,7 +49,7 @@ class _FakeBr:
         **record: object,
     ) -> None:
         # Any issue field can be overridden by keyword (status, external_ref,
-        # agent_context, dependents, ...); an absent agent_context stays absent.
+        # dependents, ...); a field not named here stays absent from the record.
         self.record: dict = {
             "id": "i",
             "status": "in_progress",
@@ -235,7 +235,6 @@ def test_read_node_state_folds_all_signals(monkeypatch: pytest.MonkeyPatch, tmp_
     assert state.gates.can_advance is True
     assert state.checkpoints == ("classify",)
     assert state.rework == {"verify": 1}
-    assert state.agent_context is None  # absent in br => graceful None
     assert state.phase == "verify"
 
 
@@ -249,15 +248,6 @@ def test_read_node_state_intake_when_nothing_recorded(
     assert state.worktree is None
     assert state.checkpoints == ()
     assert state.rework == {"verify": 0}
-
-
-def test_read_node_state_surfaces_agent_context_when_present(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Inherited agent_context is surfaced verbatim when the tracker records it."""
-    _install(monkeypatch, _FakeBr(agent_context='{"design": "keep it thin"}'))
-    state = loop_state.read_node_state(tmp_path, "i", CONFIG)
-    assert state.agent_context == '{"design": "keep it thin"}'
 
 
 def test_read_node_state_decompose_phase_from_children(

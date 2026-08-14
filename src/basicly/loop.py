@@ -2674,11 +2674,6 @@ class CeremonyResult:
         return tuple(event for event in self.events if isinstance(event, AdvanceResult))
 
     @property
-    def approvals(self) -> tuple[CheckpointApproval, ...]:
-        """Just the checkpoints this call resolved."""
-        return tuple(event for event in self.events if isinstance(event, CheckpointApproval))
-
-    @property
     def blocked(self) -> bool:
         """True when the ceremony stopped short of shipping the track.
 

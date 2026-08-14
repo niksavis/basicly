@@ -410,11 +410,11 @@ def test_answering_a_rework_escalation_with_retry_permits_one_more_attempt(
     """The reported defect: the answer was recorded and the lane still could not move."""
     _install_decisions_fake(monkeypatch)
     item = _escalate()
-    assert policy.should_escalate(Path(), "basicly-x", "merge", _CONFIG) is True
+    assert policy.rework_allowances(Path(), "basicly-x", "merge") == 0
 
     assert cli.main(["loop", "answer", item.decision_id, "retry", "--by", "niksa"]) == 0
     assert "granted one further attempt on gate 'merge'" in capsys.readouterr().out
-    assert policy.should_escalate(Path(), "basicly-x", "merge", _CONFIG) is False
+    assert policy.rework_allowances(Path(), "basicly-x", "merge") == 1
 
 
 def test_a_retry_answer_may_carry_a_rationale(
@@ -441,7 +441,7 @@ def test_answering_with_park_grants_nothing(
     item = _escalate()
     assert cli.main(["loop", "answer", item.decision_id, "park", "--by", "niksa"]) == 0
     assert "granted" not in capsys.readouterr().out
-    assert policy.should_escalate(Path(), "basicly-x", "merge", _CONFIG) is True
+    assert policy.rework_allowances(Path(), "basicly-x", "merge") == 0
 
 
 def test_answering_with_re_dispatch_is_not_read_as_retry(
@@ -463,7 +463,7 @@ def test_a_decider_answer_does_not_extend_its_own_rework_budget(
     by = f"{decisions.DECIDER_BY_PREFIX}claude"
     assert cli.main(["loop", "answer", item.decision_id, "retry", "--by", by]) == 0
     assert "granted" not in capsys.readouterr().out
-    assert policy.should_escalate(Path(), "basicly-x", "merge", _CONFIG) is True
+    assert policy.rework_allowances(Path(), "basicly-x", "merge") == 0
 
 
 def test_a_retry_on_a_non_rework_decision_grants_nothing(

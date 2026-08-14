@@ -458,16 +458,16 @@ def test_a_disregarded_result_is_explained_in_a_grant_violation(
 
 
 def test_rework_counts_and_escalates(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Rework attempts accumulate and escalate once the cap is reached."""
+    """Rework attempts accumulate and reach the cap every caller compares against."""
     _install(monkeypatch, _FakeBr())
     assert policy.rework_attempts(tmp_path, "i", "verify") == 0
-    assert policy.should_escalate(tmp_path, "i", "verify", CONFIG) is False
+    assert policy.rework_charged(tmp_path, "i", "verify") < CONFIG.max_rework
 
     assert policy.record_rework(tmp_path, "i", "verify") == 1
-    assert policy.should_escalate(tmp_path, "i", "verify", CONFIG) is False
+    assert policy.rework_charged(tmp_path, "i", "verify") < CONFIG.max_rework
 
     assert policy.record_rework(tmp_path, "i", "verify") == 2
-    assert policy.should_escalate(tmp_path, "i", "verify", CONFIG) is True
+    assert policy.rework_charged(tmp_path, "i", "verify") >= CONFIG.max_rework
 
 
 def test_rework_counter_is_per_gate(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -506,13 +506,13 @@ def test_an_allowance_permits_exactly_one_further_attempt(
     """The whole point: at the cap, one grant buys one attempt and then re-escalates."""
     _install(monkeypatch, _FakeBr())
     _to_cap(tmp_path)
-    assert policy.should_escalate(tmp_path, "i", "verify", CONFIG) is True
+    assert policy.rework_charged(tmp_path, "i", "verify") >= CONFIG.max_rework
 
     policy.grant_rework_allowance(tmp_path, "i", "verify")
-    assert policy.should_escalate(tmp_path, "i", "verify", CONFIG) is False
+    assert policy.rework_charged(tmp_path, "i", "verify") < CONFIG.max_rework
 
     policy.record_rework(tmp_path, "i", "verify")
-    assert policy.should_escalate(tmp_path, "i", "verify", CONFIG) is True
+    assert policy.rework_charged(tmp_path, "i", "verify") >= CONFIG.max_rework
 
 
 def test_an_allowance_does_not_reset_the_budget(
@@ -1829,7 +1829,6 @@ def test_an_unreliable_gate_event_is_not_a_rework_attempt(
 
     assert policy.rework_attempts(tmp_path, "i", "merge") == 0
     assert policy.rework_charged(tmp_path, "i", "merge") == 0
-    assert policy.should_escalate(tmp_path, "i", "merge", CONFIG) is False
 
 
 def test_an_unreliable_gate_event_is_scoped_to_its_gate(
@@ -2237,7 +2236,6 @@ def test_the_blocked_lane_is_charged_no_rework_for_it(
 
     assert policy.rework_attempts(tmp_path, "basicly-tcmy.6", "merge") == 0
     assert policy.rework_charged(tmp_path, "basicly-tcmy.6", "merge") == 0
-    assert policy.should_escalate(tmp_path, "basicly-tcmy.6", "merge", CONFIG) is False
     # Nor is it counted as a flake: the two are cleared by opposite evidence.
     assert policy.unreliable_gate_events(tmp_path, "basicly-tcmy.6", "merge") == 0
 
