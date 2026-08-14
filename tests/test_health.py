@@ -19,8 +19,14 @@ if TYPE_CHECKING:
     import pytest
 
 
-def _entry(agent: str, outcome: str, ts: str) -> dict:
-    return {"agent": agent, "outcome": outcome, "timestamp": ts, "returncode": 0}
+def _entry(agent: str, outcome: str, ts: str, bound: str | None = None) -> dict:
+    return {
+        "agent": agent,
+        "outcome": outcome,
+        "timestamp": ts,
+        "returncode": 0,
+        "stopped_bound": bound,
+    }
 
 
 def _ts(i: int) -> str:
@@ -47,6 +53,32 @@ def test_agent_health_counts_outcomes_and_failure_rate() -> None:
     assert h.agent == "claude"
     assert (h.runs, h.executed, h.failed, h.handoff) == (3, 1, 1, 1)
     assert h.failure_rate == 0.5  # 1 failed of 2 dispatched; the handoff is excluded
+
+
+def test_a_bounded_stop_leaves_the_failure_rate_and_is_counted_under_its_bound() -> None:
+    """AC: our own ceiling stopping a lane is not the agent failing (basicly-e2mz.3).
+
+    The measured shape of the defect: on 2026-08-13 the grant spend ceiling stopped
+    four live lanes at once and every one of them landed in claude's failure count.
+    Held here against the same run: one real failure, one clean run, two the ceiling
+    stopped. The rate has to read 50% over the two runs that were actually observed,
+    and `runs` still has to account for all four.
+    """
+    records = {
+        "basicly-a": [
+            _entry("claude", "executed", _ts(1)),
+            _entry("claude", "failed", _ts(2)),
+            _entry("claude", "failed", _ts(3), bound="spend"),
+        ],
+        "basicly-b": [_entry("claude", "failed", _ts(4), bound="quiet")],
+    }
+    (h,) = health.agent_health(records)
+    assert h.stopped == 2
+    assert h.stopped_bounds == {"quiet": 1, "spend": 1}
+    assert (h.executed, h.failed) == (1, 1), "a bounded stop is not a failed dispatch"
+    assert h.failure_rate == 0.5  # 1 of the 2 runs that ran to their own exit
+    # Nothing disappears: the excluded runs are still in the total, just not in the rate.
+    assert h.runs == 4 == h.executed + h.failed + h.handoff + h.stopped
 
 
 def test_agent_health_rework_signal_counts_redispatched_beads() -> None:
@@ -128,6 +160,36 @@ def test_agent_drift_insufficient_sample_never_regresses() -> None:
     (d,) = health.agent_drift(records, window=5)
     assert d.baseline_runs == 2  # below MIN_WINDOW_SAMPLE
     assert d.regressed is False
+
+
+def _drift_over_four_stops(bound: str | None) -> health.AgentDrift:
+    """The 2026-08-13 shape: a clean baseline, then one run and four stops.
+
+    *bound* is what stopped those four — the grant ceiling, or nothing at all, which
+    is the only difference between a budget running out and a runner degrading.
+    """
+    entries = [_entry("claude", "executed", _ts(i)) for i in range(1, 7)]
+    entries += [_entry("claude", "failed", _ts(i), bound=bound) for i in range(7, 11)]
+    (drift,) = health.agent_drift({"basicly-a": entries}, window=5)
+    return drift
+
+
+def test_a_window_the_ceiling_emptied_cannot_flag_but_the_same_failures_do() -> None:
+    """AC: the exclusion applies inside each window, and the sample rule after it.
+
+    Both halves in one test on purpose. Asserting only that the bounded window stays
+    quiet cannot tell this fix from deleting the detector — the control is the same
+    fixture with the bound taken off, which must still flag.
+    """
+    bounded = _drift_over_four_stops("spend")
+    assert bounded.recent_runs == 1, "four stops leave one scored run in the window"
+    assert bounded.recent_runs < health.MIN_WINDOW_SAMPLE
+    assert bounded.regressed is False
+
+    control = _drift_over_four_stops(None)
+    assert control.recent_runs == 5
+    assert control.recent_failure_rate == 0.8
+    assert control.regressed is True, "an unbounded failure run is still a regression"
 
 
 def test_agent_drift_ignores_handoffs() -> None:
@@ -262,10 +324,27 @@ def test_pass_report_carries_agent_health_and_drift(tmp_path: Path) -> None:
     lines = _coverage_lines(tmp_path)
 
     assert "health:   claude 0.35 over 10 runs" in lines[2]
-    assert "(fail 50%, rework 100% — 1 bead(s) re-dispatched)" in lines[2]
+    assert "(fail 50%, 0 stopped by a bound, rework 100% — 1 bead(s) re-dispatched)" in lines[2]
     assert lines[3] == (
         "drift:    REGRESSED claude: fail 100% over the recent 5 vs 0% over 5 baseline runs (+1.00)"
     )
+
+
+def test_the_pass_line_names_the_bounded_stops_and_does_not_flag_them(tmp_path: Path) -> None:
+    """AC: the count a bound stopped is stated beside the failure rate, not inside it.
+
+    This is the line the defect was found on: `basicly-zdtx` wired the report onto the
+    pass and its first output was `REGRESSED claude` over four lanes the grant ceiling
+    had stopped 96ms apart. Same fixture, at the surface an operator reads.
+    """
+    entries = [_entry("claude", "executed", _ts(i)) for i in range(1, 7)]
+    entries += [_entry("claude", "failed", _ts(i), bound="spend") for i in range(7, 11)]
+    _write_records(tmp_path, {"basicly-a": entries})
+
+    lines = _coverage_lines(tmp_path)
+
+    assert "(fail 0%, 4 stopped by a bound (spend 4), " in lines[2]
+    assert lines[3] == "drift:    no behavioral regression across 1 agent(s)"
 
 
 def test_pass_report_health_survives_a_repo_with_no_records(tmp_path: Path) -> None:

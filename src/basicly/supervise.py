@@ -61,6 +61,7 @@ from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+from typing import Any
 
 from . import (
     br,
@@ -1336,6 +1337,19 @@ def admit_pass_spend(
     )
 
 
+def _stopped_clause(agent: dict[str, Any]) -> str:
+    """How many of an agent's runs a terminal bound stopped, and which bound did it.
+
+    Named rather than totalled: ``spend`` is the grant ceiling ending the session and
+    ``quiet`` is a wedged stream, and an operator does different things about those.
+    """
+    bounds: dict[str, int] = agent["stopped_bounds"]
+    if not bounds:
+        return "0 stopped by a bound"
+    named = ", ".join(f"{bound} {count}" for bound, count in bounds.items())
+    return f"{agent['stopped']} stopped by a bound ({named})"
+
+
 def health_coverage(repo_root: Path) -> tuple[str, str]:
     """What each agent's own record says, and whether drift flags a regression.
 
@@ -1351,6 +1365,12 @@ def health_coverage(repo_root: Path) -> tuple[str, str]:
     what an agent's whole history is, then whether its *recent* window has moved
     against that history. The drift half names its two window sizes, since the flag
     only means something at :data:`health.MIN_WINDOW_SAMPLE` runs on each side.
+
+    The health half states the runs a terminal bound stopped beside the failure
+    rate rather than inside it: a lane the grant ceiling halted is our budget
+    ending, not a runner degrading, and folding the two together made this line's
+    first printed output a regression flag for a control working as designed
+    (basicly-e2mz.3).
     """
     report = health.health_report(repo_root)
     agents = report["agents"]
@@ -1358,7 +1378,8 @@ def health_coverage(repo_root: Path) -> tuple[str, str]:
         return "no run-records yet", "no history to drift against"
     scored = "; ".join(
         f"{agent['agent']} {agent['health_score']:.2f} over {agent['runs']} runs "
-        f"(fail {agent['failure_rate']:.0%}, rework {agent['rework_rate']:.0%} — "
+        f"(fail {agent['failure_rate']:.0%}, {_stopped_clause(agent)}, "
+        f"rework {agent['rework_rate']:.0%} — "
         f"{agent['rework_beads']} bead(s) re-dispatched)"
         for agent in agents
     )
