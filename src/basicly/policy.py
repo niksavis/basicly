@@ -48,6 +48,7 @@ from .config import (
     SizingConfig,
     load_policy_config,
 )
+from .plan_record import ACCEPTANCE_HEADING, has_heading
 
 # Prefix for the harness's own comment markers, so they are both machine-parseable
 # and obvious to a human reading the issue's comments.
@@ -155,7 +156,7 @@ def preflight_gate(gate: str) -> contextlib.AbstractContextManager[None]:
 # the field itself — other template sections (e.g. a bug's Steps to Reproduce)
 # stay body-checked. ``br lint`` has no config to teach it the field, so the fix
 # lives here rather than upstream in beads_rust.
-_ACCEPTANCE_CRITERIA_SECTION = "## Acceptance Criteria"
+_ACCEPTANCE_CRITERIA_SECTION = ACCEPTANCE_HEADING
 
 
 @dataclass(frozen=True)
@@ -223,7 +224,7 @@ def _has_acceptance_criteria(repo_root: Path, issue_id: str) -> bool:
     if isinstance(value, str) and value.strip():
         return True
     body = issue.get("description")
-    return isinstance(body, str) and _ACCEPTANCE_CRITERIA_SECTION in body
+    return isinstance(body, str) and has_heading(body, _ACCEPTANCE_CRITERIA_SECTION)
 
 
 # --- Body scaffolding (basicly-kjc5.44) -------------------------------------

@@ -9,10 +9,11 @@ when the writer and the reader stop agreeing on the shape.
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 from basicly import decompose, plan_entry, plan_record, policy
-from tests.plan_fixtures import DEMONSTRATION, FakeBr
+from tests.plan_fixtures import DEMONSTRATION, FakeBr, Proc
 from tests.plan_fixtures import install as _install
 from tests.plan_fixtures import planned as _planned
 
@@ -164,3 +165,59 @@ def test_a_decomposed_child_passes_the_predicate_that_gates_its_own_dispatch(
     for issue_id, _title, body in fake.created:
         verdict = plan_entry.entry_verdict_for(issue_id, body)
         assert verdict.admitted, verdict.reason
+
+
+# --- One reader for "declared acceptance criteria" (basicly-9rv0) ------------
+
+# A body that names the heading inside a sentence and nowhere as a heading. This is
+# what told the two readers apart: a substring test says declared, and the parser that
+# has to read the criteria back finds none.
+_QUOTED_MID_SENTENCE = "Each child carries a ## Acceptance Criteria section; this one does not.\n"
+
+
+def _dor_verdict(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, body: str) -> policy.DoRResult:
+    """The Definition-of-Ready verdict for a bead whose description is *body*.
+
+    `br lint` is served a clean bill, so the only thing that can put the acceptance
+    section in `missing` is the harness's own body read.
+    """
+    record = {"id": "feat.1", "description": body, "labels": []}
+    _install(monkeypatch, FakeBr(records={"feat.1": record}))
+    lint = Proc(json.dumps({"results": [{"missing": []}]}))
+    monkeypatch.setattr(policy, "_run_br", lambda _root, _args, **_kw: lint)
+    return policy.definition_of_ready(tmp_path, "feat.1")
+
+
+def test_a_heading_quoted_mid_sentence_is_declared_to_neither_reader(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The readiness gate and the plan parser must reach one verdict (basicly-9rv0).
+
+    They did not: the gate tested a substring and the parser a whole line, so this body
+    passed the Definition of Ready and then yielded the parser nothing to hold the lane
+    to. A bead that declares no criteria cannot be validated against any.
+    """
+    heading = plan_record.ACCEPTANCE_HEADING
+
+    assert plan_record.section_entries(_QUOTED_MID_SENTENCE, heading) == ()
+    assert not plan_record.has_heading(_QUOTED_MID_SENTENCE, heading)
+
+    verdict = _dor_verdict(monkeypatch, tmp_path, _QUOTED_MID_SENTENCE)
+
+    assert not verdict.ready
+    assert heading in verdict.missing
+
+
+def test_a_real_heading_is_declared_to_both_readers(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The control: tightening the gate must not refuse a body that did declare them."""
+    heading = plan_record.ACCEPTANCE_HEADING
+    body = f"{heading}\n\n- given a bead when it is gated then it is held to this\n"
+
+    assert plan_record.section_entries(body, heading) != ()
+
+    verdict = _dor_verdict(monkeypatch, tmp_path, body)
+
+    assert verdict.ready
+    assert verdict.missing == ()
