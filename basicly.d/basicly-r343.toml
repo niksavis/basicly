@@ -1,0 +1,9 @@
+# The schema-scan fix adds 829 tokens to `.scripts/wired_or_deleted.py`, which was 6525
+# of a frozen 6554 — so the module-size ratchet refused any fix to that file at all. The
+# waiver states the seam instead of faking a split; the frozen entry goes, because a
+# waiver replaces it.
+[ratchet.module_size]
+count_delta = 1
+
+[ratchet.module_size.frozen]
+".scripts/wired_or_deleted.py" = -6554

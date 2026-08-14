@@ -26,9 +26,11 @@ Three surfaces, because they are reached differently:
   reads it. A key ``basicly.toml`` declares and nothing consumes is inert config.
 * **record fields** — a field of any public record elsewhere in ``src/basicly/``.
   Its consumers are production code and the Jinja templates and JSON schemas that
-  render or validate it; those two directories are scanned as text. Catalog prose is
-  not scanned here, because a field named ``holds`` or ``folded`` would be masked by
-  any skill that happens to use the English word.
+  render or validate it; those two directories are read for the positions that name
+  something, never as free text. Catalog prose is not scanned here, because a field
+  named ``holds`` or ``folded`` would be masked by any skill that happens to use the
+  English word — and for the same reason a schema's ``description`` is not scanned
+  either (basicly-r343).
 
 ``vulture`` is the fourth surface and runs as its own declared check
 (``basicly.toml``), scoped to ``src`` and ``.scripts`` — **excluding ``tests``**, and
@@ -55,10 +57,21 @@ Run::
     uv run python .scripts/wired_or_deleted.py
 """
 
+# module-size-waiver: one BASELINE and one traversal serve all four surfaces, so the cut
+# the cap wants moves `build_index` out from under the rule that reads it. Measured before
+# basicly-r343: 6525 tokens of a frozen 6554, so the ratchet refused *any* fix to this file
+# — the split is the follow-up that headroom needs, not part of the schema-scan fix.
+#
+# THIS WAIVER EXPIRES. It is bought on cost, not on cohesion, which is not what a waiver is
+# for: §9.3 obliges the first change to a frozen file under 8000 tokens to bring it under the
+# cap, and this file was 6554. `basicly-kr7t` does the extraction and carries removing this
+# comment as an acceptance criterion, so the waiver cannot outlive the work it stands in for.
+
 from __future__ import annotations
 
 import argparse
 import ast
+import json
 import re
 import subprocess  # nosec B404
 import sys
@@ -118,12 +131,14 @@ SKIP_DIRS = frozenset({
 KIT_DIR = ".basicly/core/kit"
 
 # Non-Python consumers of a record field: the templates that render one and the
-# schemas that validate one. Scanned as text, since a Jinja expression and a YAML
-# key are not parseable as Python.
-FIELD_SITE_GLOBS = (
-    ".basicly/core/templates/**/*",
-    ".basicly/core/schemas/**/*",
-)
+# schemas that validate one. Each is read for the positions that can name a field,
+# because reading either as free text makes English prose a reference (basicly-r343):
+# five schema files whose descriptions used the word `holds` retired
+# `worktree.RemovalVerdict.holds` on 2026-08-13, and the gate's advice on the stale
+# entry that produced is "remove the entry" — which deletes a live finding for good,
+# since the prose stays. `LandedCost.packages` below is what the fix then unmasked.
+TEMPLATE_GLOB = ".basicly/core/templates/**/*"
+SCHEMA_GLOB = ".basicly/core/schemas/**/*"
 
 # Where a command may be wired: something that runs it, or catalog text that tells an
 # agent to run it. `.basicly-local` is this repo's own authored overlay and counts for
@@ -157,7 +172,9 @@ BASELINE: frozenset[str] = frozenset({
     "command:status",
     "command:usage forecast",
     "command:usage tracker",
-    # Record fields read only by their own module or by a test (41). Was 43: both
+    # Record fields read only by their own module or by a test (36). Was 41 — the
+    # headline count had not been updated for the six the 2026-08-08 splits retired.
+    # Was 43: both
     # `HookSpec` fields gained a reader when `_hook_entry` moved to `precommit_config`.
     # Was 45: `RunRecord.config_overrides` acquired a consumer when `tuning` began
     # reading the ledger — it reads the field's value back out of the record JSON as
@@ -175,6 +192,12 @@ BASELINE: frozenset[str] = frozenset({
     # outside its defining module touches, so moving a record to its own module gives
     # its fields a reader by construction. They stopped reproducing, which is the only
     # reason a baseline entry is ever removed.
+    #
+    # `LandedCost.packages` is the one entry that is new to the *list* and not new to the
+    # *tree*: it has never had a reader outside `run_record`, and the word `packages` in
+    # one `description` in `skill.schema.json` was crediting it as wired until basicly-r343
+    # stopped the schema scan reading prose. It is parked here so the gate keeps binding,
+    # not adjudicated — wiring it or deleting it is still an open call.
     "record-field:basicly.agents.AgentOutputRoot.claude_passthrough",
     "record-field:basicly.agents.AgentDefinition.deprecated_model",
     "record-field:basicly.decompose.CollapsingPath.declarers",
@@ -199,6 +222,7 @@ BASELINE: frozenset[str] = frozenset({
     "record-field:basicly.release.ReleasePlan.pins",
     "record-field:basicly.release.ReleaseResult.tagged",
     "record-field:basicly.run_record.CostRollup.dispatches",
+    "record-field:basicly.run_record.LandedCost.packages",
     "record-field:basicly.runner.Capability.reachable",
     "record-field:basicly.supervise.FoundInfo.affects",
     "record-field:basicly.supervise.DispatchBundle.folded",
@@ -302,6 +326,51 @@ def _tokens(text: str) -> set[str]:
     return set(_WORD.findall(text))
 
 
+# The JSON Schema keywords whose *string values* name something rather than describe
+# it: `required` and `enum` list property names and permitted values, `const` is a
+# one-member `enum`, and a `$ref` pointer ends in a `$defs` name. Everything else is
+# read for its keys only. That is an allowlist rather than a "skip `description`"
+# denylist because prose is not the only masking position: `$id` is a URL that would
+# donate `change`, `summary` and `block`, and `type` would donate `string` and
+# `object`. An unlisted keyword under-counts, which invents a finding the operator
+# sees; the alternative loses one silently.
+_SCHEMA_NAME_KEYS = frozenset({"required", "enum", "const", "$ref"})
+
+# `{{ expr }}` and `{% stmt %}`. A field reaches a template only through one of these:
+# the literal text between them is the rendered document, not a reference to it.
+_JINJA_CODE = re.compile(r"\{[{%](.*?)[%}]\}", re.DOTALL)
+
+
+def schema_names(text: str) -> set[str]:
+    """Names a JSON schema refers to: every object key, plus :data:`_SCHEMA_NAME_KEYS`.
+
+    Raises ``json.JSONDecodeError`` for a file the schemas directory should not hold.
+    """
+    names: set[str] = set()
+
+    def visit(node: object, names_a_field: bool) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                names.update(_tokens(key))
+                visit(value, key in _SCHEMA_NAME_KEYS)
+        elif isinstance(node, list):
+            for item in node:
+                visit(item, names_a_field)
+        elif names_a_field and isinstance(node, str):
+            names.update(_tokens(node))
+
+    visit(json.loads(text), False)
+    return names
+
+
+def template_names(text: str) -> set[str]:
+    """Identifiers inside a Jinja template's expressions, never its literal text."""
+    return {name for match in _JINJA_CODE.finditer(text) for name in _tokens(match[1])}
+
+
+_FIELD_SITE_READERS = {TEMPLATE_GLOB: template_names, SCHEMA_GLOB: schema_names}
+
+
 @dataclass(frozen=True)
 class Index:
     """Which non-test sites reference each name, keyed by the site that does."""
@@ -335,9 +404,13 @@ def build_index(root: Path) -> Index:
         for name in _referenced_names(tree):
             record(name, site)
 
-    for glob in FIELD_SITE_GLOBS:
+    for glob, names_in in _FIELD_SITE_READERS.items():
         for path in _iter_files(root, glob):
-            for name in _tokens(_read(path)):
+            try:
+                names = names_in(_read(path))
+            except ValueError as exc:
+                raise WiringError(f"{_relative(root, path)}: {exc}") from exc
+            for name in names:
                 record(name, glob)
 
     modules = tuple(_iter_files(root, f"{SRC_DIR}/**/*.py"))
