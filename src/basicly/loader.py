@@ -28,6 +28,15 @@ LEGACY_FRAGMENT_GLOB = "*.fragment.md"
 
 REQUIRED_FRAGMENT_FIELDS = {"id", "description", "category", "applies_to"}
 
+# The overlay marker directory declared in `[paths] overlay_fragments`
+# (config.DEFAULT_CONFIG_TOML). Only consulted for a root loaded without a
+# source hint — cli._fragment_roots hints every root it resolves itself.
+OVERLAY_MARKER_DIR = ".basicly-local"
+
+# Pre-migration overlays lived in a `user/` subdirectory of a fragment root;
+# `install` relocates them, so this is only reached before that migration runs.
+LEGACY_OVERLAY_SUBDIR = "user"
+
 
 def load_fragments(fragments_dir: Path, target_names: set[str]) -> list[Fragment]:
     """Load all fragment files from the fragments directory."""
@@ -47,7 +56,7 @@ def load_fragments_from_roots(
             continue
         _warn_legacy_sources(root)
         for path in sorted(root.rglob(FRAGMENT_SOURCE_GLOB)):
-            fragment = _load_fragment(path, source_hint)
+            fragment = _load_fragment(path, root, source_hint)
             _validate_fragment(fragment, path, target_names)
             if fragment.id in seen_ids:
                 first_path = seen_ids[fragment.id]
@@ -132,7 +141,7 @@ def _validate_replacements(fragments: list[Fragment]) -> None:
                 )
 
 
-def _load_fragment(path: Path, source_hint: str | None = None) -> Fragment:
+def _load_fragment(path: Path, root: Path, source_hint: str | None = None) -> Fragment:
     try:
         front = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError as exc:
@@ -144,7 +153,7 @@ def _load_fragment(path: Path, source_hint: str | None = None) -> Fragment:
     body = (front.get("body") or "").strip("\n")
     scope = front.get("scope", {})
     scope_paths = scope.get("paths", list(DEFAULT_SCOPE)) if scope else list(DEFAULT_SCOPE)
-    inferred_source = source_hint or _infer_source_from_path(path)
+    inferred_source = source_hint or _infer_source_from_path(path, root)
     source = front.get("source", inferred_source)
 
     _validate_schema_version(front.get("schema_version"), path)
@@ -188,12 +197,23 @@ def _validate_schema_version(value: object, path: Path) -> None:
         )
 
 
-def _infer_source_from_path(path: Path) -> str:
-    """Infer source based on path conventions when front matter omits source."""
-    parts = {part.lower() for part in path.parts}
-    if ".basicly-local" in parts or "user" in parts:
+def _infer_source_from_path(path: Path, root: Path) -> str:
+    """Infer source from where a fragment sits *inside its own fragment root*.
+
+    Two conventions mean overlay: the root lives under the overlay marker
+    directory the repo declares in ``[paths] overlay_fragments``, or the
+    fragment sits in the pre-migration ``user/`` subdirectory of the root.
+
+    Nothing above the root may decide. Folding the whole absolute path made any
+    component named ``user`` — a home directory, ``/Users/user`` — mark every
+    fragment an overlay, and overlay provenance is real semantics: an unknown
+    ``replaces`` degrades to a warning here, and the planner drops the core
+    fragment it names. Behaviour would have depended on the machine's path.
+    """
+    if OVERLAY_MARKER_DIR in {part.lower() for part in root.parts}:
         return "user"
-    return "core"
+    relative_parts = {part.lower() for part in path.relative_to(root).parts}
+    return "user" if LEGACY_OVERLAY_SUBDIR in relative_parts else "core"
 
 
 def _validate_fragment(
