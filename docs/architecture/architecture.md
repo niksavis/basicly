@@ -1729,9 +1729,14 @@ landed and have been exercised on this repo's own development, including a
 supervised multi-lane run. The tier-to-model mapping is published, drift-checked
 (§4.2) and now **bound**: a declared tier resolves to a concrete model at dispatch and
 an unresolvable one refuses rather than silently running on another tier's model
-(§12.8). What the binding does not yet give is a _chosen_ tier — no role or catalog
-entry declares one, so in practice every dispatch is still unpinned until a `tier` or
-`[runner] default_tier` is configured. One recorded gap remains, and it matters
+(§12.8). **The clause that stood here was false when it was written and is now false twice
+over** [M 2026-08-14]. It said no role or catalog entry declares a tier, so every dispatch
+is unpinned. Nine roles already declared one at the time; today all twelve do, `tier` is a
+required property of `agent.schema.json`, and `catalog lint` refuses a source without it
+(`basicly-plhx`). What remains true is narrower and worth stating exactly: **a declared tier
+reaches no spawn.** No projected agent file carries a model id, by decision D30, and the
+injection that would resolve one at spawn is `basicly-a3yi`, still open. So the tier is
+declared, gated and inert. One recorded gap remains, and it matters
 because a reader would otherwise believe the design is enforced: coupling attribution
 still depends on intra-pass landing order, which the determinism rule forbids. `factory-design` §9 is the authoritative
 reconciliation of decision against code.
