@@ -310,7 +310,7 @@ directory name. A name that appears in a dispatch record is a label; a role id i
 | Class | Invoked by | Bound to | Examples |
 | --- | --- | --- | --- |
 | **Loop agents** | the engine, at a state boundary | exactly one state (or two, for the implementer's repair mode) | `decomposer`, `implementer`, `validator`, `reviewer`, `decider`, `retrospector`, `curator` |
-| **Ad-hoc agents** | a human or an agent, on demand | nothing — available whenever they fit | `code-reviewer`, `security-auditor`, `test-runner` |
+| **Ad-hoc agents** | a human or an agent, on demand | nothing — available whenever they fit | `architect`, `researcher`, `security-auditor`, `test-runner` |
 
 The distinction matters because it decides what a missing one costs. A missing **loop agent** means
 that state has no specialist and falls back to the default runner, which is the current situation
@@ -322,7 +322,8 @@ user-invoked one waits to be asked.
 rather than assuming: each must still pass D5's admission test (differ in **tier, tools or
 artifact**), and any overlap with a loop agent about to be authored — `code-reviewer` against
 `reviewer`, `test-runner` against the verify gates — must be resolved rather than left as two
-things with one job.
+things with one job. The first of those is **settled**: `reviewer` superseded `code-reviewer` and
+it is removed (§6.3). The second is still open.
 
 ### 6.3 The gap, measured 2026-08-08
 
@@ -377,11 +378,46 @@ still buys is recorded rather than discarded: each of the five carries a contrac
 cannot be exercised until its artifact exists, and that is a debt this table now names
 instead of a gap it hides.
 
-**Unresolved, and §6.2 requires it resolved**: `code-reviewer` (ad-hoc) against `reviewer`
-(loop). They differ in invoker and artifact but not in job. `reviewer` is the stronger
-definition — per-lens, adversarial stance, severity-bounded, no cross-lens ranking — and
-`code-reviewer` is vendored to consumers today, so superseding it is a breaking change to
-a shipped surface. Owner's call; it is not made here.
+**Resolved by the owner 2026-08-14: `reviewer` supersedes `code-reviewer`, which is
+removed** (`basicly-e2mz.5`). §6.2 required the overlap resolved rather than left as two
+things with one job, and D5 admits a role only on tier, tools or artifact — these two
+differ in invoker and artifact but not in job. `reviewer` is the stronger definition:
+per-lens, adversarial stance, severity-bounded, no cross-lens ranking. It is also the one
+with a live contract, dispatched once per lens at VALIDATE, where `code-reviewer` was a
+prompt nothing consumed.
+
+It is a breaking change to a shipped surface, because `code-reviewer` was projected into
+both agent roots and vendored by `basicly install`, so **it ships as a relocation and not
+as a delete** — three parts, and dropping any one of them turns it into a regression.
+
+- **The harness answers the retired name.** `roles.SUPERSEDED_ROLES` maps `code-reviewer`
+  to `reviewer` and `resolve_named_role` redirects *before* the availability check. The
+  other order looks up the removed file, finds nothing and returns None, which sends the
+  dispatch to the default runner with no review persona — the silent capability loss this
+  supersession exists to avoid. An unknown name is still returned unchanged, so the table
+  narrows nothing and a typo is not rewritten into some other role's dispatch.
+- **The replacement states the supersession where a consumer reads it.** The projected
+  frontmatter `description` is what the host matches for delegation and lists to a human,
+  so `reviewer`'s `triggers` names `code-reviewer` there. A changelog entry alone reaches
+  no consumer's host.
+- **The ad-hoc route survives the removal.** `reviewer` was engine-only; it now documents
+  the human path — name the lens, and when none was named take one, say which, and answer
+  for that axis alone. It also learned to fetch its own diff (`git diff HEAD`, or the range
+  the caller named), which was the one thing `code-reviewer`'s startup did that the
+  engine-fed role never needed.
+
+**The vocabulary did not widen, and that was the pressure to watch.** `code-reviewer` also
+reviewed tests and conventions; absorbing those would have added a maintainability axis
+§6.5 refuses on measurement, since ruff, pyright, vulture, `lint-imports`, `module-size`,
+`comment-density` and `noqa-debt` ratchet it mechanically and a lens restating a green
+check is a paid dispatch on every L3 unit. `REVIEW_LENSES` is still exactly `correctness`
+and `security`, pinned by a literal tripwire rather than by a length check.
+
+**One limit, stated rather than hidden.** `sync_agents` prunes a projected agent only when
+a *technology selection* excludes its source, so a consumer who already installed
+`code-reviewer` keeps an orphaned `.claude/agents/code-reviewer.md` until they delete it by
+hand; a fresh install never writes one. Pruning a projection whose source is gone is
+agent-projection work this change does not carry.
 
 **Admission is staged, not wholesale** [D5]. A role is authored only when it differs in tier, tools
 or artifact. `decomposer` and `implementer` now qualify — `basicly-u2hl.18` shipped
