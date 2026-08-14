@@ -348,7 +348,7 @@ a role and dispatch it, which is what makes the roster real rather than projecte
 | Role | State | Source [M 2026-08-09] | Engine |
 | --- | --- | --- | --- |
 | `decomposer` | DECOMPOSE | **authored**, loads `decompose-plan` | unnamed equivalent (`loop.py:1057-1094`) |
-| `implementer` (+ **repair mode** [D5]) | BUILD, REPAIR | **authored**, loads `python-guidelines` + `repair-in-place` | equivalent exists (`loop.py:663-700`); repair mode does not |
+| `implementer` (+ **repair mode** [D5]) | BUILD, REPAIR | **authored**, loads `python-guidelines` + `repair-in-place` | **both dispatched** — build at `loop.py:667`, repair at `loop.py:1610` with `phase="repair"` and a brief carrying the gate evidence that rejected the work (`repair_brief`, `basicly-u2hl.4`). This row read "repair mode does not" until 2026-08-14 |
 | `validator` | VALIDATE | **authored**, loads `validate-as-consumer` | **dispatched** (`loop.py:459`, `u2hl.54.3`) |
 | `reviewer` (by lens) | VALIDATE | **authored** | **dispatched once per lens** (`loop._dispatch_reviews`, `roles.LENS_ROLE_BY_PHASE`, `basicly-feje`) |
 | `decider` | CLASSIFY, escalations | **authored** | exists (`decisions.py`) |
@@ -970,7 +970,12 @@ that is ≈376 lines [M].
   over at once and the strict reading would have required decomposing `cli.py` (54,362), `runner.py`
   (32,295) and `supervise.py` (48,020) before a lint family could be enabled.
 - **Per-file waiver** [D]. A module that is genuinely cohesive may exceed the cap deliberately,
-  carrying a one-line reason in the file. Waivers are themselves ratcheted — the count may not
+  carrying a one-line reason in the file. **Two kinds exist and the record cannot tell them apart**
+  [M 2026-08-14, `basicly-twfj`]. A waiver **bought on cohesion** — a genuinely small module whose
+  prose is the contract it carries — is correct, permanent and owes no follow-up. A waiver **bought
+  on cost** — the ratchet refused a change and the real fix was out of scope — is debt and must
+  expire against a named bead. Four waivers exist across two gates and two of each kind. A reader
+  sees a count. Waivers are themselves ratcheted — the count may not
   grow silently — following the pattern already used for the vulture ignore list.
 - **Scope: all `.py`** [D] — `src/`, `tests/`, `.scripts/`, `.basicly/core/`.
 

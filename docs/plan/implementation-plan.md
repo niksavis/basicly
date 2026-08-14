@@ -135,10 +135,12 @@ work to the next reader, and this section is where a decider looks first. Re-che
 and a bead status together, or the correction becomes the stale claim.
 
 ```text
-agents   11 sources · 7 loop + 4 ad-hoc · projected to both families · vendored
-         4 of 7 loop roles reachable        decider, decomposer, implementer, validator
-         3 unreachable — curator (ship never dispatches), retrospector (no
-         state), reviewer (no ROLE_BY_PHASE entry at all)   [M 2026-08-13]
+agents   12 sources · 7 loop + 5 ad-hoc · projected to both families · vendored
+         5 of 7 loop roles reachable   decider, decomposer, implementer, validator, reviewer
+         2 unreachable — curator (ship never dispatches), retrospector
+         (RETROSPECTIVE is not a phase)                     [M 2026-08-14]
+         12 of 12 declare a tier; catalog lint refuses one that does not (plhx)
+         a declared tier reaches no spawn — D30 keeps the id out, a3yi injects it
          5 of 5 roles declaring `skills:` now receive them  (basicly-ey58)
          the projected `tools:` allowlist binds on copilot too   [M 2026-08-11]
 skills   40 sources · 35 projected · 5 of 5 loop skills exist
@@ -146,13 +148,20 @@ skills   40 sources · 35 projected · 5 of 5 loop skills exist
          projected listing under a consumer's budget        UNDER (a3ab.12 closed)
 hooks    31 documented host events · mapped by catalog  2   (u2hl.49, blocked)
 always-on  AGENTS.md 14,428 chars / 242 lines vs 16,000 / 320   UNDER  [M 2026-08-14]
-loop     loop_state.PHASES 7 incl. terminal `done` — correct, not a defect
+loop     7 phases; VALIDATE dispatches validator plus reviewer once per lens
+tree     175 → 313 tracked modules and +279,788 tokens in the 7 days to
+         2026-08-14, with every per-file gate green throughout   (5p49)
 ```
 
-Both halves of `basicly-4kdm` landed on 2026-08-09: the definitions and the dispatch that
-reaches them. **What is missing is now the states, not the roster** — `validator`,
-`reviewer`, `retrospector` and `curator` resolve correctly and can never be invoked. That
-is `basicly-u2hl.54` and it is §5.3's work, not §6's or §7's.
+**The roster's remaining two fail for one reason each, and neither is the roster's.** `curator`
+maps to `ship`, which is a live phase with a live handler that never calls `_run_agent`.
+`retrospector` maps to `retrospective`, which is not in `loop._HANDLERS` at all. Both are one
+wiring behind a state, and `basicly-xmhc` builds the state the second needs.
+
+**The tree row is the finding this section did not have an instrument for until 2026-08-14.** A
+ratchet bounds a file. Nothing bounded the tree, so 138 modules arrived in a week under six green
+gates. `basicly-5p49` measures it now, and it reports rather than blocks because it has no firing
+history yet.
 
 A competing harness with strictly worse definitions — hand-written, no schema, no projection, no
 vendoring — beats this repo on all four rows because its definitions are **wired**
@@ -184,8 +193,8 @@ the dependency clusters a cut draws from (§12).
 | --- | --- | --- |
 | ~~`v0.7.0`~~ | **SHIPPED 2026-08-06.** Trustworthy factory. Exit criterion 5 was not met, and the release documented that rather than claiming it. | shipped |
 | ~~`v0.8.0`~~ | **SHIPPED 2026-08-07.** Own the work graph — the store, not the floor. `br` is still in the runtime path (§6). | shipped |
-| **`v0.9.0`** | **Make the factory's own plumbing trustworthy, then finish the loop.** §5. The quality floor and five loop features landed on 2026-08-08; the same session measured the plumbing under them failing. Fifteen ordered items, plus what remains of the loop. | 8–12 sessions |
-| **`v0.9.1`** | **The measured evidence layer, when its chain unblocks.** Cost per landed package (`7bur`), AST localisation (`agzx.2`), the remaining Phase 2 gate (`m4zv.3`), parameter learning (`3ifz`). Split out because the whole chain sits behind `u6jq.1`, and holding the loop behind it would ship neither. | 3–5 sessions |
+| ~~`v0.9.0`~~ | **SHIPPED 2026-08-14.** The plumbing, then the loop. Every P0 §5.1's ordering argument rested on landed — transcripts persist, the rebase loses no work, the scope field is split, the decider's corpus is honest, the landing anchors are collision-proof. Plus VALIDATE as a real state, seven of eight handoff schemas, and the roster wired. The remaining §5.2 rows moved to `v0.9.1` because they are a different theme. | shipped |
+| **`v0.9.1`** | **The architectural backlog, then the dispatch mechanism.** §5A is the first half and it is the priority: 34 open items under `basicly-e2mz`, from a five-lane survey at the maximum tier plus a re-verification of the 2026-08-01 review. The second half is what §5.2 has left — `ejdm`, `xjd2`, `0p8n`, `66ix` — which is one theme, the dispatch mechanism, and reads better as its own row than as leftovers. The measured evidence layer (`7bur`, `agzx.2`, `m4zv.3`, `3ifz`) rides here too. | 8–12 sessions |
 | **`v0.10.0`** | **The judgment layer and always-on relief.** The roster's routing (`s2xf`) once `7bur` has numbers; the Phase 4 authoring pass and the empty-glob check (`a3ab.2`–`.3`). **This row had a gating item and no longer does** [M 2026-08-14]: `a3ab.1`, `.10` and `.12` are all closed, and `AGENTS.md` is **14,428 characters against a 16,000 cap** — 1,572 under, not 1,135 over. The audit `a3ab.1` ran found the overrun was the *scoped tier* Codex cannot receive as separate `paths:` rules files, so evicting always-on lines would have cost all three families to fix one; `codex.yaml:9` records the cap moving 12,000→16,000 instead. Three documents outlived that by five days — see §3's note on correcting a `file:line` and a bead status together. | 5–8 sessions |
 | **`v1.0.0`** | **Stabilize and declare.** §7. Surface audit and semver freeze, the breaking-marker gate, the fresh-consumer acceptance test, `br` out of the runtime path. `1.0` is a promise, so the last release proves it instead of adding capability. | 3–5 sessions |
 
@@ -200,7 +209,76 @@ fresh-consumer acceptance test** (`vkh0.22`), and a whole-tracker probe finds **
 `v0.10.0` or `v0.9.1` in any comment — against a positive control that finds `v0.9.0`, `v0.8.0` and
 `v1.0.0`. A handover is inherited claims, not evidence; this file and the tracker are.
 
-## 5. `v0.9.0` — the plumbing, then the loop
+## 5A. `v0.9.1` first half — the architectural backlog. **Start here.**
+
+Tracked by `basicly-e2mz`. **34 open children, 21 of them ready**, and this is the priority for the
+next session and the ones after it until the epic closes.
+
+### 5A.1 Why a backlog and not a second audit
+
+**This analysis has been run before.** `basicly-tcmy` is the 2026-08-01 architecture and code
+review: three read-only passes over the engine, the projector and the catalog. Its own baseline
+reads *43 modules in a six-tier DAG*. On 2026-08-14 the tree was **91 modules** and **13 of its
+children were still open**.
+
+So a read-only pass that emits a prioritised list is a thing this repo can already produce. What it
+cannot do is **drain the list against feature pressure**. That is why `basicly-u2hl.27` — the
+controller and the actuator — is not an item in the backlog but the thing that decides whether the
+backlog is worth having.
+
+### 5A.2 What ran, and in what order
+
+Three passes, all complete as of 2026-08-14.
+
+**Pass 0 re-verified `tcmy`'s 13 open findings against the tree. Zero were done.** Four had got
+measurably worse, one was superseded by a different bead than assumed, two had a half that closed,
+and **three carried a claim that re-verification refuted** — each of which would have sent an
+implementer at the wrong thing. The verdicts are comments on the 13 beads.
+
+**Pass 1 was five surveys at the maximum tier**: the loop core, supervision and landing, the
+command-line and distribution surface, the measurement layer, and one cross-cutting lane for
+duplicated concepts and suppression lists. 28 items after deduplication, 14 dependency edges, no
+cycle. Two findings arrived from more than one lane independently, and both amended an inherited
+bead rather than opening a new one.
+
+**What the surveys judged *clean* is a comment on `basicly-e2mz` and is not in any bead.** It records
+the modules a lane read and declined to file against, with the reason, plus what no survey covered.
+Without it the next audit re-derives all of it. Read it before commissioning anything.
+
+**Pass 2 is the mechanism half**, and four of its six items have landed: the dead-code gate reads
+schema keys rather than prose (`r343`), every role must declare a tier (`plhx`), `reviewer` is
+reachable once per lens (`feje`), and tree growth is measured (`5p49`). What remains is
+`basicly-xmhc`, RETROSPECTIVE as a state fired by a special-cause signal, and `basicly-u2hl.27`.
+
+### 5A.3 The four live defects the survey found
+
+These are bugs, not smells, and each was verified by hand rather than taken from a report.
+
+| Bead | Defect |
+| --- | --- |
+| `xab3` | A unit parked in `validate` counts against the WIP bound and no pass advances it. Two modules define that population and disagree, while `wip.py:15` states they are the same on purpose. |
+| `9rv0` | Two predicates answer whether a bead declares acceptance criteria. One tests a substring, one tests a whole line, so a heading quoted mid-sentence passes the readiness gate and yields the plan parser nothing. |
+| `izpi` | The unsized lane bound seeds 4,000,000 against a measured median of 7,694,941 and a 0.9 quantile of 20,594,047. The comment above the constant calls it deliberately high and names erring low as the dangerous direction. |
+| `n6uu` | Fragment provenance reads any absolute path component named `user` as an overlay, so a checkout under such a home directory lets a fragment silently drop a core rule from every agent. |
+
+`xab3` is one day old at filing. VALIDATE became a phase on 2026-08-13 and its bead carried five
+acceptance criteria, none of which named the supervisor's parked-lane driver. The close was correct
+against the criteria and the work was incomplete against the system. **That is what the epic is for.**
+
+### 5A.4 How to work it
+
+Sibling worktrees, one lane each, through `basicly worktree create` and `worktree merge --bead`.
+They land outside the repo at `basicly.worktrees/`, which is what keeps them clear of the trap where
+an agent worktree sits inside the tree and stales every whole-tree baseline.
+
+**Do `basicly-3w51` first.** It is one line of configuration and it has already cost an aborted merge
+and a hand-resolved rebase: two lanes forked from one base both regenerated the plan's generated
+block and neither value was right afterwards. Every remaining lane forks from the same base.
+
+## 5. `v0.9.0` — shipped 2026-08-14
+
+The ordering argument below is kept because it is the reason the release was cut where it was, and
+because §5.2's remaining rows carry it forward.
 
 ### 5.1 Why the plumbing precedes the features
 
@@ -272,9 +350,17 @@ seven of the eight named kinds have a contract. And a role's declared `skills:` 
 agent dispatched for it (`ey58`) — measured at ~0.03% of a lane, and reaching all three families
 rather than the one the vendor mechanism serves.
 
+Landed 2026-08-14, all through sibling worktrees: **`reviewer` is reachable** (`feje`) — a phase now
+has a driving role and a fan-out role, and VALIDATE dispatches `reviewer` once per lens beside the
+validator, at two lenses, priced as reads, on L3 units only. **Every role must declare a tier**
+(`plhx`), refused by `catalog lint` on core and overlay alike. **The dead-code gate reads schema
+keys rather than prose** (`r343`), which unmasked one real finding. **Tree growth is measured**
+(`5p49`).
+
 Open, in the order the dependencies allow: `u2hl.6` skill descriptions · `u2hl.21` diff size
 reported at plan time · `u2hl.22` `change-shape` derived from an AST · D10's criterion-derived
-checks · EARS · REPAIR and RETROSPECTIVE as states, the latter with its special-cause signal.
+checks · EARS · REPAIR as a state · **`xmhc` RETROSPECTIVE as a state fired by a special-cause
+signal**, which is the one that makes `retrospector` reachable and is pass-2 work under §5A.
 
 **Two rows left this list because the work landed and the bead did not close** [M 2026-08-14].
 `u2hl.17` is closed — `python-guidelines` carries its `paths:` glob. `u2hl.40` is open and the
@@ -282,13 +368,21 @@ checks · EARS · REPAIR and RETROSPECTIVE as states, the latter with its specia
 closed and VALIDATE live in `loop._HANDLERS`. A bead that outlives its landing is the same defect
 as a document that does, one layer down, and the tracker is the layer a scheduler reads.
 
-**The roster's blocker moved, and the new one is not what the old one was.** Artifacts were what
-held four roles unreachable; that is fixed. Reachable went **1 → 4** (`decider`, `decomposer`,
-`implementer`, `validator`), not 1 → 7, and each of the three that remain fails for its own
-reason: `curator` because `_on_ship` never calls `_run_agent`, `retrospector` because
-RETROSPECTIVE is not a state, and `reviewer` because it has no `ROLE_BY_PHASE` entry at all.
-Two of those three are one-line wirings behind a state that does not exist yet; the third is a
-missing map entry. **Do not plan them as one item.**
+**The roster's blocker moved twice, and each move was smaller than it looked.** Artifacts held four
+roles unreachable and that is fixed. Reachable went **1 → 4** on 2026-08-09, then **4 → 5** on
+2026-08-14 when `reviewer` got a phase. Each remaining failure has its own cause and its own size:
+
+```text
+curator        maps to `ship`, a live phase with a live handler that never calls
+               `_run_agent`.  One wiring.
+retrospector   maps to `retrospective`, which is not in `loop._HANDLERS` at all.
+               Blocked on the state — basicly-xmhc builds it.
+```
+
+**`reviewer` was the one that read smallest and was not.** The bead said map a role to a phase.
+`ROLE_BY_PHASE` is one-to-one, and the design gives VALIDATE two roles with one dispatched once per
+lens, so the lane had to give a phase a driving role and a fan-out role. **Do not size these from
+the bead title.**
 
 **`ejdm` is decomposed and its first child has landed** (`ejdm.1`). The ordering is deliberate and
 should not be shortcut: the bead's causal claim — that a lane's multi-million-token floor is bought
