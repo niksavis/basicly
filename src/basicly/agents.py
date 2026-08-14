@@ -448,20 +448,61 @@ def _is_generated_agent(path: Path) -> bool:
     return path.is_file() and GENERATED_MARKER in path.read_text(encoding="utf-8", errors="ignore")
 
 
+# Reported for a projection no catalog source accounts for. Unlike the skills
+# side's `unmanaged (...)`, a rebuild does clear this one, so the shared
+# "run agents-build" remedy the check prints is the correct advice.
+ORPHANED_REASON = "orphaned (no agent source)"
+
+
+def orphaned_projections(repo_root: Path, source_slugs: set[str]) -> list[Path]:
+    """Projected agent files under the output roots that no source in *source_slugs* names.
+
+    Deleting a source used to leave its projection on every consumer forever:
+    both the build and the check iterate *sources*, and a deleted source has
+    nothing to iterate, so the gate reported up to date over a live agent
+    definition carrying a retired contract — the host still matches it for
+    delegation by description (basicly-e2mz.8, after `code-reviewer` was removed
+    in c3cdb33). Scanning the roots instead is what makes a deletion reach a
+    consumer at all.
+
+    Only generated-marker files are listed, which is the same decision
+    ``uninstall`` makes about the same roots (``cli._remove_projected_agents``):
+    a file a consumer hand-authored under a projected name is theirs. Deleting in
+    a consumer's repo is the one thing here that re-running a command cannot
+    undo, so the marker is the whole guard.
+
+    *source_slugs* holds every discovered agent, selected or not: a deselected
+    agent still has a source and keeps the targeted "excluded by technology
+    selection" reason rather than being called an orphan.
+    """
+    orphans: list[Path] = []
+    for out_root in AGENTS_OUTPUT_ROOTS:
+        base = repo_root / out_root.path
+        if not base.is_dir():
+            continue
+        for path in sorted(base.glob(f"*{out_root.suffix}")):
+            slug = path.name.removesuffix(out_root.suffix)
+            if slug not in source_slugs and _is_generated_agent(path):
+                orphans.append(path)
+    return orphans
+
+
 def sync_agents(
     repo_root: Path, selection: frozenset[str] | None = None
 ) -> tuple[SyncResult, list[Path]]:
     """Render selected source agents into every output root.
 
-    Hand-authored files are never touched, but a previously projected agent the
-    technology *selection* now excludes is pruned (generated-marker files only).
+    Hand-authored files are never touched, but a previously projected agent is
+    pruned (generated-marker files only) when the technology *selection* now
+    excludes its source, or when that source is gone from the catalog entirely.
     Returns the sync result plus the pruned paths.
     """
     roots = default_agent_roots(repo_root)
     blocks = discover_blocks(roots)
+    sources = discover_agents(roots)
     result = SyncResult()
     pruned: list[Path] = []
-    for agent in discover_agents(roots):
+    for agent in sources:
         selected = technology_selected(agent.technologies, selection)
         for out_root in AGENTS_OUTPUT_ROOTS:
             target_path = out_root.target(repo_root, agent.slug)
@@ -472,17 +513,21 @@ def sync_agents(
             elif _is_generated_agent(target_path):
                 target_path.unlink()
                 pruned.append(target_path)
+    for orphan in orphaned_projections(repo_root, {agent.slug for agent in sources}):
+        orphan.unlink()
+        pruned.append(orphan)
     return result, pruned
 
 
 def check_synced_agents(
     repo_root: Path, selection: frozenset[str] | None = None
 ) -> list[tuple[Path, str]]:
-    """Return missing or stale projected agent files, across every output root."""
+    """Return missing, stale, or orphaned projected agent files, across every output root."""
     roots = default_agent_roots(repo_root)
     blocks = discover_blocks(roots)
+    sources = discover_agents(roots)
     mismatches: list[tuple[Path, str]] = []
-    for agent in discover_agents(roots):
+    for agent in sources:
         selected = technology_selected(agent.technologies, selection)
         for out_root in AGENTS_OUTPUT_ROOTS:
             target_path = out_root.target(repo_root, agent.slug)
@@ -495,6 +540,10 @@ def check_synced_agents(
                 continue
             if target_path.read_bytes() != render_agent_md(agent, blocks, out_root).encode("utf-8"):
                 mismatches.append((target_path, "content mismatch"))
+    mismatches.extend(
+        (path, ORPHANED_REASON)
+        for path in orphaned_projections(repo_root, {agent.slug for agent in sources})
+    )
     return mismatches
 
 

@@ -11,6 +11,7 @@ from basicly.agents import (
     CLAUDE_AGENTS_ROOT,
     COPILOT_AGENTS_ROOT,
     GENERATED_MARKER,
+    ORPHANED_REASON,
     SLOT_ORDER,
     AgentOutputRoot,
     check_synced_agents,
@@ -447,6 +448,76 @@ def test_check_synced_agents_catches_a_hand_edit_in_each_root_alone(
 
     target.unlink()
     assert check_synced_agents(repo) == [(target, "missing")]
+
+
+def _delete_agent_source(repo: Path, slug: str) -> None:
+    """Remove *slug* from the catalog the way a real removal commit does."""
+    source = repo / ".basicly/core/agents" / slug / "agent.yaml"
+    source.unlink()
+    source.parent.rmdir()
+
+
+def test_sync_agents_prunes_a_projection_whose_source_was_deleted(tmp_path: Path) -> None:
+    """A deleted source takes its projection with it, in every root, and only its own.
+
+    The regression is basicly-e2mz.8: both halves iterated catalog sources, so a
+    source deleted from the catalog (`code-reviewer`, c3cdb33) left a live agent
+    definition on every consumer that nothing would ever look at again.
+    """
+    repo = _repo_with_agent(tmp_path)
+    _write_agent(repo / ".basicly/core/agents", "planner")
+    sync_agents(repo)
+    orphans = _targets(repo)
+    survivors = _targets(repo, "planner")
+    assert all(target.is_file() for target in orphans + survivors)
+
+    _delete_agent_source(repo, "code-reviewer")
+    _result, pruned = sync_agents(repo)
+
+    assert pruned == orphans
+    assert not any(target.exists() for target in orphans)
+    assert all(target.is_file() for target in survivors)
+
+
+def test_check_synced_agents_reports_an_orphan_projection(tmp_path: Path) -> None:
+    """The gate half: check fails on a planted orphan instead of reporting up to date.
+
+    Asserted separately from the build because a build that prunes and a check
+    that still passes leaves the gate fail-open for anyone who runs `check`
+    without `build` — which is what CI does.
+    """
+    repo = _repo_with_agent(tmp_path)
+    sync_agents(repo)
+    orphans = _targets(repo)
+    assert check_synced_agents(repo) == []
+
+    _delete_agent_source(repo, "code-reviewer")
+    assert check_synced_agents(repo) == [(target, ORPHANED_REASON) for target in orphans]
+
+    sync_agents(repo)
+    assert check_synced_agents(repo) == []
+
+
+def test_orphan_pruning_spares_a_hand_written_agent(tmp_path: Path) -> None:
+    """A file with no generated marker survives the prune and is not reported.
+
+    The delete predicate is `uninstall`'s: a consumer's own `code-reviewer.md`
+    under a projected name is theirs, and deleting it is the one thing here that
+    re-running a command cannot undo.
+    """
+    repo = _repo_with_agent(tmp_path)
+    _delete_agent_source(repo, "code-reviewer")
+    hand_written = "---\nname: code-reviewer\n---\n\nMy own reviewer.\n"
+    for target in _targets(repo):
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(hand_written, encoding="utf-8")
+
+    _result, pruned = sync_agents(repo)
+
+    assert pruned == []
+    assert check_synced_agents(repo) == []
+    for target in _targets(repo):
+        assert target.read_text(encoding="utf-8") == hand_written
 
 
 @pytest.mark.parametrize("root", AGENTS_OUTPUT_ROOTS, ids=lambda root: root.family)
