@@ -13,7 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from basicly import decisions, loop_state, policy, runner, supervise, wip
+from basicly import decisions, loop, loop_state, policy, runner, supervise, validate_gate, wip
 from basicly.config import PolicyConfig
 
 if TYPE_CHECKING:
@@ -73,10 +73,10 @@ def _phases(monkeypatch: pytest.MonkeyPatch, phases: dict[str, str]) -> None:
     )
 
 
-def test_downstream_units_counts_the_two_parked_phases(
+def test_downstream_units_counts_every_parked_phase(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Merged-and-parked and awaiting-ship are unlanded; building and done are not.
+    """Merged, validating and awaiting-ship are unlanded; building and done are not.
 
     The population is exactly the one ``supervise.advance_parked`` drives, which is
     what makes the bound drain instead of wedge: a lane still building has produced
@@ -84,10 +84,59 @@ def test_downstream_units_counts_the_two_parked_phases(
     """
     _phases(
         monkeypatch,
-        {"a": "build", "b": "verify", "c": "ship", "d": "done", "e": "decompose"},
+        {"a": "build", "b": "verify", "c": "ship", "d": "done", "e": "decompose", "f": "validate"},
     )
 
-    assert wip.downstream_units(Path(), ("a", "b", "c", "d", "e")) == ("b", "c")
+    assert wip.downstream_units(Path(), ("a", "b", "c", "d", "e", "f")) == ("b", "c", "f")
+
+
+def test_a_unit_parked_in_validate_is_counted_and_driven_by_one_set(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An L3 unit resting in validate is both counted here and advanced by a pass.
+
+    The defect this pins (basicly-xab3): ``validate`` was in the counted set and not in
+    the driven one, so five units owing a consumer check refused every further dispatch
+    against a bound no pass could drain. Both halves are asserted from one phase read,
+    which is what makes them one population rather than two that agree today.
+
+    The grant root goes in with the drive because a validate advance dispatches the
+    validator, and ``policy.spend_status`` is inert on a step that names no session.
+    """
+    gates = policy.GateStatus(
+        can_advance=False,
+        required_passed=("verify",),
+        required_failed=(),
+        required_missing=(validate_gate.VALIDATE_GATE,),
+        advisory=(),
+    )
+    assert (
+        loop_state.derive_phase(
+            "in_progress", checkpoints=(), worktree=None, gates=gates, has_children=False
+        )
+        == "validate"
+    )
+    _phases(monkeypatch, {"epic.1": "validate"})
+    monkeypatch.setattr(supervise, "_has_subtasks", lambda _r, _i: False)
+    monkeypatch.setattr(decisions, "has_pending", lambda _r, _i: False)
+    steps = [
+        loop.AdvanceResult("epic.1", "validate", "ship", "validated", "recorded green"),
+        loop.AdvanceResult("epic.1", "ship", "ship", "blocked", "awaiting ship", checkpoint="ship"),
+    ]
+    driven: list[tuple[str, str | None]] = []
+
+    def fake_advance(_repo: Path, issue_id: str, **kwargs: object) -> loop.AdvanceResult:
+        grant = kwargs["grant_root"]
+        driven.append((issue_id, grant if isinstance(grant, str) else None))
+        return steps[len(driven) - 1]
+
+    monkeypatch.setattr(supervise.loop, "advance", fake_advance)
+
+    routed = supervise.advance_parked(tmp_path, _session(_lane("epic.1")))
+
+    assert wip.downstream_units(tmp_path, ("epic.1",)) == ("epic.1",)
+    assert driven == [("epic.1", "epic"), ("epic.1", "epic")]
+    assert [(item.issue_id, item.route) for item in routed] == [("epic.1", "merged")]
 
 
 def test_admit_takes_the_pass_own_lanes_off_the_headroom(

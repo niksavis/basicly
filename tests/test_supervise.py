@@ -1718,11 +1718,13 @@ def test_route_green_lane_lands_and_ships_under_a_grant(
         "approve_checkpoint_guarded",
         lambda *_a, **_k: policy.ApprovalResult("approved", detail="delegated under L3 grant"),
     )
-    monkeypatch.setattr(
-        supervise.loop,
-        "run_until_blocked",
-        lambda _r, issue_id, **_k: [_advance_result(issue_id, "tore-down", "done", "closed")],
-    )
+    grants: list[object] = []
+
+    def fake_run(_r: Path, issue_id: str, **kwargs: object) -> list[loop.AdvanceResult]:
+        grants.append(kwargs.get("grant_root"))
+        return [_advance_result(issue_id, "tore-down", "done", "closed")]
+
+    monkeypatch.setattr(supervise.loop, "run_until_blocked", fake_run)
 
     routed = supervise.route_outcomes(
         tmp_path, _session(_lane("epic.1")), (_executed_outcome("epic.1"),)
@@ -1730,6 +1732,7 @@ def test_route_green_lane_lands_and_ships_under_a_grant(
 
     assert [r.route for r in routed] == ["shipped"]
     assert routed[0].progressed
+    assert grants == ["epic"]  # an L3 unit rests in validate here, so that dispatch is metered
 
 
 def test_route_green_lane_without_a_grant_queues_the_ship_checkpoint(

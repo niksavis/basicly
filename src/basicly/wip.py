@@ -10,12 +10,11 @@ lanes' worth of unreviewed surface and of merge conflicts waiting to happen, and
 neither the concurrency cap nor D3's spend ceiling can see it. The quantity that
 actually runs out is review capacity, and it is denominated in units, not tokens.
 
-**Downstream is the two parked phases**, :data:`DOWNSTREAM_PHASES` — a lane that
-merged and waits in verify, and one that verified and waits on its ship checkpoint.
-That is the same population ``supervise.advance_parked`` drives each pass, on purpose:
-what drains the bound is exactly what the bound counts, so a blocked pass is not a
-wedged one. A closed unit is done and counts for nothing; a unit still building has
-produced nothing to review yet.
+**Downstream is the parked phases**, :data:`DOWNSTREAM_PHASES` — merged and waiting in
+verify, owing a consumer check in validate, or waiting on a ship checkpoint. That set is
+what ``supervise.advance_parked`` imports and drives each pass: what drains the bound is
+exactly what the bound counts, so a blocked pass is not a wedged one. A closed unit is
+done and counts for nothing; a unit still building has produced nothing to review yet.
 
 **The pass's own admissions count toward the limit**, which is the one place this
 goes beyond a literal reading of the predicate. Checking only what is *already*
