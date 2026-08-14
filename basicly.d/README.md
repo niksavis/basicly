@@ -49,10 +49,33 @@ and fails a gate neither lane's rebase conflicted on. `count_delta = 1` from eac
 sums to the tree that landed, and addition is commutative, so the composed baseline
 does not depend on landing order.
 
-`count_delta` moves the table's tree-wide total (`waiver_count` for `module_size`,
-`unreasoned_count` for `noqa_debt`). `[ratchet.<gate>.frozen]` moves one recorded
-entry each. An entry whose deltas reach zero is dropped, which is the rule the
-ratchet tables already state for a debt that has been paid off.
+`count_delta` moves the table's tree-wide total (`waiver_count` for `module_size` and
+for `comment_density`, `unreasoned_count` for `noqa_debt`).
+`[ratchet.<gate>.frozen]` moves one recorded entry each. An entry whose deltas reach
+zero is dropped, which is the rule the ratchet tables already state for a debt that
+has been paid off.
+
+## Why one gate's deltas are fractional
+
+Two of the three ratchets count things — tokens, suppressions — so their deltas are
+integers. `comment_density` records a **percentage share** to one decimal, so its
+per-entry deltas are floats:
+
+```toml
+# The prose share this lane cut off a frozen module, and the waiver it took.
+[ratchet.comment_density]
+count_delta = 1
+
+[ratchet.comment_density.frozen]
+"src/basicly/thing.py" = -1.4
+```
+
+`dropin.compose` is told that by a `fractional=True` argument rather than reading it
+off the values it was handed, for two reasons. A recorded table can be empty, and an
+empty table offers nothing to infer from; and inferring from the values would admit a
+float into a counting ratchet the first time one arrived, which is exactly the silent
+widening the fragment schema otherwise fails closed on. `count_delta` counts entries,
+so it stays whole for all three gates including this one (`basicly-05g0`).
 
 ## What still edits the anchor itself
 
@@ -65,9 +88,9 @@ its way past; the fragments cover the appending, which is what collided.
 `basicly.config` assembles `[[verify.checks]]` from `basicly.toml` and then every
 fragment in filename order, and validates each fragment against the same schema as
 `basicly.toml` — an unknown key here is refused, not ignored. `basicly.dropin`
-composes the ratchet deltas, and the two gates under `.scripts/` read them through
-it. The pre-commit hook runner reads the same set, so a check declared here runs in
-the hook as well as in `basicly verify`.
+composes the ratchet deltas, and all three ratchet gates under `.scripts/` read their
+baseline through it. The pre-commit hook runner reads the same set, so a check
+declared here runs in the hook as well as in `basicly verify`.
 
 Fragments are not folded back into `basicly.toml`: unlike a changelog entry, a check
 is permanent config, and a composed baseline is order-independent so it never needs

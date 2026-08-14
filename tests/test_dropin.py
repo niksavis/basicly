@@ -6,6 +6,10 @@ sum does not depend on the order the fragments land in, an entry that nets to ze
 dropped rather than recorded, and a fragment that declares a total where a delta belongs is
 refused loudly instead of being read as a very large delta.
 
+One of the three ratchets records shares rather than counts, so composition is parameterised
+on the entry kind; the cases below pin that the widening reaches the per-entry deltas and
+stops there — ``count_delta`` counts waivers for that gate too (basicly-05g0).
+
 The commutativity test is the one worth keeping. ``dropin``'s whole claim is that a composed
 baseline is landing-order independent, and a regression that made composition order-sensitive
 would still pass every other assertion here.
@@ -116,6 +120,78 @@ def test_a_bool_is_refused_even_though_it_is_an_int(tmp_path: Path) -> None:
 
     with pytest.raises(dropin.FragmentError, match="must be an integer delta"):
         dropin.compose(tmp_path, "noqa_debt", frozen={}, count=0)
+
+
+def test_a_fractional_delta_moves_a_recorded_share(tmp_path: Path) -> None:
+    """``comment_density`` freezes a percentage, so its per-entry deltas are floats."""
+    _fragment(
+        tmp_path,
+        "basicly-one",
+        '[ratchet.comment_density]\ncount_delta = 1\nfrozen = {"a.py" = -1.4}\n',
+    )
+
+    composed = dropin.compose(
+        tmp_path, "comment_density", frozen={"a.py": 55.0}, count=2, fractional=True
+    )
+
+    assert composed.frozen["a.py"] == pytest.approx(53.6)
+    assert composed.count == 3
+
+
+def test_two_lanes_each_taking_a_waiver_compose_to_both(tmp_path: Path) -> None:
+    """The case ``basicly-kr7t`` was blocked on: two density waivers, neither anchor edit."""
+    _fragment(tmp_path, "basicly-one", "[ratchet.comment_density]\ncount_delta = 1\n")
+    _fragment(tmp_path, "basicly-two", "[ratchet.comment_density]\ncount_delta = 1\n")
+
+    composed = dropin.compose(tmp_path, "comment_density", frozen={}, count=2, fractional=True)
+
+    assert composed == dropin.Baseline({}, 4)
+
+
+def test_a_share_paid_off_to_zero_is_dropped_like_a_count(tmp_path: Path) -> None:
+    """A graduated module leaves the frozen table whichever unit the table is in."""
+    _fragment(tmp_path, "basicly-one", '[ratchet.comment_density]\nfrozen = {"a.py" = -55.0}\n')
+
+    composed = dropin.compose(
+        tmp_path, "comment_density", frozen={"a.py": 55.0}, count=0, fractional=True
+    )
+
+    assert composed.frozen == {}
+
+
+def test_a_whole_delta_is_accepted_where_shares_are_recorded(tmp_path: Path) -> None:
+    """TOML spells a whole number without a point, and -1 is a share a lane may mean."""
+    _fragment(tmp_path, "basicly-one", '[ratchet.comment_density]\nfrozen = {"a.py" = -1}\n')
+
+    composed = dropin.compose(
+        tmp_path, "comment_density", frozen={"a.py": 55.0}, count=0, fractional=True
+    )
+
+    assert composed.frozen["a.py"] == pytest.approx(54.0)
+
+
+def test_a_fractional_delta_is_refused_by_a_counting_ratchet(tmp_path: Path) -> None:
+    """The reason *fractional* is a parameter: 1.5 suppressions is not a state to compose."""
+    _fragment(tmp_path, "basicly-one", '[ratchet.noqa_debt]\nfrozen = {"E402" = 1.5}\n')
+
+    with pytest.raises(dropin.FragmentError, match="must be an integer delta"):
+        dropin.compose(tmp_path, "noqa_debt", frozen={}, count=0)
+
+
+def test_the_count_stays_whole_even_where_the_entries_are_shares(tmp_path: Path) -> None:
+    """``count_delta`` counts waivers, so widening the entries must not widen it."""
+    _fragment(tmp_path, "basicly-one", "[ratchet.comment_density]\ncount_delta = 1.0\n")
+
+    with pytest.raises(dropin.FragmentError, match="count_delta must be an integer delta"):
+        dropin.compose(tmp_path, "comment_density", frozen={}, count=0, fractional=True)
+
+
+def test_a_string_share_is_refused_naming_the_kind_expected(tmp_path: Path) -> None:
+    """A fragment that cannot be read as a delta stops the gate, never widens the baseline."""
+    _fragment(tmp_path, "basicly-one", '[ratchet.comment_density]\nfrozen = {"a.py" = "53.6"}\n')
+
+    with pytest.raises(dropin.FragmentError, match="must be a numeric delta"):
+        dropin.compose(tmp_path, "comment_density", frozen={}, count=0, fractional=True)
 
 
 def test_a_frozen_key_that_is_not_a_table_is_refused(tmp_path: Path) -> None:

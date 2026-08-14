@@ -37,11 +37,22 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
+from basicly.dropin import (  # noqa: E402 - the path above comes first
+    COUNT_DELTA,
+    FRAGMENT_DIR,
+    RATCHET_SECTION,
+    FragmentError,
+    compose,
+)
 from basicly.read_cost import _text_tokens  # noqa: E402  (path set above)
 
 SCOPE_ROOTS = ("src", "tests", ".scripts", ".basicly/core")
+
+# Where the ratchet is recorded, how a failure names it, and where a lane records a change
+# to the count instead of editing that shared table (basicly-05g0, applying basicly-ef7t).
 RATCHET_TABLE = "[tool.comment_density]"
 FROZEN_TABLE = "[tool.comment_density.frozen]"
+FRAGMENT = f"[{RATCHET_SECTION}.comment_density] in {FRAGMENT_DIR}/<bead-id>.toml"
 
 CAP = 50.0
 
@@ -130,17 +141,18 @@ def measure(text: str) -> tuple[float, int]:
 
 
 def load_ratchet(repo: Path) -> Ratchet:
-    """Read the recorded baseline out of ``pyproject.toml``.
+    """The baseline in ``pyproject.toml``, with the ``basicly.d`` fragments applied.
 
     Args:
         repo: The repository root.
 
     Returns:
-        The frozen prose shares and the declared waiver count.
+        The composed frozen prose shares and the composed waiver count.
 
     Raises:
         RatchetError: The table is absent or malformed. The gate must not pass by
             defaulting to an empty baseline, which would fail every frozen module at once.
+        FragmentError: A fragment declares a delta that is not a number.
     """
     try:
         data = tomllib.loads((repo / "pyproject.toml").read_text(encoding="utf-8"))
@@ -157,7 +169,21 @@ def load_ratchet(repo: Path) -> Ratchet:
         raise RatchetError(f"{FROZEN_TABLE} must map each path to its go-live prose share")
     if not isinstance(count, int):
         raise RatchetError(f"{RATCHET_TABLE} must declare waiver_count as an integer")
-    return Ratchet(frozen={path: float(v) for path, v in frozen.items()}, waiver_count=count)
+    baseline = compose(
+        repo,
+        "comment_density",
+        frozen={path: float(v) for path, v in frozen.items()},
+        count=count,
+        fractional=True,
+    )
+    # Rounded to the precision `measure` reports, because a composed share is a sum of
+    # one-decimal floats and binary addition does not stay on that grid: a lane cutting
+    # 0.1 off the 51.3 frozen for `fsck.py` composes 51.199999999999996, and the module it
+    # just cut, measured at 51.2, would be reported as having grown.
+    return Ratchet(
+        frozen={path: round(share, 1) for path, share in baseline.frozen.items()},
+        waiver_count=baseline.count,
+    )
 
 
 def tracked_modules(repo: Path) -> list[Module]:
@@ -205,7 +231,8 @@ def _over_cap(module: Module) -> Finding:
         remedy=(
             "cut narration — a comment that restates the statement below it, or a docstring "
             "that describes the code rather than the contract — or waive it with a column-0 "
-            f"`# comment-density-waiver: <reason>` and raise waiver_count in {RATCHET_TABLE}"
+            f"`# comment-density-waiver: <reason>` and record `{COUNT_DELTA} = 1` under "
+            f"{FRAGMENT}"
         ),
     )
 
@@ -272,7 +299,10 @@ def _waiver_findings(waived: Collection[str], ratchet: Ratchet) -> list[Finding]
                 f"{ratchet.waiver_count} — a waiver was {direction} without saying so "
                 f"(waived: {listed})"
             ),
-            remedy=f"set waiver_count = {len(listed_paths)} in {RATCHET_TABLE}",
+            remedy=(
+                f"record `{COUNT_DELTA} = {len(listed_paths) - ratchet.waiver_count:+d}` "
+                f"under {FRAGMENT}"
+            ),
         )
     ]
 
@@ -315,7 +345,7 @@ def main() -> int:
     try:
         ratchet = load_ratchet(REPO_ROOT)
         modules = tracked_modules(REPO_ROOT)
-    except RatchetError as exc:
+    except (RatchetError, FragmentError) as exc:
         print(f"{_LABEL}: {exc}", file=sys.stderr)
         return 1
 
