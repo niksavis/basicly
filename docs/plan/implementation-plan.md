@@ -233,6 +233,32 @@ The order is now:
 3. **The tail of `e2mz`, `tcmy` and `jr0l`** — roughly 70 items — drains through the controller rather
    than through a human's queue.
 
+**Two of item 2's three P0s cannot be started, and this list said nothing about it**
+[M 2026-08-14, `blocks` edges over `.beads/issues.jsonl`, `parent-child` excluded]. Naming a bead
+as the place to start is a readiness claim, and a readiness claim is checkable — so it is checked
+here rather than discovered by whoever picks it up:
+
+| Named P0 | Actually | Start instead at |
+| --- | --- | --- |
+| `89hm` | BLOCKED by `u2hl.30` | `u2hl.30` — demote the context ceiling to observability |
+| `vkh0.23` | BLOCKED by `c357` | `c357` — scope the shadow differential; `u4xu` waits on it too |
+| `ejdm` | READY | `ejdm`; `xjd2` is blocked behind it, as §5.2 already says |
+
+`c357` is itself a P0 and appears nowhere in §6's five-step list, which is the second half of the
+same defect: §6 describes the cutover's *steps* and the tracker holds its *entry point*, and only
+one of the two was read.
+
+**And one ready P0 is named by no ordering in this file.** `basicly-jn1x` — **0 of 357 dispatch
+records carry `--agent`**, against a positive control of 163 carrying `-p`. The role wiring exists
+in code (`supervise.py:2749`), so the two readings are "the lane path does not apply the role" and
+"it does and the record does not capture it", and the ledger cannot tell them apart. That makes it
+a prerequisite of any measurement that cites a role — `ejdm.4`'s before/after among them — rather
+than a defect competing with them for a slot.
+
+The general rule, because this file will name a bead as a starting point again: **an ordering is a
+claim about the graph, so read the graph, not the epic.** Both of the misses above are visible in
+one query and neither was in the argument that produced the order.
+
 What does **not** change: the four live defects §5A.3 names are all closed, and the mechanism half of
 §5A.2's pass 2 is complete. This is a change of *who dispatches* the remainder, not a decision to stop
 draining it.
