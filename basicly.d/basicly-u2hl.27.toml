@@ -1,0 +1,14 @@
+# `.scripts/improvement_controller.py` reads its sensor by importing
+# `check_module_size` and the basicly package, both of which need `sys.path` set first
+# — the same three-suppression shape `check_module_size.py` already carries, and for
+# the same reason: `.scripts/` is not a package, so a deferred import inside each
+# function was the only alternative and it would hide the loop's dependencies from
+# every reader. Each suppression names it.
+#
+# `basicly loop improve` runs that script through `subprocess.run`, which is S603's
+# subject. The argv is this process's interpreter plus a repo-declared path — the same
+# trust boundary `verify._run` states — so the alternative, importing the script, is
+# the one `.scripts/` rules out.
+[ratchet.noqa_debt.frozen]
+E402 = 3
+S603 = 1

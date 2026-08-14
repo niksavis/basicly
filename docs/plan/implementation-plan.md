@@ -80,7 +80,7 @@ hand-written copy of them was stale within days:
 | Measure | Value |
 | --- | --- |
 | Engine modules (`src/basicly/*.py`) | 88 |
-| Test files | 160 |
+| Test files | 161 |
 | `[[verify.checks]]` declared | 25 |
 | …of which run in `--mode fast` | 20 |
 | …of which run in `--mode full` | 24 |

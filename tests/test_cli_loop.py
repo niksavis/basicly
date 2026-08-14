@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -1178,3 +1179,42 @@ def test_preflight_forecast_never_prices_more_lanes_than_there_are_children(
     out = capsys.readouterr().out
     # 1000 per-lane (pinned in the fixture) x 2 open children, whatever the cap is.
     assert "forecast:  ~2000 tokens if all 2 lanes start" in out
+
+
+# --- improve ----------------------------------------------------------------
+
+
+def _improve_args(dry_run: bool) -> argparse.Namespace:
+    return argparse.Namespace(dry_run=dry_run)
+
+
+def test_loop_improve_runs_the_repos_controller_and_carries_the_dry_run_flag(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The command is the schedule's front door; the controller script decides."""
+    script = tmp_path / cli.IMPROVEMENT_CONTROLLER
+    script.parent.mkdir(parents=True)
+    script.write_text("", encoding="utf-8")
+    seen: dict[str, object] = {}
+
+    def fake_run(command, **kwargs):
+        seen.update(command=command, cwd=kwargs["cwd"])
+        return subprocess.CompletedProcess(command, 3)
+
+    monkeypatch.setattr(cli, "_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+
+    # The script's exit code is the command's: a schedule branches on it.
+    assert cli._cmd_loop_improve(_improve_args(dry_run=True)) == 3
+    assert seen["command"] == [sys.executable, str(script), "--dry-run"]
+    assert seen["cwd"] == tmp_path
+
+
+def test_loop_improve_refuses_a_repo_that_declares_no_controller(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The one state that would otherwise look exactly like a pass with nothing to do."""
+    monkeypatch.setattr(cli, "_repo_root", lambda: tmp_path)
+
+    assert cli._cmd_loop_improve(_improve_args(dry_run=False)) == 1
+    assert cli.IMPROVEMENT_CONTROLLER.as_posix() in capsys.readouterr().err
