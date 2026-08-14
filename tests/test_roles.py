@@ -47,8 +47,8 @@ def test_every_loop_role_is_reachable_from_one_of_the_phase_tables() -> None:
 
     The loop-role set is §6.2's, spelled out rather than derived, because nothing in an
     agent source declares whether it is engine-dispatched or ad-hoc — and an ad-hoc agent
-    (`architect`, `code-reviewer`, `researcher`, `security-auditor`, `test-runner`) is
-    invoked by a human and must not appear in a phase table at all.
+    (`architect`, `researcher`, `security-auditor`, `test-runner`) is invoked by a human
+    and must not appear in a phase table at all.
 
     `reviewer` is why this exists: it was authored, projected to both agent roots and
     vendored to consumers while `ROLE_BY_PHASE` was phase-to-one-role, so no phase string
@@ -109,6 +109,78 @@ def test_a_named_role_resolves_only_when_its_family_can_load_it(tmp_path: Path) 
 
     assert roles.resolve_named_role(tmp_path, _spec("claude"), "reviewer") == "reviewer"
     assert roles.resolve_named_role(tmp_path, _spec("codex"), "reviewer") is None
+
+
+def test_a_superseded_role_resolves_to_the_role_that_replaced_it(tmp_path: Path) -> None:
+    """The deprecation route: a retired name is answered, not dropped.
+
+    `code-reviewer` was vendored to consumers by `basicly install`, so a caller may
+    still hold the old name after the upgrade. Resolving it to None would send the
+    dispatch to the default runner with no review persona at all — a capability
+    deleted rather than relocated, which is what §6.3 made the owner's call.
+    """
+    assert roles.resolve_named_role(tmp_path, _spec("claude"), "code-reviewer") is None
+
+    _project(tmp_path, "claude", "reviewer")
+
+    assert roles.resolve_named_role(tmp_path, _spec("claude"), "code-reviewer") == "reviewer"
+
+
+def test_a_name_this_catalog_never_retired_survives_the_redirect_untouched(
+    tmp_path: Path,
+) -> None:
+    """The redirect is a lookup with a default, so it must narrow nothing.
+
+    A table that rewrote an unknown name would turn a typo into a dispatch of whatever
+    it happened to land on, which is worse than the silent drop it replaces.
+    """
+    _project(tmp_path, "claude", "implementer")
+
+    assert roles.resolve_named_role(tmp_path, _spec("claude"), "implementer") == "implementer"
+    assert roles.resolve_named_role(tmp_path, _spec("claude"), "implemnter") is None
+
+
+def test_the_superseded_agent_is_gone_from_the_catalog_and_from_both_agent_roots() -> None:
+    """Run against the real tree, because that is what `basicly install` vendors.
+
+    A source deleted while a projected copy survives ships the retired agent to every
+    consumer anyway — `sync_agents` prunes only a source that a technology selection
+    excludes, so nothing else notices an orphan left by a removal.
+    """
+    assert not Path(".basicly/core/agents/code-reviewer").exists()
+    assert Path(".basicly/core/agents/reviewer/agent.yaml").is_file()
+
+    for root, suffix in roles.AGENT_ROOTS.values():
+        assert not (root / f"code-reviewer{suffix}").exists()
+        assert (root / f"reviewer{suffix}").is_file()
+
+
+def test_the_replacement_names_what_it_superseded_where_a_consumer_reads_it() -> None:
+    """The old name has to be answerable on the surface a human typed it on.
+
+    The projected frontmatter `description` is what the host matches for delegation
+    and shows in its agent list, so the supersession is stated there rather than only
+    in a changelog the consumer's host never reads.
+    """
+    for root, suffix in roles.AGENT_ROOTS.values():
+        rendered = (root / f"reviewer{suffix}").read_text(encoding="utf-8")
+        description = next(
+            line for line in rendered.splitlines() if line.startswith("description:")
+        )
+
+        assert "code-reviewer" in description
+        assert "supersedes" in description.lower()
+
+
+def test_the_supersession_did_not_widen_the_lens_vocabulary() -> None:
+    """A tripwire on the literal pair, not on its length (§6.5).
+
+    Absorbing `code-reviewer` is the pressure that would add a third axis: it reviewed
+    tests and conventions too. Those are refused because ruff, pyright, vulture,
+    `lint-imports`, `module-size`, `comment-density` and `noqa-debt` ratchet them
+    mechanically, and a lens restating a green check is a paid dispatch per L3 unit.
+    """
+    assert roles.REVIEW_LENSES == ("correctness", "security")
 
 
 def test_a_phase_with_no_persona_resolves_to_nothing(tmp_path: Path) -> None:

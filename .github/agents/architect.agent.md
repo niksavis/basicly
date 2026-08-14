@@ -1,6 +1,6 @@
 ---
 name: architect
-description: Surveys a whole codebase for structural decay and returns a dependency-ordered remediation backlog. Use at a release boundary, or when a metric the ratchets cannot see has moved — module count, call-chain depth, duplicated concepts. Not for a diff; `code-reviewer` and `reviewer` own that. Returns a remediation backlog ordered by dependency, every item carrying the measurement that found it and shaped so the plan gate admits it unchanged. Read-only. It proposes a backlog; a human and the engine dispose of it.
+description: Surveys a whole codebase for structural decay and returns a dependency-ordered remediation backlog. Use at a release boundary, or when a metric the ratchets cannot see has moved — module count, call-chain depth, duplicated concepts. Not for a diff; `reviewer` owns that. Returns a remediation backlog ordered by dependency, every item carrying the measurement that found it and shaped so the plan gate admits it unchanged. Read-only. It proposes a backlog; a human and the engine dispose of it.
 tools: Read, Grep, Glob, Bash
 ---
 

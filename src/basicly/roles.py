@@ -100,6 +100,11 @@ REVIEW_LENSES: tuple[str, ...] = ("correctness", "security")
 # out" stays a lookup on data like the table above it.
 LENS_ROLE_BY_PHASE: dict[str, str] = {"validate": "reviewer"}
 
+# Retired role -> its replacement, applied before the availability check below so a
+# name `basicly install` once vendored relocates instead of resolving to nothing. An
+# unknown name is returned unchanged, so this narrows nothing (§6.3).
+SUPERSEDED_ROLES: dict[str, str] = {"code-reviewer": "reviewer"}
+
 # Where a projected agent lands per family, relative to the repo root. Both roots
 # are written by `basicly agents-build` and vendored by `basicly install`; a family
 # absent from this map cannot select a role at all (codex ships no subagent root),
@@ -167,13 +172,16 @@ def resolve_role(repo_root: Path, spec: HasAgentStyle, phase: str) -> str | None
 
 
 def resolve_named_role(repo_root: Path, spec: HasAgentStyle, role: str) -> str | None:
-    """*role* when *spec*'s family can load it, else None — the explicit form.
+    """*role*'s current name when *spec*'s family can load it, else None.
 
     :func:`resolve_role` answers for the role a phase's table names; this answers for
     a role the caller already holds, which is what a fan-out needs: at VALIDATE the
     reviewer is dispatched once per lens, and the phase alone no longer identifies
-    which role a given dispatch is.
+    which role a given dispatch is. A retired name redirects through
+    :data:`SUPERSEDED_ROLES` first: asking whether the removed file is available
+    answers None, which is the silent capability loss a supersession must not cause.
     """
     if spec.agent_style is None:
         return None
-    return role if role_is_available(repo_root, spec.name, role) else None
+    current = SUPERSEDED_ROLES.get(role.strip().lower(), role)
+    return current if role_is_available(repo_root, spec.name, current) else None

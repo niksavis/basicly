@@ -2,7 +2,7 @@
 schema_version: 1
 name: architect
 purpose: Surveys a whole codebase for structural decay and returns a dependency-ordered remediation backlog.
-triggers: Use at a release boundary, or when a metric the ratchets cannot see has moved — module count, call-chain depth, duplicated concepts. Not for a diff; `code-reviewer` and `reviewer` own that.
+triggers: Use at a release boundary, or when a metric the ratchets cannot see has moved — module count, call-chain depth, duplicated concepts. Not for a diff; `reviewer` owns that.
 returns: Returns a remediation backlog ordered by dependency, every item carrying the measurement that found it and shaped so the plan gate admits it unchanged.
 posture: Read-only. It proposes a backlog; a human and the engine dispose of it.
 tier: maximum
