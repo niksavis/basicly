@@ -517,7 +517,7 @@ def test_a_single_track_dispatch_over_the_ceiling_observes_and_spins_nothing(
     """
     _ready_leaf(at, monkeypatch)
     _pin_runner(monkeypatch, "claude")
-    br = _pin_ceiling(monkeypatch, 0.05)  # 200000-token window -> a 10000 threshold
+    br = _pin_ceiling(monkeypatch, 0.01)  # 1000000-token window -> a 10000 threshold
     _occupying(monkeypatch, 12_000)
 
     result = _advance(tmp_path)
@@ -528,7 +528,7 @@ def test_a_single_track_dispatch_over_the_ceiling_observes_and_spins_nothing(
     assert not any(text.startswith("[harness-overrun]") for text in written)
     # What the crossing does leave on the bead: the run marker, carrying the occupancy
     # and the window it was measured against, so the ledger still explains it.
-    assert '"context_tokens": 12000' in written[0] and '"context_window": 200000' in written[0]
+    assert '"context_tokens": 12000' in written[0] and '"context_window": 1000000' in written[0]
     assert result.blocked
     assert "12000" in result.detail and "10000" in result.detail
     assert "observed, not enforced" in result.detail

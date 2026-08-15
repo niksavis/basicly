@@ -37,6 +37,7 @@ layers =
     lane_split
     lane_log
     claude_settings | runner
+    context_window
     agents | catalog_verify | copilot_store | fleet | hooks | loader | models | permissions | planner | renderers | skills | state
     runner_usage
     decider_contract

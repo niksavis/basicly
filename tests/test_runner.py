@@ -24,7 +24,7 @@ from typing import cast
 
 import pytest
 
-from basicly import copilot_store, models, run_record, runner, runner_envelope
+from basicly import context_window, copilot_store, models, run_record, runner, runner_envelope
 from basicly.config import load_runner_config
 from basicly.runner import (
     BUILTIN_RUNNERS,
@@ -1202,12 +1202,17 @@ def test_a_metered_dispatch_keeps_both_its_numbers_and_its_answer() -> None:
 # --- Context windows and occupancy (basicly-kjc5.6, factory design D8) -------
 
 
-def test_builtin_context_windows_follow_the_design_defaults() -> None:
-    """Per-adapter windows from design §6; unknown agents get the smallest big-3."""
-    by_name = {s.name: s.context_window for s in BUILTIN_RUNNERS}
-    assert by_name["claude"] == 200_000
-    assert by_name["codex"] == 400_000
-    assert by_name["copilot"] == 128_000
+def test_only_a_family_that_reports_its_window_ships_one_as_checked() -> None:
+    """The shipped windows, and which of them anything can refute (basicly-89hm).
+
+    claude reports `contextWindow` per model on its own stream, so its figure is a
+    dated read of that field. codex and copilot report none, so theirs stay labelled
+    as defaults nobody checked and never reach a run record.
+    """
+    by_name = {s.name: (s.context_window, s.context_window_source) for s in BUILTIN_RUNNERS}
+    assert by_name["claude"] == (1_000_000, runner.ADAPTER_WINDOW)
+    assert by_name["codex"] == (400_000, context_window.FALLBACK_WINDOW)
+    assert by_name["copilot"] == (128_000, context_window.FALLBACK_WINDOW)
     assert runner.DEFAULT_CONTEXT_WINDOW == 128_000
 
 
@@ -2461,10 +2466,10 @@ def test_the_repo_declares_its_context_window_rather_than_inheriting_a_default()
     this repo dispatches, so it is the one that must carry a declaration.
     """
     claude = _repo_specs()["claude"]
-    assert claude.context_window_source == runner.DECLARED_WINDOW
+    assert claude.context_window_source == context_window.DECLARED_WINDOW
     assert claude.context_window != runner.DEFAULT_CONTEXT_WINDOW
     # An adapter this repo does not declare still says so, rather than reading as chosen.
-    assert _repo_specs()["codex"].context_window_source == runner.ADAPTER_WINDOW
+    assert _repo_specs()["codex"].context_window_source == context_window.FALLBACK_WINDOW
 
 
 def test_record_dispatch_carries_the_window_the_occupancy_was_measured_against(
@@ -2476,7 +2481,9 @@ def test_record_dispatch_carries_the_window_the_occupancy_was_measured_against(
     occupancy alone cannot say which declaration its ceiling fired under.
     """
     spec = replace(
-        _claude_spec(), context_window=1_000_000, context_window_source=runner.DECLARED_WINDOW
+        _claude_spec(),
+        context_window=1_000_000,
+        context_window_source=context_window.DECLARED_WINDOW,
     )
     result = _executed(spec, _CLAUDE_STREAM)
     monkeypatch.setattr(runner.run_record, "record_marker", lambda *_a, **_k: None)
@@ -2485,7 +2492,7 @@ def test_record_dispatch_carries_the_window_the_occupancy_was_measured_against(
 
     (entry,) = (runner.run_record.load_run_records(tmp_path) or {})["basicly-23ep"]
     assert entry["context_window"] == 1_000_000
-    assert entry["context_window_source"] == runner.DECLARED_WINDOW
+    assert entry["context_window_source"] == context_window.DECLARED_WINDOW
     # The pair on one row: the measurement and the denominator it was taken against.
     assert entry["context_tokens"] == runner.context_occupancy(spec, result)
     assert entry["context_tokens"] < entry["context_window"]

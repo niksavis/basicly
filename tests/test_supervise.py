@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ast
 import contextlib
+import dataclasses
 import json
 import os
 import subprocess
@@ -836,8 +837,15 @@ def _lookup(
 
 
 def test_ceiling_tokens_is_the_window_fraction() -> None:
-    """The observation threshold is context_ceiling of the runner's window."""
-    claude = next(s for s in runner.BUILTIN_RUNNERS if s.name == "claude")
+    """The observation threshold is context_ceiling of the runner's window.
+
+    Against a window written down here rather than whatever the adapter ships today
+    (basicly-89hm moved it): the arithmetic is the subject, and a shipped default that
+    moves must not silently rewrite what this test asserts.
+    """
+    claude = dataclasses.replace(
+        next(s for s in runner.BUILTIN_RUNNERS if s.name == "claude"), context_window=200_000
+    )
     assert supervise.ceiling_tokens(claude, _sizing(0.6)) == 120_000
 
 

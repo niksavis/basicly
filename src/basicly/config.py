@@ -8,20 +8,22 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import __version__, br, dropin, permissions, session, tree_schema
+from .context_window import (
+    AGENT_WINDOW,
+    DECLARED_WINDOW,
+    DEFAULT_CONTEXT_WINDOW,
+    FALLBACK_WINDOW,
+)
 from .lane_log import DEFAULT_RETAINED_SESSIONS
 from .models import ModelResolutionError
 from .runner import (
     AGENT_TIER,
-    AGENT_WINDOW,
     AUTO,
     BUILTIN_RUNNERS,
-    DECLARED_WINDOW,
-    DEFAULT_CONTEXT_WINDOW,
     DEFAULT_MAX_AGENT_PROCESSES,
     DEFAULT_QUIET_AFTER,
     DEFAULT_STALL_AFTER,
     DENY_STYLES,
-    FALLBACK_WINDOW,
     FAMILY_DEFAULT_TIER,
     HEADLESS,
     PROMPT_VIA,
