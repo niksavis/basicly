@@ -2861,7 +2861,7 @@ def _print_preflight_spend(
     print(f"per-lane:  {per_lane} tokens assumed for an unsizeable lane ({source})")
     if lanes:
         working_sets = tuple(
-            supervise.admit_working_set(repo_root, lane.issue_id, sizing) for lane in lanes
+            working_set.admit_working_set(repo_root, lane.issue_id, sizing) for lane in lanes
         )
         pass_spend = supervise.admit_pass_spend(repo_root, working_sets, status, sizing)
         print(f"spend:     {pass_spend.coverage}")
@@ -2885,14 +2885,15 @@ def _print_preflight_spend(
     # reads exactly like one that does. So size the candidates here too: before a budget
     # is minted is the only point where the operator can still act on it (basicly-prnm).
     candidates = tuple(
-        supervise.admit_working_set(repo_root, issue_id, sizing) for issue_id in state.open_children
+        working_set.admit_working_set(repo_root, issue_id, sizing)
+        for issue_id in state.open_children
     )
     _print_band_report(candidates, sizing)
     return _provisioning_blockers(state, candidates)
 
 
 def _provisioning_blockers(
-    state: supervise.SessionState, candidates: tuple[supervise.WorkingSetAdmission, ...]
+    state: supervise.SessionState, candidates: tuple[working_set.WorkingSetAdmission, ...]
 ) -> list[str]:
     """Refuse a pass that has nothing to provision a lane from, naming which case it is.
 
@@ -3104,7 +3105,7 @@ def _print_preflight_contention(repo_root: Path, state: supervise.SessionState) 
 
 
 def _print_band_report(
-    working_sets: tuple[supervise.WorkingSetAdmission, ...], sizing: SizingConfig
+    working_sets: tuple[working_set.WorkingSetAdmission, ...], sizing: SizingConfig
 ) -> None:
     """Print the per-lane band table, headed by the band the verdicts are against."""
     lines = working_set.band_report(working_sets)

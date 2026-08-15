@@ -1,0 +1,8 @@
+# `loop` reached the working-set admission through `supervise`, which imports `loop` back,
+# so both call sites carried a deferred import with a `# noqa: PLC0415`. The two functions
+# had already moved to `working_set`, three tiers below `loop`, so the cycle those
+# suppressions bought was a spelling for a home the code had left: the import is now
+# top-level and the two suppressions are gone. Banking the fall so it cannot grow back for
+# free (basicly-4f5g). The third, at the context meter, is a live cycle and stays.
+[ratchet.noqa_debt.frozen]
+PLC0415 = -2
