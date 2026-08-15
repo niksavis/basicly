@@ -38,8 +38,9 @@ def test_brief_prints_the_assemblers_own_output(work_repo: Path) -> None:
     result = run_basicly(work_repo, "brief", issue)
 
     assert result.returncode == 0, result.stderr
-    expected = dispatch_brief.dispatch_prompt(issue)
-    assert " ".join(expected.split()) == " ".join(result.stdout.split())
+    # Byte-exact, not whitespace-normalised: rich rewraps at the terminal width
+    # unless soft_wrap is set, and a normalised compare would call that identical.
+    assert result.stdout.rstrip("\n") == dispatch_brief.dispatch_prompt(issue)
 
 
 def test_brief_requires_an_issue_id(work_repo: Path) -> None:
@@ -132,3 +133,18 @@ def test_outcomes_survives_a_bead_with_no_runs(
 
     assert usage_report.cmd_outcomes(argparse.Namespace()) == 0
     assert "no dispatch has been recorded" in capsys.readouterr().out.lower()
+
+
+def test_outcomes_counts_a_record_with_no_outcome_field(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A malformed record is named, not dropped — a short total is a wrong rate."""
+    path = tmp_path / run_record.RUN_RECORDS_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"basicly-a": [{}, {"outcome": run_record.FAILED}]}), "utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    assert usage_report.cmd_outcomes(argparse.Namespace()) == 0
+    out = capsys.readouterr().out
+    assert usage_report.UNLABELLED in out
+    assert "1/2 = 50.0%" in out

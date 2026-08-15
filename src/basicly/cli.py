@@ -1633,9 +1633,13 @@ def cmd_brief(args: argparse.Namespace) -> int:
 
     The assembler is shared rather than re-spelled: a second rendering of the brief
     would drift from the one the engine actually sends, and a preview that differs
-    from the dispatch is worse than none. Cross-lane records and answered decisions
-    are deliberately not folded in — those are assembled at dispatch time against
-    the session's live bead set, so showing them here would date the preview.
+    from the dispatch is worse than none.
+
+    It is the base prompt, and the omissions are named because a preview that hid
+    them would be the drift it exists to prevent: cross-lane records and answered
+    decisions are folded in at dispatch time against the session's live bead set; a
+    role's declared skills are prepended by :func:`dispatch_brief.with_skills`; and a
+    lane that failed a gate is re-dispatched from a repair brief instead of this one.
 
     The id is checked against the tracker first. The brief is a pure function of it,
     so a typo renders a complete, plausible brief pointing at nothing — the one

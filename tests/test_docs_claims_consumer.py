@@ -119,3 +119,30 @@ def test_only_shell_formatted_spans_are_read_as_claims(
     path.write_text(path.read_text(encoding="utf-8") + "\n" + markdown, encoding="utf-8")
 
     assert (_run(work_repo, "--check") == 1) is flagged, label
+
+
+@pytest.mark.parametrize(
+    ("invocation", "flagged"),
+    [
+        ("basicly install teleport", True),
+        ("basicly verify fast", True),
+        ("basicly brief basicly-a4q3", False),
+        ("basicly loop supervise", False),
+        ("basicly check", False),
+    ],
+)
+def test_a_trailing_word_is_judged_against_what_the_command_accepts(
+    work_repo: Path, invocation: str, flagged: bool
+) -> None:
+    """`basicly brief <id>` and `basicly install teleport` are the same shape.
+
+    Only the parser separates them: `brief` declares a positional, `install`
+    declares none, so a word after `install` is a claim about a subcommand that
+    does not exist while a word after `brief` is its argument.
+    """
+    path = work_repo / "README.md"
+    path.write_text(
+        path.read_text(encoding="utf-8") + f"\n```sh\n{invocation}\n```\n", encoding="utf-8"
+    )
+
+    assert (_run(work_repo, "--check") == 1) is flagged, invocation

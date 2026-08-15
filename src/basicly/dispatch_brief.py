@@ -75,7 +75,7 @@ def review_prompt(issue_id: str, lens: str) -> str:
         "separately, each on its own axis, and their output is never merged with yours "
         "into one ranking, so weigh nothing against what another lens might say. Do not "
         "start at line 1: go first where the change is most likely to be wrong on your "
-        f"axis — the acceptance criterion whose check is weakest, the input the author "
+        "axis — the acceptance criterion whose check is weakest, the input the author "
         "would find inconvenient, the path no test names — and say where you attacked. "
         f"Finding nothing on {lens} is a complete answer: state it in one line rather "
         "than padding it. State the boundary of what you covered. You are read-only: "

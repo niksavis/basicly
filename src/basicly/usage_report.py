@@ -297,6 +297,12 @@ def cmd_report(_args: argparse.Namespace) -> int:
     return 0
 
 
+# Not an engine outcome: `run_record` writes one of its four constants, so a record
+# reaching this is malformed or predates the field. Counted under its own name rather
+# than dropped — a silently shorter total is a wrong denominator.
+UNLABELLED = "unlabelled"
+
+
 def cmd_outcomes(_args: argparse.Namespace) -> int:
     """Report how every recorded dispatch ended, and the share that failed.
 
@@ -312,7 +318,7 @@ def cmd_outcomes(_args: argparse.Namespace) -> int:
     """
     records = run_record.load_run_records(Path.cwd()) or {}
     counts = Counter(
-        entry.get("outcome") or "unlabelled" for runs in records.values() for entry in runs
+        entry.get("outcome") or UNLABELLED for runs in records.values() for entry in runs
     )
     # Guarded on the record count, not on the file: a ledger holding a bead whose
     # run list is empty is a file that exists, parses, and divides by zero.
