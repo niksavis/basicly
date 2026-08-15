@@ -42,15 +42,12 @@ GATE_PROVIDER = VERIFY_GATE_PROVIDER
 def linked_worktree_guard(repo_root: Path) -> str | None:
     """Reason recording a gate from *repo_root* would lose it, or None when safe.
 
-    A linked git worktree whose ``.beads`` redirects to the base checkout (the
-    ``redirect`` file provisioning writes) shares the one real tracker, so
-    recording from it is safe. Without the redirect, the worktree carries its
-    own throwaway tracker copy and a gate recorded there never reaches the base
-    checkout — it is discarded at landing.
+    A linked worktree whose ``.beads`` redirects to the base checkout shares the one
+    real tracker (:func:`basicly.br.beads_dir` resolves it), so recording from it is
+    safe.
 
     An **abort** gate, classified as :data:`basicly.policy.LINKED_WORKTREE_GATE`: it
-    halts the record, preserves the verify
-    verdict the caller already has, and reports the reason plus the remedy. Not a
+    halts the record and preserves the verify verdict the caller already has. Not a
     revision gate — no rework can make a throwaway tracker the real one — and not
     pre-flight, because the check is worth running after the work as well as before
     it. The type is declared in :mod:`basicly.policy`, which owns the taxonomy;
@@ -65,14 +62,8 @@ def linked_worktree_guard(repo_root: Path) -> str | None:
     root = Path(repo_root).resolve()
     if main == root:
         return None
-    redirect = root / ".beads" / "redirect"
-    if redirect.is_file():
-        try:
-            target = Path(redirect.read_text(encoding="utf-8").strip()).resolve()
-        except OSError:
-            target = None
-        if target == main / ".beads":
-            return None  # shared tracker — the record lands in the base checkout
+    if br.beads_dir(root).resolve() == main / ".beads":
+        return None
     return (
         f"this checkout is a linked worktree of {main} without a .beads/redirect "
         "to it; a gate recorded here lives in the worktree's throwaway tracker "

@@ -544,9 +544,10 @@ def known_bead_ids(repo_root: Path) -> set[str] | None:
     Public because every path that composes a commit message owes the same check:
     the ``beads-commit-msg`` gate rejects an unknown id, and discovering that at
     commit time strands whatever the caller already wrote (merge mid-landing,
-    release mid-bump).
+    release mid-bump), through :func:`basicly.br.beads_dir` so a redirect cannot
+    split it (basicly-tcmy.19).
     """
-    issues = repo_root / ".beads" / "issues.jsonl"
+    issues = br.beads_dir(repo_root) / "issues.jsonl"
     if not issues.exists():
         return None
     ids: set[str] = set()
@@ -558,9 +559,8 @@ def known_bead_ids(repo_root: Path) -> set[str] | None:
             record = json.loads(line)
         except json.JSONDecodeError:
             continue
-        issue_id = record.get("id")
-        if isinstance(issue_id, str):
-            ids.add(issue_id)
+        if isinstance(record, dict) and isinstance(record.get("id"), str):
+            ids.add(record["id"])
     return ids
 
 

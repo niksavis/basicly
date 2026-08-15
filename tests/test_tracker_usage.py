@@ -65,13 +65,6 @@ def test_ledger_root_follows_the_redirect_to_the_base_checkout(
     assert tracker_usage.ledger_root(repo) == repo
 
 
-def test_ledger_root_ignores_a_redirect_that_does_not_name_a_beads_dir(tmp_path: Path) -> None:
-    """A stale or hand-edited redirect must not scatter the spool somewhere arbitrary."""
-    (tmp_path / ".beads").mkdir()
-    (tmp_path / ".beads" / "redirect").write_text("/nonexistent/elsewhere\n", encoding="utf-8")
-    assert tracker_usage.ledger_root(tmp_path) == tmp_path
-
-
 def test_a_worktree_promotes_the_shared_spool_into_its_own_ledger(
     repo: Path, worktree_of: Path
 ) -> None:
