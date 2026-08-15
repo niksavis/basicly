@@ -62,7 +62,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from . import br, decompose, policy, rebase, run_record, verify
+from . import br, decompose, owned_store, policy, rebase, run_record, verify
 from .config import PolicyConfig, load_policy_config
 from .worktree import Session, current_branch, git, load_session
 
@@ -486,18 +486,38 @@ def reconcile_beads(repo_root: Path) -> str:
     )
 
 
+# The trees the engine itself writes while a lane builds, so their dirt in base is the
+# loop's own state rather than the agent's work. `.beads/` is br's export; the owned
+# ledger joined it when dual write went on (basicly-vkh0.25) — a lane's claim, gate
+# reports and comments all append there, so it is dirty by construction at the moment
+# the merge runs, and a landing that treated it as foreign needed a human every time.
+# Narrow on purpose: two engine-owned trees, never "commit whatever is dirty", or
+# `foreign_dirt` stops protecting the landing at all.
+ENGINE_TRACKER_PATHS = (".beads", owned_store.LEDGER_DIR.as_posix())
+
+
+def _under(path: str, tree: str) -> bool:
+    """Whether a git-status path sits inside *tree*."""
+    return path.startswith(f"{tree}/")
+
+
+def _is_engine_tracker_path(path: str) -> bool:
+    """Whether *path* — a git-status line's path — is one the loop commits itself."""
+    return any(_under(path, tree) for tree in ENGINE_TRACKER_PATHS)
+
+
 def foreign_dirt(repo_root: Path) -> tuple[str, ...]:
     """Dirty paths in *repo_root* that are not the loop's own tracker state.
 
-    Anything outside ``.beads/`` is somebody's uncommitted work, which is why
-    :func:`commit_tracker_state` declines to sweep it into a ``chore(beads)``
+    Anything outside :data:`ENGINE_TRACKER_PATHS` is somebody's uncommitted work, which
+    is why :func:`commit_tracker_state` declines to sweep it into a ``chore(beads)``
     commit. Public because a caller that was declined has to be able to *say* what
     blocked it: reporting "the tracker state was not committed" without naming the
     paths leaves an operator to rediscover them (basicly-f7li).
     """
     lines = git(["status", "--porcelain"], cwd=repo_root).stdout.splitlines()
     paths = [line[3:] for line in lines if line.strip()]
-    return tuple(path for path in paths if not path.startswith(".beads/"))
+    return tuple(path for path in paths if not _is_engine_tracker_path(path))
 
 
 def skipped_tracker_commit_warning(repo_root: Path) -> str:
@@ -525,10 +545,10 @@ def commit_tracker_state(
     """Commit the base checkout's dirt when it is tracker-only; False when it is not.
 
     The loop mutates the tracker from claim through gate recording while the
-    agent builds (worktrees share it via br's ``redirect`` file), so `.beads/**`
-    dirt in base is expected engine state, not the agent's business — roll it
-    into one chore commit instead of blocking the advance on it. Any non-beads
-    dirt still blocks: that is someone's uncommitted work.
+    agent builds (worktrees share it via br's ``redirect`` file), so dirt under
+    :data:`ENGINE_TRACKER_PATHS` is expected engine state, not the agent's business —
+    roll it into one chore commit instead of blocking the advance on it. Anything
+    else still blocks: that is someone's uncommitted work.
 
     A caller that gets ``False`` owes the operator an explanation — see
     :func:`skipped_tracker_commit_warning`.
@@ -539,7 +559,7 @@ def commit_tracker_state(
     """
     lines = git(["status", "--porcelain"], cwd=repo_root).stdout.splitlines()
     paths = [line[3:] for line in lines if line.strip()]
-    if not paths or not all(path.startswith(".beads/") for path in paths):
+    if not paths or not all(_is_engine_tracker_path(path) for path in paths):
         return False
     proc = br.try_run_br(repo_root, ["sync", "--flush-only"])
     if proc is not None and proc.returncode != 0:
@@ -558,7 +578,12 @@ def commit_tracker_state(
     # path, so scrubbing here covers every record br wrote since the last one.
     # The tracker-path-scan hook is the gate for whatever this misses.
     br.scrub_export(repo_root)
-    git(["add", ".beads"], cwd=repo_root)
+    # Staged per tree that actually has dirt, not per tree that could: a repo on
+    # `external` has no ledger, and `git add` on an absent pathspec exits 128 rather
+    # than skipping it. Derived from *paths* rather than from disk so the decision stays
+    # a function of what git reported.
+    dirty = [tree for tree in ENGINE_TRACKER_PATHS if any(_under(path, tree) for path in paths)]
+    git(["add", *dirty], cwd=repo_root)
     git(["commit", "-m", f"chore(beads): {action} ({bead})"], cwd=repo_root)
     return True
 
