@@ -2811,6 +2811,7 @@ def cmd_loop(args: argparse.Namespace) -> int:
         "answer": _cmd_loop_answer,
         "decide": _cmd_loop_decide,
         "kill": _cmd_loop_kill,
+        "stop": _cmd_loop_stop,
         "watch": _cmd_loop_watch,
         "improve": _cmd_loop_improve,
     }
@@ -3411,15 +3412,6 @@ def _apply_session_overrides(repo_root: Path, args: argparse.Namespace) -> tuple
     return session_config.override_pairs()
 
 
-def _print_delegated(
-    delegated: tuple[supervise.DelegatedDecision, ...], say: Callable[[str], None]
-) -> None:
-    """Report what the decider disposed of this pass, and what it handed to a human."""
-    for decided in delegated:
-        verb = "decided" if decided.answered else "to human"
-        say(f"decider:  {decided.decision_id} [{decided.kind}] {verb} - {decided.detail}")
-
-
 def _print_supervise_header(
     repo_root: Path, session_id: str, overrides: tuple[str, ...], say: Callable[[str], None]
 ) -> None:
@@ -3484,26 +3476,8 @@ def _cmd_loop_supervise(args: argparse.Namespace) -> int:
     # when a contender took over so no two supervisors ever land concurrently.
     hb = supervise.HeartbeatThread(lock, session_id)
     hb.start()
-    # Lanes the last pass held: already committed and green, so this pass owes
-    # them a landing, not a fresh implement run (basicly-kjc5.18).
-    carried: frozenset[str] = frozenset()
     try:
-        while True:
-            hb.check()
-            state = supervise.derive_session(
-                repo_root, args.issue, lane_label=args.label, session_id=session_id
-            )
-            _print_session(state, say)
-            if state.done:
-                say("done:     yes")
-                return 0
-            routed = _supervise_pass(repo_root, state, hb=hb, carried=carried, say=say)
-            carried = supervise.carried_forward(routed)
-            for routing in routed:
-                say(f"routed:   {routing.issue_id} -> {routing.route} - {routing.detail}")
-            if not supervise.should_continue(routed):
-                _print_blocked(repo_root, args.issue, say)
-                return 1
+        return _supervise_rounds(repo_root, args, hb=hb, say=say, session_id=session_id)
     except supervise.LaneSelectionError as exc:
         # Refused rather than reported blocked: an empty selection is a mistyped
         # selector, not a session with nothing to do.
@@ -3520,6 +3494,55 @@ def _cmd_loop_supervise(args: argparse.Namespace) -> int:
         hb.stop()
         supervise.release(lock, session_id)
         log.close()
+
+
+def _supervise_rounds(
+    repo_root: Path,
+    args: argparse.Namespace,
+    *,
+    hb: supervise.HeartbeatThread,
+    say: Callable[[str], None],
+    session_id: str,
+) -> int:
+    """The standing loop itself: derive, bound, run a round, route — until it ends.
+
+    Split from the command (basicly-o40x) so the command is the session's lifecycle —
+    lock, narrative, exit code — and this is the loop's three exits: done, bounded, or
+    nothing left that can progress.
+    """
+    # Lanes the last pass held: already committed and green, so this pass owes
+    # them a landing, not a fresh implement run (basicly-kjc5.18).
+    carried: frozenset[str] = frozenset()
+    passes = 0
+    while True:
+        hb.check()
+        state = supervise.derive_session(
+            repo_root, args.issue, lane_label=args.label, session_id=session_id
+        )
+        _print_session(state, say)
+        if state.done:
+            say("done:     yes")
+            return 0
+        # Both bounds are read at the round boundary: the previous round's lanes have
+        # landed through the routing layer and the next one has seeded nothing, so
+        # returning here interrupts no agent (basicly-o40x).
+        if ended := supervise.session_end_reason(
+            repo_root,
+            state,
+            passes=passes,
+            limit=getattr(args, "max_passes", None),
+            carried=carried,
+        ):
+            say(ended)
+            return 1
+        routed = _supervise_pass(repo_root, state, hb=hb, carried=carried, say=say)
+        passes += 1
+        carried = supervise.carried_forward(routed)
+        for routing in routed:
+            say(f"routed:   {routing.issue_id} -> {routing.route} - {routing.detail}")
+        if not supervise.should_continue(routed):
+            _print_blocked(repo_root, args.issue, say)
+            return 1
 
 
 def _print_blocked(repo_root: Path, issue: str, say: Callable[[str], None]) -> None:
@@ -3555,7 +3578,7 @@ def _supervise_pass(
     # lane, so an item the decider answers now releases that lane in this same pass
     # instead of the next one.
     delegated = supervise.delegate_decisions(repo_root, state, beat=hb.check, admission=admission)
-    _print_delegated(delegated, say)
+    supervise.say_delegated(delegated, say)
     # Let the graph learn from discoveries before this pass reads it
     # (basicly-kjc5.24): an edge added now gates dispatch and orders the landings in
     # this same pass, not the next one.
@@ -3577,37 +3600,11 @@ def _supervise_pass(
     outcomes = supervise.dispatch_lanes(
         repo_root, state, beat=hb.check, skip=carried, admission=admission, report=say
     )
-    _print_dispatch(outcomes, carried=carried, admission=admission, say=say)
+    supervise.say_dispatch(outcomes, carried=carried, admission=admission, say=say)
     routed = repaired + supervise.route_outcomes(
         repo_root, state, outcomes, beat=hb.check, carried=carried
     )
     return routed + supervise.advance_parked(repo_root, state, beat=hb.check)
-
-
-def _print_dispatch(
-    outcomes: tuple[supervise.LaneOutcome, ...],
-    *,
-    carried: frozenset[str],
-    admission: policy.SpendStatus,
-    say: Callable[[str], None],
-) -> None:
-    """Report one pass's dispatch: carried lanes, a spend halt, or each runner."""
-    if carried:
-        say(f"carried:  {', '.join(sorted(carried))} - landing without a new dispatch")
-    if admission.halted:
-        # Distinct from an idle pass on purpose: the lanes were ready and the
-        # ceiling stopped them (basicly-kjc5.23).
-        say(f"halted:   {admission.detail}")
-    elif not outcomes and not carried:
-        say("dispatch: (no ready build-phase lanes)")
-    for outcome in outcomes:
-        occupancy = f", context {outcome.occupancy} tokens" if outcome.occupancy is not None else ""
-        # The adapter name alone said nothing about which model ran (basicly-e5a6).
-        note = f" [{outcome.model_note}]" if outcome.model_note else ""
-        say(
-            f"dispatch: {outcome.issue_id} via {outcome.runner_name}{note} - "
-            f"{outcome.detail}{occupancy}"
-        )
 
 
 def _print_session(state: supervise.SessionState, say: Callable[[str], None]) -> None:
@@ -3650,6 +3647,39 @@ def _cmd_loop_session(args: argparse.Namespace) -> int:
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
     _print_observation(view)
+    return 0
+
+
+def _cmd_loop_stop(args: argparse.Namespace) -> int:
+    """Ask the running supervisor to finish its round and return (basicly-o40x).
+
+    Refused when nobody is supervising this root: the marker outlives the command, so
+    an unread one would stop the next session started here before it ran a round.
+    """
+    repo_root = _repo_root()
+    if not args.reason.strip():
+        print("stop: refused - --reason must say why the session is stopping", file=sys.stderr)
+        return 1
+    view = supervise.observe(repo_root, args.issue, lane_label=args.label)
+    if not view.supervised or view.holder is None:
+        print(
+            f"stop: refused - {args.issue} is not supervised: {_supervisor_line(view)}",
+            file=sys.stderr,
+        )
+        return 1
+    supervise.request_stop(repo_root, args.issue, requested_by=args.by, reason=args.reason)
+    print(f"stop: requested by {args.by} - {args.reason}")
+    for lane in view.lanes:
+        print(f"landing: {lane.issue_id} ({lane.status}) on {lane.branch}")
+    if not view.lanes:
+        print("landing: (none in flight)")
+    try:
+        supervise.await_session_return(repo_root, view.holder.session_id or "")
+    except KeyboardInterrupt:
+        # The marker outlives the wait, so giving up on watching does not undo it.
+        print("stop: still requested - the supervisor returns after its current round")
+        return 0
+    print("stop: the supervisor returned; its round's lanes landed")
     return 0
 
 
@@ -4605,8 +4635,8 @@ def _add_session_override_args(parser: argparse.ArgumentParser) -> None:
 def _add_lane_selector_arg(parser: argparse.ArgumentParser) -> None:
     """Add ``--label``, the pass's explicit lane set (basicly-1lpo).
 
-    Shared by the three commands that read a session — supervise, preflight and the
-    client attach — because they must all read the *same* session: a root can be
+    Shared by every command that reads a session — supervise, preflight, the client
+    attach and the stop — because they must all read the *same* session: a root can be
     supervised over its decomposition or over a labelled cut, and a client that omits
     the selector reports a running label pass as childless.
     """
@@ -4710,6 +4740,26 @@ def _add_loop_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     l_supervise.add_argument("issue", help="Root issue (feature or epic) the session is bound to")
     _add_lane_selector_arg(l_supervise)
+    l_supervise.add_argument(
+        "--max-passes",
+        type=int,
+        metavar="N",
+        help="Return after N rounds even with open children left, bounding a "
+        "launch's spend up front instead of needing an operator to intervene",
+    )
+    l_stop = loop_sub.add_parser(
+        "stop",
+        help="Ask the running supervisor to finish its round and return: every "
+        "dispatched lane lands, no further lane is seeded",
+    )
+    l_stop.add_argument("issue", help="Session root issue the supervisor is bound to")
+    _add_lane_selector_arg(l_stop)
+    l_stop.add_argument(
+        "--reason", required=True, help="Why the session is being stopped (recorded on the marker)"
+    )
+    l_stop.add_argument(
+        "--by", metavar="NAME", default="human", help="Requester attribution (default: human)"
+    )
     # Every path that can dispatch takes the session overrides, not only `supervise`
     # (basicly-nvm1). Without them on `advance`/`run`, one committed `[runner] default`
     # had to serve two incompatible modes: a real agent so a supervised pass dispatches

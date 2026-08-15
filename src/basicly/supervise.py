@@ -307,6 +307,123 @@ class HeartbeatThread(threading.Thread):
             raise self.lost
 
 
+# --- Operator stop: finish the round, then return (basicly-o40x) -------------
+
+STOP_FILE = Path(".basicly/usage/supervisor.stop")
+
+
+@dataclass(frozen=True)
+class StopRequest:
+    """An operator's request that the supervisor finish its round and return."""
+
+    root_issue: str
+    requested_by: str
+    reason: str
+
+
+def request_stop(repo_root: Path, root_issue: str, *, requested_by: str, reason: str) -> Path:
+    """Record a stop for the session on *root_issue*; returns the marker's path.
+
+    A marker rather than a signal, because the lanes are ``claude -p`` subprocesses of
+    the supervisor: signalling the parent leaves them killed mid-write or orphaned
+    against a grant nothing is metering, and neither is a documented outcome. This is
+    read at a round boundary, the one moment where nothing the supervisor started is
+    still running. Lock takeover is not this control either — :func:`acquire` steals a
+    lock only from a holder whose heartbeat has gone stale, so a *working* supervisor
+    cannot be asked to finish.
+    """
+    path = repo_root / STOP_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {"root_issue": root_issue, "requested_by": requested_by, "reason": reason},
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def take_stop_request(repo_root: Path, root_issue: str) -> StopRequest | None:
+    """The pending stop for *root_issue*, consumed as it is read, else None.
+
+    Read-and-clear like :func:`repair_brief.take_repair_brief`: a marker left behind
+    would stop the *next* supervisor started on this repo before it ran a round. A
+    marker naming another root is left in place — the lock is a repo singleton, but a
+    stop names the session it was asked of.
+    """
+    path = repo_root / STOP_FILE
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except OSError, json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict) or data.get("root_issue") != root_issue:
+        return None
+    path.unlink(missing_ok=True)
+    return StopRequest(
+        root_issue=root_issue,
+        requested_by=str(data.get("requested_by") or "unknown"),
+        reason=str(data.get("reason") or ""),
+    )
+
+
+def holds_lock(repo_root: Path, session_id: str) -> bool:
+    """True while *session_id* still owns the lock — the condition a stop waits on.
+
+    Ownership by content, as :func:`heartbeat` fences it: a successor's lock at the
+    same path is a different session, and the one we asked to stop has returned.
+    """
+    holder = read_holder(repo_root)
+    return holder is not None and holder.session_id == session_id
+
+
+def await_session_return(repo_root: Path, session_id: str, *, poll_s: float = 2.0) -> None:
+    """Block until *session_id* has released the lock — its round landed and it returned.
+
+    Polled rather than notified: the supervisor is a separate process and its exit is
+    the lock going away. The default cadence is well under :data:`STALE_AFTER_S`, so a
+    returned session is reported promptly without busy-waiting on a round that runs
+    for minutes.
+    """
+    while holds_lock(repo_root, session_id):
+        time.sleep(poll_s)
+
+
+def session_end_reason(
+    repo_root: Path,
+    state: SessionState,
+    *,
+    passes: int,
+    limit: int | None,
+    carried: frozenset[str] = frozenset(),
+) -> str | None:
+    """Why this session stops at the round boundary it just reached, or None to go on.
+
+    Two bounds, one boundary. An operator's stop is taken first so its marker is
+    consumed rather than left behind for the next session, and it names who asked and
+    why; the pass limit is the cheaper half, committing a launch to a bounded number of
+    rounds so nobody has to intervene at all. Neither reaches a running lane — the
+    caller is between rounds, which is what makes this a stop and not a signal.
+
+    *carried* lanes are named in the line rather than left out of it: they are green
+    and committed but held behind another lane's failed landing (basicly-kjc5.18), so
+    an ending that did not say so would read as everything having landed.
+    """
+    stop = take_stop_request(repo_root, state.root_issue)
+    if stop is None and not (limit is not None and passes >= limit):
+        return None
+    ended = (
+        f"stopped:  requested by {stop.requested_by} - {stop.reason}"
+        if stop is not None
+        else f"stopped:  --max-passes {limit} reached after {passes} pass(es), "
+        f"{len(state.open_children)} child(ren) still open"
+    )
+    if carried:
+        ended += f"; green and committed, not landed: {', '.join(sorted(carried))}"
+    return ended
+
+
 # --- Session state: derivation from br (recovery = re-reading) ---------------
 
 
@@ -1719,6 +1836,44 @@ def _say(report: Callable[[str], None] | None, line: str) -> None:
     """Emit one pass-output line, or nothing when the caller wants no output."""
     if report is not None:
         report(line)
+
+
+def say_delegated(delegated: tuple[DelegatedDecision, ...], say: Callable[[str], None]) -> None:
+    """Report what the decider disposed of this pass, and what it handed to a human."""
+    for decided in delegated:
+        verb = "decided" if decided.answered else "to human"
+        say(f"decider:  {decided.decision_id} [{decided.kind}] {verb} - {decided.detail}")
+
+
+def say_dispatch(
+    outcomes: tuple[LaneOutcome, ...],
+    *,
+    carried: frozenset[str],
+    admission: policy.SpendStatus,
+    say: Callable[[str], None],
+) -> None:
+    """Report one pass's dispatch: carried lanes, a spend halt, or each runner.
+
+    Beside the ``refused:`` and ``running:`` lines this module already emits, rather
+    than in the command (basicly-o40x): the pass's report is about the pass's own
+    outcomes, and the two halves of one narrative were being written in two modules.
+    """
+    if carried:
+        say(f"carried:  {', '.join(sorted(carried))} - landing without a new dispatch")
+    if admission.halted:
+        # Distinct from an idle pass on purpose: the lanes were ready and the
+        # ceiling stopped them (basicly-kjc5.23).
+        say(f"halted:   {admission.detail}")
+    elif not outcomes and not carried:
+        say("dispatch: (no ready build-phase lanes)")
+    for outcome in outcomes:
+        occupancy = f", context {outcome.occupancy} tokens" if outcome.occupancy is not None else ""
+        # The adapter name alone said nothing about which model ran (basicly-e5a6).
+        note = f" [{outcome.model_note}]" if outcome.model_note else ""
+        say(
+            f"dispatch: {outcome.issue_id} via {outcome.runner_name}{note} - "
+            f"{outcome.detail}{occupancy}"
+        )
 
 
 def _ungranted_detail(

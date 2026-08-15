@@ -462,6 +462,29 @@ instructions: |
     `.beads/issues.jsonl` and makes the next landing refuse on a dirty base. Commit it
     between steps.
 
+  ### Ending a pass on purpose — `--max-passes`, or `stop`
+
+  A supervisor otherwise runs until the session is done or nothing can progress. Two
+  bounds end it earlier, and neither is a signal: the lanes are `claude -p`
+  subprocesses of the supervisor, so signalling the parent leaves them killed
+  mid-write or orphaned against a grant nothing is metering.
+
+  ```sh
+  basicly loop supervise <epic> --max-passes 3          # commit to 3 rounds at launch
+  basicly loop stop <epic> --reason "<why>" --by <name>  # ask a running one to finish
+  ```
+
+  `stop` writes a marker the supervisor reads **between rounds**, so the round in
+  flight completes: every dispatched lane lands, no further lane is seeded, and the
+  command prints the lanes it is waiting on and returns when the session does. Both
+  bounds exit non-zero and name themselves on the pass narrative (`stopped: …`),
+  which is where the requester and the reason are recoverable afterwards.
+
+  A stop is **refused when nothing is supervising that root** — an unread marker would
+  end the next session started there before it ran a round. Lock takeover is not a
+  stop either: a lock is stolen only from a holder whose heartbeat has gone stale, so
+  a working supervisor cannot be handed over.
+
   ### Watching a lane — use these commands, do not invent one
 
   A dispatched lane is a `claude -p` subprocess of the engine, not a subagent of your
