@@ -357,9 +357,10 @@ DEFAULT_BUILD_FACTOR_SEEDS = {"task": 3.0, "bug": 2.0, "chore": 1.5}
 DEFAULT_BUILD_FACTOR = 3.0
 DEFAULT_CALIBRATION_MIN_SAMPLES = 10
 DEFAULT_CALIBRATION_WINDOW = 50
-# Fraction of the runner's context window at which the finalize protocol fires
-# (basicly-kjc5.6): a behavioral anxiety guard below the real window, never a
-# fill target (design D8 — models cut corners near the perceived limit).
+# Fraction of the runner's context window a dispatch's final occupancy is reported
+# against (basicly-kjc5.6). Observability since D23, never a fill target: it fired at a
+# fifth of its intended point for months and has no correct firing on record, so the
+# number is kept, recorded and surfaced rather than retuned a third time.
 DEFAULT_CONTEXT_CEILING = 0.6
 # Quantile of recent measured lane actuals used to bound a lane whose scope cannot be
 # read (basicly-jr0l.58). A *ceiling* wants a high quantile, not a central estimate:
@@ -1179,8 +1180,8 @@ class SizingConfig:
     # declares the seed's own number would read back as never having declared one, and
     # this feeds the source stamped on a dispatch record (basicly-tcmy.5).
     configured_build_factors: frozenset[str] = frozenset()
-    # Fraction of the runner's context window that triggers the finalize
-    # protocol at run time (basicly-kjc5.6, design D8).
+    # Fraction of the runner's context window a finished dispatch's occupancy is
+    # reported against (basicly-kjc5.6; observability since D23).
     context_ceiling: float = DEFAULT_CONTEXT_CEILING
     # Quantile of recent lane actuals that bounds an unsizeable lane (basicly-jr0l.58).
     unsized_lane_quantile: float = DEFAULT_UNSIZED_LANE_QUANTILE
@@ -1248,9 +1249,9 @@ def _quantile_fraction(value: object) -> float:
 def _window_fraction(value: object) -> float:
     """*value* when it is a usable ceiling fraction (0 < x <= 1), else the default.
 
-    Zero or negative would finalize every run before it starts; above 1 can
-    never trigger — both are config mistakes, so they fall back rather than
-    silently disabling or wedging the meter (same stance as the sizing band).
+    Zero or negative would report every run as over the ceiling; above 1 can never
+    report one — both are config mistakes, so they fall back rather than silently
+    blinding the meter (same stance as the sizing band).
     """
     if isinstance(value, int | float) and not isinstance(value, bool) and 0 < value <= 1:
         return float(value)

@@ -97,7 +97,7 @@ at build→verify; everything else is checkpoints and lints.
 | D21 [D] | **Context control is field selection, not encoding.** Project tracker payloads to the fields a phase needs; encode only what remains, and only where a bijective codec is safe | Measured 2026-08-08 (§14). Selection beats serialisation by ~500x on this repo's own data |
 | D22 [D] | **Anything built against the tracker is written to our own record vocabulary, never to `br`'s payload shape** | `br` and `bv` are being removed (`work-tracker.md`). A field allowlist naming `br`'s JSON keys would have to be rewritten at the flip; one naming our own fields survives it, and only the adapter changes |
 | D23 [D] | **A sizing control with no recorded correct firing becomes observability; a control that has earned one keeps its teeth** | §15.7. Measured 2026-08-08: the grant spend ceiling fired correctly 5 times and the rework cap 78, while the runner timeout, the working-set band and the context ceiling have **zero** between them — and all three of those predict how large a unit of work will be, which this repo has never predicted well. A prediction that blocks must be right; a prediction that reports costs nothing when it is wrong. Demotion is not deletion: the number stays recorded, surfaced and falsifiable, because §15.6's gate was wrong for months *with the telemetry already contradicting it* |
-| D24 [D] | **`factory-design.md` is no longer the tiebreaker.** Authority runs: measured evidence in this repo → this document → `factory-design.md` | Owner, 2026-08-08. That document's §9 — "the honest answer to *is the design real?*" — contradicts itself on `kjc5.8`/`kjc5.11`; it keeps a context ceiling §15.6 deleted for never firing correctly; and its D6 rests on light mode having "one window shared by everything", which architecture §5 records as **isolated** context (the citation also had the wrong section: it is §1 of that document, now absorbed). A factory-design decision no measurement contradicts still stands — this removes tiebreaker status, not content |
+| D24 [D] | **`factory-design.md` is no longer the tiebreaker.** Authority runs: measured evidence in this repo → this document → `factory-design.md` | Owner, 2026-08-08. That document's §9 — "the honest answer to *is the design real?*" — contradicts itself on `kjc5.8`/`kjc5.11`; it keeps a context ceiling §15.6 demoted for never firing correctly; and its D6 rests on light mode having "one window shared by everything", which architecture §5 records as **isolated** context (the citation also had the wrong section: it is §1 of that document, now absorbed). A factory-design decision no measurement contradicts still stands — this removes tiebreaker status, not content |
 | D25 [D] | **Agent-authored guidance never reaches the shared catalog without a human, at any grant level** — a decision class no autonomy level auto-disposes, an exception to the L0-L3 ladder rather than a rung in it | Roster R9, absorbed 2026-08-08. The argument is asymmetry, not the risk of a bad suggestion: a wrong implementation bounces off a gate, while a wrong fragment is **absorbed** and silently degrades every later lane with nothing mechanical to detect it. An agent that can amend the catalog under a grant widens its own constraints, and the next session inherits the widening as ground truth. Not in code [M]: `supervise.DELEGABLE_KINDS` is `("escalation", "needs-input")` (`supervise.py:1650`), so a never-auto-dispose class does not exist. Corollary: a retrospective's output is a **diff against catalog YAML**, never prose advice, so `catalog lint` and the projection checks bound what the human is asked to approve |
 | D26 [D] | **Route each role to the cheapest tier that can be relied on, priced per landed package** — total tokens, wall clock and human interventions per landed *correct* package, never the price of one dispatch. The predicate for "cheap is safe" is **specification completeness, not work category** | Roster R5 and its 2026-07-26 amendment, absorbed 2026-08-08. A brief carrying the literal code and the literal test cases is transcription and is mechanically verifiable; a brief that is a prose description is not. A cheap dispatch returns as rework, extra review cycles, bounced merges and human attention, all charged to the same package. **Operationally a dispatch with no resolved tier is a bug, not a default** — an omitted model inherits the session's, usually the most expensive, which defeats the rule silently. The four-tier ladder is already shipped (`.basicly/core/models/anchors.yaml`, `schema.MODEL_TIERS`); only this routing rule was unrecorded |
 | D20 [D] | **`change-shape` — the shape of the whole change, derived not authored, emitted by CLASSIFY** | See §8.2. It is the structure `decompose` needs to cut end-to-end instead of by directory, and `basicly-agzx.2` already proposes deriving it from an AST at zero token cost. **Derived, so it is not a state**: states exist to hold a gate and a persona, and a derivation needs neither — DECOMPOSE's entry predicate gains it, nothing else moves |
@@ -1490,13 +1490,22 @@ reproduces the whole effect the flag appeared to have. Settling it needs one fre
 with the arm order randomised. `--help` still says the flag is ignored with `--system-prompt`, and
 `--agent` is documented as replacing the system prompt the same way, but that chain is inference.
 
-### 15.6 The context ceiling is deleted, not retuned [D]
+### 15.6 The context ceiling is demoted to observability, not deleted and not retuned [D]
 
 `DEFAULT_CONTEXT_CEILING = 0.6` against a declared 1,000,000 window is 600,000, and **0 of 79
 recorded lanes cross it** (max observed 403,051). Against the stale hardcoded 200,000 it was
 120,000 and **51 of 79 crossed**, which is where the twelve overrun follow-ups came from. A gate
-that has never once fired correctly — first at a fifth of its intended point, then never — is
-removed rather than given a third constant. Its follow-up machinery goes with it.
+that has never once fired correctly — first at a fifth of its intended point, then never — does not
+get a third hand-picked constant.
+
+**Corrected 2026-08-13 by the owner: D23 governs, and this section previously said *deleted*.**
+The fraction, the occupancy it is compared against and the crossing itself are **not deleted** —
+they are recorded on the run (`context_tokens` against `context_window`), named on the pass line as
+an observation, and left falsifiable against the ledger, which is what keeps the eighteen
+`(context-ceiling overrun)` beads explicable after the fact. What goes is the *acting*: no lane is
+finalized early on the ceiling and no remainder bead is spun from it, so the follow-up machinery
+goes and the demoted number stays. A gate wrong for months with the telemetry already contradicting
+it was a visibility failure as much as a calibration one, and deleting the number reproduces it.
 
 **The fraction frame itself is refuted, independently of this gate's telemetry** [S]. Degradation is
 driven by absolute tokens of material the model must reason over, not by window fraction: NoLiMa
@@ -1529,7 +1538,7 @@ recorded **correct** firing [M, 2026-08-08, over `run-records.json` and the trac
 | Runner timeout (hard kill) | **0** — no timeout in any `stopped_bound` | → observability |
 | Working-set band **ceiling** | **0 correct.** Retuned 64k→112k→56k→72k→132k→200k→248k, each time chasing the last dispatch; twice in one landing on 2026-08-08 | → observability |
 | Working-set band **floor** | never refuses by construction | already advisory; `basicly-esxp` asks whether it should bind |
-| Context ceiling | **0** — §15.6 | deleted |
+| Context ceiling | **0** — §15.6 | → observability |
 
 **So the rule is not "demote the controls".** Two of them work and pay for themselves; the ones
 with no correct firing are all *sizing* estimates — predictions about how large a unit of work

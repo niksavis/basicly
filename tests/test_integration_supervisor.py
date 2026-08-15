@@ -159,7 +159,6 @@ def _green(issue_id: str) -> supervise.LaneOutcome:
         needs_fact=None,
         occupancy=None,
         overrun=False,
-        followup_id=None,
         detail="fixture dispatch",
     )
 

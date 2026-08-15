@@ -1187,9 +1187,8 @@ The DoR's required section set is derivable from the work type, so it is **emitt
 discovered**: `basicly policy scaffold --type <t>` prints a body with every required heading
 present and a `TODO` under each, and both refusal paths (`policy dor` and the classify gate in
 `loop._on_classify`) name that command typed for the bead instead of only listing what is
-missing. `policy.compose_body` is the single source — `decompose._child_body` and
-`supervise.finalize_followup` compose engine-created bead bodies through it, so a `bug`-typed
-child or follow-up carries `## Steps to Reproduce` too. `br`'s per-type templates are compiled
+missing. `policy.compose_body` is the single source — `decompose._child_body` composes engine-created bead
+bodies through it, so a `bug`-typed child carries `## Steps to Reproduce` too. `br`'s per-type templates are compiled
 into its binary and no read-only `br` command reports them, so `policy._TYPE_SECTIONS` states
 the set and `tests/test_integration_dor_scaffold.py` pins it against the installed `br`
 (basicly-kjc5.44).
