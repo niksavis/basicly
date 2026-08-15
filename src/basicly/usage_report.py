@@ -21,6 +21,7 @@ here needs an import back into the module it came from.
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -293,4 +294,41 @@ def cmd_report(_args: argparse.Namespace) -> int:
         )
     else:
         ui.say("Every catalog skill has recorded usage.", style="ok")
+    return 0
+
+
+def cmd_outcomes(_args: argparse.Namespace) -> int:
+    """Report how every recorded dispatch ended, and the share that failed.
+
+    The kill rate is the number this exists for. A harness whose lanes mostly
+    return no-go is working correctly and looks, from any per-lane view, like a
+    string of failures; without the denominator there is no way to tell that
+    apart from a harness that is broken.
+
+    The boundary matters and is printed rather than left to the reader: these are
+    *dispatch* outcomes from :func:`run_record.outcome_of` — whether the agent
+    process finished — not lane verdicts. Nothing recorded here says whether the
+    work reached a result, so this cannot answer "how many lanes found nothing".
+    """
+    records = run_record.load_run_records(Path.cwd())
+    if not records:
+        ui.say(
+            f"No run records at {run_record.RUN_RECORDS_FILE} — no dispatch has been "
+            "recorded in this repo yet.",
+            style="warn",
+        )
+        return 0
+
+    counts = Counter(
+        entry.get("outcome") or "unlabelled" for runs in records.values() for entry in runs
+    )
+    total = sum(counts.values())
+    ui.table(
+        f"Dispatch outcomes ({total} records over {len(records)} beads)",
+        ["outcome", "count", "share"],
+        [[name, str(n), f"{n / total:.0%}"] for name, n in counts.most_common()],
+    )
+    failed = counts.get(run_record.FAILED, 0)
+    ui.say(f"failure rate {failed}/{total} = {failed / total:.1%}")
+    ui.say("dispatch outcomes only: no record here says whether a lane reached a result")
     return 0

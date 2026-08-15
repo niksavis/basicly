@@ -29,6 +29,7 @@ from . import (
     contention,
     decisions,
     decompose,
+    dispatch_brief,
     fleet,
     health,
     lane_log,
@@ -1627,6 +1628,19 @@ def _cmd_usage_lane_split(_args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_brief(args: argparse.Namespace) -> int:
+    """Print the brief the loop would dispatch for one issue, without dispatching it.
+
+    The assembler is shared rather than re-spelled: a second rendering of the brief
+    would drift from the one the engine actually sends, and a preview that differs
+    from the dispatch is worse than none. Cross-lane records and answered decisions
+    are deliberately not folded in — those are assembled at dispatch time against
+    the session's live bead set, so showing them here would date the preview.
+    """
+    ui.say(dispatch_brief.dispatch_prompt(args.issue_id))
+    return 0
+
+
 def cmd_usage(args: argparse.Namespace) -> int:
     """Dispatch the usage telemetry subcommands (report / tracker / forecast / tuning)."""
     handlers = {
@@ -1635,6 +1649,7 @@ def cmd_usage(args: argparse.Namespace) -> int:
         "forecast": usage_report.cmd_forecast,
         "tuning": usage_report.cmd_tuning,
         "lane-split": _cmd_usage_lane_split,
+        "outcomes": usage_report.cmd_outcomes,
     }
     return _dispatch(args, "usage_command", handlers, group="usage")
 
@@ -4814,6 +4829,10 @@ def _add_usage_parser(subparsers: argparse._SubParsersAction) -> None:
         "lane-split",
         help="Split each persisted lane transcript into acquisition and implementation",
     )
+    usage_sub.add_parser(
+        "outcomes",
+        help="Report how every recorded dispatch ended, and the share that failed",
+    )
     tracker_parser = usage_sub.add_parser(
         "tracker", help="Report the measured br/bv surface Phase 6 freezes its scope from"
     )
@@ -4935,6 +4954,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
     _add_usage_parser(subparsers)
 
+    brief_parser = subparsers.add_parser(
+        "brief", help="Print the dispatch brief the loop would send for one issue"
+    )
+    brief_parser.add_argument("issue_id", help="The tracked issue to brief")
+
     _add_tracker_parser(subparsers)
 
     skills_build_parser = subparsers.add_parser(
@@ -5021,6 +5045,7 @@ def _handlers() -> dict[str, Callable[[argparse.Namespace], int]]:
         "runner": cmd_runner,
         "rubric": cmd_rubric,
         "usage": cmd_usage,
+        "brief": cmd_brief,
         "tracker": cmd_tracker,
     }
 

@@ -1,0 +1,96 @@
+"""The two read-only reporting surfaces added with `basicly-a4q3.5`.
+
+Its own module rather than an append to `test_cli.py`, which the module-size
+ratchet already froze at 20699 tokens.
+
+Both commands are previews of something else — the brief the loop would send, and
+the outcomes it already recorded — so the tests that matter assert they do not
+drift from their source: the brief is the assembler's own output rather than a
+second rendering, and the outcome labels are the engine's own constants.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from basicly import dispatch_brief, run_record, usage_report
+from tests.test_cli import run_basicly
+
+if TYPE_CHECKING:
+    import pytest
+
+
+def test_brief_prints_the_assemblers_own_output(work_repo: Path) -> None:
+    """A preview that differs from the dispatch is worse than no preview."""
+    result = run_basicly(work_repo, "brief", "basicly-xyz1")
+
+    assert result.returncode == 0
+    expected = dispatch_brief.dispatch_prompt("basicly-xyz1")
+    printed = " ".join(result.stdout.split())
+    assert " ".join(expected.split()) == printed
+
+
+def test_brief_requires_an_issue_id(work_repo: Path) -> None:
+    """The argument is positional and required, so a bare call cannot print a stub."""
+    assert run_basicly(work_repo, "brief").returncode != 0
+
+
+def _seed(root: Path, outcomes: list[str]) -> None:
+    """Write a run-record ledger holding exactly *outcomes*, one bead each."""
+    path = root / run_record.RUN_RECORDS_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {f"basicly-t{i}": [{"outcome": name}] for i, name in enumerate(outcomes)}
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def test_outcomes_reports_every_recorded_label(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every label the engine can write must appear, so none is silently dropped."""
+    labels = [run_record.HANDOFF, run_record.EXECUTED, run_record.FAILED, run_record.UNSTARTED]
+    _seed(tmp_path, labels)
+    monkeypatch.chdir(tmp_path)
+
+    assert usage_report.cmd_outcomes(argparse.Namespace()) == 0
+    out = capsys.readouterr().out
+    for label in labels:
+        assert label in out, f"{label} recorded but not reported"
+
+
+def test_outcomes_computes_the_failure_share(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One failure in four is 25 percent; a hardcoded rate could not say so."""
+    _seed(tmp_path, [run_record.FAILED, *([run_record.EXECUTED] * 3)])
+    monkeypatch.chdir(tmp_path)
+
+    assert usage_report.cmd_outcomes(argparse.Namespace()) == 0
+    assert "1/4 = 25.0%" in capsys.readouterr().out
+
+
+def test_outcomes_states_that_it_is_not_a_lane_verdict(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The boundary is the claim's honesty, so it is printed and asserted here.
+
+    Without it the failure share reads as "a quarter of lanes found nothing", which
+    the run records do not say and cannot be made to say.
+    """
+    _seed(tmp_path, [run_record.EXECUTED])
+    monkeypatch.chdir(tmp_path)
+
+    assert usage_report.cmd_outcomes(argparse.Namespace()) == 0
+    assert "no record here says whether a lane reached a result" in capsys.readouterr().out
+
+
+def test_outcomes_says_so_when_nothing_is_recorded(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An empty tree must explain itself rather than print a zero-row table."""
+    monkeypatch.chdir(tmp_path)
+
+    assert usage_report.cmd_outcomes(argparse.Namespace()) == 0
+    assert "no dispatch has been recorded" in capsys.readouterr().out.lower()

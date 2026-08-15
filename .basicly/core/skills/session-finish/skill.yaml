@@ -68,6 +68,19 @@ instructions: |
     lane that did no reading. A lane with no transcript is missing, not zero.
   - Claude only. No other family emits the per-tool event it reads.
 
+  Then the denominator, which the per-lane views cannot supply:
+
+  ```sh
+  basicly usage outcomes
+  ```
+
+  - How every recorded dispatch ended, and the failure share as a rate. A run
+    that felt like a string of failures is judged against this, not against
+    memory of it.
+  - These are **dispatch** outcomes — whether the agent process finished. No
+    record says whether a lane reached a result, so this cannot answer "how
+    many lanes found nothing", and a retro that reads it that way is wrong.
+
   ## 2) Self-improvement retro
 
   Follow the repo's retro rules:

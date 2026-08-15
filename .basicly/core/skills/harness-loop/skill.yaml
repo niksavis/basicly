@@ -325,6 +325,19 @@ instructions: |
   the path. The error runs both ways, so this is not licence to assume a remainder is
   empty: `basicly-vz78` was closed with its band half wide open.
 
+  ## Read the brief before you spend a lane on it
+
+  `basicly brief <issue-id>` prints what the loop would dispatch for that issue,
+  without dispatching it. It shares the engine's own assembler, so what you read is
+  what the agent gets — a second rendering would drift and a preview that differs
+  from the dispatch is worse than none.
+
+  Use it when a lane came back having built the wrong thing. The brief points at
+  the bead, so a requirement that reads clearly to its author and ambiguously to an
+  agent is invisible until you read the two together. Cross-lane records and
+  answered decisions are not shown: those are folded in at dispatch time against
+  the session's live bead set, so a preview carrying them would date itself.
+
   ## Blocked on a missing fact — don't guess
 
   When a dispatched agent cannot resolve a required fact, it must not guess.
