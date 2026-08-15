@@ -403,41 +403,56 @@ def _refuse_write_in_read_only(args: Sequence[str]) -> None:
 
 
 def run_br(
-    repo_root: Path, args: list[str], *, check: bool = True
+    repo_root: Path, args: list[str], *, check: bool = True, allow_export_shrink: bool = False
 ) -> subprocess.CompletedProcess[str]:
     """Run a br subcommand; raises when br is absent — the harness needs the tracker.
 
+    *allow_export_shrink* is the explicit intent a deliberate removal needs: without it
+    a call that leaves the committed export holding fewer records than it found is
+    refused and the export put back (:func:`_refuse_export_shrink`).
+
     Raises:
         TrackerWriteRefusedError: *args* writes and a :func:`read_only` section is active.
+        TrackerExportShrinkError: the call shrank the export without that intent.
     """
     _refuse_write_in_read_only(args)
     br_path = which()
     if not br_path:
         raise RuntimeError("br is not on PATH; the harness requires the beads tracker")
     _probe_version(br_path)
+    before = _export_before_write(repo_root, args, allow_shrink=allow_export_shrink)
     proc = _spawn_tolerating_transient(br_path, repo_root, args)
+    # Before the exit-code check: losing records outranks the command's own failure, and
+    # a br call can fail *and* have flushed.
+    _refuse_export_shrink(before, args)
     if check and proc.returncode != 0:
         raise RuntimeError(f"br {' '.join(args)} failed: {(proc.stderr or proc.stdout).strip()}")
     _mirror_write(repo_root, args, proc)
     return proc
 
 
-def try_run_br(repo_root: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:
+def try_run_br(
+    repo_root: Path, args: list[str], *, allow_export_shrink: bool = False
+) -> subprocess.CompletedProcess[str] | None:
     """Run a br subcommand; None when br is absent (soft call sites).
 
-    Refuses a write inside a :func:`read_only` section by raising, exactly as
-    :func:`run_br` does. Soft here means "tolerates a missing tracker", never
-    "tolerates writing when a gate promised not to".
+    Refuses a write inside a :func:`read_only` section by raising, and refuses one that
+    shrinks the export by raising, exactly as :func:`run_br` does. Soft here means
+    "tolerates a missing tracker", never "tolerates writing when a gate promised not to"
+    and never "tolerates publishing an export shorter than the committed one".
 
     Raises:
         TrackerWriteRefusedError: *args* writes and a :func:`read_only` section is active.
+        TrackerExportShrinkError: the call shrank the export without that intent.
     """
     _refuse_write_in_read_only(args)
     br_path = which()
     if not br_path:
         return None
     _probe_version(br_path)
+    before = _export_before_write(repo_root, args, allow_shrink=allow_export_shrink)
     proc = _spawn_tolerating_transient(br_path, repo_root, args)
+    _refuse_export_shrink(before, args)
     _mirror_write(repo_root, args, proc)
     return proc
 
@@ -1491,7 +1506,7 @@ def export_records(repo_root: Path) -> list[dict]:
     `[]` at the deadline rather than raising, because this function is on the read
     path of telemetry that must never be the reason a landing fails.
     """
-    export = beads_dir(repo_root) / "issues.jsonl"
+    export = beads_dir(repo_root) / EXPORT_NAME
     deadline = time.monotonic() + _READ_DEADLINE_S
     delay = _PUBLISH_FIRST_WAIT_S
     while True:
@@ -1506,6 +1521,16 @@ def export_records(repo_root: Path) -> list[dict]:
             delay = min(delay * 2, _PUBLISH_MAX_WAIT_S)
         else:
             break
+    return _parse_records(raw)
+
+
+def _parse_records(raw: str) -> list[dict]:
+    """Every issue record *raw* holds, skipping a line that will not parse as one.
+
+    Shared with :func:`_refuse_export_shrink` so the guard counts the same population
+    the engine reads: a shrink measured against a different definition of "a record"
+    than every consumer uses would be comparing two numbers, not one.
+    """
     records: list[dict] = []
     for line in raw.splitlines():
         if not line.strip():
@@ -1517,6 +1542,105 @@ def export_records(repo_root: Path) -> list[dict]:
         if isinstance(record, dict) and isinstance(record.get("id"), str):
             records.append(record)
     return records
+
+
+# --- the export a write must not shrink (basicly-b2n2) -----------------------
+#
+# Measured on a checkout 2026-08-06: the committed export held 612 records and the
+# local database 426, a mutating br command was run, and br's own flush published the
+# smaller database over the larger artifact — 187 records gone, 47 of them open, the
+# file down from 2,227,607 to 1,102,742 bytes, `br create` reporting success. Nothing
+# in this seam noticed; three positive-control tests in the pre-push suite are what
+# caught it.
+#
+# **The comparison is on content, never timestamps.** `br sync --status` had already
+# reported `JSONL is newer (import recommended)` on that checkout and allowed the write
+# anyway — and the same line appears on a *healthy* checkout whose export is
+# byte-identical to the database (measured the same day, `--import-only` a 612-record
+# no-op). A guard that fires routinely is a guard everybody learns to ignore, and it
+# could not tell this incident from a harmless clock ordering.
+#
+# The guard is deliberately not built on knowing *which* br path truncated. The
+# mechanism did not reproduce on the pinned 0.2.16 (recorded here 2026-08-07, and again
+# 2026-08-15 across three constructions: auto-import repaired a stale database first,
+# auto-flush merged rather than rewrote, and `br sync --flush-only` refused with its own
+# Stale DB Guard). So this measures the artifact rather than the tool: whatever br did,
+# if the export comes back holding fewer records than it went in holding, the bytes we
+# still have in hand go back and the call fails.
+
+
+class TrackerExportShrinkError(Exception):
+    """A br call left the committed export holding fewer records than it found.
+
+    Not a :class:`RuntimeError`, for the reason :class:`TrackerWriteRefusedError`
+    spells out: two dozen call sites answer a ``RuntimeError`` from this module with
+    None or a typed absence, and a silent-data-loss refusal swallowed into "the tracker
+    had nothing to say" is the fail-open direction for the one guard that exists
+    because the loss was already silent once.
+    """
+
+
+@dataclass(frozen=True)
+class _ExportBefore:
+    """The export as it stood before a write: where it is, its bytes, and its records."""
+
+    path: Path
+    raw: str
+    records: int
+
+
+def _export_before_write(
+    repo_root: Path, args: Sequence[str], *, allow_shrink: bool
+) -> _ExportBefore | None:
+    """What *args* will be held to, or None when this call is held to nothing.
+
+    Reads nothing for a known read, so the ordinary bulk of the surface pays no cost.
+    Unknown counts as a write, matching :func:`_refuse_write_in_read_only`: the
+    classification is deliberately not exhaustive, so "not known to be a read" is the
+    only safe test — a snapshot taken needlessly costs one file read, and one skipped
+    is the incident.
+    """
+    surface, _ = tracker_usage.split_invocation(list(args))
+    if allow_shrink or tracker_usage.classify_access(surface) == "read":
+        return None
+    export = beads_dir(repo_root) / EXPORT_NAME
+    try:
+        raw = export.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    return _ExportBefore(export, raw, len(_parse_records(raw)))
+
+
+def _refuse_export_shrink(before: _ExportBefore | None, args: Sequence[str]) -> None:
+    """Put *before*'s bytes back and fail when the call published fewer records.
+
+    Restoring rather than only reporting is what makes this the guarantee the
+    requirement asks for: the export is the committed, recoverable side and the
+    database is the side that was wrong, so the artifact goes back and the write the
+    command made survives in the database for the import to carry forward. A restore
+    that could not be published is named in the refusal rather than assumed — an
+    unrestored export is a different repair from a restored one.
+
+    Raises:
+        TrackerExportShrinkError: the export came back smaller than it went in.
+    """
+    if before is None:
+        return
+    try:
+        after = len(_parse_records(before.path.read_text(encoding="utf-8")))
+    except OSError:
+        return
+    if after >= before.records:
+        return
+    tmp = before.path.with_suffix(f".{os.getpid()}.jsonl.tmp")
+    tmp.write_text(before.raw, encoding="utf-8")
+    state = "restored" if _publish(tmp, before.path) else "NOT restored — republish it by hand"
+    raise TrackerExportShrinkError(
+        f"br {' '.join(args)} published {after} records over an export holding "
+        f"{before.records}; the export is {state}. Repair the database it came from with "
+        "`br sync --import-only` and then `br sync --flush-only`, or pass "
+        "allow_export_shrink=True when the records are meant to go"
+    )
 
 
 def export_comment_texts(record: Mapping[str, object]) -> list[str]:

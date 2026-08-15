@@ -1099,3 +1099,47 @@ def test_the_scoped_run_forwards_the_engines_vocabulary_to_the_comparison(
     br.scoped_differential(repo, {"required_gates": ("verify", "rubric")})
 
     assert seen["vocabulary"] == {"required_gates": ("verify", "rubric")}
+
+
+# --- the export a write must not shrink (basicly-b2n2) ---
+
+
+def _flushing(repo: Path, patch: pytest.MonkeyPatch, held: list[str], out: list[str]) -> None:
+    """A br that really rewrites the export from *held* to *out*."""
+
+    def export(ids: list[str]) -> None:
+        path = repo / ".beads" / br.EXPORT_NAME
+        path.parent.mkdir(exist_ok=True)
+        path.write_text("".join(f'{{"id":"{name}"}}\n' for name in ids), encoding="utf-8")
+
+    def flush(*_a: object, **_k: object) -> subprocess.CompletedProcess[str]:
+        export(out)
+        return _proc("")
+
+    patch.setattr(br, "which", lambda: "/usr/bin/br")
+    patch.setattr(br, "_probed_paths", {"/usr/bin/br"})
+    patch.setattr(br.subprocess, "run", flush)
+    export(held)
+
+
+def test_a_shrinking_write_is_refused_with_both_counts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The 2026-08-06 incident, driven through the seam."""
+    _flushing(tmp_path, monkeypatch, ["b1", "b2", "b3"], ["b1"])
+
+    with pytest.raises(br.TrackerExportShrinkError, match="1 records over an export holding 3"):
+        br.run_br(tmp_path, ["create", "a bead", "-t", "task"])
+
+    assert [r["id"] for r in br.export_records(tmp_path)] == ["b1", "b2", "b3"]
+
+
+def test_the_intent_flag_lets_a_shrinking_write_through(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A deliberate prune is not the incident, so intent has a way past."""
+    _flushing(tmp_path, monkeypatch, ["b1", "b2"], ["b1"])
+
+    br.run_br(tmp_path, ["delete", "b2"], allow_export_shrink=True)
+
+    assert [r["id"] for r in br.export_records(tmp_path)] == ["b1"]
