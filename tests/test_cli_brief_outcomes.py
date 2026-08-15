@@ -23,19 +23,40 @@ if TYPE_CHECKING:
     import pytest
 
 
+def _a_tracked_id(root: Path) -> str:
+    """Any real issue id from the checkout's own tracker export."""
+    export = (root / ".beads" / "issues.jsonl").read_text(encoding="utf-8")
+    for line in export.splitlines():
+        if line.strip():
+            return str(json.loads(line)["id"])
+    raise AssertionError("the tracker export is empty, so no id can be briefed")
+
+
 def test_brief_prints_the_assemblers_own_output(work_repo: Path) -> None:
     """A preview that differs from the dispatch is worse than no preview."""
-    result = run_basicly(work_repo, "brief", "basicly-xyz1")
+    issue = _a_tracked_id(work_repo)
+    result = run_basicly(work_repo, "brief", issue)
 
-    assert result.returncode == 0
-    expected = dispatch_brief.dispatch_prompt("basicly-xyz1")
-    printed = " ".join(result.stdout.split())
-    assert " ".join(expected.split()) == printed
+    assert result.returncode == 0, result.stderr
+    expected = dispatch_brief.dispatch_prompt(issue)
+    assert " ".join(expected.split()) == " ".join(result.stdout.split())
 
 
 def test_brief_requires_an_issue_id(work_repo: Path) -> None:
     """The argument is positional and required, so a bare call cannot print a stub."""
     assert run_basicly(work_repo, "brief").returncode != 0
+
+
+def test_brief_refuses_an_id_the_tracker_does_not_hold(work_repo: Path) -> None:
+    """The brief is a pure function of the id, so a typo renders a plausible lie.
+
+    Without this check `basicly brief basicly-zzz9` printed a complete brief and
+    exited 0 — the one failure a preview exists to stop a human reading past.
+    """
+    result = run_basicly(work_repo, "brief", "basicly-zzz9")
+
+    assert result.returncode == 1
+    assert "No tracked issue basicly-zzz9" in result.stderr
 
 
 def _seed(root: Path, outcomes: list[str]) -> None:
@@ -90,6 +111,23 @@ def test_outcomes_says_so_when_nothing_is_recorded(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An empty tree must explain itself rather than print a zero-row table."""
+    monkeypatch.chdir(tmp_path)
+
+    assert usage_report.cmd_outcomes(argparse.Namespace()) == 0
+    assert "no dispatch has been recorded" in capsys.readouterr().out.lower()
+
+
+def test_outcomes_survives_a_bead_with_no_runs(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A ledger can exist, parse, and still hold nothing to divide by.
+
+    The first guard tested the file rather than the record count, so a bead whose
+    run list is empty reached the failure-share line and raised ZeroDivisionError.
+    """
+    path = tmp_path / run_record.RUN_RECORDS_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"basicly-empty": []}), encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
     assert usage_report.cmd_outcomes(argparse.Namespace()) == 0

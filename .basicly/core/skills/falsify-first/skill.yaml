@@ -24,9 +24,9 @@ instructions: |
   | Candidate | Gap found | What the counterexample said |
   |---|---|---|
   | G2, G1 | -4.000000 | a free **phase** makes the term contribute nothing while still being charged |
-  | G2re | -1.000000 | same, weaker form |
+  | G2re | -1.000000, -2.000000 | same cause; the gap grows with the pair count |
   | G3 | -0.500 / -1.333 | a negative term is priced at zero and still subtracts |
-  | G4 | -0.25 / -0.667 | the magnitude cannot be freed; one constraint was doing **two** jobs |
+  | G4 | -0.25 to -0.728 | the magnitude cannot be freed; one constraint was doing **two** jobs |
   | the sixth | **0.0** | 400 random instances, no counterexample found |
 
   The run's own line is the method: *"Before trying to prove the claim I try to break
@@ -90,7 +90,8 @@ instructions: |
   ## The honest limit
 
   This practice is drawn from a campaign whose published record contains only the two
-  runs that produced a result, out of fifty-eight launched. Nothing in that record
-  separates the winners' practices from the thirty that returned no-go. Use this because
-  cheap falsification makes a wrong belief cheap to hold, not because it is known to
-  produce right ones.
+  runs that produced a result. Sixty agents were launched and fifty-eight ran; thirty
+  are binned "refuted, closed or unused". Nothing in the record separates the winners'
+  practices from those thirty, and their transcripts are not printed, so this is the
+  winner's process and cannot be shown to be the reason it won. Use it because cheap
+  falsification makes a wrong belief cheap to hold, not because it produces right ones.

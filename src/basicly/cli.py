@@ -1636,7 +1636,14 @@ def cmd_brief(args: argparse.Namespace) -> int:
     from the dispatch is worse than none. Cross-lane records and answered decisions
     are deliberately not folded in — those are assembled at dispatch time against
     the session's live bead set, so showing them here would date the preview.
+
+    The id is checked against the tracker first. The brief is a pure function of it,
+    so a typo renders a complete, plausible brief pointing at nothing — the one
+    failure a preview exists to stop a human reading past.
     """
+    if br.read_record(_repo_root(), args.issue_id) is None:
+        ui.fail(f"No tracked issue {args.issue_id}")
+        return 1
     ui.say(dispatch_brief.dispatch_prompt(args.issue_id))
     return 0
 

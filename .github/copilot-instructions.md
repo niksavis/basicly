@@ -122,7 +122,7 @@ uv run basicly permissions-check
 - Confirm success from the explicit pass/fail summary line; truncated output hides failures.
 - State only the scope actually exercised. Say what you did not run. Never "expected to work" → "works".
 - In a plan awaiting approval, mark parts resting on unread code as assumptions, not design — an approval spent on a false premise costs the checkpoint + the rework budget behind it.
-- Same for a capability claim on a consumer surface (README · site · release notes): exercise before publishing — `docs-claims` catches only an invented command.
+- Same for a capability claim on a consumer surface (README · release notes · repo description): exercise before publishing — `docs-claims` catches only an invented command.
 
 ## Use
 

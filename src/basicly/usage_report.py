@@ -310,8 +310,14 @@ def cmd_outcomes(_args: argparse.Namespace) -> int:
     process finished — not lane verdicts. Nothing recorded here says whether the
     work reached a result, so this cannot answer "how many lanes found nothing".
     """
-    records = run_record.load_run_records(Path.cwd())
-    if not records:
+    records = run_record.load_run_records(Path.cwd()) or {}
+    counts = Counter(
+        entry.get("outcome") or "unlabelled" for runs in records.values() for entry in runs
+    )
+    # Guarded on the record count, not on the file: a ledger holding a bead whose
+    # run list is empty is a file that exists, parses, and divides by zero.
+    total = sum(counts.values())
+    if not total:
         ui.say(
             f"No run records at {run_record.RUN_RECORDS_FILE} — no dispatch has been "
             "recorded in this repo yet.",
@@ -319,12 +325,8 @@ def cmd_outcomes(_args: argparse.Namespace) -> int:
         )
         return 0
 
-    counts = Counter(
-        entry.get("outcome") or "unlabelled" for runs in records.values() for entry in runs
-    )
-    total = sum(counts.values())
     ui.table(
-        f"Dispatch outcomes ({total} records over {len(records)} beads)",
+        f"Dispatch outcomes ({total} records over {sum(1 for r in records.values() if r)} beads)",
         ["outcome", "count", "share"],
         [[name, str(n), f"{n / total:.0%}"] for name, n in counts.most_common()],
     )

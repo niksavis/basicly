@@ -6,13 +6,9 @@ cap may only shrink. The boundary here is one whole claim rather than one layer 
 this owns the evidence *and* the judgement for consumer-surface command claims, so
 ``docs_claims`` keeps only the registration.
 
-The claim itself: ``curator`` binds a claim to its evidence at SHIP, and the
-architecture document is checked in the other direction, that every shipped command
-is documented. Neither catches a README advertising a command that does not exist.
-A false claim in code is caught by a gate; on a README it is caught by a consumer.
-
-``.scripts`` is deliberately not a package, so importing this requires the caller's
-own path set-up, exactly as ``docs_claim_sources`` does.
+Nothing else checks this direction: the architecture document is gated on every
+shipped command being documented, not on every documented command shipping. A false
+claim in code is caught by a gate; on a README it is caught by a consumer.
 """
 
 from __future__ import annotations
@@ -31,22 +27,35 @@ if TYPE_CHECKING:
 # command that does not exist is read as a promise rather than caught by a gate.
 CONSUMER_SURFACES = ("README.md", "site/index.html")
 
-_MD_CODE = re.compile(r"```.*?```|`[^`]+`", re.DOTALL)
+# Bare fences count: every one on the current surfaces is shell, and excluding them
+# would lose real claims to save a hypothetical one.
+_SHELL_INFO = frozenset({"", "sh", "bash", "shell", "zsh", "console", "powershell", "ps1"})
+_FENCE = re.compile(
+    r"^(?P<fence>```|~~~)(?P<info>[^\n`~]*)\n(?P<body>.*?)^(?P=fence)", re.MULTILINE | re.DOTALL
+)
+_INLINE = re.compile(r"`[^`\n]+`")
 _HTML_CODE = re.compile(r"<code[^>]*>.*?</code>|<pre[^>]*>.*?</pre>", re.DOTALL)
-_INVOCATION = re.compile(r"\bbasicly ([a-z][a-z-]*)(?: ([a-z][a-z-]*))?")
+_INVOCATION = re.compile(r"\bbasicly[ \t]+([a-z][a-z-]*)(?:[ \t]+([a-z][a-z-]*))?")
 
 
 def code_spans(text: str, path: str) -> list[str]:
     """The code-formatted regions of *path*, which are the only ones that claim.
 
-    Code formatting is the discriminator. These same surfaces say "basicly requires
-    python 3.14" and "basicly also owns" in prose and carry an `alt="basicly logo"`
-    attribute; read as interface claims those report three commands nobody
-    advertised, and a gate that cries wolf on authored prose gets its surface
-    excluded rather than its claim fixed.
+    These surfaces say "basicly requires python 3.14" in prose and carry an
+    `alt="basicly logo"` attribute, so an unfiltered scan reports three commands
+    nobody advertised — and a gate that cries wolf gets its surface excluded rather
+    than its claim fixed. Formatting alone is not enough either: a fenced ``text``
+    block is code-formatted and still a sentence, so a fence must also be shell.
     """
-    pattern = _HTML_CODE if path.endswith(".html") else _MD_CODE
-    return pattern.findall(text)
+    if path.endswith(".html"):
+        return _HTML_CODE.findall(text)
+    spans = [
+        match["body"]
+        for match in _FENCE.finditer(text)
+        if match["info"].strip().split(" ")[0].lower() in _SHELL_INFO
+    ]
+    spans.extend(_INLINE.findall(text))
+    return spans
 
 
 def cli_command_paths() -> set[tuple[str, ...]]:

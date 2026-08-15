@@ -833,9 +833,9 @@ inherits that failure.
 
    | Surface | chars | cap | headroom |
    | --- | --- | --- | --- |
-   | `.claude/CLAUDE.md` (claude) | 8877 | 9000 | 123 |
-   | `AGENTS.md` (codex) | 14325 | 16000 | 1675 |
-   | `.github/copilot-instructions.md` (copilot) | 8976 | 9000 | 24 |
+   | `.claude/CLAUDE.md` (claude) | 8889 | 9000 | 111 |
+   | `AGENTS.md` (codex) | 14337 | 16000 | 1663 |
+   | `.github/copilot-instructions.md` (copilot) | 8988 | 9000 | 12 |
 
    <!-- docs-claims:end always-on-sizes -->
 

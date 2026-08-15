@@ -90,3 +90,32 @@ def test_prose_naming_the_tool_is_not_read_as_a_command_claim(work_repo: Path) -
     path.write_text(path.read_text(encoding="utf-8") + "\nbasicly deploys nothing.\n", "utf-8")
 
     assert _run(work_repo, "--check") == 0
+
+
+@pytest.mark.parametrize(
+    ("label", "markdown", "flagged"),
+    [
+        ("prose in a text fence", "```text\nwhen basicly finishes the run\n```\n", False),
+        ("a diagram fence", "```mermaid\ngraph TD; basicly deploy\n```\n", False),
+        ("plain prose", "basicly deploys nothing\n", False),
+        ("a shell fence", "```sh\nbasicly deploy\n```\n", True),
+        ("a bare fence", "```\nbasicly deploy\n```\n", True),
+        ("a tilde fence", "~~~sh\nbasicly deploy\n~~~\n", True),
+        ("inline code", "run `basicly deploy` now\n", True),
+        ("a doubled space", "`basicly  deploy`\n", True),
+    ],
+)
+def test_only_shell_formatted_spans_are_read_as_claims(
+    work_repo: Path, label: str, markdown: str, flagged: bool
+) -> None:
+    """Code formatting is necessary but not sufficient — the fence must be shell.
+
+    A fenced `text` block holding a console transcript is code-formatted and still a
+    sentence. Reading it as an interface claim is how this gate would come to cry
+    wolf on a true claim-free surface, and a gate that does that gets its surface
+    excluded rather than its claim fixed.
+    """
+    path = work_repo / "README.md"
+    path.write_text(path.read_text(encoding="utf-8") + "\n" + markdown, encoding="utf-8")
+
+    assert (_run(work_repo, "--check") == 1) is flagged, label

@@ -332,11 +332,10 @@ without dispatching it. It shares the engine's own assembler, so what you read i
 what the agent gets — a second rendering would drift and a preview that differs
 from the dispatch is worse than none.
 
-Use it when a lane came back having built the wrong thing. The brief points at
-the bead, so a requirement that reads clearly to its author and ambiguously to an
-agent is invisible until you read the two together. Cross-lane records and
-answered decisions are not shown: those are folded in at dispatch time against
-the session's live bead set, so a preview carrying them would date itself.
+Use it when a lane built the wrong thing: a requirement that reads clearly to its
+author and ambiguously to an agent is invisible until you read the two together.
+Cross-lane records and answered decisions are folded in at dispatch time, so a
+preview cannot carry them without dating itself.
 
 ## Blocked on a missing fact — don't guess
 
