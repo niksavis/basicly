@@ -578,6 +578,9 @@ def commit_tracker_state(
     # path, so scrubbing here covers every record br wrote since the last one.
     # The tracker-path-scan hook is the gate for whatever this misses.
     br.scrub_export(repo_root)
+    # The ledger is committed by the same commit and carries the same leak one field
+    # over — br writes `created_by` on every record and the import copies it (r166).
+    br.scrub_ledger(repo_root)
     # Staged per tree that actually has dirt, not per tree that could: a repo on
     # `external` has no ledger, and `git add` on an absent pathspec exits 128 rather
     # than skipping it. Derived from *paths* rather than from disk so the decision stays

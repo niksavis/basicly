@@ -9,10 +9,11 @@ or a tracker file staged by hand before the repair ran.
 
 Design choices, deliberately narrow:
 
-- **Only the tracker export.** Absolute paths are legitimate content almost
+- **Only tracker state.** Absolute paths are legitimate content almost
   everywhere else in a repo — docs, fixtures, this very docstring — so a
-  repo-wide path scan would be pure noise. Scoping to ``.beads/*.jsonl`` is what
-  makes a hit unambiguous.
+  repo-wide path scan would be pure noise. Scoping to ``.beads/*.jsonl`` and the
+  owned ledger's ``events-*.jsonl`` is what makes a hit unambiguous. Both are
+  committed and both are machine-written, which is the property that matters.
 - **Parsed records, not raw lines.** Scanning the JSON source text would mean
   writing every pattern twice, once per escaping level, and the two copies would
   drift. Parsing each record means one rule set, shared with
@@ -33,13 +34,16 @@ checked mirror rather than a convention. Edit both together.
 
 from __future__ import annotations
 
+import getpass
 import json
 import re
 import subprocess  # nosec B404
 import sys
 
-# Tracker files worth scanning: the committed export and any sibling JSONL.
-_TRACKER_GLOB = re.compile(r"^\.beads/.*\.jsonl$")
+# Tracker files worth scanning: the external export, and the owned ledger beside it.
+# The ledger was outside this glob until basicly-r166, which is why 3,775 of its
+# events published a username while the gate above them reported clean.
+_TRACKER_GLOB = re.compile(r"^(?:\.beads/.*|\.basicly/ledger/events-.*)\.jsonl$")
 
 # (rule name, pattern) — shapes that identify a location on one machine.
 # Matched against parsed strings, so one literal backslash is one backslash.
@@ -50,6 +54,29 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("windows-unc-path", re.compile(rf"\\\\\?\\[A-Za-z]:\\{_PATH_TAIL}")),
     ("windows-drive-path", re.compile(rf"[A-Za-z]:\\{_PATH_TAIL}")),
 )
+
+# Mirrors `redact.IDENTITY_RULE` / `redact.MIN_IDENTITY_LENGTH`. Kept out of _RULES
+# because a username is not a shape — only the running machine knows the string, so
+# it is built per run rather than declared, and the mirror test compares _RULES alone.
+_IDENTITY_RULE = "machine-username"
+_MIN_IDENTITY_LENGTH = 4
+
+
+def identity_pattern() -> re.Pattern[str] | None:
+    """A pattern matching this machine's username, or None when there is none to match.
+
+    The committer is the one whose username the export would carry, so reading it
+    from the running process needs no configuration and cannot go stale. What it
+    cannot catch is a *teammate's* username already in the file — that is the
+    `[[privacy.denied]]` list's job, and it is stated rather than implied.
+    """
+    try:
+        name = getpass.getuser()
+    except KeyError, OSError:
+        return None
+    if len(name) < _MIN_IDENTITY_LENGTH:
+        return None
+    return re.compile(rf"\b{re.escape(name)}\b")
 
 
 def staged_tracker_files() -> list[str]:
@@ -82,16 +109,19 @@ def _strings(value: object) -> list[str]:
     return []
 
 
-def rule_hit(texts: list[str]) -> str | None:
+def rule_hit(texts: list[str], identity: re.Pattern[str] | None = None) -> str | None:
     """The name of the first rule any string in *texts* trips, or None when clean."""
     for rule, pattern in _RULES:
         if any(pattern.search(text) for text in texts):
             return rule
+    if identity is not None and any(identity.search(text) for text in texts):
+        return _IDENTITY_RULE
     return None
 
 
 def findings(path: str, content: str) -> list[tuple[str, int, str]]:
-    """(path, line number, rule) for every record carrying a machine-specific path."""
+    """(path, line number, rule) for every record carrying a path or this machine's name."""
+    identity = identity_pattern()
     hits: list[tuple[str, int, str]] = []
     for lineno, line in enumerate(content.splitlines(), start=1):
         if not line.strip():
@@ -100,7 +130,7 @@ def findings(path: str, content: str) -> list[tuple[str, int, str]]:
             texts = _strings(json.loads(line))
         except json.JSONDecodeError:
             texts = [line]  # unparseable: fall back to the raw text, never skip
-        if rule := rule_hit(texts):
+        if rule := rule_hit(texts, identity):
             hits.append((path, lineno, rule))
     return hits
 
@@ -115,8 +145,8 @@ def main() -> int:
     if not hits:
         return 0
     print(
-        "tracker-path-scan: machine-specific path(s) in the staged tracker export "
-        "— commit blocked.",
+        "tracker-path-scan: machine-specific path(s) or username in staged tracker "
+        "state — commit blocked.",
         file=sys.stderr,
     )
     for path, lineno, rule in hits[:20]:
@@ -124,12 +154,13 @@ def main() -> int:
     if len(hits) > 20:
         print(f"  … and {len(hits) - 20} more", file=sys.stderr)
     print(
-        "The export is committed and cloned by consumers, so an absolute path or "
-        "username in it is published.\n"
-        "Repair it with:  python -c "
+        "Both files are committed and cloned by consumers, so an absolute path or "
+        "username in either is published.\n"
+        "Repair them with:  python -c "
         '"from pathlib import Path; import basicly.br as b; '
-        "print(b.scrub_export(Path('.')))\"\n"
-        "then re-stage .beads. A harness loop advance repairs it automatically.",
+        "print(b.scrub_export(Path('.')), b.scrub_ledger(Path('.')))\"\n"
+        "then re-stage .beads and .basicly/ledger. A harness loop advance repairs "
+        "both automatically.",
         file=sys.stderr,
     )
     return 1

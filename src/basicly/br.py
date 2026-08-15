@@ -508,9 +508,7 @@ def _mirror_write(
     try:
         drafts = mirror.drafts(kit_module, args, proc.stdout or "")
         if drafts:
-            kit_module.events.append(
-                ledger_dir(repo_root), drafts, redact=redact.redact_machine_paths
-            )
+            kit_module.events.append(ledger_dir(repo_root), drafts, redact=redact.redact_committed)
     except TrackerDivergenceError:
         raise
     except (kit_module.events.LedgerError, OSError, ValueError) as exc:
@@ -648,7 +646,7 @@ def _append_owned_comment(repo_root: Path, issue_id: str, body: str) -> None:
     }
     draft = kit_module.events.Draft(issue_id, kit_module.events.KIND_COMMENT, payload)
     try:
-        kit_module.events.append(ledger_dir(repo_root), [draft], redact=redact.redact_machine_paths)
+        kit_module.events.append(ledger_dir(repo_root), [draft], redact=redact.redact_committed)
     except (kit_module.events.LedgerError, OSError, ValueError) as exc:
         raise TrackerDivergenceError(
             f"the marker on {issue_id} did not reach the owned ledger: {exc}"
@@ -1368,7 +1366,7 @@ def import_export(repo_root: Path, actor: str = "") -> Any:
         ledger_dir(repo_root),
         _export_snapshot(repo_root),
         actor=actor,
-        redact=redact.redact_machine_paths,
+        redact=redact.redact_committed,
     )
 
 
@@ -1394,13 +1392,16 @@ def declare_differential_baseline(
 
 
 def _redact_paths(value: object) -> object:
-    """Recursively redact machine-specific paths in every string inside *value*.
+    """Recursively redact machine-specific paths and identity inside *value*.
 
     Comments and dependency rows are nested under the record, so a leak is not
-    confined to a top-level field.
+    confined to a top-level field. Identity joined paths here for `basicly-r166`:
+    br writes ``created_by`` on every record it mints, so the committed export
+    carried the OS username on 813 of 876 records against R6's requirement that no
+    committed artifact carry one.
     """
     if isinstance(value, str):
-        return redact.redact_machine_paths(value)
+        return redact.redact_committed(value)
     if isinstance(value, dict):
         return {key: _redact_paths(item) for key, item in value.items()}
     if isinstance(value, list):
@@ -1475,6 +1476,86 @@ def scrub_export(repo_root: Path) -> int:
     tmp = export.with_suffix(f".{os.getpid()}.jsonl.tmp")
     tmp.write_text("\n".join(scrubbed) + trailer, encoding="utf-8")
     return changed if _publish(tmp, export) else 0
+
+
+def _event_generation(counts: dict[tuple[str, str, str], int], event: Mapping[str, object]) -> int:
+    """The occurrence number of this exact (record, kind, payload), counting from 1."""
+    key = (
+        str(event.get("record", "")),
+        str(event.get("kind", "")),
+        json.dumps(event.get("payload") or {}, sort_keys=True, separators=(",", ":")),
+    )
+    counts[key] = counts.get(key, 0) + 1
+    return counts[key]
+
+
+def scrub_ledger(repo_root: Path) -> int:
+    """Strip machine identity and paths from the owned ledger; return events changed.
+
+    The one place this design edits a line rather than appending one (work-tracker
+    §4.4). An append cannot un-publish a string, and the ledger is committed, so
+    removing a leaked username is the history rewrite §4.2 reserves for an explicit
+    owner decision — taken as `basicly-r166`.
+
+    An event id covers its kind and payload and nothing else, so a redacted payload
+    has to be re-minted or `fsck` reads every scrubbed event as inconsistent. The
+    generation folded into that id is not written on the line; it is the occurrence
+    count of an identical (record, kind, payload), and this refuses to write anything
+    unless that derivation reproduces **every** stored id first. Minting counts the
+    redacted payloads separately, so two events that redact to the same content get
+    distinct ids rather than colliding.
+    """
+    # Files before the kit, and that ordering is the point: this runs on the commit
+    # path beside :func:`scrub_export`, so a repo with no ledger — `external`, or a
+    # fixture tree — must be a no-op rather than the reason a landing fails.
+    files = sorted(ledger_dir(repo_root).glob("events-*.jsonl"))
+    if not files:
+        return 0
+    kit_module = kit(repo_root)
+    changed = 0
+    for path in files:
+        raw = path.read_text(encoding="utf-8")
+        stored: dict[tuple[str, str, str], int] = {}
+        minted: dict[tuple[str, str, str], int] = {}
+        lines: list[str] = []
+        for line in raw.splitlines():
+            if not line.strip():
+                lines.append(line)
+                continue
+            event = json.loads(line)
+            generation = _event_generation(stored, event)
+            expected = kit_module.events.event_id_for(
+                event["record"], event["kind"], event["payload"], generation=generation
+            )
+            if expected != event["id"]:
+                raise TrackerDivergenceError(
+                    f"{path.name}: {event['id']} does not re-mint from its own content, so the"
+                    " generation cannot be derived and nothing is rewritten"
+                )
+            scrubbed = dict(event)
+            scrubbed["actor"] = redact.redact_committed(str(event.get("actor") or ""))
+            scrubbed["payload"] = _redact_paths(event["payload"])
+            # Counted for every event, not only a rewritten one: an untouched event still
+            # occupies its generation, so a later event that redacts onto the same content
+            # takes the next one instead of colliding with it.
+            scrubbed["id"] = kit_module.events.event_id_for(
+                scrubbed["record"],
+                scrubbed["kind"],
+                scrubbed["payload"],
+                generation=_event_generation(minted, scrubbed),
+            )
+            if scrubbed == event:
+                lines.append(line)
+                continue
+            lines.append(_dump_record(scrubbed))
+            changed += 1
+        if not changed:
+            continue
+        trailer = "\n" if raw.endswith("\n") else ""
+        tmp = path.with_suffix(f".{os.getpid()}.jsonl.tmp")
+        tmp.write_text("\n".join(lines) + trailer, encoding="utf-8")
+        _publish(tmp, path)
+    return changed
 
 
 # --- Reading the committed export (basicly-kjc5.50) --------------------------

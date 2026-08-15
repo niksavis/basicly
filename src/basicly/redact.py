@@ -14,6 +14,7 @@ shared. Keep both edited together when a rule changes.
 
 from __future__ import annotations
 
+import getpass
 import re
 
 # Name of the noisier rule that also honors the placeholder allowlist below.
@@ -127,3 +128,40 @@ def redact_machine_paths(text: str) -> str:
     for rule, pattern in MACHINE_PATH_RULES:
         text = pattern.sub(_placeholder(rule), text)
     return text
+
+
+# --- Machine identity (basicly-r166) ----------------------------------------
+
+# Outside MACHINE_PATH_RULES because a username is not a shape: only the running
+# machine knows the string, so it is built per run rather than declared.
+IDENTITY_RULE = "machine-username"
+
+# Below this a literal match shreds prose instead of protecting anyone: `ci` and
+# `dev` sit inside ordinary words.
+MIN_IDENTITY_LENGTH = 4
+
+
+def machine_identity() -> str:
+    """This machine's OS username, or ``""`` when there is none long enough to match."""
+    try:
+        name = getpass.getuser()
+    except KeyError, OSError:
+        return ""
+    return name if len(name) >= MIN_IDENTITY_LENGTH else ""
+
+
+def redact_machine_identity(text: str) -> str:
+    """Return *text* with this machine's username replaced by a placeholder."""
+    name = machine_identity()
+    if not text or not name:
+        return text
+    return re.sub(rf"\b{re.escape(name)}\b", _placeholder(IDENTITY_RULE), text)
+
+
+def redact_committed(text: str) -> str:
+    """Paths and then identity — what a value passes through to reach a commit.
+
+    The order is load-bearing: this placeholder holds characters the path rules' tail
+    class excludes, so identity first would strand the directory layout unredacted.
+    """
+    return redact_machine_identity(redact_machine_paths(text))
