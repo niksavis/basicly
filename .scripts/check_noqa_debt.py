@@ -63,6 +63,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from ratchet import (  # noqa: E402 - the path above comes first
+    MAY_ONLY_TRACK,
     Finding,
     Ratchet,
     RatchetError,
@@ -169,8 +170,16 @@ def suppressions(path: str, text: str) -> list[Suppression]:
 
 
 def load_ratchet(repo: Path) -> Ratchet[int]:
-    """This gate's baseline: per-code counts, and a count of unreasoned suppressions."""
-    return compose_ratchet(repo, _GATE, count_key="unreasoned_count", entry_type=int)
+    """This gate's baseline: per-code counts, and a count of unreasoned suppressions.
+
+    ``may_only="track"`` because this record must *equal* the tree, not bound it: the gate
+    fails on "up from the frozen" and on "down from the frozen" alike, so a lane's ``+1`` is
+    the record staying true rather than a baseline being loosened. The other two ratchets
+    bound a subject and take the default (basicly-e2mz.20).
+    """
+    return compose_ratchet(
+        repo, _GATE, count_key="unreasoned_count", entry_type=int, may_only=MAY_ONLY_TRACK
+    )
 
 
 def tracked_suppressions(repo: Path) -> list[Suppression]:

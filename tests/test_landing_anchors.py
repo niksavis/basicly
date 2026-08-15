@@ -155,9 +155,9 @@ def test_three_lanes_each_adding_a_check_and_a_ratchet_entry_all_land(
     ]
     # And the ratchet the three lanes each moved agrees with the tree they made together:
     # 1 + 1 + 1 + 1 suppressions, three unargued ones, from three deltas of +1.
-    assert dropin.compose(repo, "noqa_debt", frozen={"S603": 1}, count=0) == dropin.Baseline(
-        {"S603": 4}, 3
-    )
+    assert dropin.compose(
+        repo, "noqa_debt", frozen={"S603": 1}, count=0, may_only=dropin.MAY_ONLY_TRACK
+    ) == dropin.Baseline({"S603": 4}, 3)
 
 
 def test_the_unsplit_form_bounces_the_lanes_that_land_second(

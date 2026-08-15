@@ -54,6 +54,7 @@ import re
 import subprocess  # nosec B404
 import sys
 import tomllib
+import types
 from collections.abc import Collection, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -64,6 +65,8 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 from basicly.dropin import (  # noqa: E402 - the path above comes first
     COUNT_DELTA,
     FRAGMENT_DIR,
+    MAY_ONLY_FALL,
+    MAY_ONLY_TRACK,
     RATCHET_SECTION,
     FragmentError,
     compose,
@@ -86,6 +89,12 @@ SCOPE_ROOTS = ("src", "tests", ".scripts", ".basicly/core")
 _PLACES = 1
 
 
+# Re-exported for the three gates, which import this module rather than reaching past it.
+# Explicit because the unused-import fixer removed `MAY_ONLY_TRACK` once and broke the one
+# gate that needs it.
+__all__ = ["MAY_ONLY_FALL", "MAY_ONLY_TRACK"]
+
+
 class RatchetError(Exception):
     """The gate could not reach an answer: no ratchet to read, or git refused the question."""
 
@@ -101,6 +110,9 @@ class Ratchet[Number: (int, float)]:
 
     frozen: Mapping[str, Number]
     count: int
+    # Subject -> the fragment that deliberately raised its baseline, so the gate can say
+    # how many there are. Empty for a gate whose entries track a measurement.
+    rebaselined: Mapping[str, str] = types.MappingProxyType({})
 
 
 @dataclass(frozen=True)
@@ -126,6 +138,16 @@ def fragment(gate: str) -> str:
     return f"[{RATCHET_SECTION}.{gate}] in {FRAGMENT_DIR}/<bead-id>.toml"
 
 
+def rebaseline_clause(ratchet: Ratchet) -> str:
+    """`, N rebaselined` when a fragment raised a baseline, empty when none did.
+
+    On the pass line and not only on a failure, because the whole reason a rebaseline is a
+    separate table is that it is countable: an unreported one is indistinguishable from the
+    silent `frozen` raise this route replaced (basicly-e2mz.20).
+    """
+    return f", {len(ratchet.rebaselined)} rebaselined" if ratchet.rebaselined else ""
+
+
 def count_delta_remedy(gate: str, moved: int) -> str:
     """How a finding tells a lane to record that *gate*'s tree-wide count moved by *moved*.
 
@@ -137,7 +159,12 @@ def count_delta_remedy(gate: str, moved: int) -> str:
 
 
 def compose_ratchet[Number: (int, float)](
-    repo: Path, gate: str, *, count_key: str, entry_type: type[Number]
+    repo: Path,
+    gate: str,
+    *,
+    count_key: str,
+    entry_type: type[Number],
+    may_only: str = MAY_ONLY_FALL,
 ) -> Ratchet[Number]:
     """*gate*'s recorded state in ``pyproject.toml``, with the ``basicly.d`` fragments applied.
 
@@ -145,6 +172,9 @@ def compose_ratchet[Number: (int, float)](
         repo: The repository root.
         gate: The gate, as ``[tool.<gate>]`` spells it.
         count_key: The key that table records the tree-wide count under.
+        may_only: Which direction this gate's entries are allowed to move — see
+            :data:`~basicly.dropin.MAY_ONLY_FALL`. The gate declares it because only the
+            gate knows what its subject means.
         entry_type: What one frozen entry is counted in. ``float`` also widens what a
             fragment may declare per entry; ``count_delta`` counts subjects and stays whole
             either way, so a waiver can never be half taken.
@@ -172,6 +202,7 @@ def compose_ratchet[Number: (int, float)](
             frozen={subject: entry_type(value) for subject, value in frozen.items()},
             count=count,
             fractional=fractional,
+            may_only=may_only,
         )
     except FragmentError as exc:
         # Re-typed, not re-worded: a gate has one way of failing to reach an answer, and the
@@ -182,6 +213,7 @@ def compose_ratchet[Number: (int, float)](
             subject: entry_type(round(value, _PLACES)) for subject, value in composed.frozen.items()
         },
         count=composed.count,
+        rebaselined=composed.rebaselined,
     )
 
 

@@ -61,7 +61,9 @@ def test_two_lanes_adding_one_suppression_each_compose_to_both(tmp_path: Path) -
         tmp_path, "basicly-two", '[ratchet.noqa_debt]\ncount_delta = 1\nfrozen = {"S607" = 1}\n'
     )
 
-    composed = dropin.compose(tmp_path, "noqa_debt", frozen={"S603": 4}, count=10)
+    composed = dropin.compose(
+        tmp_path, "noqa_debt", frozen={"S603": 4}, count=10, may_only=dropin.MAY_ONLY_TRACK
+    )
 
     assert composed == dropin.Baseline({"S603": 5, "S607": 1}, 12)
 
@@ -73,11 +75,15 @@ def test_composition_does_not_depend_on_landing_order(tmp_path: Path) -> None:
 
     _fragment(tmp_path, "basicly-aaa", first)
     _fragment(tmp_path, "basicly-zzz", second)
-    forwards = dropin.compose(tmp_path, "noqa_debt", frozen={"S603": 4}, count=10)
+    forwards = dropin.compose(
+        tmp_path, "noqa_debt", frozen={"S603": 4}, count=10, may_only=dropin.MAY_ONLY_TRACK
+    )
 
     _fragment(tmp_path, "basicly-aaa", second)
     _fragment(tmp_path, "basicly-zzz", first)
-    backwards = dropin.compose(tmp_path, "noqa_debt", frozen={"S603": 4}, count=10)
+    backwards = dropin.compose(
+        tmp_path, "noqa_debt", frozen={"S603": 4}, count=10, may_only=dropin.MAY_ONLY_TRACK
+    )
 
     assert forwards == backwards == dropin.Baseline({"S603": 5, "S607": 1}, 15)
 
@@ -200,3 +206,77 @@ def test_a_frozen_key_that_is_not_a_table_is_refused(tmp_path: Path) -> None:
 
     with pytest.raises(dropin.FragmentError, match="must be a table"):
         dropin.compose(tmp_path, "noqa_debt", frozen={}, count=0)
+
+
+def test_a_frozen_delta_that_raises_a_recorded_baseline_is_refused(tmp_path: Path) -> None:
+    """The hole basicly-e2mz.20 measured: ``composed.get(entry, 0) + delta``, no sign check.
+
+    Live instance at the time of filing — a fragment declared ``+0.7`` on a module whose
+    go-live share was 55.9, and the gate enforced 56.6 while ``ratchet.py`` documented that a
+    frozen subject may only fall.
+    """
+    _fragment(tmp_path, "basicly-x", '[ratchet.comment_density]\nfrozen = {"a.py" = 0.7}\n')
+
+    with pytest.raises(dropin.FragmentError) as excinfo:
+        dropin.compose(tmp_path, "comment_density", frozen={"a.py": 55.9}, count=0, fractional=True)
+
+    message = str(excinfo.value)
+    assert "basicly-x" in message and "55.9" in message and "56.6" in message
+
+
+def test_a_frozen_delta_that_invents_an_unlisted_baseline_is_refused(tmp_path: Path) -> None:
+    """The closed list holds: a fragment may not add what only ``pyproject.toml`` may."""
+    _fragment(tmp_path, "basicly-x", '[ratchet.module_size]\nfrozen = {"new.py" = 500}\n')
+
+    with pytest.raises(dropin.FragmentError, match="closed list does not name"):
+        dropin.compose(tmp_path, "module_size", frozen={"old.py": 9000}, count=0)
+
+
+def test_a_falling_delta_is_untouched(tmp_path: Path) -> None:
+    """The discriminator: the refusal is on direction, not on the presence of a delta."""
+    _fragment(tmp_path, "basicly-x", '[ratchet.module_size]\nfrozen = {"old.py" = -500}\n')
+
+    composed = dropin.compose(tmp_path, "module_size", frozen={"old.py": 9000}, count=0)
+
+    assert composed.frozen == {"old.py": 8500}
+    assert composed.rebaselined == {}
+
+
+def test_a_rebaseline_is_allowed_named_and_counted(tmp_path: Path) -> None:
+    """The legitimate shrinking-denominator case keeps a route, and it is countable."""
+    _fragment(
+        tmp_path,
+        "basicly-x",
+        '[ratchet.comment_density]\nrebaseline_reason = "code deletion shrank the denominator"\n'
+        'rebaselined = {"a.py" = 0.7}\n',
+    )
+
+    composed = dropin.compose(
+        tmp_path, "comment_density", frozen={"a.py": 55.9}, count=0, fractional=True
+    )
+
+    assert composed.frozen == {"a.py": 56.6}
+    assert composed.rebaselined == {"a.py": "basicly.d/basicly-x.toml"}
+
+
+def test_a_rebaseline_without_a_reason_is_refused(tmp_path: Path) -> None:
+    """An unexplained rebaseline is the silent raise under a new name."""
+    _fragment(tmp_path, "basicly-x", '[ratchet.comment_density]\nrebaselined = {"a.py" = 0.7}\n')
+
+    with pytest.raises(dropin.FragmentError, match="rebaseline_reason"):
+        dropin.compose(tmp_path, "comment_density", frozen={"a.py": 55.9}, count=0, fractional=True)
+
+
+def test_a_tracking_gate_takes_a_rising_delta(tmp_path: Path) -> None:
+    """noqa-debt's record must equal the tree, so ``+1`` there keeps it true.
+
+    The control for the refusals above: same shape, opposite verdict, decided only by the
+    direction the gate declares.
+    """
+    _fragment(tmp_path, "basicly-x", '[ratchet.noqa_debt]\nfrozen = {"S603" = 1}\n')
+
+    composed = dropin.compose(
+        tmp_path, "noqa_debt", frozen={"S603": 4}, count=0, may_only=dropin.MAY_ONLY_TRACK
+    )
+
+    assert composed.frozen == {"S603": 5}

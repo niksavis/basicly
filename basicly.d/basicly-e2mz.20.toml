@@ -1,0 +1,7 @@
+# `compose` gained `may_only` so a gate declares which way its entries may move, taking it
+# to six parameters. The alternative rejected was bundling `fractional` and `may_only` into
+# one subject-kind object: they are independent facts — module-size is int-and-fall,
+# comment-density float-and-fall, noqa-debt int-and-track — and folding them would couple
+# two things on a guess that no future gate is float-and-track.
+[ratchet.noqa_debt.frozen]
+PLR0913 = 1

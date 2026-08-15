@@ -17,6 +17,7 @@ Stdlib only: the ratchet gates under ``.scripts/`` read this on every commit.
 
 from __future__ import annotations
 
+import dataclasses
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -32,6 +33,19 @@ FRAGMENT_DIR = "basicly.d"
 RATCHET_SECTION = "ratchet"
 COUNT_DELTA = "count_delta"
 
+# The one case `frozen` may not carry: a baseline that has to rise (basicly-e2mz.20). Its own
+# table because the point is that it is countable — the gate prints how many came through.
+REBASELINED = "rebaselined"
+REASON = "rebaseline_reason"
+
+# Which way a gate's frozen entry is allowed to move, declared by the gate because only the
+# gate knows what its subject means (`.scripts/ratchet.py` states that boundary). `fall` is
+# module-size and comment-density, where a raised baseline is a loosening. `track` is
+# The third, whose record must *equal* the tree — it fails on "up from" and on "down from"
+# alike, so a lane's plus-one there is the record staying true, not a licence.
+MAY_ONLY_FALL = "fall"
+MAY_ONLY_TRACK = "track"
+
 
 class FragmentError(Exception):
     """A fragment could not be read, or holds something where a number belongs."""
@@ -43,6 +57,10 @@ class Baseline[Number: (int, float)]:
 
     frozen: dict[str, Number]
     count: int
+    # Entries whose baseline a fragment deliberately raised, and the fragment that did it.
+    # Surfaced so the gate can print the count: an unreported rebaseline is the defect
+    # basicly-e2mz.20 records, where a disclosed loosening and a silent one looked the same.
+    rebaselined: dict[str, str] = dataclasses.field(default_factory=dict)
 
 
 def fragment_paths(repo_root: Path) -> tuple[Path, ...]:
@@ -68,13 +86,14 @@ def documents(repo_root: Path) -> dict[str, dict]:
     return parsed
 
 
-def compose[Number: (int, float)](
+def compose[Number: (int, float)](  # noqa: PLR0913 - reason in basicly.d/basicly-e2mz.20.toml
     repo_root: Path,
     gate: str,
     *,
     frozen: Mapping[str, Number],
     count: int,
     fractional: bool = False,
+    may_only: str = MAY_ONLY_FALL,
 ) -> Baseline[Number]:
     """*gate*'s recorded baseline with every fragment's deltas added to it.
 
@@ -87,18 +106,33 @@ def compose[Number: (int, float)](
     ``comment_density``'s are; ``count_delta`` counts entries and stays whole either way.
     ``basicly.d/README.md`` says why it is a parameter and not read off *frozen*.
 
+    *may_only* is the gate's own answer to which direction is safe — see
+    :data:`MAY_ONLY_FALL`. Under ``fall`` a delta that would raise a recorded baseline, or
+    create one the table does not name, is refused; the fragment declares it under
+    :data:`REBASELINED` with a reason instead, and that is counted.
+
     Raises:
-        FragmentError: A fragment declares a delta of the wrong kind.
+        FragmentError: A fragment declares a delta of the wrong kind, or one that loosens a
+            baseline outside the declared-and-counted route.
     """
     composed: dict[str, Number] = dict(frozen)
     total = count
+    rebaselined: dict[str, str] = {}
     for name, table in _ratchet_tables(repo_root, gate):
         total += _delta(name, gate, table.get(COUNT_DELTA, 0), COUNT_DELTA, fractional=False)
-        for entry, value in _frozen_table(name, gate, table).items():
+        for entry, value in _entry_table(name, gate, table, REBASELINED).items():
+            _require_reason(name, gate, table, entry)
             composed[entry] = composed.get(entry, 0) + _delta(
                 name, gate, value, entry, fractional=fractional
             )
-    return Baseline({key: value for key, value in composed.items() if value != 0}, total)
+            rebaselined[entry] = name
+        for entry, value in _entry_table(name, gate, table, "frozen").items():
+            moved = _delta(name, gate, value, entry, fractional=fractional)
+            if may_only == MAY_ONLY_FALL:
+                _refuse_loosening(name, gate, entry, moved, frozen.get(entry))
+            composed[entry] = composed.get(entry, 0) + moved
+    kept = {key: value for key, value in composed.items() if value != 0}
+    return Baseline(kept, total, {k: v for k, v in rebaselined.items() if k in kept})
 
 
 def _ratchet_tables(repo_root: Path, gate: str) -> list[tuple[str, dict]]:
@@ -112,12 +146,45 @@ def _ratchet_tables(repo_root: Path, gate: str) -> list[tuple[str, dict]]:
     return found
 
 
-def _frozen_table(name: str, gate: str, table: dict) -> dict:
-    """The fragment's per-entry deltas, refusing anything that is not a table."""
-    frozen = table.get("frozen", {})
-    if not isinstance(frozen, dict):
-        raise FragmentError(f"{name}: [{RATCHET_SECTION}.{gate}.frozen] must be a table")
-    return frozen
+def _entry_table(name: str, gate: str, table: dict, key: str) -> dict:
+    """One of the fragment's per-entry delta tables, refusing anything that is not a table."""
+    entries = table.get(key, {})
+    if not isinstance(entries, dict):
+        raise FragmentError(f"{name}: [{RATCHET_SECTION}.{gate}.{key}] must be a table")
+    return entries
+
+
+def _require_reason(name: str, gate: str, table: dict, entry: str) -> None:
+    """A rebaseline says why, in the fragment, or it is refused."""
+    reason = table.get(REASON)
+    if not isinstance(reason, str) or not reason.strip():
+        raise FragmentError(
+            f"{name}: [{RATCHET_SECTION}.{gate}.{REBASELINED}] raises {entry!r}, so the same "
+            f"table must declare a non-empty {REASON}"
+        )
+
+
+def _refuse_loosening(name: str, gate: str, entry: str, moved: Any, recorded: Any) -> None:
+    """Refuse a delta that raises a recorded baseline, or invents one the table omits.
+
+    Both are the shape ``.scripts/ratchet.py`` calls impossible — "the list is closed", and
+    "an entry added there is a line in ``pyproject.toml`` that a reviewer sees". A fragment
+    is neither, so the doctrine held only as long as nobody wrote one (basicly-e2mz.20).
+    """
+    if moved <= 0:
+        return
+    where = f"[{RATCHET_SECTION}.{gate}.frozen]"
+    if recorded is None:
+        raise FragmentError(
+            f"{name}: {where} declares {entry!r} = +{moved}, which would create a baseline for "
+            f"a subject the closed list does not name; bring it under the cap, or declare it "
+            f"under {REBASELINED} with a {REASON}"
+        )
+    raise FragmentError(
+        f"{name}: {where} declares {entry!r} = +{moved}, raising the recorded {recorded} to "
+        f"{recorded + moved}; a frozen subject may only fall. Declare it under {REBASELINED} "
+        f"with a {REASON} if the baseline genuinely has to rise"
+    )
 
 
 def _delta(name: str, gate: str, value: object, key: str, *, fractional: bool) -> Any:

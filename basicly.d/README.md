@@ -55,6 +55,43 @@ for `comment_density`, `unreasoned_count` for `noqa_debt`).
 zero is dropped, which is the rule the ratchet tables already state for a debt that
 has been paid off.
 
+## `frozen` may only move the safe way, and one gate has no such way
+
+`module_size` and `comment_density` bound a subject, so a `frozen` delta that **raises**
+a recorded baseline — or that names an entry `pyproject.toml` does not — is refused.
+`ratchet.py` says the list is closed and that an added entry is a line a reviewer sees;
+before `basicly-e2mz.20` a fragment could do both, and one had.
+
+`noqa_debt` is different: its record must *equal* the tree, and the gate fails on "up
+from the frozen" and "down from the frozen" alike. A `+1` there keeps the record true
+rather than loosening it, so that gate declares `may_only = "track"` and takes either
+direction. The direction belongs to the gate because only the gate knows what its
+subject means.
+
+## `rebaselined`, for the one case `frozen` cannot carry
+
+A baseline sometimes has to rise with no narration added: deleting code that was less
+prose-dense than its module raises the module's *share* while both prose and code fall.
+That case declares itself, with a reason, and is counted on the gate's pass line:
+
+```toml
+[ratchet.comment_density]
+rebaseline_reason = "code deletion shrank the denominator: prose fell 503 tokens, code fell 985"
+
+[ratchet.comment_density.rebaselined]
+"src/basicly/supervise.py" = 0.7
+```
+
+Its own table rather than a flag on `frozen` because the point is that it is countable —
+`(74 frozen, 3 waived, 1 rebaselined)` — so a rebaseline cannot accumulate the way a
+`frozen` delta silently did. A missing `rebaseline_reason` is refused.
+
+## The two ratchets do not share a denominator
+
+`module_size` counts `module_tokens`, which **excludes top-level imports**;
+`comment_density`'s share is over `_text_tokens` for the whole file. Sizing a cut with
+the wrong one flips a marginal case, and nothing else in the repo says so.
+
 ## Why one gate's deltas are fractional
 
 Two of the three ratchets count things — tokens, suppressions — so their deltas are

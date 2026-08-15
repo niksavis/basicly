@@ -452,8 +452,13 @@ _VERIFY_CHECK_TABLE = Table(
 
 # One lane's contribution to a ratchet, in its own basicly.d fragment. `frozen` is open
 # because its keys are the ratcheted entries themselves — a module path, a ruff rule code —
-# which no vocabulary at this layer could enumerate.
-_RATCHET_TABLE = Table(keys=frozenset({"count_delta"}), tables={"frozen": _OPEN_TABLE})
+# which no vocabulary at this layer could enumerate. `rebaselined` is the same shape for the
+# one case `frozen` may not carry, a baseline that has to rise, and `rebaseline_reason` is
+# what a fragment must say to use it (basicly-e2mz.20).
+_RATCHET_TABLE = Table(
+    keys=frozenset({"count_delta", "rebaseline_reason"}),
+    tables={"frozen": _OPEN_TABLE, "rebaselined": _OPEN_TABLE},
+)
 
 _RUNNER_AGENT_TABLE = Table(
     keys=frozenset({

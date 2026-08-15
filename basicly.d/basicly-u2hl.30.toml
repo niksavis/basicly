@@ -10,7 +10,10 @@
 # this gate was built against. So the recorded number moves by exactly the measurement,
 # and supervise.py stays frozen at what it now is. The gate's blindness to a shrinking
 # denominator is a defect worth filing against the gate, not paid for in evidence here.
-[ratchet.comment_density.frozen]
+[ratchet.comment_density]
+rebaseline_reason = "code deletion shrank the denominator: prose fell 503 tokens and code fell 985, so the share rose 0.7pp with no narration added"
+
+[ratchet.comment_density.rebaselined]
 "src/basicly/supervise.py" = 0.7
 
 # `meter_context_ceiling` took the repo root, the session root, the lane id and a `landed`

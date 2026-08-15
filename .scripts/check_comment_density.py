@@ -45,6 +45,7 @@ from ratchet import (  # noqa: E402 - the path above comes first
     compose_ratchet,
     count_delta_remedy,
     frozen_table,
+    rebaseline_clause,
     report,
     stale,
     tracked_sources,
@@ -245,7 +246,7 @@ def main() -> int:
     waived = sum(1 for module in modules if module.waiver is not None)
     print(
         f"{_LABEL}: {len(modules)} tracked modules within the {CAP}% cap or their frozen "
-        f"share ({len(ratchet.frozen)} frozen, {waived} waived)"
+        f"share ({len(ratchet.frozen)} frozen, {waived} waived{rebaseline_clause(ratchet)})"
     )
     return 0
 
