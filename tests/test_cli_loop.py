@@ -438,12 +438,22 @@ def _preflight_fixture(monkeypatch: pytest.MonkeyPatch, pinned: _Preflight) -> N
 def test_the_lane_selector_is_on_every_command_that_reads_a_session() -> None:
     """The wiring, so the selector cannot exist in a handler but not in its parser.
 
-    All three of these read a session and must read the *same* one: supervise runs the
-    cut, preflight checks it, and a client attaches to it (basicly-1lpo).
+    All four of these read a session and must read the *same* one: supervise runs the
+    cut, preflight checks it, a client attaches to it (basicly-1lpo), and a stop names
+    the lanes it waits to land (basicly-o40x).
     """
     parser = cli._build_parser()
-    for command in ("supervise", "preflight", "session"):
-        args = parser.parse_args(["loop", command, "basicly-x", "--label", "release-v0.7.0"])
+    for command in ("supervise", "preflight", "session", "stop"):
+        # `stop` records why the session ended, so its parser requires the reason.
+        reason = ["--reason", "the grant is nearly spent"] if command == "stop" else []
+        args = parser.parse_args([
+            "loop",
+            command,
+            "basicly-x",
+            "--label",
+            "release-v0.7.0",
+            *reason,
+        ])
         assert args.label == "release-v0.7.0", command
     # And absent by default, so the parent-child derivation stays the plain case.
     assert parser.parse_args(["loop", "supervise", "basicly-x"]).label is None

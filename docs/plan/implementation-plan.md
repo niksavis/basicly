@@ -80,7 +80,7 @@ hand-written copy of them was stale within days:
 | Measure | Value |
 | --- | --- |
 | Engine modules (`src/basicly/*.py`) | 91 |
-| Test files | 172 |
+| Test files | 173 |
 | `[[verify.checks]]` declared | 26 |
 | …of which run in `--mode fast` | 21 |
 | …of which run in `--mode full` | 25 |
@@ -137,7 +137,7 @@ two the row said never ask now do.
 roles.resolve_role      loop.py:851        _run_agent           → validate · reviews · build ·
                                                                   repair · sub-task · retrospective
                         loop.py:1101       _run_proposer        → classify · decompose
-                        supervise.py:2490  _dispatch_lane       → lane build
+                        supervise.py:2645  _dispatch_lane       → lane build
 _run_agent call sites   loop.py:489        _dispatch_validation
                         loop.py:532        _dispatch_reviews    (once per lens)
                         loop.py:731        _dispatch_runner     (build)
