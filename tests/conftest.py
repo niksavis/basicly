@@ -134,6 +134,36 @@ def _shared_git_config_untouched() -> Iterator[None]:
     )
 
 
+def _leaked_git_env() -> list[str]:
+    return sorted(
+        name for name in os.environ if name.startswith("GIT_") and name not in GIT_ENV_KEPT
+    )
+
+
+@pytest.fixture(autouse=True)
+def _ambient_git_env_stays_scrubbed() -> Iterator[None]:
+    """Hold :func:`_drop_ambient_git_env`'s result across every test in the session.
+
+    ``tests/test_repo_isolation.py`` binds the scrub against the two sites the incident
+    named, in a subprocess. This binds it against the *whole* population for the cost of
+    one dict scan, which matters because the population is what the incident hit: four
+    modules commit a fixture repository and only one of them is on that list.
+
+    Checked after the test as well as before, so a test that sets ``GIT_DIR`` itself is
+    caught where it happened rather than in whatever ran next (basicly-e2mz.21).
+    """
+    assert not _leaked_git_env(), (
+        f"a forbidden GIT_* survived into this test: {_leaked_git_env()}. The import-time"
+        " scrub is what stops it, so this means the scrub stopped running."
+    )
+    yield
+    assert not _leaked_git_env(), (
+        f"this test left {_leaked_git_env()} in os.environ. Git resolves which repository"
+        " it is talking to from the environment before cwd, so it retargets every git call"
+        " the next test makes, whatever tmp path that test passes (basicly-e2mz.15)."
+    )
+
+
 @pytest.fixture(autouse=True)
 def _hide_ambient_agent_cli(monkeypatch: pytest.MonkeyPatch) -> None:
     """Make any agent CLI the host has on PATH unresolvable for the whole suite.

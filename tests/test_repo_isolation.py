@@ -92,6 +92,36 @@ def test_a_leaked_git_dir_really_does_reach_the_repository_it_names(tmp_path: Pa
     assert "leaked@example.invalid" in (victim / ".git" / "config").read_text(encoding="utf-8")
 
 
+def test_a_fixture_root_under_tmp_path_is_not_what_protects_the_repository(
+    tmp_path: Path,
+) -> None:
+    """The remedy basicly-e2mz.21 proposed, shown passing while the damage happens.
+
+    That bead read the nine fixture commits on `harness/basicly-rn0o` as call sites that
+    "ran with the live worktree as their repo root", and asked for an assertion that the
+    fixture root is under `tmp_path`. The root already was. Git took `GIT_DIR` first and
+    committed the fixture's files somewhere else entirely, which is why the assertion
+    below holds and the victim still moves.
+
+    Kept as a test rather than as a comment on a closed bead because the remedy is the
+    obvious one to re-propose the next time this signature appears.
+    """
+    victim = _seed_repo(tmp_path / "victim")
+    before = _snapshot(victim)
+    fixture = tmp_path / "fixture"
+    fixture.mkdir()
+    (fixture / "lane.txt").write_text("lane\n", encoding="utf-8")
+
+    assert fixture.is_relative_to(tmp_path)
+
+    env = _poisoned_env(victim)
+    _git(fixture, "add", "-A", env=env)
+    _git(fixture, "commit", "-q", "-m", "chore: seed the fixture repo", env=env)
+
+    assert _snapshot(victim) != before
+    assert _git(victim, "log", "-1", "--format=%s").strip() == "chore: seed the fixture repo"
+
+
 def test_the_incident_sites_leave_a_poisoned_git_dir_target_untouched(tmp_path: Path) -> None:
     """The guard: run the two sites with `GIT_DIR` poisoned; all three readings must hold.
 
