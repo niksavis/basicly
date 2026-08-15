@@ -13,6 +13,7 @@ import yaml
 from basicly import hooks as hooks_module
 from basicly.hooks import (
     HookSpec,
+    agent_hook_surface_present,
     check_copilot_hooks,
     check_hooks,
     claude_hook_specs,
@@ -129,6 +130,19 @@ def test_manifest_ships_protect_generated_commit_for_git() -> None:
     assert backstop.stage == "pre-commit"
     assert backstop.manager == "git"
     assert backstop in git_hook_specs(specs)
+
+
+def test_agent_hook_surface_present_probes_the_host_binary() -> None:
+    """The delivered tier keys on the host being findable here, not on the projection."""
+    installed = {"claude": "/usr/local/bin/claude"}
+
+    def which(cmd: str) -> str | None:
+        return installed.get(cmd)
+
+    assert agent_hook_surface_present("claude", which=which)
+    assert not agent_hook_surface_present("copilot", which=which)
+    # Git runs its own hooks, so there is no host binary to probe and no tier to report.
+    assert not agent_hook_surface_present("git", which=which)
 
 
 def test_copilot_hooks_sync_check_and_remove_roundtrip(tmp_path: Path) -> None:

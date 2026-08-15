@@ -80,6 +80,8 @@ from .config import (
     unknown_config_keys,
 )
 from .hooks import (
+    AGENT_HOOK_HOSTS,
+    agent_hook_surface_present,
     check_copilot_hooks,
     check_hooks,
     claude_hook_specs,
@@ -597,15 +599,22 @@ def _status_report(repo_root: Path, paths: ProjectPaths) -> dict[str, Any]:
                 "stages": stages,
                 "missing_stages": missing_hook_installations(repo_root, stages),
             },
+            # `host`/`surface_present` only for the agent managers: an agent hook is
+            # inert unless its host runs on this machine, so status reports the tier
+            # delivered instead of implying parity with the git floor (basicly-0p8n).
             "claude": {
                 "selected_specs": len(claude_selected),
                 "mismatches": len(claude_mismatches),
+                "host": AGENT_HOOK_HOSTS["claude"],
+                "surface_present": agent_hook_surface_present("claude"),
             },
             "copilot": {
                 "selected_specs": len(copilot_hook_specs(selected)),
                 "mismatches": len(
                     check_copilot_hooks(repo_root, _core_hooks_dir(paths), selection)
                 ),
+                "host": AGENT_HOOK_HOSTS["copilot"],
+                "surface_present": agent_hook_surface_present("copilot"),
             },
         },
         "permissions": {
@@ -638,6 +647,26 @@ def _say_status_catalog(report: dict[str, Any]) -> None:
             f"at {catalog['installed_at']} ({note})",
             style="ok" if match else "warn",
         )
+
+
+def _say_agent_hook_tier(report: dict[str, Any]) -> None:
+    """Name the agent-hook tier this machine actually delivers, active and unavailable.
+
+    Stated rather than left to the reader, because the hosts differ and the difference
+    is invisible in a projected file that is present either way (basicly-0p8n).
+    """
+    managers = ("claude", "copilot")
+    active = [name for name in managers if report["hooks"][name]["surface_present"]]
+    absent = [name for name in managers if not report["hooks"][name]["surface_present"]]
+    delivered = f"active on {', '.join(active)}" if active else "no surface active here"
+    if not absent:
+        ui.say(f"agent hooks: {delivered}; the git hooks stay the commit-time floor", style="ok")
+        return
+    ui.say(
+        f"agent hooks: {delivered}; unavailable on {', '.join(absent)} (host not on PATH), "
+        "so there only the commit-time git hooks gate",
+        style="warn",
+    )
 
 
 def _fleet_status(repo_root: Path) -> dict[str, Any]:
@@ -685,9 +714,12 @@ def cmd_status(args: argparse.Namespace) -> int:
                 else "installed"
             )
         else:
-            activation = "-"
+            activation = (
+                "active" if entry["surface_present"] else f"unavailable ({entry['host']} absent)"
+            )
         rows.append([manager, str(entry["selected_specs"]), projection, activation])
     ui.table("Hooks", ["manager", "specs", "projection", "activation"], rows)
+    _say_agent_hook_tier(report)
 
     technologies = report["technologies"]
     if technologies is None:
