@@ -90,15 +90,15 @@ uv run basicly permissions-check
 
 ## External Facts
 
-- **Your training data has a cutoff and third-party interfaces move.** A flag, config
-  key, API field, model id, price, limit or version may have changed since. Grep this
-  repo first — our own adapter is evidence under test — then fetch the vendor's
-  current docs or interrogate the installed binary; never answer from recall. The
-  `interface-facts` skill is the long form.
-- **An empty probe is not evidence of absence.** A search you designed returning
-  nothing is ambiguous between "absent" and "wrong probe", and the second is the
-  common case. Run a **positive control** that must return something before reporting
-  a zero; if the control is empty too, the zero is a property of the probe.
+- **Your training data has a cutoff and third-party interfaces move.** A flag, field,
+  model id, price, limit or version may have changed. Never answer from recall: grep
+  our own adapter, then the vendor's live docs. `interface-facts` is the long form.
+- **An empty probe is not evidence of absence.** A search returning nothing is
+  ambiguous between "absent" and "wrong probe", and the second is the common case.
+  Run a **positive control** that must return something before you report a zero; if
+  the control is empty too, the zero belongs to the probe.
+- **A number in a claim is derived twice, by paths sharing no step.** One green test
+  on one path is still one path; treat a disagreement as an instrument fault first.
 
 ## Model Tier Routing
 
@@ -187,7 +187,7 @@ ratchets prose share (comments plus docstrings) per module. Needing a comment to
 - Confirm success from the explicit pass/fail summary line; truncated output hides failures.
 - State only the scope actually exercised. Say what you did not run. Never "expected to work" → "works".
 - In a plan awaiting approval, mark parts resting on unread code as assumptions, not design — an approval spent on a false premise costs the checkpoint + the rework budget behind it.
-- Same for a capability claim on a consumer surface (README · site · release notes · repo description): exercise before publishing. A false claim in code → caught by a gate; in a README → caught by a consumer.
+- Same for a capability claim on a consumer surface (README · site · release notes): exercise before publishing — `docs-claims` catches only an invented command.
 
 ## Use
 

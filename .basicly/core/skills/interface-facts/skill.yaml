@@ -21,11 +21,15 @@ instructions: |
   1. **Our own code that already touches the interface.** If an adapter, parser or hook
      reads the thing, that code is the evidence — it was written against a real probe
      and it is under test.
-  2. **The vendor's current documentation**, fetched now.
-  3. **The vendor's changelog**, which dates the change.
-  4. **The vendor's source or issue tracker**, where a documented feature that does not
+  2. **The installed binary, interrogated.** `--help`, `--version`, a `--dry-run`, an
+     invalid flag whose error names the valid set. This outranks documentation when the
+     question is what *this* version accepts: the docs describe a release, the binary on
+     the path is the one the command will run.
+  3. **The vendor's current documentation**, fetched now.
+  4. **The vendor's changelog**, which dates the change.
+  5. **The vendor's source or issue tracker**, where a documented feature that does not
      work gets contradicted.
-  5. **Third-party writing** — weakest, never sufficient alone.
+  6. **Third-party writing** — weakest, never sufficient alone.
 
   A landing page or feature grid is marketing. A README is a claim.
 
