@@ -486,23 +486,23 @@ def reconcile_beads(repo_root: Path) -> str:
     )
 
 
-# The trees the engine itself writes while a lane builds, so their dirt in base is the
-# loop's own state rather than the agent's work. `.beads/` is br's export; the owned
-# ledger joined it when dual write went on (basicly-vkh0.25) — a lane's claim, gate
-# reports and comments all append there, so it is dirty by construction at the moment
-# the merge runs, and a landing that treated it as foreign needed a human every time.
-# Narrow on purpose: two engine-owned trees, never "commit whatever is dirty", or
-# `foreign_dirt` stops protecting the landing at all.
+# The trees the engine writes while a lane builds, so their dirt in base is the loop's
+# own state. The ledger joined `.beads` at dual write (basicly-vkh0.25): a lane's claim,
+# gate reports and comments append there, so it is dirty exactly when the merge runs.
+# Two named trees, never "commit whatever is dirty", or `foreign_dirt` protects nothing.
 ENGINE_TRACKER_PATHS = (".beads", owned_store.LEDGER_DIR.as_posix())
 
 
 def _under(path: str, tree: str) -> bool:
-    """Whether a git-status path sits inside *tree*."""
     return path.startswith(f"{tree}/")
 
 
-def _is_engine_tracker_path(path: str) -> bool:
-    """Whether *path* — a git-status line's path — is one the loop commits itself."""
+def is_engine_tracker_path(path: str) -> bool:
+    """Whether a git-status path is one the loop commits itself.
+
+    Public so `loop preflight` can ask it of a status it already holds: a second copy
+    there is how the landing and the preflight came to disagree.
+    """
     return any(_under(path, tree) for tree in ENGINE_TRACKER_PATHS)
 
 
@@ -517,7 +517,7 @@ def foreign_dirt(repo_root: Path) -> tuple[str, ...]:
     """
     lines = git(["status", "--porcelain"], cwd=repo_root).stdout.splitlines()
     paths = [line[3:] for line in lines if line.strip()]
-    return tuple(path for path in paths if not _is_engine_tracker_path(path))
+    return tuple(path for path in paths if not is_engine_tracker_path(path))
 
 
 def skipped_tracker_commit_warning(repo_root: Path) -> str:
@@ -559,7 +559,7 @@ def commit_tracker_state(
     """
     lines = git(["status", "--porcelain"], cwd=repo_root).stdout.splitlines()
     paths = [line[3:] for line in lines if line.strip()]
-    if not paths or not all(_is_engine_tracker_path(path) for path in paths):
+    if not paths or not all(is_engine_tracker_path(path) for path in paths):
         return False
     proc = br.try_run_br(repo_root, ["sync", "--flush-only"])
     if proc is not None and proc.returncode != 0:

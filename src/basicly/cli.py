@@ -3175,12 +3175,20 @@ def _cmd_loop_preflight(args: argparse.Namespace) -> int:
         return 1
     print("config:    recognised")
 
-    dirty = worktree.git(["status", "--porcelain"], cwd=repo_root, check=False).stdout.strip()
-    if dirty:
-        # A dirty base refuses a landing (basicly-4psl), and the refusal arrives *after*
-        # the lanes have already run, which is the expensive place to learn it.
-        count = len(dirty.splitlines())
-        print(f"base:      DIRTY - {count} path(s); a landing will refuse until committed")
+    # Not ``.strip()``: that eats the first line's leading status column, shifting its
+    # path by one so ``.beads/x`` reads as ``beads/x`` and misses the check below.
+    dirty = worktree.git(["status", "--porcelain"], cwd=repo_root, check=False).stdout
+    # Foreign dirt refuses a landing (basicly-4psl), and the refusal arrives *after* the
+    # lanes have already run, which is the expensive place to learn it. The engine's own
+    # tracker trees are excluded because the landing sweeps them (basicly-vkh0.25);
+    # counting those here refuses a pass over dirt it would have committed itself.
+    foreign = [
+        line[3:]
+        for line in dirty.splitlines()
+        if line.strip() and not merge.is_engine_tracker_path(line[3:])
+    ]
+    if foreign:
+        print(f"base:      DIRTY - {len(foreign)} path(s); a landing will refuse until committed")
         blockers.append("base checkout is dirty")
     else:
         print("base:      clean")

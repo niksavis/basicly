@@ -791,6 +791,29 @@ def test_preflight_refuses_a_dirty_base_before_any_lane_runs(
     assert "base checkout is dirty" in out
 
 
+def test_preflight_does_not_count_the_trees_the_landing_sweeps(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Engine tracker dirt is not a blocker here, because the landing commits it.
+
+    Under dual write a lane dirties the ledger before it lands, so counting it refused
+    a pass over dirt the landing would have swept itself (basicly-vkh0.25).
+    """
+    _preflight_fixture(
+        monkeypatch,
+        _Preflight(
+            dirty=" M .beads/issues.jsonl\n M .basicly/ledger/events-0001.jsonl\n",
+            grant=Grant(level="L1", token_budget=10_000),
+        ),
+    )
+
+    cli._cmd_loop_preflight(_preflight_args())
+
+    out = capsys.readouterr().out
+    assert "base:      clean" in out
+    assert "base checkout is dirty" not in out
+
+
 def test_preflight_refuses_a_metered_runner_with_no_budget(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
