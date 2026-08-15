@@ -49,6 +49,7 @@ import re
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 
 # `loop._LEAF_TYPES` is private and has no public alias; this script is repo-local
@@ -63,7 +64,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # by file path through `spec_from_file_location` and so starts with neither entry.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from docs_claim_sources import ClaimError, load_yaml, read_text  # noqa: E402
+import docs_claim_surfaces as surfaces  # noqa: E402 - sibling; needs the insert above
+from docs_claim_sources import ClaimError, load_yaml, read_text, subparsers  # noqa: E402
 
 ARCHITECTURE_MD = "docs/architecture/architecture.md"
 IMPLEMENTATION_PLAN = "docs/plan/implementation-plan.md"
@@ -264,14 +266,6 @@ def _cells(row: str) -> list[str]:
     return re.split(r"(?<!\\)\|", row)
 
 
-def _subparsers(parser: argparse.ArgumentParser) -> argparse._SubParsersAction | None:
-    """The parser's subcommand action, or ``None`` for a leaf command."""
-    for action in parser._actions:
-        if isinstance(action, argparse._SubParsersAction):
-            return action
-    return None
-
-
 def _section_8(root: Path) -> str:
     """The architecture document's section 8, where every command is tabulated."""
     text = read_text(root / ARCHITECTURE_MD)
@@ -308,7 +302,7 @@ def _documented_commands(section: str) -> set[str]:
 
 def _cli_commands_covered(root: Path) -> list[str]:
     """Every subcommand the CLI ships must appear in the section 8 command tables."""
-    top = _subparsers(cli._build_parser())
+    top = subparsers(cli._build_parser())
     if top is None:  # pragma: no cover - the CLI is a subcommand parser by construction
         raise ClaimError("the CLI parser declares no subcommands")
 
@@ -335,14 +329,14 @@ def _cli_subcommands_covered(root: Path) -> list[str]:
     up. Within an owning row either column counts, because a group is documented as
     one row of prose rather than a row per subcommand.
     """
-    top = _subparsers(cli._build_parser())
+    top = subparsers(cli._build_parser())
     if top is None:  # pragma: no cover - the CLI is a subcommand parser by construction
         raise ClaimError("the CLI parser declares no subcommands")
     rows = [row for row in _section_8(root).splitlines() if row.startswith("|")]
 
     problems: list[str] = []
     for parent, parser in sorted(top.choices.items()):
-        nested = _subparsers(parser)
+        nested = subparsers(parser)
         if nested is None:
             continue
         owned = [
@@ -444,6 +438,14 @@ ASSERTIONS: tuple[Assertion, ...] = (
     Assertion("cli-commands", ARCHITECTURE_MD, _cli_commands_covered),
     Assertion("cli-subcommands", ARCHITECTURE_MD, _cli_subcommands_covered),
     Assertion("skill-work-types", TOOL_BR_SKILL, _skill_work_types),
+    *(
+        Assertion(
+            "consumer-commands",
+            surface,
+            partial(surfaces.consumer_commands_exist, surface=surface),
+        )
+        for surface in surfaces.CONSUMER_SURFACES
+    ),
 )
 
 

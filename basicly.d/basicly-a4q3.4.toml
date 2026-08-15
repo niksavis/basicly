@@ -1,0 +1,9 @@
+# The one suppression this lane adds, and it is the same one `basicly-5p49` already
+# documents: `.scripts` is not a package, so a sibling module is reachable only after
+# `sys.path` names its directory, and the import cannot precede the statement that makes
+# it resolvable. The alternative rejected was keeping the consumer-surface claim inside
+# `docs_claims.py`, which `module-size` refuses — that file is already over the cap and
+# an over-cap module may only shrink. The suppression carries its reason inline, so
+# `unreasoned_count` does not move.
+[ratchet.noqa_debt.frozen]
+E402 = 1

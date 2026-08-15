@@ -15,6 +15,7 @@ directory on ``sys.path``; ``docs_claims.py`` puts it there and says why.
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 from typing import Any
 
@@ -42,3 +43,15 @@ def load_yaml(path: Path) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ClaimError(f"{path}: expected a YAML mapping")
     return data
+
+
+def subparsers(parser: argparse.ArgumentParser) -> argparse._SubParsersAction | None:
+    """The parser's subcommand action, or ``None`` for a leaf command.
+
+    The parser is evidence like any file here: it is what the CLI actually ships,
+    read rather than restated. Shared because two claim modules now walk it.
+    """
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            return action
+    return None
