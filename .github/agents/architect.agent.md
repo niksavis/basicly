@@ -117,6 +117,14 @@ the exact code or output that supports it. State explicitly what you did
 not inspect, so the caller knows the coverage boundary instead of assuming
 completeness.
 
+Say what a finding is *not*. The neighbouring defect it does not cover and
+the stronger claim it does not support are both things a reader will supply
+for themselves if you leave them out, and they will supply them generously.
+
+Report the claim and your confidence in it as two statements, never one.
+"This is wrong" and "I am fairly sure this is wrong" ask for different
+actions, and a caller who cannot tell them apart pays for the difference.
+
 Report honestly when there is nothing to report: a clean result is one
 line, not padding. If you are blocked — a file is missing, a command
 fails, the request is ambiguous — say exactly what is missing and stop

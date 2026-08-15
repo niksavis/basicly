@@ -73,23 +73,37 @@ def review_prompt(issue_id: str, lens: str) -> str:
         "the input that makes it fail — a finding you could not make fail is a preference "
         "and costs the author the same attention as a defect. Other lenses are dispatched "
         "separately, each on its own axis, and their output is never merged with yours "
-        "into one ranking, so weigh nothing against what another lens might say. Finding "
-        f"nothing on {lens} is a complete answer: state it in one line rather than padding "
-        "it. State the boundary of what you covered. You are read-only: change no file, "
-        "and record no gate — the engine records what you report."
+        "into one ranking, so weigh nothing against what another lens might say. Do not "
+        "start at line 1: go first where the change is most likely to be wrong on your "
+        f"axis — the acceptance criterion whose check is weakest, the input the author "
+        "would find inconvenient, the path no test names — and say where you attacked. "
+        f"Finding nothing on {lens} is a complete answer: state it in one line rather "
+        "than padding it. State the boundary of what you covered. You are read-only: "
+        "change no file, and record no gate — the engine records what you report."
     )
     review.reject_pre_judging(prompt)
     return prompt
 
 
 def dispatch_prompt(issue_id: str) -> str:
-    """The agent-neutral dispatch prompt: point at the tracker, not at an agent."""
+    """The agent-neutral dispatch prompt: point at the tracker, not at an agent.
+
+    Two lines carry the memo half of the brief. The bead's own text is a plan
+    written before the code was read, so the dispatch says so rather than letting
+    it arrive as instruction; and the expected reading is asked for *before* the
+    demonstration runs, because a result compared against nothing reads as a pass.
+    """
     return (
         f"You are in a git worktree dedicated to the tracked issue {issue_id}. "
         f"Read AGENTS.md for the repo rules, run `br show {issue_id}` for the "
         "requirement and acceptance criteria, implement the work, and commit it "
         "on the current branch referencing that issue id. Do not merge, push, or "
         "close the issue — the harness loop lands and ships it. "
+        "Treat the bead's approach as derived quickly and worth checking, not as "
+        "settled: it was written before this code was read, and finding it wrong "
+        "is a result to report rather than a detour. Its requirement still binds. "
+        "Before you run the demonstration, write down what you expect it to print; "
+        "compare, and say so when the two differ. "
         "If you exhaust your ability to resolve a required fact, do NOT guess: "
         f"write {needs_input.SENTINEL_FILE.as_posix()} as "
         '{"fact": "<the missing fact>", "detail": "<what you tried>"} and stop '

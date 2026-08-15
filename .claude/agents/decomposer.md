@@ -69,6 +69,17 @@ beside it — a child whose forecast implies a diff far past reviewable is
 reported, not refused, because a large diff is sometimes correct and
 splitting is the author's call while it is still cheap.
 
+Each child also carries the **expected reading**: what its demonstration
+command should print when the work is right. One line, written now, before
+anyone runs it. A surprise is only detectable against a prediction, and
+without one every result reads as confirmation — the builder sees output,
+recognises nothing wrong with it, and moves on.
+
+This costs nothing when you are right and is the whole value when you are
+wrong. Say "the count stays at 44" or "exit 1 naming the missing id", not
+"it works". A reading you cannot write is a demonstration you do not
+understand, and that is worth knowing at DECOMPOSE rather than at VERIFY.
+
 Report honestly when there is nothing to report: a clean result is one
 line, not padding. If you are blocked — a file is missing, a command
 fails, the request is ambiguous — say exactly what is missing and stop
