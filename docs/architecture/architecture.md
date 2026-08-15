@@ -1238,11 +1238,14 @@ function of the graph, with `created_at` dropped because age-based ordering make
 order clock-dependent for an unchanged graph. **Harness markers are native**
 (`basicly-s5li`): 89% of the live tracker's comments are `[harness-*]` markers using a beads
 comment purely as transport, and in `owned` mode those twelve families are written and read as
-`comment` events with no `br` spawned at all. What is left is **32 `run_br` call sites across
-12 modules** behind the one seam in `br.py` — `supervise` 8, `decompose` 6, `loop` 4,
-`policy` 4, `merge` 3, then one each in `classify`, `loop_state`, `cli`, `rubrics`, `worktree`,
-`verify` and `validate_gate`. The repo still runs `[tracker] mode = "external"`, so none of
-the owned path is authoritative here yet; §14.5 and `work-tracker.md` §5 carry the cutover.
+`comment` events with no `br` spawned at all. What is left is **28 `run_br` call sites across
+12 modules** behind the one seam in `br.py` [M 2026-08-15] — `decompose` 6, `loop` 4,
+`policy` 4, `supervise` 4, `merge` 3, then one each in `classify`, `loop_state`, `cli`,
+`rubrics`, `worktree`, `verify` and `validate_gate`. The repo runs `[tracker] mode = "dual"`
+since 2026-08-15, so every accepted write also lands in the owned ledger through
+`br._mirror_write` — which **raises** rather than logs, so a write surface with no translator
+stops the work instead of diverging the two stores. The owned side is still not authoritative;
+§14.5 and `work-tracker.md` §5 carry the cutover.
 
 **12.4 Gates — deterministic blocks, semantic advises.** Deterministic checks (tests, lint,
 type, build; the existing commit-msg/identity/beads hooks) report a **required** gate via
@@ -1927,7 +1930,7 @@ this harness is measurably better than the others that also believe it.
 | Catalog (guidance) | projected + structurally gated; the path-scoped tier in use on **four** fragments; routing measured (tiers 1 and 2 ship as `catalog lint` rules) | behaviour measured per entry — tier 3 | §14.4 |
 | Gates (enforcement) | deterministic, per-site behaviour, typed by `policy.GATE_TYPE_BY_GATE` for the five gates the engine names; 25 `[[verify.checks]]` including four ratchets | every gate classified by type, with a severity contract on judged output | [`factory-loop-requirements` §5.1](../requirements/factory-loop.md) |
 | Loop / factory (SDLC) | parallel lanes, autonomy grants, merge queue, **VALIDATE as a rung, six of seven roles reachable, seven of eight artifact schemas** — dogfooded | the seventh role wired; the judged half hardened; release automation reachable under a grant | §14.3 |
-| Tracker (state) | external `br` binary in the critical path, **32 call sites behind one seam**; ranking and harness markers already owned; repo runs `mode = "external"` | owned, in-process, append-only event log | [`work-tracker`](../requirements/work-tracker.md) |
+| Tracker (state) | external `br` binary in the critical path, **28 call sites behind one seam**; ranking and harness markers already owned; repo runs `mode = "dual"` and mirrors every write [M 2026-08-15] | owned, in-process, append-only event log | [`work-tracker`](../requirements/work-tracker.md) |
 
 **14.2 The factory — built, and its remaining honesty gaps.** The supervisor,
 autonomy grant ledger, decision queue, lane mini-loop, and merge queue v2 have
@@ -2103,17 +2106,20 @@ restricting a class of users, which is itself the strongest argument for owning 
 component), and the alternative of adopting a versioned database is rejected because
 it reintroduces exactly the unowned-binary upgrade surface being removed.
 
-**The migration is five steps and they did not run in order** [M 2026-08-14]. Step 1,
-the import, **ran once by hand** — 643 records as 3,775 events, every one carrying
-provenance — but `migrate.import_snapshot` has no caller, no `main()` and no CLI, so it
-is a one-shot that cannot be repeated and **nothing a fresh consumer runs can build the
-ledger at all** (`basicly-vkh0.23`, P0). Step 5, native harness markers, **landed
-before steps 2–4** (§12.3). Steps 2 (shadow), 3 (dual-write) and 4 (flip) are unrun,
-and the repo is `mode = "external"`. That order costs one binding constraint rather
-than a defect today: the shadow differential's comment comparison diverges **by
-construction** at `owned`, because the marker families no longer reach the external
-tracker there — so it must be run on `dual`, and a run that finds comment divergence at
-`owned` is measuring the ordering, not a bug.
+**The migration is five steps and three have now run, still not in order** [M 2026-08-15].
+Step 1, the import, is re-runnable as `basicly tracker import` (`basicly-vkh0.23`) and the
+ledger holds **5,081 events over 873 records** against an 876-record export. Step 2, the
+shadow differential, ran on `dual` with an **empty** declared baseline, so nothing is excused
+by construction. Step 3, dual write, is live. Step 5, native harness markers, **landed before
+steps 2–4** (§12.3), which costs one binding constraint rather than a defect: the differential
+must be run on `dual`, because at `owned` the marker families no longer reach the external
+tracker and the comment comparison diverges by construction.
+
+**Step 4 is not dispatchable, and the reason is one query.** The differential reports
+`conclusive: yes` and `clean: no` on **372 disagreements, every one `query='gates'`** — zero
+on records, phase or ready. The owned side reports `missing` for every gate because gate
+_history_ was never imported, which is a one-shot dump rather than a defect; the flip also
+needs post-flip records to exist, and neither can be brought forward by dispatching anything.
 
 **Five operations have no owned equivalent at all**, and each is a design question
 rather than a port: `lint` (which means owning the validation rules), `dep cycles`,
@@ -2252,8 +2258,9 @@ Pillar 04 — **the work graph**:
 | Atomic publish of the shared tracker export, and a store error charged to the store rather than to the lane's rework budget | `shipped` | §12.1, [`work-tracker`](../requirements/work-tracker.md) R7 — gated by four reader processes against a live writer |
 | The scheduler score and rank recorded behind each dispatch | `shipped` | [`work-tracker`](../requirements/work-tracker.md) §9.2 — every `[harness-run]` marker carries the rank, fallback rank, score and the schema version that makes the score interpretable, plus the dispatch order actually used, since a provisioned lane is claimed and the external scheduler has no opinion on it |
 | A pure, age-free ranking function owned in-process | `shipped` | §12.3 — `kit/tracker/scheduler.py` behind `br.read_ranking`, emitting `basicly.scheduler.v1` |
-| Owned in-process append-only event log, removing the external binary from the critical path | `building` | §14.5, `work-tracker` — eight kit modules exist and the import ran once; steps 2–4 of the cutover are unrun and the repo is `mode = "external"`, so none of it is authoritative |
-| A repeatable ledger import a fresh consumer can run | `building` | §14.5 — `basicly-vkh0.23`, P0: the import is a one-shot with no entry point |
+| Owned in-process append-only event log, removing the external binary from the critical path | `building` | §14.5, `work-tracker` — steps 1–3 have run and the repo is `mode = "dual"`, mirroring every accepted write; step 4 waits on a gate-history import and post-flip records, so the owned side is not authoritative yet |
+| A repeatable ledger import a fresh consumer can run | `shipped` | §14.5 — `basicly tracker import [--dry-run]`, re-runnable, refusing a post-flip ledger (`basicly-vkh0.23`) |
+| No committed artifact carries a host path, username or hostname | `shipped` | [`work-tracker`](../requirements/work-tracker.md) R6 — redaction at the write seam for both stores, `tracker-path-scan` widened to the ledger, gated with a positive control that reports 4,812 findings on the pre-repair file and 0 after (`basicly-r166`) |
 | Provenance on every edge — extracted, inferred, ambiguous | `designed` | §14.5 |
 | `fsck` and `rebuild`, so "the log is the truth" is a claim someone can check | `designed` | §14.5 |
 | Cross-repo work offers as self-writes in each repo's own ledger, read-only across the boundary | `deferred` | `work-tracker` |

@@ -195,6 +195,21 @@ carries a `## Plan` heading and no demonstration line, so the build-entry predic
 population from a defect, and a predicate that refuses the whole tracker is a stopped harness rather
 than a bound one (the §9.3 ratchet argument, applied to a field instead of a file).
 
+**And the gap in that rule is now measured: a backticked span that selects nothing passes it**
+[M 2026-08-15]. Five beads closed or worked in one session named a demonstration of the form
+`uv run pytest <file> -k <expr>` where the expression selects **zero** tests — against positive
+controls collecting 210, 142, 87 and 23 in the very files they name. Every real regression
+existed, under another name, and passed. So the field was refused for being absent or unquoted
+and accepted for being *wrong*, which is the failure mode D10 is otherwise built to remove: a
+criterion whose check can be satisfied without the behaviour, except here the check cannot be
+satisfied at all and nobody ran it.
+
+The remedy is not a third form rule. **Run the criterion's own command and read the collected
+count** — a zero-selection result is a refusal at the same rung as an absent field, and it is
+free, deterministic and impossible to satisfy by rewording. Until it exists, a bead's
+demonstration line is a claim like any other and closing against it without running it is what
+produced all five.
+
 **Also reported at plan time, not refused** [D19]: a child whose forecast implies a diff far past
 reviewable size. The sizing governor already forecasts in tokens, so the signal is free. It is a
 report rather than a refusal because a large diff is sometimes correct — a mechanical rename is one

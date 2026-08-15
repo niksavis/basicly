@@ -257,20 +257,25 @@ The order is now:
 3. **The tail of `e2mz`, `tcmy` and `jr0l`** — roughly 70 items — drains through the controller rather
    than through a human's queue.
 
-**Two of item 2's three P0s cannot be started, and this list said nothing about it**
-[M 2026-08-14, `blocks` edges over `.beads/issues.jsonl`, `parent-child` excluded]. Naming a bead
-as the place to start is a readiness claim, and a readiness claim is checkable — so it is checked
-here rather than discovered by whoever picks it up:
+**Two of item 2's three P0s could not be started when this was written, and this list said
+nothing about it** [M 2026-08-14, `blocks` edges over `.beads/issues.jsonl`, `parent-child`
+excluded]. Naming a bead as the place to start is a readiness claim, and a readiness claim is
+checkable — so it is checked here rather than discovered by whoever picks it up:
 
-| Named P0 | Actually | Start instead at |
+| Named P0 | Was | Now [M 2026-08-15] |
 | --- | --- | --- |
-| `89hm` | BLOCKED by `u2hl.30` | `u2hl.30` — demote the context ceiling to observability |
-| `vkh0.23` | BLOCKED by `c357` | `c357` — scope the shadow differential; `u4xu` waits on it too |
-| `ejdm` | READY | `ejdm`; `xjd2` is blocked behind it, as §5.2 already says |
+| `89hm` | BLOCKED by `u2hl.30` | both **closed** — the context ceiling is observability |
+| `vkh0.23` | BLOCKED by `c357` | both **closed**; `u4xu` ran and the repo is on `dual` (§6) |
+| `ejdm` | READY | READY; `xjd2` is blocked behind it, as §5.2 already says |
 
-`c357` is itself a P0 and appears nowhere in §6's five-step list, which is the second half of the
-same defect: §6 describes the cutover's *steps* and the tracker holds its *entry point*, and only
-one of the two was read.
+`c357` was itself a P0 and appeared nowhere in §6's five-step list, which was the second half of
+the same defect: §6 describes the cutover's *steps* and the tracker holds its *entry point*, and
+only one of the two was read. §6 now carries the cutover's measured state instead of its plan.
+
+**So item 2's remaining P0 is `ejdm`, and item 1's `e2mz.6` is still the head of the order.**
+Two new P0/P1 defects entered the backlog on 2026-08-15 from using the dual write rather than
+from a survey — `e2mz.23` and `e2mz.24`, both in §6 — and they gate any work that writes through
+the `br` seam, which is most of `vkh0`.
 
 **And one ready P0 is named by no ordering in this file.** `basicly-jn1x` — **0 of 357 dispatch
 records carry `--agent`**, against a positive control of 163 carrying `-p`. The role wiring exists
@@ -542,29 +547,49 @@ nobody re-examined, which is the shape §3's roster paragraph took for five days
 Tracked by `basicly-vkh0`; specified by
 [`requirements/work-tracker.md`](../requirements/work-tracker.md).
 
-The migration is five steps and they did not run in order:
+The migration is five steps. **Three have now run, and still not in order**
+[M 2026-08-15]:
 
 ```text
-1 import          RAN once by hand (b97a653) - but migrate.import_snapshot has no caller,
-                  no main() and no CLI, so it cannot be repeated  (basicly-vkh0.23, P0)
-2 shadow          machinery ships; MUST run on `dual`, so it cannot run today
-3 dual-write      NOT RUN - basicly.toml says mode = "external"
-4 flip            blocked on 3
+1 import          RAN, and re-runnable - `basicly tracker import` (vkh0.23). The ledger
+                  holds 5,081 events over 873 records against an 876-record export
+2 shadow          RAN on `dual`. Baseline declared EMPTY, so nothing is excused by
+                  construction and every disagreement from here is a real finding
+3 dual-write      RAN - basicly.toml says mode = "dual"  (basicly-u4xu)
+4 flip            waits on a differential that is clean AND conclusive over a non-empty
+                  scope, which needs post-flip records to exist. Not dispatchable
 5 native markers  LANDED 2026-08-07, before steps 2-4
 ```
 
-**32 spawn sites across 12 modules** behind the one seam in `br.py` [M 2026-08-14,
-`rg 'run_br\(' src/basicly/*.py` less `br.py` itself: `supervise` 8, `decompose` 6, `loop` 4,
-`policy` 4, `merge` 3, then one each in `classify`, `loop_state`, `cli`, `rubrics`, `worktree`,
-`verify`, `validate_gate`]. Only `show`, `scheduler` and comments have owned equivalents. **Five
-operations have none at all**, and each is a design question rather than a port: `lint` (which
-means owning the validation rules — requirement R3), `dep cycles`, `list --label`, id minting
-(`ids.mint_root_id` exists and only tests call it), and `gate list` (the owned side reads
-`missing` on 331 of 643 records because only the dual write populates it).
+**The differential is `conclusive` and not `clean`, and the whole of the gap is one
+query** [M 2026-08-15, `basicly tracker shadow`]: **372 disagreements, every one
+`query='gates'`**, and **zero** on records, phase or ready. The owned side has no gate
+verdicts because gate history was never imported — which is exactly what decision 1a
+(one-shot `br gate list --robot` into an import event) exists to close, so step 4's
+remaining distance is that decision plus post-flip records, not a defect hunt.
+
+**28 spawn sites across 12 modules** behind the one seam in `br.py` [M 2026-08-15,
+`rg 'run_br\(' src/basicly/*.py` less `br.py` itself: `decompose` 6, `loop` 4, `policy` 4,
+`supervise` 4, `merge` 3, then one each in `classify`, `loop_state`, `cli`, `rubrics`,
+`worktree`, `verify`, `validate_gate`]. Down from 32 on 2026-08-14, all four in `supervise`.
+Only `show`, `scheduler` and comments have owned equivalents. **Five operations have none at
+all**, and each is a design question rather than a port: `lint` (which means owning the
+validation rules — requirement R3, and decision 4a deletes it instead), `dep cycles`,
+`list --label`, id minting (`ids.mint_root_id` exists and only tests call it), and
+`gate list`.
 
 **This is also the largest single dead-code event left on the ladder**, which is why it bounds the
-scope of any architectural audit run before it: 32 call sites, the `br.py` seam and its parsers all
+scope of any architectural audit run before it: 28 call sites, the `br.py` seam and its parsers all
 leave the tree at step 4. Auditing them is auditing a scheduled deletion.
+
+**Two defects in the dual write are open and both were found by using it** [M 2026-08-15].
+`basicly-e2mz.23` (P0): `owned_store.tracker_mode` reads a process-global reader that only
+`config.py:822` registers and returns `external` when nothing did, so a caller importing
+`basicly.br` without `basicly.config` writes to br and **silently skips the mirror** — the
+one failure `_mirror_write` does not raise on. `basicly-e2mz.24`: `mirror._close_drafts`
+refuses a multi-id `br close` that br accepts, and `_create_drafts` refuses a `br create`
+without `--json`; both refuse *after* the spawn, so the guard creates the divergence it
+exists to prevent. Anything that writes through the seam should read those two first.
 
 Rework state lives in `br` comments, so the rework cap — one of only two controls with a recorded
 correct firing — depends on the tracker being removed.
@@ -624,6 +649,18 @@ Rules any release must honour. Each exists because breaking it cost a session or
   transcript, and the demonstration is what caught it (`basicly-zqgg`).
 - **A bulk find-replace needs a line-by-line audit.** One on 2026-08-08 rewrote references to
   *deleted* files into paths that never existed; the diff caught it and nothing else would have.
+- **A demonstration line is not a check until it selects something.** Five beads closed or
+  worked on 2026-08-15 named a `pytest ... -k <expr>` that selects **zero** tests, against
+  positive controls collecting 210, 142, 87 and 23 in the named files; every real regression
+  existed under another name. D18's gate refuses a field that is absent or names nothing
+  runnable, and a backticked span that matches nothing passes it. Run the criterion's own
+  command before closing, and read the collected count, not the exit code.
+- **A guard ships with the input that makes it fail.** Three defects on 2026-08-15 were one
+  shape — a guard that fails open or fails late: an unregistered mode reader defaulting to
+  `external` and skipping the dual write (`e2mz.23`), a mirror translator refusing *after* the
+  write it mirrors has landed (`e2mz.24`), and the demonstration lint above. The two gates that
+  caught real defects that day — `test_repo_isolation.py` and the identity scan — are the two
+  carrying a positive control.
 
 ## 9. Document register
 

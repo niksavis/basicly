@@ -100,6 +100,37 @@ not the leak. That is precisely the distinction R6's requirement column draws �
 portability as a property of the format rather than of a scrubbing pass — and the cost of
 not having it is now a measured per-session figure rather than an argument.
 
+**R6's other half — the username — was open until 2026-08-15 and it was wider than the
+bead that named it** (`basicly-r166`, closed). The owned ledger carried the OS username on
+every event, and the committed export carried it on **813 of 876 records**, because br
+writes `created_by` on every record it mints and `migrate._plan_record` copies every
+non-structural field into the payload verbatim. Inside the ledger it sat on `asserted_by`
+(3,176), `created_by` (736), `assignee` (56) and 4 free-text values, not only on `actor`.
+
+Three parts, and the middle one is the exception this design otherwise forbids:
+
+- **Stop writing it.** `redact.redact_committed` is paths **then** identity, on the four
+  ledger and export write sites. The order is load-bearing: the placeholder holds
+  characters the path rules' tail class excludes, so identity first would leave the
+  directory layout published. Identity is deliberately not a `MACHINE_PATH_RULES` entry —
+  a username is not a shape, only the running machine knows the string.
+- **Scrub what was already published.** `br.scrub_ledger` rewrote **4,812 of 5,081** events
+  and `scrub_export` **811** records. This is the one place the design **edits a line rather
+  than appending one** (§4.4), because an append cannot un-publish a string; §4.2 reserves
+  that for an explicit owner decision and this was one. An event id covers kind plus payload
+  and the generation folded into it is not written on the line, so it is derived as the
+  occurrence count of an identical `(record, kind, payload)` — a derivation that reproduced
+  **all 5,081** stored ids before it was used to write one, and the function refuses the
+  whole rewrite if any id fails to re-mint.
+- **Gate it.** `tracker-path-scan` now covers `.basicly/ledger/events-*.jsonl` beside
+  `.beads/*.jsonl` and reports a `machine-username` rule built per run from
+  `getpass.getuser()`. Positive control against the kept pre-scrub ledger: **4,812 findings
+  before, 0 after**. Its limit is stated rather than implied — it cannot see a *teammate's*
+  username already in the file, which is `[[privacy.denied]]`'s job.
+
+What survives deliberately is the git handle: the rule is word-bounded, and that handle is
+the `git+https://github.com/...` install URL the distribution ships.
+
 R1, R5, R6, R7, R8 and R9 are already settled in the design (§9.5, §9.4, §12, §9.3, §9.3, §4). R2, R3 and
 R4 are constraints on the command layer that has not been written yet, and this table is where they
 are recorded so it cannot be written without them.
@@ -645,11 +676,14 @@ working the whole time.
    export and reports what it added. It **refuses a ledger that already holds a post-flip
    record**, and the dry run reports that same refusal rather than a count, because a preview
    saying "would add 200" for a run that will refuse is worse than no preview. No `actor` is
-   recorded — `basicly-r166` is open on the ledger committing a username in every event.
+   recorded — and `basicly-r166` is **closed**: the OS username is out of both committed stores
+   (R6 below).
 
-   **The import is deliberately not run on this repo**: closing the gap is a cutover step
-   `basicly-u4xu` owns, and the order that makes it consistent with that bead's do-not-re-import
-   rule is import while still `external`, declare the residual baseline, then flip.
+   **Run 2026-08-15 (`basicly-u4xu`), in the order that bead's do-not-re-import rule requires**:
+   import while still `external`, declare the residual baseline, then flip. The ledger holds
+   **5,081 events over 873 records** against an 876-record export; the residual 3 are beads filed
+   by hand through `br` directly, which `basicly-vkh0.24` covers and which are deliberately left
+   as that bead's own demonstration.
 
    The entry point is the CLI rather than a kit `main()`, on a measurement rather than a
    preference — `migrate.py` has three tokens of size headroom and none on density. So §4's
@@ -679,9 +713,24 @@ working the whole time.
      0 in scope, 643 imported, 375 disagreements excused as history and 200 undeclared.
    - A **refused reference voids the run whatever the scoping says.** The boundary decides
      which records are judged, never whether the reference was the live tracker.
-3. **Dual-write** for one release, with the old tracker still authoritative.
+
+   **Ran 2026-08-15 on `dual`, with an empty declared baseline** — so nothing is excused by
+   construction and every disagreement from here is a real finding rather than an argument
+   about what predates the rule. Current verdict: `clean: no`, `conclusive: yes`, and **the
+   whole of the gap is one query** — **372 disagreements, every one `query='gates'`**, zero on
+   records, phase or ready. The owned side reports `missing` for every gate because gate
+   *history* was never imported; that is what the one-shot `br gate list --robot` dump exists
+   to close, and until it runs the differential cannot license step 4 however healthy the
+   record comparison is.
+3. **Dual-write** for one release, with the old tracker still authoritative. **Active since
+   2026-08-15**: every accepted write also lands in the owned ledger through `br._mirror_write`,
+   which **raises** on any failure rather than logging, so a write surface with no translator
+   stops the work instead of silently diverging. Two defects in it are open and both were found
+   by using it — `basicly-e2mz.23`, the mirror failing **open** when the tracker-mode reader is
+   unregistered, and `basicly-e2mz.24`, a translator that refuses *after* br has taken the write.
 4. **Flip** the source of truth once the differential test is clean and the telemetry (§6) shows
-   no unimplemented surface in use.
+   no unimplemented surface in use. Not dispatchable: it needs post-flip records to exist plus
+   the gate-history import above, and neither can be brought forward by dispatching anything.
 5. **Carry the harness markers natively**, which is the step that actually removes `br` from
    the engine rather than merely making it non-authoritative. Landed 2026-08-07
    (`basicly-s5li`): `comments` was 26 of the engine's 55 `_run_br` call sites and 45% of all
