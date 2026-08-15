@@ -470,9 +470,20 @@ def _worktree_land_readiness(repo_root: Path, session: Session) -> MergeResult |
     )
 
 
-def reconcile_beads(repo_root: Path) -> None:
-    """Reconcile ``.beads/issues.jsonl`` via ``br sync --merge`` (no hand-editing)."""
-    br.try_run_br(repo_root, ["sync", "--merge"])
+def reconcile_beads(repo_root: Path) -> str:
+    """Reconcile ``.beads/issues.jsonl`` via ``br sync --merge`` (no hand-editing).
+
+    Returns br's refusal, or empty on success. A warning rather than a raise because
+    the git merge has already landed by the time this runs, and unwinding it over an
+    unreconciled tracker would cost more than the operator re-running the sync.
+    """
+    proc = br.try_run_br(repo_root, ["sync", "--merge"])
+    if proc is None or proc.returncode == 0:
+        return ""
+    return (
+        f"WARNING tracker NOT reconciled — br sync --merge exited {proc.returncode}: "
+        f"{(proc.stderr or proc.stdout or '').strip()}"
+    )
 
 
 def foreign_dirt(repo_root: Path) -> tuple[str, ...]:
@@ -521,12 +532,26 @@ def commit_tracker_state(
 
     A caller that gets ``False`` owes the operator an explanation — see
     :func:`skipped_tracker_commit_warning`.
+
+    Raises:
+        RuntimeError: br declined the flush, so the export on disk is not the state
+            br holds and nothing is committed.
     """
     lines = git(["status", "--porcelain"], cwd=repo_root).stdout.splitlines()
     paths = [line[3:] for line in lines if line.strip()]
     if not paths or not all(path.startswith(".beads/") for path in paths):
         return False
-    br.try_run_br(repo_root, ["sync", "--flush-only"])
+    proc = br.try_run_br(repo_root, ["sync", "--flush-only"])
+    if proc is not None and proc.returncode != 0:
+        # br's sync guards refuse rather than write (a conflict-marked export exits 7,
+        # measured through this call against the pinned 0.2.16); the three lines below
+        # would commit the export br declined to produce, as a chore(beads) landing
+        # indistinguishable from a real one (basicly-ho3t).
+        raise RuntimeError(
+            f"br sync --flush-only exited {proc.returncode}; tracker state NOT committed "
+            f"— the export on disk is not what br would write: "
+            f"{(proc.stderr or proc.stdout or '').strip()}"
+        )
     # br stamps each flushed record with the producing workspace's absolute path;
     # strip it before staging so the committed export never publishes a home
     # directory layout (basicly-vkh0.5). This is the engine's only tracker-commit
@@ -660,9 +685,10 @@ def _merge_and_prove(
             f"git merge of {branch} reported success but {where} is not reachable from "
             f"{base}: the work is not landed — inspect base before landing anything else",
         )
-    reconcile_beads(repo_root)
+    unreconciled = reconcile_beads(repo_root)
     head = git(["rev-parse", "--short", "HEAD"], cwd=repo_root).stdout.strip()
-    return MergeResult(name, "merged", f"merged {branch} into {base} @ {head}")
+    detail = f"merged {branch} into {base} @ {head}"
+    return MergeResult(name, "merged", f"{detail}; {unreconciled}" if unreconciled else detail)
 
 
 def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing input
