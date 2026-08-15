@@ -19,6 +19,7 @@ import json
 import shlex
 import shutil
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -45,6 +46,16 @@ GIT_MANAGER = "git"
 CLAUDE_MANAGER = "claude"
 COPILOT_MANAGER = "copilot"
 HOOK_MANAGERS = (GIT_MANAGER, CLAUDE_MANAGER, COPILOT_MANAGER)
+
+# The host executable that reads each agent manager's projected hooks. Git has no
+# entry: its hooks are run by git itself, which `missing_hook_installations` already
+# answers for. Both hosts have a hook surface, re-probed 2026-08-15 against the
+# installed binaries — claude 2.1.233 (`--include-hook-events`, `--bare` skips hooks)
+# and Copilot CLI 1.0.79 (`copilot help config`: a `hooks` key and `disableAllHooks`).
+# The 2026-08-08 "copilot has no hook surface" probe was wrong and is retracted in
+# `.basicly/core/kit/tier/README.md`; what remains true there is narrower — no copilot
+# hook is known to fire for an *agent spawn*.
+AGENT_HOOK_HOSTS = {CLAUDE_MANAGER: "claude", COPILOT_MANAGER: "copilot"}
 
 COPILOT_HOOKS_DIR = Path(".github/hooks")
 # Filename prefix marking a Copilot hook file as basicly-managed (JSON carries
@@ -137,6 +148,27 @@ def claude_hook_specs(specs: list[HookSpec]) -> list[HookSpec]:
 def copilot_hook_specs(specs: list[HookSpec]) -> list[HookSpec]:
     """Return the specs rendered into Copilot hook files (``manager: copilot``)."""
     return [spec for spec in specs if spec.manager == COPILOT_MANAGER]
+
+
+def agent_hook_surface_present(
+    manager: str, *, which: Callable[[str], str | None] | None = None
+) -> bool:
+    """Whether the host that would run *manager*'s projected agent hooks exists here.
+
+    PATH presence of :data:`AGENT_HOOK_HOSTS`'s entry, resolved through an injected
+    *which* like :func:`basicly.runner.is_available` — the suite hides the ambient agent
+    CLIs, so a caller-supplied resolver is the only way to assert either answer. False
+    for ``git`` and any other manager with no host binary.
+
+    This is what keeps the delivered tier reported rather than assumed (basicly-0p8n):
+    a projected hook whose host never runs here cannot fire, and reading its file's
+    existence as enforcement is the built-and-never-connected defect. The git hooks are
+    the floor on every host either way, so a False here narrows the claim, not the
+    guarantees.
+    """
+    which = which or shutil.which
+    host = AGENT_HOOK_HOSTS.get(manager)
+    return host is not None and which(host) is not None
 
 
 def _copilot_hook_path(repo_root: Path, spec: HookSpec) -> Path:
