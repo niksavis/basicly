@@ -9,7 +9,7 @@ tier: maximum
 tools: [Read, Grep, Glob, Bash]
 claude:
   effort: high
-  skills: [decompose-plan, root-cause]
+  skills: [decompose-plan, root-cause, falsify-first]
 slots:
   role:
     - text: |
