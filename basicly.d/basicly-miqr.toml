@@ -1,0 +1,18 @@
+# A `file.py:line` in a requirements document is a claim about the code, and nothing read
+# one: `docs-claims` gates generated blocks, `corpus-drift` gates an epic's problem
+# statement. So a decision recorded on 2026-08-09 stayed asserted after 2026-08-11's code
+# refuted it, which is how a session planned a P0 against a replaced remedy (basicly-miqr).
+#
+# A repo-local script rather than a CLI subcommand pair, on the same grounds as
+# `docs-claims` and `module-size`: the debt is basicly's own and a consumer's document set
+# would be its own decision with its own frozen list. `uv run python`, not a bare `python`,
+# per the note above `basicly.toml`'s `docs-claims` entry.
+#
+# No `fix_command`, and the omission is the point. The gate prints the line the symbol moved
+# to, so a mechanical fix looks trivial — but a citation that drifted onto a blank line has
+# no derivable target, and renumbering one whose surrounding sentence has also gone stale
+# repairs the pointer while leaving the false claim. Reading the sentence is the repair.
+[[verify.checks]]
+name = "docs-citations"
+command = ["uv", "run", "python", ".scripts/check_docs_citations.py"]
+modes = ["fast", "full"]
