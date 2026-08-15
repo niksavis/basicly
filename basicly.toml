@@ -79,7 +79,16 @@ rank1_floor_high_water = 0.85
 # the correct refusal: what is left is `dual`, then a run that is clean **and**
 # conclusive over a non-empty scope, then `owned`.
 [tracker]
-mode = "external"
+# Steps 1 and 2 ran on 2026-08-15 (basicly-u4xu). The import brought the ledger level
+# at 866 records from 223 behind, and `shadow --declare-history` wrote an **empty**
+# baseline — nothing needs excusing, so every disagreement from here is a real finding
+# rather than an argument about what predates the rule. `dual` is step 3: every accepted
+# write now also lands in the owned ledger through `br._mirror_write`, which **raises**
+# on any failure rather than logging, so a write surface with no translator stops the
+# work instead of silently diverging. Step 4 (`owned`) waits on a differential that is
+# clean *and* conclusive over a non-empty scope, which needs post-flip work to exist and
+# cannot be brought forward by dispatching anything.
+mode = "dual"
 
 # Sibling git-worktree isolation for harness tracks.
 [worktree]
