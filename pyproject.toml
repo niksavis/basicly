@@ -382,6 +382,29 @@ waiver_count = 2
 [tool.corpus_drift.frozen]
 "basicly-u2hl" = 4
 
+# Stale-citation debt (basicly-miqr). The gate is `.scripts/check_docs_citations.py`, wired as
+# the `docs-citations` [[verify.checks]] entry. A `file.py:line` in a document is a claim about
+# the code that a planner reads as fact, and until this gate nothing checked one: four such
+# claims planned a P0 against a remedy the tree had already replaced.
+#
+# **The list is closed** — a document absent from it may not carry a single stale citation. The
+# three entries are each a citation whose correct target is not derivable from the gate's own
+# output, so shaving them is document work rather than a line-number fix, and it does not
+# belong in the lane that landed the instrument:
+#   architecture.md ×2  — the same two `loop.py` sites `implementation-plan.md` corrected; that
+#                         document is `basicly-48d1`'s reconciliation, not this lane's.
+#   factory-loop.md ×1  — §1's undated "measured delta" table, whose `loop.py:234` target is no
+#                         longer identifiable; the table needs re-measuring, not renumbering.
+#   work-tracker.md ×1  — `runner.py:2546` is past end-of-file.
+#
+# A count that falls has to be banked in the same diff and an entry that reaches zero is
+# deleted, for the reason [tool.module_size.frozen] states: leaving the higher number licenses
+# regrowth back to it for free.
+[tool.docs_citations.frozen]
+"docs/architecture/architecture.md" = 2
+"docs/requirements/factory-loop.md" = 1
+"docs/requirements/work-tracker.md" = 1
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/basicly"]
 exclude = ["**/__pycache__", "**/*.pyc"]

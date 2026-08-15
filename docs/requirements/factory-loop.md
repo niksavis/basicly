@@ -98,7 +98,7 @@ at build→verify; everything else is checkpoints and lints.
 | D22 [D] | **Anything built against the tracker is written to our own record vocabulary, never to `br`'s payload shape** | `br` and `bv` are being removed (`work-tracker.md`). A field allowlist naming `br`'s JSON keys would have to be rewritten at the flip; one naming our own fields survives it, and only the adapter changes |
 | D23 [D] | **A sizing control with no recorded correct firing becomes observability; a control that has earned one keeps its teeth** | §15.7. Measured 2026-08-08: the grant spend ceiling fired correctly 5 times and the rework cap 78, while the runner timeout, the working-set band and the context ceiling have **zero** between them — and all three of those predict how large a unit of work will be, which this repo has never predicted well. A prediction that blocks must be right; a prediction that reports costs nothing when it is wrong. Demotion is not deletion: the number stays recorded, surfaced and falsifiable, because §15.6's gate was wrong for months *with the telemetry already contradicting it* |
 | D24 [D] | **`factory-design.md` is no longer the tiebreaker.** Authority runs: measured evidence in this repo → this document → `factory-design.md` | Owner, 2026-08-08. That document's §9 — "the honest answer to *is the design real?*" — contradicts itself on `kjc5.8`/`kjc5.11`; it keeps a context ceiling §15.6 demoted for never firing correctly; and its D6 rests on light mode having "one window shared by everything", which architecture §5 records as **isolated** context (the citation also had the wrong section: it is §1 of that document, now absorbed). A factory-design decision no measurement contradicts still stands — this removes tiebreaker status, not content |
-| D25 [D] | **Agent-authored guidance never reaches the shared catalog without a human, at any grant level** — a decision class no autonomy level auto-disposes, an exception to the L0-L3 ladder rather than a rung in it | Roster R9, absorbed 2026-08-08. The argument is asymmetry, not the risk of a bad suggestion: a wrong implementation bounces off a gate, while a wrong fragment is **absorbed** and silently degrades every later lane with nothing mechanical to detect it. An agent that can amend the catalog under a grant widens its own constraints, and the next session inherits the widening as ground truth. Not in code [M]: `supervise.DELEGABLE_KINDS` is `("escalation", "needs-input")` (`supervise.py:1650`), so a never-auto-dispose class does not exist. Corollary: a retrospective's output is a **diff against catalog YAML**, never prose advice, so `catalog lint` and the projection checks bound what the human is asked to approve |
+| D25 [D] | **Agent-authored guidance never reaches the shared catalog without a human, at any grant level** — a decision class no autonomy level auto-disposes, an exception to the L0-L3 ladder rather than a rung in it | Roster R9, absorbed 2026-08-08. The argument is asymmetry, not the risk of a bad suggestion: a wrong implementation bounces off a gate, while a wrong fragment is **absorbed** and silently degrades every later lane with nothing mechanical to detect it. An agent that can amend the catalog under a grant widens its own constraints, and the next session inherits the widening as ground truth. Not in code [M]: `supervise.DELEGABLE_KINDS` is `("escalation", "needs-input")` (`supervise.py:1617`), so a never-auto-dispose class does not exist. Corollary: a retrospective's output is a **diff against catalog YAML**, never prose advice, so `catalog lint` and the projection checks bound what the human is asked to approve |
 | D26 [D] | **Route each role to the cheapest tier that can be relied on, priced per landed package** — total tokens, wall clock and human interventions per landed *correct* package, never the price of one dispatch. The predicate for "cheap is safe" is **specification completeness, not work category** | Roster R5 and its 2026-07-26 amendment, absorbed 2026-08-08. A brief carrying the literal code and the literal test cases is transcription and is mechanically verifiable; a brief that is a prose description is not. A cheap dispatch returns as rework, extra review cycles, bounced merges and human attention, all charged to the same package. **Operationally a dispatch with no resolved tier is a bug, not a default** — an omitted model inherits the session's, usually the most expensive, which defeats the rule silently. The four-tier ladder is already shipped (`.basicly/core/models/anchors.yaml`, `schema.MODEL_TIERS`); only this routing rule was unrecorded |
 | D20 [D] | **`change-shape` — the shape of the whole change, derived not authored, emitted by CLASSIFY** | See §8.2. It is the structure `decompose` needs to cut end-to-end instead of by directory, and `basicly-agzx.2` already proposes deriving it from an AST at zero token cost. **Derived, so it is not a state**: states exist to hold a gate and a persona, and a derivation needs neither — DECOMPOSE's entry predicate gains it, nothing else moves |
 | D19 [D] | **Diff size is a plan-time signal, not a review-time discovery** | The sizing governor already forecasts in tokens; a child whose forecast implies a diff far past reviewable is reported when splitting is still cheap. Deliberately **not** a human-review requirement — L1/L2 stay delegable (§4), and a 2,000-line lane is hard to review whether the reader is a human or the next agent |
@@ -107,7 +107,7 @@ at build→verify; everything else is checkpoints and lints.
 | D29 [D] | **Spend caps compose: our grant ceiling is the outer bound, the host's own cap is the inner one**, derived per dispatch from the lane's remaining budget | The grant ceiling has 5 recorded correct firings (§15.7) and stays. What it cannot do is stop a *subagent* mid-flight — it only refuses the next dispatch. `claude --max-budget-usd` counts subagent spend and stops background subagents (v2.1.217+); `copilot --max-ai-credits` is shared by a session's subagents. Note copilot's is explicitly a **soft** cap — usage is known only after a response returns — so it bounds, it does not guarantee |
 | D30 [D] | **A provider model id never appears in an agent file, generated or not.** The source declares a tier; the id is injected at spawn | Owner, 2026-08-09. Not style: our own tier kit records that *"a definition that pins its own `model` is left alone"*, so a projected `model:` line **disables** tier injection rather than implementing it — which is what `basicly-a3yi`'s projection plan would have shipped. Verified the constraint is satisfiable on both families: claude injects the alias at spawn via the hook or `--agents <json>`; copilot 1.0.78 carries the model in **config** (`subagents.agents.<name>.model`), outside the `.agent.md`. The kit's note that copilot is frontmatter-only is stale as of 1.0.78 |
 | D31 [D] | **A tier resolves by declared vendor order, verified at install.** `anchors.yaml` gains a `vendor_order` per tier; resolution walks it and takes the first the map marks available for the surface in effect; `basicly install`/`upgrade` probes each chosen model once and records a rejection | `model-map.json` already resolves tier→vendor→surface and already refuses to substitute another tier's model. Two gaps closed: nothing ranked vendors *within* a tier, and `status: available` is a claim from the generator rather than this consumer's entitlement. Neither host lists its models non-interactively (verified: claude has no `models` subcommand; copilot has `--model`/`auto` and BYOK env vars only), so entitlement must be probed once, not queried per dispatch — which keeps the dispatch path offline and deterministic |
-| D32 [D] | **A handoff artifact is a file on the work's own `harness/<issue>` branch, deleted at teardown; the ledger keeps its kind, digest and gate verdict** | Owner, 2026-08-09, superseding §8's marker-only mechanism. Git is the only transport this design has, so an artifact that must survive a machine hop has to be committed — which rules out a gitignored directory. Committed on the branch it is not dirt, so `merge.foreign_dirt` (`merge.py:469`) is unaffected; deleting the branch is the delete, so `main` never carried it. **Consequence: the harness branch must be created at INTAKE**, not at worktree provisioning (`loop.py:327`), because INTAKE, CLASSIFY and DECOMPOSE all emit artifacts before any worktree exists |
+| D32 [D] | **A handoff artifact is a file on the work's own `harness/<issue>` branch, deleted at teardown; the ledger keeps its kind, digest and gate verdict** | Owner, 2026-08-09, superseding §8's marker-only mechanism. Git is the only transport this design has, so an artifact that must survive a machine hop has to be committed — which rules out a gitignored directory. Committed on the branch it is not dirt, so `merge.foreign_dirt` (`merge.py:489`) is unaffected; deleting the branch is the delete, so `main` never carried it. **Consequence: the harness branch must be created at INTAKE**, not at worktree provisioning (`loop.py:327`), because INTAKE, CLASSIFY and DECOMPOSE all emit artifacts before any worktree exists |
 | D34 [D] | **The comments rule is the divergence rule, and it lives in `python-guidelines`, not in the always-on layer.** A comment that contradicts the code is a defect and the code is what ships; deleting the comment is not the fix. The proposed strong form — "comments that describe the code must not exist" — is **rejected** | Owner, 2026-08-09, choosing against their own initial framing on the measurement. Four independent grounds, any one sufficient. (1) **It targets an empty set here**: a 120-block hand sample over `src/basicly/` and `.basicly/core/` classifies 41% contract, 40% why, 16% navigation, 3% directive, **0% narration**, and two whole-population probes each validated against synthetic narration return 0 narration-opener hits and 9 code-echoing blocks of 1,139, every one a cross-reference [M]. (2) **Its strong form contradicts PEP 8**, which *mandates* a describe-what comment for non-public methods; Google's "never describe the code" — which `.ruff.toml` already pins via `convention = "google"` — is stated immediately after a *requirement* to comment complicated operations. (3) **It arms a live gaming path**: stripping standalone comments returns 36.3% of `config.py`'s §9.3 ratchet tokens, 17.0% of `merge.py`'s and 11.6% of `loop.py`'s [M], and `python-guidelines/skill.yaml:72` already names comment deletion as the way to game that gate — an always-on rule licensing it authorises it on every lane. (4) **No budget**: `AGENTS.md` is 13,135 characters against `codex.yaml`'s 12,000 cap, and the parent epic `basicly-a3ab` exists to *relieve* the always-on layer. Also **not agent-actionable**: "outside of best practices" is an undefined exemption and "if you need to read the comments" is a counterfactual about a reader the agent cannot query — neither is falsifiable, while divergence is checkable against an observation. The literature does not settle it either way: "comments are always failures" traces to *Clean Code* ch.4, a trade book with no cited study, and the measured work is mixed — Nielebock et al. 2018 (n=277) "the real effect of comments on software development remains uncertain", and a 2026 eye-tracking study (n=20) spans a 30% decrease to a 34% increase [S] |
 | D35 [D] | **`python-guidelines` stays a skill and gains `paths: ["**/*.py"]`; it is not demoted to an always-on fragment** | Owner, 2026-08-09, re-taking §7.2's demotion plan because the premise under it is false. That plan rested on "as a model-invoked skill it loads only when an agent thinks to ask" — refuted at claude 2.1.226, where a skill's frontmatter takes a `paths:` glob that limits *and triggers* automatic activation [S, vendor doc, fetched 2026-08-09]. The glob buys the same always-loads-on-`.py` behaviour at **zero** always-on characters, and it unblocks the work from `basicly-a3ab.1`'s eviction, which the fragment plan was waiting on. **The gap it does not close is codex**: it has no glob-based instruction scoping and never loads a nested `AGENTS.md` below the cwd (architecture §7.4), so the fragment remains the only mechanism there — deferred until codex has headroom, rather than paid for now on all three families |
 | D36 [D] | **Skill frontmatter gains a per-target vendor fence; the portable six stay portable.** An unportable key is declared once under its target and emitted only into the roots that understand it | Owner, 2026-08-09, resolving D35's mechanism. `skill.schema.json` carries exactly the Agent Skills portable subset — `name`, `description`, `license`, `compatibility`, `metadata`, `allowed-tools` — with `additionalProperties: false`, and `paths:` is outside it [M, vendor doc, 2026-08-09]. Putting `paths:` at top level would make every projected `SKILL.md` unportable to buy one behaviour; refusing it leaves `python-guidelines` with no trigger, which is the gap D35 exists to close. The fence takes neither cost, and `agent.schema.json` already establishes the shape so this is a second use of an existing pattern rather than a new mechanism. **The general rule it settles**: a host-specific capability is expressible without the portable artifact absorbing it, so the next such key does not re-open this decision. `.agents/` gets the six; `.claude/` gets the six plus its fenced keys |
@@ -232,7 +232,7 @@ variance [S]. Level decides whether a unit of work earns the factory at all.
 fail-open — "the word exists and does the opposite", re-admitting a parked lane to
 dispatch, cited at `cli.py:3922`. **That diagnosis was wrong, and it aimed the fix
 at the wrong layer.** The status vocabulary was never the problem: `deferred` is
-excluded from `DISPATCHABLE_STATUSES` (`loop_state.py:69`, with the exclusion
+excluded from `DISPATCHABLE_STATUSES` (`loop_state.py:65`, with the exclusion
 argued in the comment above it), `loop_state.is_dispatchable` refuses it,
 `supervise.ready_lanes` declines to hand such a lane a runner
 (`supervise.py:1823`), and `SessionState.open_children` drops it — so a held lane
@@ -348,13 +348,13 @@ a role and dispatch it, which is what makes the roster real rather than projecte
 
 | Role | State | Source [M 2026-08-09] | Engine |
 | --- | --- | --- | --- |
-| `decomposer` | DECOMPOSE | **authored**, loads `decompose-plan` | unnamed equivalent (`loop.py:1057-1094`) |
-| `implementer` (+ **repair mode** [D5]) | BUILD, REPAIR | **authored**, loads `python-guidelines` + `repair-in-place` | **both dispatched** — build at `loop.py:667`, repair at `loop.py:1610` with `phase="repair"` and a brief carrying the gate evidence that rejected the work (`repair_brief`, `basicly-u2hl.4`). This row read "repair mode does not" until 2026-08-14 |
-| `validator` | VALIDATE | **authored**, loads `validate-as-consumer` | **dispatched** (`loop.py:459`, `u2hl.54.3`) |
+| `decomposer` | DECOMPOSE | **authored**, loads `decompose-plan` | **dispatched** with `phase="decompose"` (`loop._run_proposer`, `loop.py:1101`) |
+| `implementer` (+ **repair mode** [D5]) | BUILD, REPAIR | **authored**, loads `python-guidelines` + `repair-in-place` | **both dispatched** — build at `loop._dispatch_runner` (`loop.py:731`), repair at `loop._repair_in_place` (`loop.py:1637`) with `phase="repair"` and a brief carrying the gate evidence that rejected the work (`repair_brief`, `basicly-u2hl.4`). This row read "repair mode does not" until 2026-08-14 |
+| `validator` | VALIDATE | **authored**, loads `validate-as-consumer` | **dispatched** (`loop._dispatch_validation`, `loop.py:489`, `u2hl.54.3`) |
 | `reviewer` (by lens) | VALIDATE | **authored** | **dispatched once per lens** (`loop._dispatch_reviews`, `roles.LENS_ROLE_BY_PHASE`, `basicly-feje`) |
-| `decider` | CLASSIFY, escalations | **authored** | exists (`decisions.py`) |
-| `retrospector` | RETROSPECTIVE | **authored**, loads `root-cause` | nothing; the state does not exist |
-| `curator` | SHIP | **authored** | nothing |
+| `decider` | CLASSIFY, escalations | **authored** | **dispatched** with `phase="classify"` through the same `loop._run_proposer`; `decisions.py` is the escalation queue, not the dispatch |
+| `retrospector` | RETROSPECTIVE | **authored**, loads `root-cause` | **dispatched** (`loop._retrospective`, `loop.py:2213`, `basicly-xmhc`) — not a phase and no unit sits in it; the signal is evaluated where the gate-failure ledger changes |
+| `curator` | SHIP | **authored** | nothing — `loop._on_ship` never calls `_run_agent` |
 
 **All seven are authored, and six are reachable in code.** The gap this section had
 measured since 2026-08-08 — "the projection works and nothing consumes it" — is closed in
@@ -371,10 +371,16 @@ positive control of 163 carrying `-p`. The cause was not the wiring: `record_dis
 flags the lane passes and asserted usage flags the decider never carried — wrong in both
 directions, and invisible from the record itself. The record copies the real argv now.
 
-**Read that as an instrument, not a reading.** The 357 historical records are unchanged and
-still name no role, so a before/after measurement of role injection begins with the next
-supervised pass. "Reachable in code" and "observed in the ledger" are two claims and only
-the first is made here.
+**The before/after that paragraph deferred has now happened, and it splits the roster in
+two** [M 2026-08-15, `.basicly/usage/run-records.json`, 382 records]. Every claude record
+written before 2026-08-15 names no role, and **every supervised lane dispatch since carries
+`--agent implementer`** — the flag reaches a real argv, so "reachable in code" is now also
+observed. What the same read refutes is any wider claim: the other dispatch path recorded in
+that window is the decision queue, **20 of 25 records, and it passes no role at all**.
+`decisions.invoke_decider` (`decisions.py:350`) calls `runner.run` directly with no `role=`,
+so the `decider` persona reaches an argv only through the loop's own CLASSIFY advance
+(`loop._run_proposer`). Reachable-by-one-path is not reachable, and the ledger is the only
+place that distinguishes them.
 
 **Resolution fails to None in three places, and each falls back to the default runner
 rather than failing**: a phase with no persona (VERIFY, by D4), a family that cannot
@@ -451,9 +457,17 @@ optional fields, of which `tools`, `disallowedTools`, `model`, `effort`, `maxTur
 above. Two consequences for §6.1's schema, neither of them a rewrite:
 
 - **`skills:` makes §7.1's "an agent is a dispatch contract; a skill is a method that contract can
-  load" mechanical rather than prose.** The field preloads a skill's full body at subagent startup.
-  It is claude-only, so it belongs under the schema's `claude:` vendor fence. One constraint: a
-  skill with `disable-model-invocation: true` cannot be preloaded.
+  load" mechanical rather than prose — but not on the shape this harness dispatches.** The field
+  preloads a skill's full body only when the definition is **spawned as a subagent**; under
+  `claude --agent <name> -p`, which is every dispatch this engine makes, it is inert. Probed twice
+  on claude 2.1.231 with a positive control that loaded the same skill through the Skill tool and
+  returned the canary, and corroborated by the vendor's own `--agent` documentation, which lists
+  system prompt, tool restrictions and model — not skills (`basicly-ey58`). So the engine injects
+  the declared bodies into the prompt itself (`loop._with_role_skills`, `dispatch_brief`), which
+  costs ~0.03% of a lane and reaches every family where the vendor's mechanism reaches one. The
+  field is still claude-only and still belongs under the schema's `claude:` vendor fence; the
+  constraint that a skill with `disable-model-invocation: true` cannot be preloaded applies to the
+  subagent path only.
 - **`--agents <json>` is the wiring this section says the engine must learn.** It supplies a role
   definition at spawn without the projected-file round-trip, so "dispatch code that READS an agent
   root -> none" can be closed without teaching the engine to read one. Engine work under D27, not a
@@ -741,7 +755,7 @@ The five whys, each link an observation, not an inference:
 **Root cause: the checkpoint clock measures rendezvous, not reading.** A renderer cannot move a
 quantity the instrument does not contain. Both recorded checkpoint-comprehension incidents
 (`basicly-kjc5.34`, `basicly-jr0l.39`) were fixed by *saying the missing thing in words* —
-`_CHECKPOINT_MEANING` (`cli.py:2214`) exists because an operator did not know the merge had already
+`_CHECKPOINT_MEANING` (`cli.py:2361`) exists because an operator did not know the merge had already
 happened. That is missing information, not unreadable format, and §15.1 records the same shape
 already refuted in the token domain.
 
@@ -1305,11 +1319,22 @@ dispatch path — which is `basicly-xjd2`.
 | Task state | per subprocess, isolated | shared across subagents and parent |
 | Progress | stream exists, unused | live, each event linked to its spawner |
 | Permissions | pre-approved | prompts reach the human |
-| Context | one window per lane | **one window shared by everything** |
+| Context | one window per lane | one window per subagent, **isolated** — see below |
 
-The last row is why light cannot replace dark: many lanes cannot share one context window. Light
-is for few lanes with a human present. INTAKE is inherently light — by definition it cannot run
-without a human unless a requirements document is supplied.
+**The context row read "one window shared by everything" until 2026-08-15, and it was the row the
+argument rested on** [M 2026-08-09, claude 2.1.226; conceded in D24 and never carried down here].
+A subagent runs in an **isolated context window**: only its name and description load at session
+start, its body never enters the parent's context, and only its final message returns
+(`architecture.md` §5, "Agent composition model"). So "many lanes cannot share one window" is not
+a fact about light mode, and the sentence that followed this table has been removed rather than
+reworded — it was the whole of the argument.
+
+What survives is the **permissions** row, which is measured and unchanged: light mode's prompts
+reach the human, so it cannot run unattended, and unattended multi-lane is the exit criterion
+(§5.4). That bounds light to few lanes with a human present without needing the context claim.
+Whether it can replace dark on any other axis is `basicly-xjd2`'s open question and is not
+answered here. INTAKE is inherently light — by definition it cannot run without a human unless a
+requirements document is supplied.
 
 Three items, cheapest first, none requiring headless to be abandoned: surface the stream already
 read; pass `--forward-subagent-text`; add light mode as a second dispatch path.
@@ -1419,19 +1444,27 @@ of a 0.1x line item, and a *dynamic* compression breaks the prefix and converts 
 1.25x writes. **Compression and caching are substitutes and caching wins by an order of magnitude
 on stable text.**
 
-This makes one defect the gate on everything else [M]: `runner_usage.claude_json_usage` never
-populates `cache_read_tokens`/`cache_write_tokens`, though `runner_usage.py:177` populates them for
-codex. **0 of 297 dispatch records carry a cache split.** Until that lands, a 40% apparent saving
-that actually broke a cached prefix is indistinguishable from a real win, on the agent that does 76
-of 77 dispatches.
+This made one defect the gate on everything else [M 2026-08-08]: `runner_usage.claude_json_usage`
+never populated `cache_read_tokens`/`cache_write_tokens`, though `runner_usage` populated them for
+codex, so **0 of 297 dispatch records carried a cache split** and a 40% apparent saving that
+actually broke a cached prefix was indistinguishable from a real win.
 
-**Corrected 2026-08-09 [M], and the correction shrinks the fix to a parser.** The paragraph above
-reads as though the numbers are unavailable. They are not: claude's `result` event carries
+**Corrected 2026-08-09 [M], and the correction shrinks the fix to a parser.** The 2026-08-08
+paragraph reads as though the numbers are unavailable. They are not: claude's `result` event carries
 `cache_creation_input_tokens` and `cache_read_input_tokens` today, and `modelUsage.<id>.contextWindow`
 beside them — captured on a live probe of 2.1.226. So this is a gap in *our* extractor, not in the
 stream. **Copilot's split is already extracted** (`copilot_store.py`, from `session.shutdown`
 `modelMetrics`), which means the family with the worse reputation here has the better telemetry and
 the claim that gated this whole section was ours to close.
+
+**Closed 2026-08-13, and the two paragraphs above are history** [M 2026-08-15, 382 records].
+`runner_usage._claude_usage_split` (`runner_usage.py:201`) landed with `basicly-i4gg`, and **every
+one of the 25 claude dispatches recorded since carries a split, 24 of them non-zero**. Read
+presence and population separately or the reading inverts: 227 records carry the *key* and only 25
+carry a *value*, because the 163 claude records written before the fix predate the field entirely.
+A count over the whole ledger therefore reports an instrument that mostly fails; a count over the
+records the fix can reach reports one that works. The discriminator is the record's date, not the
+key (`basicly-ejdm.5`).
 
 **And the economics the section reasons about are now measured rather than argued [M, 2026-08-09],
 on four real dispatches of one seeded session:**

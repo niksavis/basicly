@@ -80,10 +80,10 @@ hand-written copy of them was stale within days:
 | Measure | Value |
 | --- | --- |
 | Engine modules (`src/basicly/*.py`) | 91 |
-| Test files | 171 |
-| `[[verify.checks]]` declared | 25 |
-| …of which run in `--mode fast` | 20 |
-| …of which run in `--mode full` | 24 |
+| Test files | 172 |
+| `[[verify.checks]]` declared | 26 |
+| …of which run in `--mode fast` | 21 |
+| …of which run in `--mode full` | 25 |
 | …of which run in `--mode staged` | 3 |
 
 <!-- docs-claims:end plan-current-state -->
@@ -96,10 +96,20 @@ enforces.
 **Two entries left this list on 2026-08-13 and the reason matters more than the fact.** VALIDATE
 is a phase, gated at the recorded L3 level, with the validator dispatched from it and priced as a
 read rather than a write. And the handoff schemas are written: seven of the eight named kinds now
-have one, so the four unreachable roles are no longer blocked *by their contract*. `curator` and
-`retrospector` remain unreachable for a different reason — `_on_ship` never dispatches, and
-RETROSPECTIVE has no state — and `reviewer` has no `ROLE_BY_PHASE` entry at all. **Do not read
+have one, so the four unreachable roles are no longer blocked *by their contract*. **Do not read
 "schemas written" as "roles reachable".**
+
+**This paragraph named the wrong roles and the wrong reasons, twice, and both were checkable**
+[re-measured 2026-08-15 against `roles.py` and `loop.py`]. It said four roles resolved and could
+never be invoked; it said `reviewer` has no `ROLE_BY_PHASE` entry *at all*, and it said
+`retrospector` is unreachable because RETROSPECTIVE has no state. `reviewer` resolves through
+`roles.LENS_ROLE_BY_PHASE`, a second table added for exactly the phase that dispatches two roles,
+and is dispatched once per lens at VALIDATE (`basicly-feje`); `retrospector` is dispatched from
+`loop._retrospective` (`basicly-xmhc`), which is correct about the state — it is not a phase and
+no unit sits in it — and wrong that this makes the role unreachable. **`curator` is the only
+unreachable role**, and its reason is the one this paragraph already had: `loop._on_ship` is a
+live handler that never calls `_run_agent`. A role's reachability is a fact about the dispatch
+sites, not about the phase ladder.
 
 **One item on this list was never a defect, and it sat here for two days.**
 `loop_state.PHASES` and `config.LOOP_PHASES` were recorded as disagreeing tuples. They
@@ -124,11 +134,21 @@ days.** As written on 2026-08-09 it said `resolve_role` was called from one site
 two the row said never ask now do.
 
 ```text
-roles.resolve_role      loop.py:818   _run_agent      → validate · build · repair · sub-task build
-                        loop.py:1062  _run_proposer   → classify (:1138) · decompose (:1173)
-                        supervise.py:2679             → lane build
-_run_agent call sites   loop.py:459 validate · :667 build · :1610 repair · :1739 sub-task
+roles.resolve_role      loop.py:851        _run_agent           → validate · reviews · build ·
+                                                                  repair · sub-task · retrospective
+                        loop.py:1101       _run_proposer        → classify · decompose
+                        supervise.py:2490  _dispatch_lane       → lane build
+_run_agent call sites   loop.py:489        _dispatch_validation
+                        loop.py:532        _dispatch_reviews    (once per lens)
+                        loop.py:731        _dispatch_runner     (build)
+                        loop.py:1637       _repair_in_place
+                        loop.py:1795       _run_subtask
+                        loop.py:2213       _retrospective
 ```
+
+Every line above cites the *defining* line of the symbol named beside it, not the call inside it,
+and `docs-citations` checks that the two still agree — the third re-measurement of this block in a
+week (2026-08-15) found **all nine** of its previous line numbers drifted, one onto a blank line.
 
 The lesson is the one below it, not the wiring: a paragraph naming a **closed** bead reads as live
 work to the next reader, and this section is where a decider looks first. Re-check a `file:line`
@@ -136,12 +156,15 @@ and a bead status together, or the correction becomes the stale claim.
 
 ```text
 agents   12 sources · 7 loop + 5 ad-hoc · projected to both families · vendored
-         5 of 7 loop roles reachable   decider, decomposer, implementer, validator, reviewer
-         2 unreachable — curator (ship never dispatches), retrospector
-         (RETROSPECTIVE is not a phase)                     [M 2026-08-14]
+         6 of 7 loop roles reachable   decider, decomposer, implementer, validator,
+                                       reviewer, retrospector
+         1 unreachable — curator (`_on_ship` never dispatches)  [M 2026-08-15]
+         observed on an argv: implementer only — every supervised lane dispatch
+         since 2026-08-15 carries `--agent`; the decision queue passes no role
          12 of 12 declare a tier; catalog lint refuses one that does not (plhx)
          a declared tier reaches no spawn — D30 keeps the id out, a3yi injects it
-         5 of 5 roles declaring `skills:` now receive them  (basicly-ey58)
+         5 of 5 roles declaring `skills:` now receive them  (basicly-ey58) — by
+         prompt injection; the vendor field is inert under `claude --agent -p`
          the projected `tools:` allowlist binds on copilot too   [M 2026-08-11]
 skills   40 sources · 35 projected · 5 of 5 loop skills exist
          ever exercised                                     report unsound (basicly-4grf)
@@ -153,10 +176,11 @@ tree     175 → 313 tracked modules and +279,788 tokens in the 7 days to
          2026-08-14, with every per-file gate green throughout   (5p49)
 ```
 
-**The roster's remaining two fail for one reason each, and neither is the roster's.** `curator`
-maps to `ship`, which is a live phase with a live handler that never calls `_run_agent`.
-`retrospector` maps to `retrospective`, which is not in `loop._HANDLERS` at all. Both are one
-wiring behind a state, and `basicly-xmhc` builds the state the second needs.
+**The roster's remaining one fails for a reason that is not the roster's.** `curator` maps to
+`ship`, which is a live phase with a live handler that never calls `_run_agent`. This paragraph
+named two until 2026-08-15: `basicly-xmhc` closed the second by dispatching `retrospector` from
+`loop._retrospective` without making RETROSPECTIVE a phase, which is why "not in `loop._HANDLERS`"
+was never the reason it was unreachable.
 
 **The tree row is the finding this section did not have an instrument for until 2026-08-14.** A
 ratchet bounds a file. Nothing bounded the tree, so 138 modules arrived in a week under six green
@@ -388,7 +412,7 @@ What is open, in the order the dependencies allow:
 | --- | --- | --- | --- |
 | 6 | `89hm` | P0 | **The context-window fix never reached consumers.** `runner.py:142` ships `claude: 200_000`; `basicly.toml` overrides to one million *for this repo only*. Every consumer inherits the defect that produced eighteen overrun beads here. **Premise corrected 2026-08-09**: the binary reports its own window on the stream as `modelUsage.<id>.contextWindow`, so the fix is to *read* it, not to ship a second hand-maintained constant that goes stale the same way (`factory-loop.md` §15.5). |
 | 7 | `ejdm` | P0 | **Hand a dispatched agent the context the session already holds** — §5.1's 254x. **The mechanism is now measured, and it is `--resume --fork-session`**: four real dispatches of one seeded session on claude 2.1.226 gave `cache_create 28 / cache_read 21,620` at **$0.0115** against a cold seed's **$0.2165** — **19x on a cache hit**, context confirmed by token recall, with a fresh session id per fork so lanes do not collide. Seed one session with the corpus, fork per lane. **The per-dispatch floor is a cache miss, not tokens**, which is a different fix from the longer prompt this row originally implied. **Size it against the corrected figures, not the headline** [M 2026-08-13, claude 2.1.231, `basicly-w20y`]: the 19x denominator is the ~21,800-token host floor rather than a repo corpus, so corpus reuse is nearer **10x**; and the cross-directory penalty is **one-time per working directory, not per fork** — a first fork into a fresh worktree reads 74–87% (`$0.0376`–`$0.0643`), every later fork into that same directory reads 100% (`$0.0113`). A worktree-per-lane design therefore pays it once per worktree, so the cost is a function of dispatches-per-worktree. `--agent` composes with the fork; the `--exclude-dynamic-system-prompt-sections` interaction is **unestablished** — that probe was confounded by arm ordering. See `factory-loop.md` §15.5. |
-| 8 | `xjd2` | P0 | **Dispatch through the host agent runtime instead of spawning a headless CLI.** Blocked on `ejdm`. **Its open question is answered twice over**: `--fork-session` settles it for our own path, and a competing harness runs exactly this split in production — host-runtime dispatch for the same vendor, subprocess only for cross-vendor delegation (`factory-loop.md` §11.7). It is an existence proof, not a design. |
+| 8 | `xjd2` | P0 | **Dispatch through the host agent runtime instead of spawning a headless CLI.** Blocked on `ejdm`. **Its open question is answered once, not twice, and the second answer was a misreading of our own document** [corrected 2026-08-15]. `--fork-session` settles it for our own path, and that half stands. The half withdrawn: this row claimed a competing harness "runs exactly this split in production — host-runtime dispatch for the same vendor". §11.7 records the opposite. That harness's loop is **prompt assembly** — its verbs "do NOT call any LLM", they emit a prompt to stdout, and the loop is prose in `SKILL.md` the model executes. That is an existence proof for the **re-scope** branch of `xjd2` (make the loop something a host session drives), not for engine-driven host-runtime dispatch, so it argues about which branch to take rather than for taking this one. A citation is not evidence until the cited section is read. |
 | 9 | `esxp` · `o40x` | P1 | Bind the band floor; give a healthy supervisor a stop that does not kill live lanes. |
 | 10 | `0p8n` · `66ix` | P1 | The harness gates carried into the coding agent's own hooks (`0p8n`), and Copilot hook parity behind it (`66ix` — a Copilot consumer gets the telemetry hook and **not** the `protect-generated` guard). `66ix` was blocked on `4kdm`, which is closed. **Re-ranked in argument, not in order, 2026-08-09**: `0p8n` is enforcement at the *tool-call* boundary, which our gates do not reach at all — every one of them judges an artifact after it exists (`factory-loop.md` §11 item 8). A working shape exists to aim at: one policy kernel plus N host codecs, with a golden-file `--check` gate proving the projection converges (§11.7). Note `claude_settings.py:51` maps **2 of 31** documented hook events, so this row is engine work before it is catalog work. |
 
