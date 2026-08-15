@@ -269,8 +269,8 @@ def lint_catalog(repo_root: Path) -> list[str]:
 def _check_skill_spec(repo_root: Path) -> list[str]:
     """Enforce Agent Skills naming/length rules JSON Schema cannot express.
 
-    ``name`` must match the spec regex AND the containing directory; ``metadata``
-    values must be strings. Length limits on ``description``/``compatibility`` are
+    ``name`` must match the spec regex AND the containing directory. Length limits on
+    ``description``/``compatibility`` and the string-valued ``metadata`` map are all
     schema-enforced; the name-vs-directory identity and the regex are not.
 
     That first sentence was **false for `description` until 2026-08-09**: only

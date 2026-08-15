@@ -104,7 +104,7 @@ uv run basicly permissions-check
 
 - Minimal diffs; no unrelated refactors.
 - Solve the stated requirement only — no speculative abstractions, no unrequested config.
-- Reuse > reinvent: an existing helper/tool/skill beats new code or a hand-rolled equivalent.
+- Reuse > reinvent: grep for the helper, skill or gate before proposing one; absence needs a probe.
 - Root cause, not symptom: check other call sites before calling a single-site patch complete.
 - Back claims with evidence: files read · commands run · tests.
 - No dead code, debug prints, or silent error swallowing.
