@@ -117,6 +117,7 @@ ignore_names = [
   "recent_failure_rate",
   "recent_runs",
   "reset_process_budget",
+  "stale_declarations",
   "stale_sessions",
   "tagged",
   "tags",

@@ -650,5 +650,10 @@ default_tier = "high"
 # is the gate that keeps this honest: it fails, naming both figures, the first time
 # a lane records an occupancy this declaration says is impossible. Had it existed,
 # it would have caught the 200000 the first time a lane recorded 210721.
+#
+# What this declaration is *for* narrowed with basicly-89hm: the window a run record
+# carries is now read off the adapter's own stream per dispatch, per model, so this is
+# the threshold the engine meters against **before** the run — and the figure a lane
+# pinning a different tier is measured by is the one that lane reported, not this one.
 [runner.context_windows]
 claude = 1_000_000

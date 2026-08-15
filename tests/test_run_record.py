@@ -9,6 +9,7 @@ that shape and — crucially — that only metadata is persisted (no prompt body
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -269,12 +270,18 @@ def test_a_dispatch_records_the_occupancy_and_the_window_its_ceiling_came_from(
     The ceiling acts on nothing since D23, so the record is where the eighteen
     ``(context-ceiling overrun)`` beads it once spun stay explicable: the occupancy it
     compared, the window the threshold came from, and where that window was declared.
-    The threshold is recomputed through :func:`supervise.ceiling_tokens` rather than
-    respelled here — the 120000 those beads fired under *is* the recorded window times
-    the configured fraction, and 145570 is what basicly-kjc5.42 actually recorded
-    against it.
+    The 200000 is the historical declaration, written down rather than read off today's
+    ``BUILTIN_RUNNERS`` — the shipped figure has since moved (basicly-89hm), and a test
+    that re-derives history from the current tree stops describing the beads it exists
+    to explain. The threshold is still recomputed through
+    :func:`supervise.ceiling_tokens`, because the 120000 those beads fired under *is*
+    that window times the configured fraction, and 145570 is what basicly-kjc5.42
+    actually recorded against it.
     """
-    claude = next(spec for spec in runner.BUILTIN_RUNNERS if spec.name == "claude")
+    stale = replace(
+        next(spec for spec in runner.BUILTIN_RUNNERS if spec.name == "claude"),
+        context_window=200_000,
+    )
     entry = run_record.build_record(
         agent="claude",
         handoff=False,
@@ -282,7 +289,7 @@ def test_a_dispatch_records_the_occupancy_and_the_window_its_ceiling_came_from(
         duration_s=1.0,
         command=("claude", "-p", REDACTED_PROMPT),
         context_tokens=145_570,
-        context_window=claude.context_window,
+        context_window=stale.context_window,
         context_window_source=runner.ADAPTER_WINDOW,
     )
     run_record.record(tmp_path, "i", entry)
@@ -291,7 +298,7 @@ def test_a_dispatch_records_the_occupancy_and_the_window_its_ceiling_came_from(
     assert persisted["context_tokens"] == 145_570
     assert persisted["context_window"] == 200_000
     assert persisted["context_window_source"] == runner.ADAPTER_WINDOW
-    ceiling = supervise.ceiling_tokens(claude, load_sizing_config(tmp_path))
+    ceiling = supervise.ceiling_tokens(stale, load_sizing_config(tmp_path))
     assert ceiling == 120_000
     assert persisted["context_tokens"] > ceiling
 

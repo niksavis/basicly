@@ -41,7 +41,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import IO
 
-from . import models, run_record
+from . import context_window, models, run_record
+from .context_window import ADAPTER_WINDOW, ADAPTER_WINDOWS, DEFAULT_CONTEXT_WINDOW, FALLBACK_WINDOW
 from .copilot_store import COPILOT_SESSION_STORE, shutdown_data, store_usage
 from .redact import redact_secrets
 from .runner_envelope import (
@@ -118,47 +119,6 @@ AUTO_ORDER = ("claude", "codex", "copilot")
 # and only a caller that has to pick between them needs the union. None means the CLI
 # reports no usage at all, so the chars/4 transcript estimate applies.
 USAGE_FORMATS = (CLAUDE_JSON, CLAUDE_STREAM_JSON, CODEX_JSONL, COPILOT_SESSION_STORE)
-
-# Context-window defaults per adapter (factory design §6, basicly-kjc5.6): the
-# denominator for the context-ceiling meter. Conservative published windows;
-# config-overridable per agent via `context_window` or `[runner] context_windows`.
-# Unknown agents get the smallest of the big 3 so the ceiling errs toward
-# finalizing early, never late.
-#
-# **These are defaults, not measurements, and a default that goes unchecked rots
-# into a false capability claim** (basicly-23ep). Each was the published window of
-# the model its CLI dispatched when it was written, and nothing re-reads the
-# vendor's documentation afterwards — so a repo that upgrades its model keeps
-# metering against the window of a model it no longer runs. On this tree that cost
-# six spurious finalizations: `claude` declared 200_000 while lanes recorded a
-# measured occupancy up to 223_221, which put the 0.6 trigger at one fifth of its
-# intended point and spun a follow-up bead off every healthy long lane.
-#
-# Two consequences follow, and both are load-bearing:
-#
-# * The fix is NOT to write a bigger number here. A newer figure is the same
-#   unchecked declaration one generation later, and it would hand a consumer
-#   pinning a different model a window we invented for them. The window belongs in
-#   the consuming repo's config, beside the model that repo actually dispatches —
-#   which is why every resolved window now carries its own source
-#   (:data:`ADAPTER_WINDOW` and friends), exactly as `tier_source` and
-#   `forecast_source` do for their declarations.
-# * A declaration this shape has to be falsifiable. `context_occupancy` measures
-#   the same quantity the window bounds, so a recorded occupancy above the declared
-#   window is a proof the declaration is wrong — :func:`window_violations` is that
-#   proof, and `tests/test_runner.py` runs it over this repo's own ledger.
-DEFAULT_CONTEXT_WINDOW = 128_000
-_CONTEXT_WINDOWS = {"claude": 200_000, "codex": 400_000, "copilot": 128_000}
-
-# Provenance labels for a resolved context window, recorded verbatim on the run
-# record beside the window itself. The distinction that matters is declared versus
-# defaulted: a defaulted window is a number nobody in this repo has checked against
-# the model it dispatches, and reading one back as if it had been chosen is how
-# basicly-23ep happened.
-ADAPTER_WINDOW = "adapter default"  # _CONTEXT_WINDOWS, this adapter's published window
-FALLBACK_WINDOW = "conservative fallback"  # DEFAULT_CONTEXT_WINDOW, an agent we know nothing about
-AGENT_WINDOW = "agent context_window"  # [[runner.agents]] context_window
-DECLARED_WINDOW = "[runner] context_windows"  # the per-agent declaration, most specific
 
 # Flags appended for a usage-capturing dispatch. Trailing — after the prompt —
 # so a subcommand invocation like `codex exec` keeps the flag inside the
@@ -266,9 +226,11 @@ class RunnerSpec:
     # ``copilot-session-store`` dispatch (basicly-2rn9). None uses
     # DEFAULT_COPILOT_SESSION_STORE; ``[runner] copilot_session_store`` sets it.
     session_store: Path | None = None
-    # The model's context window in tokens (basicly-kjc5.6): the denominator for
-    # the [policy.sizing] context_ceiling meter (design D8). Per-adapter defaults
-    # in _CONTEXT_WINDOWS; config-overridable per agent.
+    # The model's context window in tokens (basicly-kjc5.6): the threshold the
+    # [policy.sizing] context_ceiling meter takes *before* a dispatch (design D8),
+    # config-overridable per agent. What the finished run was measured against is
+    # resolved per dispatch in :mod:`basicly.context_window`, because the window
+    # belongs to the model and only the run itself can say which one it used.
     context_window: int = DEFAULT_CONTEXT_WINDOW
     # Which input decided the window above (basicly-23ep): one of ADAPTER_WINDOW,
     # FALLBACK_WINDOW, AGENT_WINDOW or DECLARED_WINDOW. Carried for the same reason
@@ -293,7 +255,7 @@ BUILTIN_RUNNERS: tuple[RunnerSpec, ...] = (
         deny_style=DISALLOWED_TOOLS_FLAG,
         agent_style=AGENT_NAME_FLAG,
         usage_format=CLAUDE_STREAM_JSON,
-        context_window=_CONTEXT_WINDOWS["claude"],
+        context_window=ADAPTER_WINDOWS["claude"].tokens,
         context_window_source=ADAPTER_WINDOW,
     ),
     RunnerSpec(
@@ -303,8 +265,11 @@ BUILTIN_RUNNERS: tuple[RunnerSpec, ...] = (
         sandbox="workspace-write",
         approval="never",
         usage_format=CODEX_JSONL,
-        context_window=_CONTEXT_WINDOWS["codex"],
-        context_window_source=ADAPTER_WINDOW,
+        # Defaulted, not checked: codex reports no window on any event of its `--json`
+        # stream (probed 0.146.0, 2026-08-15), so nothing here could ever refute this
+        # figure. It stays as the observation floor and never reaches a run record.
+        context_window=400_000,
+        context_window_source=FALLBACK_WINDOW,
     ),
     RunnerSpec(
         "copilot",
@@ -313,8 +278,9 @@ BUILTIN_RUNNERS: tuple[RunnerSpec, ...] = (
         deny_style=DENY_TOOL_FLAG,
         agent_style=AGENT_NAME_FLAG,
         usage_format=COPILOT_SESSION_STORE,
-        context_window=_CONTEXT_WINDOWS["copilot"],
-        context_window_source=ADAPTER_WINDOW,
+        # Nor does copilot: `session.shutdown` carries `modelMetrics` and no window key
+        # on 6 of 6 local stores, so its figure is the same conservative default.
+        context_window_source=FALLBACK_WINDOW,
     ),
     # The handoff runner dispatches nothing, so its window is inert — but labelling
     # it keeps "no source recorded" meaning what it says: a spec nobody built through
@@ -2055,6 +2021,13 @@ def record_dispatch(  # noqa: PLR0913 — one parameter per recorded dispatch in
     resolution = result.model_resolution
     pinned = resolution.model if resolution is not None else spec.model
     seen = observed_models(spec, result)
+    window, window_source = context_window.resolve(
+        declared=spec.context_window,
+        source=spec.context_window_source,
+        reported=context_window.reported_window(result.stdout)
+        if result.executed and spec.usage_format == CLAUDE_STREAM_JSON
+        else None,
+    )
     entry = run_record.build_record(
         agent=spec.name,
         handoff=result.handoff,
@@ -2105,9 +2078,10 @@ def record_dispatch(  # noqa: PLR0913 — one parameter per recorded dispatch in
         # from (basicly-23ep). Recorded rather than re-derived at read time for the
         # reason every sibling provenance field is: the config moves, and a record
         # carrying an occupancy whose window has since changed cannot say which
-        # declaration its ceiling actually fired under.
-        context_window=spec.context_window,
-        context_window_source=spec.context_window_source,
+        # declaration its ceiling actually fired under. None is a real answer here —
+        # nothing declared a window and the adapter reported none (basicly-89hm).
+        context_window=window,
+        context_window_source=window_source,
         task_class=task_class,
         forecast_source=forecast_source,
         build_factor_source=build_factor_source,

@@ -34,13 +34,14 @@ from basicly.config import (
     unknown_config_keys,
     untiered_metered_runners,
 )
-from basicly.runner import (
-    ADAPTER_WINDOW,
-    AGENT_TIER,
+from basicly.context_window import (
     AGENT_WINDOW,
-    BUILTIN_RUNNERS,
     DECLARED_WINDOW,
     FALLBACK_WINDOW,
+)
+from basicly.runner import (
+    AGENT_TIER,
+    BUILTIN_RUNNERS,
     FAMILY_DEFAULT_TIER,
 )
 
@@ -999,7 +1000,7 @@ def test_context_windows_declares_a_builtin_window_without_restating_the_adapter
     assert by_name["claude"].usage_format == "claude-stream-json"
     assert by_name["claude"].command == ("claude", "-p", "{prompt}")
     # And an agent nobody declared still says its window was defaulted, not chosen.
-    assert by_name["codex"].context_window_source == ADAPTER_WINDOW
+    assert by_name["codex"].context_window_source == FALLBACK_WINDOW
 
 
 def test_context_windows_rejects_an_agent_it_cannot_name(tmp_path: Path) -> None:

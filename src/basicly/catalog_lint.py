@@ -54,7 +54,6 @@ from .catalog_source import (
     schema_validator,
     schema_violations,
 )
-from .runner import _CONTEXT_WINDOWS
 from .schema import MODEL_TIERS, TECHNOLOGIES
 
 # Agent Skills spec (https://agentskills.io/specification) name rule: 1-64 chars,
@@ -353,11 +352,15 @@ def _check_invocation_axis(repo_root: Path) -> list[str]:
 # loop rather than a flat cost: the entries nobody invokes are the first to lose the
 # description that would let anything invoke them.
 _LISTING_BUDGET_FRACTION = 100
-# Reported against the window a *consumer* gets, not the one this repo runs. The
-# adapter default is what a fresh install inherits; `basicly.toml` raises claude to
-# 1_000_000 here, which hides the overrun entirely from anyone measuring locally —
-# which is exactly how it went unnoticed.
+# Reported against the window a *consumer* gets, not the one this repo runs:
+# `basicly.toml` declares 1_000_000 here, which hides the overrun entirely from
+# anyone measuring locally — which is exactly how it went unnoticed. 200_000 is the
+# window the overrun above was measured against, and it is still a live claude
+# window: `claude-haiku-4-5` reported exactly that on a 2.1.233 dispatch
+# (2026-08-15). Held here rather than read off a runner default, which follows the
+# model a *dispatch* used and would silently move this budget with it (basicly-89hm).
 _LISTING_REFERENCE_FAMILY = "claude"
+_LISTING_REFERENCE_WINDOW = 200_000
 
 
 def listing_budget_warnings(repo_root: Path) -> list[str]:
@@ -382,13 +385,13 @@ def listing_budget_warnings(repo_root: Path) -> list[str]:
     # only its name, which is the saving the invocation axis exists to buy.
     listing = "".join(f"{skill.name}\n{skill.description}\n" for skill in entries)
     tokens = read_cost._text_tokens(listing)
-    window = _CONTEXT_WINDOWS[_LISTING_REFERENCE_FAMILY]
+    window = _LISTING_REFERENCE_WINDOW
     budget = window // _LISTING_BUDGET_FRACTION
     if tokens <= budget:
         return []
     return [
         f"skill listing is {tokens} tokens against a {budget}-token budget "
-        f"(1% of {_LISTING_REFERENCE_FAMILY}'s {window} adapter-default window), "
+        f"(1% of the {window}-token {_LISTING_REFERENCE_FAMILY} window a consumer gets), "
         f"from {len(entries)} model-invoked entries. The host drops descriptions "
         f"least-invoked first, so the entries this overrun silences are the ones "
         f"already hardest to reach. Retire a dead skill or move it to user-invoked."
