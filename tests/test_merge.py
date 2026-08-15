@@ -15,10 +15,10 @@ from basicly.worktree import Session
 
 
 class _Proc:
-    def __init__(self, returncode: int = 0, stdout: str = "") -> None:
+    def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = "") -> None:
         self.returncode = returncode
         self.stdout = stdout
-        self.stderr = ""
+        self.stderr = stderr
 
 
 class _FakeGit:
@@ -246,11 +246,11 @@ def test_commit_tracker_state_commits_beads_only_dirt(
         "commit": _Proc(0),
     })
     _patch_git(monkeypatch, fake)
-    flushed = {}
-    monkeypatch.setattr(merge.br, "try_run_br", lambda _r, args: flushed.setdefault("args", args))
+    flushed: list[list[str]] = []
+    monkeypatch.setattr(merge.br, "try_run_br", lambda _r, args: flushed.append(args) or _Proc(0))
 
     assert merge.commit_tracker_state(tmp_path, "basicly-x") is True
-    assert flushed["args"] == ["sync", "--flush-only"]
+    assert flushed == [["sync", "--flush-only"]]
     assert ["add", ".beads"] in fake.calls
     commit = next(call for call in fake.calls if call[0] == "commit")
     assert "(basicly-x)" in commit[-1] and commit[-1].startswith("chore(beads):")
@@ -269,6 +269,28 @@ def test_commit_tracker_state_refuses_mixed_dirt(
     fake_clean = _FakeGit({"status": _Proc(0, "")})
     _patch_git(monkeypatch, fake_clean)
     assert merge.commit_tracker_state(tmp_path, "basicly-x") is False
+
+
+def test_commit_tracker_state_refuses_an_unflushed_export(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A refused ``br sync`` is surfaced, never laundered into a chore(beads) commit."""
+    stale = "Refusing to export stale database that would lose issues."
+    fake = _FakeGit({"status": _Proc(0, " M .beads/issues.jsonl\n")})
+    _patch_git(monkeypatch, fake)
+    monkeypatch.setattr(merge.br, "try_run_br", lambda _r, _a: _Proc(7, stderr=stale))
+
+    with pytest.raises(RuntimeError, match="NOT committed") as caught:
+        merge.commit_tracker_state(Path(), "basicly-x")
+    assert stale in str(caught.value)
+    assert not fake.ran("add") and not fake.ran("commit")
+
+
+def test_reconcile_beads_reports_a_refused_sync(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The git merge has landed by then, so a refused reconcile warns, never raises."""
+    monkeypatch.setattr(merge.br, "try_run_br", lambda _r, _a: _Proc(0))
+    assert merge.reconcile_beads(Path()) == ""
+
+    monkeypatch.setattr(merge.br, "try_run_br", lambda _r, _a: _Proc(2, stderr="conflict"))
+    assert "NOT reconciled" in merge.reconcile_beads(Path())
 
 
 @pytest.mark.usefixtures("base_ready")
