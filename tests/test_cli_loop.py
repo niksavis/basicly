@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from basicly import cli, decompose, loop, loop_state, supervise
+from basicly import cli, decompose, loop, loop_state, supervise, working_set
 from basicly.config import (
     CHECKPOINTS,
     LOCAL_CONFIG_FILE,
@@ -405,10 +405,10 @@ def _preflight_fixture(monkeypatch: pytest.MonkeyPatch, pinned: _Preflight) -> N
     # preflight test — the trap basicly-jr0l's notes call out for any new tracker read
     # on a dispatch path. Pinned per-issue so a test can vary one candidate's verdict.
     monkeypatch.setattr(
-        cli.supervise,
+        cli.working_set,
         "admit_working_set",
         lambda _r, issue_id, _s: pinned.admissions.get(
-            issue_id, supervise.WorkingSetAdmission(issue_id, None, None, refused=False)
+            issue_id, working_set.WorkingSetAdmission(issue_id, None, None, refused=False)
         ),
     )
     monkeypatch.setattr(cli.decompose, "append_only_paths", lambda *_a: pinned.append_only)
@@ -510,7 +510,7 @@ def _sized(
         build_factor=1.0,
     )
     sizing = decompose.DispatchSizing(task_class="task", estimate=estimate, source="dispatch")
-    return supervise.WorkingSetAdmission(issue_id, sizing, violation or None, refused=refused)
+    return working_set.WorkingSetAdmission(issue_id, sizing, violation or None, refused=refused)
 
 
 def test_preflight_sizes_each_candidate_when_none_is_dispatchable_yet(

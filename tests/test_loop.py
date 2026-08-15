@@ -33,11 +33,13 @@ from basicly import (
     runner,
     supervise,
     verify,
+    working_set,
     worktree,
 )
 from basicly.config import LOOP_PHASES, PolicyConfig, RunnerConfig, SizingConfig, WorktreeConfig
 from basicly.loop_state import NodeState, RankedNode, WorktreeBinding
 from basicly.policy import DoRResult, GateStatus
+from basicly.working_set import WorkingSetAdmission
 from basicly.worktree import Session
 
 CONFIG = PolicyConfig(required_gates=("verify",), max_rework=2)
@@ -339,7 +341,7 @@ def test_a_dispatch_with_no_session_root_is_ungated_as_before(
 def test_an_oversized_bead_is_refused_by_the_band_at_the_interactive_dispatch(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The band gate applies here too, using supervise's single admission definition.
+    """The band gate applies here too, using working_set's single admission definition.
 
     Re-deriving the rule locally is how the number that gates a dispatch and the number
     recorded beside its actual come to disagree (basicly-jr0l.34).
@@ -349,13 +351,13 @@ def test_an_oversized_bead_is_refused_by_the_band_at_the_interactive_dispatch(
     _never_runs(monkeypatch)
     monkeypatch.setattr(loop.policy, "spend_status", lambda *_a, **_k: _unhalted())
     monkeypatch.setattr(
-        supervise,
+        working_set,
         "admit_working_set",
-        lambda *_a, **_k: supervise.WorkingSetAdmission(
+        lambda *_a, **_k: WorkingSetAdmission(
             "i", None, "child 'i' estimates 900000 working-set tokens, above 64000", refused=True
         ),
     )
-    monkeypatch.setattr(supervise, "escalate_working_set", lambda *_a, **_k: None)
+    monkeypatch.setattr(working_set, "escalate_working_set", lambda *_a, **_k: None)
 
     result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="epic")
 
@@ -377,9 +379,9 @@ def test_a_scopeless_bead_still_dispatches_but_is_escalated(
     monkeypatch.setattr(loop.policy, "spend_status", lambda *_a, **_k: _unhalted())
     escalated: list[str] = []
     monkeypatch.setattr(
-        supervise,
+        working_set,
         "admit_working_set",
-        lambda *_a, **_k: supervise.WorkingSetAdmission(
+        lambda *_a, **_k: WorkingSetAdmission(
             "i",
             None,
             "declares no scope the estimator can read",
@@ -388,7 +390,7 @@ def test_a_scopeless_bead_still_dispatches_but_is_escalated(
         ),
     )
     monkeypatch.setattr(
-        supervise,
+        working_set,
         "escalate_working_set",
         lambda _r, admission: escalated.append(admission.issue_id),
     )
@@ -595,11 +597,11 @@ def test_a_single_track_overrun_parents_its_followup_under_the_session_root(
     _occupying(monkeypatch, 12_000)
     monkeypatch.setattr(loop.policy, "spend_status", lambda *_a, **_k: _unhalted())
     monkeypatch.setattr(
-        supervise,
+        working_set,
         "admit_working_set",
-        lambda *_a, **_k: supervise.WorkingSetAdmission("i", None, "", refused=False),
+        lambda *_a, **_k: WorkingSetAdmission("i", None, "", refused=False),
     )
-    monkeypatch.setattr(supervise, "escalate_working_set", lambda *_a, **_k: None)
+    monkeypatch.setattr(working_set, "escalate_working_set", lambda *_a, **_k: None)
 
     loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="epic")
 
@@ -2923,8 +2925,8 @@ def _pin_provisioning(
         source=decompose.FROZEN_FORECAST,
     )
 
-    def _admit(_repo_root, issue_id: str, _sizing) -> supervise.WorkingSetAdmission:
-        return supervise.WorkingSetAdmission(
+    def _admit(_repo_root, issue_id: str, _sizing) -> WorkingSetAdmission:
+        return WorkingSetAdmission(
             issue_id,
             None if issue_id in unsized else sized,
             None,
@@ -2947,7 +2949,7 @@ def _pin_provisioning(
             for index, cid in enumerate(ranked, start=1)
         ),
     )
-    monkeypatch.setattr(supervise, "admit_working_set", _admit)
+    monkeypatch.setattr(working_set, "admit_working_set", _admit)
     return created
 
 

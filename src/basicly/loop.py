@@ -71,6 +71,7 @@ from . import (
     runner,
     validate_gate,
     verify,
+    working_set,
     worktree,
 )
 from .br import run_br as _run_br
@@ -816,18 +817,16 @@ def _dispatch_refused(ctx: _Ctx, name: str) -> AdvanceResult | None:
     to the interactive one: the D3 spend halt and the working-set band. The third is the
     plan gate, ratcheted on the ``## Plan`` heading (:func:`plan_entry.entry_verdict_for`).
 
-    Reuses ``supervise``'s admission rather than re-deriving it. A second copy of a
+    Reuses ``working_set``'s admission rather than re-deriving it. A second copy of a
     sizing rule is how the number that gates a dispatch and the number recorded beside
     its actual come to disagree, which is the defect basicly-jr0l.34 exists to prevent.
-    That module imports this one, so the import is deferred to this call.
+    That module sits three tiers below this one, so the import is top-level.
 
     A running dispatch is never interrupted — decision 14 — so this only ever declines
     to *start* one.
     """
     if ctx.grant_root is None:
         return None
-    from . import supervise  # noqa: PLC0415 — supervise imports loop; deferred to break it
-
     halted = _spend_refused(ctx)
     if halted is not None:
         return halted
@@ -845,8 +844,8 @@ def _dispatch_refused(ctx: _Ctx, name: str) -> AdvanceResult | None:
     if not entry.admitted:
         return _blocked(ctx, entry.reason, needs_input="plan")
     sizing = load_sizing_config(ctx.repo_root)
-    admission = supervise.admit_working_set(ctx.repo_root, ctx.issue_id, sizing)
-    queued = supervise.escalate_working_set(ctx.repo_root, admission)
+    admission = working_set.admit_working_set(ctx.repo_root, ctx.issue_id, sizing)
+    queued = working_set.escalate_working_set(ctx.repo_root, admission)
     if not admission.refused:
         return None
     held = f"; held by {queued.decision_id}" if queued is not None else ""
@@ -2440,7 +2439,7 @@ def _ensure_child_worktrees(ctx: _Ctx, children: list[tuple[str, str]]) -> None:
     (basicly-jr0l.62).
 
     A child the band refuses is skipped rather than provisioned. Dispatch drops it
-    regardless — :func:`supervise.escalate_working_set` leaves a pending decision
+    regardless — :func:`working_set.escalate_working_set` leaves a pending decision
     and ``ready_lanes`` filters on that — so provisioning it spends a concurrency
     slot on a worktree nothing ever runs in, and crowds out an admissible lane.
 
@@ -2448,8 +2447,6 @@ def _ensure_child_worktrees(ctx: _Ctx, children: list[tuple[str, str]]) -> None:
     refusal (``admit_working_set`` sets ``refused`` on the ceiling alone), and
     dropping it here would silently lose work rather than defer it.
     """
-    from . import supervise  # noqa: PLC0415 — supervise imports loop; deferred to break it
-
     wt_config = load_worktree_config(ctx.repo_root)
     sizing = load_sizing_config(ctx.repo_root)
     existing = {session.name for session in worktree.list_sessions(ctx.repo_root)}
@@ -2470,7 +2467,7 @@ def _ensure_child_worktrees(ctx: _Ctx, children: list[tuple[str, str]]) -> None:
         name = _worktree_name(cid)
         if name in existing:
             continue
-        if supervise.admit_working_set(ctx.repo_root, cid, sizing).refused:
+        if working_set.admit_working_set(ctx.repo_root, cid, sizing).refused:
             continue
         session = worktree.create(name, base=wt_config.base_branch, repo_root=ctx.repo_root)
         _bind_worktree(ctx, name, session.branch, issue_id=cid)
