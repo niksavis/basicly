@@ -1,0 +1,20 @@
+# Demoting the context ceiling (D23) deletes `finalize_followup`, `existing_followup` and
+# the `[harness-overrun]` marker they wrote. Measured with `check_comment_density.measure`
+# either side of the change: total 46345 -> 44857 tokens, prose 25911 -> 25408, so the
+# module's narration **fell by 503 tokens** while its code fell by 985. The recorded share
+# rises 0.7pp only because the deleted machinery was 34% prose against the module's 56%.
+#
+# The ratchet has no term for a code deletion — its finding here is arithmetic, not the
+# narration growth it exists to catch — and the only repair it offers is cutting ~740
+# tokens of live evidence out of unrelated functions, which D34 names as the gaming path
+# this gate was built against. So the recorded number moves by exactly the measurement,
+# and supervise.py stays frozen at what it now is. The gate's blindness to a shrinking
+# denominator is a defect worth filing against the gate, not paid for in evidence here.
+[ratchet.comment_density.frozen]
+"src/basicly/supervise.py" = 0.7
+
+# `meter_context_ceiling` took the repo root, the session root, the lane id and a `landed`
+# flag so it could create the follow-up bead; a meter that only measures takes three. Its
+# `PLR0913` suppression goes with them, so the debt is banked rather than left licensed.
+[ratchet.noqa_debt.frozen]
+PLR0913 = -1

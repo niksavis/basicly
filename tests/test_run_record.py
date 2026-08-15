@@ -14,7 +14,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from basicly import run_record
+from basicly import run_record, runner, supervise
+from basicly.config import load_sizing_config
 from basicly.run_record import (
     EXECUTED,
     FAILED,
@@ -255,6 +256,44 @@ def test_load_run_records_round_trips(tmp_path: Path) -> None:
     assert loaded is not None
     assert loaded["i"][0]["agent"] == "copilot"
     assert loaded["i"][0]["command"] == ["copilot", "-p", REDACTED_PROMPT]
+
+
+# --- The context ceiling stays explicable from the ledger (D23) -------------
+
+
+def test_a_dispatch_records_the_occupancy_and_the_window_its_ceiling_came_from(
+    tmp_path: Path,
+) -> None:
+    """The demoted ceiling's two numbers survive the run they were measured on.
+
+    The ceiling acts on nothing since D23, so the record is where the eighteen
+    ``(context-ceiling overrun)`` beads it once spun stay explicable: the occupancy it
+    compared, the window the threshold came from, and where that window was declared.
+    The threshold is recomputed through :func:`supervise.ceiling_tokens` rather than
+    respelled here — the 120000 those beads fired under *is* the recorded window times
+    the configured fraction, and 145570 is what basicly-kjc5.42 actually recorded
+    against it.
+    """
+    claude = next(spec for spec in runner.BUILTIN_RUNNERS if spec.name == "claude")
+    entry = run_record.build_record(
+        agent="claude",
+        handoff=False,
+        returncode=0,
+        duration_s=1.0,
+        command=("claude", "-p", REDACTED_PROMPT),
+        context_tokens=145_570,
+        context_window=claude.context_window,
+        context_window_source=runner.ADAPTER_WINDOW,
+    )
+    run_record.record(tmp_path, "i", entry)
+
+    persisted = _records(tmp_path)["i"][0]
+    assert persisted["context_tokens"] == 145_570
+    assert persisted["context_window"] == 200_000
+    assert persisted["context_window_source"] == runner.ADAPTER_WINDOW
+    ceiling = supervise.ceiling_tokens(claude, load_sizing_config(tmp_path))
+    assert ceiling == 120_000
+    assert persisted["context_tokens"] > ceiling
 
 
 # --- latest_record (attribution source, basicly-140a) -----------------------

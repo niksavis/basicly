@@ -287,7 +287,6 @@ def test_a_second_lane_is_refused_while_the_first_is_unlanded(
                 needs_fact=None,
                 occupancy=None,
                 overrun=False,
-                followup_id=None,
                 detail="test",
             )
         ),

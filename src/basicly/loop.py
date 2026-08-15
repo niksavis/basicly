@@ -750,46 +750,28 @@ def _dispatch_runner(ctx: _Ctx, name: str, cwd: Path) -> AdvanceResult:
     return _blocked(
         ctx,
         f"runner {dispatch.spec.name!r} finished in worktree {name!r}"
-        f"{_meter_context_ceiling(ctx, dispatch)}; advance again to land it",
+        f"{_observe_context_ceiling(ctx, dispatch)}; advance again to land it",
     )
 
 
-def _meter_context_ceiling(ctx: _Ctx, dispatch: _Dispatch) -> str:
-    """Finalize this dispatch if it crossed the context ceiling; describe the overrun.
+def _observe_context_ceiling(ctx: _Ctx, dispatch: _Dispatch) -> str:
+    """Report this dispatch's occupancy against the context ceiling, and act on neither.
 
-    The other half of the D8 meter, which measured this path all along and acted on
-    it only under ``supervise`` — so basicly-23ep ran to completion at 403051 tokens
-    against a 120000 trigger with no follow-up, while the same work under a
-    supervised lane would have been truncated and followed up (basicly-7kxq). One
-    metering definition, called from both write paths, is what keeps them from
-    disagreeing about a bead's fate for reasons unrelated to the bead.
-
-    Reached only past :func:`_runner_block`, so the run exited clean, in time, and
-    without a needs-input sentinel: it leaves the coherent partial landing the
-    remainder bead is gated on. The partial work still lands on the next advance,
-    exactly as a supervised lane's does. The follow-up goes under the session root
-    when the caller named one, which is where a supervised lane's sibling package
-    would go; a run with no ``--root`` has no session, so its remainder is top-level.
+    The other half of the D8 meter, which measured this path all along and acted on it
+    only under ``supervise`` — so basicly-23ep ran to completion at 403051 tokens
+    against a 120000 trigger while the same work under a supervised lane was truncated
+    and followed up (basicly-7kxq). D23 settled that disagreement the other way: the
+    ceiling has never once fired correctly, so neither path finalizes a lane on it and
+    both say the same sentence about it instead.
 
     Returns the detail suffix — empty when nothing crossed.
     """
     from . import supervise  # noqa: PLC0415 — supervise imports loop; deferred to break it
 
     verdict = supervise.meter_context_ceiling(
-        ctx.repo_root,
-        ctx.grant_root or ctx.issue_id,
-        ctx.issue_id,
-        dispatch.spec,
-        dispatch.result,
-        load_sizing_config(ctx.repo_root),
-        landed=True,
+        dispatch.spec, dispatch.result, load_sizing_config(ctx.repo_root)
     )
-    if not verdict.overrun:
-        return ""
-    return (
-        f"; crossed the context ceiling ({verdict.occupancy} >= {verdict.ceiling} tokens), "
-        f"so the lane finalizes here and the remainder is {verdict.followup_id}"
-    )
+    return f"; {verdict.observation}" if verdict.overrun else ""
 
 
 def _spend_refused(ctx: _Ctx) -> AdvanceResult | None:

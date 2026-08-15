@@ -414,19 +414,19 @@ def _unhalted() -> policy.SpendStatus:
     )
 
 
-# --- The context ceiling meters this path too (basicly-7kxq) -----------------
+# --- The context ceiling is observed on this path too (basicly-7kxq, D23) ----
 #
-# `ceiling_tokens`, `OVERRUN_MARKER` and `finalize_followup` lived in `supervise`
-# with a single call site, so the interactive path dispatched unmetered: basicly-23ep
-# was driven through `loop run`, recorded 403051 tokens of occupancy against a
-# derived trigger of 120000 — 3.4x over — and was neither finalized early nor given
-# a follow-up bead. It ran to completion and committed normally. A suite that
-# exercised only `supervise` is what let that ship, so these drive the single-track
-# path against a stubbed-low ceiling.
+# The interactive path once dispatched unmetered while `supervise` finalized a lane
+# on the same number: basicly-23ep was driven through `loop run`, recorded 403051
+# tokens of occupancy against a derived trigger of 120000 — 3.4x over — and ran to
+# completion, where a supervised lane would have been truncated and followed up. D23
+# demoted the ceiling, so both paths now report and neither acts. These drive the
+# single-track path against a stubbed-low ceiling; the tracker fake is kept so a
+# regression that spins a bead again is a recorded `create`, not an unexpected spawn.
 
 
 class _CeilingBr:
-    """br stand-in for the finalize protocol: show, comments, create, dep add."""
+    """br stand-in that records every write: show, comments, create, dep add."""
 
     def __init__(self) -> None:
         self.created: list[list[str]] = []
@@ -472,7 +472,7 @@ _CEILING_ISSUE = {
 
 
 def _pin_ceiling(monkeypatch: pytest.MonkeyPatch, ceiling: float) -> _CeilingBr:
-    """Pin the finalize trigger at *ceiling* of the window and fake the tracker."""
+    """Pin the observation threshold at *ceiling* of the window and fake the tracker."""
     monkeypatch.setattr(
         loop,
         "load_sizing_config",
@@ -487,10 +487,9 @@ def _pin_ceiling(monkeypatch: pytest.MonkeyPatch, ceiling: float) -> _CeilingBr:
     )
     fake = _CeilingBr()
     monkeypatch.setattr(supervise, "_run_br", fake)
-    # Named `fake` rather than `br` so the module stays reachable here: the record read
-    # goes through `br.read_record`, the one reader every consumer shares
-    # (basicly-tcmy.14), and leaving it unstubbed makes the finalize path see no bead
-    # and spin no follow-up.
+    # Named `fake` rather than `br` so the module stays reachable here: every br seam
+    # is stubbed, so a bead created off this path lands in `fake.created` instead of
+    # reaching a real tracker or erroring out on the way there.
     monkeypatch.setattr(br, "try_run_br", fake)
     return fake
 
@@ -507,37 +506,39 @@ def _occupying(monkeypatch: pytest.MonkeyPatch, tokens: int) -> None:
     )
 
 
-def test_a_single_track_dispatch_over_the_ceiling_spins_exactly_one_followup(
+def test_a_single_track_dispatch_over_the_ceiling_observes_and_spins_nothing(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The finalize protocol reaches the interactive dispatch, not just the supervised one.
+    """The interactive dispatch reports the crossing and is otherwise untouched (D23).
 
-    Same outcome a supervised lane gets: the partial work still lands on the next
-    advance, and the remainder becomes one follow-up gated on this bead.
+    The lane used to finalize here and spin its remainder into a follow-up bead. It
+    now blocks on the same "advance again to land it" a run under the ceiling gets,
+    with both numbers on the line — the ceiling writes to no tracker at all.
     """
     _ready_leaf(at, monkeypatch)
     _pin_runner(monkeypatch, "claude")
-    br = _pin_ceiling(monkeypatch, 0.05)  # 200000-token window -> a 10000 trigger
+    br = _pin_ceiling(monkeypatch, 0.05)  # 200000-token window -> a 10000 threshold
     _occupying(monkeypatch, 12_000)
 
     result = _advance(tmp_path)
 
-    assert len(br.created) == 1, "exactly one follow-up carries the remainder"
-    create = br.created[0]
-    assert create[1] == "Follow-up: Build the parser (context-ceiling overrun)"
-    assert "--parent" not in create, "no session root named means the follow-up is top-level"
-    assert ("new-1", "i", "-t", "blocks") in br.deps
-    assert br.comments["i"][-1].startswith(supervise.OVERRUN_MARKER)
+    assert br.created == [], "no follow-up bead"
+    assert br.deps == [], "no gating edge"
+    written = [text for texts in br.comments.values() for text in texts]
+    assert not any(text.startswith("[harness-overrun]") for text in written)
+    # What the crossing does leave on the bead: the run marker, carrying the occupancy
+    # and the window it was measured against, so the ledger still explains it.
+    assert '"context_tokens": 12000' in written[0] and '"context_window": 200000' in written[0]
     assert result.blocked
-    assert "crossed the context ceiling" in result.detail
     assert "12000" in result.detail and "10000" in result.detail
-    assert "new-1" in result.detail
+    assert "observed, not enforced" in result.detail
+    assert "advance again to land it" in result.detail
 
 
-def test_a_single_track_dispatch_under_the_ceiling_spins_nothing(
+def test_a_single_track_dispatch_under_the_ceiling_observes_nothing(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The control: a run inside the window finishes exactly as it did before."""
+    """The control: a run inside the window says nothing about the ceiling."""
     _ready_leaf(at, monkeypatch)
     _pin_runner(monkeypatch, "claude")
     br = _pin_ceiling(monkeypatch, 0.05)
@@ -547,67 +548,7 @@ def test_a_single_track_dispatch_under_the_ceiling_spins_nothing(
 
     assert br.created == []
     assert result.blocked and "finished in worktree" in result.detail
-    assert "context ceiling" not in result.detail
-
-
-def test_a_single_track_overrun_that_landed_nothing_spins_no_followup(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """A run that stopped on a missing fact lands nothing to follow up (design 7.6).
-
-    It gets re-dispatched once the fact is supplied, and a remainder bead pinned by
-    the idempotence marker now would survive that re-dispatch.
-    """
-    wt = tmp_path / "wt"
-    (wt / needs_input.SENTINEL_FILE.parent).mkdir(parents=True)
-    at(_state("classify", issue_type="task"))
-    monkeypatch.setattr(policy, "definition_of_ready", lambda *_a: DoRResult(True, ()))
-    monkeypatch.setattr(worktree, "list_sessions", lambda *_a, **_k: [])
-    monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: None)
-    monkeypatch.setattr(
-        worktree, "create", lambda name, **_k: replace(_session(name), worktree_path=str(wt))
-    )
-    _pin_runner(monkeypatch, "claude")
-    br = _pin_ceiling(monkeypatch, 0.05)
-    _occupying(monkeypatch, 12_000)
-    (wt / needs_input.SENTINEL_FILE).write_text(
-        '{"fact": "prod db dialect", "detail": "no vendor marker"}', encoding="utf-8"
-    )
-    monkeypatch.setattr(policy, "record_needs_input", lambda *_a: None)
-    monkeypatch.setattr(loop.decisions, "enqueue", lambda *_a, **_k: None)
-
-    result = _advance(tmp_path)
-
-    assert br.created == []
-    assert result.blocked and result.needs_input == "prod db dialect"
-
-
-def test_a_single_track_overrun_parents_its_followup_under_the_session_root(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """`loop run --root <epic>` names the session, so the remainder is its sibling.
-
-    The reproduction ran `loop run basicly-23ep --root basicly-yc0x`; a supervised
-    lane's remainder is a top-level package under that same root, and this path has
-    no other candidate for one.
-    """
-    _ready_leaf(at, monkeypatch)
-    _pin_runner(monkeypatch, "claude")
-    br = _pin_ceiling(monkeypatch, 0.05)
-    _occupying(monkeypatch, 12_000)
-    monkeypatch.setattr(loop.policy, "spend_status", lambda *_a, **_k: _unhalted())
-    monkeypatch.setattr(
-        working_set,
-        "admit_working_set",
-        lambda *_a, **_k: WorkingSetAdmission("i", None, "", refused=False),
-    )
-    monkeypatch.setattr(working_set, "escalate_working_set", lambda *_a, **_k: None)
-
-    loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="epic")
-
-    create = br.created[0]
-    parent_at = create.index("--parent")
-    assert tuple(create[parent_at : parent_at + 2]) == ("--parent", "epic")
+    assert "ceiling" not in result.detail
 
 
 def test_dispatch_prompt_documents_the_needs_input_protocol(

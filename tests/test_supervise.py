@@ -836,208 +836,9 @@ def _lookup(
 
 
 def test_ceiling_tokens_is_the_window_fraction() -> None:
-    """The finalize trigger is context_ceiling of the runner's window."""
+    """The observation threshold is context_ceiling of the runner's window."""
     claude = next(s for s in runner.BUILTIN_RUNNERS if s.name == "claude")
     assert supervise.ceiling_tokens(claude, _sizing(0.6)) == 120_000
-
-
-def _overrun_issues() -> dict[str, dict]:
-    return {
-        "epic": _issue("epic", children=(("epic.1", "in_progress"),)),
-        "epic.1": {
-            "id": "epic.1",
-            "status": "in_progress",
-            "title": "Build the parser",
-            "issue_type": "task",
-            # A real bead always carries a priority and may carry labels; the
-            # fixture used to omit both, which is why the dropped-classification
-            # defect was invisible to this suite (basicly-jr0l.25). P0 is chosen
-            # deliberately: it differs from br's default of 2, so a regression
-            # that stops passing ``-p`` shows up as a value mismatch rather than
-            # coincidentally matching.
-            "priority": 0,
-            "labels": ["phase-7", "determinism"],
-            "acceptance_criteria": "- parses all three formats",
-            "description": "Work.\n\n## Scope\n\n- `src/a/**`\n",
-        },
-    }
-
-
-def test_finalize_followup_spins_a_gated_top_level_package(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The remainder becomes a sibling lane under the root (design 7.6).
-
-    Gated on the overrun bead's landing, carrying the acceptance criteria
-    and scope.
-    """
-    br = _FakeBr(_overrun_issues())
-    _install_br(monkeypatch, br)
-
-    followup = supervise.finalize_followup(
-        Path(), "epic", "epic.1", occupancy=130_000, ceiling=120_000
-    )
-
-    assert followup == "new-1"
-    create = br.created[0]
-    assert create[1] == "Follow-up: Build the parser (context-ceiling overrun)"
-    parent_at = create.index("--parent")
-    assert tuple(create[parent_at : parent_at + 2]) == ("--parent", "epic")
-    body = create[create.index("-d") + 1]
-    assert "- parses all three formats" in body
-    assert "- `src/a/**`" in body
-    assert ("new-1", "epic.1", "-t", "blocks") in br.deps
-    marker = br.comments["epic.1"][-1]
-    assert marker.startswith(supervise.OVERRUN_MARKER)
-    assert "followup=new-1" in marker
-
-
-def test_finalize_followup_is_idempotent_via_the_overrun_marker(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A re-metered overrun returns the recorded follow-up instead of a duplicate."""
-    br = _FakeBr(_overrun_issues())
-    _install_br(monkeypatch, br)
-
-    first = supervise.finalize_followup(
-        Path(), "epic", "epic.1", occupancy=130_000, ceiling=120_000
-    )
-    second = supervise.finalize_followup(
-        Path(), "epic", "epic.1", occupancy=131_000, ceiling=120_000
-    )
-
-    assert first == second == "new-1"
-    assert len(br.created) == 1
-
-
-def test_finalize_followup_body_carries_the_inherited_types_sections(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A bug follow-up owes Steps to Reproduce, or the engine creates a bead its own gate refuses.
-
-    The body used to be hand-written with the task section set, so a bug lane's
-    overrun produced a top-level package that `policy.definition_of_ready` then
-    blocked at classify (basicly-kjc5.44).
-    """
-    issues = _overrun_issues()
-    issues["epic.1"]["issue_type"] = "bug"
-    br = _FakeBr(issues)
-    _install_br(monkeypatch, br)
-
-    supervise.finalize_followup(Path(), "epic", "epic.1", occupancy=130_000, ceiling=120_000)
-
-    create = br.created[0]
-    assert create[create.index("-t") + 1] == "bug"
-    body = create[create.index("-d") + 1]
-    headings = [line for line in body.splitlines() if line.startswith("## ")]
-    assert headings == ["## Steps to Reproduce", "## Acceptance Criteria", "## Scope"]
-    # The carried-over context still leads, above the structure.
-    assert body.startswith("Continues epic.1:")
-    assert "- parses all three formats" in body and "- `src/a/**`" in body
-
-
-def test_finalize_followup_carries_the_overrun_beads_priority(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A P0 lane's remainder must not come back as P2.
-
-    ``br create`` defaults an omitted priority to 2 and the call site passed no
-    ``-p``, so the continuation of the most urgent work in a pass was ranked
-    behind every routine bead in the ready set — the scheduler orders by
-    priority. Invisible until now because all three follow-ups the engine has
-    produced continued P2 parents, so the default happened to match
-    (basicly-jr0l.25).
-    """
-    br = _FakeBr(_overrun_issues())
-    _install_br(monkeypatch, br)
-
-    supervise.finalize_followup(Path(), "epic", "epic.1", occupancy=130_000, ceiling=120_000)
-
-    create = br.created[0]
-    assert create[create.index("-p") + 1] == "0"
-
-
-def test_finalize_followup_carries_the_overrun_beads_labels(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Phase membership is a label, so a dropped label removes the bead from the phase.
-
-    An unlabelled follow-up is well-formed, passes its own DoR, and is absent
-    from every ``br list --label phase-N`` — so a planning pass built on the
-    label cannot see it at all (basicly-jr0l.25).
-    """
-    br = _FakeBr(_overrun_issues())
-    _install_br(monkeypatch, br)
-
-    supervise.finalize_followup(Path(), "epic", "epic.1", occupancy=130_000, ceiling=120_000)
-
-    create = br.created[0]
-    assert create[create.index("-l") + 1] == "phase-7,determinism"
-
-
-def test_finalize_followup_omits_classification_flags_the_overrun_bead_lacks(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """An unlabelled or priority-less parent must not send an empty flag value.
-
-    ``-l ''`` is not the same request as omitting ``-l``, and a bead read back
-    from a tracker that has never set a label returns null rather than a list.
-    """
-    issues = _overrun_issues()
-    issues["epic.1"]["labels"] = None
-    del issues["epic.1"]["priority"]
-    br = _FakeBr(issues)
-    _install_br(monkeypatch, br)
-
-    supervise.finalize_followup(Path(), "epic", "epic.1", occupancy=130_000, ceiling=120_000)
-
-    create = br.created[0]
-    assert "-l" not in create
-    assert "-p" not in create
-
-
-def test_finalize_followup_leaf_root_creates_without_parent(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """When the overrun lane is the session root itself there is no parent to nest under."""
-    issues = _overrun_issues()
-    issues["epic.1"]["issue_type"] = "feature"  # non-leaf type falls back to task
-    br = _FakeBr(issues)
-    _install_br(monkeypatch, br)
-
-    supervise.finalize_followup(Path(), "epic.1", "epic.1", occupancy=1, ceiling=1)
-
-    create = br.created[0]
-    assert "--parent" not in create
-    assert create[create.index("-t") + 1] == "task"
-
-
-def test_finalize_followup_keeps_every_flag_next_to_its_value(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A child lane's follow-up must not separate ``-t`` from the type it names.
-
-    The parent used to be spliced in at a fixed index that was the *value* of
-    ``-t``, so a child lane emitted ``-t --parent <root> <type>`` and br refused
-    it for a missing type. The overrun follow-up was never created, the lane
-    reported a failed dispatch, and the work its agent had already committed
-    never landed (basicly-jr0l.11, found by the basicly-kjc5.22 dogfood).
-
-    The sibling leaf-root test above asserts this same pairing — but only on the
-    branch where no parent is inserted, which is the one branch that could not
-    break. This asserts it where the splice actually happened, and over every
-    value-taking flag, so adding the next one here cannot recreate the shape.
-    """
-    br = _FakeBr(_overrun_issues())
-    _install_br(monkeypatch, br)
-
-    supervise.finalize_followup(Path(), "epic", "epic.1", occupancy=130_000, ceiling=120_000)
-
-    create = br.created[0]
-    assert create[create.index("-t") + 1] == "task"
-    for flag in ("-t", "-p", "-l", "--parent", "-d"):
-        value = create[create.index(flag) + 1]
-        assert not value.startswith("-"), f"{flag} is followed by {value!r}, not a value"
 
 
 # --- Ready lanes and concurrent dispatch ---------------------------------------
@@ -1175,7 +976,6 @@ def _outcome(issue_id: str) -> supervise.LaneOutcome:
         needs_fact=None,
         occupancy=None,
         overrun=False,
-        followup_id=None,
         detail="test",
     )
 
@@ -1271,10 +1071,63 @@ def _codex() -> runner.RunnerSpec:
     return next(s for s in runner.BUILTIN_RUNNERS if s.name == "codex")
 
 
+def _finished(spec: runner.RunnerSpec, stdout: str) -> runner.RunResult:
+    return runner.RunResult(
+        spec.name, tuple(spec.command), executed=True, returncode=0, stdout=stdout
+    )
+
+
+def test_meter_context_ceiling_over_the_ceiling_reads_the_tracker_not_at_all() -> None:
+    """The meter takes no repo and no issue, so it cannot spawn anything (D23).
+
+    The signature is the guarantee: a demoted control has nothing to write to. It used
+    to take the repo root and the lane's id so it could create the follow-up bead, and
+    the eighteen it created came from a trigger at a fifth of its intended point.
+    """
+    codex = _codex()
+    verdict = supervise.meter_context_ceiling(
+        codex, _finished(codex, _codex_events(250_000)), _sizing()
+    )
+
+    assert verdict.overrun is True
+    assert verdict.occupancy == 250_000
+    assert verdict.ceiling == 240_000
+    assert verdict.observation == (
+        "context occupancy 250000 tokens is over the 240000-token ceiling (observed, not enforced)"
+    )
+
+
+def test_meter_context_ceiling_under_the_ceiling_observes_nothing() -> None:
+    """The control: a run inside the ceiling carries no observation to report."""
+    codex = _codex()
+    verdict = supervise.meter_context_ceiling(
+        codex, _finished(codex, _codex_events(239_999)), _sizing()
+    )
+
+    assert verdict.overrun is False
+    assert verdict.observation == ""
+
+
+def _lane_issues() -> dict[str, dict]:
+    return {
+        "epic": _issue("epic", children=(("epic.1", "in_progress"),)),
+        "epic.1": {
+            "id": "epic.1",
+            "status": "in_progress",
+            "title": "Build the parser",
+            "issue_type": "task",
+            "priority": 0,
+            "labels": ["phase-7", "determinism"],
+            "acceptance_criteria": "- parses all three formats",
+            "description": "Work.\n\n## Scope\n\n- `src/a/**`\n",
+        },
+    }
+
+
 def _worker_fixture(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, stdout: str, returncode: int = 0
 ) -> tuple[_FakeBr, dict]:
-    br = _FakeBr(_overrun_issues())
+    br = _FakeBr(_lane_issues())
     _install_br(monkeypatch, br)
     seen: dict = {}
 
@@ -1451,15 +1304,19 @@ def test_dispatch_lane_green_path_meters_and_records(
     assert "epic.1" in seen["prompt"]
     assert outcome.occupancy == 50_000
     assert outcome.overrun is False
-    assert outcome.followup_id is None
     assert outcome.detail == "finished; ready to land"
     assert br.created == []
 
 
-def test_dispatch_lane_overrun_triggers_the_finalize_protocol(
+def test_dispatch_lane_over_the_ceiling_lands_and_reports_both_numbers(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Crossing the ceiling spins the remainder into a follow-up bead (D8/7.6)."""
+    """Crossing the ceiling changes what the lane *says*, not what happens to it (D23).
+
+    The lane used to be finalized here and its remainder spun into a follow-up bead
+    gated on this one. Zero of those firings were correct, so the outcome is now the
+    green one it would have had anyway, carrying the observation.
+    """
     codex = _codex()
     br, _seen = _worker_fixture(monkeypatch, tmp_path, stdout=_codex_events(250_000))
 
@@ -1468,9 +1325,12 @@ def test_dispatch_lane_overrun_triggers_the_finalize_protocol(
     )
 
     assert outcome.overrun is True
-    assert outcome.followup_id == "new-1"
-    assert "new-1" in outcome.detail
-    assert len(br.created) == 1
+    assert outcome.detail == (
+        "finished; ready to land; context occupancy 250000 tokens is over the "
+        "240000-token ceiling (observed, not enforced)"
+    )
+    assert br.created == [], "no follow-up bead"
+    assert br.comments == {}, "no [harness-overrun] marker either"
 
 
 def test_dispatch_lane_surfaces_the_needs_input_sentinel(
@@ -1521,13 +1381,13 @@ def test_dispatch_lane_without_worktree_record_asks_for_reprovision(
     assert "re-provision" in outcome.detail
 
 
-def test_dispatch_lane_failed_run_never_spins_a_followup(
+def test_dispatch_lane_failed_run_over_the_ceiling_keeps_its_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A crashed runner with high usage never spins a follow-up bead.
+    """A crashed runner with high usage reports both facts, and the failure leads.
 
-    It lands nothing coherent and the routing layer re-dispatches it, so no
-    remainder may be pinned by the idempotence marker (design 7.6).
+    The routing layer re-dispatches it on the exit code; the occupancy is an
+    observation about the run it lost, not a second verdict on it.
     """
     br, _seen = _worker_fixture(monkeypatch, tmp_path, stdout=_codex_events(250_000), returncode=3)
 
@@ -1536,9 +1396,8 @@ def test_dispatch_lane_failed_run_never_spins_a_followup(
     )
 
     assert outcome.overrun is True  # the metered truth is still reported
-    assert outcome.followup_id is None
     assert br.created == []
-    assert outcome.detail == "runner exited 3"
+    assert outcome.detail.startswith("runner exited 3; context occupancy 250000 tokens")
 
 
 # --- A dispatch that never started an agent (basicly-jr0l.64) ----------------
@@ -1694,7 +1553,6 @@ def _executed_outcome(issue_id: str, *, returncode: int | None = 0, **kw) -> sup
         needs_fact=kw.pop("needs_fact", None),
         occupancy=None,
         overrun=False,
-        followup_id=None,
         salvaged=kw.pop("salvaged", False),
         detail=kw.pop("detail", "finished; ready to land"),
     )
@@ -1970,7 +1828,6 @@ def test_route_handoff_stays_with_the_driving_agent(tmp_path: Path) -> None:
         needs_fact=None,
         occupancy=None,
         overrun=False,
-        followup_id=None,
         detail="handoff runner: work left to the driving agent",
     )
     routed = supervise.route_outcomes(tmp_path, _session(_lane("epic.1")), (handoff,))
@@ -4424,7 +4281,6 @@ def test_route_a_refused_lane_to_the_queue_rather_than_a_retry(tmp_path: Path) -
         needs_fact=None,
         occupancy=None,
         overrun=False,
-        followup_id=None,
         detail="dispatch refused before it started",
         refused=True,
     )
@@ -5300,7 +5156,6 @@ def test_the_dispatch_note_names_the_tier_and_the_resolved_model() -> None:
         needs_fact=None,
         occupancy=None,
         overrun=False,
-        followup_id=None,
         detail="finished",
         model="claude-opus-5",
         model_tier="high",
@@ -5326,7 +5181,6 @@ def test_the_dispatch_note_flags_a_tier_that_was_not_honoured() -> None:
         needs_fact=None,
         occupancy=None,
         overrun=False,
-        followup_id=None,
         detail="finished",
         model="claude-opus-5",
         model_tier="maximum",
@@ -5350,7 +5204,6 @@ def test_a_dispatch_with_no_model_information_adds_no_note() -> None:
         needs_fact=None,
         occupancy=None,
         overrun=False,
-        followup_id=None,
         detail="handed off",
     )
 

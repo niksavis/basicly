@@ -571,7 +571,6 @@ def test_r7_a_dispatch_lost_to_the_store_is_retryable_not_terminal(
         needs_fact=None,
         occupancy=None,
         overrun=False,
-        followup_id=None,
         detail="lane dispatch failed: br comments list failed: " + _R7_STORAGE_ERROR,
         transient=True,
     )
@@ -608,7 +607,6 @@ def test_r7_a_lane_failure_that_is_not_the_store_still_costs_a_dispatch_attempt(
         needs_fact=None,
         occupancy=None,
         overrun=False,
-        followup_id=None,
         detail="runner exited 3",
     )
 

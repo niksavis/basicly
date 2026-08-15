@@ -15,9 +15,9 @@ built the lock, the session definition, and crash recovery. Part 2
   thread pool, and the holder keeps heartbeating the singleton lock between
   completions so a long dispatch pass is never declared stale.
 - **The usage meter** (D8) reads each run's final context occupancy from the
-  adapter and, at ``[policy.sizing] context_ceiling`` of the runner's window,
-  triggers the finalize protocol: the remainder becomes a follow-up bead — a
-  new top-level package gated on the overrun lane's landing (design 7.6).
+  adapter and reports it against ``[policy.sizing] context_ceiling`` of the
+  runner's window. Observability, not a control (D23): the ceiling names both
+  numbers on the outcome and acts on neither.
 
 Outcome routing (green → merge-ready, block → decision queue) and standing
 merge-queue integration are part 3 (kjc5.7); ``basicly loop supervise`` runs
@@ -455,8 +455,8 @@ def derive_session(
     that label and the root is the pass's anchor only — its grant, its decision
     queue, its lock. Nothing else about the derivation changes, so the pass is
     still a pure function of ``br`` and still restart-safe: re-reading the label
-    on the next tick picks up a bead labelled into the cut since (an overrun
-    follow-up inherits its lane's labels) and drops one labelled out of it.
+    on the next tick picks up a bead labelled into the cut since and drops one
+    labelled out of it.
     """
     record = br.require_record(repo_root, root_issue)
 
@@ -977,184 +977,62 @@ def _already_coupled(repo_root: Path, bead: str, coupled_to: str) -> bool:
     return False
 
 
-# --- Usage meter: context ceiling + finalize protocol (D8, design 7.6) -------
-
-
-# Comment marker recording that a lane's run crossed the context ceiling and
-# which follow-up bead carries the remainder — the idempotence guard against a
-# re-dispatched overrun spinning duplicate follow-ups.
-OVERRUN_MARKER = "[harness-overrun]"
+# --- Usage meter: the context ceiling as observability (D8 measured, D23) ----
 
 
 def ceiling_tokens(spec: runner.RunnerSpec, sizing: SizingConfig) -> int:
-    """The finalize trigger for *spec*, in tokens of final context occupancy."""
+    """The observation threshold for *spec*, in tokens of final context occupancy."""
     return int(spec.context_window * sizing.context_ceiling)
-
-
-def existing_followup(repo_root: Path, issue_id: str) -> str | None:
-    """The follow-up bead already spun for *issue_id*'s overrun, or None."""
-    proc = _run_br(repo_root, ["comments", "list", issue_id, "--json"])
-    try:
-        comments = json.loads(proc.stdout)
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(comments, list):
-        return None
-    for comment in comments:
-        if not isinstance(comment, dict):
-            continue
-        followup = _overrun_followup_id(str(comment.get("text", "")))
-        if followup is not None:
-            return followup
-    return None
-
-
-def _overrun_followup_id(text: str) -> str | None:
-    """The ``followup=<id>`` recorded on an overrun marker comment, or None."""
-    stripped = text.strip()
-    first_line = stripped.splitlines()[0] if stripped else ""
-    if not first_line.startswith(OVERRUN_MARKER + " "):
-        return None
-    for token in first_line.split()[1:]:
-        if token.startswith("followup=") and len(token) > len("followup="):
-            return token[len("followup=") :]
-    return None
-
-
-def finalize_followup(
-    repo_root: Path, root_issue: str, issue_id: str, *, occupancy: int, ceiling: int
-) -> str:
-    """Spin the remainder of an overrun lane into a follow-up bead (design 7.6).
-
-    A package-level overrun's remainder becomes a **new top-level package**: a
-    sibling lane under the session root, gated by a ``blocks`` edge on the
-    overrun bead so it dispatches only after the partial work lands — fresh
-    worktree, merge-queue semantics preserved, flatten-don't-deepen (D7). The
-    original acceptance criteria and scope are carried over; the follow-up's
-    fresh dispatch reads the landed partial work through ``br`` and the tree,
-    so nothing is lost. Idempotent via the overrun marker: a re-metered overrun
-    returns the already-created follow-up.
-    """
-    existing = existing_followup(repo_root, issue_id)
-    if existing is not None:
-        return existing
-    record = _show_issue(repo_root, issue_id) or {}
-    title = f"Follow-up: {record.get('title') or issue_id} (context-ceiling overrun)"
-    acceptance = str(record.get("acceptance_criteria") or "").strip()
-    if not acceptance:
-        acceptance = f"- Complete the remaining acceptance criteria of {issue_id}"
-    scope = decompose.parse_scope_section(str(record.get("description") or ""))
-    scope_lines = "\n".join(f"- `{glob}`" for glob in scope)
-    if not scope_lines:
-        scope_lines = f"- (inherits the declared scope of {issue_id})"
-    issue_type = record.get("issue_type")
-    if issue_type not in ("bug", "chore", "task"):
-        issue_type = "task"
-    # A follow-up is a new top-level package driven through its own loop, so it
-    # meets its own DoR gate. Compose the body from the required-section set for
-    # the type it inherits rather than the task set: a hand-written body here
-    # dropped a bug follow-up's ``## Steps to Reproduce`` and the gate then
-    # refused a bead the engine itself had created (basicly-kjc5.44).
-    body = policy.compose_body(
-        str(issue_type),
-        {"## Acceptance Criteria": acceptance, "## Scope": scope_lines},
-        preamble=(
-            f"Continues {issue_id}: its run crossed the context ceiling "
-            f"({occupancy} >= {ceiling} tokens), so the lane finalized early (factory design "
-            "D8/7.6). Check which acceptance criteria the partial landing already satisfied "
-            "before redoing work."
-        ),
-    )
-    # Assembled in order rather than spliced by index: the previous form
-    # inserted the parent at position 3, which is the *value* of ``-t``, so a
-    # child lane's follow-up went out as ``-t --parent <root> <type>`` and br
-    # rejected it for a missing type (basicly-jr0l.11). Appending each flag with
-    # its value keeps the pairing local and removes the index arithmetic that
-    # made the two separable at all.
-    create_args = ["create", title, "-t", str(issue_type)]
-    # The follow-up inherits the *classification* of the work, not just the work.
-    # ``br create`` defaults an omitted priority to 2, so a P0 lane's remainder
-    # used to come back as P2 and the scheduler — which ranks by priority — put
-    # it behind every routine bead in the ready set. Labels matter for the same
-    # reason in reverse: phase membership is a label rather than a re-parenting,
-    # so an unlabelled follow-up is silently absent from ``br list --label``
-    # and from any planning pass built on one (basicly-jr0l.25). Deliberately
-    # *not* inherited: assignee, estimate, due date — the remainder is a
-    # different size than the original, and a carried-over estimate is worse
-    # than none.
-    priority = record.get("priority")
-    if priority is not None:
-        create_args += ["-p", str(priority)]
-    labels = [str(label) for label in (record.get("labels") or []) if str(label).strip()]
-    if labels:
-        create_args += ["-l", ",".join(labels)]
-    if root_issue != issue_id:
-        create_args += ["--parent", root_issue]
-    create_args += ["-d", body, "--json"]
-    proc = _run_br(repo_root, create_args)
-    followup_id = str(json.loads(proc.stdout)["id"])
-    _run_br(repo_root, ["dep", "add", followup_id, issue_id, "-t", "blocks"])
-    _run_br(
-        repo_root,
-        [
-            "comments",
-            "add",
-            issue_id,
-            f"{OVERRUN_MARKER} followup={followup_id} occupancy={occupancy} ceiling={ceiling}",
-        ],
-    )
-    return followup_id
 
 
 @dataclass(frozen=True)
 class CeilingVerdict:
-    """What the context meter said about one finished dispatch."""
+    """What the context meter measured on one finished dispatch."""
 
     occupancy: int | None
     ceiling: int
     overrun: bool
-    followup_id: str | None
+
+    @property
+    def observation(self) -> str:
+        """Both numbers in one clause for the surface that reports the run, else "".
+
+        The demoted control's whole output (D23): a number that only blocks is invisible
+        until it fires, which is how a trigger at a fifth of its intended point survived
+        for months with the ledger already contradicting it.
+        """
+        if not self.overrun:
+            return ""
+        return (
+            f"context occupancy {self.occupancy} tokens is over the {self.ceiling}-token "
+            "ceiling (observed, not enforced)"
+        )
 
 
-def meter_context_ceiling(  # noqa: PLR0913 — one parameter per metering input
-    repo_root: Path,
-    root_issue: str,
-    issue_id: str,
-    spec: runner.RunnerSpec,
-    result: runner.RunResult,
-    sizing: SizingConfig,
-    *,
-    landed: bool,
+def meter_context_ceiling(
+    spec: runner.RunnerSpec, result: runner.RunResult, sizing: SizingConfig
 ) -> CeilingVerdict:
-    """Meter a finished dispatch against *spec*'s ceiling, finalizing if it crossed.
+    """Measure a finished dispatch against *spec*'s ceiling, and only measure it.
 
-    The one metering site both write paths reach (basicly-7kxq). This used to be
-    inline in the supervised lane and nowhere else, so the single-track path
-    dispatched unmetered: basicly-23ep was driven through ``loop run``, recorded
-    403051 tokens against a derived trigger of 120000, and was neither finalized
-    early nor given a follow-up — the same work, at the same size, truncated under
-    ``supervise`` and completed under ``loop run``. A second copy in ``loop`` is how
-    the two paths would come to disagree again, so the supervisor calls this rather
-    than keeping its own (the same reuse ``loop._dispatch_refused`` makes of
-    :func:`admit_working_set`, for the same reason).
+    Demoted from a control to observability (D23, requirements §15.6). It used to
+    finalize the lane early and spin the remainder into a follow-up bead, and over 79
+    recorded lanes it has **zero** correct firings: the 18 follow-ups it produced all
+    came from months at a 120000-token trigger — a fifth of its intended point, from a
+    stale window declaration — and nothing has crossed the corrected 600000 since (max
+    observed 403051). A prediction that blocks has to be right, and this one never was.
 
-    *landed* is the caller's answer to "did this run leave a coherent partial
-    landing?". A run that failed or stopped on a missing fact lands nothing, gets
-    re-dispatched, and must not pin a premature remainder bead through the
-    idempotence marker (design 7.6).
+    The one metering site both write paths reach (basicly-7kxq), still: a second copy in
+    ``loop`` is how the two paths came to disagree about a bead's fate for reasons
+    unrelated to the bead. What each caller does with the verdict is now the same thing
+    — report it — while ``run_record``'s ``context_tokens`` and ``context_window`` keep
+    the pair falsifiable against the ledger long after the pass line is gone.
     """
     occupancy = runner.context_occupancy(spec, result)
     ceiling = ceiling_tokens(spec, sizing)
-    overrun = occupancy is not None and occupancy >= ceiling
-    followup_id = (
-        finalize_followup(
-            repo_root, root_issue, issue_id, occupancy=occupancy or 0, ceiling=ceiling
-        )
-        if overrun and landed
-        else None
-    )
     return CeilingVerdict(
-        occupancy=occupancy, ceiling=ceiling, overrun=overrun, followup_id=followup_id
+        occupancy=occupancy,
+        ceiling=ceiling,
+        overrun=occupancy is not None and occupancy >= ceiling,
     )
 
 
@@ -1502,8 +1380,9 @@ class LaneOutcome:
     needs_fact: str | None
     # Final context occupancy in tokens; None when the adapter reports none.
     occupancy: int | None
+    # Whether that occupancy crossed the runner's context ceiling. Reported, never
+    # acted on (D23) — the lane lands exactly as one under the ceiling does.
     overrun: bool
-    followup_id: str | None
     detail: str
     # False for a lane carried into this pass with its work already committed:
     # no runner ran, so a null result means "nothing to implement", not
@@ -1601,7 +1480,6 @@ def _unstarted(issue_id: str, runner_name: str, detail: str, why: Unstarted) -> 
         needs_fact=None,
         occupancy=None,
         overrun=False,
-        followup_id=None,
         detail=detail,
         dispatched=why is not Unstarted.CARRIED,
         refused=why is Unstarted.REFUSED,
@@ -2814,7 +2692,6 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
             needs_fact=None,
             occupancy=None,
             overrun=False,
-            followup_id=None,
             salvaged=salvaged.committed,
             detail=f"stopped on {bound}; {salvaged.detail}; stall queued as {stall.decision_id}",
         )
@@ -2826,7 +2703,6 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
             needs_fact=None,
             occupancy=None,
             overrun=False,
-            followup_id=None,
             detail="handoff runner: work left to the driving agent",
         )
     needs = needs_input.take(cwd)
@@ -2836,26 +2712,17 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
         policy.record_needs_input(repo_root, lane.issue_id, needs.fact)
         # And one decision-queue item (basicly-kjc5.4) for `loop answer`.
         decisions.enqueue(repo_root, lane.issue_id, "needs-input", needs.fact, needs.detail)
-    # A lane that failed or stopped on a missing fact lands nothing and gets
-    # re-dispatched by the routing layer, so it is not a coherent partial landing.
-    verdict = meter_context_ceiling(
-        repo_root,
-        session.root_issue,
-        lane.issue_id,
-        spec,
-        result,
-        sizing,
-        landed=result.returncode == 0 and needs is None,
-    )
-    occupancy, overrun, followup_id = verdict.occupancy, verdict.overrun, verdict.followup_id
+    verdict = meter_context_ceiling(spec, result, sizing)
     if result.returncode != 0:
         detail = f"runner exited {result.returncode}"
     elif needs is not None:
         detail = f"needs input: {needs.detail or needs.fact}"
-    elif overrun:
-        detail = f"finished but crossed the context ceiling; remainder in {followup_id}"
     else:
         detail = "finished; ready to land"
+    # Appended to whichever outcome the run had rather than replacing it: the occupancy
+    # is an observation about the run, not a verdict on it (D23).
+    if verdict.overrun:
+        detail = f"{detail}; {verdict.observation}"
     # Read off the result rather than re-resolved, for the same reason the run record
     # does it that way (basicly-kjc5.59): a second read of the map could answer
     # differently from the dispatch that actually happened.
@@ -2865,9 +2732,8 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
         runner_name=spec.name,
         result=result,
         needs_fact=needs.fact if needs is not None else None,
-        occupancy=occupancy,
-        overrun=overrun,
-        followup_id=followup_id,
+        occupancy=verdict.occupancy,
+        overrun=verdict.overrun,
         detail=detail,
         model=resolution.model if resolution is not None else spec.model,
         model_tier=resolution.tier if resolution is not None else None,
