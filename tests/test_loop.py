@@ -2320,7 +2320,11 @@ def test_verify_blocks_on_pending_ship_checkpoint(
 ) -> None:
     """After landing, the verify phase waits for the human ship checkpoint."""
     at(_state("verify"))
-    monkeypatch.setattr(policy, "checkpoint_approved", lambda *_a: False)
+    monkeypatch.setattr(
+        policy,
+        "approve_checkpoint_guarded",
+        lambda *_a, **_k: policy.ApprovalResult("challenge", code="abc"),
+    )
     result = _advance(tmp_path)
     assert result.blocked and "ship checkpoint" in result.detail
 
@@ -2330,9 +2334,35 @@ def test_verify_advances_to_ship_when_approved(
 ) -> None:
     """An approved ship checkpoint advances to ship."""
     at(_state("verify"))
-    monkeypatch.setattr(policy, "checkpoint_approved", lambda *_a: True)
+    monkeypatch.setattr(
+        policy, "approve_checkpoint_guarded", lambda *_a, **_k: policy.ApprovalResult("approved")
+    )
     result = _advance(tmp_path)
     assert result.to_phase == "ship" and result.action == "shipped"
+
+
+def test_verify_asks_the_grant_not_only_the_marker(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A covering grant advances the parked ship checkpoint (basicly-u2hl.56).
+
+    Ship approval had two implementations: the landing consulted the grant, this path read
+    the marker alone. So a lane the supervisor re-adopted blocked forever under a grant whose
+    coverage included ship, while ``preflight`` reported that the grant delegated it.
+    """
+    at(_state("verify"))
+    asked: list[str | None] = []
+
+    def _guarded(_repo, _issue, _name, *, grant_root=None, **_k):
+        asked.append(grant_root)
+        return policy.ApprovalResult("approved")
+
+    monkeypatch.setattr(policy, "approve_checkpoint_guarded", _guarded)
+    monkeypatch.setattr(policy, "checkpoint_approved", lambda *_a: False)
+
+    result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="epic")
+
+    assert result.to_phase == "ship" and asked == ["epic"]
 
 
 def test_ship_tears_down_and_closes(at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

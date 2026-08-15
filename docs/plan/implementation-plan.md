@@ -80,7 +80,7 @@ hand-written copy of them was stale within days:
 | Measure | Value |
 | --- | --- |
 | Engine modules (`src/basicly/*.py`) | 92 |
-| Test files | 175 |
+| Test files | 176 |
 | `[[verify.checks]]` declared | 26 |
 | …of which run in `--mode fast` | 21 |
 | …of which run in `--mode full` | 25 |
@@ -134,16 +134,16 @@ days.** As written on 2026-08-09 it said `resolve_role` was called from one site
 two the row said never ask now do.
 
 ```text
-roles.resolve_role      loop.py:851        _run_agent           → validate · reviews · build ·
+roles.resolve_role      loop.py:869        _run_agent           → validate · reviews · build ·
                                                                   repair · sub-task · retrospective
-                        loop.py:1101       _run_proposer        → classify · decompose
-                        supervise.py:2645  _dispatch_lane       → lane build
-_run_agent call sites   loop.py:489        _dispatch_validation
-                        loop.py:532        _dispatch_reviews    (once per lens)
-                        loop.py:731        _dispatch_runner     (build)
-                        loop.py:1637       _repair_in_place
-                        loop.py:1795       _run_subtask
-                        loop.py:2213       _retrospective
+                        loop.py:1119       _run_proposer        → classify · decompose
+                        supervise.py:2651  _dispatch_lane       → lane build
+_run_agent call sites   loop.py:507        _dispatch_validation
+                        loop.py:543        _dispatch_reviews    (once per lens)
+                        loop.py:749        _dispatch_runner     (build)
+                        loop.py:1655       _repair_in_place
+                        loop.py:1813       _run_subtask
+                        loop.py:2231       _retrospective
 ```
 
 Every line above cites the *defining* line of the symbol named beside it, not the call inside it,
@@ -372,7 +372,7 @@ decide  24         31,991    0.23       14     5/29  = 17.2%
 ```
 
 `decide` is a dispatch **handed its corpus**; `lane` is a dispatch **told to go and read**. Same
-model, same repo: **254x the tokens and 27x the cost**. `loop.dispatch_prompt` (`loop.py:858`) is
+model, same repo: **254x the tokens and 27x the cost**. `dispatch_brief.dispatch_prompt` (`dispatch_brief.py:88`) is
 about ninety words and passes only the issue id — no requirement, no scope, no plan, no prior
 finding — so the floor every lane pays before its first edit is bought by the prompt, not by the
 work.

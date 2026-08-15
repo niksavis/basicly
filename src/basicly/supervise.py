@@ -1416,6 +1416,12 @@ def _report_coverage(
     report(f"drift:    {drifted}")
 
 
+PARKED_LANE_QUESTION = (
+    "this lane is parked downstream of build and the pass cannot advance it: "
+    "resolve what it waits on, or park it?"
+)
+
+
 UNGRANTED_QUESTION = (
     "this session dispatches a metered agent but carries no grant with a token budget: "
     "issue one, or set [runner] default to the manual handoff?"
@@ -3527,15 +3533,40 @@ def advance_parked(
             continue
         if final.to_phase == "done":
             routed.append(RoutedOutcome(lane.issue_id, "shipped", final.detail))
-        elif final.to_phase == "build":
-            # Still building: report whether the pass closed a sub-task (the loop
-            # keeps iterating) or the lane is now waiting on an agent/human.
-            progressed = any(step.progressed for step in steps)
-            route = "lane-step" if progressed else "lane-blocked"
+        elif any(step.progressed for step in steps):
+            # The loop moved this lane, so the pass has another useful iteration: a closed
+            # sub-task in build, a landing anywhere downstream.
+            route = "lane-step" if final.to_phase == "build" else "merged"
             routed.append(RoutedOutcome(lane.issue_id, route, final.detail))
         else:
-            routed.append(RoutedOutcome(lane.issue_id, "merged", final.detail))
+            # It did not move, and every phase must say so the same way. Until
+            # basicly-u2hl.55 only the `build` branch checked: a lane blocked at a
+            # downstream checkpoint fell here, was reported as `merged`, read as progress
+            # through `RoutedOutcome.progressed`, and re-adopted every round — measured at
+            # 257 rounds over 49 minutes, dispatching nothing and never returning.
+            routed.append(
+                RoutedOutcome(
+                    lane.issue_id, "lane-blocked", _blocked_lane_detail(repo_root, lane, final)
+                )
+            )
     return tuple(routed)
+
+
+def _blocked_lane_detail(repo_root: Path, lane: AdoptedLane, final: loop.AdvanceResult) -> str:
+    """Record what a stuck lane waits on, so the pass ends with a question rather than quietly.
+
+    `advance_parked` enqueued nothing, so the operator saw a live process and no item in the
+    decision queue — which is why the spin above was invisible rather than merely wrong.
+    """
+    with contextlib.suppress(OSError, RuntimeError, ValueError):
+        decisions.enqueue(
+            repo_root,
+            lane.issue_id,
+            "escalation",
+            PARKED_LANE_QUESTION,
+            f"{final.to_phase}: {final.detail}",
+        )
+    return final.detail
 
 
 def _route_one(

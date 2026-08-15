@@ -421,9 +421,20 @@ def clear_worktree_binding(repo_root: Path, issue_id: str) -> None:
 
 
 def _on_verify(ctx: _Ctx) -> AdvanceResult:
-    """Required gate is green (that is why we are here): gate the ship checkpoint."""
-    if not policy.checkpoint_approved(ctx.repo_root, ctx.issue_id, "ship"):
-        return _blocked(ctx, "ship checkpoint awaiting human approval", checkpoint="ship")
+    """Required gate is green (that is why we are here): gate the ship checkpoint.
+
+    Through the guarded path, not a bare marker read (basicly-u2hl.56): this asked only
+    whether a marker existed, so a lane the supervisor re-adopted blocked forever under a
+    grant whose coverage included ship. ``interactive=False`` because nothing here has a TTY.
+    """
+    approval = policy.approve_checkpoint_guarded(
+        ctx.repo_root, ctx.issue_id, "ship", interactive=False, grant_root=ctx.grant_root
+    )
+    if approval.status != "approved":
+        detail = "; ".join(
+            part for part in ("ship checkpoint awaiting human approval", approval.detail) if part
+        )
+        return _blocked(ctx, detail, checkpoint="ship")
     return _moved(ctx, "ship", "shipped", "ship checkpoint satisfied")
 
 
