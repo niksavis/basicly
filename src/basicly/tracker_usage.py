@@ -44,7 +44,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from . import tracker_invocation
+from . import tracker_invocation, tracker_paths
 from .tracker_invocation import is_valid_surface, split_invocation
 
 # The canonical two-word group set, re-exported under the name the inventory gate
@@ -143,35 +143,19 @@ def classify_access(subcommand: str) -> str:
 def ledger_root(repo_root: Path) -> Path:
     """The checkout that owns the ledger for *repo_root*, following ``.beads/redirect``.
 
-    **One ledger per repo, never one per worktree.** A loop worktree shares the base
-    checkout's tracker through br's git-ignored ``redirect`` file, and the spool has
-    to follow the same rule for the same reason. It did not, and the consequence was
-    silent: :func:`is_enabled` saw the worktree's own checked-out
-    ``.basicly/ledger/`` directory, spooled beside it, and the loop deleted the
-    worktree at teardown — so **every engine tracker call made from a lane was
-    discarded** (basicly-vkh0.8).
+    **One ledger per repo, never one per worktree.** It was not: :func:`is_enabled`
+    saw the worktree's own checked-out ``.basicly/ledger/``, spooled beside it, and
+    teardown deleted the worktree — so **every engine tracker call made from a lane
+    was discarded** (basicly-vkh0.8). Not uniform sampling loss either: lane work is
+    most of what the harness does, and it made ``where`` — which
+    ``worktree._probe_redirect`` calls on every provisioning — read as *never used*
+    in the surface report, dropping a surface the engine depends on.
 
-    That is not uniform sampling loss. Lane work is most of what the harness does,
-    and it made ``where`` — which ``worktree._probe_redirect`` calls on every single
-    provisioning — read as *never used* in the surface report. A false never-used
-    entry is the worst error the freeze's input can carry, because it would drop a
-    surface the engine depends on.
-
-    Mirrors :func:`basicly.br.beads_dir` rather than inventing a second rule: the
-    redirect names the base checkout's ``.beads``, whose parent is that checkout.
-    Falls back to *repo_root* when the redirect is absent or unreadable, so a plain
-    checkout is unaffected and telemetry never becomes a failure path.
+    The parent of :func:`basicly.tracker_paths.beads_dir`, which is the one rule: the
+    copy that stood here also required the target be named ``.beads``, so any other
+    redirect split the ledger write from the tracker read (basicly-tcmy.19).
     """
-    root = Path(repo_root)
-    redirect = root / ".beads" / "redirect"
-    try:
-        if redirect.is_file():
-            target = Path(redirect.read_text(encoding="utf-8").strip())
-            if target.is_dir() and target.name == ".beads":
-                return target.parent
-    except OSError:
-        return root
-    return root
+    return tracker_paths.beads_dir(repo_root).parent
 
 
 def _spool_path(repo_root: Path) -> Path:

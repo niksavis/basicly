@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any
 
 from basicly import mirror, owned_store, redact, tracker_usage
+from basicly.tracker_paths import beads_dir
 
 # The oldest br this harness is exercised against (see `br --version`).
 # The probe warns below this floor; it never blocks — br's core commands
@@ -1462,25 +1463,6 @@ def scrub_export(repo_root: Path) -> int:
 
 
 # --- Reading the committed export (basicly-kjc5.50) --------------------------
-
-
-def beads_dir(repo_root: Path) -> Path:
-    """The active beads directory, following br's git-ignored ``redirect`` file.
-
-    A harness worktree shares the base checkout's tracker through ``redirect``,
-    so the redirected directory — not the worktree's own checked-out copy — is
-    where br flushes and where the freshest export lives.
-    """
-    beads = Path(repo_root) / ".beads"
-    redirect = beads / "redirect"
-    if redirect.is_file():
-        try:
-            target = Path(redirect.read_text(encoding="utf-8").strip())
-        except OSError:
-            return beads
-        if target.is_dir():
-            return target
-    return beads
 
 
 def export_records(repo_root: Path) -> list[dict]:

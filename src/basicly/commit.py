@@ -22,13 +22,12 @@ change is evidence anyone who fetches the history can read.
 from __future__ import annotations
 
 import contextlib
-import json
 import re
 import textwrap
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import loop_state, run_record
+from . import br, loop_state, run_record
 from .worktree import git, main_checkout
 
 MIN_DESCRIPTION_LENGTH = 3
@@ -291,44 +290,6 @@ def staged_weights(repo_root: Path) -> dict[str, int]:
     return weights
 
 
-def _beads_dir(repo_root: Path) -> Path:
-    """The active beads dir, following br's git-ignored ``redirect`` file.
-
-    The same resolution ``beads-commit-msg.py`` does, so this command reads the
-    tracker file the gate will read: a harness worktree shares the base
-    checkout's tracker via ``.beads/redirect``.
-    """
-    beads = Path(repo_root) / ".beads"
-    redirect = beads / "redirect"
-    if redirect.is_file():
-        try:
-            target = Path(redirect.read_text(encoding="utf-8").strip())
-        except OSError:
-            return beads
-        if target.is_dir():
-            return target
-    return beads
-
-
-def _tracker_records(repo_root: Path) -> list[dict]:
-    """Every issue record in the beads JSONL, or an empty list when there is none."""
-    issues = _beads_dir(repo_root) / "issues.jsonl"
-    if not issues.is_file():
-        return []
-    records: list[dict] = []
-    for raw_line in issues.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        try:
-            record = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(record, dict) and isinstance(record.get("id"), str):
-            records.append(record)
-    return records
-
-
 def bead_under_work(repo_root: Path, branch: str) -> str:
     """The bead id bound to *branch*, from its recorded worktree binding.
 
@@ -339,7 +300,7 @@ def bead_under_work(repo_root: Path, branch: str) -> str:
     """
     matches = [
         record
-        for record in _tracker_records(repo_root)
+        for record in br.export_records(repo_root)
         if (binding := loop_state.parse_worktree_ref(record.get("external_ref")))
         and binding.branch == branch
     ]
@@ -359,7 +320,7 @@ def bead_under_work(repo_root: Path, branch: str) -> str:
 
 def _record_for(repo_root: Path, bead: str) -> dict:
     """The tracker record for *bead*, or a ``ValueError`` the gate would also raise."""
-    for record in _tracker_records(repo_root):
+    for record in br.export_records(repo_root):
         if record["id"] == bead:
             return record
     raise ValueError(

@@ -157,14 +157,15 @@ def ledger_root(repo_root: Path) -> Path:
     Duplicated from ``tracker_usage.ledger_root`` for the same reason the rest of
     this hook is: it runs as a standalone script under whatever interpreter the host
     provides, with no guarantee the package is importable. A parity test compares the
-    two.
+    two, so the rule has to track it: any directory the redirect names, not only one
+    called ``.beads`` (basicly-tcmy.19).
     """
     try:
         redirect = repo_root / ".beads" / "redirect"
         if redirect.is_file():
-            target = Path(redirect.read_text(encoding="utf-8").strip())
-            if target.is_dir() and target.name == ".beads":
-                return target.parent
+            named = redirect.read_text(encoding="utf-8").strip()
+            if named and Path(named).is_dir():
+                return Path(named).parent
     except OSError:
         return repo_root
     return repo_root
