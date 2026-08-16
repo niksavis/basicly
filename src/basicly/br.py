@@ -25,12 +25,12 @@ import shutil
 import subprocess
 import sys
 import time
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from basicly import mirror, owned_store, redact, tracker_usage
+from basicly import edge_adoption, mirror, owned_store, redact, tracker_usage
 from basicly.tracker_paths import beads_dir
 
 # The oldest br this harness is exercised against (see `br --version`).
@@ -962,6 +962,17 @@ def dependency_edge(dep: object) -> tuple[str, str] | None:
     return dep_id, dep_type if isinstance(dep_type, str) else ""
 
 
+def _edges_by_record(records: Iterable[Mapping[str, Any]]) -> dict[str, set[tuple[str, str]]]:
+    """Each record's dependency edges as ``(target, type)``, in either of br's spellings."""
+    found: dict[str, set[tuple[str, str]]] = {}
+    for record in records:
+        issue = record.get("id")
+        if isinstance(issue, str) and issue:
+            rows = record.get("dependencies") or ()
+            found[issue] = {edge for edge in map(dependency_edge, rows) if edge}
+    return found
+
+
 def read_record(repo_root: Path, issue_id: str) -> dict | None:
     """*issue_id*'s ``br show`` record, or None when the tracker has no usable one.
 
@@ -1410,16 +1421,20 @@ class AdoptionReport:
 
     Attributes:
         adopted: Records whose ``created`` event landed in this run.
+        edges: Dependency edges appended, as ``(record, target, type)``. Named, not
+            counted: a record adopted only at an edge keeps its origin, so it stays in
+            the population conclusiveness is judged on (basicly-vkh0.32).
         diverged: Already-adopted records whose export **fields** have since changed. Not
             repaired and not repairable here: a second ``created`` event would fold over
             the first and make the import a sync (§5.1), so this is the one hand edit the
             run reports instead of reconciling.
-        unadoptable: Records br holds that the ledger and the **committed export** both
-            miss, so there is nothing to adopt them from. Reported rather than raised: the
-            other records are still repaired, and this one needs a re-export first.
+        unadoptable: Records br holds a record or an edge for that the ledger and the
+            **committed export** both miss, so there is nothing to adopt it from. Reported
+            rather than raised: the rest is still repaired, and this needs a re-export.
     """
 
     adopted: tuple[str, ...] = ()
+    edges: tuple[tuple[str, str, str], ...] = ()
     diverged: tuple[str, ...] = ()
     unadoptable: tuple[str, ...] = ()
 
@@ -1439,6 +1454,9 @@ def adopt_hand_writes(repo_root: Path) -> AdoptionReport:
     ``created`` event: the boundary then keeps it **in scope** and out of the population
     conclusiveness is judged on.
 
+    An edge on a record **both stores already hold** is the other half, and the one
+    :mod:`basicly.edge_adoption` exists for.
+
     Re-runnable rather than a one-shot, which is the defect `basicly-vkh0.23` paid for: it
     re-reads every record it has already adopted, so a later status change, comment or edge
     on one of them is reconciled by running it again. A changed **field** is the exception
@@ -1457,27 +1475,41 @@ def adopt_hand_writes(repo_root: Path) -> AdoptionReport:
         TrackerDivergenceError: the kit is not installed or will not load.
         RuntimeError: br is absent or its reply was not usable JSON.
     """
+    kit_module = kit(repo_root)
     boundary = kit(repo_root, BASELINE_MODULE)
     directory = ledger_dir(repo_root)
-    ledger_events = kit(repo_root).read_ledger(directory)
+    ledger_events = kit_module.read_ledger(directory)
     held = boundary.adopted_records(ledger_events)
+    ids = _live_ids(repo_root)
     undeclared = (
-        {str(record) for record in _live_ids(repo_root)}
+        {str(record) for record in ids}
         - {str(event.record) for event in ledger_events}
         - boundary.read_baseline(directory).records
     )
     snapshot = _export_snapshot(repo_root)
     wanted = undeclared | held
     records = tuple(record for record in snapshot.records if str(record.get("id")) in wanted)
-    report = kit(repo_root).migrate.import_snapshot(
+    report = kit_module.migrate.import_snapshot(
         directory,
         replace(snapshot, name=boundary.ADOPTION_SOURCE, records=records),
         redact=redact.redact_committed,
     )
+    # The ledger as it stood *before* the import: a record created above is absent from it,
+    # so the edges that import just wrote cannot be counted missing and written twice.
+    short = edge_adoption.shortfall(
+        kit_module,
+        boundary,
+        ledger_events,
+        _edges_by_record(_live_records(repo_root, ids)),
+        _edges_by_record(snapshot.records),
+    )
+    kit_module.events.append(directory, short.drafts, redact=redact.redact_committed)
+    missed = undeclared - {str(record.get("id")) for record in records}
     return AdoptionReport(
         adopted=tuple(sorted(report.imported)),
+        edges=short.adopted,
         diverged=tuple(sorted(report.diverged)),
-        unadoptable=tuple(sorted(undeclared - {str(record.get("id")) for record in records})),
+        unadoptable=tuple(sorted(missed | set(short.unexported))),
     )
 
 

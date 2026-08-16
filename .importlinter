@@ -46,7 +46,7 @@ layers =
     spend_calibration
     demonstration_proof
     br
-    mirror
+    edge_adoption | mirror
     owned_store
     br_argv
     dispatch_phase
