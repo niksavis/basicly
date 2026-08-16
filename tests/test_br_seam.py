@@ -400,8 +400,8 @@ def test_an_update_flag_with_no_field_fails_the_command(tmp_path: Path) -> None:
     """Dropping the one field br just wrote is the divergence, so it must not be silent."""
     repo = _repo(tmp_path, br.MODE_DUAL)
     br.run_br(repo, ["create", "a bead", "-t", "task", "--json"])
-    with pytest.raises(br.TrackerDivergenceError, match="--assignee"):
-        br.run_br(repo, ["update", "seam-0001", "--assignee", "someone"])
+    with pytest.raises(br.TrackerDivergenceError, match="--add-label"):
+        br.run_br(repo, ["update", "seam-0001", "--add-label", "phase"])
 
 
 @pytest.mark.usefixtures("fake_br")

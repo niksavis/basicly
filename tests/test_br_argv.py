@@ -44,9 +44,9 @@ def test_an_unknown_flags_value_stays_positional() -> None:
     Absorbing it would make an untranslatable write look like an ordinary one, which is
     the silent-divergence direction. Refusing on a surprise id is the loud one.
     """
-    assert br_argv.positionals(["update", "--assignee", "someone", "b-1"], UPDATE) == [
+    assert br_argv.positionals(["update", "--add-label", "phase", "b-1"], UPDATE) == [
         "update",
-        "someone",
+        "phase",
         "b-1",
     ]
 

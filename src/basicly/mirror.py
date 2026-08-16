@@ -52,13 +52,32 @@ MIRROR_PROVENANCE = "dual-write"
 # `events.append` creates its directory on first write.
 _UNMIRRORED_WRITES = frozenset({"init", "sync"})
 
-# The shape each created field has to be stored in, because a flag's value arrives as one
-# argv string while `br show --json` returns it typed. Not cosmetic: `supervise` reads
+
+def _priority(value: str) -> int:
+    """``-p P3`` and ``-p 3`` name one priority; the export holds the int (measured 2026-08-16).
+
+    Raises:
+        TrackerDivergenceError: *value* is neither spelling, so no int can be recorded.
+            Raised rather than let through as a ``ValueError``, because this runs in
+            :func:`refuse_untranslatable` before br is spawned and every refusal that
+            reaches a caller from here is one type.
+    """
+    try:
+        return int(value.removeprefix("P").removeprefix("p"))
+    except ValueError as exc:
+        raise TrackerDivergenceError(
+            f"br priority {value!r} is neither a number nor a P-form, so the int the "
+            f"export holds cannot be derived"
+        ) from exc
+
+
+# The shape each field has to be stored in, because a flag's value arrives as one argv
+# string while `br show --json` returns it typed. Not cosmetic: `supervise` reads
 # ``record["labels"]`` as a list and a stored ``"phase-6,ready"`` iterates as characters,
 # so a lane's follow-up would inherit twelve one-letter labels after the flip. Anything
 # absent here is text on both sides.
-_CREATE_FIELD_TYPES: dict[str, Callable[[str], object]] = {
-    "priority": int,
+_FIELD_TYPES: dict[str, Callable[[str], object]] = {
+    "priority": _priority,
     "labels": lambda value: [part for part in value.split(",") if part],
 }
 
@@ -96,18 +115,21 @@ def _update_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[o
                 for record in records
             ]
         elif (name := UPDATE_FIELD_FLAGS.get(flag)) is not None:
+            stored = _FIELD_TYPES.get(name, str)(value)
             drafts += [
                 events.Draft(
                     record,
                     events.KIND_FIELD,
-                    _payload(kit_module, name=name, value=value),
+                    _payload(kit_module, name=name, value=stored),
                 )
                 for record in records
             ]
         else:
             raise TrackerDivergenceError(
                 f"br update {flag} has no owned-ledger equivalent, so mirroring it would "
-                f"drop the field br just wrote; add it to br_argv.UPDATE_FIELD_FLAGS"
+                f"drop the field br just wrote; add it to br_argv.UPDATE_FIELD_FLAGS if br "
+                f"stores the argv's own value under one export key — that table's note "
+                f"lists the flags measured not to, and why the mapping would diverge"
             )
     return drafts
 
@@ -137,7 +159,7 @@ def _create_drafts(kit_module: Any, args: Sequence[str], stdout: str) -> list[ob
         if name == "parent":
             parent = value
         elif name is not None:
-            fields[name] = _CREATE_FIELD_TYPES.get(name, str)(value)
+            fields[name] = _FIELD_TYPES.get(name, str)(value)
     status = reply.get("status")
     drafts: list[object] = [
         events.Draft(record, events.KIND_CREATED, _payload(kit_module, **fields)),
