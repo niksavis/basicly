@@ -2588,6 +2588,33 @@ def test_ship_proceeds_when_the_cost_rollup_cannot_be_written(
     assert "cost rollup" not in result.detail
 
 
+def _curator_reply() -> loop._Dispatch:
+    """A finished curator dispatch; what it said is `curate.record`'s to read."""
+    spec = runner.RunnerSpec("claude", command=("claude", "-p"))
+    return loop._Dispatch(spec, runner.RunResult("claude", spec.command, executed=True), Path(), 1)
+
+
+@pytest.mark.parametrize(("adopted", "dispatched"), [(True, ["ship"]), (False, [])])
+def test_ship_dispatches_the_curator_only_where_the_contract_is_installed(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, adopted: bool, dispatched: list[str]
+) -> None:
+    """Asserted against the dispatch: `ROLE_BY_PHASE` named `ship` all along."""
+    at(_state("ship"))
+    seen: list[str] = []
+    monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: None)
+    monkeypatch.setattr(run_record, "dispatch_history", lambda _repo: {})
+    monkeypatch.setattr(loop.handoff, "adopted", lambda *_a: adopted)
+    monkeypatch.setattr(
+        loop, "_run_agent", lambda *_a, **kw: seen.append(kw["phase"]) or _curator_reply()
+    )
+    monkeypatch.setattr(loop.curate, "record", lambda *_a: "release record: 2 claim(s) bound")
+
+    result = _advance(tmp_path)
+
+    assert seen == dispatched
+    assert ("release record" in result.detail) is adopted
+
+
 def test_worktree_landed_missing_branch_counts_as_landed(monkeypatch: pytest.MonkeyPatch) -> None:
     """A branch that no longer exists was merged and cleaned (git branch -d) -> landed."""
     monkeypatch.setattr(

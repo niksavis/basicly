@@ -23,7 +23,7 @@ layers =
     cli
     supervise | usage_report
     loop | release
-    catalog_lint | contention | health | landing_gate
+    catalog_lint | contention | cost_rollup | curate | health | landing_gate
     commit | merge
     rebase | repair_brief | wip | working_set
     classify | decompose | loop_state | plan_entry | retrospective | rubrics

@@ -67,10 +67,12 @@ from . import artifact_record, catalog_source, plan_gate
 if TYPE_CHECKING:
     from jsonschema import Draft202012Validator
 
-# The two artifact kinds, spelled as their schema files are named so a kind cannot name a
-# schema that does not exist.
+# The wired artifact kinds, spelled as their schema files are named so a kind cannot name
+# a schema that does not exist. Five further schemas ship with no producer and no
+# consumer; a kind belongs here when both ends of its contract run.
 IMPLEMENTATION_PLAN = "implementation-plan"
 CHANGE_SUMMARY = "change-summary"
+RELEASE_RECORD = "release-record"
 
 # The artifact-format version every payload declares. Bumped only when a consumer's
 # contract changes; the schemas pin it with `const`, so a payload from a newer producer

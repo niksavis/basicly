@@ -403,7 +403,6 @@ waiver_count = 2
 # regrowth back to it for free.
 [tool.docs_citations.frozen]
 "docs/architecture/architecture.md" = 2
-"docs/requirements/factory-loop.md" = 1
 "docs/requirements/work-tracker.md" = 1
 
 [tool.hatch.build.targets.wheel]

@@ -52,6 +52,8 @@ from . import (
     br,
     classify,
     commit,
+    cost_rollup,
+    curate,
     decisions,
     decompose,
     dispatch_brief,
@@ -622,7 +624,8 @@ def _on_ship(ctx: _Ctx) -> AdvanceResult:
     # Before the close, and before the tracker commit that flushes it: a rollup
     # written after that commit would sit in the local db only, and the whole point
     # of it is to travel with the clone (basicly-kjc5.50).
-    rolled = _record_cost_rollup(ctx)
+    rolled = cost_rollup.record(ctx.repo_root, ctx.issue_id)
+    curated = _dispatch_curation(ctx)
     _run_br(ctx.repo_root, ["close", ctx.issue_id, "--reason", "shipped by the harness loop"])
     committed = merge.commit_tracker_state(
         ctx.repo_root, ctx.issue_id, action="close the shipped track"
@@ -630,6 +633,7 @@ def _on_ship(ctx: _Ctx) -> AdvanceResult:
     detail = "worktree torn down and issue closed"
     if rolled:
         detail += "; cost rollup recorded"
+    detail += curated
     if committed:
         detail += "; tracker state committed"
     else:
@@ -642,53 +646,28 @@ def _on_ship(ctx: _Ctx) -> AdvanceResult:
     return _moved(ctx, "done", "tore-down", detail)
 
 
-def _record_cost_rollup(ctx: _Ctx) -> bool:
-    """Write the shipped package's forecast-vs-actual cost onto its bead (kjc5.50).
+def _dispatch_curation(ctx: _Ctx) -> str:
+    """Bind the shipped unit's claims to their evidence, and say what came back.
 
-    The history is machine-local otherwise: run-records live in the self-ignored
-    ``.basicly/usage/``, so a fresh clone would forecast this package's class from
-    the seed factors and never learn what the package actually cost. The bead is
-    the only carrier that survives a clone, so the rollup goes there — the forecast
-    that was made beside the actual it produced, summed over *every* dispatch
-    including the failed ones, plus the counts behind it.
-
-    A node that was never dispatched — a decomposed feature, whose cost is its
-    children's packages — gets no rollup: it did not cost anything itself, and
-    counting it as a landed package would both double-count the work and dilute
-    cost-per-landed-package with a null.
-
-    Best-effort in full: this runs after the merge, on a package that has shipped.
-    Evidence is never worth failing a landing for, so any tracker or telemetry
-    failure returns False and the ship proceeds.
+    Priced and bounded exactly as the validator's judges are: outside ``WRITE_PHASES``,
+    past the grant halt, and skipped under the supervisor's landing pass, which has no
+    watchdog or stream meter of its own. Never raises — the package has already merged.
     """
-    try:
-        history = run_record.dispatch_history(ctx.repo_root).get(ctx.issue_id, [])
-        if not history:
-            return False
-        rework: int | None = None
-        with contextlib.suppress(RuntimeError, ValueError, OSError):
-            rework = policy.rework_recorded(ctx.repo_root, ctx.issue_id)
-        info = decompose.bead_class_and_scope(ctx.repo_root, ctx.issue_id)
-        task_class, scope = info if info is not None else (None, ())
-        # Money is never recomputed — the forecast carries tokens only, from the
-        # estimate the governor froze when it accepted this package's plan.
-        estimate = (
-            decompose.forecast_for(ctx.repo_root, task_class, scope)
-            if task_class is not None
-            else None
-        )
-        forecast = run_record.CostForecast(tokens=estimate.total if estimate else None)
-        ident = run_record.record_cost_marker(
-            ctx.repo_root,
-            ctx.issue_id,
-            actual=run_record.cost_rollup(history, rework=rework),
-            forecast=forecast,
-            task_class=task_class,
-            scope_tokens=estimate.scope_tokens if estimate else None,
-        )
-    except RuntimeError, ValueError, OSError:
-        return False
-    return ident is not None
+    if not ctx.repair_dispatch or not handoff.adopted(ctx.repo_root, handoff.RELEASE_RECORD):
+        return ""
+    if _spend_refused(ctx) is not None:
+        return "; the grant refused the curator"
+    run = _run_agent(
+        ctx,
+        ctx.issue_id,
+        ctx.repo_root,
+        prompt=dispatch_brief.curate_prompt(ctx.issue_id),
+        phase="ship",
+    )
+    said = curate.record(
+        ctx.repo_root, ctx.issue_id, runner.result_text(run.spec, run.result.stdout)
+    )
+    return f"; {said}" if said else ""
 
 
 def _skipped_tracker_suffix(ctx: _Ctx) -> str:

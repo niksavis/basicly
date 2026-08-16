@@ -59,10 +59,10 @@ different, smaller thing. This document states the target so the delta can be de
 | INTAKE outputs a solution design | Records one enum value | `loop.py:234-262` |
 | CLASSIFY outputs a technical design | Same enum plus a section lint | `classify.py:43-56` |
 | DECOMPOSE emits a dependency graph | Plan schema has no dependency field; ordering derived from scope overlap only | `loop.py:923-925`, `decompose.py:370-376` |
-| VERIFY and VALIDATE distinct | Validate runs on one path only, never for leaves; its sole deterministic check is re-running verify | `loop.py:441` vs `:423`; `task.rubric.yaml:25-28` |
+| VERIFY and VALIDATE distinct | Validate runs on one path only, never for leaves; its sole deterministic check is re-running verify | `loop._dispatch_validation` vs `loop._verify_and_land`; `task.rubric.yaml:25-28` |
 | Repair in place | Supervised rework dispatches a fresh agent | `supervise.py:3036` |
 | Findings reach the repair | Dispatch prompt is fixed text every attempt | `loop.py:811-823` |
-| Gates at every boundary | Gates at one boundary (build→verify) | `loop.py:257-262`, `:313-314` |
+| Gates at every boundary | Gates at one boundary (build→verify) | `loop._on_intake`, `loop._on_classify` |
 | Seven personas | Zero implemented; one default runner serves every phase | `loop.py:678` |
 | Retrospective | Does not exist in the engine | `harness-loop/skill.yaml:337-346` |
 | End-of-loop housekeeping | Per-track teardown plus a pre-run preflight | `loop.py:409-449` |
@@ -364,7 +364,7 @@ a role and dispatch it, which is what makes the roster real rather than projecte
 | Role | State | Source [M 2026-08-09] | Engine |
 | --- | --- | --- | --- |
 | `decomposer` | DECOMPOSE | **authored**, loads `decompose-plan` | **dispatched** with `phase="decompose"` (`loop._run_proposer`, `loop.py:1119`) |
-| `implementer` (+ **repair mode** [D5]) | BUILD, REPAIR | **authored**, loads `python-guidelines` + `repair-in-place` | **both dispatched** — build at `loop._dispatch_runner` (`loop.py:749`), repair at `loop._repair_in_place` (`loop.py:1655`) with `phase="repair"` and a brief carrying the gate evidence that rejected the work (`repair_brief`, `basicly-u2hl.4`). This row read "repair mode does not" until 2026-08-14 |
+| `implementer` (+ **repair mode** [D5]) | BUILD, REPAIR | **authored**, loads `python-guidelines` + `repair-in-place` | **both dispatched** — build at `loop._dispatch_runner` (`loop.py:721`), repair at `loop._repair_in_place` (`loop.py:1655`) with `phase="repair"` and a brief carrying the gate evidence that rejected the work (`repair_brief`, `basicly-u2hl.4`). This row read "repair mode does not" until 2026-08-14 |
 | `validator` | VALIDATE | **authored**, loads `validate-as-consumer` | **dispatched** (`loop._dispatch_validation`, `loop.py:507`, `u2hl.54.3`) |
 | `reviewer` (by lens) | VALIDATE | **authored** | **dispatched once per lens** (`loop._dispatch_reviews`, `roles.LENS_ROLE_BY_PHASE`, `basicly-feje`) |
 | `decider` | CLASSIFY, escalations | **authored** | **dispatched** with `phase="classify"` through the same `loop._run_proposer`; `decisions.py` is the escalation queue, not the dispatch |

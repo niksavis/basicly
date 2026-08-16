@@ -53,6 +53,32 @@ def validate_prompt(issue_id: str) -> str:
     )
 
 
+def curate_prompt(issue_id: str) -> str:
+    """Bind every claim the shipped unit makes to its evidence, and name the rest.
+
+    The writer of a claim is the wrong context to audit it, so this brief withholds the
+    author's own conclusion and points at the record instead. It asks for one JSON
+    object because the answer is an artifact a schema refuses, not prose a reader has to
+    interpret — and the two fields the engine already knows are supplied by the engine.
+    """
+    return (
+        f"{issue_id} has merged with verify and validate green, and it is about to ship. "
+        "Your job is the one nothing mechanical can make: decide which of the claims this "
+        "release will put in front of a consumer are actually evidenced. Run "
+        f"`br show {issue_id}` for the requirement, its acceptance criteria and its "
+        "demonstration command, and read the diff that closed it. For each claim, quote "
+        "it in the words a consumer will read, and bind it to a test id, a command or a "
+        "gate name a second reader can re-run — a claim you can only argue for is "
+        "unsupported, and naming it as unsupported is the useful answer rather than the "
+        "embarrassing one. Then state, before the tag moves, what happens after it does. "
+        "Reply with one JSON object and nothing else that looks like one: keys `claims` "
+        "(each with `claim` and `evidence`, each evidence entry `kind` one of test, "
+        "command, gate, plus `reference`), `unsupported` (each with `claim` and `why`, "
+        "empty list if none), and `post_ship_action`. Omit `schema_version` and `issue` — "
+        "the engine fills both. You are read-only: change no file and move no tag."
+    )
+
+
 def review_prompt(issue_id: str, lens: str) -> str:
     """Review the merged change along *lens* alone, reporting on that axis only.
 
