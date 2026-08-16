@@ -21,8 +21,8 @@ import pytest
 from basicly import cli, schema
 
 ARCHITECTURE_MD = Path(__file__).parent.parent / "docs" / "architecture" / "architecture.md"
-CLI_SECTION = "## The CLI surface"
-FRAGMENT_SECTION = "## The fragment model"
+CLI_SECTION = "## 22. The CLI surface"
+FRAGMENT_SECTION = "## 13. The fragment model"
 
 
 def _section(text: str, heading: str) -> str:

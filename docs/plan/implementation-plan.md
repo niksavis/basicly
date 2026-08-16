@@ -590,7 +590,6 @@ exist.
 | Document | Status | Precondition for deletion |
 | --- | --- | --- |
 | `architecture/architecture.md` | **Authoritative** | Never deleted. Corrected against the code whenever the two disagree. |
-| `architecture/architecture-v2.md` | **Temporary** | The rewrite draft, not in force. Deleted the moment its content replaces `architecture.md`; the `-v2` name must never survive that swap. |
 | `architecture/status.md` | **Live** | The capability status view, extracted from the architecture reference so the reference holds specification only. Deleted when a status view is generated from the tracker rather than written by hand. |
 | `architecture/backlog.md` | **Live** | Plan-gate-shaped items the architecture review emitted. Deleted when the last item is filed as a tracked issue. |
 | `architecture/conventions.md` | **Live** | How the architecture reference is produced — the diagram renderer, the types used and declined, the reading order and the authority order. Extracted so the reference describes the system and never itself. Deleted only if the reference stops carrying diagrams. |

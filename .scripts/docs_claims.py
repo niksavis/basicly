@@ -270,7 +270,7 @@ def _cli_section(root: Path) -> str:
     """The architecture document's CLI section, where every command is tabulated."""
     text = read_text(root / ARCHITECTURE_MD)
     # No section numbers to key on, so renaming that heading must change this literal.
-    start = text.index("## The CLI surface")
+    start = text.index("## 22. The CLI surface")
     end = text.find("\n## ", start)
     return text[start:end] if end != -1 else text[start:]
 
