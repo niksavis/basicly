@@ -9,8 +9,10 @@ in the repository was answering about the wrong tree.
 The cause is not in the call sites. `tests/test_hooks.py` and `tests/test_landing_anchors.py`
 correctly pass `cwd=<fixture repo>` to every `git init`, `git config` and `git worktree add`
 they make. Git resolves the repository from `GIT_DIR` and its relatives *first* and from
-`cwd` only afterwards, so one inherited variable retargets all of them at once. `git push`
-is what made it recur: `.pre-commit-config.yaml` runs this suite from a pre-push hook.
+`cwd` only afterwards, so one inherited variable retargets all of them at once. What set
+it is git, in the lane: a hook run from a linked worktree is handed `GIT_DIR`, and
+`.pre-commit-config.yaml` runs this suite from `pre-push` (basicly-e2mz.16, first test
+below). The push is the occasion, not the mechanism — the same hook fires at commit.
 
 So the fix is `tests/conftest.py`'s import-time scrub, and this file is the test that binds
 it. It runs the two sites the incident named, in a subprocess, with the environment
@@ -19,6 +21,7 @@ deliberately poisoned, against a repository that exists only for this test.
 
 from __future__ import annotations
 
+import ast
 import os
 import subprocess
 import sys
@@ -75,6 +78,50 @@ def _poisoned_env(repo: Path) -> dict[str, str]:
     return env
 
 
+def _hook_recording_git_dir(git_dir: Path, record: Path) -> None:
+    """Install a `pre-commit` hook appending `<GIT_DIR or "unset">` for each commit."""
+    hook = git_dir / "hooks" / "pre-commit"
+    hook.write_text(
+        f'#!/bin/sh\necho "${{GIT_DIR-unset}}" >> "{record.as_posix()}"\n', encoding="utf-8"
+    )
+    hook.chmod(0o755)
+
+
+def _commit(repo: Path, name: str) -> None:
+    (repo / name).write_text(name, encoding="utf-8")
+    _git(repo, "add", name)
+    _git(repo, "commit", "-q", "-m", f"chore: add {name}")
+
+
+def test_git_hands_a_hook_in_a_linked_worktree_the_variable_that_poisons_the_suite(
+    tmp_path: Path,
+) -> None:
+    """The producer basicly-e2mz.15 could not name, and why its probes missed it.
+
+    That lane dumped a hook's environment in a *clean clone* and saw `GIT_EDITOR`,
+    `GIT_EXEC_PATH`, `GIT_PREFIX` and nothing else — the first reading below, exactly.
+    A clean clone is a main checkout, and the discriminator is the checkout: git exports
+    `GIT_DIR` to a hook whenever the git dir is not a plain `<worktree>/.git`. Every lane
+    is a linked worktree, `.pre-commit-config.yaml` runs this suite from `pre-push`, and
+    a hook's descendants inherit it — so the suite ran aimed at the shared repository.
+
+    Pinned as a test because the sanitising in `basicly.checkout` and the scrub in
+    `tests/conftest.py` are both answers to this one fact about git's own behaviour.
+    """
+    repo = _seed_repo(tmp_path / "repo")
+    record = tmp_path / "hook-git-dir.txt"
+    _hook_recording_git_dir(repo / ".git", record)
+    lane = tmp_path / "lane"
+    _git(repo, "worktree", "add", "-q", str(lane), "-b", "harness/lane")
+
+    _commit(repo, "from-main-checkout.txt")
+    _commit(lane, "from-linked-worktree.txt")
+
+    from_main, from_lane = record.read_text(encoding="utf-8").split()
+    assert from_main == "unset"
+    assert Path(from_lane).resolve() == (repo / ".git" / "worktrees" / "lane").resolve()
+
+
 def test_a_leaked_git_dir_really_does_reach_the_repository_it_names(tmp_path: Path) -> None:
     """Positive control: without it, the guard below cannot tell a fix from a no-op.
 
@@ -120,6 +167,65 @@ def test_a_fixture_root_under_tmp_path_is_not_what_protects_the_repository(
 
     assert _snapshot(victim) != before
     assert _git(victim, "log", "-1", "--format=%s").strip() == "chore: seed the fixture repo"
+
+
+# Every direct `subprocess` git call in the engine, i.e. the ones that do *not* go through
+# `checkout.run`'s scrub. All five are read-only queries, so a leaked `GIT_DIR` makes them
+# answer about the wrong repository but cannot corrupt it; the writing paths are the
+# `checkout.run` chokepoint and the `runner.run` dispatch, both scrubbed (basicly-e2mz.16).
+# Keyed by argv rather than by line so an edit elsewhere in the module cannot fail this.
+UNSCRUBBED_GIT_SPAWNS = {
+    "hooks.py: git rev-parse --git-path hooks",
+    "hooks.py: git rev-parse --git-common-dir --show-toplevel",
+    "supervise.py: git -C ... rev-parse HEAD",
+    "supervise.py: git -C ... status --porcelain",
+    "verify.py: git diff --cached --name-only --diff-filter=ACM",
+}
+_SPAWN_ATTRS = frozenset({"run", "Popen", "check_output", "call"})
+
+
+def _git_argv(node: ast.AST) -> str | None:
+    """The rendered argv of a `subprocess.<spawn>` starting with a literal `git`, else None.
+
+    Non-literal elements — a `str(cwd)` — render as `...`, since the point is which call
+    it is and not what it was pointed at.
+    """
+    if not isinstance(node, ast.Call):
+        return None
+    func = node.func
+    if not (
+        isinstance(func, ast.Attribute)
+        and func.attr in _SPAWN_ATTRS
+        and isinstance(func.value, ast.Name)
+        and func.value.id == "subprocess"
+    ):
+        return None
+    for arg in node.args:
+        if not (isinstance(arg, ast.List) and arg.elts):
+            continue
+        first = arg.elts[0]
+        if isinstance(first, ast.Constant) and first.value == "git":
+            return " ".join(
+                str(el.value) if isinstance(el, ast.Constant) else "..." for el in arg.elts
+            )
+    return None
+
+
+def test_every_direct_git_spawn_in_the_engine_is_a_known_read_only_query() -> None:
+    """Answers the bead's third criterion for code the scrub does not cover.
+
+    A new git call that bypasses `checkout.run` is how this incident comes back through a
+    door the guard is not behind, so the inventory is pinned rather than described. Adding
+    one fails here: route it through `checkout.git`, or add it above with its argv.
+    """
+    found = set()
+    for path in sorted((REPO_ROOT / "src" / "basicly").rglob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            argv = _git_argv(node)
+            if argv is not None:
+                found.add(f"{path.name}: {argv}")
+
+    assert found == UNSCRUBBED_GIT_SPAWNS
 
 
 def test_the_incident_sites_leave_a_poisoned_git_dir_target_untouched(tmp_path: Path) -> None:
