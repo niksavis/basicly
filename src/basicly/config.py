@@ -377,10 +377,10 @@ DEFAULT_CONTEXT_CEILING = 0.6
 # the target is that no more than one lane in ten exceeds its bound.
 DEFAULT_UNSIZED_LANE_QUANTILE = 0.9
 
-# The three human checkpoints the loop enforces (architecture §12.2).
+# The three human checkpoints the loop enforces (architecture §23.3).
 CHECKPOINTS = ("classify", "decompose", "ship")
 
-# The loop's phases, in the order they run (architecture §12.2). ``done`` is the
+# The loop's phases, in the order they run (architecture §23.3). ``done`` is the
 # terminal state, not a phase with a transition out of it, so it is absent. Named
 # here rather than in ``loop`` so ``[policy.evidence]`` can be validated against
 # the same set ``loop._HANDLERS`` dispatches on — the jr0l.51 stance: a rename
@@ -414,7 +414,7 @@ DEFAULT_MAX_SUBTASKS_PER_LANE = 10
 SCOPE_COLLISION_POLICIES = ("block", "warn")
 DEFAULT_SCOPE_COLLISION = "block"
 
-# The fixed br work classes the classifier may assign (architecture §12.1).
+# The fixed br work classes the classifier may assign (architecture §23.1).
 # bug/chore are leaf tracks; task/feature/epic nest fractally.
 WORK_TYPES = ("bug", "chore", "task", "feature", "epic")
 

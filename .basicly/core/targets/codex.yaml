@@ -3,7 +3,7 @@ enabled: true
 tone: terse_directive
 # Higher than claude/copilot (9000): scoped fragments are inlined here because Codex
 # has no glob-based instruction scoping and a nested AGENTS.md below the cwd is never
-# loaded (architecture §7.4). Counted in characters, not bytes. Codex's real budget is
+# loaded (architecture §12.2). Counted in characters, not bytes. Codex's real budget is
 # project_doc_max_bytes (32 KiB default, configurable).
 #
 # Raised from 12000/200 on 2026-08-09, after the basicly-a3ab.1 audit measured where the

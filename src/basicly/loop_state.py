@@ -1,6 +1,6 @@
 """Resumable loop-state reconstruction — pure reads from ``br`` (onb.6.1).
 
-The harness keeps no durable side-state (architecture §12.7): everything the
+The harness keeps no durable side-state (architecture §24): everything the
 loop needs to resume after a restart — or after switching agents mid-flight —
 is reconstructed here by *reading* ``br``. Nothing in this module mutates the
 tracker; it folds an issue's status, its stashed worktree/branch binding
@@ -29,7 +29,7 @@ from . import br, policy, validate_gate
 from .br import run_br as _run_br
 from .config import CHECKPOINTS, PolicyConfig, load_policy_config
 
-# The loop phases, ordered from earliest to latest (architecture §12.2). "done"
+# The loop phases, ordered from earliest to latest (architecture §23.3). "done"
 # is terminal (the issue is closed); "intake" is the pre-classify default.
 PHASES = ("intake", "classify", "decompose", "build", "verify", "validate", "ship", "done")
 

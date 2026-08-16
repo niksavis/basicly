@@ -2,7 +2,7 @@
 
 Where ``catalog_lint`` guards the raw YAML *source contract* (schema, extensions,
 no discoverable-name sources), this module runs the deterministic *content* checks
-of the verification pipeline (architecture §6) against the merged, override-resolved
+of the verification pipeline (architecture §19) against the merged, override-resolved
 fragment set that ``loader.load_fragments`` produces:
 
 1. Duplicate / near-duplicate bodies — two fragments saying the same thing.

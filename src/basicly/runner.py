@@ -1,7 +1,7 @@
 """Agent-agnostic runner adapters (onb.7).
 
 A *runner* is the thin adapter that invokes a coding agent headless to do a
-node's work in its worktree (architecture §12.8): an invocation command, its
+node's work in its worktree (architecture §29.1): an invocation command, its
 headless flags, how the prompt is injected, and how output is captured. The loop
 logic is agent-neutral; only the runner differs per agent, so the same loop runs
 identically under Claude, Codex, or Copilot.

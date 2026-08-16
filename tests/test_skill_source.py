@@ -89,7 +89,7 @@ def test_a_bundled_agent_skills_layout_is_left_to_the_projector(tmp_path: Path) 
 
 
 def test_a_stray_markdown_source_is_not_discovered(tmp_path: Path) -> None:
-    """The source is non-discoverable on purpose (architecture §4.2).
+    """The source is non-discoverable on purpose (architecture §10.2).
 
     A broadly-scanning agent must not be able to load the catalog source as a second
     copy of the skill, which is only true while nothing loads a `.md` here either.

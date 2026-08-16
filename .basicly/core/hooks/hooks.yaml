@@ -4,7 +4,7 @@
 # `manager: claude` goes to the agent-hook section of .claude/settings.json,
 # and `manager: copilot` goes to a managed .github/hooks/basicly-<id>.json.
 # The fields stay tool-agnostic so another manager (e.g. lefthook) can be
-# projected later. See docs/architecture/architecture.md §4.2, §11.6.
+# projected later. See docs/architecture/architecture.md §10.2, §16.
 hooks:
   - id: identity-guard
     script: identity-guard.py

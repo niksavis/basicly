@@ -1,7 +1,7 @@
 """Catalog source lint — the deterministic gate that keeps the YAML contract.
 
 Enforces nine invariants across the managed core catalog so the double-load fix
-and the single-extension decision cannot regress (architecture §4.2):
+and the single-extension decision cannot regress (architecture §10.2):
 
 1. No discoverable-name *sources*: no ``SKILL.md`` under ``core/skills``, no
    ``*.fragment.md`` under ``core/fragments``, and no markdown under

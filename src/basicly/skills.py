@@ -3,7 +3,7 @@
 Skills are authored as a non-discoverable ``skill.yaml`` source (name,
 description, ``instructions`` block scalar, and optional Agent-Skills-spec
 frontmatter) so a broadly-scanning agent never finds the catalog source as a
-second ``SKILL.md`` (architecture §4.2). The projector renders the discoverable
+second ``SKILL.md`` (architecture §10.2). The projector renders the discoverable
 ``SKILL.md`` at the target roots only, so exactly one copy an agent can load
 exists per skill.
 
@@ -335,7 +335,7 @@ def _unmanaged_entries(
     directories a source names, so a hand-authored skill dropped into a projected
     root was invisible to every gate: it shipped to one agent and not the other,
     and nothing said so (basicly-tcmy.8). The root is a projection target owned
-    wholly by basicly (architecture §4.2), so anything here without a source is a
+    wholly by basicly (architecture §14), so anything here without a source is a
     finding — either a hand-authored skill that belongs in the catalog, or a
     projection left behind by a source that was deleted.
 

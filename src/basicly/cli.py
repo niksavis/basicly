@@ -811,7 +811,7 @@ def _prune_legacy_catalog_sources(repo_root: Path, paths: ProjectPaths) -> list[
     Skills and fragments are now authored as YAML (``skill.yaml`` /
     ``*.fragment.yaml``); a leftover ``SKILL.md`` or ``*.fragment.md`` in the
     managed core is a pre-migration source that would let an agent double-load a
-    skill (architecture §4.2). This prunes exactly those, scoped to the managed
+    skill (architecture §14). This prunes exactly those, scoped to the managed
     core so a consumer's overlay content is never touched.
     """
     core_root = repo_root / paths.core_root

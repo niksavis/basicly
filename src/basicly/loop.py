@@ -92,7 +92,7 @@ if TYPE_CHECKING:
     from .decompose import ChildSpec
 
 # Work classes that are leaf tracks — they build directly rather than decompose
-# (architecture §12.1: bug/chore are leaves; a task is a unit of work).
+# (architecture §23.1: bug/chore are leaves; a task is a unit of work).
 _LEAF_TYPES = ("bug", "chore", "task")
 
 # Phases whose transition merges a worktree back or tears one down and closes the
@@ -700,7 +700,7 @@ def _skipped_tracker_suffix(ctx: _Ctx) -> str:
 def _start_build_leaf(ctx: _Ctx) -> AdvanceResult:
     """Provision the leaf's worktree and dispatch the selected runner in it.
 
-    A headless runner does the node's coding before the block (§12.8); the
+    A headless runner does the node's coding before the block (architecture §29.2); the
     manual handoff runner keeps the block-and-resume contract untouched. Either
     way this step blocks — the next advance verifies and lands whatever the
     agent committed.

@@ -7,7 +7,7 @@ here writes anything, renders anything, or knows a projection root exists.
 
 The source is deliberately non-discoverable — ``skill.yaml``, never ``SKILL.md`` — so a
 broadly-scanning agent cannot load the catalog source as a second copy of the skill
-(architecture §4.2). That is why the invocation axis and the source file names live
+(architecture §10.2). That is why the invocation axis and the source file names live
 here rather than beside the renderer: they are facts about the authored form, and
 :mod:`basicly.catalog_lint` asks about them without going anywhere near projection.
 

@@ -1295,7 +1295,7 @@ dispatch path — which is `basicly-xjd2`.
 argument rested on** [M 2026-08-09, claude 2.1.226; conceded in D24 and never carried down here].
 A subagent runs in an **isolated context window**: only its name and description load at session
 start, its body never enters the parent's context, and only its final message returns
-(`architecture.md` §5, "Agent composition model"). So "many lanes cannot share one window" is not
+(`architecture.md` §15, "Agent composition model"). So "many lanes cannot share one window" is not
 a fact about light mode, and the sentence that followed this table has been removed rather than
 reworded — it was the whole of the argument.
 

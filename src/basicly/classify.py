@@ -6,7 +6,7 @@ this module VALIDATES it against the fixed br set and RECORDS it with
 allow-list guard lives here — an unknown class is a loud error, never silently
 written.
 
-Definition-of-Ready is reported, not enforced here: per architecture §12.2 the
+Definition-of-Ready is reported, not enforced here: per architecture §23.3 the
 loop runs Classify (agent proposes, engine records the type) → _[human
 checkpoint]_ → Decompose, and the Decompose entry is what DoR gates. So
 :func:`classify` records the type unconditionally and surfaces the DoR verdict
