@@ -634,7 +634,7 @@ def _on_ship(ctx: _Ctx) -> AdvanceResult:
                 "into its base — the build->verify landing was skipped (was the verify gate "
                 "recorded out-of-band?); re-run the build->verify advance to land it first",
             )
-        worktree.cleanup(binding.name, force=False, repo_root=ctx.repo_root)
+        worktree.cleanup(binding.name, force=False, repo_root=ctx.repo_root, missing_ok=True)
     # Before the close, and before the tracker commit that flushes it: a rollup
     # written after that commit would sit in the local db only, and the whole point
     # of it is to travel with the clone (basicly-kjc5.50).

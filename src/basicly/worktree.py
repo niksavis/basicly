@@ -240,14 +240,21 @@ def create(name: str, base: str | None = None, repo_root: Path | str | None = No
 
 
 def _resolve_worktree(
-    name: str, main: Path, repo_root: Path | str | None = None
-) -> tuple[Path, str | None]:
-    """Return ``(worktree_path, branch)`` for *name*.
+    name: str,
+    main: Path,
+    repo_root: Path | str | None = None,
+    *,
+    missing_ok: bool = False,
+) -> tuple[Path, str | None] | None:
+    """Return ``(worktree_path, branch)`` for *name*, or ``None`` when absent.
 
     Prefers the session record; falls back to ``git worktree list`` so a
     worktree with no session (e.g. one made by raw ``git worktree add``) can
     still be cleaned up safely. *name* matches a registered path or its
     directory basename.
+
+    Raises when nothing matches, unless *missing_ok* — a caller that is tearing
+    down asks for an end state, and an already-absent worktree is that state.
     """
     session = load_session(name, repo_root)
     if session is not None:
@@ -257,6 +264,8 @@ def _resolve_worktree(
     for path, branch in registered_worktrees(main).items():
         if path == target or path.name == name:
             return path, branch
+    if missing_ok:
+        return None
     raise SystemExit(
         f"no worktree named {name!r}: no session record and no registered worktree "
         f"matches it. Run `git worktree list` to see them."
@@ -369,7 +378,13 @@ def _worktree_removal_verdict(worktree: Path) -> RemovalVerdict:
     return classify_worktree_tree(proc.returncode, proc.stdout)
 
 
-def cleanup(name: str, *, force: bool = False, repo_root: Path | str | None = None) -> None:
+def cleanup(
+    name: str,
+    *,
+    force: bool = False,
+    repo_root: Path | str | None = None,
+    missing_ok: bool = False,
+) -> None:
     """Remove worktree *name* and delete its merged branch.
 
     Removes the worktree directory (``git worktree remove --force`` — the
@@ -389,9 +404,18 @@ def cleanup(name: str, *, force: bool = False, repo_root: Path | str | None = No
 
     *repo_root* selects the repository, as in :func:`create`; it defaults to the
     process cwd.
+
+    *missing_ok* returns quietly when nothing matches *name*, for a caller that
+    wants the end state rather than the removal. A ship advance tears down and
+    then closes; without this it died on the teardown of a worktree an earlier
+    teardown had already removed, and left the shipped issue open at ship with a
+    binding to a worktree and branch that no longer exist (basicly-e2mz.32).
     """
     main = main_checkout(repo_root)
-    worktree, branch = _resolve_worktree(name, main, repo_root)
+    resolved = _resolve_worktree(name, main, repo_root, missing_ok=missing_ok)
+    if resolved is None:
+        return
+    worktree, branch = resolved
 
     if worktree.exists():
         verdict = _worktree_removal_verdict(worktree)

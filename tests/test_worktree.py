@@ -450,6 +450,25 @@ def test_cleanup_rejects_unknown_name(git_repo: Path, monkeypatch: pytest.Monkey
         worktree.cleanup("nope")
 
 
+def test_cleanup_missing_ok_accepts_an_already_removed_worktree(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A second teardown under missing_ok returns instead of raising.
+
+    The ship advance tears down and then closes. A worktree an earlier teardown
+    already removed once killed the advance before the close, leaving the
+    shipped issue open at ship (basicly-e2mz.32).
+    """
+    monkeypatch.chdir(git_repo)
+    worktree.create("gone")
+    worktree.cleanup("gone")
+
+    worktree.cleanup("gone", missing_ok=True)
+
+    with pytest.raises(SystemExit, match="no worktree named"):
+        worktree.cleanup("gone")
+
+
 def test_cli_worktree_create_list_cleanup(git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The worktree subcommands create, list, and clean up a session."""
     monkeypatch.chdir(git_repo)
