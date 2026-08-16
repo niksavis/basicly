@@ -34,6 +34,7 @@ from pathlib import Path
 import pytest
 
 from basicly import runner, session
+from basicly.checkout import GIT_ENV_KEPT
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -53,20 +54,10 @@ AGENT_BINARIES = frozenset({"claude", "codex", "copilot"})
 # signature of the incident that filed the bead. The same run with this scrub in place
 # leaves config, refs and the worktree registry byte-identical.
 #
-# The set is pre-commit's own `no_git_env` allowlist (`pre_commit/git.py`, which
-# documents the same class of leak) minus `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_*`/
-# `GIT_CONFIG_VALUE_*`: pre-commit keeps those to *forward* config into hooks, and
-# injecting config into every git call a test makes is the same defect one layer down.
-GIT_ENV_KEPT = frozenset({
-    "GIT_ALLOW_PROTOCOL",
-    "GIT_ASKPASS",
-    "GIT_EXEC_PATH",
-    "GIT_HTTP_PROXY_AUTHMETHOD",
-    "GIT_SSH",
-    "GIT_SSH_COMMAND",
-    "GIT_SSL_CAINFO",
-    "GIT_SSL_NO_VERIFY",
-})
+# What sets it is now known (basicly-e2mz.16): git exports `GIT_DIR` into every hook it
+# runs from a checkout whose git dir is not a plain `<worktree>/.git`, so a lane's
+# pre-push hook hands it to this suite. The engine scrubs its own git subprocesses with
+# the same allowlist, which is why this imports it rather than restating it.
 
 
 def _drop_ambient_git_env() -> None:

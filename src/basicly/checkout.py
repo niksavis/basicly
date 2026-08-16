@@ -28,8 +28,37 @@ does, and that is why this module needs no import back into it.
 
 from __future__ import annotations
 
+import os
 import subprocess
+from collections.abc import Mapping
 from pathlib import Path
+
+# pre-commit's `no_git_env` allowlist, minus the `GIT_CONFIG_*` trio it forwards to hooks.
+GIT_ENV_KEPT = frozenset({
+    "GIT_ALLOW_PROTOCOL",
+    "GIT_ASKPASS",
+    "GIT_EXEC_PATH",
+    "GIT_HTTP_PROXY_AUTHMETHOD",
+    "GIT_SSH",
+    "GIT_SSH_COMMAND",
+    "GIT_SSL_CAINFO",
+    "GIT_SSL_NO_VERIFY",
+})
+
+
+def sanitised_git_env(env: Mapping[str, str]) -> dict[str, str]:
+    """*env* without the inherited `GIT_*` that would outrank a caller's *cwd*.
+
+    Git reads `GIT_DIR` before *cwd*, and exports it into every hook it runs from a
+    checkout whose git dir is not a plain `<worktree>/.git` — every lane worktree. A
+    harness running from a hook therefore aims every call below at the wrong repository
+    unless it is dropped here (basicly-e2mz.16).
+    """
+    return {
+        name: value
+        for name, value in env.items()
+        if not name.startswith("GIT_") or name in GIT_ENV_KEPT
+    }
 
 
 def run(
@@ -43,7 +72,8 @@ def run(
 
     *env* replaces the child's environment wholesale when given (the release
     regeneration needs PYTHONPATH pointed at the repo being released); omitting it
-    inherits this process's, which is what every other caller wants.
+    inherits this process's, which is what every other caller wants. Either way
+    :func:`sanitised_git_env` runs on it, so *cwd* decides the repository.
     """
     # Validating `args` here — the alternative to the suppression — would duplicate the
     # naming rules each caller already enforces, and `shell=False` already makes a branch
@@ -51,7 +81,7 @@ def run(
     proc = subprocess.run(  # noqa: S603 — argv list built by this module, no shell
         args,
         cwd=cwd,
-        env=env,
+        env=sanitised_git_env(os.environ if env is None else env),
         check=False,
         text=True,
         encoding="utf-8",

@@ -1344,6 +1344,60 @@ def test_run_overlays_br_attribution_on_the_child_env(
     assert env["BR_HARNESS"] == "basicly-loop"
 
 
+# --- the git environment a dispatched lane inherits (basicly-e2mz.16) ---------
+
+
+def test_dispatch_env_drops_an_inherited_git_dir() -> None:
+    """A lane is dispatched from a hook, and that hook is handed a `GIT_DIR`.
+
+    Git exports it to every hook run from a linked worktree — which every lane is —
+    and it outranks the `cwd` the agent is given, so an unscrubbed child aims its
+    commits at the shared repository instead of its own worktree (basicly-e2mz.16).
+    """
+    base = {"GIT_DIR": "/repo/.git/worktrees/lane", "GIT_INDEX_FILE": "/repo/.git/index"}
+    env = runner.dispatch_env(_claude_spec(), base)
+
+    assert "GIT_DIR" not in env
+    assert "GIT_INDEX_FILE" not in env
+
+
+def test_dispatch_env_keeps_the_deliberate_identity_and_transport_vars() -> None:
+    """The scrub runs on the inherited base only — never on the overlays above it.
+
+    All four identity vars start with `GIT_`, so scrubbing the merged mapping instead
+    would silently strip the bot identity and hand the lane the developer's own.
+    """
+    spec = RunnerSpec(
+        "bot",
+        HEADLESS,
+        ("bot", "-p", PROMPT_PLACEHOLDER),
+        git_name="basicly-bot",
+        git_email="bot@example.com",
+    )
+    env = runner.dispatch_env(spec, {"GIT_DIR": "/repo/.git", "GIT_SSH_COMMAND": "ssh -i k"})
+
+    assert env["GIT_AUTHOR_NAME"] == "basicly-bot"
+    assert env["GIT_COMMITTER_EMAIL"] == "bot@example.com"
+    assert env["GIT_SSH_COMMAND"] == "ssh -i k"  # transport config, not a repo pointer
+    assert "GIT_DIR" not in env
+
+
+def test_run_does_not_hand_the_child_an_inherited_git_dir(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The end-to-end path: what `Popen` actually receives, not what the builder returns."""
+    captured = _patch_popen(monkeypatch)
+    monkeypatch.setenv("GIT_DIR", "/repo/.git/worktrees/lane")
+    monkeypatch.setenv("EXISTING_VAR", "kept")
+
+    runner.run(_claude_spec(), "go", Path("/work"))
+
+    env = captured["env"]
+    assert isinstance(env, dict)
+    assert "GIT_DIR" not in env
+    assert env["EXISTING_VAR"] == "kept"  # a scrub of `GIT_*`, not of the environment
+
+
 # --- runner_timeout hard kill (basicly-kjc5.7, design section 6) ----------------
 
 
