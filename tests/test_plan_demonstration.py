@@ -12,13 +12,17 @@ without the admitted case above them.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
-from basicly import decompose, plan_entry, plan_gate, plan_record
+from basicly import decompose, demonstration_proof, plan_entry, plan_gate, plan_record
 from tests.plan_fixtures import child_payload as _child_payload
 from tests.plan_fixtures import plan_payload as _plan_payload
 from tests.plan_fixtures import planned as _planned
 from tests.plan_fixtures import recorded_body as _recorded_body
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 @pytest.mark.parametrize(
@@ -26,7 +30,7 @@ from tests.plan_fixtures import recorded_body as _recorded_body
     [
         "run `basicly decompose feat --plan plan.toml` and read the group table",
         "POST to `/v1/plans` and read the refusal in the response body",
-        "`uv run pytest tests/test_plan_gate.py -k demonstration`",
+        "`uv run pytest tests/test_plan_demonstration.py -k demonstration`",
     ],
 )
 def test_a_demonstration_naming_a_command_a_request_or_a_test_is_admitted(
@@ -37,11 +41,19 @@ def test_a_demonstration_naming_a_command_a_request_or_a_test_is_admitted(
     All three are the same property — the author could point at the thing that
     exercises the child through the consumer surface — and the gate must not have an
     opinion about which of the three it is.
+
+    **The third case named `test_plan_gate.py -k demonstration` until 2026-08-16 and
+    collected zero tests**, because the demonstration tests live in this file. It was a
+    positive control that controlled nothing, and it is the defect `basicly-u2hl.58`
+    exists to refuse, sitting inside the suite that tests the field. The assertion below
+    holds it shut: this control now fails if its own selector stops selecting.
     """
-    verdict = plan_gate.gate_plan((_planned("a", demonstration=demonstration),))
+    unit = _planned("a", demonstration=demonstration)
+    verdict = plan_gate.gate_plan((unit,))
 
     assert not verdict.refused
-    assert plan_gate.demonstration_fault(_planned("a", demonstration=demonstration)) == ""
+    assert plan_gate.demonstration_fault(unit) == ""
+    assert not demonstration_proof.collects_nothing(REPO_ROOT, demonstration)
 
 
 def test_a_child_naming_no_demonstration_is_refused_naming_the_child() -> None:

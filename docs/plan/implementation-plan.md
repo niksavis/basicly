@@ -45,14 +45,8 @@ documents are the arguments behind the decisions it records; this file is the or
 | The loop | Every deterministic step is one command. Every judgment step is routed to a named role at a tier chosen by measured reliability. A supervised multi-lane run completes with no human intervention caused by a harness defect. |
 | The work graph | Owned in-process: an append-only event log we control, with provenance on every edge, no external binary and no bootstrap step in the critical path. |
 
-Three invariants constrain *how* any of it may be built:
-
-1. **The engine disposes, agents propose.** No model holds authority over the tracker, the
-   schedule, or a required gate — at any autonomy level.
-2. **Determinism where the answer is derivable.** A model is paid only where it is not, at the
-   tier that can be relied on, priced per landed package.
-3. **Evidence over assertion.** An unmeasured behavioural claim costs context every turn and
-   confers confidence nobody earned.
+The invariants that constrain *how* any of it may be built are in architecture — *Core
+invariants*.
 
 **`v1.0.0` means three things**, all required (owner, 2026-07-30):
 
@@ -66,9 +60,8 @@ Three invariants constrain *how* any of it may be built:
    broke within the last two minors, so the promise needs a stabilization release (§7), not a
    version-number ceremony.
 
-**Non-goals**, so the plan cannot quietly grow: an LLM orchestrator; personas spawning personas;
-an agent-writable catalog; a general-purpose issue tracker; a maintained TUI; an external database
-or daemon; agent-to-agent messaging. Reasons are in architecture — *Non-goals*.
+**Non-goals bound the plan** so it cannot quietly grow. The list and the reason for each are
+in architecture — *Non-goals*.
 
 ## 3. Current state
 
@@ -94,12 +87,6 @@ enforces. REPAIR and RETROSPECTIVE were on this list until the architecture sett
 other way: neither is a phase **by decision** — repair is the implementer's second mode and a
 retrospective is a conditional process over a ledger — and both are dispatched. A decided
 non-phase is not a gap.
-
-**Two entries left this list on 2026-08-13 and the reason matters more than the fact.** VALIDATE
-is a phase, gated at the recorded L3 level, with the validator dispatched from it and priced as a
-read rather than a write. And the handoff schemas are written: seven of the eight named kinds now
-have one, so no role is blocked *by its contract*. **Do not read "schemas written" as "roles
-reachable".**
 
 **All seven loop roles are reachable** [M 2026-08-16 against `roles.py` and `loop.py`].
 `curator` was the last: `loop._on_ship` was a live handler that closed the unit without
@@ -154,41 +141,21 @@ The lesson is the one below it, not the wiring: a paragraph naming a **closed** 
 work to the next reader, and this section is where a decider looks first. Re-check a `file:line`
 and a bead status together, or the correction becomes the stale claim.
 
-```text
-agents   12 sources · 7 loop + 5 ad-hoc · projected to both families · vendored
-         7 of 7 loop roles reachable   decider, decomposer, implementer, validator,
-                                       reviewer, retrospector, curator  [M 2026-08-16]
-         observed on an argv: implementer only — every supervised lane dispatch
-         since 2026-08-15 carries `--agent`; the decision queue passes no role
-         12 of 12 declare a tier; catalog lint refuses one that does not (plhx)
-         a declared tier reaches no spawn — D30 keeps the id out, a3yi injects it
-         5 of 5 roles declaring `skills:` now receive them  (basicly-ey58) — by
-         prompt injection; the vendor field is inert under `claude --agent -p`
-         the projected `tools:` allowlist binds on copilot too   [M 2026-08-11]
-skills   40 sources · 35 projected · 5 of 5 loop skills exist
-         ever exercised                                     report unsound (basicly-4grf)
-         projected listing under a consumer's budget        UNDER (a3ab.12 closed)
-hooks    31 documented host events · mapped by catalog  2   (u2hl.49, blocked)
-always-on  AGENTS.md 14,428 chars / 242 lines vs 16,000 / 320   UNDER  [M 2026-08-14]
-loop     7 phases; VALIDATE dispatches validator plus reviewer once per lens
-tree     175 → 313 tracked modules and +279,788 tokens in the 7 days to
-         2026-08-14, with every per-file gate green throughout   (5p49)
-```
+The per-surface inventory — how many agents, skills, hooks and always-on characters ship,
+and how far each reaches — is in architecture. This file no longer carries a second copy;
+one went stale inside a week.
 
-**What the roster still owes is not reachability but observation.** Every role resolves and every
-role has a dispatch site; only `implementer` has been seen on a real argv, so "reachable" and
-"exercised" are still two different claims and the second is unmade.
+**Tree growth is the finding this section had no instrument for until 2026-08-14.** A ratchet
+bounds a file. Nothing bounded the tree, so 138 modules arrived in a week under six green
+gates. `basicly-5p49` measures it now, and it reports rather than blocks because it has no
+firing history yet.
 
-**The tree row is the finding this section did not have an instrument for until 2026-08-14.** A
-ratchet bounds a file. Nothing bounded the tree, so 138 modules arrived in a week under six green
-gates. `basicly-5p49` measures it now, and it reports rather than blocks because it has no firing
-history yet.
-
-A competing harness with strictly worse definitions — hand-written, no schema, no projection, no
-vendoring — beats this repo on all four rows because its definitions are **wired**
-(`factory-loop.md` §11.7). That is not an argument for its design; its loop is the declarative-phase
-pattern this repo already rejected, and §11.7 carries the receipts. It is the argument that the next
-unit of work on this axis is **wiring, not authoring**.
+A competing harness with strictly worse definitions — hand-written, no schema, no projection,
+no vendoring — beats this repo on agent wiring, skill exercise, hook coverage and role
+observation, because its definitions are **wired** (`factory-loop.md` §11.7). That is not an
+argument for its design; its loop is the declarative-phase pattern this repo already
+rejected, and §11.7 carries the receipts. It is the argument that the next unit of work on
+this axis is **wiring, not authoring**.
 
 **Four figures this file previously got wrong**, corrected against the tree:
 
@@ -271,8 +238,11 @@ only one of the two was read. §6 now carries the cutover's measured state inste
 
 **So item 2's remaining P0 is `ejdm`, and item 1's `e2mz.6` is still the head of the order.**
 Two new P0/P1 defects entered the backlog on 2026-08-15 from using the dual write rather than
-from a survey — `e2mz.23` and `e2mz.24`, both in §6 — and they gate any work that writes through
-the `br` seam, which is most of `vkh0`.
+from a survey — `e2mz.23` and `e2mz.24`. Both are fixed in the tree [checked 2026-08-16:
+`owned_store.tracker_mode` raises `TrackerModeUnknownError` instead of defaulting, and
+`mirror` runs its translatability precheck before the spawn]. Architecture records the
+decide-then-spawn-then-mirror ordering as the shipped design. The lesson they produced is in
+§8.
 
 **And one ready P0 is named by no ordering in this file.** `basicly-jn1x` — **0 of 357 dispatch
 records carry `--agent`**, against a positive control of 163 carrying `-p`. The role wiring exists
@@ -342,9 +312,8 @@ against the criteria and the work was incomplete against the system. **That is w
 
 ### 5A.4 How to work it
 
-Sibling worktrees, one lane each, through `basicly worktree create` and `worktree merge --bead`.
-They land outside the repo at `basicly.worktrees/`, which is what keeps them clear of the trap where
-an agent worktree sits inside the tree and stales every whole-tree baseline.
+The worktree mechanism and the reason it sits outside the repository are in architecture —
+*Work isolation and merging*.
 
 **`basicly-3w51` landed first, and it was not one line of configuration.** This paragraph said it
 was, and so did the bead's own summary; the bead body refuted both under a heading naming two
@@ -450,24 +419,9 @@ believes in (`basicly-zqgg`).
 
 ### 5.3 What remains of the loop
 
-Landed 2026-08-08 and unreleased: the plan gate on entry to BUILD, integrity levels from a path
-rule with the diff-size downgrade, Hold and Kill as writes, repair in the lane's own worktree, the
-module-size ratchet, the first two handoff artifacts (`implementation-plan`, `change-summary`), the
-D18 demonstration field, the WIP bound, and the code-quality floor.
-
-Landed 2026-08-13: **VALIDATE as a real state** (`u2hl.54`) — a phase gated at the recorded L3
-level, refusing its advance on a failed or missing consumer gate, dispatching the `validator` and
-pricing that dispatch as a read rather than a write. **Five more handoff schemas** (`r4jm`), so
-seven of the eight named kinds have a contract. And a role's declared `skills:` now reach the
-agent dispatched for it (`ey58`) — measured at ~0.03% of a lane, and reaching all three families
-rather than the one the vendor mechanism serves.
-
-Landed 2026-08-14, all through sibling worktrees: **`reviewer` is reachable** (`feje`) — a phase now
-has a driving role and a fan-out role, and VALIDATE dispatches `reviewer` once per lens beside the
-validator, at two lenses, priced as reads, on L3 units only. **Every role must declare a tier**
-(`plhx`), refused by `catalog lint` on core and overlay alike. **The dead-code gate reads schema
-keys rather than prose** (`r343`), which unmasked one real finding. **Tree growth is measured**
-(`5p49`).
+Everything that landed between 2026-08-08 and 2026-08-14 is specified in architecture and is
+not re-listed here. This file's own §1.6 rule says a document that describes shipped code is
+noise.
 
 Open, in the order the dependencies allow: `u2hl.6` skill descriptions · `u2hl.21` diff size
 reported at plan time · `u2hl.22` `change-shape` derived from an AST · D10's criterion-derived
@@ -539,47 +493,21 @@ nobody re-examined, which is the shape §3's roster paragraph took for five days
 Tracked by `basicly-vkh0`; specified by
 [`requirements/work-tracker.md`](../requirements/work-tracker.md).
 
-The migration is five steps. **Three have run, and still not in order**:
-
-```text
-1 import          RAN, and re-runnable - `basicly tracker import` (vkh0.23).
-                  `--dry-run` reports the current gap; do not copy a count here
-2 shadow          RAN on `dual`. Pre-cutover records are excused against the import's
-                  own watermark; the declared-history sidecar is empty
-3 dual-write      RAN - basicly.toml says mode = "dual"  (basicly-u4xu)
-4 flip            waits on a differential that is clean AND conclusive over a non-empty
-                  scope, which needs post-cutover records to exist. Not dispatchable
-5 native markers  LANDED 2026-08-07, before steps 2-4
-```
+The five cutover steps, their states and the five unported operations are in architecture —
+*Dual write, and where it leaks*, and *The shadow differential*.
 
 **`basicly tracker shadow` is the instrument; read it rather than a number written here.**
 The verdict shape that matters is that the run is `conclusive` and not yet `clean`, and that
 what it finds in scope is **write surfaces that bypassed the seam** — records `br` holds
 because a human ran it directly, which `basicly tracker write` and `basicly-vkh0.24` exist to
 close. The disagreements it prints against pre-cutover records are excused as import history
-and are not the gap. Step 4's remaining distance is therefore those bypass routes plus
+and are not the gap. The flip's remaining distance is therefore those bypass routes plus
 post-cutover records, not a defect hunt.
 
-**The engine's remaining `br` spawn sites sit behind the one seam in `br.py`** — count them
-with `rg -c '_run_br\(' src/basicly/` and discount `br.py` itself. Only `show`, `scheduler`
-and comments have owned equivalents. **Five operations have none at all**, and each is a
-design question rather than a port: `lint` (which means owning the validation rules —
-requirement R3, and decision 4a deletes it instead), `dep cycles`, `list --label`, id minting
-(`ids.mint_root_id` exists and only tests call it), and `gate list`.
-
-**This is also the largest single dead-code event left on the ladder**, which is why it bounds
-the scope of any architectural audit run before it: every one of those call sites, the `br.py`
-seam and its parsers all leave the tree at step 4. Auditing them is auditing a scheduled
-deletion.
-
-**Two defects in the dual write are open and both were found by using it.**
-`basicly-e2mz.23` (P0): `owned_store.tracker_mode` reads a process-global reader that only
-`config` registers and returns `external` when nothing did, so a caller importing
-`basicly.br` without `basicly.config` writes to br and **silently skips the mirror** — the
-one failure `_mirror_write` does not raise on. `basicly-e2mz.24`: `mirror._close_drafts`
-refuses a multi-id `br close` that br accepts, and `_create_drafts` refuses a `br create`
-without `--json`; both refuse *after* the spawn, so the guard creates the divergence it
-exists to prevent. Anything that writes through the seam should read those two first.
+**The flip is also the largest single dead-code event left on the ladder**, which is why it
+bounds the scope of any architectural audit run before it: every one of those call sites, the
+`br.py` seam and its parsers all leave the tree at the flip. Auditing them is auditing a
+scheduled deletion.
 
 Rework state lives in `br` comments, so the rework cap — one of only two controls with a recorded
 correct firing — depends on the tracker being removed.

@@ -19,7 +19,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from . import checkout
+from . import br, checkout
 from .br import try_run_br
 from .checkout import (
     current_branch,
@@ -150,10 +150,15 @@ def _probe_redirect(name: str, worktree: Path, base_beads: Path) -> None:
         return
     resolved = Path(str(data["path"]))
     if resolved.resolve() != base_beads.resolve():
+        # Never `br upgrade`. The version is an exact pin in both directions
+        # (`br.PINNED_VERSION`): a br past it has a database schema with no supported
+        # migration forward, so the advice that reads as the obvious repair is the one
+        # that makes the tracker unopenable.
         raise SystemExit(
             f"the installed br ignored .beads/redirect and resolved {resolved} — "
-            "worktree tracker sharing needs a redirect-capable br (0.2.16 is the "
-            "known-good floor). Run `br upgrade`, then "
+            "worktree tracker sharing needs a redirect-capable br, and this harness is "
+            f"pinned to exactly {br.PINNED_VERSION}. Install that version with "
+            "`uv run python .scripts/install_br.py`, then "
             f"`basicly worktree cleanup {name} --force` and recreate the worktree."
         )
 

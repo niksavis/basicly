@@ -57,6 +57,12 @@ def repo(tmp_path: Path) -> Path:
     (root / ".scripts" / "bootstrap.ps1").write_text(
         f"# ./bootstrap.ps1 -Ref v{CURRENT}\n", encoding="utf-8"
     )
+    # A how-to page carrying a pin, reached by a glob rather than by name — the
+    # enumeration is what let two real pages sit four releases stale.
+    (root / "docs" / "how-to").mkdir(parents=True)
+    (root / "docs" / "how-to" / "upgrade.md").write_text(
+        f"Run `uvx --from git+https://x/basicly@v{CURRENT} basicly install`.\n", encoding="utf-8"
+    )
     (root / "CHANGELOG.md").write_text("# Changelog\n\n## [Unreleased]\n", encoding="utf-8")
     # A stand-in generator: the real one has its own suite (test_release_changelog),
     # so what matters here is that release invokes it with the tag and date.
@@ -96,11 +102,15 @@ def test_plan_reports_the_tag_the_date_and_every_pin_site(repo: Path) -> None:
     assert (plan.current_version, plan.version) == (CURRENT, "0.6.0")
     assert (plan.current_tag, plan.tag) == ("v0.5.1", "v0.6.0")
     assert plan.date == "2026-07-26"
+    # The how-to page is reached by `PIN_GLOBS` and is named in no tuple. Its presence
+    # here is the whole assertion: an enumerated list missed two real pages for four
+    # releases, and a glob is what stops the next page written from repeating it.
     assert {site.path.as_posix(): site.occurrences for site in plan.pins} == {
         "README.md": 2,
         "site/index.html": 1,
         ".scripts/bootstrap.sh": 1,
         ".scripts/bootstrap.ps1": 1,
+        "docs/how-to/upgrade.md": 1,
     }
 
 
@@ -137,7 +147,7 @@ def test_a_release_produces_the_version_the_changelog_and_an_annotated_tag(repo:
     assert release.read_version(repo) == "0.6.0"
     assert "## v0.6.0 - 2026-07-26" in (repo / "CHANGELOG.md").read_text(encoding="utf-8")
     # Pins rewritten everywhere, with no stale tag left behind.
-    for rel in release.PIN_FILES:
+    for rel in release.pin_paths(repo):
         text = (repo / rel).read_text(encoding="utf-8")
         assert "v0.6.0" in text and f"v{CURRENT}" not in text
     # An *annotated* tag (a lightweight one has no tag object to cat-file).

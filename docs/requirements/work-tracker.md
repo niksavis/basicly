@@ -32,20 +32,13 @@ and the reversal condition recorded in §8.1.
 
 ## 1. Why this is not optional
 
-The tracker is not a peripheral integration — it *is* the harness's state. `br` is the single
-source of truth for every phase derivation, gate, checkpoint, dependency edge, decision item and
-run record; the engine deliberately keeps no side-state. Two consequences follow:
+Why the tracker is the harness's state, and why the external binary's exact pin has a ceiling
+in both directions, are in architecture — *The work tracker* and *The external binary pin*.
 
-- **Every guarantee the harness makes is downstream of the tracker.** Resumability, the
-  engine-disposes/agents-propose split (D2), determinism of engine steps (D9), and the shared
-  evidence ledger (D11) are all expressed as tracker reads and writes. A behavior change in the
-  tracker is a behavior change in the harness.
-- **The dependency is unowned.** `beads_rust` and `bv` are MIT-licensed and excellent today.
-  Licenses change, maintainers move on, release cadences diverge, and a breaking change upstream
-  lands in *our* critical path. We already carry an **exact version pin** rather than a floor —
-  `br.PINNED_VERSION` warns on any other version in *either* direction, because an upgrade past
-  it broke `gate report` here while the floor check waved it through — plus version-specific
-  workarounds. That is the shape of a dependency that will eventually cost more than it saves.
+The argument that survives only here is the ownership one. `beads_rust` and `bv` are
+MIT-licensed and excellent today. Licences change, maintainers move on, release cadences
+diverge, and a breaking change upstream lands in *our* critical path. That is the shape of a
+dependency that will eventually cost more than it saves.
 
 Owning it is therefore a strategic requirement, not a preference. The counter-argument —
 "don't rebuild a working tool" — is answered by scope: we do not need a general-purpose issue
@@ -1191,10 +1184,6 @@ Three reasons this belongs in the schema rather than in a convention:
   because "the decomposition missed a coupling", that edge is an inference from one observation.
   Recording it as `INFERRED` keeps a later reader from mistaking it for a declared dependency, and
   makes "how often are our inferred couplings right?" a question the ledger can answer.
-
-The label is a property of the *event that created the edge*, not of the edge, which falls out of
-§4's model for free: the fold carries the strongest label any event asserted, and a human
-confirming an `INFERRED` edge is a new event promoting it to `EXTRACTED` rather than a mutation.
 
 ## 10. Speed and scaling — measured, not assumed
 

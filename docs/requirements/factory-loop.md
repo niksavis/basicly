@@ -19,23 +19,8 @@ document does not track which**: architecture's status table is the one place a 
 recorded, and a second copy here would go stale inside a week. What lives here is the target and
 the argument for it.
 
-### The shape
-
-```text
-  requirements
-       |
-    INTAKE ----> CLASSIFY ----> DECOMPOSE ----> BUILD ----> VERIFY ----> VALIDATE ----> SHIP
-       |            |               |            ^  |          |            |            |
-  solution-     integrity-      plan gate        |  |      does it       did we      evidence
-   design         level        (before the       |  |       work?      build the      bound
-                 assigned       constraint)      |  |                  right thing?
-                                                 |  v
-                                              REPAIR  <-- Go / Kill / Hold / Recycle
-                                          (same worktree, briefed
-                                           with the real findings)
-
-  RETROSPECTIVE fires only on a special-cause signal, never on a single failure.
-```
+The shape of the loop is drawn in architecture — *The state machine*, which distinguishes a
+computed gate from a checkpoint and marks the one advance that merges.
 
 Status: **draft for decomposition**. Written 2026-08-07 from four parallel research passes and a
 line-by-line gap analysis of `src/basicly/`. This document is the input to its own loop: decompose
@@ -51,27 +36,14 @@ a design decision taken by the owner. Unmarked prose is connective tissue and ca
 The loop was specified in prose across `factory-design.md` and `agent-roster-design.md`, both
 absorbed into this document and deleted 2026-08-08, and the `harness-loop` skill. The engine
 implements a
-different, smaller thing. This document states the target so the delta can be decomposed.
+different, smaller thing. This document states the target and the argument for it.
 
-**The measured delta** [M], from a read of `loop.py`, `loop_state.py`, `decompose.py`,
-`supervise.py`, `rubrics.py`, `verify.py`, `classify.py`, `config.py`:
-
-| Intended | Implemented | Evidence |
-| --- | --- | --- |
-| States with entry/exit conditions | Phases re-derived from tracker evidence; no transition table | `loop_state.py:143-189` |
-| INTAKE outputs a solution design | Records one enum value | `loop._on_intake` |
-| CLASSIFY outputs a technical design | Same enum plus a section lint | `classify.py:43-56` |
-| DECOMPOSE emits a dependency graph | Plan schema has no dependency field; ordering derived from scope overlap only | `loop._on_decompose`, `decompose.parse_children` |
-| VERIFY and VALIDATE distinct | Validate runs on one path only, never for leaves; its sole deterministic check is re-running verify | `loop._dispatch_validation` vs `loop._verify_and_land`; `task.rubric.yaml:25-28` |
-| Repair in place | Supervised rework dispatches a fresh agent | `supervise.py:3036` |
-| Findings reach the repair | Dispatch prompt is fixed text every attempt | `loop.py:811-823` |
-| Gates at every boundary | Gates at one boundary (build→verify) | `loop._on_intake`, `loop._on_classify` |
-| Seven personas | Zero implemented; one default runner serves every phase | `loop.py:678` |
-| Retrospective | Does not exist in the engine | `harness-loop/skill.yaml:337-346` |
-| End-of-loop housekeeping | Per-track teardown plus a pre-run preflight | `loop._on_ship`, `loop preflight` |
-
-Read plainly: **the loop is a two-state machine wearing seven labels.** Real enforcement happens
-at build→verify; everything else is checkpoints and lints.
+**The 2026-08-07 delta table is deleted rather than refreshed.** It compared an intended
+design against the engine of that day, and by 2026-08-16 most of its rows were false against
+the tree: personas are reachable, the retrospective exists, repair happens in the lane's own
+worktree, and VALIDATE is a rung with its own gate. Architecture's status view is the one
+place a row's state is recorded. This document's own rule, three paragraphs above, forbade
+the second copy that table was.
 
 ---
 
@@ -358,31 +330,13 @@ dispatch code that READS an agent root             ->  none
 `escalation-honesty`, `evidence-discipline`, `read-only-discipline`) that this section did not
 previously record. All four agents are still ad-hoc; the loop-agent column is still empty.
 
-So the projection works and **nothing consumes it**: every dispatch ends at `Popen` of a CLI with a
-prompt built inline, and the only other consumer of `.claude/agents/` is `cli.py:1261`, which globs
-the directory to *delete* files. Authoring the seven loop agents is therefore necessary and not
-sufficient — `basicly-4kdm` owns the sources, and the engine must also learn to resolve a state to
-a role and dispatch it, which is what makes the roster real rather than projected.
+Which role drives which phase, and how far each reaches, is in architecture — *Roles at
+dispatch*. The gap this section measured on 2026-08-08 — "the projection works and nothing
+consumes it" — is closed in the wiring, verified against claude 2.1.226 and copilot 1.0.78
+rather than recalled.
 
-| Role | State | Source [M 2026-08-09] | Engine |
-| --- | --- | --- | --- |
-| `decomposer` | DECOMPOSE | **authored**, loads `decompose-plan` | **dispatched** with `phase="decompose"` (`loop._run_proposer`, `loop.py:1119`) |
-| `implementer` (+ **repair mode** [D5]) | BUILD, REPAIR | **authored**, loads `python-guidelines` + `repair-in-place` | **both dispatched** — build at `loop._dispatch_runner`, repair at `loop._repair_in_place` with `phase="repair"` and a brief carrying the gate evidence that rejected the work (`repair_brief`, `basicly-u2hl.4`). This row read "repair mode does not" until 2026-08-14 |
-| `validator` | VALIDATE | **authored**, loads `validate-as-consumer` | **dispatched** (`loop._dispatch_validation`, `loop.py:507`, `u2hl.54.3`) |
-| `reviewer` (by lens) | VALIDATE | **authored** | **dispatched once per lens** (`loop._dispatch_reviews`, `roles.LENS_ROLE_BY_PHASE`, `basicly-feje`) |
-| `decider` | CLASSIFY, escalations | **authored** | **dispatched** with `phase="classify"` through the same `loop._run_proposer`; `decisions.py` is the escalation queue, not the dispatch |
-| `retrospector` | RETROSPECTIVE | **authored**, loads `root-cause` | **dispatched** (`loop._retrospective`, `loop.py:2231`, `basicly-xmhc`) — not a phase and no unit sits in it; the signal is evaluated where the gate-failure ledger changes |
-| `curator` | SHIP | **authored** | **dispatched** (`loop._dispatch_curation`, called from `loop._on_ship`), priced and bounded exactly as the validator's judges are, and skipped under the supervisor's landing pass |
-
-**All seven are authored and all seven are reachable in code.** The gap this section had
-measured since 2026-08-08 — "the projection works and nothing consumes it" — is closed in
-the wiring: `roles.resolve_role` maps a phase to a role by table lookup from three call
-sites and the runner puts `--agent <role>` on the argv, verified against claude 2.1.226 and
-copilot 1.0.78 rather than recalled. The `Engine` column above now means "does an
-equivalent already run at that state", not "can a role reach it" — and **reachable is still
-not exercised**: only `implementer` has been observed on a real argv.
-
-**This paragraph read "authored and dispatched" for five days and the ledger refuted it**
+**The claim that every role had been dispatched read "authored and dispatched" for five days,
+and the ledger refuted it**
 [M 2026-08-14, `basicly-jn1x`]. **0 of 357 dispatch records carried `--agent`**, against a
 positive control of 163 carrying `-p`. The cause was not the wiring: `record_dispatch`
 *re-derived* its command from the spec instead of copying what ran, so the record omitted
@@ -399,13 +353,6 @@ that window is the decision queue, **20 of 25 records, and it passes no role at 
 so the `decider` persona reaches an argv only through the loop's own CLASSIFY advance
 (`loop._run_proposer`). Reachable-by-one-path is not reachable, and the ledger is the only
 place that distinguishes them.
-
-**Resolution fails to None in three places, and each falls back to the default runner
-rather than failing**: a phase with no persona (VERIFY, by D4), a family that cannot
-select one (codex ships no subagent root), and a role whose *projected* file is absent.
-The last is checked against the projected file rather than the catalog source, because
-that is what the host reads — so a consumer on an older install gets an unspecialised
-loop instead of a stopped one.
 
 **Authored past the staged-admission rule, on the owner's instruction 2026-08-09.** D5
 admits a role when it differs in tier, tools or artifact, and by that test only
@@ -626,14 +573,6 @@ records — 8 of 34 skills had ever been exercised when last measured — into a
 feedback loop: a rarely-invoked skill is the first whose description is truncated, which makes it
 harder to invoke, which makes it more truncated. It converts §11.6's catalog eval from hygiene into
 a measurable context cost, and both caps are mechanically checkable by `catalog lint` today.
-
-**Skill scope precedence is the inverse of agent scope precedence, and it is unrecorded anywhere in
-this repo** [M, 2026-08-09]. Agents resolve managed > `--agents` > **project > user** > plugin;
-skills resolve enterprise > **personal > project**. `basicly install` writes a consumer's *project*
-`.claude/skills/`, which is the **lowest-priority writable scope** — so any developer's
-`~/.claude/skills/<same-name>` silently overrides a skill we shipped them, while an agent of the
-same name would not. For a distribution tool that is a supply-chain-shaped surprise, and it belongs
-in `docs/architecture/architecture.md` rather than only here.
 
 ### 7.2 Two classes, mirroring §6.2
 

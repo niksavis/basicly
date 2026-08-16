@@ -14,6 +14,7 @@ so the assertions there would be wrong here.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
 from pathlib import Path
@@ -21,7 +22,7 @@ from typing import Any
 
 import pytest
 
-from basicly import board_schema
+from basicly import board_schema, cli, policy
 
 REPO_ROOT = Path(__file__).parent.parent
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "board"
@@ -294,3 +295,58 @@ def test_a_missing_file_is_unreadable_rather_than_a_traceback(tmp_path: Path) ->
 def test_the_declared_major_is_read_off_the_document(declared: str, major: int | None) -> None:
     """Read, not validated: a document about to be refused still has to be named."""
     assert board_schema.declared_major({"schema": declared}) == major
+
+
+# --- the closed enums are bound to the engine, not merely written down ----------
+#
+# An enum is closed exactly where a consumer *acts* on the value, which makes each one
+# a promise about something the engine already has. Nothing noticed if the two drifted
+# until this pair. A published contract naming an action no command implements is worse
+# than an open string, because a consumer builds a button for it.
+
+
+def test_every_offered_action_names_a_command_the_cli_implements() -> None:
+    """A viewer's button has to reach a verb, or the board offers what nobody can do.
+
+    The mapping is spelled out rather than derived. The enum exists to be a *closed*
+    table, so a derivation that built the command path out of the enum string would
+    agree with itself and prove nothing.
+    """
+    offered = set(
+        _schema()["properties"]["asks"]["items"]["properties"]["actions"]["items"]["enum"]
+    )
+    implemented = {
+        "loop-answer": ("loop", "answer"),
+        "checkpoint-approve": ("policy", "checkpoint"),
+        "lane-kill": ("loop", "kill"),
+    }
+    assert offered == set(implemented), "an action moved without its verb"
+
+    # `--help` on a real command path exits 0; an unknown word exits 2. Asked of the
+    # parser the entry point builds, rather than of its internals, so the assertion
+    # survives an argparse refactor and reads the same surface a consumer types.
+    for action, path in implemented.items():
+        with pytest.raises(SystemExit) as exit_info:
+            cli._build_parser().parse_known_args([*path, "--help"])
+        assert exit_info.value.code == 0, f"{action} names a command basicly does not have"
+
+
+def test_a_gate_check_status_covers_every_state_the_engine_records() -> None:
+    """Three schema values against the three buckets `policy.GateStatus` carries.
+
+    A fourth engine state with no schema value gets rendered as one of these three, and
+    every wrong choice reads to a human as reassurance.
+    """
+    declared = set(
+        _schema()["properties"]["gates"]["properties"]["checks"]["items"]["properties"]["status"][
+            "enum"
+        ]
+    )
+    recorded = {
+        field.name.removeprefix("required_")
+        for field in dataclasses.fields(policy.GateStatus)
+        if field.name.startswith("required_")
+    }
+
+    assert declared == {"pass", "fail", "not_run"}
+    assert recorded == {"passed", "failed", "missing"}

@@ -67,12 +67,23 @@ SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
 # bootstrap shims matter as much as the docs: README documents their exact
 # `--ref v...` / `-Ref v...` invocations, so missing them leaves the two halves of
 # one instruction disagreeing.
+#
+# The how-to pages are a **glob**, and the enumeration is what failed. Two of them
+# carried a pin four releases stale, because a page written after this tuple was
+# last edited is a page the release never rewrites, and nothing reads a list to
+# notice. A directory that may grow a pinned page is declared as the directory.
 PIN_FILES = (
     Path("README.md"),
     Path("site") / "index.html",
     Path(".scripts") / "bootstrap.sh",
     Path(".scripts") / "bootstrap.ps1",
 )
+PIN_GLOBS = ("docs/how-to/*.md",)
+
+# The tutorial is deliberately absent from both. It quotes the engine version in its
+# recorded transcripts, so bumping only its install command leaves the page internally
+# inconsistent — it needs re-execution against a fresh repo, which is `basicly-imnu.2`,
+# not a rewrite.
 # Word-boundary-ish: `v0.5.1` must not match inside `v0.5.10`, and a trailing
 # period is prose punctuation rather than part of the version, so it still counts.
 PIN_RE_TEMPLATE = r"(?<![\w.])v{version}(?!\w|\.\d)"
@@ -199,6 +210,18 @@ def _git(repo_root: Path, args: list[str], *, check: bool = True) -> subprocess.
     return worktree.run(["git", "-C", str(repo_root), *args], check=check)
 
 
+def pin_paths(repo_root: Path) -> tuple[Path, ...]:
+    """Every repo-relative file a version bump has to rewrite, globs expanded.
+
+    Sorted and de-duplicated, so a release plan reads the same on any filesystem.
+    """
+    found = dict.fromkeys(PIN_FILES)
+    for pattern in PIN_GLOBS:
+        for path in sorted(repo_root.glob(pattern)):
+            found[path.relative_to(repo_root)] = None
+    return tuple(found)
+
+
 def read_version(repo_root: Path) -> str:
     """The version currently single-sourced in ``src/basicly/__init__.py``."""
     text = (repo_root / VERSION_FILE).read_text(encoding="utf-8")
@@ -257,7 +280,7 @@ def plan_release(repo_root: Path, version: str, *, date: str | None = None) -> R
     current = read_version(repo_root)
     pin_re = _pin_re(current)
     pins = []
-    for rel in PIN_FILES:
+    for rel in pin_paths(repo_root):
         path = repo_root / rel
         if not path.exists():
             continue
