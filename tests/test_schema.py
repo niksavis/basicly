@@ -13,12 +13,11 @@ if TYPE_CHECKING:
 
 def test_a_source_inside_the_repo_root_is_reported_relative(tmp_path: Path) -> None:
     """The absolute form leaks a home directory into anything pasted into an issue."""
-    source = tmp_path / ".basicly/core/agents/test-runner/agent.yaml"
+    source = tmp_path / ".basicly/core/agents/tester/agent.yaml"
     exc = ValidationError("unknown technologies: notatechnology", source, repo_root=tmp_path)
 
     assert (
-        str(exc)
-        == ".basicly/core/agents/test-runner/agent.yaml: unknown technologies: notatechnology"
+        str(exc) == ".basicly/core/agents/tester/agent.yaml: unknown technologies: notatechnology"
     )
 
 

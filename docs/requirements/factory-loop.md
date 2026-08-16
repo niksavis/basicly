@@ -300,7 +300,7 @@ directory name. A name that appears in a dispatch record is a label; a role id i
 | Class | Invoked by | Bound to | Examples |
 | --- | --- | --- | --- |
 | **Loop agents** | the engine, at a state boundary | exactly one state (or two, for the implementer's repair mode) | `decomposer`, `implementer`, `validator`, `reviewer`, `decider`, `retrospector`, `curator` |
-| **Ad-hoc agents** | a human or an agent, on demand | nothing — available whenever they fit | `architect`, `researcher`, `security-auditor`, `test-runner` |
+| **Ad-hoc agents** | a human or an agent, on demand | nothing — available whenever they fit | `architect`, `researcher`, `auditor`, `tester` |
 
 The distinction matters because it decides what a missing one costs. A missing **loop agent** means
 that state has no specialist and falls back to the default runner, which is the current situation
@@ -311,7 +311,7 @@ user-invoked one waits to be asked.
 **The three that exist today are all ad-hoc**, and none is a loop agent. They also need evaluating
 rather than assuming: each must still pass D5's admission test (differ in **tier, tools or
 artifact**), and any overlap with a loop agent about to be authored — `code-reviewer` against
-`reviewer`, `test-runner` against the verify gates — must be resolved rather than left as two
+`reviewer`, `tester` against the verify gates — must be resolved rather than left as two
 things with one job. The first of those is **settled**: `reviewer` superseded `code-reviewer` and
 it is removed (§6.3). The second is still open.
 
@@ -319,7 +319,7 @@ it is removed (§6.3). The second is still open.
 
 ```text
 rg -w 'dana|kai|vera|remo|juno|lumi|tala' src/     ->  0 hits
-.basicly/core/agents/                              ->  code-reviewer, security-auditor, test-runner,
+.basicly/core/agents/                              ->  code-reviewer, auditor, tester,
                                                        researcher (+ blocks/, 4 shared prompt blocks)
 .claude/agents/                                    ->  the same four, written by agents.sync()
 dispatch code that READS an agent root             ->  none

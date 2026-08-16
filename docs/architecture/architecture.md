@@ -984,8 +984,20 @@ in [D-32](#d-32--pre-commit-rather-than-a-compiled-hook-runner).
 
 ## 17. Model tiers
 
-A catalog source declares a **portable tier**. The engine resolves a concrete model id at
-dispatch, from committed data.
+A catalog source declares a **portable tier**, never a provider model id. The engine
+resolves a concrete id at dispatch, from committed data.
+
+**There are four tiers, and they are a closed set**: `low`, `medium`, `high`, `maximum`.
+A source names one of the four and nothing else. The set is closed so that a reader can
+hold the whole vocabulary, and so a typo is a refusal rather than a new tier.
+
+**A tier is a statement about the reliability a role needs, not about a price or a
+vendor's marketing name.** The same tier resolves to different models for different
+vendors, and to different spellings of one model for different surfaces.
+
+The reason a source may not name a model id: one model is spelled `claude-haiku-4-5` by
+one vendor and `claude-haiku-4.5` by another surface of the same vendor. A pinned id is
+therefore portable to exactly one surface, which is the opposite of what a catalog needs.
 
 An anchors file is the reviewed input. It holds one anchor model per tier and vendor, plus
 a surface table and a capability rule. A generator resolves it into a committed map. A
@@ -1020,14 +1032,20 @@ A test gates the committed map's shape offline.
 | in-harness | raises | a dispatch that cannot honour its tier is a bug |
 | portable kit — no dependencies, no imports, no `PATH`, no network, no subprocess | fails closed and quiet, leaving the spawn untouched | it runs on machines that may hold no map at all |
 
-**The tier reaches no spawn today.** Nothing projects a model id, by decision. The
-injection that would resolve one at spawn is a hook. That hook exists in
-`.basicly/core/kit/tier/install_hook.py` and is not installed. The tier is therefore
-declared, gated by lint, and inert.
+**No projected agent file carries a model id, and that is a decision rather than a gap.**
+The injection mechanism leaves a definition that pins its own model alone, so a projected
+line would *disable* injection rather than implement it. A tier therefore reaches a spawn
+through a host hook that rewrites the spawn, or it does not reach one at all.
 
-On Claude the installer **declines with a nonzero exit**. Across repeated probes no
-tool-boundary hook fired for an agent spawn on Claude. The documented contract for such a
-hook is approve-or-deny, not rewrite.
+**That places a hard requirement on the host, and it is the one a reader must take away:**
+a host can honour a declared tier only where its hook contract permits a spawn to be
+**rewritten**. A contract that is approve-or-deny cannot express "spawn this, but on that
+model". Where a host offers no such hook, the tier is declared, validated and unreachable,
+and the honest record is that the tier was *not honoured* rather than that it was
+satisfied.
+
+Which hosts satisfy that requirement today is a status question.
+[`status.md`](status.md) answers it.
 
 ## 18. Agent permissions
 
@@ -2234,7 +2252,7 @@ stateDiagram-v2
   state "revoked" as revoked
 
   [*] --> none
-  none --> live : a human mints a marker:<br/>level, budget, spend baseline
+  none --> live : a human mints a marker<br/>with level, budget and spend baseline
   live --> spent : the token budget is exhausted
   live --> halted : a dispatch the adapter<br/>could not meter
   live --> revoked : a revocation marker,<br/>never a deletion

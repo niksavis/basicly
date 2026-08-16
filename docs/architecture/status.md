@@ -76,7 +76,7 @@ a seventh word.
 | RETROSPECTIVE on a computed special cause | shipped | |
 | An improvement controller driving a codebase property to a set point | shipped | Has run live and filed one issue; manual-dispatch caller only, by decision |
 | A schema-validated handoff artifact at each state boundary | building | Three of eight kinds have a producer, two of those a consumer. The rest refuse nothing |
-| Tier injection, so a declared tier reaches the spawn | building | The hook exists in the kit and is not installed; declined outright on claude |
+| Tier injection, so a declared tier reaches the spawn | building | The tier is declared on every agent source and validated by lint, and it reaches no spawn. The hook that would rewrite a spawn is `.basicly/core/kit/tier/install_hook.py` and is not installed. On claude the installer declines with a nonzero exit, and across repeated probes no tool-boundary hook fired for an agent spawn there — that host's documented hook contract is approve-or-deny, not rewrite, which is the requirement architecture §17 sets |
 | Per-model spend and wall-clock forecast enforced at pass admission | building | The current forecast models working set, not turn count, and that is now measured rather than suspected |
 | A supervised multi-lane run with zero human interventions caused by an engine defect | building | |
 | The judged-output contract: a reviewer structurally incapable of seeing the producer's conclusion, a review base recorded before dispatch, re-review scoped to the fix range, late rounds escalating a tier | designed | **Deterministic engine code, not a persona**, which is why it survived the routing landing |

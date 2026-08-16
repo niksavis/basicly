@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=../../schemas/agent.schema.json
 schema_version: 1
-name: security-auditor
+name: auditor
 purpose: Audits a diff or component for security weaknesses at trust boundaries.
 triggers: Use proactively before shipping changes that touch input handling, credentials, subprocess or network calls.
 returns: Returns severity-rated findings with path:line evidence and the stated coverage boundary.

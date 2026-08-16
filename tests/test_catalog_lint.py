@@ -370,7 +370,7 @@ def test_no_shipped_agent_source_declares_a_model() -> None:
 def test_every_shipped_agent_source_declares_a_model_tier() -> None:
     """D26: a dispatch with no resolved tier is a bug, not a default.
 
-    `code-reviewer` and `security-auditor` shipped with no tier until
+    `code-reviewer` and `security-auditor`, now `auditor`, shipped with no tier until
     basicly-plhx, and `basicly install` vendors both to consumers, so the
     omission travelled. An omitted tier does not fall back to a cheap model - it
     inherits the session's, usually the most expensive one.

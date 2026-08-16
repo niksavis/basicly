@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=../../schemas/agent.schema.json
 schema_version: 1
-name: test-runner
+name: tester
 purpose: Runs the repo's documented test suite or a named subset and reports the outcome.
 triggers: Use after code changes when you need a pass/fail verdict without reading raw test output.
 returns: Returns the counts line, each failure with its location and likely cause, and nothing else.

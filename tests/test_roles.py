@@ -47,7 +47,7 @@ def test_every_loop_role_is_reachable_from_one_of_the_phase_tables() -> None:
 
     The loop-role set is §6.2's, spelled out rather than derived, because nothing in an
     agent source declares whether it is engine-dispatched or ad-hoc — and an ad-hoc agent
-    (`architect`, `researcher`, `security-auditor`, `test-runner`) is invoked by a human
+    (`architect`, `researcher`, `auditor`, `tester`) is invoked by a human
     and must not appear in a phase table at all.
 
     `reviewer` is why this exists: it was authored, projected to both agent roots and
