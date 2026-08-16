@@ -66,6 +66,11 @@ def _record(issue: str, **fields: Any) -> dict[str, Any]:
     return {"id": issue, "status": "open", "comments": [], "dependencies": [], **fields}
 
 
+def _blocks(issue: str, target: str) -> dict[str, Any]:
+    """One blocking edge in the export's spelling, which `br dep add` echoes back."""
+    return {"issue_id": issue, "depends_on_id": target, "type": "blocks"}
+
+
 def _repo(tmp_path: Path, records: dict[str, dict[str, Any]]) -> Path:
     """A dual-mode checkout whose committed export holds *records*."""
     (tmp_path / br.KIT_TRACKER_DIR).mkdir(parents=True)
@@ -237,3 +242,64 @@ def test_a_hand_edited_field_on_an_adopted_record_is_reported_not_rewritten(
 
     assert again.diverged == ("seam-byhand",)
     assert again.adopted == ()
+
+
+def test_an_edge_the_ledger_never_saw_is_adopted_onto_a_record_it_already_holds(
+    hand_written: tuple[Path, _ReferenceBr],
+) -> None:
+    """basicly-vkh0.32: the repair stopped at the records and left the edges between them.
+
+    A hand-run `br dep add` on a record both stores already hold is the one bypass no
+    seam-routed write can undo — br rejects the duplicate, so `_mirror_write` never fires
+    and the ledger stays short of the edge permanently. The differential sees it as the
+    ready query: the owned side has no blocker to be blocked by.
+    """
+    repo, reference = hand_written
+    reference.records["seam-mirrored"]["dependencies"] = [_blocks("seam-mirrored", "seam-imported")]
+    _write_export(repo, reference.records)
+    assert [item.query for item in br.scoped_differential(repo).disagreements] == ["ready"]
+
+    report = br.adopt_hand_writes(repo)
+
+    assert report.edges == (("seam-mirrored", "seam-imported", "blocks"),)
+    assert br.scoped_differential(repo).clean
+
+
+def test_an_edge_both_stores_already_hold_is_not_appended_a_second_time(
+    hand_written: tuple[Path, _ReferenceBr],
+) -> None:
+    """The re-run half, and the reason the repair is safe to keep running.
+
+    An edge that agrees is a fact the ledger holds, so a second run has nothing to add. A
+    repair that appended one anyway would grow the ledger on every invocation and record
+    the same dependency twice under two provenances.
+    """
+    repo, reference = hand_written
+    reference.records["seam-mirrored"]["dependencies"] = [_blocks("seam-mirrored", "seam-imported")]
+    _write_export(repo, reference.records)
+    br.adopt_hand_writes(repo)
+
+    settled = len(br.kit(repo).read_ledger(br.ledger_dir(repo)))
+    again = br.adopt_hand_writes(repo)
+
+    assert again.edges == ()
+    assert len(br.kit(repo).read_ledger(br.ledger_dir(repo))) == settled
+
+
+def test_an_edge_the_export_missed_is_reported_and_not_copied_from_the_reference(
+    hand_written: tuple[Path, _ReferenceBr],
+) -> None:
+    """The edge half of the rule that keeps the later differential worth running.
+
+    An edge taken from the side the differential compares against would agree by
+    construction. Taken from the committed export, a stale export stays visible as the
+    disagreement it is — so the run says which record needs re-exporting and writes nothing.
+    """
+    repo, reference = hand_written
+    reference.records["seam-mirrored"]["dependencies"] = [_blocks("seam-mirrored", "seam-imported")]
+
+    report = br.adopt_hand_writes(repo)
+
+    assert report.edges == ()
+    assert report.unadoptable == ("seam-mirrored",)
+    assert [item.query for item in br.scoped_differential(repo).disagreements] == ["ready"]

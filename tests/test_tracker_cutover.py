@@ -163,7 +163,10 @@ def test_the_adopt_command_reports_what_it_repaired_and_what_it_could_not(
         tracker_cutover.br,
         "adopt_hand_writes",
         lambda _root: br.AdoptionReport(
-            adopted=("basicly-a",), diverged=("basicly-c",), unadoptable=("basicly-b",)
+            adopted=("basicly-a",),
+            edges=(("basicly-d", "basicly-a", "blocks"),),
+            diverged=("basicly-c",),
+            unadoptable=("basicly-b",),
         ),
     )
 
@@ -171,6 +174,7 @@ def test_the_adopt_command_reports_what_it_repaired_and_what_it_could_not(
 
     out = capsys.readouterr().out
     assert "basicly-a" in out
+    assert "adopted edge basicly-d -> basicly-a (blocks)" in out
     assert "basicly-c has a hand-edited field" in out
     assert "basicly-b is in br and not in the export" in out
 

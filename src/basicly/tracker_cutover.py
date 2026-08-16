@@ -134,15 +134,23 @@ def cmd_write(args: argparse.Namespace) -> int:
 
 
 def cmd_adopt(_args: argparse.Namespace) -> int:
-    """Reconcile the records a hand-run br created into the ledger (basicly-vkh0.24).
+    """Reconcile what a hand-run br created into the ledger (basicly-vkh0.24, .32).
 
     The repair for the write `cmd_write` exists to prevent. Re-runnable, so a
     later bypass is repaired by running it again rather than by a one-off.
+
+    Every reconciled edge is named rather than counted: it is agreement the repair
+    manufactured, on a record the differential still judges as dual-written.
     """
     report = br.adopt_hand_writes(Path.cwd())
     ui.say(f"adopted {len(report.adopted)} record(s): {', '.join(report.adopted) or 'none'}")
+    for record, target, edge_type in report.edges:
+        ui.say(f"  adopted edge {record} -> {target} ({edge_type})")
     for record in report.diverged:
         ui.say(f"  {record} has a hand-edited field the ledger keeps as first written")
     for record in report.unadoptable:
-        ui.say(f"  {record} is in br and not in the export: re-export first", style="warn")
+        ui.say(
+            f"  {record} is in br and not in the export, as a record or an edge: re-export first",
+            style="warn",
+        )
     return 1 if report.unadoptable else 0
