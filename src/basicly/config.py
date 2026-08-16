@@ -350,7 +350,13 @@ ENGINE_GATE_PROVIDERS = frozenset({VERIFY_GATE_PROVIDER, RUBRIC_GATE_PROVIDER})
 # refusal a corrected declaration caused: the lane declares what it must read instead,
 # which leaves this constant answerable to lanes that really are that large.
 DEFAULT_WORKING_SET_MIN = 8_000
-DEFAULT_WORKING_SET_MAX = 256_000
+# 264_000 (basicly-e2mz.24). A third cause class, and the one that argues D23 hardest:
+# the lane did not grow and its declaration was not corrected — an unrelated change added
+# three tests to `tests/test_mirror.py`, which a closed bead's `## Scope` names, and a
+# historical estimate re-derived from today's tree crossed. Any edit to a file a landed
+# lane declared can move this number, so it is answerable to the tree rather than to a
+# dispatch, which is not a property a refusing control can have.
+DEFAULT_WORKING_SET_MAX = 264_000
 # Per-task-class multiplier on scope read-cost. Seeds, and they stay seeds: the
 # telemetry calibration that once overwrote them measured whole-lane spend, which is
 # a different quantity from a working set, and basicly-z2wi removed it. An unlisted

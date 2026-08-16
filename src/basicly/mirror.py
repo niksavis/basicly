@@ -25,10 +25,16 @@ process or touches a file.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
-from basicly import tracker_usage
+from basicly import br_argv, tracker_usage
+from basicly.br_argv import (
+    CREATE_FIELD_FLAGS,
+    UPDATE_FIELD_FLAGS,
+    UPDATE_STATUS_FLAGS,
+    VALUE_FLAGS,
+)
 from basicly.owned_store import TrackerDivergenceError
 
 # How a mirrored fact says it got here (§9.6). Distinguishes an event the dual write
@@ -46,35 +52,7 @@ MIRROR_PROVENANCE = "dual-write"
 # `events.append` creates its directory on first write.
 _UNMIRRORED_WRITES = frozenset({"init", "sync"})
 
-# `br update`'s flags, as the ledger fact each one records. Two mappings rather than
-# one because `status` has its own event kind while everything else is a `field`.
-#
-# **Deliberately only what the engine spawns** (`br update -t` in `classify`,
-# `br update --external-ref` in `loop`), plus the status flag. A flag absent here is
-# not dropped — it raises :class:`TrackerDivergenceError`, because a mirrored write that
-# silently omitted half of what br recorded is exactly the divergence this mode
-# exists to prevent, and it would be invisible until the differential ran.
-_UPDATE_FIELD_FLAGS = {
-    "-t": "issue_type",
-    "--type": "issue_type",
-    "--external-ref": "external_ref",
-}
-_UPDATE_STATUS_FLAGS = frozenset({"-s", "--status"})
-
-# `br create`'s flags, as the fields the created record carries.
-_CREATE_FIELD_FLAGS = {
-    "-t": "issue_type",
-    "--type": "issue_type",
-    "-p": "priority",
-    "--priority": "priority",
-    "-l": "labels",
-    "--label": "labels",
-    "-d": "description",
-    "--description": "description",
-    "--parent": "parent",
-}
-
-# ...and the shape each one has to be stored in, because a flag's value arrives as one
+# The shape each created field has to be stored in, because a flag's value arrives as one
 # argv string while `br show --json` returns it typed. Not cosmetic: `supervise` reads
 # ``record["labels"]`` as a list and a stored ``"phase-6,ready"`` iterates as characters,
 # so a lane's follow-up would inherit twelve one-letter labels after the flip. Anything
@@ -84,64 +62,12 @@ _CREATE_FIELD_TYPES: dict[str, Callable[[str], object]] = {
     "labels": lambda value: [part for part in value.split(",") if part],
 }
 
-# Flags whose value is the following token, per subcommand. Needed to find the
-# positional a write is about: `br gate report` puts the issue id *last*, after four
-# or five flag/value pairs, so "the last argument" is only right by accident and
-# "every token that is not a flag" would collect `--note`'s free text as one.
-_VALUE_FLAGS: dict[str, frozenset[str]] = {
-    "create": frozenset(_CREATE_FIELD_FLAGS) | {"-a", "--assignee"},
-    "update": frozenset(_UPDATE_FIELD_FLAGS) | _UPDATE_STATUS_FLAGS,
-    "close": frozenset({"--reason"}),
-    "dep add": frozenset({"-t", "--type"}),
-    "gate report": frozenset({"--gate", "--provider", "--status", "--note", "--actor"}),
-}
-
 # `br gate report --status` spells a pass this way; anything else is a failure, which
 # is `policy.GateStatus`'s own reading of the same field.
 _GATE_PASS_STATUS = "pass"  # noqa: S105 — a gate verdict, not a credential
 
 # The status br gives a record it just created, when the `--json` echo does not say.
 _CREATED_STATUS = "open"
-
-
-def _positionals(args: Sequence[str], value_flags: Collection[str]) -> list[str]:
-    """The positional words in *args*, with each value-taking flag's value consumed.
-
-    ``--flag=value`` carries its own value, so only the space-separated form skips the
-    next token. Anything after a flag this subcommand does not take a value for stays
-    a positional, which is what makes an unexpected argument visible to the caller
-    below rather than silently absorbed.
-    """
-    found: list[str] = []
-    skip = False
-    for arg in args:
-        if skip:
-            skip = False
-            continue
-        if arg.startswith("-"):
-            skip = "=" not in arg and arg in value_flags
-            continue
-        found.append(arg)
-    return found
-
-
-def _flag_pairs(args: Sequence[str], value_flags: Collection[str]) -> list[tuple[str, str]]:
-    """Each ``(flag, value)`` in *args*, in the order given, both spellings accepted."""
-    pairs: list[tuple[str, str]] = []
-    index = 0
-    while index < len(args):
-        arg = args[index]
-        if arg.startswith("-"):
-            name, sep, inline = arg.partition("=")
-            if sep:
-                pairs.append((name, inline))
-            elif name in value_flags and index + 1 < len(args):
-                pairs.append((name, args[index + 1]))
-                index += 1
-            else:
-                pairs.append((name, ""))
-        index += 1
-    return pairs
 
 
 def _payload(kit_module: Any, **fields: object) -> dict[str, object]:
@@ -159,28 +85,29 @@ def _update_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[o
     somebody just added a flag for.
     """
     events = kit_module.events
-    positional = _positionals(args, _VALUE_FLAGS["update"])
-    if len(positional) != 2:
-        raise TrackerDivergenceError(f"br update names no single issue: {' '.join(args)}")
-    record = positional[1]
+    records = br_argv.positionals(args, VALUE_FLAGS["update"])[1:]
+    if not records:
+        raise TrackerDivergenceError(f"br update names no issue: {' '.join(args)}")
     drafts: list[object] = []
-    for flag, value in _flag_pairs(args, _VALUE_FLAGS["update"]):
-        if flag in _UPDATE_STATUS_FLAGS:
-            drafts.append(
+    for flag, value in br_argv.flag_pairs(args, VALUE_FLAGS["update"]):
+        if flag in UPDATE_STATUS_FLAGS:
+            drafts += [
                 events.Draft(record, events.KIND_STATUS, _payload(kit_module, status=value))
-            )
-        elif (name := _UPDATE_FIELD_FLAGS.get(flag)) is not None:
-            drafts.append(
+                for record in records
+            ]
+        elif (name := UPDATE_FIELD_FLAGS.get(flag)) is not None:
+            drafts += [
                 events.Draft(
                     record,
                     events.KIND_FIELD,
                     _payload(kit_module, name=name, value=value),
                 )
-            )
+                for record in records
+            ]
         else:
             raise TrackerDivergenceError(
                 f"br update {flag} has no owned-ledger equivalent, so mirroring it would "
-                f"drop the field br just wrote; add it to mirror._UPDATE_FIELD_FLAGS"
+                f"drop the field br just wrote; add it to br_argv.UPDATE_FIELD_FLAGS"
             )
     return drafts
 
@@ -202,11 +129,11 @@ def _create_drafts(kit_module: Any, args: Sequence[str], stdout: str) -> list[ob
     record = reply.get("id") if isinstance(reply, dict) else None
     if not isinstance(record, str) or not record:
         raise TrackerDivergenceError("br create replied with no issue id to mirror")
-    positional = _positionals(args, _VALUE_FLAGS["create"])
+    positional = br_argv.positionals(args, VALUE_FLAGS["create"])
     fields: dict[str, object] = {"title": positional[1]} if len(positional) > 1 else {}
     parent = ""
-    for flag, value in _flag_pairs(args, _VALUE_FLAGS["create"]):
-        name = _CREATE_FIELD_FLAGS.get(flag)
+    for flag, value in br_argv.flag_pairs(args, VALUE_FLAGS["create"]):
+        name = CREATE_FIELD_FLAGS.get(flag)
         if name == "parent":
             parent = value
         elif name is not None:
@@ -252,10 +179,10 @@ def _gate_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[obj
     reported ``inconclusive`` on every population. This is what fills it.
     """
     kind = kit_module.KIND_GATE
-    positional = _positionals(args, _VALUE_FLAGS["gate report"])
+    positional = br_argv.positionals(args, VALUE_FLAGS["gate report"])
     if len(positional) != 3:
         raise TrackerDivergenceError(f"br gate report names no single issue: {' '.join(args)}")
-    values = dict(_flag_pairs(args, _VALUE_FLAGS["gate report"]))
+    values = dict(br_argv.flag_pairs(args, VALUE_FLAGS["gate report"]))
     gate = values.get("--gate", "")
     provider = values.get("--provider", "")
     if not gate or not provider:
@@ -268,7 +195,11 @@ def _gate_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[obj
 
 
 def _close_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[object]:
-    """Drafts for one ``br close``: the status move, and only that.
+    """Drafts for one ``br close``: the status move on every id it names.
+
+    **Every id, because br closes every id** — its own ``--help`` takes ``[IDS]...``.
+    Refusing the plural form was the divergence, not a guard against one: br had
+    already closed all of them by the time the mirror looked (`basicly-e2mz.24`).
 
     The ``--reason`` is not mirrored as a comment. br records it as a field of the
     close rather than as a comment row, so writing one would put a comment on the
@@ -276,16 +207,19 @@ def _close_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[ob
     mirror rather than found by it.
     """
     events = kit_module.events
-    positional = _positionals(args, _VALUE_FLAGS["close"])
-    if len(positional) != 2:
-        raise TrackerDivergenceError(f"br close names no single issue: {' '.join(args)}")
-    return [events.Draft(positional[1], events.KIND_STATUS, _payload(kit_module, status="closed"))]
+    records = br_argv.positionals(args, VALUE_FLAGS["close"])[1:]
+    if not records:
+        raise TrackerDivergenceError(f"br close names no issue: {' '.join(args)}")
+    return [
+        events.Draft(record, events.KIND_STATUS, _payload(kit_module, status="closed"))
+        for record in records
+    ]
 
 
 def _comment_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[object]:
     """Drafts for one ``br comments add`` — 45% of this repo's tracker traffic.
 
-    Read by position rather than through :func:`_positionals`, and that is the whole
+    Read by position rather than through :func:`br_argv.positionals`, and that is the whole
     point: the body is arbitrary free text, so a body beginning with ``-`` would be
     taken for a flag and silently dropped — losing exactly the checkpoint or rework
     marker the engine's whole policy layer is carried in.
@@ -301,10 +235,10 @@ def _comment_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[
 
 def _dep_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[object]:
     """Drafts for one ``br dep add``, recorded on the dependent."""
-    positional = _positionals(args, _VALUE_FLAGS["dep add"])
+    positional = br_argv.positionals(args, VALUE_FLAGS["dep add"])
     if len(positional) != 4:
         raise TrackerDivergenceError(f"br dep add names no single edge: {' '.join(args)}")
-    values = dict(_flag_pairs(args, _VALUE_FLAGS["dep add"]))
+    values = dict(br_argv.flag_pairs(args, VALUE_FLAGS["dep add"]))
     edge_type = values.get("-t") or values.get("--type") or ""
     if not edge_type:
         raise TrackerDivergenceError(f"br dep add names no edge type: {' '.join(args)}")
@@ -348,3 +282,37 @@ def drafts(kit_module: Any, args: Sequence[str], stdout: str) -> list[object]:
             f"mirror._UNMIRRORED_WRITES if it states nothing about a record"
         )
     return translate(kit_module, args, stdout)
+
+
+# What a `br create` echoes back, faked so :func:`refuse_untranslatable` can run the
+# real translator before the real echo exists. Only `_create_drafts` reads the echo,
+# and only for the minted id, which no argv can carry.
+_ECHO_PLACEHOLDER = json.dumps({"id": "unminted", "status": _CREATED_STATUS})
+
+
+def refuse_untranslatable(kit_module: Any, args: Sequence[str]) -> None:
+    """Raise now what :func:`drafts` would raise after br has taken the write.
+
+    **The check is the translator itself, run against a placeholder echo, and that is
+    the point.** A second copy of "which argvs translate" is the defect class this
+    repository has paid for three times: two copies drift, and the one that drifts here
+    would either refuse a write br accepts or wave through one the mirror cannot record.
+    So the answer comes from the same function that will answer for real, and the drafts
+    it builds are discarded.
+
+    The one thing a placeholder cannot check is whether the echo will arrive at all, so
+    that is the single explicit rule below: a ``create`` without ``--json`` prints prose,
+    and the id br minted is then unrecoverable.
+
+    Raises:
+        TrackerDivergenceError: *args* is a write with no owned-ledger translation.
+    """
+    surface, _ = tracker_usage.split_invocation(list(args))
+    if surface == "create" and not any(
+        arg == "--json" or arg.startswith("--json=") for arg in args
+    ):
+        raise TrackerDivergenceError(
+            "br create without --json prints no record id, so the id it mints cannot be "
+            "mirrored; add --json"
+        )
+    drafts(kit_module, args, _ECHO_PLACEHOLDER)

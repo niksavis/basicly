@@ -84,6 +84,16 @@ class TrackerDivergenceError(RuntimeError):
     """
 
 
+class TrackerModeUnknownError(TrackerDivergenceError):
+    """Nothing installed the mode reader, so which rung this repo runs is unknown.
+
+    Answering ``external`` to that was a guard failing **open**: the seam skipped the
+    mirror and br took the write alone. Ten writes landed that way on the day dual write
+    went live (`basicly-e2mz.23`). A subclass because the consequence is the same one
+    reached a step earlier.
+    """
+
+
 # One-slot holder for the mode reader. A list rather than a rebound module global:
 # `global` is the shape a reader has to chase, and this dependency is inverted
 # already (see :func:`set_mode_reader`), so it should be obvious rather than terse.
@@ -106,14 +116,12 @@ def set_mode_reader(reader: Callable[[Path], str] | None) -> None:
     inverting a lint tier. So ``config`` reaches down and installs its reader here,
     which is the same direction every other engine module takes to this one.
 
-    With no reader installed the mode is :data:`DEFAULT_TRACKER_MODE`, which is the
-    behaviour this seam had before the cutover existed — nothing is mirrored and
-    nothing is flipped. Every process that reaches the tracker imports ``config``
-    (``basicly.cli`` does, and it is the only entry point), and
-    ``tests/test_owned_store.py`` asserts the installation rather than assuming it.
+    With no reader installed the mode is **unknown and refused**, never
+    :data:`DEFAULT_TRACKER_MODE`. The original contract defaulted, on the premise that
+    ``basicly.cli`` is the only entry point; ``.scripts/improvement_controller.py``
+    reaches ``br.run_br`` without ``config`` and filed its lanes on br alone.
 
-    Passing ``None`` uninstalls, which is what a test that wants the pre-cutover
-    behaviour back should do.
+    Passing ``None`` uninstalls, which is the state :func:`tracker_mode` refuses.
     """
     _mode_reader.clear()
     if reader is not None:
@@ -121,9 +129,18 @@ def set_mode_reader(reader: Callable[[Path], str] | None) -> None:
 
 
 def tracker_mode(repo_root: Path) -> str:
-    """The cutover mode *repo_root* declares, or :data:`DEFAULT_TRACKER_MODE`."""
+    """The cutover mode *repo_root* declares.
+
+    Raises:
+        TrackerModeUnknownError: no reader is installed. Raised here rather than at the
+            write alone, because a read served from the wrong store is as silent as a
+            skipped mirror and both branch on this answer.
+    """
     if not _mode_reader:
-        return DEFAULT_TRACKER_MODE
+        raise TrackerModeUnknownError(
+            "the tracker mode reader is not installed, so this process cannot tell "
+            "which store a write reaches; import basicly.config, which installs it"
+        )
     return _mode_reader[0](Path(repo_root))
 
 

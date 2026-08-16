@@ -416,6 +416,7 @@ def run_br(
         TrackerExportShrinkError: the call shrank the export without that intent.
     """
     _refuse_write_in_read_only(args)
+    mode = _mirror_precheck(repo_root, args)
     br_path = which()
     if not br_path:
         raise RuntimeError("br is not on PATH; the harness requires the beads tracker")
@@ -427,7 +428,7 @@ def run_br(
     _refuse_export_shrink(before, args)
     if check and proc.returncode != 0:
         raise RuntimeError(f"br {' '.join(args)} failed: {(proc.stderr or proc.stdout).strip()}")
-    _mirror_write(repo_root, args, proc)
+    _mirror_write(repo_root, args, proc, mode)
     return proc
 
 
@@ -446,6 +447,7 @@ def try_run_br(
         TrackerExportShrinkError: the call shrank the export without that intent.
     """
     _refuse_write_in_read_only(args)
+    mode = _mirror_precheck(repo_root, args)
     br_path = which()
     if not br_path:
         return None
@@ -453,7 +455,7 @@ def try_run_br(
     before = _export_before_write(repo_root, args, allow_shrink=allow_export_shrink)
     proc = _spawn_tolerating_transient(br_path, repo_root, args)
     _refuse_export_shrink(before, args)
-    _mirror_write(repo_root, args, proc)
+    _mirror_write(repo_root, args, proc, mode)
     return proc
 
 
@@ -480,16 +482,41 @@ KIT_TRACKER_DIR = owned_store.KIT_TRACKER_DIR
 LEDGER_DIR = owned_store.LEDGER_DIR
 SCHEDULER_KIT_MODULE = owned_store.SCHEDULER_KIT_MODULE
 TrackerDivergenceError = owned_store.TrackerDivergenceError
+TrackerModeUnknownError = owned_store.TrackerModeUnknownError
 set_mode_reader = owned_store.set_mode_reader
 tracker_mode = owned_store.tracker_mode
 ledger_dir = owned_store.ledger_dir
 kit = owned_store.kit
 
 
+def _mirror_precheck(repo_root: Path, args: Sequence[str]) -> str:
+    """The mode this call mirrors under, decided **before** br is spawned.
+
+    Both of this seam's mirror defects were the same ordering mistake, so both are
+    fixed by moving one call rather than by two guards. A check that runs after the
+    spawn cannot refuse anything: br has already taken the write, and raising then
+    produces the divergence the check exists to prevent (`basicly-e2mz.24`). And an
+    unresolvable mode is refused here rather than read as ``external``, which is the
+    fail-open half (`basicly-e2mz.23`).
+
+    Raises:
+        TrackerModeUnknownError: no mode reader is installed.
+        TrackerDivergenceError: *args* is a write the mirror cannot translate.
+    """
+    mode = tracker_mode(repo_root)
+    if mode != MODE_EXTERNAL:
+        mirror.refuse_untranslatable(kit(repo_root), args)
+    return mode
+
+
 def _mirror_write(
-    repo_root: Path, args: Sequence[str], proc: subprocess.CompletedProcess[str]
+    repo_root: Path, args: Sequence[str], proc: subprocess.CompletedProcess[str], mode: str
 ) -> None:
     """Record on the owned ledger the write br just accepted.
+
+    *mode* is the one :func:`_mirror_precheck` resolved before the spawn, passed rather
+    than re-read: re-reading would let a mode change mid-call decide whether the write
+    that already landed gets mirrored.
 
     A no-op in :data:`MODE_EXTERNAL`, and a no-op for a call br refused — a rejected
     write changed neither store, so mirroring it is what would create the divergence.
@@ -502,7 +529,7 @@ def _mirror_write(
     :func:`basicly.mirror.drafts` owns what each write becomes, including which writes
     have no translation and therefore fail the command.
     """
-    if tracker_mode(repo_root) == MODE_EXTERNAL or proc.returncode != 0:
+    if mode == MODE_EXTERNAL or proc.returncode != 0:
         return
     kit_module = kit(repo_root)
     try:

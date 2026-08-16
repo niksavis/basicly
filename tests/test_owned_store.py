@@ -79,21 +79,23 @@ def test_the_ladder_is_ordered_and_starts_where_a_consumer_starts() -> None:
     assert owned_store.DEFAULT_TRACKER_MODE == owned_store.MODE_EXTERNAL
 
 
-def test_with_no_reader_installed_the_mode_is_the_pre_cutover_one(tmp_path: Path) -> None:
-    """Uninstalling is what a test wanting the pre-cutover behaviour back does.
+def test_with_no_reader_installed_the_mode_is_refused_not_defaulted(tmp_path: Path) -> None:
+    """Unknown is refused, because answering `external` to it is a guard failing open.
 
-    Restored in a `finally`, because the holder is process-global: leaving it empty
-    would make every later test in this process read `external` for a repo that
-    declared otherwise, and they would fail somewhere else entirely.
+    This asserted the opposite until `basicly-e2mz.23`, and the assertion was the
+    defect. The fixture declares `owned` so a default matching the declaration cannot
+    pass. Restored in a `finally`: the holder is process-global.
     """
     (tmp_path / "basicly.toml").write_text('[tracker]\nmode = "owned"\n', encoding="utf-8")
     installed = list(_mode_reader)
     try:
         owned_store.set_mode_reader(None)
-        assert owned_store.tracker_mode(tmp_path) == owned_store.DEFAULT_TRACKER_MODE
+        with pytest.raises(owned_store.TrackerModeUnknownError, match="not installed"):
+            owned_store.tracker_mode(tmp_path)
     finally:
         owned_store.set_mode_reader(installed[0] if installed else None)
     assert _mode_reader == installed
+    assert owned_store.tracker_mode(tmp_path) == owned_store.MODE_OWNED
 
 
 # --- where the ledger lives ---------------------------------------------------

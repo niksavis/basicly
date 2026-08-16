@@ -47,6 +47,7 @@ layers =
     br
     mirror
     owned_store
+    br_argv
     dispatch_phase
     runner_envelope
     catalog | catalog_routing | catalog_source | checkout | copilot_tools | dropin | integrity | needs_input | plan_record | precommit_config | projection | read_cost | redact | review | roles | scaffolds | schema | session | tracker_surface | tracker_usage | tree_schema | ui | usage | verify_artifact

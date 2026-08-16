@@ -55,7 +55,7 @@ sys.path[:0] = [str(SCRIPTS_DIR), str(REPO_ROOT / "src")]
 
 import check_module_size as sensor  # noqa: E402 - the paths above come first
 
-from basicly import br, plan_record, policy, supervise, wip  # noqa: E402 - path set above
+from basicly import br, config, plan_record, policy, supervise, wip  # noqa: E402 - path above
 from basicly.read_cost import SCOPE_FILE_READ_CAP  # noqa: E402 - path set above
 
 # The label every lane this loop files carries. It *is* the loop's flow-control
@@ -242,7 +242,10 @@ def dispatch(repo_root: Path, target: Candidate, dropped: int) -> str:
     The actuator writes to the tracker and nowhere else: the lane it files is picked
     up by the dispatcher the delivery loop already has, so this loop never spawns an
     agent itself and inherits every bound that path already carries.
+
+    The mode is printed because this entry point filed lanes on br alone (`e2mz.23`).
     """
+    print(f"tracker:   mode {config.load_tracker_mode(repo_root)}")
     proc = br.run_br(
         repo_root,
         [
