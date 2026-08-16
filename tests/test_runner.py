@@ -1361,6 +1361,23 @@ def test_dispatch_env_drops_an_inherited_git_dir() -> None:
     assert "GIT_INDEX_FILE" not in env
 
 
+def test_dispatch_env_drops_an_operators_forced_colour() -> None:
+    """A lane must not inherit the terminal preference of the shell that started it.
+
+    With `FORCE_COLOR=3` set, a lane's verify run failed on ANSI escapes in code that
+    cannot emit colour: a kit CLI and the tracker seam each spent rework on it
+    (basicly-e2mz.34). `NO_COLOR` survives, because it can only move a dispatch toward
+    the plain output the gates assert.
+    """
+    base = {"FORCE_COLOR": "3", "CLICOLOR_FORCE": "1", "COLORTERM": "truecolor", "NO_COLOR": "1"}
+    env = runner.dispatch_env(_claude_spec(), base)
+
+    assert "FORCE_COLOR" not in env
+    assert "CLICOLOR_FORCE" not in env
+    assert "COLORTERM" not in env
+    assert env["NO_COLOR"] == "1"
+
+
 def test_dispatch_env_keeps_the_deliberate_identity_and_transport_vars() -> None:
     """The scrub runs on the inherited base only — never on the overlays above it.
 

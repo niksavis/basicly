@@ -42,7 +42,7 @@ from pathlib import Path
 from typing import IO
 
 from . import context_window, models, run_record
-from .checkout import sanitised_git_env
+from .checkout import sanitised_colour_env, sanitised_git_env
 from .context_window import ADAPTER_WINDOW, ADAPTER_WINDOWS, DEFAULT_CONTEXT_WINDOW, FALLBACK_WINDOW
 from .copilot_store import COPILOT_SESSION_STORE, shutdown_data, store_usage
 from .redact import redact_secrets
@@ -910,14 +910,15 @@ def br_attribution_env(spec: RunnerSpec) -> dict[str, str]:
 
 
 def dispatch_env(spec: RunnerSpec, base: Mapping[str, str]) -> dict[str, str]:
-    """*base* as the dispatched agent gets it: git-scrubbed, then the overlays.
+    """*base* as the dispatched agent gets it: scrubbed, then the overlays.
 
     The scrub first, the overlays after, because an inherited ``GIT_DIR`` is the one
     thing the child must not have (basicly-e2mz.16) while ``git_identity_env``'s four
     ``GIT_*`` are deliberate and have to survive it.
     """
     identity = git_identity_env(spec)
-    return {**sanitised_git_env(base), **br_attribution_env(spec), **(identity or {})}
+    scrubbed = sanitised_colour_env(sanitised_git_env(base))
+    return {**scrubbed, **br_attribution_env(spec), **(identity or {})}
 
 
 # --- Timeout kill: the dispatch's whole tree, portably (basicly-kjc5.15) ------

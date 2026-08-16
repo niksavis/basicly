@@ -61,6 +61,18 @@ def sanitised_git_env(env: Mapping[str, str]) -> dict[str, str]:
     }
 
 
+# An operator's terminal preference, which a dispatched lane must never inherit: rich
+# reads these when it builds a Console, so a forced value fails a verify run on ANSI
+# escapes in code that has nothing to do with colour (basicly-e2mz.34). `NO_COLOR` is
+# deliberately absent — it only ever moves output toward the plain form gates assert.
+COLOUR_ENV_FORCING = frozenset({"FORCE_COLOR", "CLICOLOR_FORCE", "CLICOLOR", "COLORTERM"})
+
+
+def sanitised_colour_env(env: Mapping[str, str]) -> dict[str, str]:
+    """*env* without the colour-forcing variables a developer's shell may carry."""
+    return {name: value for name, value in env.items() if name not in COLOUR_ENV_FORCING}
+
+
 def run(
     args: list[str],
     *,

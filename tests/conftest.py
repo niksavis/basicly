@@ -34,7 +34,7 @@ from pathlib import Path
 import pytest
 
 from basicly import runner, session
-from basicly.checkout import GIT_ENV_KEPT
+from basicly.checkout import COLOUR_ENV_FORCING, GIT_ENV_KEPT
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -76,6 +76,26 @@ def _drop_ambient_git_env() -> None:
 
 
 _drop_ambient_git_env()
+
+
+def _drop_ambient_colour_env() -> None:
+    """Remove the colour-forcing variables this machine's shell may carry.
+
+    At import for a sharper reason than the git scrub: ``basicly.ui`` builds its two
+    ``Console`` objects at module scope and rich reads these variables *then*, so a
+    fixture running after the first test module is imported is already too late.
+
+    Measured 2026-08-16 with ``FORCE_COLOR=3`` set: ``tests/test_ui.py`` alone was 10
+    failed / 3 passed, and 13 passed with it unset — while the whole suite passed either
+    way, because another module disabled colour first. A green full run therefore did not
+    clear it, and two lanes burned rework on ANSI escapes in code that cannot emit them
+    (basicly-e2mz.34).
+    """
+    for name in COLOUR_ENV_FORCING:
+        os.environ.pop(name, None)
+
+
+_drop_ambient_colour_env()
 
 
 def _shared_git_config() -> Path | None:
