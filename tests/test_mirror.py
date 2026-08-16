@@ -6,6 +6,8 @@ read back — and those tests stay there, because what they assert is that the *
 writes both stores. What was missing is the translation on its own: which drafts one
 argv becomes, and which argv is refused.
 
+`br update`'s own flag surface outgrew this file and lives in `test_mirror_update.py`.
+
 The kit arrives as a parameter rather than being loaded by `mirror`, and this file is
 what that affordance was for: the real kit module, no repo, no ledger, no subprocess. It
 is the real one rather than a stub on purpose — every key the mirror writes is read off
@@ -101,43 +103,6 @@ def test_a_comment_with_the_wrong_argument_count_is_refused(kit: Any) -> None:
     """Positional reading is only safe while the shape is exactly the one assumed."""
     with pytest.raises(TrackerDivergenceError, match="one issue and one body"):
         mirror.drafts(kit, ["comments", "add", "b-1", "body", "extra"], "")
-
-
-# --- update --------------------------------------------------------------------
-
-
-def test_a_status_move_and_a_field_edit_are_different_kinds(kit: Any) -> None:
-    """`status` has its own event kind; everything else is a `field`."""
-    drafts = mirror.drafts(kit, ["update", "-s", "in_progress", "-t", "task", "b-1"], "")
-
-    status = _by_kind(drafts, kit.events.KIND_STATUS)
-    field = _by_kind(drafts, kit.events.KIND_FIELD)
-    assert status.payload["status"] == "in_progress"
-    assert (field.payload["name"], field.payload["value"]) == ("issue_type", "task")
-    assert {status.record, field.record} == {"b-1"}
-
-
-def test_an_update_flag_with_no_equivalent_is_refused_not_dropped(kit: Any) -> None:
-    """Dropping it leaves the ledger missing precisely the field somebody just added.
-
-    Spelled inline, and that is forced rather than stylistic: `VALUE_FLAGS["update"]`
-    is built *from* the translatable flags, so a space-separated unknown flag leaves its
-    value looking like a positional and the id guard fires first. Both refuse — this is
-    the one that names the repair.
-    """
-    with pytest.raises(TrackerDivergenceError, match=r"br_argv\.UPDATE_FIELD_FLAGS"):
-        mirror.drafts(kit, ["update", "--assignee=someone", "b-1"], "")
-
-
-def test_an_update_naming_no_issue_is_refused(kit: Any) -> None:
-    """A write about nothing is still refused, now that a write about many is not.
-
-    This asserted that *two* ids are a refusal until `basicly-e2mz.24`, and that was the
-    defect rather than the guard: `br update` takes many, so the mirror refused a write
-    br had already made. Widening it to many must not widen it to none.
-    """
-    with pytest.raises(TrackerDivergenceError, match="names no issue"):
-        mirror.drafts(kit, ["update", "-s", "open"], "")
 
 
 # --- create --------------------------------------------------------------------
@@ -318,15 +283,7 @@ def test_a_multi_id_close_moves_every_id_it_names(kit: Any) -> None:
     assert {draft.payload["status"] for draft in drafts} == {"closed"}
 
 
-def test_a_multi_id_update_records_every_flag_on_every_id(kit: Any) -> None:
-    """`br update` takes many ids too, and the same refusal was one translator over."""
-    drafts: list[Any] = mirror.drafts(kit, ["update", "b-1", "b-2", "-s", "in_progress"], "")
-
-    assert [draft.record for draft in drafts] == ["b-1", "b-2"]
-    assert {draft.payload["status"] for draft in drafts} == {"in_progress"}
-
-
 def test_a_close_naming_no_id_is_still_refused(kit: Any) -> None:
-    """Widening to many ids must not widen to none — the control on the two above."""
+    """Widening to many ids must not widen to none — the control on the close above."""
     with pytest.raises(TrackerDivergenceError, match="names no issue"):
         mirror.drafts(kit, ["close", "--reason", "done"], "")

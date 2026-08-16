@@ -10,12 +10,31 @@ from __future__ import annotations
 from collections.abc import Collection, Sequence
 
 # `br update`'s flags, as the ledger fact each records. Two mappings because `status`
-# has its own event kind. Deliberately only what the engine spawns; a flag absent here
-# is not dropped but raised on, since a mirrored write silently missing half of what br
-# recorded stays invisible until the differential runs.
+# has its own event kind. A flag belongs here when br stores the argv's own value under
+# one export key; a flag absent here is not dropped but raised on, since a mirrored
+# write silently missing half of what br recorded stays invisible until the differential
+# runs.
+#
+# Each name is br's own export key, measured 2026-08-16. Four families fail the test
+# above and stay out: the label flags accumulate rather than replace (`--set-labels a
+# --set-labels b` leaves both), `--claim` carries no value, `--due`/`--defer` are
+# re-based against the host clock into `due_at`/`defer_until`, and `--estimate` lands
+# under `estimated_minutes`, which no record in this repo's export holds.
 UPDATE_FIELD_FLAGS = {
+    "--title": "title",
+    "-d": "description",
+    "--description": "description",
+    "--body": "description",
+    "--design": "design",
+    "--acceptance": "acceptance_criteria",
+    "--acceptance-criteria": "acceptance_criteria",
+    "--notes": "notes",
     "-t": "issue_type",
     "--type": "issue_type",
+    "-p": "priority",
+    "--priority": "priority",
+    "--assignee": "assignee",
+    "--owner": "owner",
     "--external-ref": "external_ref",
 }
 UPDATE_STATUS_FLAGS = frozenset({"-s", "--status"})
