@@ -1,0 +1,4 @@
+# The comment-density waiver on `.basicly/core/kit/tracker/gates.py`, which the module
+# states its reason for at column 0.
+[ratchet.comment_density]
+count_delta = 1
