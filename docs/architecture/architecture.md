@@ -248,6 +248,8 @@ cannot be reviewed.
 | model vendors | model ids, prices, per-surface caps | a committed model map, generated from a reviewed anchors file | the drift check reports and never writes, so an upstream edit can never change which model runs someone's code |
 | GitHub Actions | five workflows on three platforms | the workflow files in this repository | CI failing does not block a local landing; the loop's verify step runs the same checks |
 | `uv` and CPython | the runtime every projected hook shells out to | `requires-python` in `pyproject.toml` | a consumer without the runtime on `PATH` reaches the bootstrap shim |
+| `pre-commit` | the runner that installs and invokes the git-hook floor at three stages | a pinned revision per hook repository in the committed config | a hook the runner cannot resolve fails the commit loudly rather than passing it |
+| the external tracker binary | the loop's state today, while the cutover runs | an exact pinned version, warned about in both directions | §37 is the account of it, and of its removal |
 
 **The projected guidance is the one contract every agent family does standardize.** That
 is why the handoff runner in [29.2](#292-detection-model-resolution-and-the-handoff-fallback)
@@ -1596,10 +1598,16 @@ failed or missing consumer gate. It dispatches the validator role. It prices tha
 as a **read** and not as a write, so a judge never enters the sample a lane's cost is
 calibrated from.
 
-**A reviewer fans out beside the validator, once per lens.** A literal tripwire pins the
-lens vocabulary, rather than a length check. Both roles are advisory in one structural
-sense. A reviewer records its findings under its own marker, and **the validator owns the
-gate**. The no-rerank rule therefore holds by construction, and not by instruction.
+**A reviewer fans out beside the validator, once per lens.**
+
+**There are two lenses, and the set is closed: `correctness` and `security`.** A change can
+pass one axis and fail the other, so each lens records its findings under its own name.
+Findings from two lenses are never merged, and never ranked against each other. A literal
+tripwire pins that vocabulary, rather than a length check.
+
+Both roles are advisory in one structural sense. A reviewer records its findings under its
+own marker, and **the validator owns the gate**. The no-rerank rule therefore holds by
+construction, and not by instruction.
 
 **Maintainability is deliberately not a lens.** The linter, the type checker, the dead-code
 gate, the layering contract and the size ratchets bound that axis mechanically. A lens that
@@ -2783,7 +2791,7 @@ missing-fact sentinel, and the one-time checkpoint confirmation codes.
 
 ## 34. Module structure and the layering contract
 
-The engine is 98 modules in 36 tiers [measured 2026-08-16, `.importlinter`]. A higher tier
+The engine is a layered set of modules, and `.importlinter` is the declaration. A higher tier
 may import a lower one. The reverse breaks the build and names both modules. Two siblings
 inside one tier may not import each other. That last rule is what makes a tier a tier and
 not a bucket.
@@ -2889,18 +2897,20 @@ flowchart TB
 Each layer runs later than the layer above it, and each one is the backstop for a layer that
 can be skipped. The order is strictly linear.
 
-| Layer | When it runs | What it is | Status |
-| --- | --- | --- | --- |
-| 1 · tool-call boundary | before a tool runs | the only layer that can refuse an edit before it exists | partial |
-| 2 · git hooks | at commit and at push | the deterministic floor, agent-independent | shipped |
-| 3 · the verify runner | at the loop's verify step | one command, recorded as a tracker gate | shipped |
-| 4 · continuous integration | on push and on a tag | the same checks on three platforms, plus a fresh-consumer smoke install at a tag | shipped |
+| Layer | When it runs | What it is |
+| --- | --- | --- |
+| 1 · tool-call boundary | before a tool runs | the only layer that can refuse an edit before it exists |
+| 2 · git hooks | at commit and at push | the deterministic floor, agent-independent |
+| 3 · the verify runner | at the loop's verify step | one command, recorded as a tracker gate |
+| 4 · continuous integration | on push and on a tag | the same checks on three platforms, plus a fresh-consumer smoke install at a tag |
 
 Layer 3 runs the same checks as layer 2, so a green loop step predicts a green build.
 
-**Layer 1 is the least built.** Four hooks are mapped: three on Claude and one on Copilot.
-The three Claude hooks span **two** event types, `PreToolUse` and `PostToolUse`; the Copilot
-hook uses `PostToolUse`. Every gate below layer 1 judges an artifact *after* it exists.
+**Layer 1 is structurally different from the three below it, and that is the point.** Every
+gate below it judges an artifact *after* it exists. Layer 1 is the only one that can refuse
+an edit before there is anything to judge, so it is the only layer whose absence cannot be
+compensated for lower down. How much of it any host permits is a status question;
+[`status.md`](status.md) answers it.
 
 The host event vocabulary widens only to an event with a named consumer. **A stage lands with
 the catalog source that uses it.** A widening to every documented event was refused, on the
@@ -2910,13 +2920,13 @@ keep true against a vendor that moves.
 
 The gates below hang off layer 3 rather than sitting in the stack.
 
-| Gate | Where it binds | Status |
+| Gate | Where it binds | What it judges |
 | --- | --- | --- |
-| plan gate | the decompose advance, inside `decompose`, before any child is written. Refuses a child with no criteria, scope, dependencies, budget, integrity level or demonstration | partial. It judges the demonstration field and never runs it |
-| plan-entry ratchet | entry to BUILD. Re-reads the recorded plan section and refuses a dispatch missing one of the **five** fields | partial. It never judges the demonstration field, and it is inert without a grant. See [36.4](#364-the-plan-gate-and-the-demonstration) |
-| demonstration proof | the **decompose advance, advisory**; and the **ship advance, blocking** | shipped. See [36.4](#364-the-plan-gate-and-the-demonstration) |
-| validate gate | `consumer-surface` integrity only. A consumer-level verdict, recorded by the engine and never by the agent | shipped |
-| ratchets | a frozen baseline that may only fall | shipped |
+| plan gate | the decompose advance, inside `decompose`, before any child is written | refuses a child with no criteria, scope, dependencies, budget, integrity level or demonstration. It judges the demonstration **field**, deliberately never the command — see [36.4](#364-the-plan-gate-and-the-demonstration) |
+| plan-entry ratchet | entry to BUILD | re-reads the recorded plan section and refuses a dispatch missing one of the **five** fields. It never judges the demonstration field, because on that population an absent demonstration is ambiguous between a defect and a record predating the rule |
+| demonstration proof | the decompose advance, advisory; and the ship advance, blocking | runs the command the plan gate admitted |
+| validate gate | `consumer-surface` integrity only | a consumer-level verdict, recorded by the engine and never by the agent |
+| ratchets | every commit | a frozen baseline that may only fall |
 
 ### 36.2 The verify pipeline
 
@@ -3945,8 +3955,8 @@ approved and never landed. The failure is silent and reads as data loss rather t
 reader defect.
 
 **The migration constraint, which is the load-bearing half.** An append-only log is never
-rewritten, so the 2,458 existing `comment` events stay on disk exactly as they are. **The
-reader needs an alias.** A `comment` event resolves to the kind its body already announces,
+rewritten, so every existing `comment` event stays on disk exactly as it is, and the census
+command above says how many that is today. **The reader needs an alias.** A `comment` event resolves to the kind its body already announces,
 and a `comment` with no marker resolves to `note`. The alias is permanent, not a migration
 window, because the events it covers are permanent.
 
