@@ -77,7 +77,7 @@ caught it. Review did not.
 | Scope | `.scripts/`, `package.json`, `.pre-commit-config.yaml`, `basicly.toml` |
 | Integrity | `engine` |
 | Depends on | nothing |
-| Acceptance | WHEN a tracked markdown file holds an unparseable mermaid block, THE CHECK SHALL exit non-zero and name the file, the line and the parser message. WHEN every block parses, THE CHECK SHALL exit zero and print the block count |
+| Acceptance | WHEN a tracked markdown file holds a mermaid block the renderer refuses, THE CHECK SHALL exit non-zero and name the file, the line, the renderer version and its message. WHEN every block renders, THE CHECK SHALL exit zero and print the block count and the renderer version |
 | Demonstrated by | a check that reports the tree's current block count and 0 failures, and 1 failure after a deliberate typo |
 | Cost | **a dependency addition**, and therefore a human decision. It needs node plus `mermaid` and `jsdom`. `@mermaid-js/mermaid-cli` is not the answer — it declares a `puppeteer` peer dependency, which means a browser download |
 | Buys | the only defect class in the architecture document that is invisible to every existing gate and visible to every reader |
@@ -91,6 +91,20 @@ a human is being asked to approve is therefore unknown. Re-measure before approv
 
 Its acceptance also once said "reports 12 blocks", which counted the legend as a view. The
 count belongs in the check's output, not in the acceptance criterion.
+
+**A second correction, and it is the one that decides whether this item is worth
+building.** The acceptance above used to say *parses*. A parse is the wrong instrument.
+Measured 2026-08-16 against mermaid 11 in a real browser: `mermaid.parse()` **accepts** a
+`stateDiagram-v2` block whose transition label carries a second colon, and a renderer
+**refuses** the same block with *"No diagram type detected matching given
+configuration"*. A gate written to the old criterion would have passed the exact block a
+reader reported as a red error box. The criterion now says *renders*.
+
+**One thing is unestablished and blocks sizing.** The reported failure could not be
+reproduced on mermaid 11 — that build renders the offending block. The reporting renderer
+is therefore a different version or configuration, and it is unknown which. **Establish
+which renderer the hosting surface uses, and its version, before approving the
+dependency**: a check pinned to the wrong renderer is a gate that agrees with itself.
 
 ---
 

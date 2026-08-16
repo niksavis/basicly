@@ -217,14 +217,34 @@ def _reset_process_globals():
 
 @pytest.fixture(scope="session")
 def _tracked_repo_files() -> tuple[Path, ...]:
-    """Every git-tracked path in this repo, resolved once for the whole suite."""
+    """Every git-tracked path in this repo, resolved once for the whole suite.
+
+    Refuses here, once, when any of them is missing from the working tree. The refusal
+    itself is not new — :func:`work_repo` already raised on the first absent path, and
+    deliberately, because a deleted-but-unstaged edit is a real difference from CI. What
+    is new is that it happens once and says why: three separate unstaged deletions on
+    2026-08-16 each surfaced as a wall of identical ``FileNotFoundError`` tracebacks from
+    ``shutil.copy2`` — 37, then 14, then 100 — none of which named the cause. One operator
+    error must not read as a hundred defects (basicly-e2mz.33).
+    """
     listing = subprocess.run(  # nosec B603 B607
         ["git", "-C", str(REPO_ROOT), "ls-files", "-z"],
         capture_output=True,
         text=True,
         check=True,
     )
-    return tuple(Path(name) for name in listing.stdout.split("\0") if name)
+    tracked = tuple(Path(name) for name in listing.stdout.split("\0") if name)
+    absent = [name for name in tracked if not (REPO_ROOT / name).exists()]
+    if absent:
+        shown = "\n  ".join(str(name) for name in absent[:10])
+        more = f"\n  ... and {len(absent) - 10} more" if len(absent) > 10 else ""
+        raise RuntimeError(
+            f"{len(absent)} tracked file(s) deleted but not staged, so the work_repo "
+            f"fixture cannot build a tree that matches CI.\n  "
+            f"{shown}{more}\n"
+            "Stage the deletions with `git add -A`, or restore them with `git restore`."
+        )
+    return tracked
 
 
 @pytest.fixture
