@@ -770,7 +770,7 @@ The five whys, each link an observation, not an inference:
 **Root cause: the checkpoint clock measures rendezvous, not reading.** A renderer cannot move a
 quantity the instrument does not contain. Both recorded checkpoint-comprehension incidents
 (`basicly-kjc5.34`, `basicly-jr0l.39`) were fixed by *saying the missing thing in words* —
-`_CHECKPOINT_MEANING` (`cli.py:2361`) exists because an operator did not know the merge had already
+`_CHECKPOINT_MEANING` (in `cli.py`) exists because an operator did not know the merge had already
 happened. That is missing information, not unreadable format, and §15.1 records the same shape
 already refuted in the token domain.
 

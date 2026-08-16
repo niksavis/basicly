@@ -70,6 +70,12 @@ br sync --merge                           # 3-way merge of .beads/issues.jsonl a
 
 ## Safe Defaults
 
+- **Above `[tracker] mode = "external"`, make every write through
+  `basicly tracker write -- <br subcommand> ...`, never by spawning `br` yourself.**
+  A direct spawn does not pass the engine seam, so it lands on `br` alone and leaves
+  the owned ledger short — a divergence the shadow differential cannot tell from a
+  mirror failure. The wrapper also refuses, _before_ `br` runs, a write the ledger has
+  no translation for. Reads are unaffected: run those directly.
 - Always resolve or create an issue before doing the work it represents; never invent
   an id in a commit message that does not exist in `.beads/issues.jsonl`.
 - Run `br sync --flush-only` before staging `.beads/` so the JSONL export matches the

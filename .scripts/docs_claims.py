@@ -266,16 +266,17 @@ def _cells(row: str) -> list[str]:
     return re.split(r"(?<!\\)\|", row)
 
 
-def _section_8(root: Path) -> str:
-    """The architecture document's section 8, where every command is tabulated."""
+def _cli_section(root: Path) -> str:
+    """The architecture document's CLI section, where every command is tabulated."""
     text = read_text(root / ARCHITECTURE_MD)
-    start = text.index("## 8) CLI surface")
+    # No section numbers to key on, so renaming that heading must change this literal.
+    start = text.index("## The CLI surface")
     end = text.find("\n## ", start)
     return text[start:end] if end != -1 else text[start:]
 
 
 def _documented_commands(section: str) -> set[str]:
-    """Subcommand names declared in the *first* cell of each section 8 table row.
+    """Subcommand names declared in the *first* cell of each CLI-section table row.
 
     Only the command cell, never the behavior prose beside it: that column is full
     of incidental backticked words (``basicly.toml``, ``check``, ``build``) which
@@ -301,14 +302,14 @@ def _documented_commands(section: str) -> set[str]:
 
 
 def _cli_commands_covered(root: Path) -> list[str]:
-    """Every subcommand the CLI ships must appear in the section 8 command tables."""
+    """Every subcommand the CLI ships must appear in the CLI section's tables."""
     top = subparsers(cli._build_parser())
     if top is None:  # pragma: no cover - the CLI is a subcommand parser by construction
         raise ClaimError("the CLI parser declares no subcommands")
 
-    missing = sorted(set(top.choices) - _documented_commands(_section_8(root)))
+    missing = sorted(set(top.choices) - _documented_commands(_cli_section(root)))
     if missing:
-        return [f"subcommands missing from the section 8 command tables: {', '.join(missing)}"]
+        return [f"subcommands missing from the CLI tables: {', '.join(missing)}"]
     return []
 
 
@@ -323,7 +324,7 @@ def _cli_subcommands_covered(root: Path) -> list[str]:
     worktree`".
 
     Coverage is scoped to the rows whose **command cell** names the parent, not to
-    section 8 as a whole. Scanning the whole section would let an incidental ``list``
+    the CLI section as a whole. Scanning it whole would let an incidental ``list``
     in the ``catalog`` row satisfy ``worktree list`` — the same failure mode
     :func:`_documented_commands` avoids by reading only the command column, one level
     up. Within an owning row either column counts, because a group is documented as
@@ -332,7 +333,7 @@ def _cli_subcommands_covered(root: Path) -> list[str]:
     top = subparsers(cli._build_parser())
     if top is None:  # pragma: no cover - the CLI is a subcommand parser by construction
         raise ClaimError("the CLI parser declares no subcommands")
-    rows = [row for row in _section_8(root).splitlines() if row.startswith("|")]
+    rows = [row for row in _cli_section(root).splitlines() if row.startswith("|")]
 
     problems: list[str] = []
     for parent, parser in sorted(top.choices.items()):
@@ -345,7 +346,7 @@ def _cli_subcommands_covered(root: Path) -> list[str]:
             if len(_cells(row)) >= 3 and re.search(rf"basicly {parent}\b", _cells(row)[1])
         ]
         if not owned:
-            problems.append(f"no section 8 row documents the '{parent}' command group")
+            problems.append(f"no CLI row documents the '{parent}' command group")
             continue
         documented = " ".join(owned)
         missing = [
@@ -357,7 +358,7 @@ def _cli_subcommands_covered(root: Path) -> list[str]:
         ]
         if missing:
             problems.append(
-                f"'{parent}' subcommands missing from its section 8 row(s): {', '.join(missing)}"
+                f"'{parent}' subcommands missing from its CLI row(s): {', '.join(missing)}"
             )
     return problems
 

@@ -1,2278 +1,2573 @@
 # basicly Architecture
 
-> **This document is the single authoritative architecture reference for `basicly`.**
-> Beads (`br`) issues are broken down directly from it (§10). Where it and any other
-> document disagree, this one wins.
->
-> **Its relationship to [`docs/requirements/`](../requirements/)**: a design document explores
-> and settles _one_ question in depth — the factory, the roster, gates and rework,
-> catalog efficacy, steering surfaces, the tracker. This file carries the _result_:
-> the current system in §§0–13 and the agreed direction in §14. A design document is
-> therefore the detail behind a §14 row, never a competing account of how the system
-> works, and it is archived once absorbed. Evidence for the design documents lives in
-> [`docs/research/`](../research/2026-07-26-sota-review.md), and the order the §14 rows
-> get built in lives in [`docs/plan/`](../plan/implementation-plan.md).
->
-> **Status convention — two states, never blurred.** §§0–13 describe the system
-> **as it exists in code today**; deliberate small omissions are marked
-> **[Deferred]** and collected in §11. §14 describes the **target state** — where
-> the architecture is going — and is the only forward-looking section. §15 is a
-> **derived view** of those two: the per-capability roadmap the README and the
-> landing page render, adding no claim of its own.
->
-> A claim in §§0–13 is a statement about running code. A claim in §14 is a
-> statement of intent with a design document behind it. Reading the second as the
-> first is the specific error this convention exists to prevent: a decision
-> recorded in a design document is not evidence that it is enforced anywhere.
->
-> **How to read this document**: each numbered Part opens with a short **Summary**
-> you can scan alone to get the full picture, followed by **Details** you only need
-> when implementing or debugging that part. Skip straight to the Part you need.
->
-> **This is the reference quadrant, not the entry point.** A consumer starting from
-> `basicly install` wants [`docs/tutorial/first-loop.md`](../tutorial/first-loop.md)
-> and then [`docs/how-to/`](../how-to/); §13.1 records how that layer relates to
-> this one.
+`basicly` is a **harness for coding agents that ships its own development process**. A
+repository installs it, and gets three things it did not have: guidance projected into
+the files each coding agent actually reads, deterministic gates that block bad work
+whether or not a model read the guidance, and a workflow engine that drives a unit of
+work from an idea to a merge over a tracked graph of state.
 
-## 0) Idea
+This file is the authority on the **design**. It is the one document to read first.
 
-`basicly` is a **harness for coding agents that ships its own development
-process**. It is distributed as a curated, versioned catalog a repository installs,
-customizes, and projects into the native context files each coding agent actually
-reads — and, in the same package, the workflow that drives work through those
-agents plus the state that workflow runs on.
+## How to read this document
 
-That is deliberately more than a guidance bundle. Four pillars, each independently
-useful and only jointly sufficient:
+**Two audiences, one file.** A human wants to see how the factory, the harness, the
+tracker, the state machine, the agents and the skills fit together, and what is built
+versus what is only decided. An agent building context at the start of a session wants
+the same picture and the invariants it may not violate.
 
-1. **Catalog — guidance** (suggestive, non-deterministic). Fragments and skills:
-   Markdown a model reads and may or may not follow (§§4–7).
-2. **Gates — enforcement** (deterministic). Git hook scripts and the verify
-   pipeline, which mechanically block a bad commit, push, or landing regardless of
-   whether the model read or followed the guidance (§4.2, §6).
-3. **The loop — an SDLC of its own** (deterministic engine, agent-supplied
-   judgment). Intake → classify → decompose → build → verify → validate → ship,
-   driven by `basicly loop` over the tracker, run single-track or as
-   parallel lanes behind a supervisor and a serial merge queue (§12). Teardown is
-   folded into the ship advance and the retrospective is a conditional process over
-   the gate-failure ledger, not a rung (§12.13); neither is a phase.
-4. **The tracker — work state as a graph.** Issues, dependencies, gates,
-   checkpoints and evidence, from which the loop **derives** the current phase
-   rather than remembering it (§12.1).
+**The survival rule that shaped every editing call here:** this document must stand
+alone if the code and every other document disappeared, and be enough to rebuild the
+system from scratch. A decision and the reason behind it, an invariant, a constraint, a
+data shape: content. A line number, a bead id used as an argument, the status of one
+lane last Tuesday: noise, and cut.
 
-Pillars 1 and 2 are the classic harness bargain, and both halves must be present:
-guidance without gating is easily ignored; gating without guidance gives the agent
-no context for _why_ a check exists or how to satisfy it up front.
+**Authority order, when two sources disagree.**
 
-**Pillars 3 and 4 are the distinction.** A harness that ships agents, skills, and
-automation scripts tells an agent _how to work_. `basicly` additionally owns _the
-process_ and _the state_, and enforces both in code:
+1. **The code wins.** It is the only thing that runs. Every claim here was checked
+   against the tree; where a number is cheap to re-derive, the command is given instead
+   of the number, because a copied figure goes stale silently.
+2. **This document wins over every other document** — the requirements documents, the
+   implementation plan, the README, the landing page, the tutorial and the how-tos.
+   Those are renderings, arguments or sequences; this is the specification.
+3. A claim about an **external interface** (a CLI flag, a model id, a vendor limit) is
+   never settled from recall. Grep this repo's own adapter, then fetch the vendor's live
+   documentation.
 
-- **The process is a command, not a procedure in prose.** Anything fully
-  deterministic is executable as one command an agent triggers and waits on. If an
-  agent must perform a _sequence_ of mechanical steps, the engine is missing a
-  command — and the tokens, latency, and chance of getting a mechanical step wrong
-  are all waste (§12, D10).
-- **The state is derived, not remembered.** Because phase is a pure function of
-  tracker state and the engine keeps no side-state, a crashed, switched, or
-  compacted session resumes by re-reading the tracker. This makes a whole class of
-  orchestration failure — re-dispatching already-completed work after losing the
-  thread — structurally impossible rather than merely unlikely.
-- **Authority is asymmetric.** Agents propose; the engine disposes. No model holds
-  authority over the tracker, the schedule, or a required gate, at any autonomy
-  level.
-- **Enforcement is code, not a request.** The model choosing to run a formatter is
-  a different thing from the formatter running automatically. Where a hook can
-  enforce a rule, the rule is a hook and the prose only points at it (§3.1).
-- **The phases are engine code, and deliberately not configuration.** Decided
-  2026-07-30 after two independently-built projects were reviewed that had made
-  phases declarative — a YAML node DAG and an engine driving a lifecycle declared in
-  front matter. Most rungs of `derive_phase` are mechanical enough to express as
-  data; the `verified` term is not. It reads
-  `gates.can_advance and (worktree is not None or has_children)`, and the ship rung
-  adds `gates.can_advance and (worktree is None or verified)` — together the
-  _landed_ invariant found by incident `basicly-k35r`, where approving ship before
-  the landing wedged the phase with no route back to the merge. The leading
-  `gates.can_advance` on the ship rung is the second half of that invariant, added
-  after `basicly-jr0l.49`: a missing binding does not by itself mean _torn down
-  after the merge_, because a leaf that never built has no binding either, so
-  without it an out-of-order ship approval closed an unstarted bead with zero work
-  done. The green required gate is the discriminator — the build→verify landing
-  records it and nothing else does. In YAML that becomes a boolean expression
-  language, and the invariant then lives where the type checker cannot see it, the
-  test suite cannot easily target it, and review will not catch a subtle edit. The
-  general form is worth stating once, because it applies past this decision:
-  **every rule that moves from code to data leaves the type checker, the test
-  suite, and code review.** What a consumer would plausibly want to vary — required
-  gates, the rework cap, verify checks per mode, autonomy levels — is already
-  configuration in `basicly.toml`.
+**What this document is not.** It is not the entry point for a consumer running
+`basicly install` for the first time — that is the tutorial. It is not the order the
+unbuilt parts get built in — that is the implementation plan. It is not a backlog.
 
-The four pillars are also the axis along which this document is organised: §§4–11
-are the catalog and its projection, §12 is the loop and the tracker it runs on, and
-§14 is where each pillar is going next.
+**A note on measured numbers.** Where a figure is stated it carries the date it was
+measured and, wherever possible, the command that re-derives it. A figure with neither
+is a claim nobody can check, and this document has already carried several.
 
-## 1) Goal
+### Legend
 
-`basicly` succeeds when:
+Every diagram uses three node colours and every node carries exactly one.
 
-1. A repository can install the catalog, get working `AGENTS.md`/`CLAUDE.md`/
-   `copilot-instructions.md` files, and never hand-edit them again.
-2. A user can add or override guidance without forking the catalog, and a later
-   `basicly install` (upgrade, §9) never destroys that customization.
-3. The three always-on files stay small, unambiguous, and free of restated linter
-   rules — because that duplication measurably hurts agent task success (§3.1).
-4. Changing "the security policy" (or any single concern) means editing exactly one
-   fragment, and every affected output regenerates consistently.
-5. Contradictions, duplicates, and ambiguity in the catalog are caught before they
-   reach a generated file — deterministically where possible, by an agent reviewer
-   where not.
+```mermaid
+flowchart LR
+  b["built<br/>in the tree and reachable from a real call path"]
+  p["partial<br/>exists, but does not bind, is unreachable,<br/>or covers only part of what it claims"]
+  d["designed<br/>decided, and not in the tree"]
 
-The four goals the loop and the tracker add, which a guidance-only harness does not
-have to meet:
+  classDef built fill:#d5efd5,stroke:#2e7d32,color:#000
+  classDef partial fill:#fff2cc,stroke:#e69500,color:#000
+  classDef designed fill:#f0f0f0,stroke:#9e9e9e,color:#000,stroke-dasharray:5 3
+  class b built
+  class p partial
+  class d designed
+```
 
-1. A unit of work can be driven end to end by any supported agent, and the phase it
-   is parked in is **derivable** from the tracker alone — so a session can be
-   crashed, compacted, or swapped for a different agent family mid-track and
-   resumed without replay.
-2. Every deterministic step in that workflow is reachable as **one command**; no
-   agent is asked to remember a mechanical sequence (§12, D10).
-3. A required gate can only ever be passed by deterministic checks. Judged
-   verification is advisory or routes a decision — never a green light.
-4. The harness's own claims are **measured, not asserted**: a rule that no longer
-   binds and a skill that never fires both cost context on every turn and deliver
-   nothing, and neither is currently visible. Closing that gap is §14.4.
+**`built` is the strongest claim in the vocabulary and it is still narrow**: it means
+code exists and something calls it. It does not mean the thing has been exercised in
+anger, and it does not mean a gate binds. A closed work item proves code exists; only
+running the gate on a real input proves the gate refuses anything.
 
-## 2) Overview
+A node reading **`no bead`** is a gap nothing tracks. That is a finding in itself, not
+an omission in the drawing.
 
-The system has **two planes**. The _distribution plane_ below turns authored
-catalog sources into the files agents read and the hooks that bind them; the
-_execution plane_ (§12) drives a unit of work through the loop over the tracker.
+## Contents
+
+- [The problem](#the-problem)
+- [Core invariants](#core-invariants)
+- [System overview](#system-overview)
+- [The distribution model](#the-distribution-model)
+- [The fragment model](#the-fragment-model)
+- [Skills](#skills)
+- [Subagent definitions](#subagent-definitions)
+- [Hooks](#hooks)
+- [Model tiers](#model-tiers)
+- [Configuration](#configuration)
+- [Catalog verification](#catalog-verification)
+- [The always-on files](#the-always-on-files)
+- [Installation and upgrade](#installation-and-upgrade)
+- [The CLI surface](#the-cli-surface)
+- [The harness loop](#the-harness-loop)
+- [Work isolation and merging](#work-isolation-and-merging)
+- [Parallel lanes and the supervisor](#parallel-lanes-and-the-supervisor)
+- [Dispatch and the agent-agnostic runner](#dispatch-and-the-agent-agnostic-runner)
+- [Cost, forecasting and autonomy](#cost-forecasting-and-autonomy)
+- [Roles at dispatch](#roles-at-dispatch)
+- [Handoff artifacts](#handoff-artifacts)
+- [Gates and enforcement](#gates-and-enforcement)
+- [The work tracker](#the-work-tracker)
+- [Status: built, partial, designed](#status-built-partial-designed)
+- [Decisions and their reasoning](#decisions-and-their-reasoning)
+- [Non-goals](#non-goals)
+- [The rest of the documentation](#the-rest-of-the-documentation)
+
+## The problem
+
+A coding agent is a capable but unreliable worker with no memory between sessions. Four
+things go wrong, and each has a different remedy.
+
+**It does not know the local rules.** Every repository has conventions a model cannot
+infer. The remedy is guidance in the files the agent already reads — and each agent
+family reads a different file, so the same rule has to be written once and projected
+several ways.
+
+**Guidance is a suggestion.** A model may read a rule and not follow it. The remedy is a
+gate: a script that runs whether or not anyone asked, and refuses. Guidance without
+gating is easily ignored; gating without guidance leaves the agent no idea why a check
+exists or how to satisfy it before hitting it.
+
+**A session ends.** A crash, a context compaction, a rate limit, a switch to a different
+agent family: any of them loses the thread, and the classic failure is re-doing work
+that already landed. The remedy is that the current position is **derived from durable
+state** rather than remembered, so resuming is a read.
+
+**Nobody knows whether any of it works.** A rule the model has stopped attending to and
+a skill that never fires both cost context on every turn and deliver nothing, and
+neither is visible. The remedy is measurement, and this is the least finished of the
+four.
+
+The first two are the classic harness bargain, and most harnesses stop there. The last
+two are what makes `basicly` an SDLC rather than a guidance bundle: it owns **the
+process** and **the state**, and enforces both in code.
+
+## Core invariants
+
+These hold everywhere. A change that violates one is wrong even if it passes.
+
+**The engine disposes; agents propose.** No model holds authority over the tracker, the
+schedule, or a required gate, at any autonomy level. An agent's output is a proposal
+that engine code validates against policy before it becomes state.
+
+**State is derived, never remembered.** The loop phase is a pure function of tracker
+state. The engine keeps no durable side-state of its own, so a crashed, compacted or
+swapped session resumes by re-reading the tracker. This makes re-dispatching completed
+work structurally impossible rather than merely unlikely.
+
+**Enforcement is code, not a request.** Where a hook can enforce a rule, the rule is a
+hook and the prose only points at it. A model choosing to run a formatter is a different
+thing from the formatter running automatically.
+
+**Deterministic first, judged second.** A required gate may only ever be passed by a
+deterministic check. Judged output is advisory or routes a decision to a human; it is
+never a green light.
+
+**Every deterministic step is one command.** If an agent must perform a *sequence* of
+mechanical steps, the engine is missing a command, and the tokens, the latency and the
+chance of getting a mechanical step wrong are all waste.
+
+**Nothing generated is ever hand-edited, and nothing authored is ever generated.** Users
+edit catalog sources; the projector writes outputs. The one-way street is defended by a
+tool-time guard and a commit-time backstop, not by convention.
+
+**Extension is addition or explicit override, never silent replacement.** There is no
+third mechanism and no last-one-wins. An unexplained conflict is an error.
+
+**No committed artifact carries a machine-specific path, username or hostname.**
+Redaction runs at the write seam for both stores, and a pre-commit hook is the floor
+under it.
+
+**Evidence over assertion.** A claim in this document, in a release note or on a README
+is backed by something a reader can re-run. An unmeasured behavioural claim buys
+confidence nobody earned.
+
+## System overview
+
+The system has **two planes**. The **distribution plane** turns authored catalog sources
+into the files agents read and the hooks that bind them. The **execution plane** drives a
+unit of work through the loop over the tracker.
+
 They meet at exactly two points: the loop dispatches agents whose context is the
-projected guidance, and the loop's verify step runs the same gates the hooks run.
+projected guidance, and the loop's verify step runs the same checks the git hooks run.
 
-### Distribution plane
+```mermaid
+flowchart TB
+  subgraph dist["DISTRIBUTION PLANE - authored catalog to the files agents read"]
+    direction TB
+    src["catalog sources · .basicly/core<br/>fragments · skills · agents · hooks ·<br/>targets · templates · schemas · models · permissions · kit"]
+    ovl["user overlay · .basicly-local<br/>add or override; an upgrade never destroys it"]
+    proj["loader + planner + renderers<br/>load, validate, select, sort, render once per output"]
+    out["projected outputs<br/>AGENTS.md · CLAUDE.md · copilot-instructions.md<br/>.claude/rules · two skill roots · two agent roots · permissions"]
+    drift["projection gates<br/>check · skills-check · agents-check ·<br/>hooks-check · permissions-check · catalog lint · catalog verify"]
+    hooks["git hook floor<br/>pre-commit · commit-msg · pre-push, projected from hooks.yaml"]
+    ahooks["agent hooks at the tool-call boundary<br/>3 claude events + 1 copilot event mapped,<br/>out of 31 documented claude events · basicly-u2hl.49"]
+    beh["behavioural efficacy evals<br/>control arms, hidden checks, safety tier · basicly-agzx"]
+  end
 
-Three roles, one repo can dogfood all of them at once (as this repo does today):
+  subgraph exe["EXECUTION PLANE - a unit of work through the loop"]
+    direction TB
+    cli["CLI surface · basicly<br/>27 commands, 8 of them subcommand groups"]
+    loop["loop engine<br/>seven phases, derived from tracker state, never remembered"]
+    sup["supervisor<br/>parallel lanes, autonomy grants, decision queue, singleton lock"]
+    mq["serial landing<br/>dependency-ordered, one landing at a time, conflicts bounce"]
+    gates["gate and verify layer<br/>verify fast/full/staged · plan gate · validate gate · ratchets"]
+    wt["worktree provisioning<br/>one sibling checkout per lane"]
+    rt["agent runtime<br/>claude, codex, copilot adapters plus a manual handoff"]
+    cost["usage and cost ledger<br/>run records, spend forecast, lane split, tuning"]
+    seam["tracker seam · br.py<br/>~29 spawn sites across 12 modules · basicly-vkh0"]
+    ext["external br binary · .beads<br/>authoritative today"]
+    own["owned ledger kit · .basicly/ledger<br/>append-only events, mirrored, not authoritative · basicly-vkh0"]
+  end
 
-```text
-  SOURCE OF TRUTH — human-edited, git-tracked
-  ┌────────────────────────┐          ┌────────────────────────┐
-  │ Catalog                │          │ User overlay           │
-  │ fragments, skills,     │          │ .basicly-local/        │
-  │ hooks (versioned)      │          │ additions & overrides  │
-  └────────────┬───────────┘          └────────────┬───────────┘
-               │ basicly install                   │ edited directly
-               ▼ (writes core only)                │ by the consumer
-  ┌────────────────────────┐                       │
-  │ .basicly/core/         │                       │
-  │ (managed, read-only)   │                       │
-  └────────────┬───────────┘                       │
-               └─────────────────┬─────────────────┘
-                                 │ merge (add / override)
-               ┌─────────────────┴─────────────────┐
-               │                                   │
-      GUIDANCE — suggestive               GATES — deterministic
-      (fragments + skills)                (hooks)
-               │                                   │
-               ▼                                   ▼
-  ┌────────────────────────┐          ┌────────────────────────┐
-  │ Planner   select/sort  │          │ .pre-commit-config.yaml│
-  │ Verify    (semantic:   │          │   -> .git/hooks        │
-  │            advisory)   │          │ installed by basicly   │
-  │ Renderers per target   │          │ install / hooks-build  │
-  └────────────┬───────────┘          └────────────┬───────────┘
-               ▼                                   ▼
-  ┌────────────────────────┐          at commit / push time,
-  │ AGENTS.md (codex:      │          block a bad change even
-  │   scoped inlined)      │          if the guidance above
-  │ .claude/CLAUDE.md      │          was never followed
-  │ .github/copilot-*.md   │
-  │ + scoped, path-gated:  │
-  │   .claude/rules/*      │
-  │   (single source)      │
-  └────────────┬───────────┘
-               ▼
-      Coding agents & humans — read the generated files
-      (read-only); the gates enforce no matter what
+  src --> proj
+  ovl --> proj
+  proj --> out
+  out --> drift
+  src --> hooks
+  src --> ahooks
+  drift --> beh
+
+  cli --> loop
+  cli --> sup
+  sup --> loop
+  sup --> mq
+  sup --> rt
+  loop --> mq
+  loop --> wt
+  loop --> gates
+  loop --> rt
+  loop --> seam
+  mq --> wt
+  mq --> seam
+  gates --> seam
+  rt --> cost
+  seam --> ext
+  seam --> own
+
+  out -.->|"meeting point 1: the context a dispatched agent reads"| rt
+  hooks -.->|"meeting point 2: the same checks the verify layer runs"| gates
+
+  classDef built fill:#d5efd5,stroke:#2e7d32,color:#000
+  classDef partial fill:#fff2cc,stroke:#e69500,color:#000
+  classDef designed fill:#f0f0f0,stroke:#9e9e9e,color:#000,stroke-dasharray:5 3
+  classDef plane fill:#fbfbfb,stroke:#bbbbbb,color:#333
+  class src,ovl,proj,out,drift,hooks,cli,loop,sup,mq,gates,wt,cost,ext,rt built
+  class ahooks,seam,own partial
+  class beh designed
+  class dist,exe plane
 ```
 
-Everything a coding agent or human reads is **generated**. Everything a user edits is
-a **fragment** (core, never touched directly, or overlay, always theirs). See §11 for
-the small pieces of the projection deliberately not built yet.
+An arrow is a **dependency**, not a data flow: the tail cannot be built or run without
+the head. The tier order it draws is enforced mechanically — an import-layer contract
+declares an exhaustive set of tiers over every module in the package, so a new module
+cannot join without being placed in one.
 
-### Execution plane
+**Three roles, and one repository can hold all three at once, as this one does.** The
+*engine* is normal installable Python at `src/basicly/`. The *catalog* is data at
+`.basicly/core/`. The *consumer* is whatever repository installed it. Neither tree
+depends on the other's location: `.basicly/` never contains engine code and
+`src/basicly/` never contains catalog data.
 
-```text
-  TRACKER — the only state; phase is derived from it, never remembered
-  ┌──────────────────────────────────────────────────────────────────┐
-  │ issues · dependency graph · gates · checkpoints · evidence       │
-  └───────────────┬──────────────────────────────────┬───────────────┘
-        derive    │                                  │  record
-        phase     ▼                                  ▲  (engine only)
-  ┌──────────────────────────────┐                   │
-  │ Engine — deterministic       │                   │
-  │ basicly loop / loop supervise│───────────────────┘
-  │  ranks the ready set,        │
-  │  provisions worktrees,       │        ┌────────────────────────┐
-  │  assembles dispatch bundles, │───────▶│ Agent — a pure function│
-  │  validates every proposal,   │◀───────│ fresh context, headless│
-  │  lands through a serial      │        │ Claude / Codex / Copilot│
-  │  merge queue                 │        └────────────────────────┘
-  └──────────────┬───────────────┘         proposes: plan, commit,
-                 │                          decision, verdict
-                 ▼
-  GATES — deterministic; the same checks the hooks run
-  verify (fast | full | staged) + validate; a required gate
-  is never passed by a model, at any autonomy level
-```
+## The distribution model
 
-The engine disposes and the agent proposes: input is a bundle assembled
-deterministically from tracker state, output is a structured proposal the engine
-validates against policy before it becomes state. Human checkpoints sit at classify,
-decompose, and ship; an explicit, auditable autonomy grant can delegate some of them
-to a decider agent, and no grant can delegate a required gate.
+Everything a coding agent or a human reads is **generated**. Everything a user edits is a
+**source**. Three trees, three write-owners, and the separation is a mechanism rather
+than a convention.
 
----
+| Tree | Who writes here |
+| --- | --- |
+| `src/basicly/` — engine: loader, planner, renderers, CLI, loop | basicly maintainers; ships with the tool |
+| `.basicly/core/` — managed catalog: fragments, skills, agents, hooks, targets, templates, schemas, models, permissions, kit | `basicly install` only |
+| `.basicly/state/install.json` — install provenance: version, timestamp, per-file hashes | `basicly install` only |
+| `.basicly-local/` — user overlay, path-configurable | the consumer repo's users |
+| `basicly.toml`, `basicly.d/*.toml`, `basicly.local.toml` — configuration | the consumer repo |
+| Generated artifacts: `AGENTS.md`, `.claude/CLAUDE.md`, `.github/copilot-instructions.md`, scoped rules, skill and agent roots | `basicly build` and its siblings only |
+| `.basicly/generated-manifest.json` | `basicly build` only |
 
-## 3) Guiding principles
-
-**Summary**: point at enforcement instead of restating it; compose from fragments, not
-templates; verify deterministically first and semantically second; never hand-edit
-either the source or the generated files; extend only by addition or explicit
-override; distribute the catalog as a pinned, versioned whole; keep every target
-idiomatic from one tool-agnostic source; keep everything in plain git-tracked files.
-
-### Details
-
-**3.1 Context minimalism — point at enforcement, don't restate it.**
-_LLM-generated context files that duplicate what a linter/hook already enforces
-measurably hurt agent task success and inflate cost._ If a rule is mechanically
-enforced (ruff, pyright, bandit, markdownlint, a commit-msg hook, pre-push tests), the
-always-on file must reference the command that enforces it, not restate the rule in
-prose. Prose is reserved for what a linter cannot check: judgment calls, escalation
-policy, when to ask instead of guess. The
-`enforced_by` schema field lists the commands that enforce a rule, and
-`catalog_lint` requires each listed command to be cited in the fragment body —
-a fragment that claims enforcement must point at the command, not restate the rule.
-
-**3.2 Composability over templates.** Generated files are never hand-templated blobs;
-they are assembled from fragments — one fragment per policy/practice/decision —
-selected, sorted, and rendered per target — this is exactly how
-[`loader.py`](../../src/basicly/loader.py) and
-[`planner.py`](../../src/basicly/planner.py) work.
-
-**3.3 Two-layer verification, deterministic first.** Deterministic, scriptable checks
-catch a large class of problems cheaply (duplicate ids, missing fields, unknown
-categories). Semantic problems — contradiction, ambiguity that parses fine but reads
-badly to a model — need a capable reader. Both layers run against the same merged
-fragment set, deterministic always first. Schema/duplicate-id
-validation runs inside the normal load path
-(`loader._validate_fragment`); duplicate-body, contradiction, ambiguity, and
-scope-overlap checks live behind the `basicly catalog verify` command
-(`catalog_verify.py`). Agent-assisted semantic
-review (`basicly catalog review`, `review.py`) is
-advisory, never a merge gate (§6).
-
-**3.4 Source of truth and generated files are each a one-way street.** Users edit
-fragments (core or overlay) and never the generated files; `basicly build` regenerates,
-`basicly check` catches manual edits. `basicly install` edits only the managed core
-catalog and never the user's overlay — the mechanism, not just the convention,
-guarantees this (§4.3). Two guardrails defend the one-way street at different moments:
-the `protect-generated` PreToolUse guard blocks an agent's edit to a marked generated
-file at tool time (Claude-only, fail-open), and the `protect-generated-commit` pre-commit
-hook (basicly-yw28) is the deterministic, agent-independent backstop — it blocks a commit
-that stages a generated output whose content no longer matches the projection manifest's
-recorded hash, so a tool-time bypass or a non-Claude agent is still caught before the
-edit lands. A legitimate rebuild stages the regenerated file and the updated manifest
-together, so their hashes agree and the commit passes.
-
-**3.5 Addition and override, never silent replacement.** Consumers extend the catalog
-by adding a new fragment id, or by overriding a core fragment with
-`override: true` + `replaces: [...]`. There is no third mechanism — no silent
-shadowing, no "last fragment wins." An unexplained conflict is always an error.
-
-**3.6 Hermetic, curated, pinned distribution.** The catalog is versioned as a whole,
-the same way `.pre-commit-config.yaml` pins a hook `rev:`. Re-running `basicly
-install` from a newer pinned ref is the only, explicit, reviewable action that moves
-a consumer to a newer catalog version (§9).
-
-**3.7 Idiomatic per-target projection from one authored source.** Fragment bodies stay
-tool-agnostic; only the renderer/template layer knows each target's native activation
-syntax (Claude's `paths:`, Copilot's `applyTo:`, filesystem conventions like
-`.claude/skills/*/SKILL.md`).
-
-**3.8 Everything lives in plain, git-tracked files.** No daemon, no hidden state, no
-network calls at build time. `git diff`/`git blame` are the audit trail; `basicly
-check` is the offline CI staleness gate.
-
----
-
-## 4) Directory & distribution contract
-
-**Summary**: engine code, managed core catalog, and user overlay are three separate
-trees with three separate write-owners. Only `basicly build`/`install` write to
-generated/core paths; only the user writes to the overlay.
-
-### Details
-
-| Tree                                                                                                                     | Owner (who writes here)                                                |
-| ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
-| `src/basicly/` — engine (loader, planner, CLI, renderers)                                                                | `basicly` maintainers, ships with the tool                             |
-| `.basicly/core/` — managed fragment + skill + agent + hook + target + template catalog                                   | `basicly install` only                                                 |
-| `.basicly/state/install.json` — install provenance (version, timestamp, catalog hashes)                                  | `basicly install` only                                                 |
-| `.basicly-local/` — user overlay (path-configurable via `basicly.toml`)                                                  | the consumer repo's users                                              |
-| `basicly.toml` — path wiring                                                                                             | the consumer repo                                                      |
-| Generated artifacts (`AGENTS.md`, `.claude/CLAUDE.md`, `.github/copilot-instructions.md`, skill/scoped-rule/agent files) | `basicly build` / `basicly skills-build` / `basicly agents-build` only |
-| `.basicly/generated-manifest.json`                                                                                       | `basicly build` only                                                   |
-
-#### 4.1 Engine
-
-Lives at [`src/basicly/`](../../src/basicly/): `cli.py`, `config.py`,
-`loader.py`, `planner.py`, `schema.py`, `renderers/`, `skills.py`. It has no
-import-time dependency on specific fragment content, only on the schema below.
-
-This mirrors what a real consumer repo would look like after installing `basicly` via
-`uvx` (§9): the engine is normal installable package source, entirely
-separate from `.basicly/`, which holds only catalog data a consumer repo would
-actually have on disk. This repo dogfoods itself, so both trees coexist here, but
-neither one depends on the other's location — `.basicly/` never contains engine code
-and `src/basicly/` never contains catalog data.
-
-#### 4.2 Managed core
+### The catalog
 
 ```text
 .basicly/
   core/
-    fragments/{boundaries,commands,decisions,project,security,testing,tools}/*.fragment.yaml
-    skills/<skill-name>/skill.yaml    # projected to SKILL.md at target roots, see below
-    agents/<slug>/agent.yaml          # + agents/blocks/<id>.block.yaml (§5)
-    hooks/*.py + hooks.yaml           # git-stage + agent hook scripts and their manifest
+    fragments/<category>/<id>.fragment.yaml
+    skills/<skill-name>/skill.yaml        # plus references/, scripts/, assets/
+    agents/<slug>/agent.yaml              # plus agents/blocks/<id>.block.yaml
+    hooks/*.py + hooks.yaml               # git-stage and agent hook scripts, and their manifest
     models/{anchors.yaml,model-map.json,model-map.schema.json}
-    permissions/permissions.yaml      # agent-permissions deny-list, see §8
-    rubrics/*.rubric.yaml             # work-type behavioral rubrics (basicly-0122), advisory gate
+    permissions/permissions.yaml
+    rubrics/*.rubric.yaml
     schemas/*.schema.json
     targets/{claude,copilot,codex}.yaml
     templates/{claude,copilot,codex}/*.j2
+    kit/{tracker,tier}/*.py               # portable modules deployed into a consumer
   generated-manifest.json
 ```
 
-Confirmed current core catalog fragment categories on disk: `boundaries`, `commands`
-(git-discipline), `decisions`, `project`, `security`, `testing` (test-discipline, a
-path-scoped example), and `tools` (non-interactive-shell, tool-usage). The user overlay
-(`.basicly-local/fragments/user/`) adds a `code-style` fragment as a real, dogfooded
-example of repo-specific content (Python conventions, project scope/tooling facts) that
-intentionally does not belong in the generic core catalog. The schema also recognizes
-`code-style`, `design`, `hooks`, `skills`, `ci-cd` as valid categories with no core
-fragments in them yet. **Important distinction**: category `hooks` labels a _fragment
-that describes hook usage_ — it is not the mechanism that ships an actual hook script;
-the actual scripts live in `core/hooks/` (below).
+**Every catalog source is YAML, and deliberately not Markdown.** Some coding agents
+auto-discover skills by scanning broadly for `SKILL.md`; a `SKILL.md` *source* would risk
+an agent loading both the catalog copy and the projected copy. Fragments follow the same
+rule for consistency. YAML over Python because it needs no code execution and keeps prose
+lossless in block scalars. `basicly catalog lint` refuses a Markdown-named source and a
+second YAML extension.
 
-**Skills**: `core/skills/` is the catalog location. Sources are authored as `skill.yaml` (name, an
-`invocation` axis, description, and an
-`instructions` block scalar), **not** the discoverable `SKILL.md` name: because some coding
-agents auto-discover skills by scanning broadly for `SKILL.md`, a `SKILL.md` _source_ would
-risk an agent loading both the catalog copy and the projected copy twice. `skills-build`
-renders the discoverable `SKILL.md` at the target roots only, with a generated marker.
-Fragments follow the same rule (`<id>.fragment.yaml` → projected `.md`), YAML is the single
-catalog source format (targets and hooks were already YAML), and `basicly catalog lint`
-enforces all of this (schema validity, no `.md`-named sources, no `.yml`). The chosen format
-is YAML rather than Python — it needs no code execution, keeps prose lossless via block
-scalars, and matches the existing catalog conventions.
+### The projection pipeline
 
-A skill source directory follows the full [Agent Skills spec](https://agentskills.io/specification):
-alongside `skill.yaml` it may bundle `references/`, `scripts/`, `assets/`, and any additional
-files or directories. `skills-build` projects the **whole** source directory into each target
-root — the rendered `SKILL.md` (carrying the generated marker) plus every other file copied
-verbatim (bytes and mode) — so a skill can ship a long reference guide or a fixer script.
-`skill.yaml` also accepts the spec's optional frontmatter (`license`, `compatibility`,
-`allowed-tools`, `metadata`), rendered into the `SKILL.md` header; `technologies` stays
-basicly-internal (§9 scoping) and is never emitted.
+```mermaid
+flowchart LR
+  s1["load targets<br/>targets/*.yaml -> name, enabled, caps, outputs"]
+  s2["load fragments<br/>core root, then each overlay root,<br/>ordered and de-duplicated"]
+  s3["validate<br/>required fields, known vocabulary,<br/>duplicate id across all roots is a hard error"]
+  s4["technology filter<br/>drop a source whose tag the repo did not select"]
+  s5["select<br/>status active, apply user replaces,<br/>then per output: applies_to, has_scope, exclude_scoped"]
+  s6["sort<br/>priority desc, category asc, id asc"]
+  s7["render<br/>one template per target output"]
+  s8["write if changed<br/>byte compare, atomic rename,<br/>manifest records hash + source ids"]
+  s9["sweep<br/>delete outputs the old manifest vouched for<br/>that this plan no longer produces"]
 
-**The invocation axis** (`invocation`, required, `model` or `user`) declares whether
-anything can route to an entry. A **model-invoked** skill keeps its `description`, is
-advertised to the agent, and therefore pays context load on every turn; a
+  s1 --> s5
+  s2 --> s3 --> s4 --> s5 --> s6 --> s7 --> s8 --> s9
+
+  classDef built fill:#d5efd5,stroke:#2e7d32,color:#000
+  class s1,s2,s3,s4,s5,s6,s7,s8,s9 built
+```
+
+**Determinism is a property, not an accident.** Sorting is total — priority descending,
+then category, then id — so two builds on identical sources produce byte-identical
+output and a diff only ever shows a real change.
+
+**Selection has exactly four axes**, and every output declares which it uses:
+
+- `applies_to` on the fragment names the target families it is for, or `all`.
+- `filter.applies_to` on the output names which of those values it accepts.
+- `has_scope` restricts an output to path-scoped fragments; `exclude_scoped` drops them
+  from a baseline. One fragment set therefore yields both an always-on file and a set of
+  path-gated rules, with no fragment appearing in both for a target that scopes.
+- `technologies` gates a whole source on the consumer's declared stack.
+
+**The manifest is the memory of the projection.** It records, per output, a content hash
+and the ordered ids of the fragments that composed it. Three things depend on it:
+`basicly check` recomputes it to detect a hand edit; the sweep deletes outputs that
+dropped out of the plan, which is how a retired output reaches a consumer; and the
+generated-file commit hook uses it as the oracle for whether a staged generated file
+still matches its sources.
+
+**Path interpolation is checked, not trusted.** An output path that resolves outside the
+repository root is refused, and a fragment id containing a separator or a pure-dot value
+is refused before it can reach a path template.
+
+### Targets
+
+Three targets ship, all enabled.
+
+| Target | Output | Filter | Soft cap |
+| --- | --- | --- | --- |
+| claude | `.claude/CLAUDE.md` | `all` plus `claude`, scoped excluded | 9000 chars |
+| claude | `.claude/rules/<id>.md`, one per scoped fragment, carrying a `paths:` frontmatter key | `all` plus `claude`, scoped only | — |
+| codex | `AGENTS.md` | `all`, scoped **inlined** | 16000 chars |
+| copilot | `.github/copilot-instructions.md` | `all` plus `copilot`, scoped excluded | 9000 chars |
+
+**Codex inlines scoped fragments because it has nowhere to put them.** Codex is not short
+of steering files — it supports nested `AGENTS.md`, an override file, fallback filenames,
+repo-checked-in Agent Skills, project subagents and a sandbox policy. What it lacks is a
+**type**: there is no glob- or pattern-based instruction scoping anywhere in its
+discovery, its config reference or its skill frontmatter. Directory placement is the only
+scoping axis, and this project's scopes are globs. Worse, a nested `AGENTS.md` **below the
+current directory is never loaded** — Codex walks from the project root down to the
+current directory and stops, so a file at `src/foo/AGENTS.md` contributes nothing when
+Codex runs from the repository root. Inlining is therefore the correctness-preserving
+choice, and offloading to nested files is rejected rather than deferred.
+
+**Two naming traps on the Codex surface**, both of which have misled a reader here.
+Codex's own feature called "Rules" (`.codex/rules/`, a Starlark prefix rule) is a sandbox
+command-execution policy, unrelated to per-file instructions; reading that page and
+concluding Codex has no instruction rules is the exact wrong turn. And file-based custom
+prompts are deprecated in favour of skills and are user-scope only, so they can never ship
+inside a repository.
+
+**Copilot gets no path-scoped twin, by decision.** One editor loads both the Claude rules
+root and the Copilot instructions root with no deduplication, so a twin double-loaded every
+path-scoped rule for every consumer of that editor. Scoped rules are single-sourced to the
+Claude rules root. The accepted cost is that the server-side Copilot surfaces — PR review
+and the cloud agent — keep only the root instructions file.
+
+## The fragment model
+
+One fragment is one policy, practice or decision: a YAML source with a body written as a
+block scalar, projected to Markdown.
+
+| Field | Required | Values | Notes |
+| --- | --- | --- | --- |
+| `id` | yes | kebab-case, unique | a duplicate across core and overlay is a hard error |
+| `description` | yes | one line | |
+| `category` | yes | `boundaries`, `code-style`, `commands`, `decisions`, `design`, `hooks`, `project`, `security`, `skills`, `testing`, `tools`, `ci-cd`, `quirks` | a closed vocabulary; unknown values are refused at load |
+| `applies_to` | yes | target names or `all` | |
+| `priority` | no | `critical` (4), `high` (3), `medium` (2, default), `low` (1) | sorts descending |
+| `scope.paths` | no | glob list, default `["**"]` | a non-default value makes the fragment scoped |
+| `status` | no | `active` (default), `draft`, `deprecated` | only `active` is projected |
+| `technologies` | no | controlled list | untagged means universal |
+| `source` | no | `core` (default) or `user` | inferred from the load root when omitted |
+| `override` | no | bool, default false | must be true to replace a core fragment |
+| `replaces` | no | list of fragment ids | those core fragments are removed when this one is active |
+| `extends` | no | list of fragment ids | declared and validated; nothing consumes it today |
+| `enforced_by` | no | list of commands | each must be cited in the body, see below |
+
+**The extension mechanism is two rules and no exceptions.** The planner removes core
+fragments named in an active user fragment's `replaces`. The loader enforces the
+integrity rules as hard errors on every load: a fragment declaring `replaces` must set
+`override: true`, every replaced id must exist in the merged set, and two user fragments
+may not replace each other.
+
+**`enforced_by` closes the loop on the context-minimalism rule.** A fragment that claims a
+command enforces its rule must cite that command in its body, and `catalog lint` refuses
+one that does not. That turns "point at enforcement instead of restating it" from advice
+into a check.
+
+**On disk today** [measured 2026-08-16]: 21 core fragments across eight category
+directories — `boundaries` 1, `commands` 1, `decisions` 3, `design` 1, `project` 11,
+`security` 1, `testing` 1, `tools` 2 — and three overlay fragments. Five of the thirteen
+categories (`code-style`, `hooks`, `skills`, `ci-cd`, `quirks`) have no fragment in them
+yet. **The category `hooks` labels a fragment that *describes* hook usage; it is not the
+mechanism that ships a hook script.**
+
+Four fragments are path-scoped, and each becomes a scoped rules file rather than baseline
+text. Two are target-specific defaults, one per family that takes them.
+
+## Skills
+
+A skill is on-demand guidance: a directory the agent loads when it decides the skill is
+relevant, or when a path glob triggers it. It costs nothing until then except the line
+that advertises it.
+
+**Two projection roots, both mandatory and both always written.** `.claude/skills/` is
+one family's only project skill root; `.agents/skills/` is the open-standard root the
+other families discover. The split mirrors how each family finds its guidance, and
+neither root is optional, because a root only some commands write is how a second root
+drifts unnoticed.
+
+**A skill source directory projects whole.** Alongside `skill.yaml` a skill may bundle
+references, scripts and assets; the projector renders the discoverable `SKILL.md` with a
+generated marker and copies every other file verbatim, bytes and mode. So a skill can
+ship a long reference guide or a fixer script.
+
+**The invocation axis is declared, not inferred.** It is required and is either
+model-invoked or user-invoked. A **model-invoked** skill keeps its description, is
+advertised to the agent, and therefore pays a context load on every turn. A
 **user-invoked** skill carries no description at all, costs nothing until a human types
-it, and the empty pairing is enforced by `catalog lint`. It is declared rather than
-inferred because "does this entry route correctly" is not a well-posed question until
-the entry says whether routing applies to it — which makes this the prerequisite for
-the routing evals of §14.4. Implemented in
-[`skills.py`](../../src/basicly/skills.py). The projected skill directory is a pure
-projection target owned wholly by basicly and is **mirrored**: `skills-check` flags a stale or
-orphaned resource, a rebuild prunes a resource dropped from the source, and deselecting a
-skill's technology prunes the whole directory. The **root** is owned too: `skills-check` also
-reports any entry there that no source accounts for — a hand-authored `SKILL.md`, a loose
-`README.md`, a projection whose source was deleted — since otherwise a skill the projector
-never knew about passes every gate while reaching only one agent (`basicly-tcmy.8`). It
-reports and never prunes those, because nothing describes them and the projected copy is the
-only one. `catalog lint` enforces the spec's naming rules
-(name matches the directory; 1–64 lowercase `a-z0-9`/hyphen characters with no leading,
-trailing, or consecutive hyphen) and warns (advisory) when a `SKILL.md` body exceeds ~500 lines
-or a file reference reaches more than one level deep, per the spec's progressive-disclosure
-guidance. (The upstream `skills-ref validate` tool checks the same frontmatter/naming rules;
-it is not vendored into this repo, so `catalog lint` is the in-tree equivalent.)
+its name, and lint enforces the empty pairing. It is declared because "does this entry
+route correctly" is not a well-posed question until the entry says whether routing
+applies to it — which makes the axis a prerequisite for the routing evals rather than
+bookkeeping.
 
-**Skill taxonomy (core vs optional)**: every skill is one of two kinds, set by its
-`technologies:` tag. An **untagged** skill is _universal core_ — it always ships
-(`test-discipline`, the harness and tool skills). A **technologies-tagged** skill is
-_optional_ — it ships only when the consuming repo selects that tag via `[catalog]
-technologies` in `basicly.toml` (§9). So this repo ships `python` and `node` and excludes
-`wsl` and the environment-tagged tool skills, which stay available to repos that opt in.
-Tech-specific and situational guidance belongs in these optional skills, not in the
-always-on files: enforcement stays in the deterministic hooks (`ruff`, `pytest`,
-`markdownlint`) and a skill carries the judgment and pointers a linter cannot — never a
-restated lint rule.
+**One root requires a description and the other does not**, so a user-invoked skill emits
+a synthesized one on the standard root, because that family rejects a description-less
+file outright.
 
-**Two skill roots, both mandatory**: skills project into `.claude/skills` (Claude Code's
-only project skill root) and `.agents/skills` (the Agent Skills open-standard root Codex,
-Copilot, and Cursor discover). The split mirrors how each agent finds its guidance: Claude
-Code reads `.claude/CLAUDE.md` and discovers skills only under `.claude/`; Codex, Copilot,
-and Cursor read `AGENTS.md` and discover skills under `.agents/`. Moving guidance into
-skills drops none of the always-on files — `AGENTS.md` is the canonical open-standard
-baseline, and `.claude/CLAUDE.md` and `.github/copilot-instructions.md` are per-agent
-renders of the _same_ shared `applies_to: [all]` fragments, each self-contained (Claude and
-Copilot do not reliably `@`-import `AGENTS.md`, so the shared content is inlined into each,
-not imported — §4.4 detail 3). Both skill roots and all three always-on files stay. See the
-[Agent Skills spec](https://agentskills.io/specification), the
-[AGENTS.md spec](https://agents.md/), and the
-[skills tooling and agent discovery paths](https://github.com/vercel-labs/skills/blob/main/README.md).
+**The projected directory is mirrored, and the root itself is owned.** A rebuild prunes a
+resource dropped from the source; deselecting a technology prunes the whole directory.
+The check additionally reports any entry in the root that no source accounts for — a
+hand-authored skill file, a loose README, a projection whose source was deleted — because
+otherwise a skill the projector never knew about passes every gate while reaching only
+one agent. It reports and never prunes those: nothing describes them, and the projected
+copy is the only one.
 
-**Hooks** (projected and installed by
-`hooks-build`): `core/hooks/` holds the actual hook scripts — git-stage gates
-(`pre-commit.py`, `identity-guard.py`, `commit-msg.py`, `beads-commit-msg.py`,
-`pre-push.py`, `secret-scan.py` — a stdlib scanner that blocks a commit whose
-staged added lines carry a likely credential, with an inline
-`pragma: allowlist secret` escape for reviewed false positives;
-`internal-info-scan.py` — its sibling for internal-only identifiers (a company
-domain, an internal host, a machine username, a private repo name), which
-publish silently because they read as ordinary text to anyone who does not
-already know they are internal. Its denylist is **not** in the script: a gate
-hard-coding the strings it suppresses would publish them into this repo and into
-every consumer that installs the catalog, so the tokens live in the gitignored
-`basicly.local.toml` as named `[[privacy.denied]]` rules and the report prints
-only the rule name — pre-commit also runs in CI, whose logs are public. Inert
-until configured, so a consumer is never blocked by a list it did not write)
-plus agent-side
-hooks (`protect-generated.py`, `tool-usage.py`) — as
-first-class catalog artifacts — the deterministic, gating counterpart to
-fragments/skills — described tool-agnostically in `core/hooks/hooks.yaml`.
-(`identity-guard.py` blocks a commit whose git identity is unset or a hostname
-fallback — a generic, no-personal-data gate; the `.scripts/setup_git_identity.py`
-helper and the `tool-git` skill cover the per-host identity setup it guards.) This
-repo dogfoods them directly: [`.pre-commit-config.yaml`](../../.pre-commit-config.yaml)
-points straight at `core/hooks/*.py`. `basicly hooks-build` projects the manifest
-into a consumer's `.pre-commit-config.yaml` and then runs `pre-commit install` so the
-gates are active — not merely written; a gate that is shipped but never installed is
-inert, the exact failure that once let unguarded commits through (§8).
+**Technology scoping is the core-versus-optional axis.** An untagged skill is universal
+and always ships. A tagged skill ships only when the consumer selects that tag in
+configuration. Tech-specific and situational guidance belongs in an optional skill, never
+in an always-on file: enforcement stays in the deterministic hooks, and a skill carries
+the judgment and pointers a linter cannot.
 
-**Why pre-commit and not lefthook** (decided `basicly-3s2p`; absorbed here 2026-08-08 when
-the standalone decision note was deleted). The hooks are already runner-agnostic —
-`hooks.yaml` is a tool-neutral spec list and every hook script is standalone Python with no
-pre-commit API — so the only pre-commit-specific code is the projection layer in
-`hooks.py`. The decisive fact is that **every projected hook runs `uv run python <script>`**:
-uv and Python 3.14+ are required of a basicly committer whatever orchestrates the hooks, so
-lefthook's headline advantage — a static Go binary with "no runtime dependency" — buys this
-project nothing, while adding a binary-acquisition problem with no uv-native answer.
-pre-commit rides the uv channel consumers already have.
+**A skill is not free, and the cost is in the listing rather than the body.** The whole
+skill listing is budgeted against a fraction of the context window, and on overflow the
+host drops descriptions **starting with the least-invoked skills** — a feedback loop, not
+a flat cost: a rarely-invoked skill is the first to be truncated, which makes it harder to
+invoke. Both the per-entry cap and the listing budget are gated.
 
-Reopen the decision only if one of these changes: consumers stop reliably having uv on
-`PATH`; basicly drops the Python/uv requirement for the checks themselves; hook execution
-speed becomes a **measured** complaint that parallelism would fix; or pre-commit's
-provisioning seam regresses beyond what the `uv tool run` fallback covers. The
-runner-agnostic seam (the `manager` field, API-free scripts) is kept precisely so this stays
-cheap to reopen. The manifest's
-`manager` field routes each hook to one of three surfaces: `git` (the pre-commit
-config), `claude` (agent hooks in `.claude/settings.json`; the event derives from the
-spec `stage`, with an optional per-spec `matcher`), and `copilot` (managed
-`.github/hooks/basicly-<id>.json` files). The `tool-usage` hook rides both agent
-managers: a PostToolUse counter tallying every shell command's pipeline heads into the
-self-ignored `.basicly/usage/tool-usage.json` — token-free telemetry for culling idle
-tools/skills from the catalog with real data. A head is resolved _past a wrapper_ (`uv`,
-`npx`, `env`, and their subcommands, flags, flag values and `VAR=val` prefixes), so the
-wrapped tool is credited too and not only the wrapper: `env -C /repo uv run pytest -q`
-records `env`, `uv` and `pytest`, where it used to lose `pytest` entirely.
+**A skill's frontmatter can take a path glob that both limits and triggers automatic
+activation**, which buys always-loads-on-a-matching-file behaviour at **zero** always-on
+characters. The key is not in the portable subset, so it is declared under a per-target
+vendor fence and emitted only into the root that understands it. The general rule this
+settles: a host-specific capability is expressible without the portable artifact absorbing
+it.
 
-**Model map**: `core/models/` resolves the portable **model tier** a catalog source
-declares (§5) to a concrete model. `anchors.yaml` is the reviewed input — one anchor
-model per (tier, vendor), plus the surface table and the capability rule — and
-[`.scripts/generate_model_map.py`](../../.scripts/generate_model_map.py) resolves it
-into the generated `model-map.json`, validated against its published
-`model-map.schema.json`. Three axes, because all three change the answer: **tier x
-vendor x surface**, which is 4 x 4 x 2 = **32 cells, 5 of them unavailable** (measured
-2026-07-31). Cost _and_ token limits are recorded **per surface** rather than per
-vendor, because both genuinely vary there — `gpt-5.6-luna` costs 0.2/1.2 USD per MTok
-on `openai` and 1/6 on `github-copilot`, and `github-copilot` caps
-`claude-haiku-4.5` input at 136,000 tokens where the Anthropic surface publishes no
-input cap. An unavailable cell records a `status` and a `reason` and deliberately
-carries **no `model` key**, so a consumer reading `["model"]` fails loudly instead of
-being silently demoted onto another tier's model. Two constraints keep it inside §3.8:
-the generator fetches models.dev at **authoring and check time only, never in the
-dispatch path**, so nothing that dispatches an agent depends on the network and there
-is deliberately no `[[verify.checks]]` entry for it; and `--check` **reports** drift
-and never writes, because a community-contributed upstream edit must surface as a red
-check rather than as a silent change to which model runs someone's code. The committed
-map's _shape_ is gated offline by `tests/test_model_map.py`. Being under `core/`, the
-map ships in the wheel and `basicly install` materializes it into a consumer repo (§9).
-`basicly.models` reads it at dispatch to resolve a declared tier into the one id the
-target surface accepts, and refuses the dispatch when the cell is unavailable rather
-than substituting another tier's model (§12.8). The lookup is a plain read of committed
-data, so the dispatch path stays offline and deterministic.
+**Skill scope precedence is the inverse of agent scope precedence, and for a distribution
+tool that asymmetry is load-bearing.** Agents resolve managed over project over user;
+skills resolve enterprise over **personal** over **project**. `basicly install` writes a
+consumer's *project* skill root, which is the **lowest-priority writable scope** — so a
+developer's personal skill of the same name silently overrides one we shipped, while an
+identically named agent would not. Nothing we ship makes that visible to the consumer.
 
-#### 4.3 User overlay
+**Lint enforces the specification's naming rules** — the name matches the directory, and
+is 1 to 64 lowercase alphanumeric-or-hyphen characters with no leading, trailing or
+consecutive hyphen — and warns when a body runs long or a file reference reaches more than
+one level deep, per the specification's progressive-disclosure guidance.
 
-```text
-.basicly-local/
-  fragments/user/         # addition + override fragments; e.g. code-style/python-style,
-                          # project/project-defaults (repo-specific facts kept out of core)
-```
+**On disk today** [measured 2026-08-16]: 41 skill sources, 36 projected into each of the
+two roots after the technology filter, split roughly evenly between model-invoked and
+user-invoked.
 
-Configurable via `basicly.toml`:
+## Subagent definitions
 
-```toml
-[paths]
-core_fragments = ".basicly/core/fragments"
-overlay_fragments = [".basicly-local/fragments"]
-targets = ".basicly/core/targets"
-templates = ".basicly/core/templates"
-manifest = ".basicly/generated-manifest.json"
-```
+Subagent definition files are the fourth catalog kind, generated and never hand-edited.
 
-`basicly install` only ever writes under the managed core and state paths; it creates
-`paths.overlay_fragments/.../user/` if missing but never writes fragment content
-there, and never overwrites an existing `basicly.toml`. When the existing file lacks
-sections the shipped default now carries, install names them in a hint instead of
-editing the file.
+**Composition.** Every agent fills five ordered body slots — role, startup, process,
+output contract, constraints — each a list of references to shared building blocks or
+inline Markdown. The skeleton is the structure that the vendor's own subagent examples and
+the best files in a community corpus converge on. Four shared blocks exist, under a
+reserved slug.
 
-**Per-machine overlay — `basicly.local.toml`** (gitignored; install adds the
-`.gitignore` entry): keys there override `basicly.toml` key-by-key for the harness
-sections only (`[worktree]`, `[verify]`, `[policy]`, `[runner]`), so machine-specific
-choices (a runner default, a lower worktree cap) stay out of the shared config. A key
-set locally replaces the shared key wholesale (a local `checks`/`agents` list is not
-concatenated). Projection config (`[paths]`, `[catalog]`) shapes repo-committed
-outputs, so it is repo-level only and never reads the overlay.
+**The description is authored as four fields** — purpose, triggers, returns, posture —
+which the projector joins, so no part of a delegation-quality description can be
+forgotten.
 
-**Per-lane drop-in fragments — `basicly.d/<bead-id>.toml`** (committed, layered
-between the two files above): a lane declares the `[[verify.checks]]` entry it wires
-and the `[ratchet.<gate>]` numbers its change moved in a file named after its own
-bead, so two lanes can never write one file — the same construction `changelog.d`
-uses for `CHANGELOG.md` (`basicly-4746`), applied to the two anchors that bounced
-three of five lanes on the 2026-08-08 pass (`basicly-ef7t`). Checks are **appended**
-in filename order rather than replacing, because a fragment is one lane's addition;
-the overlay above still replaces, because that is the machine saying _instead_. Every
-ratchet number is a **delta** (`basicly.dropin`), never a total: two lanes each adding
-one suppression both record the total 16 and the merged tree holds 17, whereas
-addition composes in any landing order. Each fragment goes through the same schema as
-`basicly.toml`, so a typo there is refused rather than ignored, and the pre-commit
-hook runner assembles the same set so a lane's gate binds at commit time too.
+**The tool list is a mandatory explicit allowlist.** Agents never silently inherit every
+tool. A posture declaring read-only may not grant a write tool, and lint refuses one that
+does.
 
-**Both files are schema-checked on every load** (`config.CONFIG_SCHEMA`): an
-unrecognised section or key raises, naming the file, the containing section, what
-that section accepts, and which sections accept a name like it. A key the engine
-ignores leaves the file stating one behaviour and the engine performing another,
-and in the gitignored overlay there is no diff to review and no other gate — the
-symptom is only ever the default the key was written to replace. The schema is an
-allowlist over the whole config _surface_, not over this module's loaders: two
-entries (`[[verify.checks]]`, re-parsed by the pre-commit hook runner, and
-`[[privacy.denied]]`, read only by `internal-info-scan.py`) have no reader in
-`config.py` at all.
+**Tool names are not translated.** The other family's published alias table accepts the
+first family's PascalCase names as first-class and matches case-insensitively, so one
+declared name resolves on both. The table is pinned as reviewed data for two reasons: it
+drives the read-only posture check, and it lets lint refuse a name that resolves to
+nothing — because one family drops an unrecognised entry with no error where the other
+refuses to launch and says so. An unrecognised entry therefore fails **safe**: the residual
+risk is a useless agent, not a lost guarantee.
+
+**A tier names a portable model tier** — low, medium, high, maximum — single-sourced from
+the engine into an enum on the agent schema, with a tripwire test keeping the two in step.
+Lint refuses a source that declares none.
+
+**No projected agent file carries a provider model id, and that is a decision rather than
+an omission.** A provider id is not portable across agent families — the same model is
+spelled differently on two surfaces — and, decisively, the tier-injection mechanism leaves
+a definition that pins its own model alone, so a projected model line would **disable**
+tier injection rather than implement it. The deprecation of the old key is engineered
+rather than documented: it is retained as a deprecated property purely so lint owns the
+actionable message instead of the schema emitting a bare "additional properties are not
+allowed", and it stays on the reserved-frontmatter list so the per-family passthrough
+cannot smuggle an id back in.
+
+**Two roots, both written and both checked**, one per family that has an agent root. The
+second exists because that family's *cloud* agent reads only its own root while its CLI's
+discovery of the first root is real but undocumented, and because its custom agents do
+support a tool allowlist, so the read-only posture survives the crossing. Double loading
+does not materialise: the deduplication key is the file name minus its extension, so the
+two files collapse to one agent. Only the first root receives the per-family passthrough.
+
+**A third native root is declined, not overlooked.** Codex's subagent format has no tool
+allowlist equivalent, so a Codex copy would silently drop the mandatory allowlist the
+read-only posture check depends on — a lost guarantee, not a format cost — while forking
+the renderer, the drift check and the generated marker. Codex receives the same guidance
+through `AGENTS.md` and the standard skills root.
+
+**No root costs always-on budget, and the saving is structural.** Only an agent's name and
+description load at session start; the body never enters the parent's context; only the
+final message returns; and a subagent runs in an **isolated context window**, so a
+dispatch's working set is never charged to the session that spawned it. Verified against a
+live host rather than taken from vendor guidance.
+
+**A projected agent definition does not reach a running session's subagent registry**
+[measured 2026-08-16, in this session]. A role was given write tools in the catalog,
+`basicly agents-build` wrote both roots, and a dispatch immediately afterwards reported its
+live tools as the pre-change set. A requirements document claims agent definitions
+hot-reload, citing an earlier measurement; **that claim does not hold for this path**.
+Treat a definition change as taking effect on the next process start, and say so to
+consumers, because clearing the conversation is the lever a consumer reaches for first and
+it is the wrong one.
+
+**On disk today** [measured 2026-08-16]: 11 agent sources and four shared blocks, projected
+to 11 files in each root.
+
+## Hooks
+
+Hook scripts are first-class catalog artifacts: the deterministic, gating counterpart to
+fragments and skills. They are described tool-agnostically in a manifest and every one is
+standalone Python with no runner API, so the manifest could drive a different runner
+without touching a script.
+
+**Each entry declares** an id, a script, a stage, and optionally whether filenames are
+passed, whether it always runs, its technologies, a matcher, and a manager. The manager
+routes the hook to one of three surfaces.
+
+| Manager | Surface it writes | Stages in use |
+| --- | --- | --- |
+| git | a managed local block in the pre-commit config, foreign hooks preserved | pre-commit, commit-msg, pre-push |
+| claude | the agent-hook section of that family's settings file | pre-tool-use, post-tool-use |
+| copilot | one managed JSON file per hook under that family's hooks directory | pre-tool-use, post-tool-use |
+
+**What ships today** [measured 2026-08-16]: 15 declared specs — 11 git-stage, three on one
+agent surface, one on the other. The git-stage set is the identity guard, the fast-check
+runner, catalog lint, the secret scanner, the tracker path scanner, the internal-info
+scanner, the kit boundary check and the generated-file commit backstop at pre-commit; the
+conventional-commit and tracker-id checks at commit-msg; and the full-check runner at
+pre-push. The agent-side set is the generated-file tool-time guard, a shell-footgun guard,
+and the tool-usage counter, which rides both agent managers.
+
+**A gate that is shipped but never installed is inert**, which is the exact failure that
+once let unguarded commits through. So `basicly hooks-build` projects the manifest **and
+then runs the installer** for every managed stage, rather than only writing the config.
+
+**Two scanners deserve their reasoning stated.** The secret scanner blocks a commit whose
+staged added lines carry a likely credential, with an inline allowlist escape for reviewed
+false positives. Its sibling scans for internal-only identifiers — a company domain, an
+internal host, a machine username, a private repository name — which publish silently
+because they read as ordinary text to anyone who does not already know they are internal.
+**Its denylist is deliberately not in the script**: a gate hard-coding the strings it
+suppresses would publish them into this repository and into every consumer that installs
+the catalog, and pre-commit also runs in CI whose logs are public. The tokens live in the
+gitignored per-machine config as named rules, and the report prints only the rule name. It
+is inert until configured, so a consumer is never blocked by a list they did not write.
+
+**The identity guard blocks a commit whose git identity is unset or a hostname fallback** —
+a generic, no-personal-data gate. It validates the **effective** identity git will actually
+stamp, resolving author and committer with the environment taking precedence over config,
+because a runner may overlay identity environment variables and validating config alone
+would miss the override.
+
+**The tool-usage counter is token-free telemetry.** It tallies every shell command's
+pipeline head into a self-ignored file, resolving a head *past* a wrapper — the runner, the
+package executor, the environment setter, and their subcommands, flags, flag values and
+variable prefixes — so the wrapped tool is credited and not only the wrapper. It is the
+input for culling idle tools and skills from the catalog with real data.
+
+**Why pre-commit and not a compiled runner.** The hooks are already runner-agnostic, so the
+only runner-specific code is the projection layer. The decisive fact is that **every
+projected hook shells out to the Python runner**: the runtime is required of a committer
+whatever orchestrates the hooks, so a static binary's headline advantage — no runtime
+dependency — buys this project nothing while adding a binary-acquisition problem with no
+native answer. Reopen the decision only if consumers stop reliably having the runner on
+`PATH`, if the project drops the runtime requirement for the checks themselves, if hook
+execution speed becomes a **measured** complaint that parallelism would fix, or if the
+provisioning seam regresses beyond what the fallback covers. The manager field and the
+API-free scripts are kept precisely so this stays cheap to reopen.
+
+**A consumer's own hooks survive.** The projector merges its managed block into an existing
+config, preserving foreign repositories and hooks, and the merge is idempotent. This
+repository dogfoods the catalog directly: its own pre-commit config points straight at the
+catalog scripts, and one hook in it — the Markdown linter — is a hand-maintained consumer
+block that the projector preserves rather than owns.
+
+## Model tiers
+
+A catalog source declares a **portable tier**; a concrete model id is resolved at dispatch
+from committed data.
+
+An anchors file is the reviewed input: one anchor model per tier and vendor, plus a surface
+table and a capability rule. A generator resolves it into a committed map, validated
+against a published schema.
+
+**Three axes, because all three change the answer: tier by vendor by surface.** Cost *and*
+token limits are recorded per **surface** rather than per vendor because both genuinely
+vary there — the same model can cost several times more through one surface than another,
+and one surface may cap a model's input where the vendor's own publishes no cap.
+
+**An unavailable cell records a status and a reason and deliberately carries no model
+key**, so a consumer reading it fails loudly instead of being silently demoted onto another
+tier's model. Resolution refuses the dispatch rather than substituting.
+
+**Two constraints keep the whole mechanism offline.** The generator fetches upstream data
+at authoring and check time only, never in the dispatch path, and there is deliberately no
+verify-check entry for it, so nothing that dispatches an agent depends on the network. And
+the drift check **reports** and never writes, because a community-contributed upstream edit
+must surface as a red check rather than as a silent change to which model runs someone's
+code. The committed map's shape is gated offline by a test.
+
+**Two independent resolvers exist, and the difference is deliberate.** The in-harness one
+raises on an unavailable cell, because a dispatch that cannot honour its tier is a bug. The
+portable kit one — zero dependencies, no imports, no PATH, no network, no subprocess —
+**fails closed and quiet**, leaving the spawn untouched, because it runs on machines that
+may have no map at all.
+
+**The tier reaches no spawn today.** Nothing projects a model id, by decision; the injection
+that would resolve one at spawn is a hook that exists in the kit and is not installed. So
+the tier is declared, gated by lint, and inert. On one family the installer **declines with
+a nonzero exit**, because across repeated probes no tool-boundary hook fired for an agent
+spawn there, and even where one does fire the documented contract is approve-or-deny rather
+than rewrite.
+
+## Configuration
+
+Three files, layered lowest to highest, with a fourth layer for the current process.
+
+| File | Committed | What belongs here |
+| --- | --- | --- |
+| `basicly.toml` | yes | the repository's declaration; the **only** source for projection config |
+| `basicly.d/<id>.toml` | yes | one lane's additions, so two lanes never write one file |
+| `basicly.local.toml` | no, gitignored | per-machine harness choices, and the internal-identifier denylist |
+| session overrides | no | this process only |
+
+**The merge is a key-level shallow replace**, with exactly one documented exception. A key
+set in a later layer replaces the earlier value wholesale, so a local list is taken as-is
+rather than concatenated — that is the machine saying *instead*. The exception is the verify
+check list, which the drop-in layer **appends** to in filename order, because a drop-in
+fragment is one lane's *addition*. The per-machine layer still replaces the whole list.
+
+**Projection config is repository-level only.** The path and catalog sections shape
+repo-committed outputs, so they are read from the committed file alone and never from the
+per-machine overlay.
+
+**Every ratchet number in a drop-in is a delta, never a total.** Two lanes each adding one
+suppression would both record the same total and the merged tree would hold one more,
+whereas addition composes in any landing order. Raising a frozen baseline through a delta is
+refused; the escape is an explicit rebaseline key with a non-empty reason, and those are
+counted and printed.
+
+**Both files are schema-checked on every load, and the schema is an allowlist over the whole
+configuration surface.** An unrecognised section or key raises, naming the file, the
+containing section, what that section accepts, and which sections accept a name like it. A
+key the engine ignores leaves the file stating one behaviour and the engine performing
+another, and in a gitignored overlay there is no diff to review and no other gate — the
+symptom is only ever the default the key was written to replace. The allowlist covers the
+surface, not this module's readers: two entries have no reader in the config loader at all
+and are still declared.
 
 **Which schema does the checking is a property of the tree, not of the process.** A
-repo that ships its own `src/basicly/config.py` — this one, and each of its lane
-worktrees — is checked against the `CONFIG_SCHEMA` declared in _that_ file, read
-statically on every validation. Without this, `loop advance` could not land
-a lane that adds a key: the landing runs from the base checkout, so the engine
-validating the lane's `basicly.toml` is the pre-merge one, and it refused a name the
-lane's own code introduces one commit later (basicly-69az, reproduced four times).
-Static because the tree under test has not merged yet — importing it would run a
-second engine inside the process landing it, and the question here is a set of names,
-not behaviour. It fails closed: a schema this reader cannot model falls back to the
-running engine's, and the refusal then names the ordering rule instead of reading as a
-typo. A consumer repo ships no engine source and is unaffected.
+repository that ships its own engine source — this one, and each of its lane worktrees — is
+checked against the schema declared in *that* file, read statically on every validation.
+Without this, a landing could not admit a lane that adds a key: the landing runs from the
+base checkout, so the engine validating the lane's config is the pre-merge one, and it
+refused a name the lane's own code introduces one commit later. Static, because the tree
+under test has not merged: importing it would run a second engine inside the process landing
+it, and the question is a set of names rather than behaviour. It fails closed — a schema the
+reader cannot model falls back to the running engine's, and the refusal then names the
+ordering rule instead of reading as a typo.
 
-_Forward compatibility._ The refusal is unconditional — no warn-then-error staging,
-no narrowing to near-misses of a known key — so a repo pinned to an older basicly
-whose config carries a key added since fails until it upgrades or removes the key.
-That cost is accepted because the alternative is the silent divergence above, and
-it is bounded by the message, which names the engine's version and says upgrading
-is one of the two fixes. Staging was rejected as unendable (the engine ships from
-`main`, so a warn phase has no graduation point) and unread (the reported incident
-already printed a visibly wrong number that was skimmed past); near-miss narrowing
-was rejected because it leaves a genuinely novel key silent, which is the same hole
-one generation on. Surfaced by every command, and as a first-line verdict rather
-than a traceback in `basicly loop preflight`.
+**The refusal is unconditional, and forward compatibility is the accepted cost.** No
+warn-then-error staging, no narrowing to near-misses of a known key, so a repository pinned
+to an older engine whose config carries a newer key fails until it upgrades or removes the
+key. Staging was rejected as unendable — the engine ships from the trunk, so a warn phase has
+no graduation point — and as unread. Near-miss narrowing was rejected because it leaves a
+genuinely novel key silent, which is the same hole one generation on. The cost is bounded by
+the message, which names the engine's version and says upgrading is one of the two fixes.
 
-#### 4.4 Generated artifacts
+## Catalog verification
 
-```text
-AGENTS.md                                    # applies_to: [all]; inlines scoped fragments (our scopes are globs; codex scopes by directory)
-.claude/CLAUDE.md                            # applies_to: [all] + [claude]; scoped fragments excluded (exclude_scoped)
-.claude/rules/*.md                           # path-scoped fragments, `paths:` frontmatter (single source)
-.github/copilot-instructions.md              # applies_to: [all] + [copilot], inlined (no @-import); scoped excluded
-.claude/skills/*/SKILL.md                    # projected via `skills-build`
-```
+Two layers, deterministic always first.
 
-Which fragments land where is driven by each output's `filter` in `targets/*.yaml`:
-`applies_to` selects by target, `has_scope: true` restricts an output to scoped
-fragments (the `.claude/rules/` files), and `exclude_scoped: true` drops scoped
-fragments from a baseline (the `CLAUDE.md` and `copilot-instructions.md` wrappers) —
-see §7 detail 4. Codex gets the shared `AGENTS.md` baseline only, with scoped
-fragments inlined because its only scoping axis is directory placement while our
-scopes are globs, and because a nested `AGENTS.md` below the cwd is not loaded at
-all (§7 detail 4). A native per-path renderer is **[Deferred]** (§11). Note that
-Codex's own feature named **"Rules"** (`.codex/rules/`, Starlark
-`prefix_rule(pattern=…)`) is a sandbox command-execution policy, not a per-file
-instruction tier — the name collides, the mechanism does not.
-
-**Scoped rules are single-sourced to `.claude/rules/`** (adopted 2026-07-16): VS Code
-loads both `.claude/rules/*.md` and `.github/instructions/*.instructions.md` with no
-dedup (it name-dedupes only skills), so a `.github/instructions/` twin double-loaded
-every path-scoped rule for every VS Code consumer. The copilot target therefore no
-longer emits `scoped_instructions`; a full `basicly build`/`install` sweeps previously
-manifest-tracked `.github/instructions/*.instructions.md` files from consumers.
-Trade-off, accepted: github.com-side Copilot (PR code review, cloud agent) loses
-path-scoped rules and keeps only the root `copilot-instructions.md`.
-
----
-
-## 5) Fragment model
-
-**Summary**: one fragment = one Markdown file with YAML front matter = one
-policy/practice/decision. Required fields: `id`, `description`, `category`,
-`applies_to`. Extension fields (`source`, `override`, `replaces`, `extends`) exist with
-safe defaults today.
-
-### Details
-
-Confirmed current schema ([`schema.py`](../../src/basicly/schema.py)):
-
-| Field         | Required | Values                                                                                                                                         | Notes                                                 |
-| ------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| `id`          | yes      | kebab-case, unique                                                                                                                             | duplicate id across core+overlay is a hard error      |
-| `description` | yes      | one line                                                                                                                                       |                                                       |
-| `category`    | yes      | `boundaries`, `code-style`, `commands`, `decisions`, `design`, `hooks`, `project`, `security`, `skills`, `testing`, `tools`, `ci-cd`, `quirks` |                                                       |
-| `applies_to`  | yes      | target names or `all`                                                                                                                          |                                                       |
-| `priority`    | no       | `critical`(4) `high`(3) `medium`(2, default) `low`(1)                                                                                          | sorts descending                                      |
-| `scope.paths` | no       | glob list, default `["**"]`                                                                                                                    | non-default → scoped output                           |
-| `status`      | no       | `active`(default) `draft` `deprecated`                                                                                                         | only `active` is projected                            |
-| `source`      | no       | `core`(default) `user`                                                                                                                         | inferred from load root if omitted                    |
-| `override`    | no       | bool, default `false`                                                                                                                          | must be `true` to replace a core fragment             |
-| `replaces`    | no       | list of fragment ids                                                                                                                           | core fragments removed when this fragment is active   |
-| `extends`     | no       | list of fragment ids                                                                                                                           | documentation only, narrows future conflict detection |
-
-**Extension mechanism**: the planner
-(`planner._apply_user_replacements`) removes core fragments listed in an active user
-fragment's `replaces`, and the loader (`loader._validate_replacements`, run on every
-`list`/`build`/`check`) enforces the integrity rules as hard errors: a fragment
-declaring `replaces` must set `override: true`, every replaced id must exist in the
-merged fragment set, and two user fragments may not replace each other.
-
-Sorting is deterministic: priority (desc) → category (asc) → id (asc). Two `build`
-runs on identical source produce byte-identical output.
-
-### Agent composition model
-
-Subagent definition files are the fourth catalog kind, generated — never
-hand-edited — from YAML sources:
-
-- **Sources**: `.basicly/core/agents/<slug>/agent.yaml` per agent, plus shared
-  building blocks in `.basicly/core/agents/blocks/<id>.block.yaml` (`blocks` is
-  a reserved slug). The overlay mirrors the layout under
-  `.basicly-local/agents/`; an overlay source with the same slug/id needs
-  `override: true` to replace the core one, new names simply add.
-- **Composition**: every agent fills five ordered body slots — `role`,
-  `startup`, `process`, `output_contract`, `constraints` — each a list of
-  `{block: id}` refs or `{text: ...}` inline markdown. The skeleton comes from
-  the `basicly-ajq` research: it is the structure Anthropic's official
-  subagent examples and the community corpus best-in-class files converge on.
-- **Description**: authored as four fields (`purpose`, `triggers`, `returns`,
-  `posture`) the projector joins, so no part of a delegation-quality
-  description can be forgotten. `tools` is a mandatory explicit allowlist —
-  agents never silently inherit every tool. `tier` names the **model tier** the
-  agent needs (`low`, `medium`, `high`, `maximum` — roster design R5),
-  single-sourced from `schema.MODEL_TIERS` into a `tier` enum on
-  `agent.schema.json` and kept in step by a tripwire test. It is **never
-  emitted**: no family receives a `model` line, because a provider model id is
-  not portable across agent families (models.dev spells one model
-  `claude-haiku-4.5` for Copilot and `claude-haiku-4-5` for Anthropic); the
-  resolution from a tier to a concrete per-surface id lives in the model map
-  (§4.2). Replacing `model` with `tier` was a **breaking change** to the source
-  format, so the deprecation is engineered rather than just documented: `model`
-  is retained as a **deprecated** property on the schema — which sets
-  `additionalProperties: false` — purely so `catalog lint` owns the actionable
-  message ("declare the portable model tier instead") in place of a bare
-  "additional properties are not allowed", and `model` stays in
-  `agents.RESERVED_FRONTMATTER_KEYS` so the `claude:` passthrough cannot smuggle
-  a provider id back in. A `claude:` map
-  passes Claude-only frontmatter (e.g. `memory`, `maxTurns`) through verbatim.
-- **Emission**: two roots, both written by `agents-build` and both compared by
-  `agents-check` (`agents.AGENTS_OUTPUT_ROOTS`) — `.claude/agents/<slug>.md` for
-  the Claude family and `.github/agents/<slug>.agent.md` for GitHub Copilot, the
-  second added in `basicly-8sxf` (2026-07-31) after `basicly-ajq`'s single root
-  was reopened with measured facts: the Copilot **cloud** agent reads only its own
-  root, the Copilot CLI's discovery of `.claude/agents` is real but
-  **undocumented**, and Copilot custom agents support a `tools` allowlist so the
-  read-only posture check survives the crossing. The double-load worry does not
-  materialise — GitHub documents the config file name minus `.md`/`.agent.md` as
-  the deduplication key, so the two files collapse to one agent. There is
-  deliberately no root-selection flag (contrast `skills-build
-  --all-default-roots`): a root only some commands write is how a second root
-  drifts unnoticed. Only the Claude root receives the `claude:` passthrough; no
-  root receives a `model` line. Rendered files carry the generated marker inside
-  the `protect-generated` hook's scan window, so tool-time edits are blocked in
-  both roots. **The remaining native subagent root is declined, not overlooked**:
-  `.codex/agents/*.toml` was decided against in `basicly-crkl` (2026-07-31):
-  its documented field set (`name`, `description`, `developer_instructions`)
-  has no `tools` equivalent, so a codex copy would silently drop the mandatory
-  allowlist the lint checks against a `Read-only` posture — a lost guarantee,
-  not a format cost — while forking the renderer, the drift check and the
-  generated marker. The roster that grows this tier is deliberately
-  catalog-source prompts rather than agent-native files
-  ([plan](../plan/implementation-plan.md) Phase 5), so codex receives the same
-  guidance through `AGENTS.md` and `.agents/skills`. No root costs always-on
-  budget, and the saving is structural rather than a matter of size: only an
-  agent's **name and description** load at session start, the **body never enters
-  the parent's context**, and **only the final message returns** — a subagent runs
-  in an **isolated context window**, so a dispatch's working set is never charged
-  to the session that spawned it. (**Verified 2026-08-09 against Claude Code
-  2.1.226**, upgrading this from the first-party-guidance claim it was recorded as
-  on 2026-07-26. All four hold. It is the fact that refutes any claim that
-  concurrent subagents must share one window — see `factory-loop.md` D24.)
-- **Agent and hook definitions hot-reload; they are not read once at process
-  start** [M, 2026-08-09, claude 2.1.226]. Both `~/.claude/agents/` and
-  `.claude/agents/` are watched and an added or edited file is picked up within
-  seconds, as is hook config in a settings file. **One exception, and it is exactly
-  the case a first install creates**: the first file in an `agents/` directory that
-  did not exist at session start. Clearing the conversation reloads neither and is
-  the wrong lever — it is what a consumer reaches for first, so the tier kit's
-  notice says so.
-- **Skill scope precedence is the inverse of agent scope precedence**, and for a
-  distribution tool that asymmetry is load-bearing [M, 2026-08-09]. Agents resolve
-  managed > `--agents` > **project** > user > plugin; skills resolve enterprise >
-  **personal** > **project**. `basicly install` writes a consumer's _project_
-  `.claude/skills/`, which is the **lowest-priority writable scope** — so a
-  developer's `~/.claude/skills/<same-name>` silently overrides a skill we shipped
-  them, while an identically named agent would not. Nothing we ship makes that
-  visible to the consumer, and the surface freeze cannot promise stability for a
-  scope it can lose (`plan` §7).
-- **Tool names** are _not_ translated. GitHub's published alias table accepts
-  Claude's PascalCase names as first-class and matches case-insensitively, so the
-  names a source declares resolve on both families. The table is pinned as
-  reviewed data in `agents.COPILOT_TOOL_ALIASES` (reviewed 2026-07-31) for two
-  reasons: it drives the read-only posture check (every alias of Copilot's `edit`
-  primary fails it), and it lets lint refuse a name that resolves to nothing,
-  because Copilot drops an unrecognised entry with no error where Claude Code
-  refuses to launch and names it. An unrecognised entry fails **safe** (no
-  grant-all fallback), so the residual risk is a useless agent, not a lost
-  guarantee. What the allowlist does not control on Copilot is recorded beside the
-  table: `skill` and `sql` are granted unconditionally, `Bash` expands to four
-  tools, and `NotebookEdit` alone resolves to both `create` and `edit`.
-- **Lint** (`catalog lint`): schema validation for both source kinds, plus
-  composition rules — block refs must resolve, every declared tool must resolve
-  through the pinned Copilot alias table, a `Read-only` posture may not grant
-  write tools, and the composed body must stay under 30,000 characters (the
-  strictest reader's prompt ceiling).
-
----
-
-## 6) Verification pipeline
-
-**Summary**: schema/duplicate-id validation runs on every load; the deterministic
-content checks (duplicate-body, contradiction, ambiguity, scope-overlap) and the
-standalone `basicly catalog verify` command (also wired as `basicly build --verify`)
-are built, as is the advisory agent-assisted semantic review (`basicly catalog review`).
-
-### Details
-
-| Check | Mechanism |
+| Check | Where it runs |
 | --- | --- |
-| Required fields, known category/priority/status/target, extension-field types | `loader._validate_fragment`, runs on every `list`/`build`/`check` |
-| Duplicate fragment `id` across core + overlay roots | `loader.load_fragments_from_roots` |
-| `replaces` target exists / `override: true` required / no mutual user-user replaces | `loader._validate_replacements`, runs on every `list`/`build`/`check` |
-| Duplicate/near-duplicate fragment bodies | `catalog_verify._duplicate_bodies` (difflib ratio) |
-| Contradiction detection (static dictionary: tabs/spaces, pathlib/os.path, etc.) | `catalog_verify._contradictions`, curated pairs |
-| Ambiguity detection (deny-list of vague phrases) | `catalog_verify._ambiguous_phrases` |
-| Scope-overlap detection | `catalog_verify._scope_overlaps`, scoped pairs |
-| Enforcement-pointer check (`enforced_by` field, §3.1) | `catalog_lint` requires each `enforced_by` command to be cited in the body |
-| Standalone `basicly catalog verify` / `basicly build --verify` commands | named `catalog verify` because `basicly verify` is the loop CI-check runner; `build --verify` gates the write |
-| Semantic review (`basicly catalog review`, agent reads rendered files for contradictions/ambiguity) | `review.py` builds the prompt, dispatches via the agent-agnostic runner, always exits 0 (advisory, not a merge gate) |
+| Required fields, known category, priority, status and target; extension-field types | the loader, on every list, build and check |
+| Duplicate fragment id across every root | the loader, on every load |
+| Replacement integrity: the target exists, the override flag is set, no mutual user-to-user replace | the loader, on every list, build and check |
+| Source format: schema validity, no Markdown-named source, a single YAML extension | `basicly catalog lint`, wired as a pre-commit hook and a CI step |
+| Composition rules: block references resolve, every tool resolves, a read-only posture grants no write tool, the composed body stays under the strictest reader's prompt ceiling | `basicly catalog lint` |
+| Routing: positive top-k, pairwise negatives, a description-collision ceiling, a ratcheting rank-1 floor | `basicly catalog lint` |
+| Duplicate or near-duplicate bodies, contradictions from a curated pair dictionary, vague phrases, scope overlaps | `basicly catalog verify` |
+| Semantic review: an agent reads the rendered files for contradiction and ambiguity | `basicly catalog review`, advisory, always exits zero |
 
-Both layers run in this order — deterministic gate first, always; semantic
-review second, advisory, on demand or in CI as a report (not a blocker).
+**Deterministic checks catch a large class cheaply** — duplicate ids, missing fields,
+unknown vocabulary. Semantic problems — a contradiction that parses fine but reads badly to
+a model — need a capable reader. Both layers run against the same merged fragment set, and
+the judged layer is never a merge gate.
 
----
+**The routing gate is the deterministic, lexical, free tier of the evidence layer**, and the
+reason it works is a detail worth keeping: it asserts that the declared owner must
+**outrank** the entry, because a bare "must not rank first" passes vacuously on a prompt
+that matches nothing. It reports a rank-1 rate against a floor that ratchets and cannot be
+lowered.
 
-## 7) The three always-on files
+## The always-on files
 
-**Summary**: `AGENTS.md`, `CLAUDE.md`, `copilot-instructions.md` are the foundation
-every other artifact builds on. If they're noisy or ambiguous, everything downstream
+`AGENTS.md`, `.claude/CLAUDE.md` and `.github/copilot-instructions.md` are the foundation
+every other artifact builds on. If they are noisy or ambiguous, everything downstream
 inherits that failure.
 
-### Details
+**Six properties they must keep.**
 
-1. **Size discipline**: a **shared soft cap of 9,000 chars** for the `claude` and
-   `copilot` targets, and **12,000 for `codex`** (`max_size_warning` per
-   `targets/*.yaml`; raised from 8,000 in `e70e4db`). The cap counts **characters**,
-   not bytes — `cli.py` compares `len(content)` on the decoded string, so a `wc -c`
-   reading overstates a UTF-8 baseline by the multi-byte characters in it. The
-   shared-baseline reasoning still holds — all three always-on
-   files project from the same `applies_to: [all]` fragment set and differ only by a
-   small per-target defaults fragment — but the codex projection legitimately carries
-   more: scoped fragments are inlined there for glob fidelity (detail 4), so its cap
-   gets a documented allowance rather than a pretense of identical content. The numbers
-   are a deliberate discipline choice, not platform limits: Claude Code's own
-   degradation warning is ~40 KB, GitHub removed its former 4,000-char hard limit on
-   `copilot-instructions.md` (it now only advises shortening past ~4,000 chars), and
-   Codex reads AGENTS.md up to `project_doc_max_bytes` (32 KiB default, configurable;
-   verified 2026-07-31). A cap warning means split into a scoped rule, not shrink the prose.
-   (Refs: GitHub removed the hard limit — github/docs#42761; Claude ~40 KB — Claude
-   Code memory docs; Codex 32 KiB — learn.chatgpt.com/docs/agent-configuration/agents-md.)
+1. **Point at enforcement; do not restate it.** If a rule is mechanically enforced, the
+   always-on file references the command that enforces it. Prose is reserved for what a
+   linter cannot check: judgment calls, escalation policy, when to ask instead of guess.
+   Duplicating what a linter already enforces measurably hurts agent task success and
+   inflates cost.
+2. **Enforced rules are one line; judgment rules are prose**, and the judgment section
+   should be the shorter of the two.
+3. **No duplication across the three files.** The shared always-applicable set feeds all
+   three; each family's file adds only genuinely different content.
+4. **Each file is self-contained.** Two of the three families do not reliably import a
+   shared file, so the shared content is inlined into each rather than referenced. An agent
+   should never need a second file to understand the baseline.
+5. **Scoped fragments stay out of the baseline** for the two families that can scope, so a
+   language-specific rule does not cost every task its context budget.
+6. **Stable ordering**, so diffs stay minimal.
 
-   Measured from the projected files themselves and regenerated by
-   `.scripts/docs_claims.py`, which gates this block on every commit:
+**The caps are a discipline choice, not a platform limit.** Measured against the vendors:
+one host's own degradation warning is far above these numbers, one vendor removed its former
+hard character limit and now only advises shortening, and the third reads its file up to a
+configurable byte cap. **A cap warning means split into a scoped rule, not shrink the
+prose.** The cap counts **characters**, not bytes, so a byte count overstates a UTF-8
+baseline by its multi-byte characters.
 
-   <!-- docs-claims:begin always-on-sizes -->
+Measured from the projected files themselves, and regenerated and gated on every commit:
 
-   | Surface | chars | cap | headroom |
-   | --- | --- | --- | --- |
-   | `.claude/CLAUDE.md` (claude) | 8895 | 9000 | 105 |
-   | `AGENTS.md` (codex) | 14343 | 16000 | 1657 |
-   | `.github/copilot-instructions.md` (copilot) | 8994 | 9000 | 6 |
+<!-- docs-claims:begin always-on-sizes -->
 
-   <!-- docs-claims:end always-on-sizes -->
+| Surface | chars | cap | headroom |
+| --- | --- | --- | --- |
+| `.claude/CLAUDE.md` (claude) | 8895 | 9000 | 105 |
+| `AGENTS.md` (codex) | 14343 | 16000 | 1657 |
+| `.github/copilot-instructions.md` (copilot) | 8994 | 9000 | 6 |
 
-   So **`copilot-instructions.md` is the tightest always-on surface** and binds for an
-   always-on fragment, while **`AGENTS.md` binds for the path-scoped tier** — a scoped
-   fragment costs `AGENTS.md` 900-1600 chars and costs the other two nothing. **Four
-   fragments are scoped, not three** [M 2026-08-14]: `platform-hermetic-tests`,
-   `external-review`, `code-is-authoritative` and `model-tier-routing`.
+<!-- docs-claims:end always-on-sizes -->
 
-   **The codex cap moved from 12,000 to 16,000, and the reason is a finding rather than
-   an allowance** (`basicly-a3ab.1`, `codex.yaml:9`). The audit run on the 13,135-character
-   overrun found the excess **is** the scoped tier: claude and copilot receive those four
-   fragments as separate `paths:`-carrying rules files, codex has no glob-based instruction
-   scoping and inlines them, so the gap is structural to one target. Evicting always-on
-   lines would have charged all three families to fix one and left the cause standing. What
-   the move trades away is stated where it was made: the old cap also stood proxy for the
-   vendor's claim that adherence degrades with length, which this repo has never measured
-   (`basicly-agzx.1`).
-2. **Enforced vs. judgment split**: enforced rules are one line pointing at the
-   command/config; judgment rules are prose, and should be the shorter of the two
-   sections.
-3. **No duplication across always-on files**: `applies_to: [all]` fragments feed
-   `AGENTS.md` and are inlined into `copilot-instructions.md` (Copilot cannot
-   `@`-import `AGENTS.md`). Target-specific fragments add only genuinely different
-   content.
-4. **Scoped fragments stay out of the always-on baseline** (Claude & Copilot): a
-   fragment with a non-default `scope.paths` is projected only to its path-gated file
-   (`.claude/rules/*.md` via `paths:` — the single source; the former
-   `.github/instructions/*.instructions.md` twin was retired 2026-07-16 because VS
-   Code loads both roots without dedup, see §4.4) — and is **not**
-   inlined into `CLAUDE.md`/`copilot-instructions.md`. This keeps the always-on file lean
-   (a Python-only rule shouldn't cost every task its context budget) and is enforced by
-   the `exclude_scoped: true` output filter (§4.4). **Exception — `AGENTS.md` (codex)**:
-   scoped fragments are still inlined there, for two reasons (re-verified 2026-07-31
-   against OpenAI's docs). First, a framing correction: Codex is **not** short of
-   separate steering files — it supports nested `AGENTS.md` (root→leaf concatenation,
-   nearest file wins), `AGENTS.override.md` precedence,
-   `project_doc_fallback_filenames`, repo-checked-in Agent Skills (SKILL.md open
-   standard, discovered from `.agents/skills` at repo root/cwd with progressive
-   disclosure — basicly's skill projection already targets this), project subagents at
-   `.codex/agents/*.toml`, and sandbox policy at `.codex/rules/`. What it has is a
-   **type mismatch and a loading limit**:
-   1. **No glob- or pattern-based instruction scoping exists at all** — no `applyTo`, no
-      `paths:` frontmatter, no `globs` field, anywhere in `AGENTS.md` discovery, the
-      config reference, or `SKILL.md` frontmatter. Directory placement is the only
-      scoping axis, while basicly scoped fragments are **glob-based** (`**/*.py`), so a
-      per-directory offload cannot faithfully express a glob scope.
-   2. **A nested `AGENTS.md` below the cwd is never loaded.** Codex walks from the
-      project root down to the current directory and _stops there_. Run from the repo
-      root — the normal case — a file at `src/foo/AGENTS.md` contributes **nothing**.
-      So per-directory offload would not merely lose glob fidelity; it would usually
-      not load. (Exception: Codex code review on GitHub does walk the changed files, so
-      that surface behaves differently from the CLI.)
+**Which surface binds depends on the tier.** The tightest always-on surface binds for an
+always-on fragment. `AGENTS.md` binds for the **path-scoped** tier, because a scoped
+fragment costs it around a thousand characters and costs the other two nothing.
 
-   Inlining therefore remains the correctness-preserving choice. This is why
-   `AGENTS.md` runs larger than the other two baselines and why the codex cap carries
-   an allowance (detail 1). Offloading via nested `AGENTS.md`/skills for
-   directory-shaped scopes is **[Deferred]** (§11), and reason 2 is what makes that
-   reject stronger than a fidelity trade-off.
+**Scoping's cost effect is asymmetric, not a blanket improvement.** It removes a fragment
+from the two baselines that can scope and **adds** it to the one that inlines. The codex cap
+was raised rather than lowered after an audit of an overrun found the excess *was* the
+scoped tier: evicting always-on lines would have charged all three families to fix one and
+left the cause standing. What that trade gave up is stated where it was made — the old cap
+also stood proxy for the vendor's claim that adherence degrades with length, which this
+repository has never measured.
 
-   Two naming traps on the codex surface, both of which have misled a reader here:
-   Codex's own **"Rules"** feature (`.codex/rules/`, Starlark `prefix_rule(pattern=…)`)
-   is a **sandbox command-execution policy**, unrelated to per-file instructions —
-   reading that page and concluding Codex has no instruction rules is the exact wrong
-   turn; and file-based **custom prompts** (`~/.codex/prompts`) are **deprecated** in
-   favour of skills and are user-scope only, so they can never ship in a repo — worth
-   remembering if a codex command tier is ever proposed. (Refs:
-   learn.chatgpt.com/docs/build-skills;
-   learn.chatgpt.com/docs/agent-configuration/agents-md; agentskills.io. The former
-   `developers.openai.com/codex/*` paths 308-redirect to `learn.chatgpt.com/docs/*`.)
-5. **Self-contained per target**: each generated file stands alone; an agent should
-   never need a second file to understand the baseline.
-6. **Stable ordering**: priority → category → id, so diffs stay minimal.
+**What is known and what is not.** Measured against both families that were tested, each
+reproduces the overwhelming majority of its baseline's rules when asked, against a small
+no-guidance control. So the "cliff already crossed" reading is **refuted**: the content is
+not invisible at this size. What that does **not** settle is the operational question —
+nothing measures which baseline rules *bind* while an agent works. Recall under a direct cue
+is an upper bound and confirms mechanism only. The cap policy is therefore asymmetric:
+**lowering it is ordinary housekeeping; raising it still has no evidence behind it.**
 
----
+## Installation and upgrade
 
-## 8) CLI surface
-
-**Summary**: the CLI has three surfaces — lifecycle (`install`, which replaced
-the former `init`/`update` staging pair, `uninstall`, and the read-only
-`status`), catalog (the consumer projection pairs `build`/`check`,
-`skills-build`/`skills-check`, `agents-build`/`agents-check`,
-`hooks-build`/`hooks-check`, `permissions-build`/`permissions-check`, `usage`,
-plus the contributor authoring group
-`catalog` with the verbs `lint`, `verify`, `review`, `new`, `list`), and harness
-(`worktree`, `verify`, `commit`, `policy`, `decompose`, `loop`, `runner`, `rubric`). The authoring
-and inspection verbs moved under `basicly catalog <verb>` (a breaking change:
-the old flat `list`/`skills-list`/`agents-list`/`*-new`/`catalog-lint`/`catalog-verify`/`review`
-names were removed, not aliased).
-
-### Details
-
-**Lifecycle** — one command installs _and_ upgrades; a second removes:
-
-| Command                       | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `basicly install`             | Idempotent converge: materialize the bundled core catalog, migrate/prune legacy layouts, scaffold overlay + `basicly.toml` (never overwriting existing user content), then `build` + `skills-build` (all default roots) + `agents-build` + `hooks-build` (with hook activation). The same command performs first install and every upgrade (provenance-guarded core sync, §9; `--force` overwrites kept hand-edits). Replaced the former `init`/`update` staging pair |
-| `basicly uninstall [--purge]` | Removes managed core, state, manifest-listed generated files, projected skills and agents (generated-marker files only), and the managed hook block (deleting the config + uninstalling git hooks when nothing else remains); preserves the overlay + `basicly.toml` unless `--purge`; refuses in the authoring repo                                                                                                                                                  |
-| basicly status [--json]       | Read-only snapshot for fleet loops and humans: installed catalog version vs running engine version, drift summary (the `check` comparison plus install-provenance drift), per-manager hook state (projection sync + git stage activation), technology selection, and overlay counts; never writes, always exits 0; `--json` emits a stable versioned schema; `--fleet [--root PATH]` rolls it across the housed repos as one json payload (h0f0)                      |
-| `basicly health [--json]`     | Read-only per-agent health scoring and behavioral drift from the run-record log (`health.py`, y886): dispatch failure rate, a rework signal, and a bounded health score per agent, plus a rolling-baseline drift check flagging agents whose recent failure rate regressed; `--window N` sizes the recent window; `--fleet [--root PATH]` rolls it across the housed repos; never writes, always exits 0                      |
-| `basicly brief <issue-id>` | Prints the brief the loop would dispatch for one issue, without dispatching it. Shares `dispatch_brief.dispatch_prompt` rather than re-rendering it — a preview that differs from the dispatch is worse than none. Cross-lane records and answered decisions are not folded in: those are assembled at dispatch time against the session's live bead set (§12.8, `basicly-a4q3.5`) |
-
-**Catalog**:
-
-| Command | Behavior |
-| --- | --- |
-| `basicly build [--target NAME] [--verify]` | Renders enabled targets (or one), writes only changed bytes, updates the manifest, warns on size-cap overrun; `--verify` runs `catalog verify` first and writes nothing on failure |
-| `basicly check` | Byte-for-byte staleness check of generated files + manifest; exit `1` on mismatch, no auto-fix |
-| `basicly skills-build [--root ...\|--all-default-roots]` / `skills-check` | Same build/check contract, applied to the skill catalog |
-| `basicly agents-build` / `agents-check` | Same build/check contract for the agent catalog: composes slot blocks into `.claude/agents/<slug>.md` and `.github/agents/<slug>.agent.md`, always both roots and with no root-selection flag (§5 agent composition model) |
-| `basicly hooks-build [--no-install]` / `hooks-check` | Materializes catalog hook scripts, merges a managed `repo: local` block into `.pre-commit-config.yaml` (foreign hooks preserved, idempotent), and then runs `pre-commit install` for every managed stage so the gates are actually active (`--no-install` skips activation; graceful when pre-commit is absent). `hooks-check` reports projection drift and warns (non-fatal) when the git hooks are not installed. It skips the script content comparison when the installed catalog and the target are the same working-tree-relative path in the same git repository — basicly installed editable from its own checkout, where a difference is uncommitted or branch-local work rather than drift, so a hook-script change could not otherwise pass its own landing verify — and falls back to comparing whenever git cannot answer; path equality is required as well as repository identity, so a consumer with an in-repo `.venv` keeps the gate |
-| `basicly permissions-build` / `permissions-check` | Projects the catalog agent-permissions deny-list (`.basicly/core/permissions/permissions.yaml`) into the co-owned `.claude/settings.json` `permissions.deny`, the way hooks are managed: ensure-present (managed patterns merged in, consumer-added entries preserved, nothing pruned — an extra deny is fail-safe and a flat deny string has no per-entry marker), with a semantic subset-match drift check. Claude-only: Copilot CLI has no config-file deny (session-scoped `--deny-tool` flag only) and Codex forbids project-scope override of `sandbox_mode`/`approval_policy`, so those guardrails are invocation-only — the copilot runner injects the deny-list as `--deny-tool` flags at dispatch (`basicly-lqz5`), while Codex sandbox/approval defaults remain to wire (`basicly-t0kt`) |
-| `basicly usage report` | Reports the tool/skill counts recorded by the `tool-usage` agent hook (token-free telemetry in `.basicly/usage/`) and names never-used catalog skills — the culling input (§4.3) |
-| `basicly usage forecast` | Reports the forecast error per dispatch — actual spend over forecast working set, per bead/class/model, with a median — from the run records and the committed `[harness-run]` markers. Refuses to compute an error for a record missing either half and reports those as unpaired counts, so an empty report explains itself (§12.8.1, `basicly-jr0l.34`) |
-| `basicly usage tuning` | Advises every governed factory parameter from the recorded dispatches, over the local run records **and** the committed `[harness-run]` markers, naming which corpus each sample came from. Per parameter it prints the value in force for the dispatches it summarises (a session override puts its dispatches in their own cohort), the outcome distribution under that value, and a recommendation with its sample size labelled `measured` or `seeded` — below `[policy.sizing] calibration_min_samples` the declared prior stands and the row names the in-force value it would displace. A parameter the ledger records nothing about still prints, with a sample size of zero, no recommendation and the reason it has none. **Advisory only: it writes nothing** (§12.8.3, `basicly-3ifz.1`) |
-| `basicly usage lane-split` | Splits each persisted lane transcript into a **context acquisition** share and an **implementation** share, so `basicly-ejdm`'s causal claim — that a lane's floor is bought by the dispatch instruction rather than by the work — has an instrument behind it before a remedy is judged by it (§12.8.4, `basicly-ejdm.2`) |
-| `basicly usage outcomes` | Reports how every recorded dispatch ended — the `handoff`/`executed`/`failed`/`unstarted` distribution from `run_record.outcome_of` over the local run records — with the failure share as an explicit rate. The kill rate is the point: a harness whose lanes mostly return no-go is working correctly and looks, per lane, like a run of failures. Prints its own boundary, because these are dispatch outcomes and no record here says whether a lane reached a result (§12.8, `basicly-a4q3.5`) |
-| `basicly usage tracker [--promote] [--refresh-surface] [--as-json]` | Reports the measured `br`/`bv` surface Phase 6 freezes its replacement scope from. `--promote` folds the spool into the committed ledger before reporting, `--refresh-surface` re-probes `br`/`bv` `--help` and rewrites the committed surface inventory (needs `br` on PATH), `--as-json` emits the whole report for the freeze |
-| `basicly catalog list [fragment\|skill\|agent]` | Table of catalog sources of the given kind (default `fragment`); the authoring/inspection verbs live under the `catalog` group |
-| `basicly catalog new <fragment\|skill\|agent> NAME [--category C] [--description D]` | Scaffold a new `<id>.fragment.yaml` / `skill.yaml` / `agent.yaml` source (§4.2 source format); `--category` sets a fragment's category, `--description` seeds the one-line summary |
-| `basicly catalog lint` | Source-format gate: schema validation, no `.md`-named sources, single `.yaml` extension; wired as a pre-commit hook and CI step |
-| `basicly catalog verify` | Deterministic content checks beyond the load-path validation: duplicate bodies, contradictions, ambiguity, scope overlaps (§6); named `catalog verify` because `basicly verify` is the loop check runner |
-| `basicly catalog review [--runner NAME] [--dry-run]` | Advisory agent-assisted semantic review: renders the always-on files, dispatches a review prompt via the agent-agnostic runner (handoff when no CLI is on PATH), always exits 0. `--dry-run` prints the prompt without invoking an agent (§6) |
-| `basicly rubric eval <issue> [--runner NAME] [--dry-run]` | Evaluates the issue's work-type behavioral rubric (`.basicly/core/rubrics/*.rubric.yaml`): deterministic checks run via the verify runner (exit code = yes/no), judged checks dispatch one agent prompt via the runner (handoff when no CLI). Reports an advisory `rubric` gate (`br gate report`) — non-required by default (a judged verdict never fails the gate; deterministic-first), promotable by adding `rubric` to `[policy] required_gates`. `--dry-run` prints the judged prompt (basicly-0122) |
-
-**Harness** (§12):
-
-| Command                                     | Behavior                                                                                                                                     |
-| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `basicly worktree ...`                      | Sibling git-worktree lifecycle: `create` + provision (deps, hooks), `list`, `cleanup`; `merge` lands one finished worktree on its base (rebase, re-verify, `--no-ff`) and `merge-queue` lands several serially in the given topological order; `bg-isolation` sets Claude's `worktree.bgIsolation=none` so the harness isolates itself (§12.5–12.6) |
-| `basicly verify [--gate] [--fix]`           | Runs the consumer's `[[verify.checks]]` per mode and optionally records a `br` gate; `--fix` applies mechanical repairs first (§12.3–12.4)   |
-| `basicly policy ...`                        | `dor`/`gate`/`rework`/`checkpoint`/`scaffold` checks, plus `grant` to show, issue or revoke a session autonomy grant (L1–L3; `--token-budget` required for L2+); `policy checkpoint --approve` needs an interactive TTY or a one-time `--confirm` code (§12.2) |
-| `basicly decompose`                         | Turns a feature into child `br` issues + a computed dependency graph (§12.2)                                                                 |
-| `basicly loop status\|advance\|run <issue>` | Drives one issue through the harness loop; a blocked step exits non-zero and names the input it needs. The multi-lane path is `preflight` (read-only: clean base, live worktrees, runner, grant, budget, per-lane band table and forecast spend) and then `supervise`, which dispatches ready lanes, routes their outcomes and lands green work until it is done, blocked on a human, or ended by one of its two bounds — `supervise --max-passes N`, and `stop`, which asks a running supervisor to finish the round it is in (every dispatched lane lands, no further lane is seeded) rather than signalling a process whose lanes are its own subprocesses. A second session observes a live run with `session` and `watch`, and clears what a lane is blocked on with `decisions`, `answer` (record a human answer) and `decide` (invoke the decider agent, corpus-bounded). `kill` is the one gate verb that is not an answer — it closes a lane won't-do-this-way with a recorded reason and tears its worktree down, always behind a one-time confirm code no grant or TTY substitutes for (§12.2). `improve` is the other loop shape and takes no issue: it runs the repo's improvement controller (`.scripts/improvement_controller.py`), which measures one declared property of the tree, selects one target deterministically and files at most one lane — bounded to one unlanded lane at a time, `--dry-run` to select without filing |
-| `basicly commit <description>`              | Assembles the conventional-commit envelope from engine state — type from the bead's work class (refined by an all-docs/all-test/all-ci diff), scope from the staged paths weighted by churn, trailing bead id from the branch's worktree binding — and commits the staged change with it. Only the description (and an optional `--body`) is authored; a description the charset rules reject names the offending character before any commit is attempted. `--type`/`--scope`/`--issue` override a derived part, `--dry-run` prints the message only. The `commit-msg`/`beads-commit-msg` hooks stay the gate (design D10, `basicly-kjc5.42`) |
-| `basicly runner list\|dry-run\|run`         | Agent-agnostic headless runner adapters (claude/codex/copilot + `manual` handoff); the loop build phase auto-dispatches through them (§12.8) |
-| `basicly tracker shadow`                    | Step 2 of the work-tracker cutover ([`work-tracker`](../requirements/work-tracker.md) §5): folds the owned event log under `.basicly/ledger/` and compares its answers to phase derivation, the ready set and gate status against the **live** `br`, record by record. The reference is a `br list`/`br show`/`br gate list` read and never the JSONL export — an upsert-only import cannot express a deletion, so two derivatives of one snapshot agree with each other and prove nothing (§5.1), and the kit audits the reference by perturbing the ledger and refusing a source whose answers move with it. Writes to neither store, and reports `clean` and `conclusive` as two verdicts: a query every record answered identically discriminated nothing, so exit `0` needs both |
-| `basicly release <version> --issue ID [--date D] [--dry-run] [--autonomous --root ID]` | Component 9 release automation (`release.py`): bumps the single-sourced `__version__`, regenerates the version-stamped projections in a **fresh interpreter with the target repo forced onto `PYTHONPATH`** (`cli` binds `__version__` at import, and a same-process or installed-copy rebuild stamps the previous version), rewrites the `@vX.Y.Z` install pins in `README.md` + `site/index.html`, assembles the per-lane `changelog.d/<bead-id>.<category>.md` fragments into the `## [Unreleased]` body (grouped by Keep a Changelog heading, ordered by category then filename, deleted in the same commit — one file per lane so two lanes can never collide on one changelog anchor, `basicly-4746`) and upserts the dated `CHANGELOG.md` section from it via `.scripts/generate_release_changelog.py`, commits, and creates the annotated tag. **Never pushes** — publishing is irreversible and stays a human step. Refuses on a dirty tree, a version that does not move forward, an existing tag, or a fragment it cannot place (empty, misnamed, or no `[Unreleased]` heading to fold into), reporting every reason from one run; `--dry-run` runs the same checks and writes nothing. `--autonomous` requires an **L3** grant (not L1/L2) with green lights-out preconditions on `--root` (D3) |
-
-The formerly planned `basicly conflicts`/`basicly overrides` reporting views are
-**[Deferred]** — cut from scope; `catalog verify` output covers the reporting need.
-
----
-
-## 9) Distribution mechanics
-
-**Summary**: the consumer lifecycle is **one command for install and every upgrade**,
-plus one for removal:
+Two commands, one of which does first install and every upgrade.
 
 ```sh
-uvx --from git+https://github.com/niksavis/basicly@<ref> basicly install    # first time AND upgrades
-uvx --from git+https://github.com/niksavis/basicly@<ref> basicly uninstall  # removal
+uvx --from git+https://github.com/niksavis/basicly@<ref> basicly install
+uvx --from git+https://github.com/niksavis/basicly@<ref> basicly uninstall
 ```
 
-Packaging, the bundled catalog, the unified `install`/`uninstall` commands, core
-upgrade sync, and provenance tracking all live behind those two commands. The
-live `git+<remote>@<ref>` path works for both `@main` and commit-pinned
-`@<sha>` refs: install converges the repo, `basicly check` passes afterwards,
-and an immediate re-run is a no-op.
+**One idempotent converge command.** An earlier design staged an init, then a build, then
+each projector, plus a separate update. The finding that collapsed them: init was never a
+technical prerequisite — everything it does is idempotent skip-existing — so a single command
+serves both cases. Its contract: materialize or sync the bundled core, migrate and prune
+legacy layouts, scaffold the overlay and the config **only if missing**, keep the
+authoring-repo guard, then rebuild every artifact and install the hooks.
 
-### Details
+**The catalog is versioned as a whole and pinned as a whole**, the same way a hook
+configuration pins a revision. Re-running the install from a newer pinned ref is the only,
+explicit, reviewable action that moves a consumer to a newer catalog version.
 
-- `pyproject.toml` declares a `[build-system]` table (hatchling),
-  `tool.uv.package = true`, and a `[project.scripts]` `basicly = "basicly.cli:main"`
-  entry point. `uv build` produces a wheel + sdist; `uvx --from <wheel> basicly`
-  resolves `basicly.cli`, as does the equivalent `git+https://...@<ref>` form.
-  `jinja2` and `rich` (terminal output) are `[project.dependencies]` runtime deps.
-- The managed core catalog ships inside the distribution: hatchling
-  `force-include` projects the dogfooded source `.basicly/core/` to `basicly/catalog/`
-  in the wheel, and the sdist carries `.basicly/core/` so `git+` installs resolve it.
-  `basicly.catalog.bundled_catalog_root()` prefers a source checkout (marker walk) and
-  falls back to the packaged copy in installed wheels.
-- **`basicly install` — one idempotent
-  converge command** replacing the former `init` → `build` → `skills-build` →
-  `hooks-build` staging and the separate `update` (both removed pre-release).
-  Design finding (2026-07-15): `init` was never a technical prerequisite —
-  everything it does is idempotent skip-existing — so a single command serves
-  first install and every upgrade. Its converge contract: materialize or sync
-  the bundled core (below), migrate/prune legacy layouts, scaffold the overlay +
-  `basicly.toml` only if missing, keep the authoring-repo guard (bundled source
-  == destination → leave in place), then rebuild all artifacts and install the
-  hooks.
-- **Provenance** (`state.py`): `install` writes
-  `.basicly/state/install.json` (sibling of the configured core root) recording the
-  basicly version, timestamp, and a per-file sha256 snapshot of the core as
-  materialized — so a later hash mismatch means a hand-edit of managed content.
-  `basicly check` surfaces drift (modified/removed core files) and an
-  installed-vs-current version mismatch as advisory notes that never change its
-  exit code. The authoring repo writes no state file.
-- **Core upgrade sync** (`cli._sync_catalog`):
-  on a repeat `install` from a newer ref, the managed core is synced to the bundled
-  catalog: changed files overwritten, upstream-removed files deleted, the overlay
-  and `basicly.toml` never touched. The provenance snapshot distinguishes upstream
-  changes from user hand-edits of core files: a file matching the snapshot is
-  upstream-owned (overwritten/deleted); one that differs is a hand-edit — warned
-  and kept unless `--force`; files unknown to both bundle and snapshot are always
-  kept. The post-sync snapshot records only bundle-matching files, so kept edits
-  stay protected on the next run. `hooks-build` no longer copies scripts (install
-  owns core content); it errors when the core was never materialized. Upgrading is
-  therefore literally re-running the same pinned `uvx ... basicly install` command
-  with a newer `@<ref>` (§3.6).
-- **`basicly uninstall`** removes everything
-  managed — core, state, manifest-listed generated files, projected skills
-  (generated-marker files only), the managed hook block (deleting the config and
-  uninstalling the git hooks when nothing else remains) — and preserves the user's
-  overlay + `basicly.toml` unless `--purge`. It refuses to run in the authoring
-  repo, where the core is the catalog source itself.
-- **Technology scoping** — catalog selection by
-  stack/environment tag. Sources (skills, fragments, agents, hooks) carry an
-  optional `technologies:` list; an untagged source is universal and always
-  ships. The vocabulary is a controlled list (`schema.TECHNOLOGIES`: stack tags
-  like `python`/`go` plus environment tools like `zsh`/`tmux`), enforced by
-  `catalog lint` across all four source types (the fragment loader also
-  validates it, since overlay fragments bypass catalog lint). The consumer's
-  selection is recorded as `[catalog] technologies` in `basicly.toml`
-  (`basicly install --technologies python,zsh`; absent = everything ships) and
-  applied at **projection time**: `build`/`skills-build`/`agents-build`/
-  `hooks-build` and their checks skip non-overlapping sources, while the core
-  sync stays full for provenance-simple upgrades. Narrowing the selection
-  converges on rebuild: fragment outputs recompose (per-fragment outputs are
-  swept via the generated manifest), projected skills/agents the selection
-  excludes are pruned (generated-marker files only), and excluded managed hooks
-  are stripped from `.pre-commit-config.yaml` / `.claude/settings.json` instead
-  of stranding. Per-block technology conditioning inside agent slots is
-  **[Deferred]** (§11).
-- **Bootstrap shim** for consumers without
-  `uv`/Python: `.scripts/bootstrap.sh` (POSIX sh, curl-able) and
-  `.scripts/bootstrap.ps1` (PowerShell) install `uv` from astral.sh when
-  absent, then run the same pinned `uv tool run --from git+...@<ref> basicly
-  install` in the current repo. `--ref` pins the version (default `main`);
-  every other argument passes through to `basicly install`. Both fail fast
-  outside a git repository.
+**Provenance is what makes an upgrade safe.** Install records a per-file hash snapshot of the
+core as materialized. On a later install the sync overwrites changed files and deletes
+upstream-removed ones — but the snapshot distinguishes an upstream change from a user's hand
+edit: a file matching the snapshot is upstream-owned, one that differs is a hand edit and is
+warned and kept unless forced, and a file unknown to both bundle and snapshot is always kept.
+The post-sync snapshot records only bundle-matching files, so kept edits stay protected on the
+next run.
 
----
+**Install writes the managed core and state only.** It creates the overlay directory if
+missing but never writes fragment content there, and it never overwrites an existing config
+file — when an existing file lacks a section the shipped default now carries, it names the
+section in a hint instead of editing.
 
-## 10) Development workflow for this repo
+**Uninstall removes everything managed** — core, state, manifest-listed generated files,
+projected skills and agents that carry the generated marker, and the managed hook block,
+deleting the config and uninstalling the git hooks when nothing else remains. It preserves the
+overlay and the config unless purging, and it refuses to run in the authoring repository,
+where the core *is* the catalog source.
 
-**Summary**: this repo tracks its own implementation work with `br` (beads), not a
-separate issue tracker. Every commit must reference a tracked issue id — enforced by a
-git hook, not just convention.
+**Technology scoping applies at projection time, not at sync time.** The core sync stays full,
+which keeps provenance simple; the projectors and their checks skip non-overlapping sources.
+Narrowing the selection converges on rebuild rather than stranding: fragment outputs recompose
+and are swept via the manifest, excluded skills and agents are pruned if they carry the
+generated marker, and excluded managed hooks are stripped from the configuration files.
 
-### Details
+**The managed catalog ships inside the distribution.** The build projects the dogfooded source
+tree into the wheel and the source distribution carries it, so a direct-from-git install
+resolves it; the locator prefers a source checkout and falls back to the packaged copy.
 
-- Workspace: `.beads/`, prefix `basicly`, defaults `priority: 2` (Medium),
-  `type: task`. Full taxonomy, priority scale, and hierarchy convention (`--parent`,
-  since `br` has no separate story/sub-task type) are documented once, in
-  [`.beads/config.yaml`](../../.beads/config.yaml) and the
-  [`tool-br` skill](../../.basicly/core/skills/tool-br/skill.yaml) — not restated here, per
-  §3.1.
-- Enforcement: [`commit-msg.py`](../../.basicly/core/hooks/commit-msg.py)
-  (conventional-commit format, permits a trailing issue-id parenthetical) and
-  [`beads-commit-msg.py`](../../.basicly/core/hooks/beads-commit-msg.py)
-  (requires the referenced id to exist in `.beads/issues.jsonl`) both run at the
-  `commit-msg` git stage, wired independently in
-  [`.pre-commit-config.yaml`](../../.pre-commit-config.yaml).
-- These hooks are both this repo's own dev-process tooling **and** the literal
-  catalog source (§4.2) — dogfooding is direct, not a copy.
-- Practical implication for planning work as beads issues: use `epic` for large
-  initiatives (e.g. "make basicly uvx-installable"), `feature`/`task` for new
-  work (including the deferred items in §11), `bug` for regressions, and
-  `--parent` to link a `task` under a `feature`/`epic` instead of inventing a
-  "story"/"sub-task" type.
+**A bootstrap shim exists for a consumer with no runtime**: a POSIX shell script and a
+PowerShell script that install the runtime from its vendor when absent, then run the same
+pinned install in the current repository. Both fail fast outside a git repository.
 
----
+**Everything lives in plain, git-tracked files.** No daemon, no hidden state, no network calls
+at build time. `git diff` and `git blame` are the audit trail, and `basicly check` is the
+offline staleness gate.
 
-## 11) Not yet implemented
+## The CLI surface
 
-Everything described in §§0–13 exists in code today. The items below are the only
-known exceptions — each is **[Deferred]**: consciously not built until a real
-consumer need appears. None is tracked as an open issue (the former tracking beads
-were closed as won't-do, 2026-07-16); file a fresh task if demand appears.
+Three surfaces: lifecycle, catalog, and harness. 27 top-level commands, eight of which are
+subcommand groups.
 
-This section is **not** the roadmap. A deferred item here is one nobody has asked
-for; the work the architecture is actively heading toward is §14, and the combined
-status view of both — what is built, building, designed, researched or deferred — is
-§15.
+**Lifecycle.**
 
-1. **A native per-path instruction renderer for codex**: Codex reads
-   the shared `AGENTS.md` baseline today, with path-scoped fragments inlined for
-   glob fidelity (§7 detail 4). A native scoped-rules projection would add
-   per-path parity once a real Codex consumer needs it — but there is currently no
-   Codex mechanism to project _to_: it has no glob-based instruction scoping at all.
-   (Not to be confused with `.codex/rules/`, which is Codex's _sandbox
-   command-execution_ policy, a different feature that happens to share the name
-   "Rules" — see §7 detail 4.)
-2. **Cursor as a target**: no renderer, no templates.
-3. **Offloading directory-shaped scopes** via nested `AGENTS.md`/skills for the
-   codex target (§7 detail 4). Rejected more firmly than a fidelity trade-off would
-   warrant: Codex loads nested `AGENTS.md` only from the project root **down to the
-   cwd** and stops there, so a file at `src/foo/AGENTS.md` is not loaded at all when
-   Codex runs from the repo root — the offload would usually contribute nothing.
-4. **`basicly conflicts`/`basicly overrides` reporting views** — cut from scope;
-   `catalog verify` output covers the reporting need (§8).
-5. **Per-block technology conditioning inside agent slots** — technology scoping
-   applies at whole-source granularity (§9); per-block conditioning is a v2
-   idea.
+| Command | Behaviour |
+| --- | --- |
+| `basicly install` | Idempotent converge: materialize or sync the core, migrate legacy layouts, scaffold overlay and config without overwriting, then build, skills-build across all default roots, agents-build, hooks-build with activation. First install and every upgrade |
+| `basicly uninstall [--purge]` | Remove everything managed, preserve the overlay and config unless purging, refuse in the authoring repo |
+| `basicly status [--json] [--fleet]` | Read-only snapshot: installed catalog version against running engine version, drift summary, per-manager hook state, technology selection, overlay counts. Never writes, always exits zero. The fleet flag rolls it across the housed repositories as one JSON payload |
+| `basicly health [--json] [--window N] [--fleet]` | Read-only per-agent health scoring and behavioural drift from the run-record log: dispatch failure rate, a rework signal, a bounded score, and a rolling-baseline drift flag. Never writes, always exits zero |
+| `basicly brief <issue-id>` | Print the brief the loop would dispatch for one issue, without dispatching it. Shares the dispatch renderer rather than re-rendering, because a preview that differs from the dispatch is worse than none |
 
-## 12) The basicly harness — agent-agnostic development loop
+**Catalog.**
 
-**Summary**: The harness is an always-delivered
-_core_ that binds work isolation, a workflow loop, and hard verify/validate gates into a
-predictable machine, driven identically by any coding agent (Claude, Codex, Copilot). Its
-thesis is _lean-over-substrate_: it wraps the `br` (beads-rust) tracker's existing primitives
-(gate ledger, scheduler, dependency graph, lint) and builds only the missing mechanics
-(worktree lifecycle, merge queue, verify runner, loop state machine). Guidance is projected
-per target like every other fragment/skill; enforcement is deterministic gates.
+| Command | Behaviour |
+| --- | --- |
+| `basicly build [--target NAME] [--verify]` | Render enabled targets, write only changed bytes, update the manifest, warn on cap overrun. The verify flag runs the content checks first and writes nothing on failure |
+| `basicly check` | Byte-for-byte staleness check of generated files and the manifest; exit 1 on mismatch, no auto-fix |
+| `basicly skills-build [--root ...\|--all-default-roots]` / `skills-check` | The same build and check contract for the skill catalog, mirrored per root |
+| `basicly agents-build` / `agents-check` | The same contract for the agent catalog, always both roots, with no root-selection flag |
+| `basicly hooks-build [--no-install]` / `hooks-check` | Materialize hook scripts, merge a managed block into the hook config preserving foreign hooks, then install the git hooks so the gates are active. The check reports projection drift and warns when the git hooks are not installed |
+| `basicly permissions-build` / `permissions-check` | Project the agent-permissions deny-list into the co-owned settings file: ensure-present, consumer entries preserved, nothing pruned, with a semantic subset drift check |
+| `basicly usage report` | The tool and skill counts the telemetry hook recorded, and the catalog skills never used: the culling input |
+| `basicly usage forecast` | Forecast error per dispatch, over local run records and committed markers. Refuses to compute an error for a record missing either half and reports those as unpaired, so an empty report explains itself |
+| `basicly usage tuning` | Advise every governed factory parameter from the recorded dispatches: the value in force, the outcome distribution under it, and a recommendation labelled measured or seeded. Advisory only; it writes nothing |
+| `basicly usage lane-split` | Split each persisted lane transcript into a context-acquisition share and an implementation share |
+| `basicly usage outcomes` | How every recorded dispatch ended, with the failure share as an explicit rate |
+| `basicly usage tracker [--promote] [--refresh-surface] [--as-json]` | The measured external-tracker surface the replacement scope is frozen from |
+| `basicly catalog list [fragment\|skill\|agent]` | Table of catalog sources of the given kind |
+| `basicly catalog new <fragment\|skill\|agent> NAME [--category C] [--description D]` | Scaffold a new source in the correct format |
+| `basicly catalog lint` | Source-format and composition gate; wired as a pre-commit hook and a CI step |
+| `basicly catalog verify` | Deterministic content checks beyond the load path: duplicate bodies, contradictions, ambiguity, scope overlaps |
+| `basicly catalog review [--runner NAME] [--dry-run]` | Advisory agent-assisted semantic review; always exits zero |
+| `basicly rubric eval <issue> [--runner NAME] [--dry-run]` | Evaluate the issue's work-type behavioural rubric: deterministic checks through the verify runner, judged checks through one agent prompt. Reports an advisory gate, promotable by naming it in the required set |
 
-### Details
+The names above are the whole authoring surface. Two formerly planned reporting views for
+conflicts and overrides were cut from scope; `basicly catalog verify` output covers the need.
 
-**12.1 Work model.** A unit of work is classified into a **Work Class** that is exactly a
-`br` issue type — `bug`, `chore`, `task`, `feature`, `epic`. (`br`'s statuses are
-`open · in_progress · blocked · deferred · closed`; there is **no** `rework` status, so the
-rework loop below is modeled with gate results + comments, not a status.) The class selects a
-**track**, and tracks nest fractally: an Epic track runs Feature tracks, which run Task
-tracks; `bug`/`chore` are leaf tracks. There is no separate "node" concept — a decomposed
-leaf is a child `br` issue linked with `br dep add`.
+**Harness.**
 
-**12.2 The loop.** Intake (any input) → **Classify** (agent proposes, engine records the `br`
-type) → _[human checkpoint]_ → **Decompose** into child issues + a `br dep` graph, gated by a
-**Definition-of-Ready** (`br lint` required template sections; a non-empty structured
-`acceptance_criteria` field satisfies the `## Acceptance Criteria` section without a body heading —
-`br lint` ignores the field and has no config for it, so the credit lives in
-`policy.definition_of_ready`, not upstream, basicly-58iu)
-→ _[human checkpoint]_ → **fan-out build** (one worktree per dependency-unblocked node, ranked
-by `br scheduler`, concurrency-capped) with a **serial merge queue** on the way back →
-**Verify** (deterministic, blocking) → **Validate** → _[human
-checkpoint]_ → **Ship** (teardown folded into the same advance). A failed node enters a bounded
-**rework loop (n=2)** then escalates to a human; any track can **escalate a tier** (carry work
-forward, re-hit only the Decomposition checkpoint) without restarting. Default is
-task-by-task; one-shot mode collapses the middle checkpoint. The concurrency cap is
-`[worktree].concurrency`, whose default is `config.DEFAULT_WORKTREE_CONCURRENCY` and is
-deliberately not restated here — a document that repeats it goes stale silently
-(`basicly-tcmy.9`). Each _[human checkpoint]_
-approval (`policy checkpoint <issue> <name> --approve`) is gated on an interactive terminal:
-off a TTY — as any tool-invoked Bash runs — the command refuses and issues a one-time
-confirm code that a human must echo back with `--confirm`, so a subagent driving the loop
-cannot self-approve ship autonomously. When an autonomy grant _was_ consulted and declined
-— an uncovered checkpoint, an issue outside the grant's session tree, a spent token budget,
-a ceiling that cannot be metered (below), or a ship whose lights-out preconditions do not
-hold — the reason rides on the challenge's
-`detail` and is threaded through `loop advance` and the supervisor's decision queue, so an
-operator can tell _no grant_ from _a covering grant that refused_; a bare confirmation
-request made the two indistinguishable. No decision logic changed with it. This mitigates
-the shared-identity gap (a fork and its
-human share one OS/git identity); it does not defeat a process deliberately re-running with
-the code.
+| Command | Behaviour |
+| --- | --- |
+| `basicly worktree create\|list\|cleanup` | Sibling worktree lifecycle: create provisions dependencies and installs the gates; cleanup removes the worktree and its merged branch |
+| `basicly worktree merge\|merge-queue\|bg-isolation` | Land one finished worktree on its base; land several serially in a given topological order; turn off the host's own background isolation so the harness isolates itself |
+| `basicly verify [--gate] [--fix]` | Run the consumer's configured checks for a mode and optionally record a tracker gate; the fix flag applies mechanical repairs first |
+| `basicly policy dor\|scaffold\|gate\|rework` | Report the definition-of-ready, emit a body with every required heading, and read or record gate and rework state |
+| `basicly policy checkpoint\|grant` | Approve a human checkpoint behind a terminal or a one-time confirm code; show, issue or revoke a session autonomy grant |
+| `basicly decompose` | Turn a feature into child issues plus a computed dependency graph |
+| `basicly loop status\|advance\|run <issue>` | Drive one issue through the loop; a blocked step exits nonzero and names the input it needs |
+| `basicly loop preflight\|supervise\|stop` | The multi-lane path: preflight is read-only and reports clean base, live worktrees, runner, grant, budget and a per-lane band table; supervise dispatches ready lanes, routes their outcomes and lands green work; stop asks a running supervisor to finish the round it is in |
+| `basicly loop session\|watch\|decisions\|answer\|decide\|kill` | A second session observes a live run and clears what a lane is blocked on. Answer records a human answer, decide invokes the confined decider agent, and kill closes a lane with a recorded reason behind a one-time confirm code that no grant and no terminal substitutes for |
+| `basicly loop improve [--dry-run]` | The second loop shape, taking no issue: run the repository's improvement controller, which measures one declared property, selects one target deterministically and files at most one lane |
+| `basicly commit <description>` | Assemble the conventional-commit envelope from engine state and commit the staged change. Only the description is authored; the commit-message hooks stay the gate |
+| `basicly runner list\|dry-run\|run` | Agent-agnostic headless runner adapters; the dry run prints the exact command an adapter would execute before any live invocation |
+| `basicly tracker import\|shadow\|write` | The owned-tracker cutover surface: import folds the export into the event log; shadow compares the two stores record by record against the live binary; write puts one human tracker write through the engine seam so both stores move together |
+| `basicly release <version> --issue ID [--date D] [--dry-run] [--autonomous --root ID]` | Bump the single-sourced version, regenerate version-stamped projections in a fresh interpreter, rewrite install pins on the consumer surfaces, fold the per-lane changelog fragments into a dated section, commit, and create the annotated tag. **Never pushes** |
 
-The DoR's required section set is derivable from the work type, so it is **emitted rather than
-discovered**: `basicly policy scaffold --type <t>` prints a body with every required heading
-present and a `TODO` under each, and both refusal paths (`policy dor` and the classify gate in
-`loop._on_classify`) name that command typed for the bead instead of only listing what is
-missing. `policy.compose_body` is the single source — `decompose._child_body` composes engine-created bead
-bodies through it, so a `bug`-typed child carries `## Steps to Reproduce` too. `br`'s per-type templates are compiled
-into its binary and no read-only `br` command reports them, so `policy._TYPE_SECTIONS` states
-the set and `tests/test_integration_dor_scaffold.py` pins it against the installed `br`
-(basicly-kjc5.44).
+**Two properties of the harness surface are decisions.** Anything fully deterministic is
+reachable as **one command** an agent triggers and waits on. And a command that changes the
+world irreversibly — publishing a release, killing a lane, approving a ship — stops for a human
+even when a grant is live.
 
-**12.2.1 VALIDATE is a rung, not a lint** (`basicly-u2hl.54`). `config.LOOP_PHASES` reads
-`intake · classify · decompose · build · verify · validate · ship`, and `loop_state.PHASES`
-adds the terminal `done`, which has no transition out. The two tuples differ by exactly that
-one element **on purpose** — `config.py:369` records the reason and `tests/test_loop.py` pins
-`loop._HANDLERS` to `LOOP_PHASES` so a handler cannot drift from the set that validates it.
-Do not reconcile them.
+**The release command regenerates in a fresh interpreter with the target repository forced onto
+the import path**, because the CLI binds the version at import and a same-process or
+installed-copy rebuild would stamp the previous version. It refuses on a dirty tree, a version
+that does not move forward, an existing tag, or a changelog fragment it cannot place, reporting
+every reason from one run.
 
-The phase is gated at the recorded L3 level: it refuses its advance on a failed or missing
-consumer gate, dispatches the `validator` role, and prices that dispatch as a **read** rather
-than a write, so a judge never enters the sample a lane's cost is calibrated from (§12.8.2).
-`reviewer` fans out beside it, once per entry in `roles.REVIEW_LENSES` — `correctness` and
-`security`, and the vocabulary is pinned by a literal tripwire rather than by a length check.
-Both are advisory: a reviewer records findings under a `[harness-review] lens=<lens>` marker
-and the validator owns the gate, so §6's no-rerank rule holds by construction rather than by
-instruction. Maintainability is deliberately not a lens — ruff, pyright, vulture,
-`lint-imports`, `module-size`, `comment-density` and `noqa-debt` ratchet that axis
-mechanically, and a lens restating a green check is a paid dispatch on every L3 unit.
+## The harness loop
 
-**12.2.2 Four gate verbs, all four of which now write.** Go and Recycle (bounded rework in the
-lane's own worktree) were the loop as first built. **Hold** and **Kill** were words an escalation
-offered that no answer carried out (`basicly-u2hl.3`): an operator who answered `park` changed no
-status, and the next supervised pass dispatched the lane again. Both are writes today — an
-answered `park` defers the lane and records the reason (`cli._carry_out_rework_hold` →
-`policy.hold_lane`), and `basicly loop kill` tears the worktree down and closes the bead behind a
-one-time confirm code that no grant and no TTY can substitute for (`policy.authorize_kill` →
-`policy.kill_lane`). Kill requires a human at **every** integrity level, because it is the only
-verb that removes a requirement rather than routing work.
+The loop is the SDLC. It is an always-delivered core that binds work isolation, a workflow, and
+hard gates into a predictable machine, driven identically by any supported agent.
 
-**12.3 Components — build vs reuse.** The engine we build is thin: worktree lifecycle; merge
-orchestrator + serial merge queue + conflict-resolver; a **verify runner** (runs the
-consumer's configured checks — adapted from beads-blueprint's `validate.py`, made
-config-driven rather than Python-specific); the loop state machine + checkpoints; the
-classifier; the concurrency cap. Everything else is delegated to `br`: **gate ledger**
-(`br gate report`/`br gate list`, with required-gate status), **dependency graph + readiness**
-(`br dep`/`br ready`/`br blocked`), **Definition-of-Ready** (`br lint`), and
-**swarm/stale-claim diagnosis** (`br coordination`).
+Its thesis is **lean over substrate**: it wraps a work tracker's existing primitives — a gate
+ledger, a dependency graph, readiness, a definition-of-ready lint — and builds only the missing
+mechanics: the worktree lifecycle, the landing order, the verify runner and the state machine.
 
-**Two of those surfaces have already left the list, and the delegation claim above is
-narrower than it reads** [M 2026-08-14]. **Ranking is owned**: `kit/tracker/scheduler.py`
-sits behind `br.read_ranking` and emits `schema: basicly.scheduler.v1` — unblocked only, then
-priority, then descending count of still-live blocking dependents, then id, every term a pure
-function of the graph, with `created_at` dropped because age-based ordering makes dispatch
-order clock-dependent for an unchanged graph. **Harness markers are native**
-(`basicly-s5li`): 89% of the live tracker's comments are `[harness-*]` markers using a beads
-comment purely as transport, and in `owned` mode those twelve families are written and read as
-`comment` events with no `br` spawned at all. What is left is **28 `run_br` call sites across
-12 modules** behind the one seam in `br.py` [M 2026-08-15] — `decompose` 6, `loop` 4,
-`policy` 4, `supervise` 4, `merge` 3, then one each in `classify`, `loop_state`, `cli`,
-`rubrics`, `worktree`, `verify` and `validate_gate`. The repo runs `[tracker] mode = "dual"`
-since 2026-08-15, so every accepted write also lands in the owned ledger through
-`br._mirror_write` — which **raises** rather than logs, so a write surface with no translator
-stops the work instead of diverging the two stores. The owned side is still not authoritative;
-§14.5 and `work-tracker.md` §5 carry the cutover.
+### The work model
 
-**12.4 Gates — deterministic blocks, semantic advises.** Deterministic checks (tests, lint,
-type, build; the existing commit-msg/identity/beads hooks) report a **required** gate via
-`br gate report --status pass|fail`; a failed required gate blocks loop advancement.
-AI-semantic verification reports a **non-required** gate — advisory, never blocking (§3.3
-deterministic-first, semantic-second, applied to the loop). The block-vs-advise policy and
-the n=2 rework rule live in the harness engine; `br gate` only stores the verdicts. Because
-`br gate report` authenticates nothing and a dispatched lane agent shares the real tracker
-through the worktree `.beads` redirect, a **required** gate counts only results carrying the
-engine's own provider (`basicly-verify`, `basicly-rubric` — `config.ENGINE_GATE_PROVIDERS`);
-a foreign result on a required gate is surfaced as _disregarded_ rather than counted, so
-invariant 3 of §1 is enforced rather than left to agent good behaviour. Advisory gates still
-accept any provider. Forging one of those provider strings is still possible: that is the
-same acknowledged class as grant and checkpoint marker forgery, and authenticated gate
-results are the only real fix. A check
-whose repair is purely mechanical and lossless also declares a **`fix_command`** (a
-formatter's write mode): the pre-commit hook applies it to the staged files and re-stages
-them, so the commit carries the fixed bytes and no agent cycle is ever spent re-running a
-repair a script can make. The check itself is unchanged, so unformatted input from outside
-the harness still fails in CI, and a non-mechanical failure (lint, type, test) still blocks.
+A unit of work is classified into a **work class** that is exactly a tracker issue type: bug,
+chore, task, feature, epic. The class selects a **track**, and tracks nest: an epic track runs
+feature tracks, which run task tracks; bug and chore are leaf tracks. There is no separate
+"node" concept — a decomposed leaf is a child issue linked by a dependency edge.
 
-**12.4.1 Declared evidence artifacts.** A gate records a status, not an artifact, so a lane
-could reach ship having recorded a passing verify with nothing on disk to point at — and when
-a landing was later questioned, the evidence was whatever happened to be committed. A phase
-may therefore **declare** a file the engine asserts is present before that phase may report
-success (`basicly-m4zv.13`, adapted from Archon's `evidence_policy.required`):
+The tracker has no rework status, so the rework loop is modelled with gate results and comments
+rather than with a status.
+
+### The state machine
+
+```mermaid
+stateDiagram-v2
+  direction TB
+
+  state "INTAKE<br/>no evidence recorded yet" as intake
+  state "CLASSIFY<br/>decider proposes the work type; the engine<br/>records it and assigns an integrity level" as classify
+  state "DECOMPOSE<br/>decomposer cuts children and the dependency graph" as decompose
+  state "BUILD<br/>implementer, one sibling worktree per lane" as build
+  state "REPAIR<br/>implementer in its second mode:<br/>a dispatch label, not a phase" as repair
+  state "VERIFY<br/>deterministic checks; no persona, by decision" as verify
+  state "VALIDATE<br/>validator drives the gate, reviewer advises once per lens" as validate
+  state "SHIP<br/>tear down, curate the release record, close" as ship
+  state "DONE" as done
+  state "OPERATOR DECISION<br/>the queue a blocked lane waits in" as decision
+  state "RETROSPECTIVE<br/>retrospector on a computed special cause:<br/>not a phase, by decision" as retro
+
+  [*] --> intake
+  intake --> classify : checkpoint classify
+  classify --> decompose : GATE definition of ready, then the decomposer's plan
+  decompose --> build : checkpoint decompose, then GATE the implementation-plan artifact
+  build --> verify : GATE the landing - merge, change-summary artifact, verify run
+  verify --> validate : derived, when an L3 validate gate is outstanding
+  validate --> verify : GATE validate gate recorded green
+  verify --> ship : checkpoint ship - terminal, one-time confirm code, or autonomy grant
+  ship --> done : GATE the worktree must have landed
+  done --> [*]
+
+  build --> repair : verify or the landing failed
+  validate --> repair : the validate gate failed
+  repair --> build : Recycle - capped per gate, and twice that per lane
+  repair --> retro : a rework event beyond three sigma, or a run or a trend
+  repair --> decision : cap spent, or the finding set stalled twice
+  decision --> build : Go - a one-shot gate override, spent at the next landing
+  decision --> repair : Recycle - an additive rework allowance
+  decision --> [*] : Hold - the lane is deferred and stops being dispatchable
+  decision --> done : Kill - a human confirm code at every integrity level
+
+  classDef built fill:#d5efd5,stroke:#2e7d32,color:#000
+  classDef partial fill:#fff2cc,stroke:#e69500,color:#000
+  classDef designed fill:#f0f0f0,stroke:#9e9e9e,color:#000,stroke-dasharray:5 3
+  class intake,classify,decompose,build,verify,validate,done,repair,retro,decision,ship built
+```
+
+**A transition marked GATE is refused by code that computes a verdict. A transition marked
+checkpoint only needs an approval marker to exist, and nothing computes anything.** That
+distinction is the difference between a rule the engine enforces and a rule a human is trusted
+with, and confusing them is the most expensive misreading of this diagram.
+
+**Three things the picture is drawn to make unmissable.**
+
+- **The ladder is not a line.** A green validate gate moves the unit back to verify, which is
+  where the ship checkpoint is taken. Validate is a detour off verify, not a rung between it
+  and ship.
+- **Only one advance merges** — the build-to-verify landing. Neither the ship checkpoint nor the
+  teardown touches git history.
+- **There is exactly one derived transition.** Moving from verify to validate is not an advance
+  at all; it is the phase derivation reading an outstanding gate off the tracker.
+
+### Phase is derived, not stored
+
+The engine keeps no durable phase field anywhere. The phase is a pure function of five values
+read from the tracker: the issue status, the set of approved checkpoint markers, the worktree
+binding, the gate status, and whether the issue has children.
+
+The ladder is read strongest-signal-first:
+
+| Rung | Condition |
+| --- | --- |
+| done | the issue is closed |
+| ship | the ship checkpoint is approved, the node has **landed**, and no validate gate is outstanding |
+| validate | the node has landed and a validate gate is outstanding |
+| verify | the verify gate is green and the node has a worktree binding or children |
+| build | a worktree binding exists |
+| decompose | the decompose checkpoint is approved, or children exist |
+| classify | the classify checkpoint is approved |
+| intake | otherwise |
+
+**The two composite terms carry two incidents' worth of reasoning and must not be simplified.**
+
+*Landed* requires the green verify gate, not just an absent binding. Approving ship before the
+landing — after a transient failure, say — once wedged the phase at ship with no route back to
+the merge, because a bound worktree whose verify gate is not green has not merged. So the ship
+rung demands landing rather than only the checkpoint.
+
+*A missing binding alone is not landed evidence.* A leaf that never built has no binding either,
+and nothing enforces checkpoint ordering, so a ship approval recorded out of order on an
+unstarted leaf once closed an issue with zero work done. **The green required gate is the
+discriminator** — the build-to-verify landing records it, and nothing a never-built node has run
+does.
+
+Both rungs read the **verify gate itself** rather than the aggregate can-advance flag: requiring
+a second gate otherwise dropped a merged node back to build.
+
+**This is exactly why the phases are engine code and deliberately not configuration.** Most rungs
+are mechanical enough to express as data; these two terms are not. In a declarative form they
+become a boolean expression language, and the invariant then lives where the type checker cannot
+see it, the test suite cannot easily target it, and review will not catch a subtle edit. The
+general form is worth stating once because it applies past this decision: **every rule that moves
+from code to data leaves the type checker, the test suite, and code review.** What a consumer
+would plausibly want to vary — required gates, the rework cap, verify checks per mode, autonomy
+levels — is already configuration.
+
+### Phases, checkpoints and advances
+
+The handler set is exactly intake, classify, decompose, build, verify, validate, ship. Done is a
+terminal marker with no handler and no transition out. **Repair and retrospective are not
+phases**; they are dispatch labels, and the reason is given below.
+
+**An advance re-derives the phase, then runs the one handler for it.** The engine's invariant is
+that every advance must either **block** or produce a new tracker signal that moves the derived
+phase. It never announces a move it did not make. Two drivers sit above a single advance: one
+runs until blocked, and one additionally resolves checkpoint blocks through the approval path and
+never mints more than one confirmation challenge per call.
+
+**An advance is refused from a linked worktree for the two phases that write to the base branch.**
+Git refuses to update a branch checked out in another worktree, so blocking cleanly is better than
+stranding a commit.
+
+**Three human checkpoints exist**: classify, decompose, ship. An approval is a comment marker on
+the issue, and it is gated on an interactive terminal — off a terminal, as any tool-invoked shell
+is, the command refuses and issues a one-time confirmation code a human must echo back. **This
+mitigates the shared-identity gap and does not close it**: a fork and its human share one
+operating-system and git identity, so a process deliberately re-running with the code can still
+forge the marker. Authenticated markers would be the real fix; this is honest mitigation, and the
+same acknowledged class covers a forged gate provider.
+
+**The definition-of-ready is emitted rather than discovered.** The required section set is
+derivable from the work type, so a scaffold command prints a body with every required heading
+present and a placeholder under each, and both refusal paths name that command typed for this
+issue instead of only listing what is missing. One composer is the single source, and the engine
+composes the bodies of the children it creates through it, so a bug-typed child carries the
+reproduction section too. The tracker's per-type templates are compiled into its binary and no
+read-only command reports them, so the engine states the set and a test pins it against the
+installed binary.
+
+### Rework, escalation, and the four verbs
+
+**Every gate failure funnels through one function**, which records the attempt, may fire a
+retrospective, judges convergence, checks the lane ceiling, and only then tests the cap.
+
+**The cap is per gate**, matching what the counters already record — verify and validate each get
+their own — with a **lane-wide ceiling** at a multiple of it so a lane cannot grind by alternating
+gates. Below the cap, the loop blocks and writes a **repair brief** into the lane's own worktree
+carrying the gate evidence that rejected the work. At the cap it escalates into the decision
+queue.
+
+**Convergence is judged on the finding set, not the count.** A round whose findings are the same
+set as the previous round is a stall, not progress; the second consecutive stall escalates and
+**refunds** the attempt, because grinding on an unchanging finding set spends the cap without
+changing a variable. A repeated identical merge bounce is stricter — the first repeat escalates.
+
+**A sub-task charges its own record**, so one bad sub-task cannot spend the whole lane's budget.
+
+**Four gate verbs, and all four write.**
+
+| Verb | What it does |
+| --- | --- |
+| Go | a one-shot override of one named gate, spent at the next landing |
+| Recycle | bounded rework in the lane's own worktree, or an additive rework allowance |
+| Hold | defers the lane and records the reason, so the next supervised pass does not dispatch it |
+| Kill | tears the worktree down and closes the issue behind a one-time confirm code |
+
+Hold and Kill were once words an escalation offered that no answer carried out: an operator who
+answered "park" changed no status, and the next pass dispatched the lane again. Both are writes
+today. **Kill requires a human at every integrity level**, because it is the only verb that
+removes a requirement rather than routing work — an agent that can kill what it finds hard has an
+exit from every difficulty.
+
+### VALIDATE is a rung, not a lint
+
+The phase is gated at the recorded L3 integrity level: it refuses its advance on a failed or
+missing consumer gate, dispatches the validator role, and prices that dispatch as a **read**
+rather than a write, so a judge never enters the sample a lane's cost is calibrated from.
+
+**A reviewer fans out beside it, once per lens**, and the lens vocabulary is pinned by a literal
+tripwire rather than by a length check. Both are advisory in a specific structural sense: a
+reviewer records findings under its own marker and **the validator owns the gate**, so the
+no-rerank rule holds by construction rather than by instruction.
+
+**Maintainability is deliberately not a lens.** The linter, the type checker, the dead-code gate,
+the layering contract and the size ratchets bound that axis mechanically, and a lens restating a
+green check is a paid dispatch on every L3 unit.
+
+**The validator's verdict is read off a declared line in its reply, not off its exit code**, and
+**the engine writes the gate, never the agent** — the gate ledger authenticates nothing. No
+verdict line at all leaves the unit in validate rather than advancing it either way.
+
+### Declared evidence artifacts
+
+A gate records a status, not an artifact, so a lane could reach ship having recorded a passing
+verify with nothing on disk to point at. A phase may therefore **declare** a file the engine
+asserts is present before that phase may report success:
 
 ```toml
 [policy.evidence]
 verify = ".basicly/evidence/verify.log"
 ```
 
-**Opt-in, blocking where declared.** Nothing is declared by default, so the mechanism is
-inert until a consumer writes the table, and deleting the line removes the requirement.
-Blocking every phase was rejected as too strict, record-only as toothless.
+**Opt-in, blocking where declared.** Nothing is declared by default, so the mechanism is inert
+until a consumer writes the table, and deleting the line removes the requirement. Blocking every
+phase was rejected as too strict; record-only as toothless.
 
-**Presence only** — the engine stats the artifact and never opens it. Anything more would put
-a parser, a schema and a verdict about content on the deterministic side of §12.4's contract.
-The corollary, stated rather than hidden: an `echo` satisfies this, exactly as a forged
-provider string satisfies a required gate (same acknowledged class). What it buys is that
-"verified" can no longer be claimed with an empty disk behind it. Archon's own completion gate
-is `signalDetected || bashComplete`, which lets a model's self-emitted DONE short-circuit the
-deterministic half; that disjunction is rejected, only the evidence requirement adopted.
+**Presence only.** The engine stats the artifact and never opens it. Anything more would put a
+parser, a schema and a verdict about content on the deterministic side of the gate contract. The
+corollary is stated rather than hidden: an `echo` satisfies this, exactly as a forged provider
+string satisfies a required gate. What it buys is that "verified" can no longer be claimed with an
+empty disk behind it. A comparable design elsewhere lets a model's self-emitted completion signal
+short-circuit the deterministic half; that disjunction is rejected and only the evidence
+requirement adopted.
 
-The check is a precondition on **leaving** a phase, so it is decided before the phase handler
-runs and a refusal has spent nothing — the work type is not recorded, the merge is not
-attempted. `build` is the exception in placement only: a lane's sub-task steps stay inside
-`build` and are what produce a build artifact, so checking them would deadlock the lane on its
-own evidence; its check sits at the single build→verify funnel (`loop._verify_and_land`, before
-the merge) and resolves the path against the **lane's worktree**, since that is where the
-build's evidence is produced. Everything fails closed: an empty declaration, a path escaping
-the checkout, a directory, and a misspelled phase name all refuse rather than degrade to "no
-requirement" — a gate the operator believes is on and that never fires is the exact failure
-this removes, so a typo refuses _every_ phase and names the key to fix. A satisfied path is
-recorded on the bead as a `[harness-policy] evidence` marker before the transition runs, so it
-travels with the tracker export (`br` comments) rather than landing after ship's own commit.
-`verify` streams its output to the terminal and captures nothing today, so a producer for it is
-tracked separately (`basicly-m0s4`); this is the mechanism, not its first user.
+**The check is a precondition on leaving a phase**, decided before the handler runs, so a refusal
+has spent nothing. Build is the exception in placement only: a lane's sub-task steps stay inside
+build and are what produce a build artifact, so checking on entry would deadlock the lane on its
+own evidence. Its check sits at the single build-to-verify funnel, before the merge, and resolves
+the path against the **lane's worktree**.
 
-**12.5 Work isolation.** Non-trivial work runs in a **sibling** git worktree
-`<repo>.worktrees/<name>` on branch `harness/<name>` (never in-repo `.claude/worktrees/`,
-which pollutes basicly's own tree-walk and provisions no deps). Creating a worktree provisions
-its toolchain (`uv sync`, `npm install`) and installs the gates (`pre-commit install`) — a
-worktree without the toolchain runs _no_ gates, the exact failure that once let unguarded
-commits through. Trivial mechanical work goes straight to the source branch. Cleanup
-(`git worktree remove` + delete the merged branch) runs immediately after a node lands;
-copy-mode deps make removal safe.
+**Everything fails closed.** An empty declaration, a path escaping the checkout, a directory, and
+a misspelled phase name all refuse rather than degrading to "no requirement" — a gate the operator
+believes is on and that never fires is the exact failure this removes, so a typo refuses *every*
+phase and names the key to fix.
 
-**12.6 Merge model.** Parallelism is **parallel-build, serial-merge**: nodes build
-concurrently in their worktrees but land one at a time through a **merge queue** in dependency
-(topological) order, owned by a **merge orchestrator**, re-verifying after each merge. The
-**decomposer** marks nodes parallel-safe only when it can predict **file-disjoint** scopes;
-when it cannot, it emits a fixed serial order. A **conflict-resolver** (agent + scripts +
-skills) handles residual conflicts under the same n=2→human rule. Tracker state
-(`.beads/issues.jsonl`) is reconciled with **`br sync --merge`** (a 3-way merge; `br` has no
-git merge-driver, unlike `bd`), never by hand-editing JSONL conflict markers. Git refuses to
-update a branch checked out in another worktree, so the merge/ship transitions must run from
-the **base checkout**; `advance` refuses the `build` and `ship` phases when invoked from a
-linked worktree (git-dir ≠ git-common-dir), blocking cleanly rather than stranding a commit.
+### RETROSPECTIVE fires on a special cause, and is deliberately not a phase
 
-The declared scope those disjointness claims rest on is **verified at the landing, not trusted
-from the plan** (`basicly-jr0l.44`). `decompose` reads a child's `## Scope` globs to group and
-size the plan and then never looks again, so a wrong or stale declaration used to surface only
-later and indirectly — as a merge-queue conflict, after two lanes had already done work that
-fights. The build→verify funnel (`loop._scope_block`, beside the evidence check and likewise
-before the merge, so a refusal spends nothing) diffs the lane against its merge base
-(`merge.branch_changed_paths`, three-dot, so a base that moved on is not counted as the lane's
-work) and holds the result against the declaration. Two outcomes, and only one refuses:
+A retrospective reads the gate-failure ledger and fires only on a **computed** signal: a point
+beyond three sigma, or a non-random run or trend within the limits. A single failure inside the
+limits is common cause and fires nothing, because acting on it is tampering, which increases the
+variation of a stable process. **This is the first mechanism in the harness that decides to
+suppress work**, and it is a correction to this repository's own practice of filing an issue off
+every single occurrence.
 
-- **Every** out-of-scope path is recorded on the bead as a `[harness-policy] scope-violation`
-  marker — evidence about the _plan_, travelling with the tracker export like the rest (§12.4),
-  and written whatever the policy then decides.
-- A path that also falls inside **another live lane's** declared scope is the case that
-  actually produces the conflict, and `[policy] scope_collision` decides it deterministically:
-  `block` (default) refuses and names the lane that declared that ground, `warn` lands on the
-  finding. Blocking the non-collision case too would turn every legitimately incomplete
-  agent-authored plan into a rework cycle, which costs more than the finding is worth.
+**It is not a phase because a state exists to hold three things** — an entry predicate, an exit
+gate and a persona — and a conditional process over a ledger needs none of them. Adding a rung
+that never blocks anything would be ceremony around a function call. The dispatch is recorded
+under a retrospective label for role resolution and cost attribution only, outside the write-phase
+set.
 
-"Live" is the worktree session records on disk, not the tracker export: the `worktree:` binding
-is written with `br update --external-ref` and is not flushed to `issues.jsonl` until the next
-tracker commit, so a freshly provisioned lane — the one most likely to be mid-edit — would be
-invisible there. Engine-owned paths (`.beads/`) are never out of scope, for the reason
-`merge.coupled_lanes` excludes them: the harness rewrites the tracker on every landing. A bead
-with no readable `## Scope` — anything not created by `decompose` — is not checked at all,
-because it contradicts no plan.
+**One arithmetic trap is fixed in the implementation and is worth stating because the naive form
+looks right**: a c-chart's control limit falls below one at low mean failure counts, so raw
+arithmetic flags every isolated failure, at roughly thirty-six times the rate a three-sigma tail
+admits. The limit is floored at two.
 
-**12.6.1 Zero-touch tracker state.** Every loop-provisioned worktree shares the base
-checkout's tracker via `br`'s git-ignored `.beads/redirect` file (written at provisioning;
-the `beads-commit-msg` hook follows it too), so `br` reads/writes from any checkout hit the
-one real DB/JSONL and there is no divergent copy to reconcile. The engine owns the tracker
-commits at three points: provisioning commits the claim (so teammates who pull see it from
-the moment work starts), the landing advance rolls accumulated `.beads/**` dirt in base into
-one `chore(beads)` commit before merging (non-beads dirt still blocks), and ship commits the
-close after `br close`. Agents never stage `.beads/` for loop-tracked work, and CI ignores
-`.beads/**`-only pushes (the commit-msg hooks are the deterministic floor). A
-redirect-capable `br` is a hard requirement of worktree tracker sharing (`br` 0.2.16 is the
-known-good floor): a `br` that ignores the file would silently run a divergent tracker, so
-provisioning probes `br where --json` from the new worktree and aborts with upgrade guidance
-when the answer is not the base `.beads`.
-
-**12.6.2 Owned vs shared scope.** Grouping is the transitive closure of scope overlap, so a
-single path several children declare made every one of them overlap every other and collapsed a
-wholly parallel plan into one serial chain — worst for the most honest plan, because a careful
-author is _more_ likely to declare the manifest they will touch (basicly-jr0l.45). A child may
-therefore list part of its `scope` as `shared`: paths it touches but does not own, and overlap
-through a path **both** sides declared shared does not serialize them (ccpm's designated-owner
-rule, read from the other side — one child _owning_ the path still blocks everyone who touches
-it). The escape hatch is deliberately narrow so no agent-authored plan can use it to hide a real
-collision: an entry must appear verbatim in `scope` (the recorded `## Scope` stays the whole truth
-for read-cost sizing and merge attribution) and must be one literal path, never a glob, so no
-subtree can be exempted behind a wildcard. Independently of the declaration, every decompose
-surface **names the load-bearing path**: `decompose.collapsing_paths` reports each declared glob
-whose removal would leave the plan in more groups, marking the ones a `shared` declaration already
-defused — the original failure was silent, and a serial chain with no stated reason is the reason
-nobody made the one-line fix.
-
-**12.7 State & resumability.** `br` is the single source of truth — the harness keeps no
-durable side-state. In-flight worktree/branch bindings are stashed on the issue via
-`br update --external-ref`; design/architecture constraints ride _down_ a dependency tree via
-`br`'s inheritable `--agent-context`. Resume (after a crash, or when switching agents because
-one is rate-limited) is re-reading `br`: in-progress issues + their external-ref + recorded
-gate results + the ready set, reconciled against live worktrees. This is what makes the loop
-cross-agent — start on Claude, resume on Codex or Copilot.
-
-**12.8 Agent-agnostic runner.** Each agent drives the _same_ loop through a thin **runner**
-adapter (invocation command, headless flags, prompt injection, output capture), selected by
-capability detection or an explicit flag. The loop logic is agent-neutral; only the runner
-differs per agent. Detection (`auto`) walks the big 3 in order (claude → codex → copilot),
-selecting the first that is both on `PATH` and **capability-probed** (`basicly-bveo`): the
-binary is run with `--help` and auto-selection skips it if the probe positively shows its
-assumed headless flag (`-p`, `exec`) is gone — a dropped/renamed flag no longer gets picked
-and then fails at dispatch. The probe is conservative (a probe that cannot run assumes
-capable, so a flaky probe never false-skips a working agent) and never gates an _explicit_
-choice; `runner list` surfaces each runner's PATH + capability. Any other agent is supported
-by an explicit `[[runner.agents]]` command template in `basicly.toml`. A runner may pin an
-optional **`model`** (`[[runner.agents]] model = "opus"`): the invocation seam folds it into
-the command — substituting a `{model}` placeholder when the template has one (the escape hatch
-for an agent whose flag is not `--model`), otherwise injecting `--model <value>` right after
-the binary; no model leaves the argv unchanged. Preferred over a pinned id is a portable
-**`tier`** (`low`/`medium`/`high`/`maximum`), resolved at dispatch through the committed map
-(§4.2) into the one spelling the target surface accepts — `claude-haiku-4-5` on the Anthropic
-surface, `claude-haiku-4.5` on Copilot's — with `[runner] default_tier` applied to any spec
-declaring none. Resolution is most-specific-first (`model` pin → `tier` → default) and it
-**refuses before spawning** when the tier resolves to nothing, naming the agent and the config
-key, because silently running on another tier's model is the failure the map's keyless
-`unavailable` cells exist to prevent. A tier aimed at a family that cannot pin one at all — the
-`manual` handoff — is recorded as _not honoured_ rather than as satisfied. The run record keeps
-the provenance, not just the id: the tier, which input decided it, and the model the adapter
-reported it **actually** used, which is measured per family rather than assumed (claude names it
-three ways and keys `modelUsage` by the dated build while carrying the short `canonicalModel`;
-copilot names it in its session store's `modelMetrics` keys and one dispatch may list several;
-codex 0.146.0 names it nowhere, so codex is recorded as _unobserved_ instead of assumed to
-match). This is model/agent-property _awareness at the invocation seam_, not a token-level
-inference client — per-track model choice stays out of scope. There is no cross-agent CLI invocation standard, so an unknown agent's command is
-**never guessed** — when
-nothing matches, selection falls back to a **`manual` handoff runner** that shells out to
-nothing and instead surfaces the exact prompt + worktree path,
-deferring to the loop's block-and-resume contract and the one thing that _is_ standardized
-across agents: the projected `AGENTS.md` guidance. `basicly runner dry-run` prints the exact
-command an adapter would execute so it can be verified before any live invocation.
-`loop advance` on a ready leaf provisions the worktree
-and dispatches the selected runner headless inside it with an agent-neutral prompt (bead id +
-`AGENTS.md` + `br show`; merging/pushing/closing stays with the loop), then blocks with the
-run outcome; the `manual` handoff runner keeps the block-and-resume contract untouched, and a
-failed run blocks with the runner name and exit code. Each dispatch also writes a
-metadata-only **run-record** keyed by bead id into the self-ignored `.basicly/usage/`
-(`run_record.py`, same atomic tmp-write pattern as `tool-usage`): wall-clock duration, exit
-outcome (executed/handoff/failed), agent, the pinned model when the runner sets one, and
-token/cost telemetry (`basicly-kjc5.1`, factory design §7.5). For telemetry, a loop dispatch
-appends the adapter's usage-report flags (claude `--output-format stream-json --verbose`, codex `--json`;
-opt-in per call site, because they wrap stdout in an envelope — a consumer that parses the
-agent's answer reads it back through `runner.result_text`, which inverts the envelope, and the
-two CLI passthroughs — `basicly review` and `basicly runner run` — stay unflagged because they
-print the reply for a human rather than metering it) and `runner.extract_usage` parses reported
-tokens/cost from the captured output;
-when the output does not parse, it falls back to a chars/4 transcript estimate flagged
-`estimated` so calibration can down-weight it. Copilot is metered **out of band**
-(`basicly-2rn9`): it reports nothing usable on stdout, but each dispatch's per-model token
-split and AI-credit spend land on the terminating `session.shutdown` event of its own session
-store (probed 1.0.75), so a metered dispatch supplies the new session's UUID with
-`--session-id` and the reader joins on it — which measures real tokens _and_ leaves stdout
-plain text, so this is the one arm an answer-parsing consumer needs no inversion on. An
-absent or unreadable store
-takes the same flagged estimate, so a measurement that could not be made is never reported as
-one that was. `[runner] copilot_session_store` moves the base directory (default
-`~/.copilot/session-state`); it lives in `[runner]` rather than `[paths]` because only the
-harness sections read the gitignored `basicly.local.toml`, which is where a machine-specific
-store path belongs. Token counts are recorded both as the summed `tokens` total every consumer
-already reads and, where an adapter reports the breakdown, as a provider-neutral
-input/output/cache-read/cache-write/reasoning split; AI credits get their own `credits` field
-rather than `cost`, which stays USD. A `[[runner.agents]]` override sets `usage_format`
-(`claude-stream-json`/`claude-json`/`codex-jsonl`/`copilot-session-store`) to keep exact
-extraction on a custom command. The claude default is the **streaming** envelope because it is the only one carrying
-per-turn usage: `runner.context_occupancy` reads the last assistant turn for the D8
-context-ceiling meter, while the stream's terminating result event still supplies the
-cumulative cost view (`basicly-kjc5.14`). A consumer pinning `claude-json` keeps exact cost
-telemetry and an inert ceiling. Only metadata is persisted — the command is stored with the prompt argument
-elided, never the prompt body or captured output. This is the correlation foundation for
-agent attribution, model provenance, and the cross-repo fleet rollup.
-
-An estimated sample is good enough to calibrate against and **not** good enough to meter a
-grant with, so `policy.session_spend` keeps the two apart (`basicly-jr0l.35`). The chars/4
-fallback counts the captured output only — never the prompt, the system prompt, the tool
-definitions or cache writes, which is where nearly all of an agentic dispatch's tokens are —
-so it is a floor far below reality rather than the conservative over-count a ceiling needs:
-measured on a live copilot probe, 5514 bytes of stdout estimated 1378 tokens against 24210
-real input tokens, 17.6x under, and with plain-text output the captured answer was two
-characters. Counted at face value it therefore _bought_ budget. There is no honest multiplier
-to inflate it by either, so the ceiling errs the only way a ceiling may: a session that took a
-dispatch its adapter could not meter is **halted** with the reason surfaced (`spend_status`
-detail, its own decision-queue question, and the `loop preflight` verdict), and
-`remaining_tokens` reads 0 because what is left is unknown rather than free. The count of
-unmeterable dispatches is baselined on the grant marker exactly as spend is, so re-granting —
-the human seeing the reason and accepting it — clears the halt, and any adapter with no usage
-format inherits the refusal rather than a silent under-count.
-
-**12.8.1 The forecast lands on the record its actual lands on** (`basicly-jr0l.34`). A dispatch
-records its **working-set forecast, task class and forecast source** alongside the scope
-read-cost it already froze, so one record carries the estimate and the outcome it produced.
-Before this they were written to disjoint classes of record — the governor froze an estimate on
-a _feature_ at decompose while tokens landed on a run record whose `forecast_tokens` field had
-no writer at all (measured non-null on **zero** of 149 records) — so the forecast error, which
-is the entire learning signal the spend forecast (`basicly-jr0l.21`) calibrates against, had
-never once been computable. `decompose.dispatch_sizing` resolves it: the estimate frozen for
-this content wins where one exists (marked `frozen`, evidence of prediction skill), otherwise
-the same formula is applied at dispatch (marked `dispatch`) — a distinction recorded rather than
-averaged away. A bead with no readable `## Scope` gets **no** forecast, because a forecast
-against an unknown scope is an invented number.
-
-`basicly usage forecast` reads the pair back, over local records **and** the committed
-`[harness-run]` markers, so a fresh clone computes the same error a teammate measured. It
-**refuses to compute an error for a record missing either half** — a forecast with no actual is
-a handoff or a killed run, an actual with no forecast is an un-sized helper dispatch — and
-reports those as unpaired counts instead, so an empty report says _why_ it is empty rather than
-looking like a passing calibration. Two things the report states, because misreading either is
-expensive: the ratio is **actual spend over forecast working set**, and since an agentic loop
-re-sends its context every turn it carries the turn multiplier (which nothing models yet) as
-well as any estimator error; and the summary is a **median**, because the measured misses span
-160x-420x and one such sample would drag a mean somewhere no dispatch has ever been.
-
-The pair the ratio above is computed from spans **two quantities**, and a dispatch now records
-the same-unit one beside it (`basicly-tcmy.34`). `forecast_spend_tokens` is what
-`decompose.forecast_spend` predicts and what `supervise.admit_pass_spend` already refuses a pass
-on — whole-lane spend, which is what `tokens` meters — so the forecast a completed lane can be
-held to no longer has to be the one denominated in context. Both halves stay, because each has an
-actual of its own (`forecast_tokens` against `context_tokens`, `forecast_spend_tokens` against
-`tokens`) and the turn multiplier is measured from the cross-unit ratio. The assumed bound an
-unsizeable lane is gated at (§12.8) records on the spend field for the same reason: it is a
-quantile of measured lane actuals, and in the working-set slot it paired at ~1x — a forecast that
-looked perfect while predicting the wrong quantity.
-
-`decompose.spend_accuracy` holds every _bead_ to its spend forecast, and `basicly usage forecast`
-reports the verdict under the table: **one order of magnitude either way**, because
-under-forecasting spends money no grant admitted and over-forecasting refuses a pass that would
-have fitted. The unit is the bead because `forecast_spend_tokens` is derived from the bead's
-scope, so every dispatch of one bead records the identical number and each attempt after the
-first would otherwise be scored against a forecast covering work an earlier attempt already did —
-`basicly-u2hl.14`'s third dispatch read as 0.057x against a lane that came in at 1.31x. A bead's
-attempts are therefore summed and the count reported, which is also the unit a grant is minted
-in. It binds on the history that already exists rather than only on records written from now on —
-an older record's working set is converted by today's calibration through the one converter
-`forecast_spend` uses — and on this repo's committed ledger the 60 comparable lanes come in at
-0.19x-6.37x (median 0.97x) where the cross-unit comparison of the same records reads 64x-793x. A record whose recorded working set the band itself would refuse
-cannot be converted and is **named** rather than skipped: one exists, carrying a factor of ~193
-from the spend-derived calibration `basicly-z2wi` deleted, and a population quietly shrunk by a
-filter is how `basicly-ipx2` committed a false claim.
-
-**12.8.2 One named phase set, and a factor that says it was declared** (`basicly-tcmy.5`).
-Every dispatch records a **phase**, and the write phases — the interactive `build`
-(`loop._run_agent`) and the supervised `lane` (`supervise._dispatch_lane`) — are one named set
-(`run_record.WRITE_PHASES`, tested through `run_record.is_write_phase`). They are the same kind
-of work, so both consumers of the phase read the same definition: the unsizeable-lane bound
-(§12.8) counts a write dispatch from either path, and the spend calibration samples only write
-dispatches, so a rubric judge (`validate`) or the decider (`decide`) can never contribute a
-helper's spend to a lane's ratio. The two filtered oppositely before this — the bound required
-`lane` alone, so on this repo's own history it measured 24 of 32 metered write dispatches and
-bounded a lane at 15245717 tokens where the whole population gives 15830484, while the
-calibration filtered on no phase at all. A record whose phase was never written is excluded from
-both: unknown provenance fails closed.
-
-The same record now also carries **where its build factor came from** (`seed` from
-`DEFAULT_BUILD_FACTOR_SEEDS`, or `configured` from `[policy.sizing.build_factor]`). Nothing
-measures a working-set factor — the calibration that appeared to was measuring whole-lane spend,
-a different quantity, and was removed (`basicly-z2wi`) — so every forecast is a declared constant
-times a scope read-cost, and the record says so on the same rule its siblings already follow
-(`forecast_source`, `SpendCalibration`, the bound's `measured`/`seed`). `basicly loop preflight`
-reports both: the per-class paired-sample counts against `calibration_min_samples` with the
-verdict they add up to, and whether any build factor is anything but a seed — so an operator
-minting a budget from the forecast learns it rests on a prior before the money is granted, rather
-than by reading source.
-
-**12.8.3 The parameters in force, held against the outcomes they produced** (`basicly-3ifz.1`).
-Almost every number governing the factory is set by judgment and then never revisited.
-`basicly usage tuning` (`tuning.py`) is the readable half of the feedback loop the exceptions
-already have: it reads the dispatch ledger from **both** corpora — the self-ignored local run
-records and the committed `[harness-run]` markers, deduplicated on (bead, timestamp) so a
-dispatch recorded in both is one sample labelled `both` — and reports, per governed parameter,
-the value in force for the dispatches it summarises, the outcome distribution under that value,
-and a recommendation with its sample size.
-
-Three rules keep it from becoming another declared number:
-
-- **It writes nothing.** Deterministic checks block, judged checks advise, the engine disposes;
-  a tuner proposes a `basicly.toml` change and a human or a gate applies it. Nothing in the read
-  path opens a file for writing.
-- **A seed never reads as a measurement.** At or above `[policy.sizing] calibration_min_samples`
-  the recommendation is the statistic over the newest `calibration_window` observations, labelled
-  `measured`. Below it the **declared prior** stands, labelled `seeded`, and the row names the
-  in-force value it would displace — deliberately not a number fitted to three samples, which
-  would still be read as a measurement whatever the label said. The prior is read from the config
-  loader's own dataclass fallback rather than copied, so it cannot drift from the value actually
-  in force. Same discipline as `run_record.SpendCalibration`, one layer down.
-- **A parameter nothing measures still prints**, with a sample size of zero, no recommendation
-  and the reason it has none. `stall_after`, `quiet_after`, `max_agent_processes`,
-  `[worktree] concurrency`, `max_subtasks_per_lane`, `decider_max_decisions` and the two
-  calibration bounds are all in that state today: a bound nothing records is a bound nobody can
-  tighten, and omitting the row makes "no evidence exists" look exactly like "this is fine".
-
-The statistics split by what being wrong costs. A **backstop** (`runner_timeout`,
-`context_ceiling`) fires on work already in progress and destroys it, so it is read from the
-worst observed run with headroom rather than from a quantile — calibrating `runner_timeout`
-against the work distribution is what had it killing working lanes (`basicly-lpsf`). A **band**
-(`working_set_min`/`working_set_max`) refuses a package, and both refusals are recoverable — merge
-with a sibling, or split into more top-level packages — so it is read at the quantiles of what
-really happened. `max_rework` is write dispatches per bead at the ceiling quantile less the first
-attempt, which is not rework. The per-class **build factors** are fitted to measured
-`context_tokens` over declared `scope_tokens` — the working set the factor predicts — and never to
-spend, which is working set times a turn count nothing models (§12.8.2, `basicly-z2wi`).
-
-A session override is the one per-dispatch record of a parameter's value (`config_overrides`), so
-dispatches run under one form their own **cohort** with their own outcome distribution; pooling
-them would report outcomes under a value that never governed half of them.
-
-**12.8.4 A lane's spend split into acquisition and implementation** (`basicly-ejdm.2`).
-`basicly-ejdm` claims a lane's multi-million-token floor is bought by the dispatch
-instruction rather than by the work. That claim had **no instrument behind it**, so its
-remedy could not have been judged — which is why the ordering is `.1` record the tools,
-`.2` derive the split, `.3` brief the lane, `.4` measure, and only `.4` is a claim.
-`basicly usage lane-split` (`lane_split.py`) is `.2`.
-
-**The pairing rule is the whole arithmetic, and two naive versions measure the wrong
-thing.** A `tool_use` turn's usage is the cost of _emitting_ the call; the tool's result
-lands in the **next turn that carries usage**. So summing tokens on the turns that called
-the tools counts the request and misses the answer — and pairing against the immediately
-preceding _line_ fails too, because a real transcript forwards the tool result as a `user`
-event carrying no usage, which sits between the call and its answer. That second version
-was written first here and attributed a real captured lane **100% to unattributed**, a
-confident figure measuring nothing; the demonstration caught it, not the unit tests. A
-turn's tokens are attributed to the last tools emitted before it, and a turn with none is
-unattributed rather than guessed at.
-
-**Three things it refuses to guess.** A tool that is neither read nor write is
-`unclassified`, not bucketed — `Bash` runs `git status` and `mv` alike, and a majority
-rule over a mixed turn would put a guess inside the number the remedy is judged by. A
-transcript written before `basicly-ejdm.1` added the tool field is **unclassifiable**
-rather than fully implementation, because absent is unknown and `[]` is "called nothing".
-And a lane with no transcript is reported as missing rather than as a zero split.
-
-**Shares lead, tokens follow, and the report says why.** Per-turn stream usage
-over-reports against the run record by **1.46x-1.79x** [M 2026-08-13, four lanes], so a
-stream-derived absolute is in a different denomination from the grant it would be
-compared against — a mixture that has already cost this repo a lane. The report also
-states that it is **claude-only**: no other family emits the per-tool event it reads,
-which matches a ledger holding only claude and manual dispatches.
-
-**Fleet rollup (`basicly-h0f0`).** `basicly status --fleet [--root PATH]` (`fleet.py`) is the
-cross-repo view dimension 3 calls for: it discovers the basicly-installed repos under a workspace
-root (immediate subdirs carrying a `.basicly/` dir; default root = the parent of the current repo)
-and rolls up, per repo, the single-repo `status` snapshot plus a run-record summary (total runs,
-counts by outcome, distinct agents/models) into one versioned JSON payload with fleet totals.
-Read-only and resilient by construction: it writes nothing, and a repo whose snapshot raises is
-captured as an `error` entry rather than failing the rollup — the command always exits 0. The
-per-repo snapshot is produced **in-process** by the current engine (the `status_fn` the CLI
-injects, so `fleet.py` never imports the CLI); each repo's payload still carries its own
-`installed_version` vs `engine_version`, so version skew across the fleet stays visible. A
-human-formatted table and a subprocess-per-repo model (each repo reporting via its own pinned
-basicly) are out of scope — this is JSON-first and single-engine.
-
-**Health scoring and behavioral drift (`basicly-y886`).** `basicly health` (`health.py`) turns
-the run-record log into a per-agent health signal and a drift check. The signal source is
-run-records _only_, by necessity: `br` gate results overwrite (no history, §12.7), so gate
-pass/fail over time is not queryable — but a failed dispatch is a `failed` run and a rework
-re-dispatch appends another record for the same bead, so the append-only log is a durable proxy
-for the gate-fail + rework signal. Per agent it reports the dispatch failure rate (handoffs
-excluded — they carry no outcome), a rework signal (beads the agent re-dispatched), and a bounded
-`health_score` in `[0, 1]` where failure dominates and rework is a multiplicative drag. Drift is a
-**rolling baseline read off the log's own timestamps**, not a stored snapshot: an agent's most
-recent `--window` dispatched runs are compared against everything older, and a behavioral
-regression is flagged when the recent failure rate exceeds the baseline by a fixed delta with a
-minimum sample size in each window. `--fleet [--root PATH]` rolls the per-repo report across the
-housed repos (reusing `fleet.discover_repos`). Everything is read-only, deterministic (no
-wall-clock enters the payload), and advisory — nothing gates on a score; a token/cost health
-dimension over the now-populated run-record telemetry (`basicly-kjc5.1`) and a persisted
-time-series/charting layer are out of scope.
-
-**Structured needs-input outcome (`basicly-o774`, D5/D6 convergence).** The stop-instead-of-guess
-policy used to be soft prose in the `knowledge-priming`/`decision-protocol` fragments the model
-could ignore; this makes it a first-class loop outcome. When a dispatched headless agent cannot
-resolve a required fact it writes a small sentinel — `.basicly/usage/needs-input.json`
-(`{"fact", "detail"}`) — into its worktree and stops without committing a guess. After a clean
-(exit 0) dispatch the loop reads the sentinel (`needs_input.take`), maps it to the existing
-block-and-resume contract (`_blocked(..., needs_input=<fact>)`), and **does not land** — the
-missing fact is surfaced by `loop advance`/`status` like any other block. The sentinel is
-consumed on read (valid or malformed) so a re-dispatch, once the fact is supplied, starts clean;
-a missing sentinel is exactly today's "advance again to land it". A file — not a stdout marker —
-carries the signal so it survives output redaction/truncation and needs no cross-agent output
-convention. Scope is the headless path; the `manual` handoff runner is unchanged (the driver
-already surfaces missing facts), and a manual-driver CLI is out of scope. The protocol is
-projected into the dispatch prompt and the `harness-loop` fragment so agents know the contract.
-
-**Output redaction and egress (`basicly-3p2i`).** Captured stdout/stderr is redacted at the
-source before it enters a `RunResult`: high-signal secret shapes (private-key headers, provider
-tokens, secret-named assignments — the sibling pattern set of the `secret-scan` hook, `redact.py`)
-are replaced with a labeled placeholder, so no surface (CLI print, loop log) leaks a credential
-an agent echoed. Network egress is _not_ sandboxed by basicly — it cannot portably restrict a
-generic subprocess; egress control is delegated to the agent-layer sandbox (Codex `sandbox_mode`,
-`basicly-t0kt`; Claude/Copilot config).
-
-**Attribution (`basicly-140a`).** At landing the loop reads the bead's latest run-record
-and stamps the dispatched runner into the audit trail: the `--no-ff` merge commit carries
-`Harness-Runner: <agent>` and (when the run pinned one) `Harness-Model: <model>` git
-trailers, and the recorded verify gate carries the agent as its `br gate report --actor`.
-So history and the gate ledger distinguish which agent produced a landing instead of
-collapsing onto the one human git identity. It is best-effort and non-fatal: with no
-run-record the merge message and gate are unchanged.
-
-**Bot identity and the trust model (`basicly-smzg`).** Attribution above is a _trailer_ on
-commits still authored by the human git identity. A runner may go further and commit _as_ a
-bot: an `[[runner.agents]]` entry may pin an optional **`git_name` + `git_email`** (both keys
-or neither — the config parser rejects a lone half). When set, the dispatch seam overlays
-`GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL`/`GIT_COMMITTER_NAME`/`GIT_COMMITTER_EMAIL` on the agent's
-inherited environment (`runner.git_identity_env`), so commits the agent makes in its worktree
-read as the bot for both author and committer. It is opt-in and backward-compatible: no
-identity configured leaves the child environment untouched. This does **not** relax any gate:
-`identity-guard` validates the _effective_ identity git will actually stamp — it resolves the
-author and committer via `git var GIT_AUTHOR_IDENT`/`GIT_COMMITTER_IDENT` (env-first, then
-config), so a bot email must satisfy `basicly.identityAllowEmail` exactly as a human's would
-(a disallowed bot email is blocked). Validating config alone would have missed the override,
-since the env vars change what history records without touching config. The **append-only
-tamper-evidence trust model** is the layering of the existing controls, not new enforcement:
-the per-repo `identity-guard` gate bounds _who_ a commit may claim to be, and optional commit
-signing (`git config commit.gpgsign true` + a `user.signingkey`) makes each commit
-tamper-evident — with the permissions deny-list forbidding `--no-verify`/`--no-gpg-sign` as the
-floor so the gates cannot be skipped. basicly does not _force_ signing (key management is
-per-machine and out of a portable catalog's reach); it documents enabling it and guarantees
-that once enabled it cannot be bypassed through the harness.
-
-**12.9 Ship.** Ship is parameterized by the entry branch recorded at Intake: default → merge
-to `main` + push `main` (no feature branches on the remote); if the entry branch is a feature
-branch → merge to it, push, open a PR to `main`. Delivery is incremental per feature; teardown
-follows each feature's merge.
-
-**12.10 Reuse & positioning.** basicly's harness is a lean, clean-room, `br`-substrate-native,
-agent-agnostic re-founding of the same goal as an earlier private harness (a lefthook/pinned-pack,
-tracker-abstracted first attempt): borrow that battle-tested
-worktree/merge know-how (copy-mode deps, `git merge-tree` pre-flight probe, mode-aware
-cleanup) as a reference, while keeping the **`br`-wrapping engine + agent-agnostic projection +
-installable composable distribution** as the differentiators. From beads-blueprint, adapt
-the `validate.py` gate-runner structure into the verify runner. `bv` (beads-viewer) is an
-**optional human viewer only** — redundant with `br scheduler` at runtime, never a harness
-dependency. Measured over 1,568 recorded invocations, **0 of `bv`'s 141 surfaces** have ever
-been called programmatically, which is what makes it a viewer rather than a dependency.
-
-**12.11 The role map — a phase resolves to a named agent.** For two days this section could
-have read "the projection works and nothing consumes it": twelve agent sources were authored,
-rendered into both agent roots and vendored to consumers, and every dispatch ended at a bare
-`claude -p <prompt>`. That is closed. `roles.resolve_role` maps a phase to a role by **table
-lookup** and the runner puts `--agent <role>` on the argv, verified against claude 2.1.226 and
-copilot 1.0.78 rather than recalled.
-
-Two tables, because the state table gives VALIDATE two roles. `ROLE_BY_PHASE` names the role
-that **drives** a phase — the one whose reply the engine acts on — and `LENS_ROLE_BY_PHASE`
-the one it fans out beside it (§12.2.1). Three properties are decisions rather than
-implementation detail:
-
-- **The map is data, not judgment.** The choice is not gameable, costs no tokens and cannot
-  drift between lanes.
-- **A role that is not projected resolves to nothing**, and the dispatch falls back to the
-  default runner rather than failing. The check is against the **projected** file, not the
-  catalog source, because that is what the host reads — so a consumer on an older install gets
-  an unspecialised loop instead of a stopped one. Resolution also fails to `None` for a phase
-  with no persona (VERIFY, by decision) and for a family that cannot select one (codex ships
-  no subagent root).
-- **Repair is the implementer's second state, not a role.** A persona is admitted only when it
-  differs in tier, tools or artifact; repair differs in none of them, only in prompt. So REPAIR
-  maps to `implementer` too and the mode travels in the brief, carrying the gate evidence that
-  rejected the work.
-
-Three `resolve_role` call sites reach an argv: `loop.py:818` (`_run_agent` — validate, build,
-repair, sub-task build), `loop.py:1062` (`_run_proposer` — classify, decompose) and
-`supervise.py:2679` (lane build). **Six of the seven loop roles are reachable today** —
-`decider`, `decomposer`, `implementer`, `validator`, `reviewer`, and `retrospector` once its
-trigger landed (§12.13). `curator` is the one that is not, and its cause is one wiring rather
-than a design gap: it maps to `ship`, which is a live phase with a live handler that never
-calls `_run_agent`.
-
-**The ledger could not falsify any of this until the record learned to copy the argv**
-(`basicly-jn1x`). Measured 2026-08-14: **0 of 357 dispatch records carry `--agent`**, against a
-positive control of 163 carrying `-p`. The record _re-derived_ its command from the spec rather
-than copying what ran, so it was wrong in both directions at once — it omitted the role flag the
-lane passes, and it appended usage flags the decider's argv never had. A record that can be
-wrong both ways is not evidence, and neither error is visible from the record itself.
-`record_dispatch` now copies `result.command` with the dispatched prompt elided by equality,
-recording no argv at all when the prompt is unknown rather than publishing one.
-
-**That builds the instrument; it does not supply the reading.** The 357 historical records are
-unchanged and still name no role, so a before/after measurement of role injection begins with the
-next supervised pass. Until one runs, read §12.11 as a statement about reachable wiring, never
-about observed dispatch.
-
-Every role declares a **tier**, and `catalog lint` refuses a source that does not
-(`basicly-plhx`). No projected agent file carries a provider model id — a projected `model:`
-line would _disable_ tier injection rather than implement it — so the tier is declared, gated
-and, until `basicly-a3yi` lands the injection, **inert at spawn** (§14.2). A role's declared
-`skills:` do reach the agent dispatched for it (`basicly-ey58`), measured at ~0.03% of a lane
-and reaching all three families rather than the one the vendor mechanism serves.
-
-**12.12 Handoff artifacts — a schema at each state boundary.** Eight artifact kinds are named
-and **seven carry a JSON schema** under `.basicly/core/schemas/`: `classification`,
-`change-shape`, `implementation-plan`, `change-summary`, `verification-evidence`,
-`validation-transcript` and `release-record`. `solution-design` is the one without, because it
-is specified as **markdown with six machine-checked sections** rather than a JSON payload —
-problem in the requester's terms, success as an observable, a consumer transcript, out of
-scope, constraints, and open questions — so whether it belongs to the same family is an open
-question (`basicly-32qz`) rather than an omission.
-
-Two mechanisms carry them, and the second is the one a reader gets wrong. The schemas are
-**catalog sources**, so a repo that has not installed them runs _neither_ end of the contract;
-both producer and consumer resolve the schema first, which is what keeps a skipped write from
-becoming a refusal downstream. And the artifacts travel as `[harness-artifact]` comment
-markers through `br.add_comment`/`br.read_comments` — **not** by appending to
-`.basicly/ledger/` directly. A direct ledger append would refuse the landing it precedes: the
-advance sweeps base-checkout dirt only under `.beads/`, and anything else blocks the merge, so
-an artifact written into the committed ledger on the way into BUILD would wedge the very
-landing it gates. The marker seam writes on every rung and _becomes_ a ledger `comment` event
-at the flip.
-
-Schemas written is **not** roles reachable. Five of the seven roles carry a contract that
-cannot be exercised until its artifact has run in anger, and that is a debt this section names
-rather than a gap it hides.
-
-**12.13 RETROSPECTIVE fires on a special cause, and is deliberately not a phase**
-(`basicly-xmhc`). `retrospective.py` reads the gate-failure ledger and fires only on a
-**computed** signal — a point beyond three sigma, or a non-random run or trend within the
-limits. A single failure inside the limits is common cause and fires nothing: acting on it is
-tampering, which "invariably increases variation in the results of a stable process". This is
-the first mechanism in the harness that decides to **suppress** work, and it is a correction to
-this repo's own practice, which filed beads off single occurrences.
-
-`LOOP_PHASES` and `loop._HANDLERS` are untouched by it. A state exists to hold an entry
-predicate, an exit gate and a persona; a conditional process over a ledger needs none of the
-three, and adding a rung that never blocks anything would be ceremony around a function call.
-The dispatch is recorded under a `retrospective` phase for role resolution and cost
-attribution only (`retrospective.PHASE`), outside `WRITE_PHASES`.
-
-One arithmetic trap is fixed in the module and is worth stating because the naive form looks
-right: a c-chart's control limit falls **below 1** at low mean failure counts, so raw
-arithmetic flags every isolated failure — at roughly 36× the rate a three-sigma tail admits.
-The limit is floored at 2.
-
-The output contract is **not** the why-chain. Three things: a named control that would have
-refused the defect, its tier (control / warning / documentation), and the class of defects it
-covers — plus the branch of the analysis not taken, because iterated-why yields one causal path
+**The output contract is not the why-chain.** Three things: a named control that would have
+refused the defect, its tier (control, warning or documentation), and the class of defects it
+covers — plus **the branch of the analysis not taken**, because iterated-why yields one causal path
 chosen by the asker and is not reproducible between analysts. A documentation-tier outcome is
 recorded as a downgrade with the reason no stronger control was available. A retrospective's
-output is a **diff against catalog YAML**, never prose advice, and no autonomy grant disposes
-it: an agent that can amend the catalog under a grant widens its own constraints, and the next
-session inherits the widening as ground truth.
+output is a **diff against catalog YAML**, never prose advice, and no autonomy grant disposes it:
+an agent that can amend the catalog under a grant widens its own constraints, and the next session
+inherits the widening as ground truth.
 
-**12.14 The second loop shape — an improvement controller** (`basicly-u2hl.27`). Everything
-above drives a _requirement_ to a landed change. `basicly loop improve` drives a **property of
-the codebase** toward a set point: one sensor reading, one lane. It is the actuator behind the
-ratchets, which bound a file and cannot themselves repair one.
+### The improvement controller
+
+Everything above drives a *requirement* to a landed change. The second loop shape drives a
+**property of the codebase** toward a set point: one sensor reading, one lane. It is the actuator
+behind the ratchets, which bound a file and cannot themselves repair one.
 
 Three properties keep it inside the engine-disposes rule. The controller is a **repo-declared
-script** at a fixed path, run with this process's own interpreter and `shell=False`; a repo
-that declares none is **refused by name**, because an absent script is the one state otherwise
-indistinguishable from a run that measured everything and found nothing to do. Its exit code
-passes straight through, so a schedule can branch on it. And it holds a **one-lane bound**: it
-files one bead and does not file another until that one lands.
+script** at a fixed path, run with this process's own interpreter and without a shell; a
+repository that declares none is **refused by name**, because an absent script is the one state
+otherwise indistinguishable from a run that measured everything and found nothing to do. Its exit
+code passes straight through, so a schedule can branch on it. And it holds a **one-lane bound**: it
+files one issue and does not file another until that one lands.
 
-It has run live and filed its first real bead. What it does not have is a caller —
-`basicly-e2mz.6` gives it one, `workflow_dispatch` only, which is what makes the wiring
-non-circular.
+It has a caller — a workflow that runs it in dry-run mode. The trigger is **manual dispatch only**,
+and the absence of a schedule is a decision rather than unfinished work: it is what keeps the
+wiring non-circular, because a dead-code gate was otherwise crediting the command off the
+controller's own docstring while the command ran the controller.
 
-## 13) References
+## Work isolation and merging
 
-### 13.1 The documentation layer
+**Non-trivial work runs in a sibling git worktree** at `<repo>.worktrees/<name>` on branch
+`harness/<name>`, never in an in-repository directory, which pollutes the tree walk and provisions
+no dependencies. Creating a worktree provisions its toolchain and **installs the gates**: a
+worktree without them runs *no* gates, the exact failure that once let unguarded commits through.
+Trivial mechanical work goes straight to the source branch. Cleanup runs immediately after a node
+lands.
 
-**Summary**: this file is the _reference_ quadrant and nothing else. A reference
-answers "what is it and how is it specified"; it cannot also be the page that
-gets a new consumer from `basicly install` to a first shipped unit, and trying to
-make it both is what left that path missing. The four quadrants are separate
-files with separate jobs:
+**Zero-touch tracker state.** Every loop-provisioned worktree shares the base checkout's tracker
+through a git-ignored redirect file written at provisioning, so reads and writes from any checkout
+hit the one real store and there is no divergent copy to reconcile. The commit-message hook follows
+the redirect too. A redirect-capable tracker binary is a hard requirement of this design, so
+provisioning **probes** the new worktree and aborts with upgrade guidance when the answer is not
+the base store — a binary that ignored the file would silently run a divergent tracker.
 
-| Quadrant | Where | Job | Written for |
-| --- | --- | --- | --- |
-| Tutorial | [`docs/tutorial/first-loop.md`](../tutorial/first-loop.md) | one guaranteed-success path, install → shipped bead, no options offered | a consumer on day one |
-| How-to | [`docs/how-to/`](../how-to/) | the recurring operations, one page per task | a consumer with a job to do |
-| Reference | this file, plus [`CONTRIBUTING.md`](../../CONTRIBUTING.md) | the system as specified | anyone implementing or debugging |
-| Explanation | [`docs/requirements/`](../requirements/), [`docs/research/`](../research/) | why one question was settled the way it was | anyone changing a decision |
+**The engine owns the tracker commits at three points**: provisioning commits the claim, so
+teammates who pull see it from the moment work starts; the landing advance rolls accumulated
+tracker dirt in base into one commit before merging, while non-tracker dirt still blocks; and ship
+commits the close. Agents never stage tracker files for loop-tracked work.
 
-Three rules keep the layer from rotting into a second, competing account of the
-system:
+**Parallel build, serial merge.** Nodes build concurrently in their worktrees and land one at a
+time in dependency order, re-verifying after each merge. The decomposer marks nodes parallel-safe
+only when it can predict **file-disjoint** scopes; when it cannot, it emits a fixed serial order.
+Tracker state is reconciled with the tracker's own three-way merge, never by hand-editing conflict
+markers in the export.
 
-1. **A tutorial command is executed before it is written.** Every command and
-   every quoted output in the tutorial was run against a fresh repo. A
-   walkthrough is the one surface where an untested step costs the reader the
-   whole session, because they have no model yet to notice it is wrong.
-2. **A how-to states the operation and its failure text, not the design.** Where
-   it needs a reason, it links to the section here that owns it. Duplicated
-   rationale is what goes stale first.
-3. **Where they disagree with this file, this file wins** — same rule as §15's
-   rendered copies. The tutorial and the how-tos are consumer-facing renderings
-   of §§4, 6, 9 and 12, not independent sources.
+**Two serial landing implementations exist and they are not the same thing.** The supervisor's own
+landing loop is what the factory uses; a separate merge-queue function handles epic fan-in over
+child worktrees and one CLI verb. Both order by the same stable topological sort, but the queue
+additionally snapshots every lane's branch head up front, so a branch that grows a commit mid-pass
+is refused as stale rather than landed in an unexamined state.
 
-The current pages: the tutorial, and how-tos for customizing the catalog,
-wiring the verify gate, unblocking a refused commit, upgrading and drift,
-running parallel lanes, and resuming a track.
+### Declared scope is verified at the landing
 
-### 13.2 External references
+The disjointness claims above rest on a scope declaration the decomposer reads once to group and
+size the plan and then never looks at again. A wrong or stale declaration therefore used to surface
+only later and indirectly, as a merge conflict, after two lanes had already done work that fights.
 
-- pre-commit: <https://pre-commit.com/>
-- Trunk Code Quality: <https://docs.trunk.io/code-quality/overview>
-- MegaLinter: <https://github.com/oxsecurity/megalinter>
-- Claude Agent SDK: <https://code.claude.com/docs/en/agent-sdk/overview>
-- OpenAI SDKs and CLI: <https://developers.openai.com/api/docs/libraries>
-- Cursor SDK: <https://cursor.com/blog/typescript-sdk>
-- Pydantic AI: <https://pydantic.dev/docs/ai/overview/>
-- Fowler series (context priming, design-first, context anchoring): <https://martinfowler.com/articles/reduce-friction-ai/>
+The build-to-verify funnel now diffs the lane against its merge base — three-dot, so a base that
+moved on is not counted as the lane's work — and holds the result against the declaration. Two
+outcomes, and only one refuses:
 
----
+- **Every** out-of-scope path is recorded on the issue as a scope-violation marker: evidence about
+  the *plan*, travelling with the tracker export, and written whatever the policy then decides.
+- A path that also falls inside **another live lane's** declared scope is the case that actually
+  produces the conflict, and a config key decides it deterministically: block, the default, refuses
+  and names the lane that declared that ground; warn lands on the finding.
 
-## 14) Target state — where the architecture is going
+**Blocking the non-collision case too was rejected**, because it would turn every legitimately
+incomplete agent-authored plan into a rework cycle, which costs more than the finding is worth.
 
-**Summary**: the four pillars of §0 are at very different maturities. The loop and
-the factory are built and dogfooded; the judgment layer is designed and unbuilt;
-the evidence layer barely exists and is the largest gap; the tracker is a dependency
-we intend to own. This section is the map, not the detail — each row points at the
-design document that owns it, and **none of it is running code**.
+**"Live" means the worktree session records on disk, not the tracker export.** The worktree binding
+is written to a field that is not flushed to the export until the next tracker commit, so a freshly
+provisioned lane — the one most likely to be mid-edit — would be invisible there. Engine-owned
+tracker paths are never out of scope, because the harness rewrites them on every landing. An issue
+with no readable scope section is not checked at all, because it contradicts no plan.
 
-**The order it gets built in is [`docs/plan/implementation-plan.md`](../plan/implementation-plan.md)**,
-which sequences these rows into phases with dependencies and exit criteria. That file
-is deliberately external to the tracker, because the tracker is itself one of the
-things being replaced (§14.5). **Which of these rows is actively being built rather
-than merely agreed is §15**, the roadmap view.
+### Owned versus shared scope
 
-Everything here is grounded in a 2026-07-26 review of eleven comparable projects
-read at pinned revisions ([`research/`](../research/2026-07-26-sota-review.md)),
-which is also where the competitive framing comes from: the field has converged on
-a name for what this repo is — **harness engineering**, the claim that the
-deterministic scaffolding around a model matters more than the model choice. The
-open question is therefore not whether the harness approach is right; it is whether
-this harness is measurably better than the others that also believe it.
+Grouping is the transitive closure of scope overlap, so a single path several children declare made
+every one of them overlap every other and collapsed a wholly parallel plan into one serial chain —
+**worst for the most honest plan**, because a careful author is *more* likely to declare the
+manifest they will touch.
 
-### Details
+A child may therefore list part of its scope as **shared**: paths it touches but does not own.
+Overlap through a path **both** sides declared shared does not serialize them; one child *owning*
+the path still blocks everyone who touches it.
 
-**14.1 Pillar maturity.**
+**The escape hatch is deliberately narrow** so no agent-authored plan can use it to hide a real
+collision: an entry must appear verbatim in the scope declaration, which stays the whole truth for
+read-cost sizing and merge attribution, and it must be **one literal path, never a glob**, so no
+subtree can be exempted behind a wildcard.
 
-| Pillar | Today [M 2026-08-14] | Target | Owning design doc |
-| --- | --- | --- | --- |
-| Catalog (guidance) | projected + structurally gated; the path-scoped tier in use on **four** fragments; routing measured (tiers 1 and 2 ship as `catalog lint` rules) | behaviour measured per entry — tier 3 | §14.4 |
-| Gates (enforcement) | deterministic, per-site behaviour, typed by `policy.GATE_TYPE_BY_GATE` for the five gates the engine names; 25 `[[verify.checks]]` including four ratchets | every gate classified by type, with a severity contract on judged output | [`factory-loop-requirements` §5.1](../requirements/factory-loop.md) |
-| Loop / factory (SDLC) | parallel lanes, autonomy grants, merge queue, **VALIDATE as a rung, six of seven roles reachable, seven of eight artifact schemas** — dogfooded | the seventh role wired; the judged half hardened; release automation reachable under a grant | §14.3 |
-| Tracker (state) | external `br` binary in the critical path, **28 call sites behind one seam**; ranking and harness markers already owned; repo runs `mode = "dual"` and mirrors every write [M 2026-08-15] | owned, in-process, append-only event log | [`work-tracker`](../requirements/work-tracker.md) |
+**Independently of the declaration, every decompose surface names the load-bearing path**: the
+engine reports each declared glob whose removal would leave the plan in more groups, marking the
+ones a shared declaration already defused. The original failure was silent, and a serial chain with
+no stated reason is why nobody made the one-line fix.
 
-**14.2 The factory — built, and its remaining honesty gaps.** The supervisor,
-autonomy grant ledger, decision queue, lane mini-loop, and merge queue v2 have
-landed and have been exercised on this repo's own development, including a
-supervised multi-lane run. The tier-to-model mapping is published, drift-checked
-(§4.2) and now **bound**: a declared tier resolves to a concrete model at dispatch and
-an unresolvable one refuses rather than silently running on another tier's model
-(§12.8). **The clause that stood here was false when it was written and is now false twice
-over** [M 2026-08-14]. It said no role or catalog entry declares a tier, so every dispatch
-is unpinned. Nine roles already declared one at the time; today all twelve do, `tier` is a
-required property of `agent.schema.json`, and `catalog lint` refuses a source without it
-(`basicly-plhx`). What remains true is narrower and worth stating exactly: **a declared tier
-reaches no spawn.** No projected agent file carries a model id, by decision D30, and the
-injection that would resolve one at spawn is `basicly-a3yi`, still open. So the tier is
-declared, gated and inert. One recorded gap remains, and it matters
-because a reader would otherwise believe the design is enforced: coupling attribution
-still depends on intra-pass landing order, which the determinism rule forbids.
-**The pointer that stood here is dead**: `factory-design.md` lost tiebreaker authority
-and was deleted. Authority now runs **measured evidence in this repo, then the two
-requirements documents, then nothing else**.
+## Parallel lanes and the supervisor
 
-**14.3 The judgment layer — built at the routing seam, unbuilt at the judged half.**
-**This section read "designed, unbuilt" and that is now false** [M 2026-08-14]. The
-factory no longer dispatches one generic prompt shape for every lane: a phase
-resolves to a named role by table lookup, the role reaches the argv, and six of the
-seven loop roles are reachable (§12.11). What is described below as the target is
-therefore split — the **routing** is running code in §§12.11–12.12, and what remains
-open is the seventh wiring plus the judged-output contract this section closes on.
-Three decisions constrain the design, and all three are deliberately conservative:
+The supervisor runs many lanes and lands their work. It is **code, and it stays unnamed**, precisely
+so nobody treats the thing that enforces the rules as something that can be persuaded.
 
-- **An agent may spawn only a role the engine authored.** The supervisor is code and
-  stays unnamed precisely so nobody treats the thing that enforces the rules as
-  something that can be persuaded. Reviewers are read-only; a separate actor fixes.
-  **Amended 2026-08-09**: the original form was "no agent spawns agents", which both
-  installed runtimes contradict by construction — a blanket ban is unenforceable
-  prose. The amended form is stronger, because a host hook can intercept a subagent
-  finishing _before_ its results return to the parent, so the boundary is a runtime
-  gate rather than a process boundary we hope holds. Personas still never invent
-  unmetered helpers, and any output is a proposal the engine validates.
-- **Admission is a test, not a preference.** A role becomes a persona only if the
-  work is genuine judgment, has a checkable success criterion, _and_ needs a
-  materially different tool policy or model tier than its neighbours. Otherwise it
-  is a prompt section or a deterministic engine step.
-- **Tier is chosen by reliability, priced per landed package** — total tokens, wall
-  clock, and human interventions per landed, correct unit, never the price of one
-  dispatch. A cheap dispatch that buys a rework cycle and a human interruption is
-  the expensive one. The refinement worth recording is that the safe predicate is
-  **specification completeness**, not the work's nominal category: a brief
-  containing the literal code is transcription, which is mechanically checkable.
+**A singleton lock, and liveness by modification time rather than by probing a process id.** The
+lock file is created exclusively and carries the holder's process id, session id and root issue. A
+heartbeat thread refreshes its modification time; a lock older than the stale bound is a crashed
+holder and is stolen through a rename, which exactly one contender wins. The heartbeat fences on the
+lock's *content*, so a stalled-then-resumed holder raises rather than beating a lock it already lost.
 
-The judged half needs hardening the current prompts do not have: an explicit
-adversarial stance plus a **role-specific list of how that role goes soft**, derived
-from observed failures rather than invented. Reviewer conflict-avoidance —
-downgrading a blocker to a warning to avoid disagreeing with the producer — is a
-predictable failure mode and is named rather than hoped away.
+**Recovery is derivation, not replay.** A session is re-adopted by reading the tracker for children
+of the root carrying a worktree binding.
 
-**What is still unbuilt here is deterministic engine code, not a persona**, which is
-why it survives the routing landing above. The reviewer must be **structurally
-incapable** of receiving the producer's conclusion — bundles are assembled by code, so
-the assembler can guarantee it rather than a rule requesting it. The review base must
-be **recorded before the producer is dispatched**, never derived as `HEAD~1`, which
-silently truncates a multi-commit unit and reviews its last commit while reporting on
-the whole. A re-review is **scoped to the fix range**, verdicting each open finding
-addressed or not, so an out-of-scope observation becomes a deferred minor with a named
-consumer instead of extending the loop. Late rework rounds **escalate a tier** with the
-prior attempt's record, rather than bouncing to the same tier with the same framing and
-spending the cap without changing a variable — which yields a measurable signal, since
-if late-round bumps routinely succeed the initial tier was wrong. And two degenerate
-reviewers are currently invisible and both are computable from data already recorded:
-the rubber stamp, whose advisory green is worthless, and the noise generator, whose
-findings are nearly all adjudicated contestable.
+**A lane is dispatched only if every one of these holds**: it is live and dispatchable, it is not
+blocked in the dependency graph, it has no pending decision, its derived phase is build, and it has
+no sub-tasks of its own. Ready lanes are ordered by the owned scheduler's rank, ties by id.
 
-**14.4 The evidence layer — the largest gap.** Roughly thirty catalog entries ship
-today and there is behavioural evidence about **one** of them, from a single-task
-pilot whose own write-up notes the result was partly circular. Two failure modes
-follow and both are silent: a skill whose description contains no word a user would
-actually say never fires yet costs its context load forever, and an always-on rule
-that has drifted past the point where the model attends to it still passes every
-gate. The existing gates verify that an entry is _well-formed and projected_, never
-that it _changes behaviour_ — excellent checks on the wrong axis.
+**Admission is a chain of gates, checked before anything spawns**: readiness, then the grant spend
+status, then grant coverage, then a downstream work-in-progress limit, then a per-lane working-set
+band, then a forward spend forecast for the whole pass. Inside each worker the spend status is
+**re-read**, because a lane that waited in the pool queue can find the grant exhausted. **A running
+dispatch is never interrupted**; shutting the pool down cancels only lanes that have not started.
 
-The target is three tiers: structural (have it), **routing** (deterministic,
-lexical, free, runs in CI — the highest-value single deliverable and the thing
-nobody else in the field has), and behavioural (judged, on demand, with control arms
-so a result means something). Two disciplines carry over from the strongest
-measurement work reviewed: separate _mechanism confirmed_ from _outcome improved_
-and never report one as the other, and keep a safety tier that **executes** the
-produced code against hostile input, so "less code" or "more decisive" can never be
-bought by dropping validation.
+**The downstream limit bounds finished-but-unreviewed output**, which is a different quantity from
+the concurrency cap: concurrency bounds how many lanes run at once, and a pass can exhaust the
+downstream limit while well inside the concurrency cap. Lowering it makes review, rather than slots
+or tokens, the constraint that binds.
 
-**Tier state today, measured 2026-08-08.** **Tier 1 and Tier 2 both ship**, as rules 8 and 9 of
-`catalog lint`, on every commit. The routing gate asserts positive top-k, pairwise negatives — the
-declared owner must _outrank_ the entry, because a bare "must not rank first" passes vacuously on a
-prompt that matches nothing — and a description-collision ceiling; it reports a **rank-1 rate**,
-measured at 83/90 = 92.2% against a `[catalog] rank1_floor` of 0.85 that ratchets and cannot be
-lowered. **Tier 3 is paper**: no arms, hidden checks or safety tier exist in code. The one Tier-1
-rule still unbuilt is making a _missing_ eval case file a failure (`basicly-m4zv.3`) — all 30
-model-invoked skills carry one by convention today, and the 19 fragments carry none.
+**One durable decision queue.** Items are comment markers on the affected issue with content-derived
+ids, so enqueueing is idempotent. Five kinds exist: a missing fact, a rework escalation, a
+checkpoint, a stall, and a validation question. **Only two of the five are ever delegable to the
+decider agent**, and only above a minimum grant level and while the grant is unspent; the decider
+runs serially in a confined runner, and an unconfinable agent family is not dispatched at all. A
+hard cap on delegated decisions is re-checked inside the queue lock before each one is recorded.
 
-The single highest-leverage unknown sat here, and half of it has now been measured.
-The always-on baseline is a few thousand characters per family — the live measurement
-is the generated table in §7 detail 1; it was 7167 / 7299 / 8434 for Claude / Copilot /
-Codex at the recall test below — on the order of 1100–1600 words of dense rules,
-against a consistent practitioner
-finding that adherence to dense rules degrades well below that. **The "cliff already
-crossed" reading is refuted**: measured 2026-07-26, both families reproduce 93–98% of
-their baseline's rules when asked, against a 6–17% no-guidance control
-(§14.4). The content is
-not invisible at this size.
+**Landing is serial and it does not stop at the first failure.** Order comes from a stable
+topological sort restricted to the issues in hand, with carried lanes prepended so they land ahead of
+freshly dispatched lanes at equal rank. A conflicted landing **bounces**: the base is untouched, the
+lane keeps its commits, the collision is recorded, and the pass keeps landing the remaining green
+lanes.
 
-What that result does **not** settle is the operational question, so the entry above
-still stands as written: nothing measures which baseline rules _bind_ while an agent
-works. Recall under a direct cue is an upper bound and confirms mechanism only — by
-§14.4's own rule it may not be cited as evidence of quality. So the cap
-policy is now asymmetric: **lowering it is ordinary housekeeping; raising it still has
-no evidence behind it** and would prejudge exactly the adherence question that remains
-open.
+**Any landing failure that is not a bounce pauses the pass.** Every later green lane is held with the
+reason and carried into the next pass, because landing on top of a broken base is worse than
+waiting. A lane whose merge a landing *this pass* just broke is pre-empted before its doomed landing
+is attempted. Couplings and bounce briefs are attributed **after** the pass, so no durable record
+depends on intra-pass landing order.
 
-Relatedly, and cheaper than the design documents assume: the **path-scoped tier is
-already built** — targets declare a `scoped_rules` output and the planner routes
-fragments carrying a `scope` — and **four fragments now declare one** [M 2026-08-14]:
-`external-review`, `platform-hermetic-tests`, `code-is-authoritative` and
-`model-tier-routing`. Moving conditional guidance out of the always-on baseline is
-therefore authoring work, not engine work.
+**The supervisor's two bounds are a pass count and a cooperative stop.** Stopping asks a running
+supervisor to finish the round it is in — every dispatched lane lands, no further lane is seeded —
+rather than signalling a process whose lanes are its own subprocesses.
 
-**A skill takes the same glob, and that refuted a plan this section was queued
-behind.** A skill's frontmatter accepts a `paths:` glob that both limits _and triggers_
-automatic activation, so scoping `python-guidelines` cost **zero** always-on characters
-and did not need a fragment at all. The key is not in the portable Agent Skills subset,
-so it is declared under a per-target vendor fence and emitted only into the roots that
-understand it — `.agents/` gets the portable six, `.claude/` gets the six plus its
-fenced keys. **The gap that survives is codex**, which has no glob-based instruction
-scoping and never loads a nested `AGENTS.md` below the cwd (§7 detail 4), so a fragment
-remains the only mechanism there.
+## Dispatch and the agent-agnostic runner
 
-**A skill is not free, and the cost is in the listing rather than the body.** Every
-skill's `description` plus `when_to_use` is capped per entry and the whole listing is
-budgeted at 1% of the context window; on overflow the host drops descriptions
-**starting with the least-invoked skills**. That is a feedback loop rather than a cost:
-a rarely-invoked skill is the first to be truncated, which makes it harder to invoke.
-Both caps are gated. The exercised-count that sized this — 8 of 34 skills ever invoked —
-is **now unsound and has no successor figure**: since a role injects its skills into the
-dispatch, the never-used report cannot tell an uninvoked skill from an injected one
-(`basicly-4grf`).
+Each agent family drives the *same* loop through a thin **runner adapter**: an invocation command,
+headless flags, prompt injection and output capture. The loop logic is agent-neutral; only the
+adapter differs.
 
-Its cost effect is **asymmetric across families, not a blanket improvement** (§7
-detail 1): scoping removes a fragment from the Claude and Copilot baselines and
-**adds** it to Codex's, which has no glob scoping at all and therefore inlines scoped
-fragments into `AGENTS.md` — measured 869, 1462 and 1614 characters for the three that exist,
-against the `AGENTS.md` headroom in the §7 detail 1 table, which the **next** scoped
-fragment can already exhaust. Whether scoping also improves **adherence** is a hypothesis
-this repo cannot yet assert: the only measurement is recall under a direct cue, which
-§14.4 bars from standing as evidence of quality, and at 98% / 93%
-there is no headroom left to improve — which is why Phase 4's exit criterion asks only
-that recall be **not degraded**.
+**Detection walks the families in order and capability-probes each.** A binary is selected only if
+it is on `PATH` **and** the probe does not positively show its assumed headless flag is gone — a
+dropped or renamed flag no longer gets picked and then fails at dispatch. The probe is conservative:
+a probe that cannot run assumes capable, so a flaky probe never false-skips a working agent, and it
+never gates an *explicit* choice.
 
-**14.5 Owning the tracker.** The tracker is not a peripheral integration — it _is_
-the harness's state, so every guarantee above is downstream of it, and it is
-currently an unowned external binary in the critical path. The target is pure
-Python inside this package, with an **append-only event log as the truth** and every
-other file derived and disposable; a record's state is a fold over its events, so
-history lives in the data rather than depending on git history surviving a squash or
-a shallow clone. The motivation is **ownership, not speed**: re-measured 2026-08-07
-against the live 642-record ledger, a single-record in-process read is ~15× cheaper
-than the median external CLI call and a full fold ~1.9× — real but modest, and the
-fold ratio narrows as the ledger grows. An earlier "~175×" here compared a p95 CLI
-call against a single-record read of a much smaller ledger; `work-tracker.md` §10
-carries the corrected table (`basicly-rxc1`).
+**There is no cross-agent CLI invocation standard, so an unknown agent's command is never guessed.**
+When nothing matches, selection falls back to a **manual handoff runner** that shells out to nothing
+and instead surfaces the exact prompt and worktree path, deferring to the loop's block-and-resume
+contract and to the one thing that *is* standardized across agents: the projected guidance. Any
+other agent is supported by an explicit command template in config.
 
-Two constraints are recorded because they are easy to lose: a **clean-room
-boundary** applies (the licence of the binary we currently depend on carries a rider
-restricting a class of users, which is itself the strongest argument for owning the
-component), and the alternative of adopting a versioned database is rejected because
-it reintroduces exactly the unowned-binary upgrade surface being removed.
+**Model resolution is most-specific-first**: a pinned id, then a declared tier, then a default tier.
+It **refuses before spawning** when a tier resolves to nothing, naming the agent and the config key,
+because silently running on another tier's model is the failure the keyless unavailable cells exist
+to prevent. A tier aimed at a family that cannot pin one at all is recorded as *not honoured* rather
+than as satisfied.
 
-**The migration is five steps and three have now run, still not in order** [M 2026-08-15].
-Step 1, the import, is re-runnable as `basicly tracker import` (`basicly-vkh0.23`) and the
-ledger holds **5,081 events over 873 records** against an 876-record export. Step 2, the
-shadow differential, ran on `dual` with an **empty** declared baseline, so nothing is excused
-by construction. Step 3, dual write, is live. Step 5, native harness markers, **landed before
-steps 2–4** (§12.3), which costs one binding constraint rather than a defect: the differential
-must be run on `dual`, because at `owned` the marker families no longer reach the external
-tracker and the comment comparison diverges by construction.
+**The run record keeps provenance, not just an id**: the tier, which input decided it, and the model
+the adapter reported it **actually** used. That last is measured per family rather than assumed,
+because the families disagree about where and whether they name it — one names it three ways, one
+names it in a session store and may list several for one dispatch, and one names it nowhere and is
+therefore recorded as *unobserved* rather than assumed to match.
 
-**Step 4 is not dispatchable, and the reason is one query.** The differential reports
-`conclusive: yes` and `clean: no` on **372 disagreements, every one `query='gates'`** — zero
-on records, phase or ready. The owned side reports `missing` for every gate because gate
-_history_ was never imported, which is a one-shot dump rather than a defect; the flip also
-needs post-flip records to exist, and neither can be brought forward by dispatching anything.
+**This is model awareness at the invocation seam, not a token-level inference client.** Per-track
+model choice stays out of scope.
 
-**Five operations have no owned equivalent at all**, and each is a design question
-rather than a port: `lint` (which means owning the validation rules), `dep cycles`,
-`list --label`, id minting (`ids.mint_root_id` exists and only tests call it), and
-`gate list`. **The kit is also outside the scope of any architectural audit until its
-own promotion runs**: eight kit modules landed against reasoning in `work-tracker.md`
-that was never promoted to a design, so there is no frozen surface, no declared schema
-and no cache decision to judge them against — and an audit needs a specification. That
-gate was written as prose, nothing read it, and the condition was discharged by a bead
-closing somewhere else. **A gate written as prose is not a gate.**
+**Each dispatch writes a metadata-only run record** keyed by issue: wall-clock duration, exit
+outcome, agent, phase, the model when one was pinned, and token and cost telemetry. **Only metadata
+is persisted** — the command is stored with the prompt argument elided, never the prompt body or the
+captured output.
 
-**14.6 Asserted, not yet earned.** Recorded explicitly so it is not mistaken for
-established fact. The structural leads are real: enforcement is code and hooks
-rather than prose; state is a tracker with a dependency graph rather than markdown
-plan files; one catalog is projected to three agent families and the projection is
-gated. But three headline claims are unmeasured — that the roster's tiers and lenses
-pay for themselves, that the always-on baseline is effective at its current size,
-and that individual catalog entries change behaviour. The cost-per-landed-package
-baseline is the instrument that makes the first falsifiable, and it gates several
-downstream decisions.
+**Telemetry flags are opt-in per call site**, because they wrap stdout in an envelope. A consumer
+that parses the agent's answer reads it back through an inverter; the two passthrough commands that
+print a reply for a human stay unflagged. When the output does not parse, the record falls back to a
+transcript estimate **flagged as estimated**, so calibration can down-weight it.
 
-**14.7 Explicitly rejected, so it is not re-proposed.** Each refusal has a reason
-stronger than taste, and several were reached independently by other projects: an
-LLM orchestrator in control of the tracker; personas spawning personas; an
-agent-writable catalog (a bad implementation bounces off a gate, a bad fragment is
-_absorbed_ and silently degrades every later lane); `--no-verify` to dodge parallel
-commit contention, which the merge queue already solves without defeating a gate;
-lossy compaction of the ledger; a maintained TUI; an external database or daemon; a
-compression proxy in the critical path; a cheap-tier model pre-reader whose
-characteristic error is an undetectable omission; and agent-to-agent messaging,
-which is a real capability declined because it costs reproducible scheduling and
-resumability.
+**One family is metered out of band** because it reports nothing usable on stdout: the per-model
+token split and credit spend land on the terminating event of its own session store, so a metered
+dispatch supplies the new session's identifier and the reader joins on it. That measures real tokens
+**and** leaves stdout plain text, so it is the one arm an answer-parsing consumer needs no inversion
+on.
 
----
+**The streaming envelope is the default for the family that has one**, because it is the only one
+carrying per-turn usage: the context-occupancy meter reads the last assistant turn, while the
+terminating result event still supplies the cumulative cost view. Pinning the non-streaming form
+keeps exact cost telemetry and an inert ceiling.
 
-## 15) Roadmap — status per capability
+**Token counts are recorded both ways**: the summed total every consumer already reads, and, where
+an adapter reports it, a provider-neutral input, output, cache-read, cache-write and reasoning split.
+Credits get their own field rather than being folded into a currency amount.
 
-**Summary**: one status view of every capability, so a reader can tell running code
-from a decision on paper without cross-referencing three sections. It is **derived,
-not a new source of truth**: a `shipped` row is the system described in §§0–13, a
-`deferred` row is §11, and every other row is a §14 target with the state it is
-currently in. There are **no dates** — the project does not run to a schedule, so
-status is the only honest axis.
+**Output is redacted at the source, before it enters a result object.** High-signal secret shapes
+are replaced with a labelled placeholder, so no surface leaks a credential an agent echoed.
+**Network egress is not sandboxed by this project** — it cannot portably restrict a generic
+subprocess — and is delegated to the agent-layer sandbox.
 
-The **order** the non-shipped rows get built in is
-[`docs/plan/implementation-plan.md`](../plan/implementation-plan.md), which sequences
-them into phases with dependencies and exit criteria. This section carries status;
-that file carries order and reasons.
+**Attribution rides the audit trail.** At landing the loop reads the issue's latest run record and
+stamps the dispatched runner into the merge commit as a trailer, with the model when one was pinned,
+and records the agent as the gate result's actor. So history and the gate ledger distinguish which
+agent produced a landing instead of collapsing onto one human identity. It is best-effort and
+non-fatal.
 
-This table is the copy the [README roadmap](../../README.md#roadmap) table and the
-[landing page](https://niksavis.github.io/basicly/#roadmap) render for a wider
-audience. Where the three disagree, this one wins and the other two are stale — with
-one **deliberate** difference: neither rendered copy carries the `deferred` rows,
-because a prospective consumer is choosing between what exists and what is coming, and
-a list of things nobody has asked for is noise there. That omission is editorial, not
-drift, and this table plus §11 remain the complete record of what was consciously left
-unbuilt.
+**A runner may go further and commit as a bot.** An adapter entry may pin a name and email — both
+keys or neither, and the parser rejects a lone half — which the dispatch seam overlays on the child
+environment for both author and committer. **This relaxes no gate**: the identity guard validates
+the *effective* identity, so a bot email must satisfy the allowlist exactly as a human's would. The
+tamper-evidence model is the layering of existing controls rather than new enforcement: the identity
+guard bounds who a commit may claim to be, optional commit signing makes each commit tamper-evident,
+and the permissions deny-list forbids bypassing either. The project does not *force* signing, because
+key management is per-machine and out of a portable catalog's reach; it documents enabling it and
+guarantees that once enabled it cannot be bypassed through the harness.
 
-### Details
+### Block, do not guess
 
-**15.1 Status vocabulary.** Five states, each defined by the evidence it requires, so
-a row cannot be promoted by optimism:
+When a dispatched headless agent cannot resolve a required fact it writes a small sentinel file into
+its worktree — a JSON object naming the missing fact and what was tried — and stops **without
+committing a guess**.
+
+After a clean dispatch the loop reads the sentinel, records a durable marker on the issue, enqueues a
+decision, and **does not land**. The missing fact is surfaced like any other block.
+
+**Four properties make this work.** The sentinel is **consumed on read**, valid or malformed, so a
+re-dispatch starts clean and a garbled file cannot re-fire. A **file** rather than a stdout marker
+carries the signal, so it survives output redaction and truncation and needs no cross-agent output
+convention. It lives under a self-ignored directory, so it can never enter a commit. And the protocol
+is projected into the dispatch prompt, so agents know the contract rather than inferring it.
+
+This turns a stop-instead-of-guess *policy* the model could ignore into a first-class loop outcome.
+
+## Cost, forecasting and autonomy
+
+**An autonomy grant is a marker on the session's root issue** recording a level, and for the higher
+levels a token budget, a baseline and an unmetered count. The last marker in comment order wins; a
+revocation is another marker; a grant whose root issue is closed is not live. A marker at a level
+requiring a budget that carries none does not parse as a grant at all.
+
+**Four levels, and coverage widens with each.** L0 delegates nothing, so with no configured ceiling
+an unattended pass is impossible by construction. L1 covers decompose; L2 adds classify; L3 adds
+ship. **Originating a proposal is one level stricter than approving one.**
+
+Note that the autonomy ladder and the **integrity** ladder are different scales that share a letter:
+autonomy runs L0 to L3, integrity runs L1 to L3.
+
+**What no grant can delegate**, each enforced by code rather than by policy prose:
+
+- a checkpoint above the level's coverage;
+- a checkpoint on an issue outside the grant's own session tree;
+- anything once the token budget is spent;
+- **ship, whenever any session-wide wrinkle exists** — a required gate not green on the shipping
+  node, any unresolved missing-fact marker, any unanswered rework escalation, anywhere in the
+  session;
+- a **kill**, at every level: no grant is consulted, a terminal is no substitute, and a one-time
+  confirm code is always required.
+
+**A refusal says which kind it is.** When a grant *was* consulted and declined — an uncovered
+checkpoint, an issue outside the tree, a spent budget, a ceiling that cannot be metered, or a ship
+whose preconditions do not hold — the reason rides on the confirmation challenge and is threaded
+through the advance and the decision queue, so an operator can tell *no grant* from *a covering grant
+that refused*. A bare confirmation request made the two indistinguishable.
+
+### Forecasting spend, and the rules that keep the numbers honest
+
+**A dispatch records its forecast on the same record its actual lands on.** Working-set forecast,
+task class and forecast source sit beside the scope read-cost the issue already froze. Before this
+they were written to disjoint classes of record, so the forecast error — the entire learning signal
+the calibration feeds on — had never once been computable.
+
+**Eight rules govern the arithmetic, and each exists because breaking it produced a false number.**
+
+- **A frozen estimate beats a re-derived one, and the record says which it was.** An estimate frozen
+  for this content is evidence of prediction skill; the same formula applied at dispatch is not. The
+  distinction is recorded rather than averaged away.
+- **An issue with no readable scope gets no forecast**, because a forecast against an unknown scope
+  is an invented number.
+- **The unit is the issue, not the dispatch.** The forecast derives from the issue's scope, so every
+  dispatch of one issue records the identical number, and each attempt after the first would
+  otherwise be scored against a forecast covering work an earlier attempt already did. Attempts are
+  summed and the count reported — which is also the unit a grant is minted in.
+- **A record the band itself would refuse is named, not skipped.** A population quietly shrunk by a
+  filter is how this repository once committed a false claim.
+- **Both denominations are kept.** Forecast working set against measured occupancy, and forecast
+  whole-lane spend against measured spend. Each has an actual of its own, and the turn multiplier —
+  which nothing models — is measured from the ratio between them. Mixing them is the error the
+  report guards against by naming its units: the accuracy band is one order of magnitude either
+  way, and the summary is a **median**, because the measured misses span orders of magnitude and one
+  such sample would drag a mean somewhere no dispatch has ever been.
+- **One named write-phase set, read by both consumers.** The interactive build and the supervised
+  lane are the same kind of work, so the unsizeable-lane bound counts a write dispatch from either
+  path and the calibration samples only write dispatches. A judge or a decider can therefore never
+  contribute a helper's spend to a lane's ratio. The two filtered oppositely before this, which
+  measured a bound against a fraction of the real population. A record whose phase was never
+  written is excluded from both: unknown provenance fails closed.
+- **Nothing measures a working-set factor, and the record admits it.** The calibration that appeared
+  to was measuring whole-lane spend, a different quantity, and was removed. Every forecast is a
+  declared constant times a scope read-cost, and preflight reports whether any factor is anything
+  but a seed — so an operator minting a budget learns it rests on a prior **before** the money is
+  granted, rather than by reading source.
+- **A forecast with no actual, or an actual with no forecast, is reported as unpaired rather than
+  scored.** An empty report then says why it is empty instead of looking like a passing calibration.
+
+### Metering honestly, and halting when you cannot
+
+**An estimated sample is good enough to calibrate against and not good enough to meter a grant
+with**, so the two are kept apart.
+
+The fallback estimate counts the captured output only — never the prompt, the system prompt, the
+tool definitions or cache writes, which is where nearly all of an agentic dispatch's tokens are. It
+is therefore a **floor far below reality** rather than the conservative over-count a ceiling needs:
+on a live probe it read more than an order of magnitude under the real input count, and with
+plain-text output the captured answer was two characters. Counted at face value it *bought* budget.
+
+**There is no honest multiplier to inflate it by**, so the ceiling errs the only way a ceiling may:
+a session that took a dispatch its adapter could not meter is **halted** with the reason surfaced,
+and the remaining budget reads zero because what is left is unknown rather than free. The count of
+unmeterable dispatches is baselined on the grant marker exactly as spend is, so re-granting — the
+human seeing the reason and accepting it — clears the halt, and any adapter with no usage format
+inherits the refusal rather than a silent under-count.
+
+### Tuning: the parameters in force, held against the outcomes they produced
+
+Almost every number governing the factory is set by judgment and then never revisited. The tuning
+report reads the dispatch ledger from both corpora — local run records and committed markers,
+deduplicated so a dispatch recorded in both is one sample — and reports, per governed parameter, the
+value in force for the dispatches it summarises, the outcome distribution under that value, and a
+recommendation with its sample size.
+
+**Four rules keep it from becoming another declared number.**
+
+- **It writes nothing.** A tuner proposes a config change and a human or a gate applies it.
+- **A seed never reads as a measurement.** At or above the minimum sample count the recommendation
+  is the statistic over the newest window, labelled measured. Below it the **declared prior** stands,
+  labelled seeded, and the row names the in-force value it would displace — deliberately not a
+  number fitted to three samples, which would still be read as a measurement whatever the label
+  said. The prior is read from the config loader's own fallback rather than copied, so it cannot
+  drift from the value actually in force.
+- **A parameter nothing measures still prints**, with a sample size of zero, no recommendation and
+  the reason it has none. A bound nothing records is a bound nobody can tighten, and omitting the
+  row makes "no evidence exists" look exactly like "this is fine".
+- **A session override forms its own cohort.** It is the one per-dispatch record of a parameter's
+  value; pooling those dispatches would report outcomes under a value that never governed half of
+  them.
+
+**The statistic depends on what being wrong costs.** A **backstop** fires on work already in
+progress and destroys it, so it is read from the worst observed run with headroom rather than from a
+quantile — calibrating a timeout against the work distribution is what had it killing working lanes.
+A **band** refuses a package, and both refusals are recoverable (merge with a sibling, or split into
+more packages), so it is read at the quantiles of what really happened.
+
+### The acquisition and implementation split
+
+A claim that a lane's multi-million-token floor is bought by the dispatch instruction rather than by
+the work had **no instrument behind it**, so its remedy could not have been judged. The lane-split
+report is that instrument, and the ordering is deliberate: record the tools, derive the split, brief
+the lane, measure — and only the last is a claim.
+
+**The pairing rule is the whole arithmetic, and two naive versions measure the wrong thing.** A
+tool-call turn's usage is the cost of *emitting* the call; the tool's result lands in the **next turn
+that carries usage**. So summing tokens on the calling turns counts the request and misses the
+answer, and pairing against the immediately preceding *line* fails too, because a real transcript
+forwards the tool result as an event carrying no usage, which sits between the call and its answer.
+That second version was written first here and attributed a real captured lane **entirely to
+unattributed** — a confident figure measuring nothing, caught by the demonstration and not by the
+unit tests. A turn's tokens are attributed to the last tools emitted before it, and a turn with none
+is unattributed rather than guessed at.
+
+**Three things it refuses to guess.** A tool that is neither read nor write is *unclassified*, not
+bucketed, because a general shell tool runs a status command and a move alike and a majority rule
+over a mixed turn would put a guess inside the number the remedy is judged by. A transcript written
+before the tool field existed is **unclassifiable** rather than fully implementation, because absent
+is unknown and empty is "called nothing". And a lane with no transcript is reported as missing
+rather than as a zero split.
+
+**Shares lead, tokens follow, and the report says why.** Per-turn stream usage over-reports against
+the run record, so a stream-derived absolute is in a different denomination from the grant it would
+be compared against — a mixture that has already cost this repository a lane. The report also states
+that it is single-family, because no other family emits the per-tool event it reads.
+
+### Fleet and health
+
+**The fleet rollup** discovers installed repositories under a workspace root and rolls up, per
+repository, the single-repo status snapshot plus a run-record summary into one versioned JSON payload
+with totals. It is read-only and resilient by construction: a repository whose snapshot raises is
+captured as an error entry rather than failing the rollup, and the command always exits zero. Each
+payload carries its own installed-versus-engine version, so skew across the fleet stays visible. The
+per-repo snapshot is produced **in-process** by the current engine, so this is JSON-first and
+single-engine; a formatted table and a subprocess-per-repo model are out of scope.
+
+**Health scoring** turns the run-record log into a per-agent signal and a drift check. The source is
+run records *only*, by necessity: gate results overwrite, so pass-fail over time is not queryable —
+but a failed dispatch is a failed run and a rework re-dispatch appends another record for the same
+issue, so the append-only log is a durable proxy. **Drift is a rolling baseline read off the log's own
+timestamps**, not a stored snapshot: an agent's most recent window is compared against everything
+older, and a regression is flagged when the recent failure rate exceeds the baseline by a fixed delta
+with a minimum sample in each window. Everything is read-only, deterministic — no wall clock enters
+the payload — and advisory.
+
+## Roles at dispatch
+
+A phase resolves to a named agent by **table lookup**, and the runner puts the role on the argv.
+
+**Three properties are decisions rather than implementation detail.**
+
+- **The map is data, not judgment.** The choice is not gameable, costs no tokens, and cannot drift
+  between lanes.
+- **A role that is not projected resolves to nothing**, and the dispatch falls back to the default
+  runner rather than failing. The check is against the **projected file**, not the catalog source,
+  because that is what the host reads — so a consumer on an older install gets an unspecialised loop
+  instead of a stopped one. Resolution also yields nothing for a phase with no persona and for a
+  family that ships no subagent root.
+- **Repair is the implementer's second state, not a role.** A persona is admitted only when it differs
+  in tier, tools or artifact; repair differs in none of them, only in prompt. So repair maps to the
+  implementer too and the mode travels in the brief, carrying the gate evidence that rejected the work.
+
+**Two tables, because the state table gives one phase two roles**: one names the role that **drives** a
+phase — the one whose reply the engine acts on — and one names the role that fans out beside it.
+
+```mermaid
+flowchart TB
+  csrc["11 agent.yaml sources plus four shared blocks<br/>every source must declare a tier;<br/>catalog lint refuses one that does not"]
+  abuild["basicly agents-build<br/>also a step of basicly install"]
+  pcl[".claude/agents<br/>the role's declared skills ride the frontmatter"]
+  pco[".github/agents<br/>projection drops the skills for this family · no bead"]
+  pcx["codex: no agent root at all<br/>declined - the format has no tool allowlist"]
+  argv["runner argv: the role name<br/>resolved from the phase by table lookup;<br/>a family that cannot select a role drops it silently"]
+  tier["the declared tier reaches no spawn<br/>the injection hook exists in the kit<br/>and is not installed · basicly-a3yi"]
+  reg["a projected definition does not reach a<br/>running session's registry - next process start · no bead"]
+
+  csrc --> abuild
+  abuild --> pcl
+  abuild --> pco
+  abuild -.-> pcx
+  csrc --> tier
+  pcl --> reg
+  pcl --> argv
+  pco --> argv
+  argv --> loopr
+
+  subgraph loopr["Loop roles: what the phase table resolves to. VERIFY has none, by decision"]
+    rdec["decider · CLASSIFY proposes the work type"]
+    rdcp["decomposer · DECOMPOSE cuts the children"]
+    rimp["implementer · BUILD, and REPAIR as its second mode"]
+    rval["validator · VALIDATE, owns the gate"]
+    rrev["reviewer · VALIDATE, one dispatch per lens, advisory"]
+    rret["retrospector · on a computed special cause"]
+    rcur["curator · SHIP, writes the release record"]
+  end
+
+  adhoc["Ad-hoc roles: a human invokes these, and they are in no phase table<br/>architect · researcher · security-auditor · test-runner"]
+
+  skills["41 skill sources, 36 projected, six declared by a role<br/>a declared skill is inlined into the prompt, never put on the argv"]
+  scnt["how many skills ever fire is no longer measurable:<br/>the never-used report cannot tell an injected skill<br/>from an invoked one · basicly-4grf"]
+  skills --> scnt
+
+  classDef built fill:#d5efd5,stroke:#2e7d32,color:#000
+  classDef partial fill:#fff2cc,stroke:#e69500,color:#000
+  classDef designed fill:#f0f0f0,stroke:#9e9e9e,color:#000,stroke-dasharray:5 3
+  classDef plane fill:#fbfbfb,stroke:#bbbbbb,color:#333
+  class csrc,abuild,pcl,argv,rdec,rdcp,rimp,rval,rrev,rret,rcur,adhoc,skills built
+  class pco,tier,scnt,reg partial
+  class pcx designed
+  class loopr plane
+```
+
+**All seven loop roles are reachable from engine code** [verified 2026-08-16]. For two days this
+section could have read "the projection works and nothing consumes it": agent sources were authored,
+rendered into both roots and vendored to consumers, and every dispatch ended at a bare prompt. That is
+closed.
+
+**Two caveats a reader will otherwise supply generously.** The curator and the retrospector are both
+inert on the supervised landing pass, which has no watchdog or stream meter of its own; under the
+supervisor they run only after the ship approval, on the interactive driver. And the decider's *other*
+job — answering a queued decision — is tool-confined but passes no role, so that path does not load
+the decider persona. Only the classify proposer does.
+
+**Reachable wiring and observed dispatch are two different claims, and only the first is green.** The
+ledger could not falsify any of this until the record learned to copy the argv: it re-derived the
+command from the spec rather than copying what ran, so it was wrong in **both directions at once** —
+omitting the role flag a lane passes and appending usage flags a decider's argv never had. A record
+that can be wrong both ways is not evidence, and neither error is visible from the record itself. The
+record now copies the real command with the prompt elided by equality, recording no argv at all when
+the prompt is unknown rather than publishing one. **That builds the instrument; it does not supply the
+reading.** The historical records are unchanged, so a before-and-after measurement of role injection
+begins with the next supervised pass.
+
+**A role's declared skills do reach the agent dispatched for it**, at a negligible share of a lane, and
+reaching all three families rather than the one a vendor mechanism serves. The cost of that is a lost
+instrument, named in the diagram: the never-used report can no longer tell an uninvoked skill from an
+injected one.
+
+**Four roles are deliberately not in any phase table**: an architect, a researcher, a security auditor
+and a test runner. A human invokes them. And **the supervisor, the merge, the verify and the ship steps
+are deliberately not agents** — they are deterministic engine code, and naming them would invite
+treating them as persuadable.
+
+## Handoff artifacts
+
+Eight artifact kinds are named, and each is a schema at a state boundary: a state's exit criterion is a
+verifiable condition on a work product, which requires work products to have schemas.
+
+```mermaid
+flowchart LR
+  subgraph wired["Both ends wired: a transition refuses on a present, invalid artifact"]
+    direction TB
+    a1["implementation-plan<br/>written by DECOMPOSE, read at the BUILD fan-out"]
+    a2["change-summary<br/>written at the BUILD landing, every field engine-derived;<br/>read entering VERIFY"]
+  end
+
+  subgraph prod["Producer only: validated on write, no entry verdict consumes it"]
+    direction TB
+    a7["release-record<br/>the curator's output contract, written at SHIP -<br/>which has already merged, so there is nothing left to refuse"]
+  end
+
+  subgraph paper["Schema on disk, no producer and no consumer · no bead"]
+    direction TB
+    a3["classification<br/>CLASSIFY writes a different, unvalidated marker instead"]
+    a4["change-shape"]
+    a5["verification-evidence<br/>not the verify run artifact, which the<br/>evidence gate stats and never opens"]
+    a6["validation-transcript<br/>the validator's reply is read as a verdict line instead"]
+  end
+
+  subgraph none["Named, and not in the tree at all"]
+    direction TB
+    a8["solution-design<br/>six machine-checked markdown sections, not JSON;<br/>family membership is an open question"]
+  end
+
+  transport["Transport: one comment marker family on the issue, kind as a field.<br/>Never an append to the committed ledger, which would wedge the<br/>landing it precedes. It becomes a ledger comment event at the flip."]
+
+  a1 --> transport
+  a2 --> transport
+  a7 --> transport
+  paper -.->|"would use the same seam"| transport
+
+  classDef built fill:#d5efd5,stroke:#2e7d32,color:#000
+  classDef partial fill:#fff2cc,stroke:#e69500,color:#000
+  classDef designed fill:#f0f0f0,stroke:#9e9e9e,color:#000,stroke-dasharray:5 3
+  classDef plane fill:#fbfbfb,stroke:#bbbbbb,color:#333
+  class a1,a2,transport built
+  class a3,a4,a5,a6,a7 partial
+  class a8 designed
+  class wired,paper,none,prod plane
+```
+
+**Required fields, which are the shapes a reimplementer needs.**
+
+| Kind | Required fields |
+| --- | --- |
+| implementation-plan | schema version, feature, tasks, groups |
+| change-summary | schema version, issue, why, commit, changed, self-check |
+| release-record | schema version, issue, claims, unsupported, post-ship action |
+| classification | schema version, issue, level, depth, rule, reason, selects |
+| change-shape | schema version, issue, call tree, file tree, new public functions |
+| verification-evidence | schema version, issue, passed, gates, criteria |
+| validation-transcript | schema version, issue, requirement, environment, steps, verdict |
+
+A release record's claims each carry their evidence, typed as a test, a command or a gate, and every
+unsupported claim is named and dropped rather than softened — that is the whole point of the role that
+writes it.
+
+`solution-design` is the one kind without a schema, because it is specified as **markdown with six
+machine-checked sections** rather than a JSON payload — the problem in the requester's terms, success
+as an observable, a consumer transcript, out of scope, constraints, and open questions. Structured
+markdown is the only shape that is both readable and checkable: JSON is unreadable and prose is
+unactionable. **The consumer transcript is this project's translation of a UI mockup**: the consumer
+surface here is a CLI, so the artifact that settles a design dispute by *showing* the surface is the
+command as it will be typed and what it will print.
+
+**Two mechanisms carry them, and the second is the one a reader gets wrong.**
+
+The schemas are **catalog sources**, so a repository that has not installed them runs *neither* end of
+the contract. Both producer and consumer resolve the schema first, which is what keeps a skipped write
+from becoming a refusal downstream.
+
+And the artifacts travel as **comment markers on the issue**, not by appending to the committed ledger.
+A direct ledger append would refuse the landing it precedes: the advance sweeps base-checkout dirt only
+under the tracker path, and anything else blocks the merge, so an artifact written into the committed
+ledger on the way into build would wedge the very landing it gates. The marker seam writes on every
+rung and *becomes* a ledger comment event at the flip. Storage is idempotent on the whole body, and a
+read takes the last matching marker.
+
+**Two ratchets weaken even the wired pair, both deliberate and both stated in the code.** An **absent
+artifact is admitted** — only a present and invalid one refuses — because absence is ambiguous between
+a skipped write and work that predates the rule. And a repository that has not installed the schemas
+runs neither end.
+
+**Schemas written is not roles reachable, and it is not artifacts written either** [measured
+2026-08-16]. Three kinds have a producer; two of those have a consumer that can refuse. Four have a
+schema on disk and neither, so their contract cannot refuse anything. **Five of the seven roles
+therefore carry a contract that cannot be exercised until its artifact has run in anger**, and that is
+a debt this section names rather than a gap it hides.
+
+**Three handoff files are deliberately not schema-validated**, because each is a small internal signal
+rather than a contract between states: the repair brief written into a lane's worktree, the
+missing-fact sentinel, and the one-time checkpoint confirmation codes.
+
+## Gates and enforcement
+
+Four layers, from earliest to latest.
+
+```mermaid
+flowchart TB
+  l1["1 · tool-call boundary<br/>agent hooks intercept a tool before it runs<br/>3 claude events + 1 copilot event mapped · basicly-u2hl.49"]
+  l2["2 · git hooks<br/>pre-commit, commit-msg, pre-push<br/>the deterministic floor, agent-independent"]
+  l3["3 · the verify runner<br/>the same checks, by mode, callable as one command<br/>and recorded as a tracker gate"]
+  l4["4 · CI<br/>the same checks again on three platforms,<br/>plus a fresh-consumer smoke install at a tag"]
+
+  pg["plan gate · at DECOMPOSE<br/>refuses a child with no criteria, scope, dependencies,<br/>budget, integrity level or demonstration -<br/>but never runs the demonstration"]
+  vg["validate gate · L3 only<br/>a consumer-level verdict recorded by the engine,<br/>never by the agent"]
+  rt["ratchets · a frozen baseline that may only fall<br/>module size · comment density · suppression debt ·<br/>corpus drift · stale citations"]
+
+  l1 --> l2 --> l3 --> l4
+  pg -.-> l3
+  vg -.-> l3
+  rt -.-> l3
+
+  classDef built fill:#d5efd5,stroke:#2e7d32,color:#000
+  classDef partial fill:#fff2cc,stroke:#e69500,color:#000
+  classDef designed fill:#f0f0f0,stroke:#9e9e9e,color:#000,stroke-dasharray:5 3
+  class l2,l3,l4,vg,rt built
+  class l1,pg partial
+```
+
+**Layer 1 is the least built.** Every gate below it judges an artifact *after* it exists. The host event
+vocabulary widens only to events we can name a consumer for, and **a stage lands with the catalog source
+that uses it** — widening to every documented event was refused on the same argument this document makes
+about dead definitions everywhere else: dozens of stages with no consumer is a second instance of the
+same problem, and each is a surface to keep true against a vendor that moves.
+
+### The verify pipeline
+
+**Three modes.** Fast runs at pre-commit, full at pre-push and in CI and at the loop's verify step, and
+staged is a staged-files-only subset.
+
+The check list is assembled from three config layers, with the drop-in layer appending. Today that
+composes to 26 checks [measured 2026-08-16; re-derive from the assembled config rather than by counting
+the file, because the drop-ins contribute]. They cover linting, formatting, three platform-specific
+type-check passes, security scanning, dead code, a wiring gate, the kit boundary, the layering contract,
+the test suite, all five projection drift checks, the documentation claim gates, and the ratchets.
+
+**A check whose repair is purely mechanical and lossless declares a fix command.** The pre-commit hook
+applies it to the staged files and re-stages them, so the commit carries the fixed bytes and no agent
+cycle is ever spent re-running a repair a script can make. The check itself is unchanged, so unformatted
+input from outside the harness still fails in CI, and a non-mechanical failure still blocks.
+
+**Failure semantics are chosen so an ambiguous state is a failure.** A missing executable is a failure,
+not a skip. A git command that cannot answer which files are staged makes the check fail rather than pass
+vacuously. A recorded pass — and only a pass — enters the usage ledger, which is the sole evidence source
+for the release-time capability gate that refuses to ship a declared capability nothing has exercised.
+
+**A narrow forgiveness path exists and is deliberately narrow**: a re-run may forgive a failure only when
+*every* failing check matches a known dependency-defect signature.
+
+### Gate results and who may write them
+
+Deterministic checks report a **required** gate; a failed required gate blocks the advance. AI judgment
+reports a **non-required** gate, which is advisory and never blocking.
+
+**The gate ledger authenticates nothing, and a dispatched lane agent shares the real tracker through the
+worktree redirect.** So a required gate counts only results carrying **the engine's own provider**; a
+foreign result on a required gate is surfaced as *disregarded* rather than counted. That turns "a judged
+verdict is never a green light" into an enforced property rather than agent good behaviour. Advisory
+gates still accept any provider.
+
+**Forging one of those provider strings is still possible.** That is the same acknowledged class as grant
+and checkpoint marker forgery, and authenticated gate results are the only real fix. This document states
+it rather than implying a guarantee that does not exist.
+
+### The plan gate, and the hole in it
+
+The plan gate is the entry condition on build. It refuses, reporting every violation at once: an empty
+plan; a duplicated child title, since the graph is title-keyed; a child missing acceptance criteria, a
+scope, a dependency declaration, a token budget or an integrity level; an integrity level outside the
+vocabulary; a non-positive budget; a dependency naming a title the plan does not contain; and any cycle
+in the declared graph. An empty dependency list passes and an absent one does not, because declaring
+"nothing blocks this" is a statement and omitting the field is not.
+
+**Every planned child must also name how it is demonstrated end to end**, which is what makes "every
+acceptance criterion names its own check at plan time" satisfiable by construction: a child with no
+consumer-visible behaviour has no check to derive, and that is the horizontal-slice failure a scope-glob
+decomposer produces by default.
+
+**The demonstration check tests the field's form only and never runs the command** [verified 2026-08-16].
+It refuses an empty value, a value spanning several lines — the recorded form is one line and a
+multi-line value would read back truncated — and a value naming nothing runnable, which it detects as the
+absence of a backticked span. That is the entire test. **A demonstration selecting zero tests passes**,
+and so does one naming a command that always succeeds. The gate's own documentation is honest about this:
+it is a floor, asking whether the author could name one, not a judgement.
+
+### Integrity levels
+
+**Three levels, assigned by a deterministic rule over the declared scope globs.** Not judgeable,
+therefore not gameable, and it costs zero tokens. The highest level any path resolves to wins, and the
+clauses are single-valued by exclusion rather than by ordering.
+
+| Level | Paths | Gates it requires |
+| --- | --- | --- |
+| L1 | documentation and tests | the fast check set |
+| L2 | engine and scripts, and the fallback for anything unclassified | the full check set |
+| L3 | consumer surfaces: the CLI, the config schema, the catalog schemas, the projection layer, the run record | the full set, plus a consumer-level validation gate and an evidence-binding gate |
+
+**Only the gate selection is consumed today.** The level also carries a model tier, a rework allowance
+and a ship disposition; those are written into the classification marker's text and **never read back**.
+The rework cap comes from config unconditionally, and tier routing comes from the runner configuration.
+A designed diff-size downgrade — an L3 path with a small diff and no changed public signature dropping to
+L2 — is implemented and **never invoked in production**, because the classify path supplies no patch.
+
+**Only one of the three L3 gates is promoted into the required set**, and deliberately: the
+evidence-binding gate is not, because nothing produces it, and promoting a gate nothing can satisfy would
+wedge every L3 unit.
+
+### Ratchets
+
+A ratchet freezes a measured baseline that **may only fall**, so a property nothing else measures cannot
+silently get worse.
+
+| Gate | Metric | Baseline shape |
+| --- | --- | --- |
+| module size | module tokens excluding top-level imports, against a per-file cap | a frozen per-file table plus a waiver count |
+| comment density | comments plus docstrings as a share of module tokens, against a cap | a frozen per-file table plus a waiver count, with an explicit rebaseline escape carrying a reason |
+| suppression debt | count of lint suppressions per rule code | a frozen per-code table that must **equal** the tree, not merely not exceed it |
+| corpus drift | unaccounted context bullets per open parent issue | a frozen per-issue count |
+| stale citations | `file:line` references in a document that no longer point at what the sentence claims | a frozen per-document count |
+| tree growth | net tokens added tree-wide over a rolling window | **none: it reports and never fails** |
+
+**The size ratchet is an agent-context gate, not a code-quality gate**, and the distinction matters
+because the quality literature argues the other way: the measured work finds mid-size components best and
+smaller modules proportionally *more* defect-prone. The rest here is the working set an agent can hold,
+which is a plausible mechanism and not a measurement, and it must be stated that way.
+
+**The two size ratchets pull in opposite directions.** Shedding tokens by extracting code raises the
+remaining prose share, so an extraction satisfies both only when the extracted unit's prose share is
+*above* its origin's. Measure that before choosing a split.
+
+**A ratchet whose control has never fired correctly becomes observability rather than a block.** A
+prediction that blocks must be right; a prediction that reports costs nothing when it is wrong. Demotion
+is not deletion: the number stays recorded, surfaced and falsifiable, because one gate here was wrong for
+months *with the telemetry already contradicting it*.
+
+**Never propose a change whose stated benefit is the number moving.** Deleting comments is the cheapest
+route to size headroom in this tree and returns a large fraction of some modules' budgets, and splitting
+a function in two satisfies a complexity gate while making the code worse. Extract along a nameable
+responsibility or do not extract.
+
+### Documentation gates
+
+Two gates keep this document and its siblings honest, and both exist because a document is read as fact
+by every human and agent that plans from it.
+
+**Generated blocks** are regions rendered wholly from the tree between paired markers, so a fix run
+repairs drift. This document carries one: the always-on size table.
+
+**Assertions** are checkable but not writable, so a failure names the edit rather than making it. Two
+bind on this document: every subcommand the CLI ships must appear in its command tables, and every
+subcommand of a *group* must appear in that group's own rows. The second exists because the first is
+satisfied by a single group row, which is how several worktree subcommands stayed undocumented while
+every gate passed. A third pair checks the **reverse** direction on the consumer surfaces: a command
+shown in the README or on the landing page must be one the CLI actually ships. A separate test holds the
+other reverse direction on this file — a removed or renamed subcommand must leave the tables.
+
+**A `file:line` in a document is a claim about the code**, and until the citation gate nothing checked
+one — four such claims once planned a priority-zero item against a remedy the tree had already replaced.
+Two exact rules: a cited line must be live code, and it must fall **inside the symbol its own sentence
+names**. That second rule is what pins a citation to something stable under editing. It is a ratchet with
+a closed list: a document absent from the list may not carry a single stale citation. **This document
+carries none, and prefers a symbol name or a command over a line number everywhere.**
+
+### CI
+
+| Workflow | Trigger | What it runs |
+| --- | --- | --- |
+| projection drift | push and PR on the trunk | the projection staleness check |
+| quality gates | push and PR on the trunk, plus manual | first, every commit message in range replayed through both message hooks; then the full check set on three platforms, fail-fast off |
+| release | a version tag | lint and both check sets, a **fresh-consumer smoke install** from the tag into an empty repository, then a version-tag match, changelog extraction, a build, and a published release |
+| pages | a push touching the site | build and deploy the landing page |
+| improvement loop | manual dispatch only | the improvement controller in dry-run mode |
+
+**CI ignores tracker-only pushes**, because the commit-message hooks are the deterministic floor for
+those.
+
+### Agent permissions
+
+A deny-list of semantic rules is projected into the one agent family that has a config-file deny.
+Projection is **ensure-present**: managed patterns are merged in, consumer entries are preserved, and
+**nothing is pruned**, because a flat deny string carries no per-entry marker and an extra deny is
+fail-safe. Drift is therefore a subset check.
+
+**The limits are stated because absence of a rule is not permission.** Only the file-edit rule form binds
+for file mutation on that family, and the two write-tool variants a reader would expect are ignored by
+the permission check. The second family has no config-file deny at all, so the deny-list is injected as
+invocation flags at dispatch, and its pattern language matches by token prefix with no infix wildcard, so
+it cannot express the first family's globs. The third family forbids project-scope override of its
+sandbox and approval settings, so those guardrails are invocation-only. **The list is a partial backstop,
+never the source of a prohibition** — several destructive git commands are denied on no target and still
+require human confirmation.
+
+## The work tracker
+
+**The tracker is not a peripheral integration — it *is* the harness's state**, so every guarantee in this
+document is downstream of it. Today it is an unowned external binary in the critical path.
+
+**The tracker holds** issues typed as work classes, a dependency graph, gate results, checkpoint markers,
+evidence markers, and the harness's own artifact and telemetry markers. Phase is derived from it;
+in-flight worktree bindings are stashed on the issue; design constraints ride *down* a dependency tree.
+**Resume is re-reading it**: in-progress issues, their bindings, their recorded gate results and the ready
+set, reconciled against live worktrees. That is what makes the loop cross-agent — start on one family,
+resume on another.
+
+### Why own it
+
+**Ownership, not speed.** Re-measured against the live ledger, a single-record in-process read is about
+fifteen times cheaper than the median external CLI call and a full fold about twice — real but modest, and
+the fold ratio narrows as the ledger grows. An earlier claim of a far larger factor compared incomparable
+operations against a much smaller ledger and was corrected.
+
+**Two constraints are recorded because they are easy to lose.** A **clean-room boundary** applies: the
+licence of the binary currently depended on carries a rider restricting a class of users, which is itself
+the strongest argument for owning the component. And adopting a versioned database instead is rejected,
+because it reintroduces exactly the unowned-binary upgrade surface being removed.
+
+### The target shape
+
+Pure Python inside this package, with an **append-only event log as the truth** and every other file
+derived and disposable. A record's state is a **fold over its events**, so history lives in the data
+rather than depending on git history surviving a squash or a shallow clone.
+
+**The event record** carries an id, the record it belongs to, a per-record sequence number, a kind, an
+actor, a timestamp, a payload, and a carried totals cache. Event kinds are creation, a field change, a
+status change, a comment, a dispatch, a tombstone, a graph edge and a gate result.
+
+- **The id is a digest over kind, payload and generation, deliberately excluding the timestamp**, so
+  replaying the same logical write is idempotent. The trap that buys, documented rather than hidden:
+  re-recording an identical fact is swallowed, so a genuine reopen needs a new generation.
+- **The sequence number is per record, not per ledger.** Two branches incrementing the same record fork
+  visibly.
+- **Totals are a cache that lives in the log**; the fold is the authority. Spend is carried in integer
+  micro-units so the sum is order-independent, and one accumulator serves both the writer and the fold.
+- **The fold sorts into canonical order first**, so it is a function of the event *set* and not of the
+  file's append order. **An unknown kind is skipped for state but still counted in totals**, so an old
+  reader never reports a newer writer's events as a false disagreement.
+
+**Append-only is structural**, not a convention: the writer opens for append and nothing rewrites a line.
+Repairs are corrective *appends*. There is deliberately **no fsync** — the push is the durability
+boundary, and the code says so explicitly so nobody adds one. Rotation is name-based, so a rotation policy
+just creates a later-sorting file and no wall-clock branch enters the write path.
+
+**Locking is a file whose existence is the lock**, created exclusively, because the POSIX advisory lock
+does not exist on one of the three supported platforms. It is held for one append; a caller needing a
+wider critical section holds it and passes it in. Staleness is measured on a **monotonic** clock with an
+epoch marker, so a negative age after a reboot counts as stale rather than as freshly-taken, and release
+re-checks the holder so it never deletes a lock stolen from it. Liveness probing is injected and returns
+*unknown* on the platform where the obvious probe terminates the process instead of testing it.
+
+**Deployment has exactly one requirement the kit cannot meet itself**, and it is declared: the log files
+must be checked out with unchanged line endings, or a checkout on one platform rewrites the log in place.
+
+**The kit may not import the engine.** A pre-commit hook enforces the one-way boundary, and the redaction
+function is **injected into the kit** rather than imported by it.
+
+### The seam
+
+One module spawns the external binary. Everything else calls through it, which is what makes the
+replacement a change in one place.
+
+**Behind the seam already:** ranking is owned in-process, and the harness's own comment marker families are
+written and read as ledger events with no external process spawned at all.
+
+**Ranking is a pure function of the graph**: unblocked only, then priority, then descending count of
+still-live blocking dependents, then id. **Creation time is deliberately dropped**, because age-based
+ordering makes dispatch order clock-dependent for an unchanged graph. It emits its own schema name rather
+than the external tool's, so a consumer parsing it is not parsing a foreign contract.
+
+**Still in front of the seam** [measured 2026-08-16]: about 29 spawn sites across 12 engine modules,
+concentrated in decompose, the loop, policy, the supervisor and merge, plus one in the improvement
+controller. Re-derive it rather than trusting the number — the count is a moving target, and a naive search
+for the wrapper's name undercounts, because most call sites import it under an alias and a second wrapper
+exists for tolerated failures.
+
+### Dual write, and where it leaks
+
+The repository runs in **dual** mode: every accepted write also lands in the owned ledger.
+
+```mermaid
+flowchart TB
+  subgraph steps["The five-step cutover: three have run, and not in order"]
+    direction LR
+    s1["1 · import<br/>RAN, and re-runnable"]
+    s2["2 · shadow differential<br/>RAN on dual; the declared baseline is empty"]
+    s3["3 · dual write<br/>LIVE"]
+    s4["4 · flip the source of truth<br/>NOT DISPATCHABLE · basicly-vkh0"]
+    s5["5 · native harness markers<br/>LANDED ahead of steps 2 to 4"]
+  end
+
+  callers["~29 spawn sites across 12 engine modules<br/>plus one in the improvement controller · basicly-vkh0"]
+  seam["the one seam<br/>resolve the mode and validate translatability,<br/>THEN spawn, THEN mirror the accepted write"]
+  hand["a human running the binary by hand<br/>never enters the seam · basicly-vkh0.24"]
+  cmd["basicly tracker write<br/>the surface that closes that hole"]
+  ext["EXTERNAL STORE - authoritative<br/>a database exported to JSONL"]
+  mirror["the mirror: one way, external to owned<br/>raises rather than logs, so an untranslatable<br/>write stops the work instead of diverging the stores"]
+  own["OWNED STORE - not authoritative<br/>.basicly/ledger/events-*.jsonl"]
+
+  shadow["basicly tracker shadow<br/>compares the ledger against the LIVE binary,<br/>record by record, on three queries"]
+  blockers["what still fails it: records written<br/>outside the seam and absent from the ledger"]
+  noeq["five operations with no owned equivalent -<br/>each a design question, not a port:<br/>lint · dependency cycles · label query · id minting · gate list"]
+  target["TARGET · owned, in-process, append-only<br/>state is a fold over events; fsck and rebuild;<br/>provenance on every edge · basicly-vkh0"]
+
+  s1 --> s2 --> s3 --> s4
+  s5 -.->|"out of order, so the differential must run on dual"| s3
+  s4 -.->|"waits on"| blockers
+  s4 -.->|"and on"| noeq
+  s4 --> target
+
+  callers --> seam
+  cmd --> seam
+  seam --> ext
+  seam --> mirror
+  mirror --> own
+  hand --> ext
+  ext --> shadow
+  own --> shadow
+  shadow --> blockers
+
+  classDef built fill:#d5efd5,stroke:#2e7d32,color:#000
+  classDef partial fill:#fff2cc,stroke:#e69500,color:#000
+  classDef designed fill:#f0f0f0,stroke:#9e9e9e,color:#000,stroke-dasharray:5 3
+  classDef plane fill:#fbfbfb,stroke:#bbbbbb,color:#333
+  class s1,s2,s3,s5,seam,ext,shadow,cmd built
+  class callers,mirror,own,hand,blockers partial
+  class s4,noeq,target designed
+  class steps plane
+```
+
+**The write order is: decide, then spawn, then mirror.** The mode is resolved and the argv's
+translatability validated **before** the external binary is spawned. That ordering is the fix for two real
+defects, and both were one mistake: the mirror used to raise *after* the write had already run, so a plural
+close the binary accepts and the translator refused diverged the stores before the guard fired.
+
+**An unregistered mode reader raises rather than defaulting.** Defaulting to external let writes land on
+one store alone from a code path that reaches the seam without importing the config loader.
+
+**The registered mode set is external, dual, owned**, validated on read: a value outside the set raises
+rather than falling back.
+
+**Six write surfaces are mirrored** — close, comment, create, dependency add, gate report, update — and two
+store-management surfaces deliberately are not. Anything classified as a read produces no draft. **Anything
+else raises**, which is the point: a write surface with no translator must stop the work rather than
+diverge the stores.
+
+**The translatability precheck runs the real translator against a placeholder and discards the result**,
+deliberately, so "which argvs translate" has exactly one implementation rather than a validator and a
+writer that can disagree.
+
+**The seam is the only place both stores move together, so a write surface must route through it rather
+than around it.** That is a design invariant, and it is why a human's tracker write has its own command
+rather than being left to the raw binary: a directly spawned binary never enters the mirror, so it moves
+one store and not the other, and the differential then reports a divergence it cannot tell from a mirror
+failure. `basicly tracker write` is a thin passthrough on purpose — the refusals a write can meet, an
+unknown mode or an untranslatable argv, belong to the seam and should be the same ones the engine's own
+writes meet.
+
+### The shadow differential, and what would license the flip
+
+**The reference is a live read of the external binary, never the JSONL export.** An upsert-only export
+cannot express a deletion, so two derivatives of one snapshot agree with each other and prove nothing. The
+comparison covers three queries — records and derived phase, the ready set, and gate status — and the gate
+side has no export field at all, so live is the only witness.
+
+**The kit audits its own reference**: it calls the views function a second time with a synthetic event
+appended and refuses a source whose answers move with it. **It deliberately does not cache**, because a
+memoised answer would clear that probe by being the same answer rather than an independent one.
+
+**Two verdicts, and the exit code needs both.** *Clean* means no in-scope disagreement, nothing undeclared,
+and no refused reference. *Conclusive* means the in-scope population is non-empty: a comparison over zero
+records discriminated nothing, so **an empty scope is inconclusive, never clean**. Without that, scoping
+would license the flip on a comparison that measured nothing.
+
+**Two exclusion populations, keyed on two different things, and this is the part most likely to be got
+wrong.** A record the *ledger* holds from the import is excused as history, keyed on a marker the import's
+own producer writes. A record the *reference* holds and the ledger does not is excused only by an
+explicitly declared baseline sidecar. This repository's declared baseline is **empty**, so nothing on the
+reference side is excused — a summary reading "zero declared" beside a large "excused as history" count is
+not a contradiction.
+
+**The declared baseline may be written once and may only shrink.** Re-declaring after the dual write
+started would absorb a genuine failure into history, so widening it is never a repair. Symmetrically, the
+import refuses a ledger that already holds a post-flip record.
+
+**What the run says today** [measured 2026-08-16, `uv run basicly tracker shadow`]: not clean, and
+conclusive. The failures are a small number of records that exist on the external tracker and are absent
+from the ledger, and **every one of them is a hand-write that bypassed the seam** rather than a mirror
+defect. An earlier reading of hundreds of gate disagreements is stale: those carry the import marker and
+are now correctly excused as history.
+
+**So the flip no longer waits on a one-shot gate dump.** It waits on the bypass route being closed and on
+the five operations that have no owned equivalent at all — the definition-of-ready lint, which means owning
+the validation rules; dependency-cycle detection; a label query; id minting; and the gate listing. Each is
+a design question rather than a port.
+
+**Two kit modules are built and reached by nothing.** A consistency checker and an edge-provenance labeller
+exist with tests and no engine caller — verified with a positive control that found the callers of the kit
+modules that *are* loaded. Both are advertised on consumer surfaces as shipped capability. **This is the
+closed-blocker-is-not-a-working-gate case in its purest form: the code exists, and nothing binds it.**
+
+The design they encode is worth keeping even though nothing runs it. The checker's contract is that it
+**repairs only by appending** a corrective event, so a broken log is reported and never rewritten in place,
+and a derived file that disagrees with the log it summarises is a separate severity with a separate exit
+code. The labeller's contract is that every graph edge carries how it got there — extracted from a human or
+repository fact, inferred by an agent, or ambiguous — and that disposition decides what it may do:
+extracted **may gate** a landing, inferred is **shown as a proposal**, ambiguous **routes a decision**. The
+label rides the event rather than the edge, the strongest label wins, promotion is monotone with **no
+demotion**, and an unknown label fails **closed** into the least-trusted disposition, because the tolerant
+direction for a gate is the restrictive one.
+
+**The kit as a whole is outside the scope of any architectural audit until its own promotion runs.** Its
+modules landed against reasoning that was never promoted to a design, so there is no frozen surface, no
+declared schema and no cache decision to judge them against — and an audit needs a specification. That
+condition was written as prose, nothing read it, and it was discharged by an issue closing somewhere else.
+**A gate written as prose is not a gate.**
+
+### Redaction
+
+**No committed artifact carries a machine-specific path, username or hostname**, and three rule sets
+enforce it: high-signal secret shapes, machine path shapes, and the running user's own name — the last built
+per run rather than pattern-matched, because a username is not a shape, and ignored when it is short enough
+to shred ordinary prose.
+
+**The composition order is load-bearing and documented**: paths first, identity second, because the path
+placeholder contains characters the path rules' tail class excludes and the reverse order would strand the
+directory layout unredacted. The **whole** path is redacted, not just the user-identifying head — the leak
+that motivated the Windows rule was a directory layout with no username in it at all.
+
+**It binds in two distinct places.** Every owned-ledger append is redacted at the write. And the engine's
+only tracker-commit path scrubs both stores immediately after the flush and before staging.
+
+**The deterministic floor is two pre-commit hooks**, which are standalone stdlib scripts copied to consumers
+and therefore **cannot import** the engine's rule sets. The mirror is real duplication. The path mirror is
+gated by a test asserting the two sets are equal; **the secret mirror is kept in step by convention only**,
+and that asymmetry is a gap rather than a design.
+
+### The external binary pin
+
+The tracker binary is an external CLI, not a package dependency. The engine declares a **floor** on major
+and minor, and an **exact pinned version** that is warned about in **both** directions.
+
+**The exact pin has a ceiling for a reason.** A floor alone once let a silent upgrade break a gate command
+on one machine while CI stayed green. Upgrading past the pin is not a fix either: the upstream trunk targets
+a newer database schema and its migration accepts only a narrow range, so a newer binary has no supported
+forward path from the schema in use here.
+
+**The pin string is duplicated by hand in about ten places** — user-facing messages, comments, consumer
+documentation — with no gate keeping them in step, and **the consumer-facing documents call it a floor while
+the code treats it as an exact pin**. That is a live contradiction between this repository's documentation
+and its code, recorded here rather than resolved, because resolving it is a change to those files. The
+single authoritative statement is the constant in the seam module; the installer imports it rather than
+copying it, which is the one duplicate that cannot drift.
+
+## Status: built, partial, designed
+
+One status view, grouped by the four things the system is. It is **derived**: a shipped row is described
+above, and every other row names what is missing. There are **no dates** — the project does not run to a
+schedule, so status is the only honest axis. The **order** the unshipped rows get built in lives in the
+implementation plan.
+
+**Five states, each defined by the evidence it requires**, so a row cannot be promoted by optimism.
 
 | Status | Means | Evidence required to claim it |
 | --- | --- | --- |
-| `shipped` | Running code in the current release | Exercised on this repo's own development, and described in §§0–13 |
-| `building` | Sequenced into a phase being worked now — plan Phases 0–4 | An open work package with written exit criteria |
-| `designed` | Settled in a design document but sequenced behind a later phase — plan Phases 5–6 — and **nothing is built** | A design document and a §14 row. **Not** evidence that anything enforces it |
-| `researching` | The deliverable is a number rather than a capability, so this label wins over the phase band | A specified measurement whose result is allowed to cancel the work, written into the design document that owns it |
-| `deferred` | Deliberately not built | Nobody has asked for it yet (§11) |
+| shipped | Running code | Exercised on this repository's own development, and described above |
+| building | Sequenced into a phase being worked now | An open work package with written exit criteria |
+| designed | Settled and sequenced behind a later phase, and **nothing is built** | A decision recorded here. **Not** evidence that anything enforces it |
+| researching | The deliverable is a number rather than a capability | A specified measurement whose result is allowed to cancel the work |
+| deferred | Deliberately not built | Nobody has asked for it |
 
-The `building`/`designed` line is drawn at the plan's phase sequence rather than at
-enthusiasm, because both states have an open tracked record and only the sequence says
-which one is actually in flight.
+### Guidance
 
-**15.2 The map.** Grouped by the four pillars of §0, because that is the axis the
-whole document is organised on.
-
-Pillar 01 — **guidance**:
-
-| Capability | Status | Where it is specified |
+| Capability | Status | Note |
 | --- | --- | --- |
-| One catalog projected to Claude, Codex and Copilot — instructions, skills, subagents, permissions | `shipped` | §§4–7, §9 |
-| Drift gate (`basicly check`) run by CI | `shipped` | §6 |
-| Path-scoped rules tier, so conditional guidance loads on a matching file instead of always | `shipped` | §7 detail 4 — engine built, **four** fragments use it today, plus a `paths:` glob on a skill at zero always-on cost; cost falls for claude and copilot and rises for codex (§14.4) |
-| Invocation axis per entry: model-invoked pays context load, user-invoked does not | `shipped` | §4.2 (skills) — declared on skill sources today, not yet on fragments |
-| Deterministic lexical routing evals — rank-1 rate in CI, no embeddings | `shipped` | §14.4 — `catalog lint` rules 8 and 9 on every commit, with a ratcheting rank-1 floor that cannot be lowered |
-| An eval case file per catalog entry, enforced as a structural failure | `building` | §14.4 |
-| Relieve the always-on baseline by scoping what is conditional | `building` | §7, §14.4 |
-| Tutorial and how-to layer, so a new consumer has a path from install to first shipped unit | `shipped` | §13.1 — the tutorial was executed end to end on a fresh repo before it was written |
-| Whether an individual entry changes behaviour, and which baseline rules bind while an agent works | `researching` | §14.4 — recall measured 2026-07-26; adherence still open |
-| Cursor as a target; a native Codex scoped-rules renderer | `deferred` | §11 |
+| One catalog projected to three agent families: instructions, skills, subagents, permissions | shipped | |
+| Projection drift gate run by CI | shipped | |
+| Path-scoped rules tier | shipped | Engine built; four fragments and one skill glob use it. Cost falls for two families and rises for the one that inlines |
+| Invocation axis per entry | shipped | Declared on skill sources; not yet on fragments |
+| Deterministic lexical routing evals with a ratcheting rank-1 floor | shipped | |
+| An eval case file per catalog entry, enforced as a structural failure | building | Model-invoked skills carry one by convention; fragments carry none |
+| Relieve the always-on baseline by scoping what is conditional | building | Authoring work, not engine work |
+| Tutorial and how-to layer | shipped | The tutorial was executed end to end on a fresh repository before it was written |
+| Whether an individual entry changes behaviour, and which baseline rules bind while an agent works | researching | Recall is measured; adherence is open. **The largest gap in the system** |
+| Behavioural efficacy evals with control arms, hidden checks and a safety tier | designed | No arms, no hidden checks, no safety tier exist in code |
+| Cursor as a target; a native Codex scoped-rules renderer | deferred | For Codex there is currently no mechanism to project *to* |
 
-Pillar 02 — **gates**:
+### Gates
 
-| Capability | Status | Where it is specified |
+| Capability | Status | Note |
 | --- | --- | --- |
-| Git hook floor across pre-commit, commit-msg and pre-push | `shipped` | §4.2 |
-| Agent hooks for Claude Code and Copilot | `shipped` | §4.2 |
-| Verify pipeline with `fast`, `full` and `staged` modes | `shipped` | §6, §12 |
-| Every gate classified by type, and a pre-flight gate that writes nothing | `building` | [`factory-loop-requirements` §5.1](../requirements/factory-loop.md) — the five gates the engine names are typed; the unnamed ones are classified in prose because they have nothing to key on |
-| Severity required on judged output, plus a lint refusing a pre-judging reviewer bundle | `shipped` | §14.3 — severity as a required field, the no-pre-judging lint, the composite rubric gate and the convergence detector all landed; the deterministic half listed in §14.3 did not |
-| Rework convergence detection from the open-finding set rather than the count | `shipped` | §14.3 |
-| Agent-context ratchets: module size, comment density, suppression debt, tree growth | `shipped` | §12 — four `[[verify.checks]]` entries over all `.py`, frozen per file; tree growth reports rather than blocks because it has no firing history yet |
-| Enforcement at the tool-call boundary, not only at the commit boundary | `designed` | [`factory-loop`](../requirements/factory-loop.md) §11 item 8 — every gate here judges an artifact _after_ it exists; `claude_settings.py` maps 2 of 31 documented host hook events, so this is engine work before it is catalog work |
-| `basicly install` reporting the capability tier it actually delivered | `building` | Plan Phase 3 — enforcement is plugin-tier; on an instruction-tier host the harness degrades to advice, and we currently say so nowhere |
+| Git hook floor across three stages | shipped | |
+| Agent hooks for two families | shipped | Three events on one family, one on the other |
+| Verify pipeline with three modes | shipped | |
+| Ratchets: module size, comment density, suppression debt, corpus drift, stale citations | shipped | Tree growth reports rather than blocks, because it has no firing history |
+| Severity required on judged output, and a lint refusing a pre-judging reviewer bundle | shipped | |
+| Rework convergence detection from the open-finding set rather than the count | shipped | |
+| A release gate refusing to ship a declared capability nothing has exercised | shipped | Derives the inventory from the configured checks, and fails closed with no ledger at all |
+| Every gate classified by type | building | The gates the engine names by constant are typed; the rest are classified in prose because they have nothing to key on |
+| Enforcement at the tool-call boundary, not only at the commit boundary | designed | Engine work before it is catalog work: the host event vocabulary is barely mapped |
+| A plan gate that runs the demonstration it admits | designed | Today it checks the field's form and never executes it |
+| `basicly install` reporting the capability tier it actually delivered | building | On a host with no plugin tier the harness degrades to advice, and we say so nowhere |
 
-Pillar 03 — **the loop**:
+### The loop
 
-| Capability | Status | Where it is specified |
+| Capability | Status | Note |
 | --- | --- | --- |
-| Single-track loop, intake to retro, driven identically by any supported agent | `shipped` | §12 |
-| Worktree isolation per unit of work | `shipped` | §12 |
-| Parallel lanes: supervisor, lane mini-loop, serial merge queue | `shipped` | §12, §14.2 |
-| Autonomy grants L0–L3 with a spend ceiling, decision queue, confined decider | `shipped` | §12 |
-| Release automation up to the annotated tag | `shipped` | §12 |
-| Scope sized by the material a lane actually reads, so a small change to a large module is dispatchable | `shipped` | §12 — per-file read cap measured over 185 (lane, file) pairs; a file under ~4,000 tokens is read whole and above that a lane takes out ~1,500 however large it is |
-| Measured context occupancy recorded beside the forecast on every dispatch | `shipped` | §12 — `RunRecord.context_tokens`, the first measurement of the quantity the band gates on |
-| Per-model spend and wall-clock forecast, enforced when a supervisor pass is admitted | `building` | Plan Phase 1 — the current forecast models working set, not turn count, and that is now **measured** rather than suspected: declared scope predicts occupancy at R² = 0.095 against 0.863 for turn count |
-| A supervised multi-lane run with zero human interventions caused by a harness defect | `building` | Plan Phase 0 exit criterion |
-| VALIDATE as a rung with its own gate, dispatching a validator plus a reviewer per lens | `shipped` | §12.2.1 |
-| Hold and Kill as writes an operator's answer actually carries out | `shipped` | §12.2.2 |
-| A named role per judgment step, each with its own instructions, tool policy, tier and output contract | `shipped` | §12.11 — six of seven roles reachable in code; `curator` is one wiring behind a live `ship` handler, a declared tier is inert at spawn until `basicly-a3yi`, and the ledger only became able to falsify it when the record started copying the real argv (`basicly-jn1x`) — no supervised pass has yet written one |
-| A schema-validated handoff artifact at each state boundary | `building` | §12.12 — seven of eight kinds carry a schema; `solution-design` is markdown sections and its family membership is open |
-| RETROSPECTIVE on a computed special cause, never on a single failure | `shipped` | §12.13 |
-| An improvement controller that drives a codebase property to a set point | `shipped` | §12.14 — it has run live and filed a bead; it has no scheduled caller yet |
-| Cost per landed package — the instrument the tier claims rest on | `researching` | §14.6 |
-| Whether deterministic AST localisation cuts an implementer's pre-first-edit cost | `researching` | Plan Phase 1c |
+| Single-track loop driven identically by any supported agent | shipped | |
+| Worktree isolation per unit of work | shipped | |
+| Parallel lanes: supervisor, lane mini-loop, serial landing | shipped | |
+| Autonomy grants with a spend ceiling, decision queue, confined decider | shipped | |
+| Release automation up to the annotated tag | shipped | |
+| Scope sized by the material a lane actually reads | shipped | |
+| Measured context occupancy recorded beside the forecast on every dispatch | shipped | |
+| VALIDATE as a rung with its own gate, a validator plus a reviewer per lens | shipped | |
+| Hold and Kill as writes an operator's answer actually carries out | shipped | |
+| A named role per judgment step | shipped | All seven reachable; **the declared tier is inert at spawn**, and no supervised pass has yet recorded a role on an argv |
+| RETROSPECTIVE on a computed special cause | shipped | |
+| An improvement controller driving a codebase property to a set point | shipped | Has run live and filed one issue; manual-dispatch caller only, by decision |
+| A schema-validated handoff artifact at each state boundary | building | Three of eight kinds have a producer, two of those a consumer. The rest refuse nothing |
+| Tier injection, so a declared tier reaches the spawn | building | The hook exists in the kit and is not installed; declined outright on one family |
+| Per-model spend and wall-clock forecast enforced at pass admission | building | The current forecast models working set, not turn count, and that is now measured rather than suspected |
+| A supervised multi-lane run with zero human interventions caused by a harness defect | building | |
+| The judged-output contract: a reviewer structurally incapable of seeing the producer's conclusion, a review base recorded before dispatch, re-review scoped to the fix range, late rounds escalating a tier | designed | **Deterministic engine code, not a persona**, which is why it survived the routing landing |
+| Cost per landed package | researching | The instrument the tier claims rest on |
 
-Pillar 04 — **the work graph**:
+### The work graph
 
-| Capability | Status | Where it is specified |
+| Capability | Status | Note |
 | --- | --- | --- |
-| Issues, dependencies, gate results, checkpoints and evidence in a tracked graph | `shipped` | §12.1 |
-| Phase derived from tracker state, so resume is a read rather than a replay | `shipped` | §12.1 |
-| Atomic publish of the shared tracker export, and a store error charged to the store rather than to the lane's rework budget | `shipped` | §12.1, [`work-tracker`](../requirements/work-tracker.md) R7 — gated by four reader processes against a live writer |
-| The scheduler score and rank recorded behind each dispatch | `shipped` | [`work-tracker`](../requirements/work-tracker.md) §9.2 — every `[harness-run]` marker carries the rank, fallback rank, score and the schema version that makes the score interpretable, plus the dispatch order actually used, since a provisioned lane is claimed and the external scheduler has no opinion on it |
-| A pure, age-free ranking function owned in-process | `shipped` | §12.3 — `kit/tracker/scheduler.py` behind `br.read_ranking`, emitting `basicly.scheduler.v1` |
-| Owned in-process append-only event log, removing the external binary from the critical path | `building` | §14.5, `work-tracker` — steps 1–3 have run and the repo is `mode = "dual"`, mirroring every accepted write; step 4 waits on a gate-history import and post-flip records, so the owned side is not authoritative yet |
-| A repeatable ledger import a fresh consumer can run | `shipped` | §14.5 — `basicly tracker import [--dry-run]`, re-runnable, refusing a post-flip ledger (`basicly-vkh0.23`) |
-| No committed artifact carries a host path, username or hostname | `shipped` | [`work-tracker`](../requirements/work-tracker.md) R6 — redaction at the write seam for both stores, `tracker-path-scan` widened to the ledger, gated with a positive control that reports 4,812 findings on the pre-repair file and 0 after (`basicly-r166`) |
-| Provenance on every edge — extracted, inferred, ambiguous | `designed` | §14.5 |
-| `fsck` and `rebuild`, so "the log is the truth" is a claim someone can check | `designed` | §14.5 |
-| Cross-repo work offers as self-writes in each repo's own ledger, read-only across the boundary | `deferred` | `work-tracker` |
+| Issues, dependencies, gate results, checkpoints and evidence in a tracked graph | shipped | |
+| Phase derived from tracker state, so resume is a read rather than a replay | shipped | |
+| Atomic publish of the shared export, and a store error charged to the store rather than to the lane's rework budget | shipped | |
+| The scheduler score and rank recorded behind each dispatch | shipped | |
+| A pure, age-free ranking function owned in-process | shipped | |
+| Harness comment markers native to the owned store | shipped | Landed ahead of the steps before it, which is why the differential must run on dual |
+| A repeatable ledger import a fresh consumer can run | shipped | Refuses a post-flip ledger |
+| A seam-routed surface for a human tracker write, so both stores move together | shipped | Closes the last bypass route the differential can see |
+| No committed artifact carries a host path, username or hostname | shipped | Redaction at both write seams; the secret-rule mirror is kept in step by convention only |
+| Owned in-process append-only event log, removing the external binary from the critical path | building | Steps 1 to 3 have run; the flip waits on the remaining bypasses and on five unported operations |
+| A consistency check and rebuild, so "the log is the truth" is checkable | partial | **Built with tests and reached by nothing**, while advertised as shipped on two consumer surfaces |
+| Provenance on every edge: extracted, inferred, ambiguous | partial | Same: built, no caller, advertised |
+| Cross-repo work offers as self-writes in each repository's own ledger | deferred | |
 
-**15.3 Not planned.** So a reader does not read absence as an oversight, the refusals
-in §14.7 are permanent rather than unscheduled: an LLM orchestrator in control of the
-tracker, personas spawning personas, an agent-writable catalog, a maintained TUI, an
-external database or daemon, and agent-to-agent messaging. Each has a reason stronger
-than taste recorded there.
+**How this stays current.** A row changes state in the change that lands the behaviour, not in a later
+cleanup pass, and the same change updates the two rendered copies on the README and the landing page.
+**Nothing gates that**, so the honest consequence is that a stale row here is possible, and the sections
+above remain the place a shipped claim has to be true.
 
-**15.4 How this stays current.** A row changes state in the change that lands the
-behaviour, not in a later cleanup pass, and the same change updates the two rendered
-copies (README and the landing page). Nothing gates that today — it is a convention,
-and the honest consequence is that a stale row here is possible; §§0–13 remain the
-place a `shipped` claim has to be true.
+## Decisions and their reasoning
+
+Every decision the design rests on, with the reason rather than the conclusion alone. Each is argued
+where it applies above; this is the index, and the link goes to the argument.
+
+**Authority is asymmetric: the engine disposes and agents propose.** No model holds authority over
+the tracker, the schedule or a required gate, at any level. This is the single decision the rest of
+the design hangs from — every other refusal below is a consequence of it.
+[Core invariants](#core-invariants).
+
+**Phase is derived from tracker state, and the phases are engine code rather than configuration.**
+Two rungs of the derivation encode invariants found by real incidents; in a declarative form they
+become a boolean expression language living where the type checker, the test suite and code review
+cannot reach. The general rule: every rule that moves from code to data leaves all three.
+[Phase is derived, not stored](#phase-is-derived-not-stored).
+
+**The tracker is an append-only event log and a record's state is a fold over its events**, so
+history lives in the data rather than depending on git history surviving a squash or a shallow
+clone, and the truth has one shape a checker can verify. [The target shape](#the-target-shape).
+
+**Deterministic first, judged second: a judged verdict is never a green light.** Enforced by
+counting only the engine's own gate provider on a required gate, rather than by asking agents to
+behave. [Gate results and who may write them](#gate-results-and-who-may-write-them).
+
+**Verification and validation are two states run sequentially.** They are distinct technical
+processes in the standards this borrows from, and running them in parallel spends judged tokens
+validating builds that verification will reject.
+
+**A persona is admitted by a test, not a preference**: genuine judgment, a checkable success
+criterion, *and* a materially different tool policy or tier than its neighbours. Otherwise it is a
+prompt section or a deterministic engine step. Repair fails the test — it differs only in prompt —
+so it is the implementer's second mode. [Roles at dispatch](#roles-at-dispatch).
+
+**A retrospective fires on a computed special cause and is not a phase.** A state exists to hold an
+entry predicate, an exit gate and a persona, and a conditional process over a ledger needs none of
+the three. Acting on a single failure inside the control limits is tampering.
+[In full](#retrospective-fires-on-a-special-cause-and-is-deliberately-not-a-phase).
+
+**A tier is chosen by reliability and priced per landed package** — total tokens, wall clock and
+human interventions per landed *correct* unit, never the price of one dispatch. The predicate for
+"cheap is safe" is **specification completeness**, not the work's nominal category: a brief carrying
+the literal code is transcription, which is mechanically checkable. A dispatch with no resolved tier
+is a bug, not a default, because an omitted model silently inherits the session's.
+
+**A provider model id never appears in an agent file, generated or not.** Not style: the injection
+mechanism leaves a definition that pins its own model alone, so a projected line would *disable*
+injection rather than implement it. [In full](#subagent-definitions).
+
+**The catalog defines and the host executes.** Both installed runtimes already ship the dispatch
+mechanism an earlier design assumed had to be built; reimplementing a shipped mechanism inverts the
+reuse-before-reinventing rule. The engine supervises lanes and owns the tracker, the gates and the
+landing.
+
+**An agent may spawn only a role the engine authored.** The original form, "no agent spawns agents",
+is unenforceable prose that both runtimes contradict by construction. The amended form is
+*stronger*, because a host hook can intercept a subagent finishing before its results return to the
+parent — a runtime gate rather than a process boundary we hope holds.
+
+**Agent-authored guidance never reaches the shared catalog without a human**, at any grant level: a
+decision class no autonomy level auto-disposes, rather than a rung in the ladder. The argument is
+asymmetry, not the risk of a bad suggestion — a wrong implementation bounces off a gate, while a
+wrong fragment is **absorbed** and silently degrades every later lane, and an agent that can amend
+the catalog under a grant widens its own constraints.
+
+**Kill always requires a human, at every integrity level.** It is the only verb that removes a
+requirement rather than routing work, and an agent that can kill what it finds hard has an exit from
+every difficulty.
+
+**Integrity level is assigned by a deterministic rule over touched paths.** Scope globs are already
+declared and gated, so a rule over them is not judgeable, therefore not gameable, and costs zero
+tokens. [In full](#integrity-levels).
+
+**Every acceptance criterion names its own check at plan time, and every child names how it is
+demonstrated end to end.** This moves judgment to the earliest, cheapest point and makes it
+gateable; a child with no consumer-visible behaviour has no check to derive, which is the
+horizontal-slice failure a scope-glob decomposer produces by default.
+[The gap that remains](#the-plan-gate-and-the-hole-in-it).
+
+**Acceptance criteria use a notation distinguishing trigger, state, condition, feature-gate and
+ubiquitous requirement**, ratcheted rather than bulk-transformed, because that distinction is what
+makes a check derivable.
+
+**The rework allowance is per gate, with a lane-wide ceiling.** It matches what the counters already
+record, and the ceiling stops a lane grinding by alternating gates.
+
+**Diff size is a plan-time signal, not a review-time discovery**, and deliberately not a human-review
+requirement: a very large lane is hard to review whether the reader is a human or the next agent.
+
+**A sizing control with no recorded correct firing becomes observability; one that has earned a
+firing keeps its teeth.** A prediction that blocks must be right; a prediction that reports costs
+nothing when it is wrong. [In full](#ratchets).
+
+**Spend caps compose**: the grant ceiling is the outer bound and the host's own cap the inner one.
+The grant ceiling cannot stop a subagent mid-flight, only refuse the next dispatch — and at least one
+host's cap is explicitly soft, so it bounds rather than guarantees.
+
+**Context control is field selection, not encoding.** Project tracker payloads to the fields a phase
+needs; encode only what remains, and only where a bijective codec is safe. Measured on this
+repository's own data, selection beats serialisation by orders of magnitude.
+
+**Anything built against the tracker uses our own record vocabulary, never the external tool's
+payload shape.** A field list naming a foreign tool's keys would have to be rewritten at the flip;
+one naming our own survives it, and only the adapter changes.
+
+**The seam is the only place both stores move together**, so a write surface routes through it
+rather than around it — which is why a human's tracker write has its own command.
+[In full](#dual-write-and-where-it-leaks).
+
+**A skill keeps its path glob rather than being demoted to an always-on fragment.** The glob buys
+always-loads-on-a-matching-file behaviour at zero always-on characters. The gap it does not close is
+the family with no glob scoping, where a fragment remains the only mechanism.
+
+**A comment that contradicts the code is a defect and the code is what ships; deleting the comment is
+not the fix.** The strong form — "comments that describe the code must not exist" — is **rejected** on
+four independent grounds, any one sufficient: it targets an empty set here on measurement; it
+contradicts the style guide this repository already pins; it arms a live gaming path, since stripping
+comments returns a large fraction of the size ratchet's budget; and there is no always-on character
+budget for it. It is also not agent-actionable, where divergence is checkable against an observation.
+
+**`docs/` carries only architecture, tutorial, how-to and a contributor guide.** No new requirement
+or plan document is ever created as a file; a new requirement enters as a design artifact on a
+branch. A path gate makes the rule a free deterministic check instead of a disciplinary one.
+
+**Everything is plain, git-tracked files.** No daemon, no hidden state, no network at build time.
+
+## Non-goals
+
+Each refusal has a reason stronger than taste, and several were reached independently by comparable
+projects. These are permanent rather than unscheduled, so absence is not an oversight.
+
+| Refused | Because |
+| --- | --- |
+| An LLM orchestrator in control of the tracker | Authority must be asymmetric; a persuadable scheduler is not a scheduler |
+| Personas spawning personas | The failure it prevents is an agent inventing unmetered helpers. Amended, not dropped: an agent may spawn only a role the engine authored, gated at the runtime boundary |
+| An agent-writable catalog | A bad implementation bounces off a gate; a bad fragment is *absorbed* and silently degrades every later lane |
+| Bypassing a commit hook to dodge parallel commit contention | The serial landing already solves it without defeating a gate |
+| Lossy compaction of the ledger | The fold is the authority, and a lossy fold has no authority |
+| A maintained TUI | A maintenance surface with no leverage on any of the four problems |
+| An external database or daemon | Reintroduces exactly the unowned-binary upgrade surface being removed |
+| A compression proxy in the critical path | Selection beats serialisation by orders of magnitude on measured data |
+| A cheap-tier model pre-reader | Its characteristic error is an undetectable omission |
+| Agent-to-agent messaging | A real capability, declined because it costs reproducible scheduling and resumability |
+| A general-purpose issue tracker | The work graph exists to serve the loop, not to compete with issue trackers |
+| Per-track model choice at the token level | Model awareness lives at the invocation seam; this is not an inference client |
+
+### Asserted, not yet earned
+
+Recorded explicitly so it is not mistaken for established fact. **The structural leads are real**:
+enforcement is code and hooks rather than prose; state is a graph with dependencies rather than markdown
+plan files; one catalog is projected to three agent families and the projection is gated.
+
+**Three headline claims are unmeasured**: that the roster's tiers and lenses pay for themselves, that the
+always-on baseline is effective at its current size, and that individual catalog entries change behaviour.
+The cost-per-landed-package baseline is the instrument that would make the first falsifiable, and it gates
+several downstream decisions.
+
+The field has converged on a name for what this repository is — **harness engineering**, the claim that the
+deterministic scaffolding around a model matters more than the model choice. The open question is therefore
+not whether the harness approach is right; it is whether *this* harness is measurably better than the others
+that also believe it.
+
+## The rest of the documentation
+
+This file is the **reference** quadrant and nothing else. A reference answers "what is it and how is it
+specified"; it cannot also be the page that gets a new consumer from install to a first shipped unit, and
+trying to make it both is what left that path missing.
+
+| Quadrant | Where | Job | Written for |
+| --- | --- | --- | --- |
+| Tutorial | `docs/tutorial/` | one guaranteed-success path, install to shipped unit, no options offered | a consumer on day one |
+| How-to | `docs/how-to/` | the recurring operations, one page per task | a consumer with a job to do |
+| Reference | this file, plus `CONTRIBUTING.md` | the system as specified | anyone implementing or debugging |
+| Explanation | `docs/requirements/`, `docs/research/` | why one question was settled the way it was | anyone changing a decision |
+| Order | `docs/plan/` | which unshipped rows get built next, and why in that order | whoever is planning the next release |
+
+**Three rules keep the layer from rotting into a second, competing account of the system.**
+
+1. **A tutorial command is executed before it is written.** Every command and every quoted output in the
+   tutorial was run against a fresh repository. A walkthrough is the one surface where an untested step costs
+   the reader the whole session, because they have no model yet to notice it is wrong.
+2. **A how-to states the operation and its failure text, not the design.** Where it needs a reason it links
+   here. Duplicated rationale goes stale first.
+3. **Where they disagree with this file, this file wins.** The tutorial, the how-tos, the README and the
+   landing page are consumer-facing renderings, not independent sources. The requirements documents are the
+   arguments behind a decision recorded here, and each is archived once absorbed.
+
+### External references
+
+- Agent Skills specification: <https://agentskills.io/specification>
+- AGENTS.md specification: <https://agents.md/>
+- pre-commit: <https://pre-commit.com/>
+- Claude Agent SDK: <https://code.claude.com/docs/en/agent-sdk/overview>
+- OpenAI SDKs and CLI: <https://developers.openai.com/api/docs/libraries>
+- Codex agent configuration: <https://learn.chatgpt.com/docs/agent-configuration/agents-md>
+- Fowler on reducing friction with AI: <https://martinfowler.com/articles/reduce-friction-ai/>

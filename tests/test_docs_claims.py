@@ -234,22 +234,21 @@ def test_the_command_tables_cover_every_subcommand_of_every_group() -> None:
         # The defect tcmy.9 was filed for: `worktree ...` satisfied the top-level
         # claim while three of its six subcommands were undocumented.
         (
-            " and `merge-queue` lands several serially in the given topological order;",
+            r"\|merge-queue",
             "worktree",
             "merge-queue",
         ),
         # `merge` is a prefix of `merge-queue`. A plain substring test would credit
         # the missing one to the surviving one and report a clean tree.
         (
-            "`merge` lands one finished worktree on its base (rebase, re-verify, `--no-ff`) and ",
+            r"merge\|",
             "worktree",
             "merge",
         ),
         (
-            "`preflight` (read-only: clean base, live worktrees, runner, grant, budget, "
-            "per-lane band table and forecast spend) and then ",
+            r"watch\|",
             "loop",
-            "preflight",
+            "watch",
         ),
     ],
 )
@@ -281,7 +280,7 @@ def test_fix_cannot_repair_a_missing_subcommand_and_says_so(work_repo: Path) -> 
     """
     path = work_repo / ARCHITECTURE_MD
     text = path.read_text(encoding="utf-8")
-    path.write_text(text.replace("`bg-isolation` sets Claude's", "sets Claude's", 1), "utf-8")
+    path.write_text(text.replace(r"\|bg-isolation", "", 1), encoding="utf-8")
 
     assert _run(work_repo, "--fix") == 1
 

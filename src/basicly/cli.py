@@ -1793,9 +1793,30 @@ def _cmd_tracker_import(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_tracker_write(args: argparse.Namespace) -> int:
+    """Run one br write through the engine seam, so the owned ledger gets it too.
+
+    Spawning ``br`` directly never enters ``br._mirror_write``, so a hand-run write
+    moves one store and not the other. Three records arrived that way and are the whole
+    of what still fails the differential (basicly-vkh0.24).
+    """
+    argv = [arg for arg in (args.argv or []) if arg != "--"]
+    if not argv:
+        ui.say("tracker write: name a br subcommand, e.g. `-- close b-1`")
+        return 2
+    proc = br.run_br(_repo_root(), argv)
+    if proc.stdout:
+        ui.say(proc.stdout.rstrip())
+    return 0
+
+
 def cmd_tracker(args: argparse.Namespace) -> int:
-    """Dispatch the owned work tracker's cutover subcommands (import, shadow)."""
-    handlers = {"import": _cmd_tracker_import, "shadow": _cmd_tracker_shadow}
+    """Dispatch the owned tracker's cutover subcommands (import, shadow, write)."""
+    handlers = {
+        "import": _cmd_tracker_import,
+        "shadow": _cmd_tracker_shadow,
+        "write": _cmd_tracker_write,
+    }
     return _dispatch(args, "tracker_command", handlers, group="tracker")
 
 
@@ -4984,6 +5005,10 @@ def _add_tracker_parser(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help="Record today's pre-flip delta as the declared baseline and exit (run once)",
     )
+    t_write = tracker_sub.add_parser(
+        "write", help="Make a tracker write through the engine seam, so both stores get it"
+    )
+    t_write.add_argument("argv", nargs=argparse.REMAINDER, help="The br subcommand, after `--`")
 
 
 def _tolerate_narrow_consoles() -> None:

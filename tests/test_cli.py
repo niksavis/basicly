@@ -1773,6 +1773,41 @@ def test_tracker_shadow_reports_clean_and_conclusive_as_two_answers(
     assert f"conclusive: {conclusive}" in out
 
 
+def test_tracker_write_puts_a_hand_write_through_the_mirroring_seam(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The surface exists so a human's write reaches both stores (basicly-vkh0.24).
+
+    Asserted against `br.run_br`, which is where `_mirror_write` lives: a passthrough
+    that spawned the binary itself would print the same output and mirror nothing,
+    which is the defect rather than the fix.
+    """
+    monkeypatch.chdir(tmp_path)
+    seen: list[list[str]] = []
+    monkeypatch.setattr(
+        cli.br,
+        "run_br",
+        lambda _root, argv: (
+            seen.append(argv) or subprocess.CompletedProcess(argv, 0, "Comment added", "")
+        ),
+    )
+
+    assert cli.main(["tracker", "write", "--", "comments", "add", "b-1", "hello"]) == 0
+
+    assert seen == [["comments", "add", "b-1", "hello"]]
+    assert "Comment added" in capsys.readouterr().out
+
+
+def test_tracker_write_with_no_subcommand_says_so_rather_than_spawning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The control: an empty argv is a usage error, never an empty br invocation."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli.br, "run_br", lambda *_a: pytest.fail("nothing should be spawned"))
+
+    assert cli.main(["tracker", "write"]) == 2
+
+
 def test_tracker_shadow_names_the_refusal_beside_the_agreement_it_voids(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
