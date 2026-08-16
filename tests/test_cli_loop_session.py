@@ -13,16 +13,30 @@ ceremony, which is what the tests left behind do.
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
 
-from basicly import cli, supervise
+import pytest
+
+from basicly import cli, policy, supervise
 from basicly.decisions import DecisionItem
 
-if TYPE_CHECKING:
-    import pytest
-
-
 # --- session (client attach, basicly-kjc5.8) ---------------------------------
+
+
+# The grant the ``_observation`` defaults are written against: issued once the session
+# had already spent 800 tokens, so lifetime spend and spend under the grant differ and
+# a test can tell which one a surface printed.
+_GRANT = policy.Grant(level="L2", token_budget=5000, spent_at_issue=800)
+
+
+@pytest.fixture(autouse=True)
+def _no_ambient_grant(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the grant read off the real tracker; a test that needs one calls ``_grant``."""
+    monkeypatch.setattr(policy, "active_grant", lambda *_a, **_k: None)
+
+
+def _grant(monkeypatch: pytest.MonkeyPatch, grant: policy.Grant | None = _GRANT) -> None:
+    """Answer ``loop session``'s grant read with *grant*."""
+    monkeypatch.setattr(policy, "active_grant", lambda *_a, **_k: grant)
 
 
 def _observation(**overrides: object) -> supervise.Observation:
@@ -73,6 +87,7 @@ def test_loop_session_prints_the_attach_surface(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Attaching renders the holder, each lane's last run, the queue, and grant spend."""
+    _grant(monkeypatch)
     monkeypatch.setattr(supervise, "observe", lambda *_a, **_k: _observation())
 
     assert cli.main(["loop", "session", "basicly-epic"]) == 0
@@ -84,7 +99,59 @@ def test_loop_session_prints_the_attach_surface(
     assert "last run: claude executed at 2026-07-25T10:00:00+00:00, 1200 tokens" in out
     assert "decisions:  1 pending" in out
     assert "ship without the migration?" in out
-    assert "grant:      L2, 1200/5000 tokens spent" in out
+    assert "grant:      L2, 400/5000 tokens under this grant (issued at 800 spent)" in out
+
+
+def test_loop_session_never_offers_lifetime_spend_against_the_budget(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The two figures cover different windows, so the surface may not read as a ratio.
+
+    ``basicly loop session basicly-kjc5 --json`` reported 177970761 spent against a
+    4000000 budget — 44.5x — while kjc5's own decomposition had spent nothing at all
+    under that grant: the lifetime total counts every grant and every bead the
+    session's track reaches, including work other roots ran under their own ceilings
+    (basicly-e2mz.13).
+    """
+    _grant(monkeypatch)
+    monkeypatch.setattr(supervise, "observe", lambda *_a, **_k: _observation())
+
+    assert cli.main(["loop", "session", "basicly-epic"]) == 0
+    out = capsys.readouterr().out
+    assert "1200/5000" not in out
+    assert "grant:      L2, 400/5000 tokens under this grant (issued at 800 spent)" in out
+    assert "lifetime:   1200 tokens over this session's track" in out
+
+
+def test_loop_session_json_names_the_window_each_spend_figure_covers(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A machine client gets the comparable figure and the window every figure covers.
+
+    ``spent_tokens`` and ``token_budget`` stay where they were — a board reading them
+    (basicly-rn0o.3) must not break — so the payload carries what makes them
+    unmisreadable beside them rather than instead of them.
+    """
+    _grant(monkeypatch)
+    monkeypatch.setattr(supervise, "observe", lambda *_a, **_k: _observation())
+
+    assert cli.main(["loop", "session", "basicly-epic", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert (payload["grant_spent_tokens"], payload["grant_baseline_tokens"]) == (400, 800)
+    assert set(payload["spend_windows"]) == {"spent_tokens", "grant_spent_tokens", "token_budget"}
+    assert "all time" in payload["spend_windows"]["spent_tokens"]
+    assert "grant_spent_tokens" in payload["spend_windows"]["token_budget"]
+
+
+def test_loop_session_json_reports_no_grant_window_when_there_is_no_grant(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Without a grant there is no second window — null, never the lifetime total."""
+    monkeypatch.setattr(supervise, "observe", lambda *_a, **_k: _observation())
+
+    assert cli.main(["loop", "session", "basicly-epic", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert (payload["grant_spent_tokens"], payload["grant_baseline_tokens"]) == (None, None)
 
 
 def test_loop_session_reports_human_wait_apart_from_dispatch(
@@ -147,7 +214,7 @@ def test_loop_session_names_an_unsupervised_root(
     assert "supervisor: (none running" in out
     assert "lane:       (no in-flight lanes)" in out
     assert "decisions:  none pending" in out
-    assert "grant:      (none) - 0 tokens spent this session" in out
+    assert "grant:      (none) - 0 tokens over this session's track, all time" in out
 
 
 def test_loop_session_warns_that_a_stale_holder_may_be_taken_over(

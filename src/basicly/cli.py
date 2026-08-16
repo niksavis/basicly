@@ -3138,7 +3138,7 @@ def _cmd_loop_preflight(args: argparse.Namespace) -> int:
     if grant is None:
         print("grant:     NONE - every checkpoint is human")
     else:
-        spent = status.spent_tokens - grant.spent_at_issue
+        spent = policy.tokens_under_grant(status.spent_tokens, grant)
         remaining = (
             "no ceiling" if status.remaining_tokens is None else f"{status.remaining_tokens}"
         )
@@ -3572,16 +3572,73 @@ def _cmd_loop_session(args: argparse.Namespace) -> int:
     ``--label`` has to be the one the supervisor was started with: the lane set is
     then a labelled cut rather than the root's children, and omitting it observes a
     different session than the one running (basicly-1lpo).
+
+    **The spend pair is windowed, and that is a finding rather than a preference.**
+    Settled 2026-08-16 with ``uv run basicly loop session basicly-kjc5 --json`` read
+    against ``policy.session_spend``/``policy.active_grant`` on the same root
+    (basicly-e2mz.13): its 177970761 spent against a 4000000 budget is a scope
+    mismatch, not a ceiling that failed to fire. 3361523 of that total is kjc5's own
+    decomposition and all of it predates the grant — the grant's baseline is that
+    exact number — while the remaining 174609238 belongs to 28 beads the session walk
+    reaches only through ``blocks`` edges: 22 are children of five other epics (jr0l,
+    tcmy, u6jq, yc0x, vkh0) and 6 are parentless roots, the track spanning several
+    parents and some parentless beads exactly as :func:`policy.session_issue_ids`
+    says it does. The ceiling does cover this root: ``policy.spend_status`` reports
+    it halted with 0 remaining.
+
+    Subtracting the baseline does not by itself collapse the ratio — 174609238
+    against 4000000 is still 43.7x — because the two figures differ in the
+    *population* they count and not only in the window: the budget was granted over
+    a track whose gated work runs its own dispatches under its own roots' grants. So
+    the surface names both, and the surface is what changed here, not the control.
+
+    Read the spend figures on the machine that ran the work: :func:`policy.session_spend`
+    reads the self-ignored ``.basicly/usage/`` store, so the same root reports 177970761
+    spent and halted at that checkout and 0 spent with the full budget remaining from a
+    linked worktree or a fresh clone, where only :func:`run_record.tracker_history` still
+    has the record.
     """
-    view = supervise.observe(_repo_root(), args.issue, lane_label=args.label)
+    repo_root = _repo_root()
+    view = supervise.observe(repo_root, args.issue, lane_label=args.label)
+    # One extra tracker read rather than a second session walk: the baseline lives on
+    # the grant marker, and re-deriving spend costs a whole ~3s walk of the track.
+    grant = policy.active_grant(repo_root, args.issue)
     if args.json:
         # ``supervised`` is a derived property, which asdict drops — and it is the
         # one question a machine client always asks, so emit it explicitly.
-        payload = asdict(view) | {"supervised": view.supervised}
+        payload = (
+            asdict(view)
+            | {"supervised": view.supervised}
+            | _spend_payload(view.spent_tokens, grant)
+        )
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
-    _print_observation(view)
+    _print_observation(view, grant)
     return 0
+
+
+# What each spend figure covers, emitted beside the numbers. ``spent_tokens`` and
+# ``token_budget`` are left where they are so a client reading them keeps working, and
+# a reader who would otherwise divide one by the other is told they are two windows.
+SPEND_WINDOWS = {
+    "spent_tokens": (
+        "every measured run record on this session's track - its decomposition and the "
+        "work it gates - across every grant and all time"
+    ),
+    "grant_spent_tokens": "spent_tokens since the active grant was issued, null when there is none",
+    "token_budget": "the ceiling on grant_spent_tokens alone, never on spent_tokens",
+}
+
+
+def _spend_payload(spent_tokens: int, grant: policy.Grant | None) -> dict[str, object]:
+    """The comparable spend figure and the window every reported figure covers."""
+    return {
+        "grant_spent_tokens": (
+            None if grant is None else policy.tokens_under_grant(spent_tokens, grant)
+        ),
+        "grant_baseline_tokens": None if grant is None else grant.spent_at_issue,
+        "spend_windows": SPEND_WINDOWS,
+    }
 
 
 def _cmd_loop_stop(args: argparse.Namespace) -> int:
@@ -3634,7 +3691,7 @@ def _supervisor_line(view: supervise.Observation) -> str:
     return f"{who} - {beat}"
 
 
-def _print_observation(view: supervise.Observation) -> None:
+def _print_observation(view: supervise.Observation, grant: policy.Grant | None) -> None:
     print(f"root:       {view.root_issue} ({view.root_status})")
     print(f"supervisor: {_supervisor_line(view)}")
     if view.lane_label is not None:
@@ -3662,11 +3719,23 @@ def _print_observation(view: supervise.Observation) -> None:
             print(f"  {_format_decision(item)}")
     else:
         print("decisions:  none pending")
-    if view.grant_level is None:
-        print(f"grant:      (none) - {view.spent_tokens} tokens spent this session")
+    if grant is None:
+        print(
+            f"grant:      (none) - {view.spent_tokens} tokens over this session's track, all time"
+        )
     else:
         budget = view.token_budget if view.token_budget is not None else "unbounded"
-        print(f"grant:      {view.grant_level}, {view.spent_tokens}/{budget} tokens spent")
+        under = policy.tokens_under_grant(view.spent_tokens, grant)
+        # Level and budget off the observation, which already carries them; the grant is
+        # read only for the baseline, which it alone has.
+        print(
+            f"grant:      {view.grant_level}, {under}/{budget} tokens under this grant "
+            f"(issued at {grant.spent_at_issue} spent)"
+        )
+        print(
+            f"lifetime:   {view.spent_tokens} tokens over this session's track - its "
+            "decomposition and the work it gates - across every grant and all time"
+        )
     print(
         f"wait:       {_format_duration(view.human_wait_s)} human, "
         f"{_format_duration(view.delegated_wait_s)} delegated "
