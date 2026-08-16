@@ -729,7 +729,7 @@ happened. That is missing information, not unreadable format, and §15.1 records
 already refuted in the token domain.
 
 **The branch not taken, per the Card 2017 caveat**: this followed *duration*. The other branch is
-*decision quality* — a checkpoint answered in 5 s may be answered wrong, and `cli.py:2219` exists
+*decision quality* — a checkpoint answered in 5 s may be answered wrong, and `src/basicly/cli.py:2219` exists
 because of exactly such an approval. That branch is **not measurable here**: `checkpoint_approved`
 is a boolean, there is no un-approve, and a regretted approval leaves no distinguishable trace.
 
