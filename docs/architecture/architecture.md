@@ -3,118 +3,36 @@
 `basicly` **ships a development process to coding agents and then enforces it.** A
 repository installs it and gets three things it did not have.
 
-1. Guidance projected into the file each coding agent actually reads.
+1. Guidance projected into the file each coding agent reads.
 2. Deterministic gates that block bad work whether or not a model read the guidance.
 3. A workflow engine that drives a unit of work from an idea to a merge, over a tracked
    graph of state.
 
-This file is the authority on the **design**. It is the one document to read first.
+This file is the authority on the **design**. Read it first.
 
-## What to call this thing
+## Authority and conventions
 
-**Correction first: this project is not an agent harness, and this document said it
-was.** An earlier revision opened with "a harness for coding agents" and closed with
-"the field has converged on a name for what this repository is — harness engineering".
-Both claims fail against the definitions below. They are removed rather than softened.
-
-### The two terms, defined from their sources
-
-| Term | Definition | Source | Fetched | Evidence rung |
-| --- | --- | --- | --- | --- |
-| **agent harness** | "The tools, context management, and execution environment that turn a language model into a capable coding agent. Claude Code is the harness; Claude is the model inside it." | Anthropic, Claude Code glossary, `code.claude.com/docs/en/glossary` | 2026-08-16 | vendor primary |
-| **agent harness**, formal test | A system is a harness only if it instantiates all four at runtime: an agent loop of reason, act and observe; a tool interface that lets the model *alter* the environment; content-driven context management; and a control the model cannot decline. | Macedo, *What makes a harness a harness*, arXiv 2606.10106, dated 2026-06-10 | 2026-08-16 | single-author preprint, not peer-reviewed |
-| **software factory**, first definition | A programming environment on a computer, in which construction and checkout happen entirely. It "has measures and controls for productivity and quality. Financial records are kept for costing and scheduling. Thus management is able to estimate from previous data." | R. W. Bemer 1969, quoted in Cusumano, MIT Japan Program MITJP 91-10 | 2026-08-16 | author's own primary, quoting a primary |
-| **software factory**, synthesis | Moving beyond a craft mode to "standardization of development methods and tools, systematic reuse of program components or designs, some divisions of labor and functional departments, and disciplined project management as well as product quality control". | Cusumano, MITJP 91-10 | 2026-08-16 | author primary |
-| **Software Factory**, product-line sense | "a model-driven product line", capturing how to produce the members of one product family as reusable assets. | Greenfield and Short, OOPSLA'03, DOI `10.1145/949344.949348` | 2026-08-16 | author paper |
-| **software factory**, defence sense | A multi-tenant *platform* running many pipelines, with people and processes, not a tool. | US Department of Defense CIO, *DevSecOps Fundamentals Playbook* v2.0, March 2021 | 2026-08-16 | authority primary |
-
-### The verdict, against the four-part harness test
-
-| Condition | `basicly` | Evidence |
-| --- | --- | --- |
-| a reason-act-observe loop at runtime | **fails** | `basicly` runs no model loop. Its runner spawns `claude -p`, `codex exec` and `copilot -p` as subprocesses. The inner loop belongs to those binaries. `basicly`'s own loop iterates work items and phases |
-| a tool interface that lets the model alter the environment | **fails** | The model's whole interface from `basicly` is one prompt string on the argument vector, and captured output read back. File access and shell execution come from the spawned tool |
-| content-driven context management | **partial** | It decides what enters a dispatch, and projects what the host loads. It does not decide what leaves a window mid-run |
-| a control the model cannot decline | **passes, strongly** | Git hook floor, verify pipeline, ratchets, plan and validate and landing gates, serial merge queue, spend ceiling, the engine-disposes invariant |
-
-Two of four fail. **The whole product is therefore not an agent harness.**
-
-### The decision
-
-**Neither term names the whole product. Each names one plane, and this document uses
-each only at its own scope.**
-
-| Plane | Term this document uses | Why |
-| --- | --- | --- |
-| distribution | **harness configuration** | It authors and installs the parts a harness is made of, into a harness it does not own. Permission gating and memory loading are named as harness components by the vendor definition above |
-| execution | **software factory** | It matches Bemer's definition on five of six clauses, including the one nobody expects a tool to satisfy: it keeps cost records and estimates future work from them |
-| the whole product | neither, alone | It fails two of the four harness conditions, and it produces no family of applications |
-
-**The one clause the execution plane misses**, stated so the claim is falsifiable:
-Cusumano requires "systematic reuse of program components or designs". `basicly` reuses
-*process* assets, meaning fragments, skills, hooks and roles. It reuses no application
-code and produces none.
-
-**The risk in the word "software factory", stated rather than buried.** No source
-reached uses it for a repository-installable tool. Bemer 1969 and Greenfield 2003 scope
-it to an environment. Every 2026 usage found scopes it to an *organizational programme*.
-Using the word on a consumer surface may therefore import a reading the product cannot
-satisfy.
-
-**Corroboration from outside this repository.** A peer project in the same position,
-housed in this workspace, drives the same three headless tools and calls itself a server
-that "orchestrates agent harnesses rather than reimplementing them". It declines the word
-for itself. A second peer calls itself a "Portable Multi-Agent Harness" while its code is
-a per-vendor configuration installer. Loose usage is the community norm. It is what the
-formal test above exists to correct.
-
-**What is not settled.** Which single noun belongs on the README and the repository
-description is a positioning decision, not a research finding. Those surfaces still say
-"harness". Changing them is outside this document.
-
-## How to read this document
-
-**Two audiences, one file.** A human wants to see how the factory, the projected
-guidance, the tracker, the state machine, the agents and the skills fit together, and
-what is built against what is only decided. An agent building context at the start of a
-session wants the same picture, plus the invariants it may not violate.
-
-**The survival rule that shaped every editing call here.** This document must stand alone
-if the code and every other document disappeared. It must be enough to rebuild the system
-from scratch.
-
-| Content | Noise, and cut |
-| --- | --- |
-| a decision and the reason behind it | a line number |
-| an invariant | a work-item id used as an argument |
-| a constraint | the status of one lane last Tuesday |
-| a data shape | a restatement of what a diagram already shows |
+**The survival rule.** This file must stand alone if the code and every other document
+disappears. It must be enough to rebuild the system from scratch. A decision and its
+reason stay. An invariant, a constraint and a data shape stay. Everything else is a
+candidate for deletion.
 
 **Authority order, when two sources disagree.**
 
-1. **The code wins.** It is the only thing that runs. Every claim here was checked against
-   the tree. Where a number is cheap to re-derive, the command is given instead of the
-   number, because a copied figure goes stale silently.
-2. **This document wins over every other document.** That covers the requirements
-   documents, the implementation plan, the README, the landing page, the tutorial and the
-   how-to pages. Those are renderings, arguments or sequences. This is the specification.
-3. **A claim about an external interface is never settled from recall.** That covers a CLI
-   flag, a model id and a vendor limit. Read this repository's own adapter first, then
-   fetch the vendor's live documentation.
+1. **The code wins.** It is the only thing that runs. Where a number is cheap to
+   re-derive, this document gives the command instead of the number. A copied figure
+   goes stale in silence.
+2. **This file wins over every other document.** That covers the requirements
+   documents, the implementation plan, the README, the landing page, the tutorial and
+   the how-to pages.
+3. **A claim about an external interface is never settled from recall.** That covers a
+   command-line flag, a model id and a vendor limit. Read this repository's own adapter
+   first. Then fetch the vendor's live documentation.
 
-**What this document is not.**
+Every measured figure carries the date and, where one exists, the command that
+re-derives it.
 
-| It is not | That is |
-| --- | --- |
-| the entry point for a consumer running `basicly install` for the first time | the tutorial |
-| the order the unbuilt parts get built in | the implementation plan |
-| a backlog | the tracker |
-
-**A note on measured numbers.** Where a figure is stated it carries the date it was
-measured, and wherever possible the command that re-derives it. A figure with neither is a
-claim nobody can check, and this document has already carried several.
-
-### Diagrams: the convention, and why mermaid
+### Diagram convention
 
 Every diagram uses three node colours. Every node carries exactly one.
 
@@ -133,60 +51,28 @@ flowchart LR
 ```
 
 **`built` is the strongest claim in the vocabulary, and it is still narrow.** It means
-code exists and something calls it. It does not mean the thing has been exercised in
-anger. It does not mean a gate binds. A closed work item proves code exists. Only running
-the gate on a real input proves the gate refuses anything.
+code exists and a call path reaches it. It does not mean a gate binds. A closed work
+item proves that code exists. Only a run of the gate on a real input proves that the
+gate refuses anything.
 
-A node reading **`no bead`** is a gap nothing tracks. That is a finding, not an omission
-in the drawing.
+A node that reads **`no bead`** marks a gap that nothing tracks.
 
-**Mermaid is the diagram language here, and it was chosen against alternatives** [verified
-2026-08-16]. Three constraints decided it.
-
-1. This document is read by coding agents as text. A committed binary image is invisible
-   to that reader.
-2. It must render where it is read.
-3. A build step costs a dependency, a gate and continuous-integration time.
-
-| Candidate | Readable as text | Renders on GitHub | Build step |
-| --- | --- | --- | --- |
-| **mermaid** in a fenced block | ✓ | ✓ | none |
-| Graphviz DOT | ✓ | ✗ | `dot` binary |
-| PlantUML | ✓ | ✗, only through a per-reader browser extension | Java plus Graphviz |
-| D2 | ✓ | ✗ | `d2` binary |
-| inline SVG | coordinates, not meaning | ✗, the sanitizer strips the element | yes |
-| linked SVG file | the markdown shows only a link | ✓, as an image | yes |
-| ASCII box drawing | ✓ | ✓ | none, but no reflow and it breaks on every edit |
-
-GitHub's own documentation names exactly four renderable diagram syntaxes: mermaid,
-geoJSON, topoJSON and ASCII STL. Mermaid is the only graph language among them. GitHub
-served mermaid 11.16.1 on the date above.
-
-**Where mermaid is weak, so a reader knows what they are getting.**
-
-| Weakness | Consequence here |
-| --- | --- |
-| no layout control for a flowchart. Node placement is the algorithm's | a large flowchart drifts into unreadable arrow crossings. Every diagram here is kept small for that reason |
-| edge labels are placed poorly, and the bugs are open upstream | an edge label says what the edge *means* and never repeats the node names, so a misplaced one still reads |
-| a hard ceiling of 500 edges, unliftable from inside the block | far above anything here. The readable ceiling is much lower |
-| a hard ceiling of 50000 characters, which fails by substituting a red box rather than an error | far above anything here |
-| a wide diagram shrinks to the container rather than scrolling | prefer top-to-bottom for a wide graph |
-| the theme follows the reader's colour mode | every `classDef` here sets an explicit text colour, so contrast holds in both modes |
+**Mermaid is the diagram language** [verified 2026-08-16]. It reads as text for a coding
+agent, it renders on the hosting site, and it needs no build step. No other candidate
+holds all three properties. Each diagram stays small, because mermaid gives a flowchart
+no layout control. Every `classDef` sets an explicit text colour, because the theme
+otherwise follows the reader's colour mode.
 
 **Only three diagram types are used**: `flowchart`, `sequenceDiagram` and
 `stateDiagram-v2`. All three are long-stable. `C4Context`, `block-beta` and
-`architecture-beta` render on GitHub but are experimental or carry `beta` in the keyword
-itself, so a syntax change upstream would break a committed block. They are declined.
-
-**No gate checks that these blocks parse.** That is a real gap, not an oversight. See
-[Validate every mermaid block](#backlog-validate-every-mermaid-block).
+`architecture-beta` are declined. Each one is experimental, so an upstream syntax change
+would break a committed block.
 
 ## Contents
 
-- [What to call this thing](#what-to-call-this-thing)
 - [The problem](#the-problem)
 - [Core invariants](#core-invariants)
-- [Two ladders and the names for their levels](#two-ladders-and-the-names-for-their-levels)
+- [Autonomy and integrity](#autonomy-and-integrity)
 - [System overview](#system-overview)
 - [The distribution model](#the-distribution-model)
 - [The fragment model](#the-fragment-model)
@@ -211,8 +97,8 @@ itself, so a syntax change upstream would break a committed block. They are decl
 - [Status: built, partial, designed](#status-built-partial-designed)
 - [Decisions and their reasoning](#decisions-and-their-reasoning)
 - [Non-goals](#non-goals)
-- [Backlog this document emits](#backlog-this-document-emits)
-- [The rest of the documentation](#the-rest-of-the-documentation)
+- [Backlog](#backlog)
+- [The documentation set](#the-documentation-set)
 
 ## The problem
 
@@ -267,26 +153,26 @@ third mechanism and no last-one-wins. An unexplained conflict is an error.
 **No committed artifact carries a machine-specific path, username or hostname.**
 Redaction runs at the write seam of both stores. A pre-commit hook is the floor under it.
 
-**Evidence over assertion.** A claim in this document, in a release note or on a README
+**Evidence over assertion.** A claim in a specification, in a release note or on a README
 is backed by something a reader can re-run. An unmeasured claim about behaviour buys
 confidence nobody earned.
 
-## Two ladders and the names for their levels
+## Autonomy and integrity
 
-Two different scales in this system used the letter `L`. Autonomy ran `L0` to `L3`.
-Integrity ran `L1` to `L3`. A reader could not tell them apart, and the code cannot tell
-you which one a bare `L2` means either.
+The system assigns two independent levels to a unit of work. Autonomy bounds what the
+engine may approve. Integrity bounds how much verification the change must pass.
 
-Both are renamed here. The code's current identifier sits beside each new name in the
-tables below. That mapping appears once. Every later section uses the new name.
-
-| Ladder | Question it answers | Set by | Levels |
+| Level | Question it answers | Set by | Values |
 | --- | --- | --- | --- |
 | Autonomy | How much may the engine approve while no human watches? | A human, at grant time | 4 |
 | Integrity | How far does a defect in this change reach? | A deterministic rule over declared paths | 3 |
 
 The two are independent. A typo fix in the tutorial, run under a grant that needs no
 human, is `docs-and-tests` integrity at `unattended` autonomy.
+
+Both scales once used the letter `L`. Autonomy ran `L0` to `L3` and integrity ran `L1`
+to `L3`, so a bare `L2` named neither one. Each level now has a name. The `Code today`
+column below carries the identifier the engine still writes.
 
 ### Autonomy: how much the engine may approve alone
 
@@ -330,25 +216,18 @@ read here are the same word.
 repository. An `engine` defect changes how the tool behaves. A `consumer-surface` defect
 breaks something a consumer's own code or configuration is pinned to.
 
-### Names that were rejected
+**Four name sets were rejected, each because it makes one word mean two things.**
 
-| Rejected | For which ladder | Why |
+| Rejected | For which level | Why |
 | --- | --- | --- |
-| `full` / `partial` / `none` | autonomy | Three names for four levels. `assisted` and `supervised` are two different partials and would collapse into one word |
-| `none` / `decompose` / `classify` / `ship` | autonomy | Every name after the first is already a loop phase. A cumulative level named only for its newest power also misleads: `ship` covers classify and decompose too |
-| `low` / `medium` / `high` | both | An ordinal with a new spelling. The reader still needs the lookup table, which is the defect being removed |
-| `manual` / `semi-auto` / `auto` | autonomy | `auto` does not say what is automatic, and the top level still stops for a kill |
-| `fast` / `full` / `full-plus` | integrity | Those are the three verify **mode** names. A level named for the gate set it selects makes one word mean two things |
-| `routine` / `internal` / `breaking` | integrity | `breaking` is wrong. A `consumer-surface` change is one that *can* break a consumer, not one that does |
+| `none` / `decompose` / `classify` / `ship` | autonomy | Every name after the first already names a loop phase |
+| `low` / `medium` / `high` | both | An ordinal with a new spelling. The reader still needs a lookup table |
+| `fast` / `full` / `full-plus` | integrity | Those are the three verify **mode** names |
 | `local` / `engine` / `contract` | integrity | `local` already names the per-machine overlay, `.basicly-local` and `basicly.local.toml` |
 
-### The code still says `L1`
-
-This document is ahead of the tree. The engine writes `L1`, `L2`, `L3` into the
-classification marker, the plan gate's vocabulary check, `basicly.toml` and every
-`--autonomy` flag value. Renaming those is a change to a frozen consumer surface, so it
-is a work item and not an edit made here. See
-[Rename the two ladders in code](#backlog-rename-the-two-ladders-in-code).
+**The engine still writes `L0` to `L3`** in the classification marker, in the plan
+gate's vocabulary check, in `basicly.toml` and in every `--autonomy` flag value. Those
+spellings are a frozen consumer surface, so a rename needs a deprecation window.
 
 ## System overview
 
@@ -400,15 +279,15 @@ Neither tree depends on the other's location. `.basicly/` never holds engine cod
 ### The engine's real dependency direction
 
 The engine is 98 modules in 36 tiers [measured 2026-08-16, `.importlinter`]. A higher
-tier may import a lower one. The reverse breaks the build and names both modules.
-Siblings inside a tier may not import each other either, which is what makes a tier a
-tier rather than a bucket.
+tier may import a lower one. The reverse breaks the build and names both modules. Two
+siblings inside one tier may not import each other. That last rule is what makes a tier
+a tier and not a bucket.
 
-The contract is **exhaustive**. A new module cannot join the package without a
-maintainer placing it in a tier.
+The contract is **exhaustive**. A new module joins the package only when a maintainer
+places it in a tier.
 
-The 36 tiers group into nine bands. The stack is strictly linear, so it is a table and not
-a diagram. Every band may import every band below it, and nothing above it.
+The 36 tiers group into nine bands. Every band may import every band below it, and
+nothing above it.
 
 | Band | Modules | Examples |
 | --- | --- | --- |
@@ -422,19 +301,19 @@ a diagram. Every band may import every band below it, and nothing above it.
 | 8 · tracker seam | 7 | `br`, `mirror`, `owned_store`, `br_argv`, `dispatch_phase` |
 | 9 · leaf data and pure helpers | 27 | `integrity`, `schema`, `redact`, `roles`, `read_cost`, `ui`, `stemmer` |
 
-`integrity` sits in the bottom band on purpose. It imports nothing from `basicly`, so it
-stays testable with no repository, no tracker and no configuration file, and every
-consumer above it can reach it.
+`integrity` sits in the bottom band on purpose. It imports nothing from `basicly`. It
+therefore stays testable with no repository, no tracker and no configuration file, and
+every band above it can reach it.
 
-Two cycles survive as function-level imports: `loop` to `supervise`, and `policy` to
-`decisions`. Both are declared as exemptions rather than hidden. Removing one turns the
-contract red until the exemption goes with it.
+Two cycles survive as function-level imports. They are `loop` to `supervise`, and
+`policy` to `decisions`. The contract declares both as exemptions. When one cycle goes,
+the contract turns red until the exemption goes with it.
 
 ## The distribution model
 
 Everything a coding agent or a human reads is **generated**. Everything a user edits is a
-**source**. Three trees, three write-owners, and the separation is a mechanism rather
-than a convention.
+**source**. Three trees each have one write-owner. The separation is a mechanism, not a
+convention.
 
 | Tree | Who writes here |
 | --- | --- |
@@ -466,11 +345,11 @@ than a convention.
 ```
 
 **Every catalog source is YAML and deliberately not Markdown.** Some coding agents
-auto-discover skills by scanning broadly for `SKILL.md`. A `SKILL.md` *source* would risk
-an agent loading the catalog copy and the projected copy at once. Fragments follow the
-same rule for consistency. YAML beats Python here because it needs no code execution and
-keeps prose lossless in block scalars. `basicly catalog lint` refuses a Markdown-named
-source, and refuses a second YAML extension.
+discover a skill by a broad scan for `SKILL.md`. A `SKILL.md` *source* would let an agent
+load the catalog copy and the projected copy at once. Fragments follow the same rule.
+YAML beats Python here for two reasons. It needs no code execution, and a block scalar
+keeps prose lossless. `basicly catalog lint` refuses a Markdown-named source. It also
+refuses a second YAML extension.
 
 ### The projection pipeline
 
@@ -492,9 +371,9 @@ flowchart LR
   class targets,sources,gate,pick,order,emit,sweep built
 ```
 
-**Determinism is a property, not an accident.** The sort is total: priority descending,
-then category, then id. Two builds on identical sources produce byte-identical output. A
-diff therefore only ever shows a real change.
+**Determinism is a property, not an accident.** The sort is total. It orders by priority
+descending, then by category, then by id. Two builds on identical sources produce
+byte-identical output. A diff therefore only ever shows a real change.
 
 **Selection has exactly four axes.** Every output declares which of them it uses.
 
@@ -532,31 +411,29 @@ Three targets ship, all enabled.
 | codex | `AGENTS.md` | `all`, scoped **inlined** | 16000 chars |
 | copilot | `.github/copilot-instructions.md` | `all` plus `copilot`, scoped excluded | 9000 chars |
 
-**Codex inlines scoped fragments because it has nowhere to put them.** Codex is not short
-of steering files. It supports nested `AGENTS.md`, an override file, fallback filenames,
-repository-checked-in Agent Skills, project subagents and a sandbox policy. What it lacks
-is a **type**. No glob-based or pattern-based instruction scoping exists anywhere in its
-discovery, its configuration reference or its skill frontmatter. Directory placement is
-its only scoping axis. This project's scopes are globs.
+**Codex inlines a scoped fragment because it has nowhere to put one.** Codex is not short
+of steering files. It supports a nested `AGENTS.md`, an override file, fallback
+filenames, repository-checked-in skills, project subagents and a sandbox policy. What it
+lacks is a **type**. Codex has no glob-based or pattern-based instruction scoping in its
+discovery, in its configuration reference or in its skill frontmatter. Directory
+placement is its only scoping axis. This project's scopes are globs.
 
-A nested `AGENTS.md` **below the current directory is never loaded**. Codex walks from the
-project root down to the current directory and stops. A file at `src/foo/AGENTS.md`
-therefore contributes nothing when Codex runs from the repository root. Inlining is the
-correctness-preserving choice. Offloading to nested files is rejected, not deferred.
+Codex also **never loads a nested `AGENTS.md` below the current directory**. It walks
+from the project root down to the current directory and stops. A file at
+`src/foo/AGENTS.md` therefore contributes nothing when Codex runs from the repository
+root. Inlining preserves correctness. A nested file is rejected, not deferred.
 
-**Two naming traps on the Codex surface have each misled a reader here.**
-
-| Trap | What it actually is | The wrong turn it causes |
-| --- | --- | --- |
-| Codex "Rules" (`.codex/rules/`, a Starlark prefix rule) | a sandbox command-execution policy | reading that page and concluding Codex has no instruction rules |
-| File-based custom prompts | deprecated in favour of skills, and user-scope only | planning to ship them inside a repository, which is impossible |
+**Two names on the Codex surface mislead a reader.** Codex "Rules" (`.codex/rules/`) is
+a sandbox command-execution policy, not an instruction rule. A file-based custom prompt
+is deprecated in favour of a skill, and it is user-scope only, so a repository cannot
+ship one.
 
 **Copilot gets no path-scoped twin, by decision.** One editor loads the Claude rules root
 and the Copilot instructions root together, with no deduplication. A twin therefore
-double-loaded every path-scoped rule for every consumer of that editor. Scoped rules are
-single-sourced to the Claude rules root instead. The accepted cost is that the
-server-side Copilot surfaces, meaning pull-request review and the cloud agent, keep only
-the root instructions file.
+double-loaded every path-scoped rule for every consumer of that editor. A scoped rule is
+single-sourced to the Claude rules root instead. The accepted cost falls on the
+server-side Copilot surfaces. Pull-request review and the cloud agent keep only the root
+instructions file.
 
 ## The fragment model
 
@@ -586,10 +463,10 @@ block scalar, projected to Markdown.
    declares `replaces` must set `override: true`. Every replaced id must exist in the
    merged set. Two user fragments may not replace each other.
 
-**`enforced_by` closes the loop on the context-minimalism rule.** A fragment that claims a
-command enforces its rule must cite that command in its body. `catalog lint` refuses one
-that does not. That turns "point at enforcement instead of restating it" from advice into
-a check.
+**`enforced_by` closes the loop on the context-minimalism rule.** A fragment that claims
+a command enforces its rule must cite that command in its body. `catalog lint` refuses a
+fragment that does not. The rule "point at enforcement instead of restating it" is
+therefore a check and not advice.
 
 **On disk today** [measured 2026-08-16, `basicly catalog list fragment`]:
 
@@ -601,12 +478,8 @@ a check.
 | path-scoped fragments, each becoming its own rules file | 4 |
 | target-specific defaults, one per family that takes them | 2 |
 
-Core fragments by category: `boundaries` 1, `commands` 1, `decisions` 3, `design` 1,
-`project` 11, `security` 1, `testing` 1, `tools` 2. The five empty categories are
-`code-style`, `hooks`, `skills`, `ci-cd` and `quirks`.
-
 **The category `hooks` labels a fragment that *describes* hook usage.** It is not the
-mechanism that ships a hook script. That mechanism is [Hooks](#hooks).
+mechanism that ships a hook script. [Hooks](#hooks) is that mechanism.
 
 ## Skills
 
@@ -637,21 +510,21 @@ values.
 | model-invoked | yes | on every turn, in the listing | when the model judges it relevant |
 | user-invoked | no, and lint enforces the empty pairing | nothing | when a human types its name |
 
-The axis is declared rather than guessed because "does this entry route correctly" is not
-a well-posed question until the entry says whether routing applies to it. That makes the
-axis a prerequisite for the routing evals rather than bookkeeping.
+The axis is declared and never guessed. "Does this entry route correctly" is not a
+well-posed question until the entry says whether routing applies to it. The axis is
+therefore a prerequisite for the routing evals, and not bookkeeping.
 
 **One root requires a description and the other does not.** A user-invoked skill
 therefore emits a synthesized description on the standard root. That family rejects a
-description-less file outright.
+file with no description.
 
 **The projected directory is mirrored and the root itself is owned.** A rebuild prunes a
-resource dropped from the source. Deselecting a technology prunes the whole directory.
-The check also reports any entry in the root that no source accounts for: a hand-authored
-skill file, a loose README, a projection whose source was deleted. Without that report a
-skill the projector never knew about passes every gate while reaching only one agent. The
-check reports and never prunes those. Nothing describes them, and the projected copy is
-the only one there is.
+resource the source dropped. Deselection of a technology prunes the whole directory. The
+check also reports any entry in the root that no source accounts for. That covers a
+hand-authored skill file, a loose README and a projection whose source was deleted.
+Without the report, a skill the projector never knew about passes every gate and reaches
+only one agent. The check reports such an entry and never prunes it, because the
+projected copy is the only copy there is.
 
 **Technology scoping is the core-versus-optional axis.** An untagged skill is universal
 and always ships. A tagged skill ships only when the consumer selects that tag in
@@ -662,15 +535,15 @@ carries the judgment and the pointers a linter cannot.
 **A skill is not free, and the cost sits in the listing rather than the body.** The whole
 skill listing is budgeted against a fraction of the context window. On overflow the host
 drops descriptions **starting with the least-invoked skills**. That is a feedback loop
-rather than a flat cost: a rarely-invoked skill is truncated first, which makes it harder
-to invoke. Both the per-entry cap and the listing budget are gated.
+and not a flat cost. The host truncates a rarely-invoked skill first, which makes that
+skill harder to invoke. Both the per-entry cap and the listing budget are gated.
 
-**A skill's frontmatter can take a path glob.** The glob both limits the skill and
+**A skill's frontmatter can take a path glob.** The glob limits the skill, and it also
 triggers automatic activation. It buys always-loads-on-a-matching-file behaviour at
-**zero** always-on characters. The key is not in the portable subset, so it is declared
-under a per-target vendor fence and emitted only into the root that understands it. The
-general rule this settles: a host-specific capability is expressible without the portable
-artifact absorbing it.
+**zero** always-on characters. The key is not in the portable subset. It is therefore
+declared under a per-target vendor fence, and emitted only into the root that
+understands it. The general rule this settles is that a host-specific capability is
+expressible without the portable artifact absorbing it.
 
 **Skill scope precedence is the inverse of agent scope precedence.** For a distribution
 tool that asymmetry is load-bearing.
@@ -680,15 +553,15 @@ tool that asymmetry is load-bearing.
 | agents | managed → project → user | project, the middle scope |
 | skills | enterprise → **personal** → **project** | project, the **weakest** writable scope |
 
-A developer's personal skill of the same name therefore silently overrides one we
-shipped. An identically named agent would not. Nothing we ship makes that visible to the
-consumer.
+A developer's personal skill of the same name therefore overrides a shipped skill in
+silence. An identically named agent would not. Nothing in the projection makes that
+visible to the consumer.
 
 **Lint enforces the specification's naming rules.** The name must match the directory. It
 must be 1 to 64 lowercase alphanumeric-or-hyphen characters, with no leading, trailing or
-consecutive hyphen. Lint warns when a body runs long, and when a file reference reaches
-more than one level deep. Both warnings follow the specification's progressive-disclosure
-guidance.
+consecutive hyphen. Lint warns when a body runs long. It also warns when a file reference
+reaches more than one level deep. Both warnings follow the specification's
+progressive-disclosure guidance.
 
 **On disk today** [measured 2026-08-16]:
 
@@ -702,79 +575,76 @@ guidance.
 Subagent definition files are the fourth catalog kind. They are generated and never
 hand-edited.
 
-**Composition.** Every agent fills five ordered body slots: role, startup, process, output
-contract, constraints. Each slot is a list of references to shared building blocks, or
-inline Markdown. The skeleton is the structure that the vendor's own subagent examples and
-the best files in a community corpus converge on. Four shared blocks exist, under a
-reserved slug.
+**Composition.** Every agent fills five ordered body slots. They are role, startup,
+process, output contract and constraints. Each slot holds a list of references to shared
+building blocks, or inline Markdown. Four shared blocks exist, under a reserved slug.
 
 **The description is authored as four fields.** They are purpose, triggers, returns and
 posture. The projector joins them, so no part of a delegation-quality description can be
 forgotten.
 
-**The tool list is a mandatory explicit allowlist.** An agent never silently inherits
-every tool. A posture that declares read-only may not grant a write tool. Lint refuses one
-that does.
+**The tool list is a mandatory explicit allowlist.** An agent never inherits every tool
+in silence. A posture that declares read-only may not grant a write tool. Lint refuses a
+source that does.
 
 **Tool names are not translated.** The second family's published alias table accepts the
-first family's PascalCase names as first-class, and matches case-insensitively. One
-declared name therefore resolves on both. The table is pinned as reviewed data for two
-reasons. It drives the read-only posture check. And it lets lint refuse a name that
-resolves to nothing, which matters because one family drops an unrecognised entry with no
-error where the other refuses to launch and says so. An unrecognised entry therefore fails
-**safe**. The residual risk is a useless agent, not a lost guarantee.
+first family's PascalCase names as first-class, and it matches without regard to case.
+One declared name therefore resolves on both families. The table is pinned as reviewed
+data for two reasons. It drives the read-only posture check. It also lets lint refuse a
+name that resolves to nothing. That refusal matters, because one family drops an
+unrecognised entry with no error, and the other refuses to launch and says so. An
+unrecognised entry therefore fails **safe**. The residual risk is a useless agent, not a
+lost guarantee.
 
-**A tier names a portable model tier**: low, medium, high or maximum. It is single-sourced
-from the engine into an enum on the agent schema. A tripwire test keeps the two in step.
-Lint refuses a source that declares none.
+**A tier names a portable model tier.** The four values are low, medium, high and
+maximum. The engine single-sources them into an enum on the agent schema. A tripwire test
+keeps the two in step. Lint refuses a source that declares no tier.
 
-**No projected agent file carries a provider model id.** That is a decision, not an
-omission, and it rests on two independent reasons.
+**No projected agent file carries a provider model id.** That is a decision, and it rests
+on two independent reasons.
 
-1. A provider id is not portable across agent families. The same model is spelled
-   differently on two surfaces.
-2. Decisively: the tier-injection mechanism leaves a definition that pins its own model
-   alone. A projected model line would therefore **disable** tier injection rather than
-   implement it.
+1. A provider id is not portable across agent families. Two surfaces spell the same model
+   differently.
+2. The tier-injection mechanism leaves a definition that pins its own model alone. A
+   projected model line would therefore **disable** tier injection rather than implement
+   it.
 
-The deprecation of the old key is engineered rather than documented. The key is retained
-as a deprecated property purely so lint owns the actionable message, instead of the schema
-emitting a bare "additional properties are not allowed". It stays on the
-reserved-frontmatter list so the per-family passthrough cannot smuggle an id back in.
+The schema keeps the old key as a deprecated property, so lint owns the actionable
+message. Without it the schema emits a bare "additional properties are not allowed". The
+key also stays on the reserved-frontmatter list, so the per-family passthrough cannot
+smuggle an id back in.
 
-**Two roots, both written and both checked**, one per family that has an agent root. The
-second root exists for two reasons. That family's *cloud* agent reads only its own root,
-while its command-line tool's discovery of the first root is real but undocumented. And
-its custom agents do support a tool allowlist, so the read-only posture survives the
+**Two roots are written and both are checked**, one per family that has an agent root.
+The second root exists for two reasons. That family's *cloud* agent reads only its own
+root, and its command-line tool discovers the first root through an undocumented path.
+Its custom agents also support a tool allowlist, so the read-only posture survives the
 crossing.
 
 Double loading does not happen. The deduplication key is the file name without its
 extension, so the two files collapse to one agent. Only the first root receives the
 per-family passthrough.
 
-**A third native root is declined, not overlooked.** Codex's subagent format has no tool
-allowlist equivalent. A Codex copy would therefore silently drop the mandatory allowlist
-the read-only posture check depends on. That is a lost guarantee, not a format cost, and
-it would also fork the renderer, the drift check and the generated marker. Codex receives
+**A third native root is declined, not overlooked.** The Codex subagent format has no
+tool allowlist. A Codex copy would therefore drop the mandatory allowlist that the
+read-only posture check depends on. That is a lost guarantee and not a format cost. It
+would also fork the renderer, the drift check and the generated marker. Codex receives
 the same guidance through `AGENTS.md` and the standard skills root.
 
-**No agent root costs always-on budget, and the saving is structural.** Four facts, all
-verified against a live host rather than taken from vendor guidance.
+**No agent root costs always-on budget, and the saving is structural.** Four facts hold,
+each verified against a live host rather than taken from vendor guidance.
 
 1. Only an agent's name and description load at session start.
 2. The body never enters the parent's context.
 3. Only the final message returns.
-4. A subagent runs in an isolated context window, so a dispatch's working set is never
-   charged to the session that spawned it.
+4. A subagent runs in an isolated context window. A dispatch's working set is therefore
+   never charged to the session that spawned it.
 
 **A projected agent definition does not reach a running session's subagent registry**
-[measured 2026-08-16, in this session]. A role was given write tools in the catalog.
-`basicly agents-build` wrote both roots. A dispatch immediately afterwards reported its
-live tools as the pre-change set. A requirements document claims agent definitions
-hot-reload, citing an earlier measurement. **That claim does not hold for this path.**
-Treat a definition change as taking effect at the next process start, and say so to
-consumers. Clearing the conversation is the lever a consumer reaches for first, and it is
-the wrong one.
+[measured 2026-08-16]. The measurement gave a role write tools in the catalog, ran
+`basicly agents-build` over both roots, and then dispatched that role. The dispatch
+reported its live tools as the pre-change set. A definition change therefore takes effect
+at the next process start. A consumer reaches for a conversation reset first, and that is
+the wrong lever.
 
 **On disk today** [measured 2026-08-16]:
 
@@ -817,64 +687,65 @@ once let unguarded commits through. So `basicly hooks-build` projects the manife
 then runs the installer** for every managed stage. It does not only write the
 configuration.
 
-**Two scanners deserve their reasoning stated.**
+**Three hooks carry reasoning a reader cannot recover from the script.**
 
 The secret scanner blocks a commit whose staged added lines carry a likely credential. An
 inline allowlist escapes a reviewed false positive.
 
-Its sibling scans for internal-only identifiers: a company domain, an internal host, a
-machine username, a private repository name. Those publish silently, because they read as
-ordinary text to anyone who does not already know they are internal. **Its denylist is
+Its sibling scans for an internal-only identifier. That covers a company domain, an
+internal host, a machine username and a private repository name. Each one publishes in
+silence, because it reads as ordinary text to anyone outside. **Its denylist is
 deliberately not in the script.** A gate that hard-codes the strings it suppresses would
 publish them into this repository, and into every consumer that installs the catalog.
 Pre-commit also runs in a continuous-integration job whose logs are public. The tokens
-live in the gitignored per-machine configuration as named rules. The report prints only
-the rule name. The scanner is inert until configured, so a consumer is never blocked by a
-list they did not write.
+therefore live in the gitignored per-machine configuration as named rules, and the report
+prints only the rule name. The scanner is inert until a consumer configures it, so no
+consumer is blocked by a list they did not write.
 
 **The identity guard blocks a commit whose git identity is unset or a hostname fallback.**
-It is generic and holds no personal data. It validates the **effective** identity git will
-stamp, resolving author and committer with the environment taking precedence over
-configuration. A runner may overlay identity environment variables, and validating
-configuration alone would miss the override.
+It is generic and holds no personal data. It validates the **effective** identity that git
+will stamp. It resolves author and committer with the environment above the
+configuration, because a runner may overlay an identity environment variable. A check on
+the configuration alone would miss that override.
 
-**The tool-usage counter is token-free telemetry.** It tallies every shell command's
-pipeline head into a self-ignored file. It resolves the head *past* a wrapper: the runner,
-the package executor, the environment setter, and their subcommands, flags, flag values
-and variable prefixes. The wrapped tool is therefore credited and not only the wrapper.
-The file is the input for culling idle tools and skills from the catalog with real data.
+**The tool-usage counter is token-free telemetry.** It tallies the pipeline head of every
+shell command into a self-ignored file. It resolves the head *past* a wrapper. A wrapper
+here is the runner, the package executor or the environment setter, together with their
+subcommands, flags, flag values and variable prefixes. The counter therefore credits the
+wrapped tool and not only the wrapper. The file is the input for a cull of idle tools and
+skills from the catalog.
 
 **Why pre-commit and not a compiled runner.** The hooks are already runner-agnostic, so
-the only runner-specific code is the projection layer. The decisive fact is that **every
-projected hook shells out to the Python runtime**. A committer needs that runtime whatever
-orchestrates the hooks. A static binary's headline advantage is no runtime dependency, and
-that advantage buys this project nothing. It would add a binary-acquisition problem with
-no native answer.
+the projection layer holds the only runner-specific code. The decisive fact is that
+**every projected hook shells out to the Python runtime**. A committer needs that runtime
+whatever orchestrates the hooks. A static binary's headline advantage is that it needs no
+runtime, and that advantage buys this project nothing. It would add a
+binary-acquisition problem with no native answer.
 
-Reopen the decision on any one of four triggers.
+Four triggers reopen the decision.
 
 1. Consumers stop reliably having the runtime on `PATH`.
 2. The project drops the runtime requirement for the checks themselves.
 3. Hook execution speed becomes a **measured** complaint that parallelism would fix.
 4. The provisioning seam regresses beyond what the fallback covers.
 
-The manager field and the interface-free scripts are kept precisely so this stays cheap to
-reopen.
+The manager field and the interface-free scripts keep the decision cheap to reopen.
 
-**A consumer's own hooks survive.** The projector merges its managed block into an existing
-configuration. Foreign repositories and hooks are preserved, and the merge is idempotent.
-This repository dogfoods the catalog directly. Its own pre-commit configuration points
-straight at the catalog scripts. One hook in it, the Markdown linter, is a hand-maintained
-consumer block that the projector preserves rather than owns.
+**A consumer's own hooks survive.** The projector merges its managed block into an
+existing configuration. It preserves a foreign repository and a foreign hook, and the
+merge is idempotent. This repository dogfoods the catalog directly, so its own pre-commit
+configuration points straight at the catalog scripts. One hook in it is the Markdown
+linter. That one is a hand-maintained consumer block the projector preserves and does not
+own.
 
 ## Model tiers
 
-A catalog source declares a **portable tier**. A concrete model id is resolved at dispatch
-from committed data.
+A catalog source declares a **portable tier**. The engine resolves a concrete model id at
+dispatch, from committed data.
 
-An anchors file is the reviewed input. It holds one anchor model per tier and vendor, plus
-a surface table and a capability rule. A generator resolves it into a committed map,
-validated against a published schema.
+An anchors file is the reviewed input. It holds one anchor model per tier and vendor,
+plus a surface table and a capability rule. A generator resolves it into a committed map.
+A published schema validates that map.
 
 **The map is indexed on three axes, because all three change the answer.**
 
@@ -885,18 +756,18 @@ validated against a published schema.
 | surface | the same model can cost several times more through one surface than another, and one surface may cap a model's input where the vendor's own publishes no cap |
 
 **An unavailable cell records a status and a reason, and deliberately carries no model
-key.** A consumer reading it therefore fails loudly, rather than being silently demoted
-onto another tier's model. Resolution refuses the dispatch. It never substitutes.
+key.** A consumer that reads the cell therefore fails loudly. Nothing demotes it onto
+another tier's model in silence. Resolution refuses the dispatch and never substitutes.
 
 **Two constraints keep the whole mechanism offline.**
 
-1. The generator fetches upstream data at authoring time and check time only, never in the
-   dispatch path. There is deliberately no verify-check entry for it. Nothing that
-   dispatches an agent depends on the network.
-2. The drift check **reports** and never writes. A community-contributed upstream edit must
-   surface as a red check. It must not silently change which model runs someone's code.
+1. The generator fetches upstream data at authoring time and at check time only. It never
+   fetches in the dispatch path, and it has no verify-check entry. No agent dispatch
+   depends on the network.
+2. The drift check **reports** and never writes. A community-contributed upstream edit
+   must surface as a red check. It must never change which model runs someone's code.
 
-The committed map's shape is gated offline by a test.
+A test gates the committed map's shape offline.
 
 **Two independent resolvers exist, and the difference is deliberate.**
 
@@ -906,12 +777,12 @@ The committed map's shape is gated offline by a test.
 | portable kit — no dependencies, no imports, no `PATH`, no network, no subprocess | fails closed and quiet, leaving the spawn untouched | it runs on machines that may hold no map at all |
 
 **The tier reaches no spawn today.** Nothing projects a model id, by decision. The
-injection that would resolve one at spawn is a hook that exists in the kit and is not
-installed. The tier is therefore declared, gated by lint, and inert.
+injection that would resolve one at spawn is a hook. That hook exists in the kit and is
+not installed. The tier is therefore declared, gated by lint, and inert.
 
 On one family the installer **declines with a nonzero exit**. Across repeated probes no
-tool-boundary hook fired for an agent spawn on that family. Even where one does fire, the
-documented contract is approve-or-deny rather than rewrite.
+tool-boundary hook fired for an agent spawn on that family. The documented contract for
+such a hook is approve-or-deny, not rewrite.
 
 ## Configuration
 
@@ -924,62 +795,62 @@ Three files, layered lowest to highest, with a fourth layer for the current proc
 | `basicly.local.toml` | no, gitignored | per-machine harness choices, and the internal-identifier denylist |
 | session overrides | no | this process only |
 
-**The merge is a key-level shallow replace, with exactly one documented exception.** A key
-set in a later layer replaces the earlier value wholesale. A per-machine list is therefore
-taken as-is rather than concatenated. That is the machine saying *instead*.
+**The merge is a key-level shallow replace, with exactly one exception.** A key set in a
+later layer replaces the earlier value whole. A per-machine list is therefore taken as it
+stands, and never concatenated. The machine says *instead*.
 
-The one exception is the verify check list. The drop-in layer **appends** to it in filename
-order, because a drop-in fragment is one lane's *addition*. The per-machine layer still
-replaces the whole list.
+The one exception is the verify check list. The drop-in layer **appends** to it in
+filename order, because a drop-in fragment is one lane's *addition*. The per-machine layer
+still replaces the whole list.
 
 **Projection configuration is repository-level only.** The path and catalog sections shape
 repository-committed outputs. They are read from the committed file alone, never from the
 per-machine overlay.
 
-**Every ratchet number in a drop-in is a delta, never a total.** Two lanes each adding one
-suppression would both record the same total, while the merged tree holds one more.
-Addition composes in any landing order. A total does not. Raising a frozen baseline through
-a delta is refused. The escape is an explicit rebaseline key carrying a non-empty reason,
-and those are counted and printed.
+**Every ratchet number in a drop-in is a delta, never a total.** Two lanes that each add
+one suppression would both record the same total, while the merged tree holds one more.
+Addition composes in any landing order. A total does not. A delta that raises a frozen
+baseline is refused. The escape is an explicit rebaseline key with a non-empty reason.
+The engine counts and prints every such escape.
 
-**Both files are schema-checked on every load, and the schema is an allowlist over the
-whole configuration surface.** An unrecognised section or key raises. The message names the
-file, the containing section, what that section accepts, and which sections accept a name
-like it.
+**Both files are schema-checked on every load. The schema is an allowlist over the whole
+configuration surface.** An unrecognised section or key raises. The message names the
+file, the containing section, what that section accepts, and which sections accept a
+similar name.
 
-The reason is that a key the engine ignores leaves the file stating one behaviour and the
-engine performing another. In a gitignored overlay there is no diff to review and no other
-gate. The only symptom is the default the key was written to replace. The allowlist covers
-the surface rather than this module's readers: two entries have no reader in the
-configuration loader at all, and are still declared.
+A key the engine ignores leaves the file stating one behaviour and the engine performing
+another. A gitignored overlay has no diff to review and no other gate. The only symptom
+is the default the key was written to replace. The allowlist therefore covers the whole
+surface rather than this module's readers. Two declared entries have no reader in the
+configuration loader at all.
 
-**Which schema does the checking is a property of the tree, not of the process.** A
-repository that ships its own engine source is checked against the schema declared in
-*that* file, read statically on every validation. This repository is such a tree, and so is
-each of its lane worktrees.
+**The tree decides which schema does the checking, not the process.** A repository that
+ships its own engine source is checked against the schema declared in *that* source. The
+reader parses it statically on every validation. This repository is such a tree, and so
+is each of its lane worktrees.
 
 Without that rule a landing could not admit a lane that adds a key. The landing runs from
-the base checkout, so the engine validating the lane's configuration is the pre-merge one.
-It refused a name the lane's own code introduces one commit later.
+the base checkout, so the engine that validates the lane's configuration is the pre-merge
+one. It refused a name the lane's own code introduces one commit later.
 
-Reading it statically is deliberate. The tree under test has not merged. Importing it would
-run a second engine inside the process that is landing it, and the question is a set of
-names rather than a behaviour. It fails closed: a schema the reader cannot model falls back
-to the running engine's, and the refusal then names the ordering rule instead of reading as
-a typo.
+The static read is deliberate. The tree under test has not merged. An import would run a
+second engine inside the process that lands it, and the question is a set of names rather
+than a behaviour. It fails closed. A schema the reader cannot model falls back to the
+running engine's schema, and the refusal then names the ordering rule instead of reading
+as a typo.
 
 **The refusal is unconditional. Forward compatibility is the accepted cost.** There is no
-warn-then-error staging and no narrowing to near-misses of a known key. A repository pinned
-to an older engine whose configuration carries a newer key fails until it upgrades or
-removes the key.
+warn-then-error staging, and no narrowing to a near-miss of a known key. A repository
+pinned to an older engine, whose configuration carries a newer key, fails until it
+upgrades or removes the key.
 
 | Softer option | Why it was rejected |
 | --- | --- |
 | warn, then error in a later release | The engine ships from the trunk, so a warn phase has no graduation point. It would also go unread |
 | refuse only a near-miss of a known key | A genuinely novel key stays silent. That is the same hole, one generation on |
 
-The cost is bounded by the message. It names the engine's version and says upgrading is one
-of the two fixes.
+The message bounds the cost. It names the engine's version, and it says that an upgrade is
+one of the two fixes.
 
 ## Catalog verification
 
@@ -996,49 +867,48 @@ Two layers, deterministic always first.
 | Duplicate or near-duplicate bodies, contradictions from a curated pair dictionary, vague phrases, scope overlaps | `basicly catalog verify` |
 | Semantic review: an agent reads the rendered files for contradiction and ambiguity | `basicly catalog review`, advisory, always exits zero |
 
-**Deterministic checks catch a large class cheaply** — duplicate ids, missing fields,
-unknown vocabulary. Semantic problems — a contradiction that parses fine but reads badly to
-a model — need a capable reader. Both layers run against the same merged fragment set, and
-the judged layer is never a merge gate.
+**A deterministic check catches a large class cheaply.** That class is a duplicate id, a
+missing field and an unknown vocabulary value. A semantic problem needs a capable reader.
+An example is a contradiction that parses fine and reads badly to a model. Both layers run
+against the same merged fragment set. The judged layer is never a merge gate.
 
-**The routing gate is the deterministic, lexical, free tier of the evidence layer**, and the
-reason it works is a detail worth keeping: it asserts that the declared owner must
-**outrank** the entry, because a bare "must not rank first" passes vacuously on a prompt
-that matches nothing. It reports a rank-1 rate against a floor that ratchets and cannot be
-lowered.
+**The routing gate is the deterministic, lexical, free tier of the evidence layer.** Its
+assertion is that the declared owner must **outrank** the entry. A bare "must not rank
+first" passes vacuously on a prompt that matches nothing. The gate reports a rank-1 rate
+against a floor that ratchets and cannot be lowered.
 
 ## The always-on files
 
 `AGENTS.md`, `.claude/CLAUDE.md` and `.github/copilot-instructions.md` are the foundation
-every other artifact builds on. If they are noisy or ambiguous, everything downstream
-inherits that failure.
+every other artifact builds on. A noisy or ambiguous baseline passes that failure to
+everything downstream.
 
 **Six properties they must keep.**
 
-1. **Point at enforcement; do not restate it.** If a rule is mechanically enforced, the
-   always-on file references the command that enforces it. Prose is reserved for what a
-   linter cannot check: judgment calls, escalation policy, when to ask instead of guess.
-   Duplicating what a linter already enforces measurably hurts agent task success and
-   inflates cost.
-2. **Enforced rules are one line; judgment rules are prose**, and the judgment section
-   should be the shorter of the two.
+1. **Point at enforcement. Do not restate it.** Where a rule is mechanically enforced, the
+   always-on file names the command that enforces it. Prose is reserved for what a linter
+   cannot check. That means a judgment call, an escalation policy, and when to ask instead
+   of guess. A restatement of what a linter already enforces measurably hurts agent task
+   success and inflates cost.
+2. **An enforced rule is one line. A judgment rule is prose.** The judgment section is the
+   shorter of the two.
 3. **No duplication across the three files.** The shared always-applicable set feeds all
-   three; each family's file adds only genuinely different content.
+   three. Each family's file adds only content that differs.
 4. **Each file is self-contained.** Two of the three families do not reliably import a
-   shared file, so the shared content is inlined into each rather than referenced. An agent
-   should never need a second file to understand the baseline.
-5. **Scoped fragments stay out of the baseline** for the two families that can scope, so a
-   language-specific rule does not cost every task its context budget.
-6. **Stable ordering**, so diffs stay minimal.
+   shared file, so each file inlines the shared content. An agent never needs a second
+   file to understand the baseline.
+5. **A scoped fragment stays out of the baseline** for the two families that can scope. A
+   language-specific rule then costs no context budget on an unrelated task.
+6. **Stable ordering**, so a diff stays minimal.
 
-**The caps are a discipline choice, not a platform limit.** Measured against the vendors:
-one host's own degradation warning is far above these numbers, one vendor removed its former
-hard character limit and now only advises shortening, and the third reads its file up to a
-configurable byte cap. **A cap warning means split into a scoped rule, not shrink the
-prose.** The cap counts **characters**, not bytes, so a byte count overstates a UTF-8
-baseline by its multi-byte characters.
+**The caps are a discipline choice, not a platform limit.** One host's own degradation
+warning is far above these numbers. One vendor removed its former hard character limit
+and now only advises a shorter file. The third reads its file up to a configurable byte
+cap. **A cap warning means split into a scoped rule. It does not mean shrink the prose.**
+The cap counts **characters**, not bytes, so a byte count overstates a UTF-8 baseline by
+its multi-byte characters.
 
-Measured from the projected files themselves, and regenerated and gated on every commit:
+Measured from the projected files, and regenerated and gated on every commit:
 
 <!-- docs-claims:begin always-on-sizes -->
 
@@ -1054,49 +924,48 @@ Measured from the projected files themselves, and regenerated and gated on every
 always-on fragment. `AGENTS.md` binds for the **path-scoped** tier, because a scoped
 fragment costs it around a thousand characters and costs the other two nothing.
 
-**Scoping's cost effect is asymmetric, not a blanket improvement.** It removes a fragment
-from the two baselines that can scope and **adds** it to the one that inlines. The codex cap
-was raised rather than lowered after an audit of an overrun found the excess *was* the
-scoped tier: evicting always-on lines would have charged all three families to fix one and
-left the cause standing. What that trade gave up is stated where it was made — the old cap
-also stood proxy for the vendor's claim that adherence degrades with length, which this
-repository has never measured.
+**The cost effect of scoping is asymmetric.** It removes a fragment from the two
+baselines that can scope, and it **adds** that fragment to the one that inlines. The codex
+cap was raised rather than lowered, because an audit of an overrun found that the excess
+*was* the scoped tier. Eviction of always-on lines would have charged all three families
+to fix one, and it would have left the cause standing. The trade gave up one thing. The
+old cap also stood proxy for the vendor's claim that adherence degrades with length, and
+this repository has never measured that claim.
 
-**What is known and what is not.** Measured against both families that were tested, each
-reproduces the overwhelming majority of its baseline's rules when asked, against a small
-no-guidance control. So the "cliff already crossed" reading is **refuted**: the content is
-not invisible at this size. What that does **not** settle is the operational question —
-nothing measures which baseline rules *bind* while an agent works. Recall under a direct cue
-is an upper bound and confirms mechanism only. The cap policy is therefore asymmetric:
-**lowering it is ordinary housekeeping; raising it still has no evidence behind it.**
+**What is known and what is not.** Both families that were tested reproduce the great
+majority of their baseline's rules when asked, against a small no-guidance control. The
+"cliff already crossed" reading is therefore **refuted**. The content is not invisible at
+this size. That does **not** settle the operational question. Nothing measures which
+baseline rules *bind* while an agent works. Recall under a direct cue is an upper bound,
+and it confirms the mechanism only. The cap policy is therefore asymmetric. **A lower cap
+is ordinary housekeeping. A higher cap still has no evidence behind it.**
 
 ## Installation and upgrade
 
-**`install` and `uninstall` are ordinary CLI verbs** [measured 2026-08-16, `basicly
---help`]. They are not special bootstrap commands. `uvx` in the lines below is only how
-you reach a `basicly` executable when your machine has none. It is not part of the verb.
+**`install` and `uninstall` are ordinary command-line verbs** [measured 2026-08-16,
+`basicly --help`]. They are not special bootstrap commands. `uvx` is only how a consumer
+reaches a `basicly` executable when the machine has none. It is not part of the verb.
 
-Three ways to reach the same two verbs.
+Three ways reach the same two verbs.
 
-| How you invoke it | When to use it | Verified |
-| --- | --- | --- |
-| `uvx --from git+https://github.com/niksavis/basicly@<ref> basicly install` | first install, and every upgrade of a pinned ref. Nothing is added to `PATH` | yes |
-| `uv run basicly install` | inside a checkout of this repository, where `basicly` is the project | yes, this is how every command in this document was run |
-| `basicly install` | when a `basicly` executable is already on `PATH` | the verb exists; putting it on `PATH` is the consumer's own step |
+| How a consumer invokes it | When to use it |
+| --- | --- |
+| `uvx --from git+https://github.com/niksavis/basicly@<ref> basicly install` | first install, and every upgrade of a pinned ref. Nothing is added to `PATH` |
+| `uv run basicly install` | inside a checkout of this repository, where `basicly` is the project |
+| `basicly install` | when a `basicly` executable is already on `PATH` |
 
 **`basicly install` does not put `basicly` on `PATH`.** It syncs the catalog into the
 repository and projects every artifact. Nothing in it installs the Python package. A bare
-`basicly install` therefore works only after a consumer has separately made the executable
-reachable, for example with `uv tool install`. On this machine `command -v basicly` returns
-nothing [measured 2026-08-16].
+`basicly install` therefore works only after the consumer makes the executable reachable,
+for example with `uv tool install`.
 
 **Uninstall follows the same rule.** `basicly uninstall` and `uvx ... basicly uninstall`
-are the same verb reached two ways.
+are one verb reached two ways.
 
 **One idempotent converge command.** An earlier design staged an init, then a build, then
-each projector, plus a separate update command. The finding that collapsed them: init was
-never a technical prerequisite, because everything it does is idempotent and skips what
-exists. One command therefore serves both cases.
+each projector, and a separate update command. Init was never a technical prerequisite,
+because everything it does is idempotent and skips what exists. One command therefore
+serves both the first install and every upgrade.
 
 Its contract, in order:
 
@@ -1106,14 +975,14 @@ Its contract, in order:
 4. Keep the authoring-repository guard.
 5. Rebuild every artifact and install the hooks.
 
-**The catalog is versioned as a whole and pinned as a whole.** That is the same way a hook
-configuration pins a revision. Re-running the install from a newer pinned ref is the only
-action that moves a consumer to a newer catalog version. It is explicit and reviewable.
+**The catalog is versioned as a whole and pinned as a whole.** A hook configuration pins a
+revision the same way. A re-run of the install from a newer pinned ref is the only action
+that moves a consumer to a newer catalog version. That action is explicit and reviewable.
 
 **Provenance is what makes an upgrade safe.** Install records a per-file hash snapshot of
-the core as materialized. On a later install the sync overwrites changed files and deletes
-upstream-removed ones. The snapshot is what distinguishes an upstream change from a user's
-hand edit.
+the core as materialized. A later install overwrites a changed file and deletes an
+upstream-removed one. The snapshot distinguishes an upstream change from a user's hand
+edit.
 
 | File state | What the sync does |
 | --- | --- |
@@ -1153,25 +1022,29 @@ sequenceDiagram
   CLI-->>Dev: repo converged. Re-run to upgrade
 ```
 
-**Uninstall removes everything managed** — core, state, manifest-listed generated files,
-projected skills and agents that carry the generated marker, and the managed hook block,
-deleting the config and uninstalling the git hooks when nothing else remains. It preserves the
-overlay and the config unless purging, and it refuses to run in the authoring repository,
-where the core *is* the catalog source.
+**Uninstall removes everything managed.** That covers the core, the state, every
+manifest-listed generated file, every projected skill and agent that carries the generated
+marker, and the managed hook block. When nothing managed remains, uninstall deletes the
+configuration and removes the git hooks. It preserves the overlay and the configuration
+unless the consumer purges. It refuses to run in the authoring repository, where the core
+*is* the catalog source.
 
-**Technology scoping applies at projection time, not at sync time.** The core sync stays full,
-which keeps provenance simple; the projectors and their checks skip non-overlapping sources.
-Narrowing the selection converges on rebuild rather than stranding: fragment outputs recompose
-and are swept via the manifest, excluded skills and agents are pruned if they carry the
-generated marker, and excluded managed hooks are stripped from the configuration files.
+**Technology scoping applies at projection time, not at sync time.** The core sync stays
+full, which keeps provenance simple. The projectors and their checks skip a source that
+does not overlap the selection. A narrower selection converges on rebuild and strands
+nothing. Fragment outputs recompose, and the manifest sweeps the rest. An excluded skill
+or agent is pruned when it carries the generated marker. An excluded managed hook is
+stripped from the configuration files.
 
-**The managed catalog ships inside the distribution.** The build projects the dogfooded source
-tree into the wheel and the source distribution carries it, so a direct-from-git install
-resolves it; the locator prefers a source checkout and falls back to the packaged copy.
+**The managed catalog ships inside the distribution.** The build projects the dogfooded
+source tree into the wheel, and the source distribution carries it, so a direct-from-git
+install resolves it. The locator prefers a source checkout and falls back to the packaged
+copy.
 
-**A bootstrap shim exists for a consumer with no runtime**: a POSIX shell script and a
-PowerShell script that install the runtime from its vendor when absent, then run the same
-pinned install in the current repository. Both fail fast outside a git repository.
+**A bootstrap shim exists for a consumer with no runtime.** It is a POSIX shell script and
+a PowerShell script. Each installs the runtime from its vendor when the runtime is absent,
+then runs the same pinned install in the current repository. Both fail fast outside a git
+repository.
 
 **Everything lives in plain, git-tracked files.** No daemon, no hidden state, no network calls
 at build time. `git diff` and `git blame` are the audit trail, and `basicly check` is the
@@ -1179,9 +1052,8 @@ offline staleness gate.
 
 ## The CLI surface
 
-**28 top-level commands. Nine of them are subcommand groups** [measured 2026-08-16; count
-`subparsers(cli._build_parser()).choices`]. An earlier revision of this document said 27
-and eight. Both were wrong.
+**28 top-level commands. Nine of them are subcommand groups** [measured 2026-08-16, count
+`subparsers(cli._build_parser()).choices`].
 
 They fall into three surfaces.
 
@@ -1224,8 +1096,8 @@ They fall into three surfaces.
 | `basicly catalog review [--runner NAME] [--dry-run]` | Advisory agent-assisted semantic review; always exits zero |
 | `basicly rubric eval <issue> [--runner NAME] [--dry-run]` | Evaluate the issue's work-type behavioural rubric: deterministic checks through the verify runner, judged checks through one agent prompt. Reports an advisory gate, promotable by naming it in the required set |
 
-The names above are the whole authoring surface. Two formerly planned reporting views for
-conflicts and overrides were cut from scope; `basicly catalog verify` output covers the need.
+The names above are the whole authoring surface. Two planned reporting views for conflicts
+and overrides were cut from scope. The `basicly catalog verify` output covers that need.
 
 **Harness.**
 
@@ -1247,32 +1119,30 @@ conflicts and overrides were cut from scope; `basicly catalog verify` output cov
 | `basicly board validate` | Read a board snapshot and say whether this consumer can render it. A major-version mismatch refuses; an unknown key is reported and admitted |
 | `basicly release <version> --issue ID [--date D] [--dry-run] [--autonomous --root ID]` | Bump the single-sourced version, regenerate version-stamped projections in a fresh interpreter, rewrite install pins on the consumer surfaces, fold the per-lane changelog fragments into a dated section, commit, and create the annotated tag. **Never pushes** |
 
-**Two properties of the harness surface are decisions.** Anything fully deterministic is
-reachable as **one command** an agent triggers and waits on. And a command that changes the
-world irreversibly — publishing a release, killing a lane, approving a ship — stops for a human
-even when a grant is live.
+**Two properties of the harness surface are decisions.** First, every fully deterministic
+step is reachable as **one command** an agent triggers and waits on. Second, a command
+that changes the world irreversibly stops for a human even when a grant is live. Three
+commands do that. They publish a release, kill a lane and approve a ship.
 
-**The release command regenerates in a fresh interpreter with the target repository forced onto
-the import path**, because the CLI binds the version at import and a same-process or
-installed-copy rebuild would stamp the previous version. It refuses on a dirty tree, a version
-that does not move forward, an existing tag, or a changelog fragment it cannot place, reporting
-every reason from one run.
+**The release command regenerates in a fresh interpreter, with the target repository
+forced onto the import path.** The command-line entry point binds the version at import,
+so a same-process or installed-copy rebuild would stamp the previous version. Release
+refuses on a dirty tree, on a version that does not move forward, on an existing tag, and
+on a changelog fragment it cannot place. It reports every reason from one run.
 
 ## The loop
 
-The loop is the execution plane. It is the software factory of
-[What to call this thing](#what-to-call-this-thing). It binds work isolation, a workflow
-and hard gates into one predictable machine. Any supported agent drives it identically.
+The loop is the execution plane. It binds work isolation, a workflow and hard gates into
+one predictable machine. Any supported agent drives it identically.
 
-**Three names exist for this one mechanism, and only one of them is used here.** The CLI
-calls it `basicly loop`. The tracker markers it writes are spelled `[harness-*]`. The
-requirements document is named `factory-loop.md`. This document says **the loop**, and
-nothing else.
+**One mechanism carries three names in the tree.** The command-line verb is `basicly
+loop`. The tracker markers are spelled `[harness-*]`. The requirements document is named
+`factory-loop.md`. The name for it is **the loop**.
 
-Its thesis is **lean over substrate**. It wraps a work tracker's existing primitives: a gate
-ledger, a dependency graph, readiness, and a definition-of-ready lint. It builds only the
-four mechanics the tracker lacks: the worktree lifecycle, the landing order, the verify
-runner and the state machine.
+Its thesis is **lean over substrate**. It wraps four primitives the work tracker already
+has: a gate ledger, a dependency graph, readiness, and a definition-of-ready lint. It
+builds only the four mechanics the tracker lacks. Those are the worktree lifecycle, the
+landing order, the verify runner and the state machine.
 
 ### The work model
 
@@ -1295,8 +1165,7 @@ and comments instead.
 
 ### The state machine
 
-Two kinds of transition, and confusing them is the most expensive misreading of this
-diagram.
+Two kinds of transition exist. A reader who confuses them misreads the whole machine.
 
 | Marker | Who decides | What it takes to pass |
 | --- | --- | --- |
@@ -1328,18 +1197,18 @@ stateDiagram-v2
   done --> [*]
 ```
 
-**Three things the happy path is drawn to make unmissable.**
+**Three properties of the happy path.**
 
-1. **The ladder is not a line.** A green validate gate moves the unit *back* to verify, and
-   verify is where the ship checkpoint is taken. Validate is a detour off verify. It is not
-   a rung between verify and ship.
+1. **The ladder is not a line.** A green validate gate moves the unit *back* to verify. The
+   ship checkpoint is taken at verify. Validate is a detour off verify, and not a rung
+   between verify and ship.
 2. **Only one advance merges.** That is the build-to-verify landing. Neither the ship
    checkpoint nor the teardown touches git history.
-3. **Exactly one transition is derived.** Verify to validate is not an advance at all. It is
-   the phase derivation reading an outstanding gate off the tracker.
+3. **Exactly one transition is derived.** Verify to validate is not an advance. It is the
+   phase derivation, which reads an outstanding gate off the tracker.
 
-The failure paths hang off build and validate. They are drawn apart because they are the
-half a reader skips when both halves share a picture.
+The failure paths hang off build and validate. They have their own diagram, because a
+reader skips this half when both halves share one picture.
 
 ```mermaid
 stateDiagram-v2
@@ -1369,11 +1238,11 @@ Each of the four operator verbs writes. None of them is advice. See
 
 ### Phase is derived, not stored
 
-The engine keeps no durable phase field anywhere. The phase is a pure function of five values
-read from the tracker: the issue status, the set of approved checkpoint markers, the worktree
-binding, the gate status, and whether the issue has children.
+The engine keeps no durable phase field anywhere. The phase is a pure function of five
+values read from the tracker. They are the issue status, the set of approved checkpoint
+markers, the worktree binding, the gate status, and whether the issue has children.
 
-The ladder is read strongest-signal-first:
+The engine reads the ladder strongest-signal first.
 
 | Rung | Condition |
 | --- | --- |
@@ -1394,57 +1263,57 @@ The ladder is read strongest-signal-first:
 | a missing worktree binding proves the node landed | A leaf that never built has no binding either. Nothing enforces checkpoint ordering, so a ship approval recorded out of order on an unstarted leaf closed an issue with zero work done |
 
 **The green required gate is the discriminator.** The build-to-verify landing records it.
-Nothing a never-built node has run records it.
+A node that never built has run nothing that records it.
 
-Both rungs read the **verify gate itself**, not the aggregate can-advance flag. Requiring a
-second gate dropped a merged node back to build.
+Both rungs read the **verify gate itself**, and not the aggregate can-advance flag. A
+demand for a second gate dropped a merged node back to build.
 
-**This is why the phases are engine code and deliberately not configuration.** Most rungs
-are mechanical enough to express as data. These two terms are not. In a declarative form
-they become a boolean expression language, and the invariant then lives where the type
-checker cannot see it, the test suite cannot easily target it, and review will not catch a
-subtle edit.
+**The phases are therefore engine code and deliberately not configuration.** Most rungs
+are mechanical enough to express as data. These two terms are not. A declarative form
+turns them into a boolean expression language. The invariant then lives where the type
+checker cannot see it, where the test suite cannot easily target it, and where review will
+not catch a subtle edit.
 
-The general form is worth stating once, because it applies past this decision. **Every rule
-that moves from code to data leaves the type checker, the test suite and code review.**
-What a consumer would plausibly want to vary is already configuration: the required gates,
-the rework cap, the verify checks per mode, and the autonomy ceiling.
+The general form applies past this one decision. **Every rule that moves from code to data
+leaves the type checker, the test suite and code review.** What a consumer would plausibly
+want to vary is already configuration. That covers the required gates, the rework cap, the
+verify checks per mode, and the autonomy ceiling.
 
 ### Phases, checkpoints and advances
 
-The handler set is exactly intake, classify, decompose, build, verify, validate, ship. Done is a
-terminal marker with no handler and no transition out. **Repair and retrospective are not
-phases**; they are dispatch labels, and the reason is given below.
+The handler set is exactly intake, classify, decompose, build, verify, validate and ship.
+Done is a terminal marker with no handler and no transition out. **Repair and
+retrospective are not phases.** They are dispatch labels, for the reason given below.
 
-**An advance re-derives the phase, then runs the one handler for it.** The engine's invariant is
-that every advance must either **block** or produce a new tracker signal that moves the derived
-phase. It never announces a move it did not make. Two drivers sit above a single advance: one
-runs until blocked, and one additionally resolves checkpoint blocks through the approval path and
-never mints more than one confirmation challenge per call.
+**An advance re-derives the phase, then runs the one handler for it.** The engine's
+invariant is that every advance must either **block** or produce a new tracker signal that
+moves the derived phase. It never announces a move it did not make. Two drivers sit above
+a single advance. One runs until blocked. The other also resolves a checkpoint block
+through the approval path, and it mints at most one confirmation challenge per call.
 
-**An advance is refused from a linked worktree for the two phases that write to the base branch.**
-Git refuses to update a branch checked out in another worktree, so blocking cleanly is better than
-stranding a commit.
+**Two phases write to the base branch, and an advance for either is refused from a linked
+worktree.** Git refuses to update a branch checked out in another worktree. A clean block
+beats a stranded commit.
 
-**Three human checkpoints exist**: classify, decompose and ship. An approval is a comment
-marker on the issue. It is gated on an interactive terminal. Off a terminal, as any
-tool-invoked shell is, the command refuses and issues a one-time confirmation code a human
-must echo back.
+**Three human checkpoints exist.** They are classify, decompose and ship. An approval is a
+comment marker on the issue, and it is gated on an interactive terminal. Off a terminal,
+which is where any tool-invoked shell runs, the command refuses. It then issues a one-time
+confirmation code a human must echo back.
 
-**This mitigates the shared-identity gap. It does not close it.** A fork and its human share
-one operating-system identity and one git identity. A process that deliberately re-runs with
-the code can still forge the marker. Authenticated markers would be the real fix. This is
-honest mitigation, and the same acknowledged class covers a forged gate provider.
+**This mitigates the shared-identity gap. It does not close it.** A fork and its human
+share one operating-system identity and one git identity. A process that deliberately
+re-runs with the code can still forge the marker. An authenticated marker would be the
+real fix. The same acknowledged class covers a forged gate provider.
 
 **The definition-of-ready is emitted rather than discovered.** The required section set is
 derivable from the work type. A scaffold command therefore prints a body with every required
 heading present and a placeholder under each. Both refusal paths name that command, typed
 for this issue, instead of only listing what is missing.
 
-One composer is the single source. The engine composes the bodies of the children it creates
-through it, so a bug-typed child carries the reproduction section too. The tracker's
-per-type templates are compiled into its binary and no read-only command reports them, so
-the engine states the set and a test pins it against the installed binary.
+One composer is the single source. The engine composes every child body through it, so a
+bug-typed child carries the reproduction section too. The tracker compiles its per-type
+templates into its binary, and no read-only command reports them. The engine therefore
+states the set, and a test pins that set against the installed binary.
 
 ### Rework, escalation, and the four verbs
 
@@ -1456,25 +1325,25 @@ the engine states the set and a test pins it against the installed binary.
 4. Check the lane ceiling.
 5. Test the cap.
 
-**The cap is per gate.** Verify and validate each get their own, matching what the counters
-already record. A **lane-wide ceiling** sits at a multiple of it, so a lane cannot grind by
-alternating gates.
+**The cap is per gate.** Verify and validate each get their own cap, which matches what the
+counters already record. A **lane-wide ceiling** sits at a multiple of the cap, so a lane
+cannot grind by alternating gates.
 
 | Where the lane is | What happens |
 | --- | --- |
 | below the cap | the loop blocks and writes a **repair brief** into the lane's own worktree, carrying the gate evidence that rejected the work |
 | at the cap | the loop escalates into the decision queue |
 
-**Convergence is judged on the finding set, not the count.** A round whose findings are the
-same set as the previous round is a stall, not progress. The second consecutive stall
-escalates and **refunds** the attempt. Grinding on an unchanging finding set spends the cap
-without changing a variable. A repeated identical merge bounce is stricter: the first repeat
-escalates.
+**Convergence is judged on the finding set, not on the count.** A round whose findings
+match the previous round's set is a stall, not progress. The second consecutive stall
+escalates and **refunds** the attempt. A grind on an unchanging finding set spends the cap
+and changes no variable. A repeated identical merge bounce is stricter, because the first
+repeat escalates.
 
 **A sub-task charges its own record.** One bad sub-task therefore cannot spend the whole
 lane's budget.
 
-**Four operator verbs, and all four write.**
+**Four operator verbs exist, and all four write.**
 
 | Verb | What it does | Who may issue it |
 | --- | --- | --- |
@@ -1483,86 +1352,89 @@ lane's budget.
 | Hold | defers the lane and records the reason, so the next supervised pass does not dispatch it | operator, or a covering grant |
 | Kill | tears the worktree down and closes the issue | **a human, always** |
 
-Hold and Kill were once words an escalation offered that no answer carried out. An operator
-who answered "park" changed no status, and the next pass dispatched the lane again. Both are
-writes today.
+Hold and Kill were once words an escalation offered that no answer carried out. An
+operator who answered "park" changed no status, and the next pass dispatched the lane
+again. Both are writes today.
 
 **Kill requires a human at every integrity level.** It is the only verb that removes a
-requirement rather than routing work. An agent that can kill what it finds hard has an exit
+requirement instead of routing work. An agent that can kill what it finds hard has an exit
 from every difficulty.
 
 ### VALIDATE is a rung, not a lint
 
-The phase is gated at `consumer-surface` integrity. It refuses its advance on a failed or
-missing consumer gate. It dispatches the validator role. It prices that dispatch as a **read**
-rather than a write, so a judge never enters the sample a lane's cost is calibrated from.
+The engine gates this phase at `consumer-surface` integrity. It refuses the advance on a
+failed or missing consumer gate. It dispatches the validator role. It prices that dispatch
+as a **read** and not as a write, so a judge never enters the sample a lane's cost is
+calibrated from.
 
-**A reviewer fans out beside it, once per lens**, and the lens vocabulary is pinned by a literal
-tripwire rather than by a length check. Both are advisory in a specific structural sense: a
-reviewer records findings under its own marker and **the validator owns the gate**, so the
-no-rerank rule holds by construction rather than by instruction.
+**A reviewer fans out beside the validator, once per lens.** A literal tripwire pins the
+lens vocabulary, rather than a length check. Both roles are advisory in one structural
+sense. A reviewer records its findings under its own marker, and **the validator owns the
+gate**. The no-rerank rule therefore holds by construction, and not by instruction.
 
 **Maintainability is deliberately not a lens.** The linter, the type checker, the dead-code
 gate, the layering contract and the size ratchets bound that axis mechanically. A lens that
 restates a green check is a paid dispatch on every `consumer-surface` unit.
 
-**The validator's verdict is read off a declared line in its reply, not off its exit code**, and
-**the engine writes the gate, never the agent** — the gate ledger authenticates nothing. No
-verdict line at all leaves the unit in validate rather than advancing it either way.
+**The validator's verdict is read off a declared line in its reply, not off its exit
+code.** **The engine writes the gate, and the agent never does**, because the gate ledger
+authenticates nothing. A reply with no verdict line leaves the unit in validate. The engine
+advances it neither way.
 
 ### Declared evidence artifacts
 
-A gate records a status, not an artifact, so a lane could reach ship having recorded a passing
-verify with nothing on disk to point at. A phase may therefore **declare** a file the engine
-asserts is present before that phase may report success:
+A gate records a status and not an artifact. A lane could therefore reach ship with a
+passing verify recorded and nothing on disk to point at. A phase may **declare** a file the
+engine asserts is present before that phase may report success.
 
 ```toml
 [policy.evidence]
 verify = ".basicly/evidence/verify.log"
 ```
 
-**Opt-in, blocking where declared.** Nothing is declared by default, so the mechanism is inert
-until a consumer writes the table, and deleting the line removes the requirement. Blocking every
-phase was rejected as too strict; record-only as toothless.
+**The mechanism is opt-in, and it blocks where a consumer declares it.** Nothing is
+declared by default. Deletion of the line removes the requirement. A block on every phase
+was rejected as too strict, and a record-only form as toothless.
 
-**Presence only.** The engine stats the artifact and never opens it. Anything more would put a
-parser, a schema and a verdict about content on the deterministic side of the gate contract. The
-corollary is stated rather than hidden: an `echo` satisfies this, exactly as a forged provider
-string satisfies a required gate. What it buys is that "verified" can no longer be claimed with an
-empty disk behind it. A comparable design elsewhere lets a model's self-emitted completion signal
-short-circuit the deterministic half; that disjunction is rejected and only the evidence
-requirement adopted.
+**Presence only.** The engine stats the artifact and never opens it. Anything more would
+put a parser, a schema and a verdict about content on the deterministic side of the gate
+contract. The corollary is stated rather than hidden. An `echo` satisfies this check,
+exactly as a forged provider string satisfies a required gate. What the check buys is that
+nobody can claim "verified" with an empty disk behind it. A comparable design elsewhere
+lets a model's self-emitted completion signal short-circuit the deterministic half. That
+disjunction is rejected. Only the evidence requirement is adopted.
 
-**The check is a precondition on leaving a phase**, decided before the handler runs, so a refusal
-has spent nothing. Build is the exception in placement only: a lane's sub-task steps stay inside
-build and are what produce a build artifact, so checking on entry would deadlock the lane on its
-own evidence. Its check sits at the single build-to-verify funnel, before the merge, and resolves
-the path against the **lane's worktree**.
+**The check is a precondition on leaving a phase.** The engine decides it before the
+handler runs, so a refusal has spent nothing. Build is the exception in placement only. A
+lane's sub-task steps stay inside build and are what produce a build artifact, so a check
+on entry would deadlock the lane on its own evidence. The build check therefore sits at the
+single build-to-verify funnel, before the merge. It resolves the path against the **lane's
+worktree**.
 
-**Everything fails closed.** Four inputs refuse rather than degrading to "no requirement": an
-empty declaration, a path that escapes the checkout, a directory, and a misspelled phase name.
-A gate the operator believes is on and that never fires is the exact failure this removes. A
-typo therefore refuses *every* phase, and names the key to fix.
+**Everything fails closed.** Four inputs refuse rather than degrade to "no requirement".
+They are an empty declaration, a path that escapes the checkout, a directory, and a
+misspelled phase name. A gate the operator believes is on, and that never fires, is the
+exact failure this removes. A typo therefore refuses *every* phase, and it names the key to
+fix.
 
 ### RETROSPECTIVE fires on a special cause, and is deliberately not a phase
 
-A retrospective reads the gate-failure ledger and fires only on a **computed** signal: a point
-beyond three sigma, or a non-random run or trend within the limits. A single failure inside the
-limits is common cause and fires nothing, because acting on it is tampering, which increases the
-variation of a stable process. **This is the first mechanism in the loop that decides to
-suppress work**, and it is a correction to this repository's own practice of filing an issue off
-every single occurrence.
+A retrospective reads the gate-failure ledger. It fires only on a **computed** signal. That
+signal is a point beyond three sigma, or a non-random run or trend inside the limits. A
+single failure inside the limits is common cause and fires nothing. Action on common cause
+is tampering, and tampering increases the variation of a stable process. **This is the
+first mechanism in the loop that decides to suppress work.**
 
-**It is not a phase because a state exists to hold three things** — an entry predicate, an exit
-gate and a persona — and a conditional process over a ledger needs none of them. Adding a rung
-that never blocks anything would be ceremony around a function call. The dispatch is recorded
-under a retrospective label for role resolution and cost attribution only, outside the write-phase
-set.
+**It is not a phase, because a state exists to hold three things.** Those are an entry
+predicate, an exit gate and a persona. A conditional process over a ledger needs none of
+them. A rung that never blocks anything would be ceremony around a function call. The
+engine records the dispatch under a retrospective label, for role resolution and cost
+attribution only, outside the write-phase set.
 
-**One arithmetic trap is fixed in the implementation and is worth stating because the naive form
-looks right**: a c-chart's control limit falls below one at low mean failure counts, so raw
-arithmetic flags every isolated failure, at roughly thirty-six times the rate a three-sigma tail
-admits. The limit is floored at two.
+**One arithmetic trap is fixed in the implementation, and the naive form looks right.** A
+c-chart's control limit falls below one at a low mean failure count. Raw arithmetic
+therefore flags every isolated failure, at roughly thirty-six times the rate a three-sigma
+tail admits. The limit is floored at two.
 
 **The output contract is not the why-chain.** It is four things.
 
@@ -1570,7 +1442,7 @@ admits. The limit is floored at two.
 2. That control's tier: control, warning or documentation.
 3. The class of defects it covers.
 4. **The branch of the analysis not taken.** Iterated-why yields one causal path, chosen by
-   the asker, and it is not reproducible between analysts.
+   the asker, and no two analysts reproduce it.
 
 A documentation-tier outcome is recorded as a downgrade, with the reason no stronger control
 was available.
@@ -1582,41 +1454,44 @@ constraints, and the next session inherits the widening as ground truth.
 ### The improvement controller
 
 Everything above drives a *requirement* to a landed change. The second loop shape drives a
-**property of the codebase** toward a set point: one sensor reading, one lane. It is the actuator
-behind the ratchets, which bound a file and cannot themselves repair one.
+**property of the codebase** to a set point. It reads one sensor and files one lane. It is
+the actuator behind the ratchets. A ratchet bounds a file. It cannot repair one.
 
-Three properties keep it inside the engine-disposes rule. The controller is a **repo-declared
-script** at a fixed path, run with this process's own interpreter and without a shell; a
-repository that declares none is **refused by name**, because an absent script is the one state
-otherwise indistinguishable from a run that measured everything and found nothing to do. Its exit
-code passes straight through, so a schedule can branch on it. And it holds a **one-lane bound**: it
-files one issue and does not file another until that one lands.
+Three properties keep the controller inside the engine-disposes rule.
 
-It has a caller — a workflow that runs it in dry-run mode. The trigger is **manual dispatch only**,
-and the absence of a schedule is a decision rather than unfinished work: it is what keeps the
-wiring non-circular, because a dead-code gate was otherwise crediting the command off the
-controller's own docstring while the command ran the controller.
+1. The controller is a **repo-declared script** at a fixed path. The engine runs it with
+   this process's own interpreter, and without a shell. The engine **refuses by name** a
+   repository that declares no script. An absent script otherwise looks the same as a run
+   that measured everything and found no work.
+2. The exit code passes straight through. A schedule can branch on it.
+3. The controller holds a **one-lane bound**. It files one issue. It files no second issue
+   until the first lands.
+
+A workflow calls the controller in dry-run mode. The trigger is **manual dispatch only**.
+The absent schedule is a decision, not unfinished work. It keeps the wiring non-circular. A
+schedule would let a dead-code gate credit the command from the controller's own docstring,
+while the command runs the controller.
 
 ## Work isolation and merging
 
 **Non-trivial work runs in a sibling git worktree** at `<repo>.worktrees/<name>`, on branch
-`harness/<name>`. It is never an in-repository directory. An in-repository worktree pollutes
-the tree walk and provisions no dependencies.
+`harness/<name>`. The worktree is never a directory inside the repository. An in-repository
+worktree pollutes the tree walk. It also provisions no dependencies.
 
-Creating a worktree provisions its toolchain and **installs the gates**. A worktree without
-them runs *no* gates. That is the exact failure that once let unguarded commits through.
+Provisioning a worktree installs its toolchain and **installs the gates**. A worktree
+without them runs *no* gate. That failure once let unguarded commits through.
 
-Trivial mechanical work goes straight to the source branch. Cleanup runs immediately after a
-node lands.
+Trivial mechanical work goes straight to the source branch. Cleanup runs as soon as a node
+lands.
 
 **Zero-touch tracker state.** Every loop-provisioned worktree shares the base checkout's
-tracker through a git-ignored redirect file, written at provisioning. Reads and writes from
-any checkout therefore hit the one real store, and no divergent copy exists to reconcile.
-The commit-message hook follows the redirect too.
+tracker through a git-ignored redirect file. Provisioning writes that file. A read or a
+write from any checkout therefore reaches the one real store, and no divergent copy exists
+to reconcile. The commit-message hook follows the redirect too.
 
-A redirect-capable tracker binary is a hard requirement of this design. Provisioning
-**probes** the new worktree, and aborts with upgrade guidance when the answer is not the base
-store. A binary that ignored the file would silently run a divergent tracker.
+A redirect-capable tracker binary is a hard requirement. Provisioning **probes** the new
+worktree. It aborts with upgrade guidance when the answer is not the base store. A binary
+that ignored the redirect file would run a divergent tracker in silence.
 
 **The engine owns the tracker commits at three points.**
 
@@ -1629,10 +1504,10 @@ store. A binary that ignored the file would silently run a divergent tracker.
 An agent never stages tracker files for loop-tracked work.
 
 **Parallel build, serial merge.** Nodes build concurrently in their worktrees. They land one
-at a time in dependency order, and the engine re-verifies after each merge. The decomposer
-marks nodes parallel-safe only when it can predict **file-disjoint** scopes. When it cannot,
-it emits a fixed serial order. Tracker state is reconciled with the tracker's own three-way
-merge, never by hand-editing conflict markers in the export.
+at a time, in dependency order. The engine re-verifies after each merge. The decomposer
+marks nodes parallel-safe only when it can predict **file-disjoint** scopes. Otherwise it
+emits a fixed serial order. The tracker's own three-way merge reconciles tracker state. No
+one edits a conflict marker in the export by hand.
 
 **One landing, drawn in order.** Everything below the dashed line is what makes the landing
 the only advance that touches git history.
@@ -1675,68 +1550,70 @@ Both order by the same stable topological sort.
 
 ### Declared scope is verified at the landing
 
-The disjointness claims above rest on a scope declaration the decomposer reads once to group and
-size the plan and then never looks at again. A wrong or stale declaration therefore used to surface
-only later and indirectly, as a merge conflict, after two lanes had already done work that fights.
+The disjointness claims above rest on a scope declaration. The decomposer reads that
+declaration once, to group and size the plan, and then never reads it again. A wrong or
+stale declaration therefore used to surface late and indirectly, as a merge conflict, after
+two lanes had already written work that collides.
 
-The build-to-verify funnel now diffs the lane against its merge base — three-dot, so a base that
-moved on is not counted as the lane's work — and holds the result against the declaration. Two
-outcomes, and only one refuses:
+The build-to-verify funnel now diffs the lane against its merge base. The diff is three-dot,
+so it does not count a moved base as the lane's work. The funnel holds the result against
+the declaration. Two outcomes follow, and only one refuses.
 
-- **Every** out-of-scope path is recorded on the issue as a scope-violation marker: evidence about
-  the *plan*, travelling with the tracker export, and written whatever the policy then decides.
-- A path that also falls inside **another live lane's** declared scope is the case that actually
-  produces the conflict, and a config key decides it deterministically: block, the default, refuses
-  and names the lane that declared that ground; warn lands on the finding.
+- The engine records **every** out-of-scope path on the issue, as a scope-violation marker.
+  The marker is evidence about the *plan*. It travels with the tracker export, and the
+  engine writes it whatever the policy then decides.
+- A path that also falls inside **another live lane's** declared scope is the case that
+  produces the conflict. A config key decides that case deterministically. `block` is the
+  default: it refuses, and names the lane that declared the same ground. `warn` lands on the
+  finding.
 
-**Blocking the non-collision case too was rejected**, because it would turn every legitimately
-incomplete agent-authored plan into a rework cycle, which costs more than the finding is worth.
+**A refusal on the non-collision case was rejected.** It would turn every incomplete
+agent-authored plan into a rework cycle, and that costs more than the finding is worth.
 
-**"Live" means the worktree session records on disk, not the tracker export.** The worktree binding
-is written to a field that is not flushed to the export until the next tracker commit, so a freshly
-provisioned lane — the one most likely to be mid-edit — would be invisible there. Engine-owned
-tracker paths are never out of scope, because the engine rewrites them on every landing. An issue
-with no readable scope section is not checked at all, because it contradicts no plan.
+**"Live" reads the worktree session records on disk, not the tracker export.** The engine
+writes the worktree binding to a field that reaches the export only at the next tracker
+commit. A freshly provisioned lane is the lane most likely to be mid-edit, and the export
+would not show it. Engine-owned tracker paths are never out of scope, because the engine
+rewrites them at every landing. An issue with no readable scope section is not checked at
+all, because it contradicts no plan.
 
 ### Owned versus shared scope
 
-Grouping is the transitive closure of scope overlap, so a single path several children declare made
-every one of them overlap every other and collapsed a wholly parallel plan into one serial chain —
-**worst for the most honest plan**, because a careful author is *more* likely to declare the
-manifest they will touch.
+Grouping is the transitive closure of scope overlap. One path that several children declare
+therefore made every one of those children overlap every other, and collapsed a fully
+parallel plan into one serial chain. The effect is **worst for the most honest plan**. A
+careful author is *more* likely to declare the manifest they will touch.
 
-A child may therefore list part of its scope as **shared**: paths it touches but does not own.
-Overlap through a path **both** sides declared shared does not serialize them; one child *owning*
-the path still blocks everyone who touches it.
+A child may therefore list part of its scope as **shared**. A shared path is a path the
+child touches but does not own. An overlap through a path **both** sides declared shared
+does not serialize them. A child that *owns* the path still blocks everyone who touches it.
 
-**The escape hatch is deliberately narrow**, so no agent-authored plan can use it to hide a
-real collision. Two rules bound it.
+**The exemption is deliberately narrow.** No agent-authored plan may use it to hide a real
+collision. Two rules bound it.
 
-1. An entry must appear verbatim in the scope declaration. The declaration stays the whole
-   truth, for read-cost sizing and for merge attribution.
-2. An entry must be **one literal path, never a glob**. No subtree can be exempted behind a
-   wildcard.
+1. An entry must appear word for word in the scope declaration. The declaration stays the
+   whole truth, for read-cost sizing and for merge attribution.
+2. An entry must be **one literal path, never a glob**. No wildcard may exempt a subtree.
 
-**Independently of the declaration, every decompose surface names the load-bearing path**: the
-engine reports each declared glob whose removal would leave the plan in more groups, marking the
-ones a shared declaration already defused. The original failure was silent, and a serial chain with
-no stated reason is why nobody made the one-line fix.
+**Every decompose surface also names the load-bearing path, whatever the declaration says.**
+The engine reports each declared glob whose removal would leave the plan in more groups. It
+marks the globs a shared declaration already defused. The original failure was silent, and a
+serial chain with no stated reason is why nobody made the one-line fix.
 
 ## Parallel lanes and the supervisor
 
-The supervisor runs many lanes and lands their work. It is **code, and it stays unnamed**,
-precisely so nobody treats the thing that enforces the rules as something that can be
-persuaded.
+The supervisor runs many lanes and lands their work. It is **code, and it stays unnamed**.
+Nobody should treat the part that enforces the rules as a part that can be persuaded.
 
-**A singleton lock, with liveness read from a modification time rather than by probing a
-process id.** The lock file is created exclusively. It carries the holder's process id,
-session id and root issue. A heartbeat thread refreshes its modification time. A lock older
-than the stale bound is a crashed holder, and is stolen through a rename, which exactly one
-contender wins. The heartbeat fences on the lock's *content*, so a holder that stalled and
-then resumed raises rather than beating a lock it already lost.
+**A singleton lock reads liveness from a modification time, not from a process id.** The
+engine creates the lock file exclusively. The file carries the holder's process id, session
+id and root issue. A heartbeat thread refreshes the modification time. A lock older than the
+stale bound belongs to a crashed holder. A rename steals it, and exactly one contender wins
+that rename. The heartbeat fences on the lock's *content*. A holder that stalled and then
+resumed therefore raises an error, instead of beating a lock it already lost.
 
-**Recovery is derivation, not replay.** A session is re-adopted by reading the tracker for
-children of the root that carry a worktree binding.
+**Recovery derives state. It does not replay it.** The engine re-adopts a session by reading
+the tracker for children of the root that carry a worktree binding.
 
 **Five conditions must all hold before a lane is even a candidate.**
 
@@ -1759,20 +1636,20 @@ Ready lanes are then ordered by the owned scheduler's rank. Ties break by id.
 | 5 | per-lane working-set band | whether this one lane is sizeable |
 | 6 | forward spend forecast for the whole pass | whether the pass as a whole fits the budget |
 
-**Inside each worker the spend status is re-read**, because a lane that waited in the pool
-queue can find the grant exhausted while it waited.
+**Each worker re-reads the spend status.** A lane that waited in the pool queue can find the
+grant exhausted by the time it starts.
 
-**A running dispatch is never interrupted.** Shutting the pool down cancels only lanes that
-have not started.
+**Nothing interrupts a running dispatch.** A pool shutdown cancels only the lanes that have
+not started.
 
 **The downstream limit and the concurrency cap bound different quantities**, and the
 difference matters. Concurrency bounds how many lanes run at once. The downstream limit
-bounds how much finished work is waiting for review. A pass can exhaust the downstream limit
-while well inside the concurrency cap. Lowering the downstream limit makes review, rather
-than slots or tokens, the constraint that binds.
+bounds how much finished work waits for review. A pass can exhaust the downstream limit and
+stay well inside the concurrency cap. A lower downstream limit makes review the binding
+constraint, instead of slots or tokens.
 
-**One durable decision queue.** An item is a comment marker on the affected issue, with a
-content-derived id, so enqueueing is idempotent.
+**One durable decision queue.** An item is a comment marker on the affected issue. Its id is
+derived from its content, so a second enqueue of the same item changes nothing.
 
 | Kind | Delegable to the decider agent |
 | --- | --- |
@@ -1782,63 +1659,67 @@ content-derived id, so enqueueing is idempotent.
 | a stall | yes |
 | a validation question | yes |
 
-Delegation needs two further conditions: a grant at or above a minimum level, and a budget
-that is not spent. The decider runs serially, in a confined runner. **An agent family that
-cannot be confined is not dispatched at all.** A hard cap on delegated decisions is
-re-checked inside the queue lock before each one is recorded.
+Delegation needs two further conditions. The grant must sit at or above a minimum level, and
+the budget must not be spent. The decider runs serially, in a confined runner. **The engine
+does not dispatch an agent family it cannot confine.** A hard cap bounds delegated
+decisions, and the engine re-checks that cap inside the queue lock before it records each
+one.
 
-**Landing is serial and it does not stop at the first failure.** Order comes from a stable
-topological sort restricted to the issues in hand, with carried lanes prepended so they land ahead of
-freshly dispatched lanes at equal rank. A conflicted landing **bounces**: the base is untouched, the
-lane keeps its commits, the collision is recorded, and the pass keeps landing the remaining green
-lanes.
+**Landing is serial, and it does not stop at the first failure.** A stable topological sort
+over the issues in hand gives the order. Carried lanes go first, so they land ahead of
+freshly dispatched lanes at equal rank. A conflicted landing **bounces**. The base stays
+untouched, the lane keeps its commits, the engine records the collision, and the pass lands
+the remaining green lanes.
 
-**Any landing failure that is not a bounce pauses the pass.** Every later green lane is held with the
-reason and carried into the next pass, because landing on top of a broken base is worse than
-waiting. A lane whose merge a landing *this pass* just broke is pre-empted before its doomed landing
-is attempted. Couplings and bounce briefs are attributed **after** the pass, so no durable record
-depends on intra-pass landing order.
+**A landing failure that is not a bounce pauses the pass.** The engine holds every later
+green lane with the reason, and carries it into the next pass. A landing on top of a broken
+base is worse than a wait. The engine pre-empts a lane whose merge a landing *in this pass*
+has just broken, before it attempts that landing. The engine attributes couplings and bounce
+briefs **after** the pass, so no durable record depends on the landing order inside a pass.
 
-**The supervisor's two bounds are a pass count and a cooperative stop.** Stopping asks a running
-supervisor to finish the round it is in — every dispatched lane lands, no further lane is seeded —
-rather than signalling a process whose lanes are its own subprocesses.
+**The supervisor has two bounds: a pass count, and a cooperative stop.** A stop asks a
+running supervisor to finish the round it is in. Every dispatched lane lands, and no further
+lane is seeded. A stop does not signal the process, because the lanes are that process's own
+subprocesses.
 
 ## Dispatch and the agent-agnostic runner
 
-Each agent family drives the *same* loop through a thin **runner adapter**: an invocation command,
-headless flags, prompt injection and output capture. The loop logic is agent-neutral; only the
-adapter differs.
+Each agent family drives the *same* loop through a thin **runner adapter**. An adapter holds
+an invocation command, headless flags, prompt injection and output capture. The loop logic is
+agent-neutral. Only the adapter differs.
 
-**Detection walks the families in order and capability-probes each.** A binary is selected only if
-it is on `PATH` **and** the probe does not positively show its assumed headless flag is gone — a
-dropped or renamed flag no longer gets picked and then fails at dispatch. The probe is conservative:
-a probe that cannot run assumes capable, so a flaky probe never false-skips a working agent, and it
-never gates an *explicit* choice.
+**Detection walks the families in order and probes the capability of each one.** The engine
+selects a binary only when it is on `PATH`, **and** the probe does not positively show that
+its assumed headless flag is gone. A dropped or renamed flag therefore no longer gets picked
+and then fails at dispatch. The probe is conservative. A probe that cannot run assumes the
+binary is capable, so a flaky probe never skips a working agent, and it never gates an
+*explicit* choice.
 
-**There is no cross-agent invocation standard, so an unknown agent's command is never
-guessed.** When nothing matches, selection falls back to a **manual handoff runner**. That
-runner shells out to nothing. It surfaces the exact prompt and the worktree path, and defers
-to two things: the loop's block-and-resume contract, and the one thing that *is* standardized
-across agents, the projected guidance. Any other agent is supported by an explicit command
-template in configuration.
+**No cross-agent invocation standard exists, so the engine never guesses an unknown agent's
+command.** When nothing matches, selection falls back to a **manual handoff runner**. That
+runner shells out to nothing. It prints the exact prompt and the worktree path. It defers to
+two things: the loop's block-and-resume contract, and the projected guidance, which is the
+one thing every agent family does standardize. Configuration supports any other agent
+through an explicit command template.
 
-**Model resolution is most-specific-first**: a pinned id, then a declared tier, then a default tier.
-It **refuses before spawning** when a tier resolves to nothing, naming the agent and the config key,
-because silently running on another tier's model is the failure the keyless unavailable cells exist
-to prevent. A tier aimed at a family that cannot pin one at all is recorded as *not honoured* rather
-than as satisfied.
+**Model resolution takes the most specific source first**: a pinned id, then a declared
+tier, then a default tier. It **refuses before it spawns** when a tier resolves to nothing,
+and names the agent and the config key. A silent run on another tier's model is the failure
+the keyless unavailable cells exist to prevent. The engine records a tier aimed at a family
+that can pin no model as *not honoured*, never as satisfied.
 
-**The run record keeps provenance, not just an id**: the tier, which input decided it, and the model
-the adapter reported it **actually** used. That last is measured per family rather than assumed,
-because the families disagree about where and whether they name it — one names it three ways, one
-names it in a session store and may list several for one dispatch, and one names it nowhere and is
-therefore recorded as *unobserved* rather than assumed to match.
+**The run record keeps provenance, not only an id.** It holds the tier, the input that
+decided the tier, and the model the adapter reported it **actually** used. The engine
+measures that last field per family. It does not assume it. The families disagree about
+where they name the model, and about whether they name it at all. One family names it three
+ways. One names it in a session store, and may list several models for one dispatch. One
+names it nowhere, and the engine records that case as *unobserved*.
 
-**This is model awareness at the invocation seam, not a token-level inference client.** Per-track
-model choice stays out of scope.
+**This is model awareness at the invocation seam. It is not a token-level inference
+client.** Per-track model choice stays out of scope.
 
 **One dispatch, drawn in order.** This is the seam where the execution plane meets the
-distribution plane, and where every cost number in this document comes from.
+distribution plane. Every cost figure below comes from it.
 
 ```mermaid
 sequenceDiagram
@@ -1870,63 +1751,72 @@ wall-clock duration, the exit outcome, the agent, the phase, the model when one 
 and token and cost telemetry. **Only metadata is persisted.** The command is stored with the
 prompt argument elided. Neither the prompt body nor the captured output is kept.
 
-**Telemetry flags are opt-in per call site**, because they wrap stdout in an envelope. A consumer
-that parses the agent's answer reads it back through an inverter; the two passthrough commands that
-print a reply for a human stay unflagged. When the output does not parse, the record falls back to a
-transcript estimate **flagged as estimated**, so calibration can down-weight it.
+**A telemetry flag is opt-in per call site**, because the flag wraps stdout in an envelope.
+A consumer that parses the agent's answer reads it back through an inverter. The two
+passthrough commands that print a reply for a human stay unflagged. When the output does not
+parse, the record falls back to a transcript estimate, and marks it **estimated**, so
+calibration can down-weight it.
 
-**One family is metered out of band** because it reports nothing usable on stdout: the per-model
-token split and credit spend land on the terminating event of its own session store, so a metered
-dispatch supplies the new session's identifier and the reader joins on it. That measures real tokens
-**and** leaves stdout plain text, so it is the one arm an answer-parsing consumer needs no inversion
-on.
+**One family is metered out of band**, because it reports nothing usable on stdout. Its
+per-model token split and credit spend land on the terminating event of its own session
+store. A metered dispatch therefore supplies the new session's identifier, and the reader
+joins on it. That path measures real tokens **and** leaves stdout as plain text. It is the
+one arm that needs no inversion from an answer-parsing consumer.
 
-**The streaming envelope is the default for the family that has one**, because it is the only one
-carrying per-turn usage: the context-occupancy meter reads the last assistant turn, while the
-terminating result event still supplies the cumulative cost view. Pinning the non-streaming form
-keeps exact cost telemetry and an inert ceiling.
+**The streaming envelope is the default for the family that has one.** It is the only
+envelope that carries per-turn usage. The context-occupancy meter reads the last assistant
+turn. The terminating result event still supplies the cumulative cost view. A pin to the
+non-streaming form keeps exact cost telemetry and leaves the ceiling inert.
 
-**Token counts are recorded both ways**: the summed total every consumer already reads, and, where
-an adapter reports it, a provider-neutral input, output, cache-read, cache-write and reasoning split.
-Credits get their own field rather than being folded into a currency amount.
+**The engine records token counts two ways.** It records the summed total every consumer
+already reads. Where an adapter reports one, it also records a provider-neutral split:
+input, output, cache-read, cache-write and reasoning. Credits get their own field. They are
+never folded into a currency amount.
 
-**Output is redacted at the source, before it enters a result object.** High-signal secret shapes
-are replaced with a labelled placeholder, so no surface leaks a credential an agent echoed.
-**Network egress is not sandboxed by this project** — it cannot portably restrict a generic
-subprocess — and is delegated to the agent-layer sandbox.
+**Redaction runs at the source, before output enters a result object.** A labelled
+placeholder replaces every high-signal secret shape, so no surface leaks a credential an
+agent echoed. **This project does not sandbox network egress.** It cannot portably restrict
+a generic subprocess. Egress control belongs to the agent-layer sandbox.
 
-**Attribution rides the audit trail.** At landing the loop reads the issue's latest run record and
-stamps the dispatched runner into the merge commit as a trailer, with the model when one was pinned,
-and records the agent as the gate result's actor. So history and the gate ledger distinguish which
-agent produced a landing instead of collapsing onto one human identity. It is best-effort and
-non-fatal.
+**Attribution rides the audit trail.** At the landing, the loop reads the issue's latest run
+record. It stamps the dispatched runner into the merge commit as a trailer, with the model
+when one was pinned. It also records the agent as the gate result's actor. History and the
+gate ledger therefore name which agent produced a landing, instead of collapsing every
+landing onto one human identity. The stamp is best-effort and non-fatal.
 
-**A runner may go further and commit as a bot.** An adapter entry may pin a name and email — both
-keys or neither, and the parser rejects a lone half — which the dispatch seam overlays on the child
-environment for both author and committer. **This relaxes no gate**: the identity guard validates
-the *effective* identity, so a bot email must satisfy the allowlist exactly as a human's would. The
-tamper-evidence model is the layering of existing controls rather than new enforcement: the identity
-guard bounds who a commit may claim to be, optional commit signing makes each commit tamper-evident,
-and the permissions deny-list forbids bypassing either. The project does not *force* signing, because
-key management is per-machine and out of a portable catalog's reach; it documents enabling it and
-guarantees that once enabled it cannot be bypassed through the loop.
+**A runner may go further and commit as a bot.** An adapter entry may pin a name and an
+email. It must carry both keys or neither, and the parser rejects a lone half. The dispatch
+seam overlays the pair on the child environment, for the author and for the committer.
+**This relaxes no gate.** The identity guard validates the *effective* identity, so a bot
+email must satisfy the allowlist exactly as a human's would. Tamper-evidence comes from
+layered existing controls, not from new enforcement. The identity guard bounds who a commit
+may claim to be. Optional commit signing makes each commit tamper-evident. The permissions
+deny-list forbids a bypass of either one. The project does not *force* signing, because key
+management is per-machine and out of a portable catalog's reach. It documents how to enable
+signing, and it guarantees that no loop path can bypass signing once enabled.
 
 ### Block, do not guess
 
-When a dispatched headless agent cannot resolve a required fact it writes a small sentinel file into
-its worktree — a JSON object naming the missing fact and what was tried — and stops **without
-committing a guess**.
+A dispatched headless agent that cannot resolve a required fact writes a small sentinel file
+into its worktree. The file is a JSON object. It names the missing fact and what the agent
+tried. The agent then stops, **and commits no guess**.
 
-After a clean dispatch the loop reads the sentinel, records a durable marker on the issue, enqueues a
-decision, and **does not land**. The missing fact is surfaced like any other block.
+After a clean dispatch the loop reads the sentinel, records a durable marker on the issue,
+enqueues a decision, and **does not land**. The loop surfaces the missing fact like any
+other block.
 
-**Four properties make this work.** The sentinel is **consumed on read**, valid or malformed, so a
-re-dispatch starts clean and a garbled file cannot re-fire. A **file** rather than a stdout marker
-carries the signal, so it survives output redaction and truncation and needs no cross-agent output
-convention. It lives under a self-ignored directory, so it can never enter a commit. And the protocol
-is projected into the dispatch prompt, so agents know the contract rather than inferring it.
+**Four properties make the protocol work.**
 
-This turns a stop-instead-of-guess *policy* the model could ignore into a first-class loop outcome.
+1. The loop **consumes the sentinel on read**, whether it is valid or malformed. A
+   re-dispatch therefore starts clean, and a garbled file cannot fire twice.
+2. A **file** carries the signal, not a stdout marker. The signal survives output redaction
+   and truncation, and it needs no cross-agent output convention.
+3. The file lives under a self-ignored directory. It can never enter a commit.
+4. The projection puts the protocol in the dispatch prompt. An agent reads the contract
+   instead of inferring it.
+
+The protocol turns a stop-instead-of-guess *policy*, which a model may ignore, into a
+first-class loop outcome.
 
 ## Cost, forecasting and autonomy
 
@@ -1954,148 +1844,167 @@ The four levels and their coverage are in
 | **ship, whenever any session-wide wrinkle exists** | a required gate not green on the shipping node, an unresolved missing-fact marker, or an unanswered rework escalation, **anywhere in the session** |
 | a **kill**, at every level | no grant is consulted. A terminal is no substitute. A one-time confirm code is always required |
 
-**A refusal says which kind it is.** A grant that was consulted and declined threads its
-reason through the confirmation challenge, the advance and the decision queue. An operator
-can therefore tell *no grant* from *a covering grant that refused*. A bare confirmation
-request made the two indistinguishable. Five decline reasons carry a message: an uncovered
-checkpoint, an issue outside the tree, a spent budget, a ceiling that cannot be metered, and
-a ship whose preconditions do not hold.
+**A refusal names its own kind.** A grant that the engine consulted and that declined
+threads its reason through the confirmation challenge, the advance and the decision queue.
+An operator can therefore tell *no grant* from *a covering grant that refused*. A bare
+confirmation request made the two look the same. Five decline reasons carry a message: an
+uncovered checkpoint, an issue outside the tree, a spent budget, a ceiling the engine cannot
+meter, and a ship whose preconditions do not hold.
 
 ### Forecasting spend, and the rules that keep the numbers honest
 
-**A dispatch records its forecast on the same record its actual lands on.** Working-set forecast,
-task class and forecast source sit beside the scope read-cost the issue already froze. Before this
-they were written to disjoint classes of record, so the forecast error — the entire learning signal
-the calibration feeds on — had never once been computable.
+**A dispatch records its forecast on the same record that its actual lands on.** The
+working-set forecast, the task class and the forecast source sit beside the scope read-cost
+the issue already froze. Earlier the engine wrote them to disjoint classes of record. The
+forecast error is the whole learning signal the calibration feeds on, and it had never once
+been computable.
 
-**Eight rules govern the arithmetic, and each exists because breaking it produced a false number.**
+**Eight rules govern the arithmetic. Each one exists because a broken version produced a
+false number.**
 
-- **A frozen estimate beats a re-derived one, and the record says which it was.** An estimate frozen
-  for this content is evidence of prediction skill; the same formula applied at dispatch is not. The
-  distinction is recorded rather than averaged away.
-- **An issue with no readable scope gets no forecast**, because a forecast against an unknown scope
+- **A frozen estimate beats a re-derived one, and the record says which one it used.** An
+  estimate frozen for this content is evidence of prediction skill. The same formula applied
+  at dispatch is not. The record keeps the distinction instead of averaging it away.
+- **An issue with no readable scope gets no forecast.** A forecast against an unknown scope
   is an invented number.
-- **The unit is the issue, not the dispatch.** The forecast derives from the issue's scope, so every
-  dispatch of one issue records the identical number, and each attempt after the first would
-  otherwise be scored against a forecast covering work an earlier attempt already did. Attempts are
-  summed and the count reported — which is also the unit a grant is minted in.
-- **A record the band itself would refuse is named, not skipped.** A population quietly shrunk by a
-  filter is how this repository once committed a false claim.
-- **Both denominations are kept.** Forecast working set against measured occupancy, and forecast
-  whole-lane spend against measured spend. Each has an actual of its own, and the turn multiplier —
-  which nothing models — is measured from the ratio between them. Mixing them is the error the
-  report guards against by naming its units: the accuracy band is one order of magnitude either
-  way, and the summary is a **median**, because the measured misses span orders of magnitude and one
-  such sample would drag a mean somewhere no dispatch has ever been.
-- **One named write-phase set, read by both consumers.** The interactive build and the supervised
-  lane are the same kind of work, so the unsizeable-lane bound counts a write dispatch from either
-  path and the calibration samples only write dispatches. A judge or a decider can therefore never
-  contribute a helper's spend to a lane's ratio. The two filtered oppositely before this, which
-  measured a bound against a fraction of the real population. A record whose phase was never
-  written is excluded from both: unknown provenance fails closed.
-- **Nothing measures a working-set factor, and the record admits it.** The calibration that appeared
-  to was measuring whole-lane spend, a different quantity, and was removed. Every forecast is a
-  declared constant times a scope read-cost, and preflight reports whether any factor is anything
-  but a seed — so an operator minting a budget learns it rests on a prior **before** the money is
-  granted, rather than by reading source.
-- **A forecast with no actual, or an actual with no forecast, is reported as unpaired rather than
-  scored.** An empty report then says why it is empty instead of looking like a passing calibration.
+- **The unit is the issue, not the dispatch.** The forecast derives from the issue's scope,
+  so every dispatch of one issue records the identical number. Otherwise the engine would
+  score each attempt after the first against a forecast that covers work an earlier attempt
+  already did. The engine sums the attempts and reports the count. That count is also the
+  unit a grant is minted in.
+- **The report names a record the band itself would refuse. It does not skip it.** A
+  population that a filter quietly shrinks is how this repository once committed a false
+  claim.
+- **The report keeps both denominations.** It holds forecast working set against measured
+  occupancy, and forecast whole-lane spend against measured spend. Each denomination has an
+  actual of its own. The ratio between them measures the turn multiplier, which nothing
+  models. A mix of the two is the error the report guards against, and it guards by naming
+  its units. The accuracy band is one order of magnitude either way. The summary is a
+  **median**, because the measured misses span orders of magnitude, and one such sample
+  would drag a mean to a value no dispatch has ever reached.
+- **One named write-phase set, read by both consumers.** An interactive build and a
+  supervised lane are the same kind of work. The unsizeable-lane bound therefore counts a
+  write dispatch from either path, and the calibration samples only write dispatches. A
+  judge or a decider can never contribute a helper's spend to a lane's ratio. The two
+  consumers once filtered in opposite directions, which measured a bound against a fraction
+  of the real population. Both exclude a record whose phase was never written. Unknown
+  provenance fails closed.
+- **Nothing measures a working-set factor, and the record admits it.** The calibration that
+  appeared to measure one was measuring whole-lane spend, which is a different quantity. It
+  was removed. Every forecast is a declared constant times a scope read-cost. Preflight
+  reports whether any factor is more than a seed. An operator who mints a budget therefore
+  learns that it rests on a prior **before** the money is granted, and does not have to read
+  the source to find out.
+- **A forecast with no actual, and an actual with no forecast, are reported as unpaired.
+  Neither is scored.** An empty report then states why it is empty, instead of looking like
+  a passing calibration.
 
 ### Metering honestly, and halting when you cannot
 
-**An estimated sample is good enough to calibrate against and not good enough to meter a grant
-with**, so the two are kept apart.
+**An estimated sample is good enough to calibrate against. It is not good enough to meter a
+grant with.** The engine keeps the two apart.
 
-The fallback estimate counts the captured output only — never the prompt, the system prompt, the
-tool definitions or cache writes, which is where nearly all of an agentic dispatch's tokens are. It
-is therefore a **floor far below reality** rather than the conservative over-count a ceiling needs:
-on a live probe it read more than an order of magnitude under the real input count, and with
-plain-text output the captured answer was two characters. Counted at face value it *bought* budget.
+The fallback estimate counts the captured output alone. It never counts the prompt, the
+system prompt, the tool definitions or the cache writes, and nearly all of an agentic
+dispatch's tokens are there. The estimate is therefore a **floor far below reality**, not
+the conservative over-count a ceiling needs. On a live probe it read more than an order of
+magnitude under the real input count. With plain-text output the captured answer was two
+characters long. At face value that estimate *bought* budget.
 
-**There is no honest multiplier to inflate it by**, so the ceiling errs the only way a ceiling may:
-a session that took a dispatch its adapter could not meter is **halted** with the reason surfaced,
-and the remaining budget reads zero because what is left is unknown rather than free. The count of
-unmeterable dispatches is baselined on the grant marker exactly as spend is, so re-granting — the
-human seeing the reason and accepting it — clears the halt, and any adapter with no usage format
-inherits the refusal rather than a silent under-count.
+**No honest multiplier can inflate it**, so the ceiling errs the only way a ceiling may. The
+engine **halts** a session that took a dispatch its adapter could not meter, and it surfaces
+the reason. The remaining budget then reads zero, because what is left is unknown rather
+than free. The engine baselines the count of unmeterable dispatches on the grant marker,
+exactly as it baselines spend. A new grant clears the halt, and a new grant means a human
+saw the reason and accepted it. Any adapter with no usage format inherits the refusal
+instead of a silent under-count.
 
 ### Tuning: the parameters in force, held against the outcomes they produced
 
-Almost every number governing the factory is set by judgment and then never revisited. The tuning
-report reads the dispatch ledger from both corpora — local run records and committed markers,
-deduplicated so a dispatch recorded in both is one sample — and reports, per governed parameter, the
-value in force for the dispatches it summarises, the outcome distribution under that value, and a
-recommendation with its sample size.
+Judgment sets almost every number that governs the factory, and nobody revisits it. The
+tuning report reads the dispatch ledger from both corpora: local run records, and committed
+markers. It deduplicates them, so a dispatch recorded in both counts once. Per governed
+parameter it reports the value in force for the dispatches it summarises, the outcome
+distribution under that value, and a recommendation with its sample size.
 
-**Four rules keep it from becoming another declared number.**
+**Four rules keep the report from becoming another declared number.**
 
-- **It writes nothing.** A tuner proposes a config change and a human or a gate applies it.
-- **A seed never reads as a measurement.** At or above the minimum sample count the recommendation
-  is the statistic over the newest window, labelled measured. Below it the **declared prior** stands,
-  labelled seeded, and the row names the in-force value it would displace — deliberately not a
-  number fitted to three samples, which would still be read as a measurement whatever the label
-  said. The prior is read from the config loader's own fallback rather than copied, so it cannot
-  drift from the value actually in force.
-- **A parameter nothing measures still prints**, with a sample size of zero, no recommendation and
-  the reason it has none. A bound nothing records is a bound nobody can tighten, and omitting the
-  row makes "no evidence exists" look exactly like "this is fine".
-- **A session override forms its own cohort.** It is the one per-dispatch record of a parameter's
-  value; pooling those dispatches would report outcomes under a value that never governed half of
-  them.
+- **The report writes nothing.** A tuner proposes a config change. A human or a gate applies
+  it.
+- **A seed never reads as a measurement.** At or above the minimum sample count, the
+  recommendation is the statistic over the newest window, labelled measured. Below that
+  count the **declared prior** stands, labelled seeded, and the row names the in-force value
+  the prior would displace. A number fitted to three samples is deliberately not offered. A
+  reader takes such a number as a measurement whatever the label says. The report reads the
+  prior from the config loader's own fallback rather than from a copy, so the prior cannot
+  drift from the value in force.
+- **A parameter nothing measures still prints**, with a sample size of zero, no
+  recommendation, and the reason it has none. A bound nothing records is a bound nobody can
+  tighten. An omitted row makes "no evidence exists" look exactly like "this is fine".
+- **A session override forms its own cohort.** An override is the one per-dispatch record of
+  a parameter's value. A pool over those dispatches would report outcomes under a value that
+  never governed half of them.
 
-**The statistic depends on what being wrong costs.** A **backstop** fires on work already in
-progress and destroys it, so it is read from the worst observed run with headroom rather than from a
-quantile — calibrating a timeout against the work distribution is what had it killing working lanes.
-A **band** refuses a package, and both refusals are recoverable (merge with a sibling, or split into
-more packages), so it is read at the quantiles of what really happened.
+**The statistic follows the cost of being wrong.** A **backstop** fires on work already in
+progress, and destroys it. The report therefore reads a backstop from the worst observed run
+plus headroom, never from a quantile. A timeout calibrated against the work distribution is
+what once killed working lanes. A **band** refuses a package, and both of its refusals are
+recoverable: merge with a sibling, or split into more packages. The report therefore reads a
+band at the quantiles of what really happened.
 
 ### The acquisition and implementation split
 
-A claim that a lane's multi-million-token floor is bought by the dispatch instruction rather than by
-the work had **no instrument behind it**, so its remedy could not have been judged. The lane-split
-report is that instrument, and the ordering is deliberate: record the tools, derive the split, brief
-the lane, measure — and only the last is a claim.
+One claim said the dispatch instruction buys a lane's multi-million-token floor, and the
+work does not. That claim had **no instrument behind it**, so nobody could judge its remedy.
+The lane-split report is that instrument. Its order is deliberate: record the tools, derive
+the split, brief the lane, then measure. Only the last step is a claim.
 
-**The pairing rule is the whole arithmetic, and two naive versions measure the wrong thing.** A
-tool-call turn's usage is the cost of *emitting* the call; the tool's result lands in the **next turn
-that carries usage**. So summing tokens on the calling turns counts the request and misses the
-answer, and pairing against the immediately preceding *line* fails too, because a real transcript
-forwards the tool result as an event carrying no usage, which sits between the call and its answer.
-That second version was written first here and attributed a real captured lane **entirely to
-unattributed** — a confident figure measuring nothing, caught by the demonstration and not by the
-unit tests. A turn's tokens are attributed to the last tools emitted before it, and a turn with none
-is unattributed rather than guessed at.
+**The pairing rule is the whole arithmetic, and two naive versions measure the wrong
+thing.** A tool-call turn's usage is the cost of the *emitted* call. The tool's result lands
+in the **next turn that carries usage**. A sum over the calling turns therefore counts the
+request and misses the answer. A pairing against the immediately preceding *line* fails too.
+A real transcript forwards the tool result as an event that carries no usage, and that event
+sits between the call and its answer. This repository wrote the second version first. It
+attributed a real captured lane **entirely to unattributed**, which is a confident figure
+that measures nothing. The demonstration caught it. The unit tests did not. The report now
+attributes a turn's tokens to the last tools emitted before it. A turn with no such tools is
+unattributed, never guessed at.
 
-**Three things it refuses to guess.** A tool that is neither read nor write is *unclassified*, not
-bucketed, because a general shell tool runs a status command and a move alike and a majority rule
-over a mixed turn would put a guess inside the number the remedy is judged by. A transcript written
-before the tool field existed is **unclassifiable** rather than fully implementation, because absent
-is unknown and empty is "called nothing". And a lane with no transcript is reported as missing
-rather than as a zero split.
+**The report refuses to guess three things.**
 
-**Shares lead, tokens follow, and the report says why.** Per-turn stream usage over-reports against
-the run record, so a stream-derived absolute is in a different denomination from the grant it would
-be compared against — a mixture that has already cost this repository a lane. The report also states
-that it is single-family, because no other family emits the per-tool event it reads.
+1. A tool that is neither a read nor a write is *unclassified*, not bucketed. A general
+   shell tool runs a status command and a move alike, and a majority rule over a mixed turn
+   would put a guess inside the number the remedy is judged by.
+2. A transcript written before the tool field existed is **unclassifiable**, not fully
+   implementation. Absent means unknown. Empty means the turn called nothing.
+3. A lane with no transcript is reported as missing, not as a zero split.
+
+**Shares lead, tokens follow, and the report says why.** Per-turn stream usage over-reports
+against the run record. A stream-derived absolute therefore sits in a different denomination
+from the grant it would be compared against, and that mixture has already cost this
+repository a lane. The report also states that it covers one family. No other family emits
+the per-tool event it reads.
 
 ### Fleet and health
 
-**The fleet rollup** discovers installed repositories under a workspace root and rolls up, per
-repository, the single-repo status snapshot plus a run-record summary into one versioned JSON payload
-with totals. It is read-only and resilient by construction: a repository whose snapshot raises is
-captured as an error entry rather than failing the rollup, and the command always exits zero. Each
-payload carries its own installed-versus-engine version, so skew across the fleet stays visible. The
-per-repo snapshot is produced **in-process** by the current engine, so this is JSON-first and
-single-engine; a formatted table and a subprocess-per-repo model are out of scope.
+**The fleet rollup** finds installed repositories under a workspace root. Per repository it
+rolls the single-repo status snapshot and a run-record summary into one versioned JSON
+payload with totals. It is read-only, and resilient by construction. A repository whose
+snapshot raises an error becomes an error entry, and does not fail the rollup. The command
+always exits zero. Each payload carries its own installed version against the engine
+version, so skew across the fleet stays visible. The current engine produces every per-repo
+snapshot **in-process**, so the rollup is JSON-first and single-engine. A formatted table
+and a subprocess-per-repo model are out of scope.
 
-**Health scoring** turns the run-record log into a per-agent signal and a drift check. The source is
-run records *only*, by necessity: gate results overwrite, so pass-fail over time is not queryable —
-but a failed dispatch is a failed run and a rework re-dispatch appends another record for the same
-issue, so the append-only log is a durable proxy. **Drift is a rolling baseline read off the log's own
-timestamps**, not a stored snapshot: an agent's most recent window is compared against everything
-older, and a regression is flagged when the recent failure rate exceeds the baseline by a fixed delta
-with a minimum sample in each window. Everything is read-only, deterministic — no wall clock enters
-the payload — and advisory.
+**Health scoring** turns the run-record log into a per-agent signal and a drift check. The
+source is run records *only*, and that is a necessity. A gate result overwrites its
+predecessor, so nothing can query pass and fail over time. A failed dispatch is a failed
+run, and a rework re-dispatch appends another record for the same issue, so the append-only
+log is a durable proxy. **Drift is a rolling baseline read off the log's own timestamps**,
+never a stored snapshot. The check compares an agent's most recent window against everything
+older. It flags a regression when the recent failure rate exceeds the baseline by a fixed
+delta, and when each window holds a minimum sample. The whole path is read-only,
+deterministic and advisory. No wall clock enters the payload.
 
 ## Roles at dispatch
 
@@ -2120,8 +2029,8 @@ says which one the engine acts on.
 and test runner. A human invokes them.
 
 **The supervisor, the merge, the verify step and the ship step are deliberately not
-agents.** They are deterministic engine code. Naming them would invite treating them as
-persuadable.
+agents.** They are deterministic engine code. A name on any of them would invite a reader to
+treat it as persuadable.
 
 **Three properties are decisions rather than implementation detail.**
 
@@ -2172,11 +2081,11 @@ flowchart LR
 | a changed agent definition | the *next* process start | a projected definition does not reach a running session's registry · no bead |
 
 **All seven loop roles are reachable from engine code** [verified 2026-08-16]. For two days
-this section could have read "the projection works and nothing consumes it". Agent sources
-were authored, rendered into both roots and vendored to consumers, and every dispatch ended
-at a bare prompt. That is closed.
+the true statement was "the projection works and nothing consumes it". Someone authored the
+agent sources, rendered them into both roots and vendored them to consumers, and every
+dispatch still ended at a bare prompt. That gap is closed.
 
-**Two caveats a reader will otherwise supply generously.**
+**Two caveats, because a reader will otherwise assume more than the evidence supports.**
 
 1. The curator and the retrospector are both inert on the supervised landing pass, which has
    no watchdog and no stream meter of its own. Under the supervisor they run only after the
@@ -2185,30 +2094,29 @@ at a bare prompt. That is closed.
    role. That path does not load the decider persona. Only the classify proposer does.
 
 **Reachable wiring and observed dispatch are two different claims, and only the first is
-green.** The ledger could not falsify any of this until the record learned to copy the
-argument vector. It re-derived the command from the specification rather than copying what
-ran, so it was wrong in **both directions at once**. It omitted the role flag a lane passes,
-and it appended usage flags a decider's command never had.
+green.** The ledger could falsify none of this until the record learned to copy the argument
+vector. The record re-derived the command from the specification instead of a copy of what
+ran, so it was wrong in **both directions at once**. It dropped the role flag a lane passes.
+It added usage flags a decider's command never carried.
 
-A record that can be wrong both ways is not evidence, and neither error is visible from the
-record itself. The record now copies the real command, with the prompt elided by equality,
-and records no argument vector at all when the prompt is unknown rather than publishing one.
-**That builds the instrument. It does not supply the reading.** The historical records are
-unchanged, so a before-and-after measurement of role injection begins with the next
-supervised pass.
+A record that can be wrong both ways is not evidence, and the record itself shows neither
+error. The record now copies the real command, with the prompt elided by equality. When the
+prompt is unknown it records no argument vector at all, instead of a published guess. **That
+builds the instrument. It does not supply the reading.** The historical records are
+unchanged, so a before-and-after measurement of role injection starts at the next supervised
+pass.
 
-**Counting how many skills ever fire is no longer possible.** A declared skill is inlined
+**Nothing can now count how many skills ever fire.** The engine inlines a declared skill
 into the prompt, so the never-used report cannot tell an injected skill from an invoked one.
-That is the price paid for reaching all three families.
+That is the price of reaching all three families.
 
 ## Handoff artifacts
 
-Eight artifact kinds are named. Each is a schema at a state boundary. A state's exit
-criterion is a verifiable condition on a work product, and that requires work products to
-have schemas.
+Eight artifact kinds carry a name. Each one is a schema at a state boundary. A state's exit
+criterion is a verifiable condition on a work product, so every work product needs a schema.
 
 **How far each kind actually binds** [measured 2026-08-16]. A status list is not a graph, so
-this is a table.
+the form below is a table.
 
 | Kind | Producer | Consumer that can refuse | State | Required fields |
 | --- | --- | --- | --- | --- |
@@ -2224,32 +2132,32 @@ this is a table.
 **`verification-evidence` is not the verify run artifact.** The evidence gate stats that file
 and never opens it. The two are different things with adjacent names.
 
-**Schemas written is not roles reachable, and it is not artifacts written either.** Three
-kinds have a producer. Two of those have a consumer that can refuse. Four have a schema on
-disk and neither, so their contract cannot refuse anything. **Five of the seven roles
-therefore carry a contract that cannot be exercised until its artifact has run in anger.**
-This section names that debt rather than hiding it.
+**A written schema is not a reachable role, and it is not a written artifact either.** Three
+kinds have a producer. Two of those three have a consumer that can refuse. Four have a
+schema on disk and neither a producer nor a consumer, so their contract can refuse nothing.
+**Five of the seven roles therefore carry a contract that nobody can exercise until its
+artifact has run on real work.** That debt is named here rather than hidden.
 
-**A release record's claims each carry their evidence**, typed as a test, a command or a
-gate. Every unsupported claim is named and dropped rather than softened. That is the whole
-point of the role that writes it.
+**Every claim in a release record carries its evidence**, typed as a test, a command or a
+gate. The curator names and drops every unsupported claim. It never softens one. That is the
+whole point of the role.
 
-**`solution-design` is the one kind without a schema**, because it is specified as markdown
-with six machine-checked sections rather than a JSON payload. The six are: the problem in the
-requester's terms, success as an observable, a consumer transcript, out of scope, constraints,
-and open questions.
+**`solution-design` is the one kind with no schema.** Its specification is markdown with six
+machine-checked sections, not a JSON payload. The six sections are: the problem in the
+requester's terms, success as an observable, a consumer transcript, out of scope,
+constraints, and open questions.
 
-Structured markdown is the only shape that is both readable and checkable. JSON is unreadable.
-Prose is unactionable. **The consumer transcript is this project's translation of a screen
-mockup.** The consumer surface here is a command-line tool, so the artifact that settles a
-design dispute by *showing* the surface is the command as it will be typed, and what it will
-print.
+Structured markdown is the only shape that is both readable and checkable. JSON is
+unreadable. Prose is unactionable. **The consumer transcript is this project's translation
+of a screen mockup.** The consumer surface here is a command-line tool. The artifact that
+settles a design dispute by a *view* of the surface is therefore the command as a consumer
+will type it, and the output it will print.
 
 **Two mechanisms carry these artifacts. The second is the one a reader gets wrong.**
 
 1. **The schemas are catalog sources.** A repository that has not installed them runs
-   *neither* end of the contract. Both producer and consumer resolve the schema first, which
-   is what keeps a skipped write from becoming a refusal downstream.
+   *neither* end of the contract. The producer and the consumer both resolve the schema
+   first. That is what keeps a skipped write from becoming a refusal downstream.
 2. **The artifacts travel as comment markers on the issue.** They are never an append to the
    committed ledger.
 
@@ -2275,26 +2183,26 @@ flowchart LR
   class led designed
 ```
 
-The advance sweeps base-checkout dirt only under the tracker path. Anything else blocks the
+The advance sweeps base-checkout dirt only under the tracker path. Any other dirt blocks the
 merge. An artifact written into the committed ledger on the way into build would therefore
-wedge the very landing it gates. Marker storage is idempotent on the whole body, and a read
-takes the last matching marker.
+wedge the landing it gates. Marker storage is idempotent on the whole body, and a read takes
+the last matching marker.
 
-**Two ratchets weaken even the wired pair. Both are deliberate and both are stated in the
-code.**
+**Two relaxations weaken even the wired pair. Both are deliberate, and the code states
+both.**
 
-1. **An absent artifact is admitted.** Only a present and invalid one refuses. Absence is
-   ambiguous between a skipped write and work that predates the rule.
+1. **An absent artifact is admitted.** Only a present and invalid artifact refuses. Absence
+   is ambiguous between a skipped write and work that predates the rule.
 2. **A repository that has not installed the schemas runs neither end.**
 
-**Three handoff files are deliberately not schema-validated**, because each is a small
-internal signal rather than a contract between states: the repair brief written into a lane's
-worktree, the missing-fact sentinel, and the one-time checkpoint confirmation codes.
+**Three handoff files are deliberately not schema-validated.** Each one is a small internal
+signal, not a contract between states: the repair brief written into a lane's worktree, the
+missing-fact sentinel, and the one-time checkpoint confirmation codes.
 
 ## Gates and enforcement
 
-Four layers. Each runs later than the one above it, and each is the backstop for the layer
-that can be skipped. The order is strictly linear, so it is a table.
+Four layers. Each one runs later than the layer above it, and each one is the backstop for a
+layer that can be skipped. The order is strictly linear, so the form below is a table.
 
 | Layer | When it runs | What it is | State |
 | --- | --- | --- | --- |
@@ -2308,10 +2216,10 @@ Layer 3 runs the same checks as layer 2, so a green loop step predicts a green b
 **Layer 1 is the least built**, with three events mapped on one agent family and one on
 another. Every gate below it judges an artifact *after* it exists.
 
-The host event vocabulary widens only to events we can name a consumer for. **A stage lands
-with the catalog source that uses it.** Widening to every documented event was refused on the
-same argument this document makes about dead definitions everywhere else. Dozens of stages
-with no consumer is a second instance of the same problem, and each is one more surface to
+The host event vocabulary widens only to an event with a named consumer. **A stage lands with
+the catalog source that uses it.** A widening to every documented event was refused, on the
+argument this file makes about a dead definition everywhere else. Dozens of stages with no
+consumer are a second instance of the same defect, and each stage is one more surface to
 keep true against a vendor that moves.
 
 Three further gates hang off layer 3 rather than sitting in the stack.
@@ -2334,18 +2242,18 @@ counting the file, because the drop-in layer contributes.
 | full | 26 | pre-push, continuous integration, and the loop's verify step |
 | staged | 3 | a staged-files-only subset |
 
-27 checks are declared in total. They cover linting, formatting, three platform-specific
-type-check passes, security scanning, dead code, a wiring gate, the kit boundary, the
-layering contract, the test suite, all five projection drift checks, the documentation claim
-gates, and the ratchets.
+The configuration declares 27 checks in total. They cover lint, format, three
+platform-specific type-check passes, a security scan, dead code, a wiring gate, the kit
+boundary, the layering contract, the test suite, all five projection drift checks, the
+documentation claim gates, and the ratchets.
 
 **A check whose repair is purely mechanical and lossless declares a fix command.** The
-pre-commit hook applies it to the staged files and re-stages them. The commit therefore
-carries the fixed bytes, and no agent cycle is ever spent re-running a repair a script can
-make. The check itself is unchanged, so unformatted input from outside the loop still
-fails in continuous integration, and a non-mechanical failure still blocks.
+pre-commit hook applies that command to the staged files, and re-stages them. The commit
+therefore carries the fixed bytes, and no agent cycle repeats a repair a script can make.
+The check itself does not change. Unformatted input from outside the loop still fails in
+continuous integration, and a non-mechanical failure still blocks.
 
-**Failure semantics are chosen so an ambiguous state is a failure.**
+**The failure semantics make an ambiguous state a failure.**
 
 | Situation | Verdict | Why |
 | --- | --- | --- |
@@ -2360,18 +2268,21 @@ failure only when *every* failing check matches a known dependency-defect signat
 
 ### Gate results and who may write them
 
-Deterministic checks report a **required** gate; a failed required gate blocks the advance. AI judgment
-reports a **non-required** gate, which is advisory and never blocking.
+A deterministic check reports a **required** gate. A failed required gate blocks the
+advance. An AI judgment reports a **non-required** gate. A non-required gate is advisory, and
+it never blocks.
 
-**The gate ledger authenticates nothing, and a dispatched lane agent shares the real tracker through the
-worktree redirect.** So a required gate counts only results carrying **the engine's own provider**; a
-foreign result on a required gate is surfaced as *disregarded* rather than counted. That turns "a judged
-verdict is never a green light" into an enforced property rather than agent good behaviour. Advisory
-gates still accept any provider.
+**The gate ledger authenticates nothing, and a dispatched lane agent shares the real tracker
+through the worktree redirect.** A required gate therefore counts only a result that carries
+**the engine's own provider**. The engine surfaces a foreign result on a required gate as
+*disregarded*, and does not count it. That makes "a judged verdict is never a green light"
+an enforced property, not a matter of agent good behaviour. An advisory gate still accepts
+any provider.
 
-**Forging one of those provider strings is still possible.** That is the same acknowledged class as grant
-and checkpoint marker forgery, and authenticated gate results are the only real fix. This document states
-it rather than implying a guarantee that does not exist.
+**A forged provider string is still possible.** That risk is the same acknowledged class as
+a forged grant marker or a forged checkpoint marker. Authenticated gate results are the only
+real fix. The limit is stated here rather than covered by an implied guarantee that does not
+exist.
 
 ### The plan gate, and the hole in it
 
@@ -2404,34 +2315,35 @@ horizontal-slice failure a scope-glob decomposer produces by default.
 | a value spanning several lines | the recorded form is one line, and a multi-line value reads back truncated |
 | a value naming nothing runnable | detected as the absence of a backticked span |
 
-That is the entire test. **A demonstration that selects zero tests passes.** So does one
-naming a command that always succeeds. The gate's own documentation is honest about it. It is
-a floor, asking whether the author could name a demonstration. It is not a judgement.
+That is the whole test. **A demonstration that selects zero tests passes.** So does a
+demonstration that names a command which always succeeds. The gate's own documentation says
+so. The gate is a floor. It asks whether the author could name a demonstration. It is not a
+judgment.
 
 ### Integrity levels
 
-The three levels, their names and what each buys are in
-[Integrity: how far a defect reaches](#integrity-how-far-a-defect-reaches). This section is
-about the rule that assigns one, and about how much of the assignment is actually read back.
+[Integrity: how far a defect reaches](#integrity-how-far-a-defect-reaches) gives the three
+levels, their names and what each one buys. This section covers the rule that assigns a
+level, and how much of that assignment anything reads back.
 
-**The rule is deterministic over the declared scope globs.** It is not judgeable, therefore
-not gameable, and it costs zero tokens.
+**The rule is deterministic over the declared scope globs.** Nobody judges it, so nobody can
+game it, and it costs zero tokens.
 
 Three properties the rule keeps.
 
 1. **The highest level any declared path resolves to wins.** A package that touches one
    consumer surface is a consumer change, whatever else it touches.
-2. **The clauses are single-valued by exclusion, not by ordering.** The `engine` clause names
-   the `consumer-surface` patterns as exclusions. The order the clauses are written in is
-   therefore presentation, not meaning, and a test asserts exactly-one-match over every
-   tracked file.
-3. **The rule is total.** Every path resolves, because the fallback is a clause rather than an
-   absence. An unclassified path resolves to `engine`, deliberately in the middle:
-   `docs-and-tests` would fast-gate a path the rule has never been taught, and
+2. **An exclusion makes each clause single-valued. The order does not.** The `engine` clause
+   names the `consumer-surface` patterns as exclusions. The written order of the clauses is
+   therefore presentation, not meaning. A test asserts exactly one match over every tracked
+   file.
+3. **The rule is total.** Every path resolves, because the fallback is a clause and not an
+   absence. An unclassified path resolves to `engine`, deliberately in the middle.
+   `docs-and-tests` would fast-gate a path the rule has never been taught.
    `consumer-surface` would demand a human ship for every unrecognised file.
 
-**The five frozen consumer surfaces are not invented by the rule.** They are the five things
-the release process freezes for semantic versioning, mapped onto the paths that declare each
+**The rule does not invent the five frozen consumer surfaces.** They are the five things the
+release process freezes for semantic versioning, mapped onto the paths that declare each
 one.
 
 | Surface | Declared by |
@@ -2443,27 +2355,29 @@ one.
 | the owned ledger format | `run_record.py` |
 
 Where a surface has a declaration and an implementation, the *declaration* sits at
-`consumer-surface`. `loader.py` parses against the catalog schema and is ordinary engine code.
+`consumer-surface`. `loader.py` parses against the catalog schema, and is ordinary engine
+code.
 
 **Only the gate selection is consumed today.** A level also carries a model tier, a rework
-allowance and a ship disposition. Those three are written into the classification marker's
-text and **never read back**. The rework cap comes from configuration unconditionally. Tier
-routing comes from the runner configuration.
+allowance and a ship disposition. The engine writes those three into the classification
+marker's text, and **reads none of them back**. The rework cap comes from configuration
+unconditionally. Tier routing comes from the runner configuration.
 
-**A designed downgrade is implemented and never invoked.** A `consumer-surface` path whose
-diff is small and changes no public signature drops to `engine`, with the reason recorded.
-The classify path supplies no patch, so the downgrade never fires in production. Its
-threshold is a seed and the code says so: the mechanism is fixed and no measurement here has
+**One downgrade is implemented and never invoked.** A `consumer-surface` path whose diff is
+small, and which changes no public signature, drops to `engine`, and the engine records the
+reason. The classify path supplies no patch, so the downgrade never fires in production. Its
+threshold is a seed, and the code says so. The mechanism is fixed. No measurement here has
 found where the line belongs.
 
-**Only one of the three `consumer-surface` gates is promoted into the required set**, and
-deliberately. The evidence-binding gate is not, because nothing produces it. Promoting a gate
-nothing can satisfy would wedge every `consumer-surface` unit.
+**One of the three `consumer-surface` gates is promoted into the required set, and only
+one.** That is deliberate. The evidence-binding gate is not promoted, because nothing
+produces it. A promoted gate that nothing can satisfy would wedge every `consumer-surface`
+unit.
 
 ### Ratchets
 
-A ratchet freezes a measured baseline that **may only fall**, so a property nothing else measures cannot
-silently get worse.
+A ratchet freezes a measured baseline that **may only fall**. A property nothing else
+measures therefore cannot get worse in silence.
 
 | Gate | Metric | Baseline shape |
 | --- | --- | --- |
@@ -2476,57 +2390,58 @@ silently get worse.
 
 **The size ratchet is an agent-context gate, not a code-quality gate.** The distinction
 matters, because the quality literature argues the other way. The measured work finds
-mid-size components best, and smaller modules proportionally *more* defect-prone. The reason
-the gate exists here is the working set an agent can hold. That is a plausible mechanism, not
-a measurement, and it must be stated that way.
+mid-size components best, and finds smaller modules proportionally *more* defect-prone. The
+gate exists here for the working set an agent can hold. That is a plausible mechanism, not a
+measurement, and it must be stated that way.
 
-**The two size ratchets pull in opposite directions.** Shedding tokens by extracting code
-raises the remaining prose share. An extraction therefore satisfies both gates only when the
-extracted unit's prose share is *above* its origin's. Measure that before choosing a split.
+**The two size ratchets pull in opposite directions.** An extraction sheds tokens, and it
+raises the prose share of what remains. An extraction therefore satisfies both gates only
+when the extracted unit's prose share is *above* the share of its origin. Measure that before
+you choose a split.
 
-**A ratchet whose control has never fired correctly becomes observability rather than a
-block.** A prediction that blocks must be right. A prediction that reports costs nothing when
-it is wrong. Demotion is not deletion: the number stays recorded, surfaced and falsifiable.
-One gate here was wrong for months *with the telemetry already contradicting it*.
+**A ratchet whose control has never fired correctly becomes observability, not a block.** A
+prediction that blocks must be right. A prediction that reports costs nothing when it is
+wrong. A demotion is not a deletion. The number stays recorded, surfaced and falsifiable. One
+gate here was wrong for months, *and the telemetry already contradicted it*.
 
-**Never propose a change whose stated benefit is the number moving.** Deleting comments is
-the cheapest route to size headroom in this tree, and it returns a large fraction of some
-modules' budgets. Splitting a function in two satisfies a complexity gate while making the
-code worse. Extract along a nameable responsibility, or do not extract.
+**Never propose a change whose stated benefit is a moved number.** A comment deletion is the
+cheapest route to size headroom in this tree, and it returns a large share of some modules'
+budgets. A function split in two satisfies a complexity gate and makes the code worse.
+Extract along a nameable responsibility, or do not extract.
 
 ### Documentation gates
 
-Two gates keep this document and its siblings honest. Both exist because every human and
+Three gate kinds keep this file and its siblings honest. They exist because every human and
 every agent that plans from a document reads it as fact.
 
-| Gate kind | What it does | On failure | What binds on this document |
+| Gate kind | What it does | On failure | What binds on this file |
 | --- | --- | --- | --- |
 | generated block | renders a region wholly from the tree, between paired markers | a fix run repairs the drift | one: the always-on size table |
 | assertion | checks a claim it cannot write | names the edit a human must make | three, below |
-| citation ratchet | checks every `file:line` in a document | refuses | this document carries no `file:line` at all |
+| citation ratchet | checks every `file:line` in a document | refuses | nothing: this file carries no `file:line` at all |
 
 **Three assertions bind on this file.**
 
 1. Every subcommand the CLI ships must appear in the CLI section's command tables.
-2. Every subcommand of a *group* must appear in that group's own rows. This exists because
-   the first assertion is satisfied by a single group row, which is how several worktree
+2. Every subcommand of a *group* must appear in that group's own rows. This assertion exists
+   because a single group row satisfies the first one. That is how several worktree
    subcommands stayed undocumented while every gate passed.
-3. A separate test holds the reverse direction: a removed or renamed subcommand must leave
+3. A separate test holds the reverse direction. A removed or renamed subcommand must leave
    the tables.
 
 A fourth pair checks the reverse direction on the consumer surfaces. A command shown in the
-README or on the landing page must be one the CLI actually ships.
+README or on the landing page must be a command the CLI ships.
 
-**A `file:line` in a document is a claim about the code.** Until the citation gate existed
-nothing checked one, and four such claims once planned a top-priority item against a remedy
-the tree had already replaced.
+**A `file:line` in a document is a claim about the code.** Before the citation gate existed,
+nothing checked one. Four such claims once planned a top-priority item against a remedy the
+tree had already replaced.
 
-The gate has two exact rules. A cited line must be live code. And it must fall **inside the
-symbol its own sentence names** — that second rule is what pins a citation to something
-stable under editing. It is a ratchet with a closed list, and the list is empty, so no
-document may carry a single stale citation.
+The gate holds two exact rules. A cited line must be live code. It must also fall **inside
+the symbol its own sentence names**. The second rule pins a citation to something that stays
+stable under an edit. The gate is a ratchet with a closed list, and the list is empty, so no
+document may carry one stale citation.
 
-**This document prefers a symbol name or a command over a line number everywhere.**
+**This file prefers a symbol name or a command to a line number, everywhere.**
 
 ### CI
 
@@ -2538,43 +2453,47 @@ document may carry a single stale citation.
 | pages | a push touching the site | build and deploy the landing page |
 | improvement loop | manual dispatch only | the improvement controller in dry-run mode |
 
-**CI ignores tracker-only pushes**, because the commit-message hooks are the deterministic floor for
-those.
+**CI ignores a tracker-only push.** The commit-message hooks are the deterministic floor for
+that case.
 
 ### Agent permissions
 
-A deny-list of semantic rules is projected into the one agent family that has a config-file deny.
-Projection is **ensure-present**: managed patterns are merged in, consumer entries are preserved, and
-**nothing is pruned**, because a flat deny string carries no per-entry marker and an extra deny is
-fail-safe. Drift is therefore a subset check.
+The projection writes a deny-list of semantic rules into the one agent family that has a
+config-file deny. The projection is **ensure-present**. It merges the managed patterns in, it
+preserves consumer entries, and it **prunes nothing**. A flat deny string carries no
+per-entry marker, and an extra deny is fail-safe. Drift is therefore a subset check.
 
-**The limits are stated because absence of a rule is not permission.** Only the file-edit rule form binds
-for file mutation on that family, and the two write-tool variants a reader would expect are ignored by
-the permission check. The second family has no config-file deny at all, so the deny-list is injected as
-invocation flags at dispatch, and its pattern language matches by token prefix with no infix wildcard, so
-it cannot express the first family's globs. The third family forbids project-scope override of its
-sandbox and approval settings, so those guardrails are invocation-only. **The list is a partial backstop,
-never the source of a prohibition** — several destructive git commands are denied on no target and still
-require human confirmation.
+**The limits are stated here, because an absent rule is not a permission.** Only the
+file-edit rule form binds file mutation on that family. The permission check ignores the two
+write-tool variants a reader would expect. The second family has no config-file deny at all,
+so the dispatch injects the deny-list as invocation flags. That family's pattern language
+matches by token prefix and has no infix wildcard, so it cannot express the first family's
+globs. The third family forbids a project-scope override of its sandbox and approval
+settings, so those guardrails are invocation-only. **The list is a partial backstop. It is
+never the source of a prohibition.** Several destructive git commands are denied on no
+target, and still need a human confirmation.
 
 ## The work tracker
 
-**The tracker is not a peripheral integration. It *is* the loop's state**, so every guarantee in this
-document is downstream of it. Today it is an unowned external binary in the critical path.
+**The tracker is not a peripheral integration. It *is* the loop's state.** Every guarantee
+in this file is therefore downstream of it. Today the tracker is an unowned external binary
+in the critical path.
 
-**The tracker holds** issues typed as work classes, a dependency graph, gate results, checkpoint markers,
-evidence markers, and the loop's own artifact and telemetry markers. Phase is derived from it;
-in-flight worktree bindings are stashed on the issue; design constraints ride *down* a dependency tree.
-**Resume is re-reading it**: in-progress issues, their bindings, their recorded gate results and the ready
-set, reconciled against live worktrees. That is what makes the loop cross-agent — start on one family,
-resume on another.
+**The tracker holds** issues typed as work classes, a dependency graph, gate results,
+checkpoint markers, evidence markers, and the loop's own artifact and telemetry markers. The
+engine derives the phase from it. It stashes an in-flight worktree binding on the issue. A
+design constraint rides *down* a dependency tree. **A resume re-reads the tracker.** It reads
+the in-progress issues, their bindings, their recorded gate results and the ready set, and
+reconciles them against the live worktrees. That is what makes the loop cross-agent. A unit
+starts on one family and resumes on another.
 
 ### Why own it
 
-**Ownership, not speed.** Re-measured against the live ledger, a single-record in-process read is about
-fifteen times cheaper than the median external CLI call and a full fold about twice — real but modest, and
-the fold ratio narrows as the ledger grows. An earlier claim of a far larger factor compared incomparable
-operations against a much smaller ledger and was corrected.
+**Ownership, not speed.** Re-measured against the live ledger, a single-record in-process
+read is about fifteen times cheaper than the median external CLI call. A full fold is about
+twice as cheap. Both gains are real and modest, and the fold ratio narrows as the ledger
+grows. An earlier claim of a far larger factor compared incomparable operations against a
+much smaller ledger, and it was corrected.
 
 **Two constraints are recorded because they are easy to lose.** A **clean-room boundary** applies: the
 licence of the binary currently depended on carries a rider restricting a class of users, which is itself
@@ -2583,61 +2502,70 @@ because it reintroduces exactly the unowned-binary upgrade surface being removed
 
 ### The target shape
 
-Pure Python inside this package, with an **append-only event log as the truth** and every other file
-derived and disposable. A record's state is a **fold over its events**, so history lives in the data
-rather than depending on git history surviving a squash or a shallow clone.
+Pure Python inside this package, with an **append-only event log as the truth**. Every other
+file is derived and disposable. A record's state is a **fold over its events**, so history
+lives in the data. It does not depend on git history surviving a squash or a shallow clone.
 
-**The event record** carries an id, the record it belongs to, a per-record sequence number, a kind, an
-actor, a timestamp, a payload, and a carried totals cache. Event kinds are creation, a field change, a
-status change, a comment, a dispatch, a tombstone, a graph edge and a gate result.
+**The event record** carries an id, the record it belongs to, a per-record sequence number, a
+kind, an actor, a timestamp, a payload, and a carried totals cache. The event kinds are a
+creation, a field change, a status change, a comment, a dispatch, a tombstone, a graph edge
+and a gate result.
 
-- **The id is a digest over kind, payload and generation, deliberately excluding the timestamp**, so
-  replaying the same logical write is idempotent. The trap that buys, documented rather than hidden:
-  re-recording an identical fact is swallowed, so a genuine reopen needs a new generation.
-- **The sequence number is per record, not per ledger.** Two branches incrementing the same record fork
-  visibly.
-- **Totals are a cache that lives in the log**; the fold is the authority. Spend is carried in integer
-  micro-units so the sum is order-independent, and one accumulator serves both the writer and the fold.
-- **The fold sorts into canonical order first**, so it is a function of the event *set* and not of the
-  file's append order. **An unknown kind is skipped for state but still counted in totals**, so an old
-  reader never reports a newer writer's events as a false disagreement.
+- **The id is a digest over the kind, the payload and the generation. It deliberately
+  excludes the timestamp.** A replay of the same logical write is therefore idempotent. The
+  trap that buys is documented, not hidden: a re-record of an identical fact is swallowed, so
+  a genuine reopen needs a new generation.
+- **The sequence number is per record, not per ledger.** Two branches that increment the same
+  record fork visibly.
+- **Totals are a cache that lives in the log.** The fold is the authority. Spend is carried in
+  integer micro-units, so the sum is order-independent, and one accumulator serves the writer
+  and the fold alike.
+- **The fold sorts into canonical order first.** It is therefore a function of the event
+  *set*, not of the file's append order. **An unknown kind is skipped for state, and still
+  counted in totals.** An old reader therefore never reports a newer writer's events as a
+  false disagreement.
 
-**Append-only is structural**, not a convention: the writer opens for append and nothing rewrites a line.
-Repairs are corrective *appends*. There is deliberately **no fsync** — the push is the durability
-boundary, and the code says so explicitly so nobody adds one. Rotation is name-based, so a rotation policy
-just creates a later-sorting file and no wall-clock branch enters the write path.
+**Append-only is structural, not a convention.** The writer opens for append, and nothing
+rewrites a line. A repair is a corrective *append*. The code deliberately runs **no fsync**.
+The push is the durability boundary, and the code says so, so that nobody adds one. Rotation
+is name-based. A rotation policy creates a later-sorting file, and no wall-clock branch enters
+the write path.
 
-**Locking is a file whose existence is the lock**, created exclusively, because the POSIX advisory lock
-does not exist on one of the three supported platforms. It is held for one append; a caller needing a
-wider critical section holds it and passes it in. Staleness is measured on a **monotonic** clock with an
-epoch marker, so a negative age after a reboot counts as stale rather than as freshly-taken, and release
-re-checks the holder so it never deletes a lock stolen from it. Liveness probing is injected and returns
-*unknown* on the platform where the obvious probe terminates the process instead of testing it.
+**The lock is a file whose existence is the lock.** The kit creates it exclusively, because
+the POSIX advisory lock does not exist on one of the three supported platforms. A holder
+keeps it for one append. A caller that needs a wider critical section holds the lock and
+passes it in. Staleness is measured on a **monotonic** clock with an epoch marker, so a
+negative age after a reboot counts as stale, not as freshly taken. Release re-checks the
+holder, so it never deletes a lock stolen from it. The liveness probe is injected. It returns
+*unknown* on the platform where the obvious probe terminates the process instead of testing
+it.
 
-**Deployment has exactly one requirement the kit cannot meet itself**, and it is declared: the log files
-must be checked out with unchanged line endings, or a checkout on one platform rewrites the log in place.
+**Deployment has exactly one requirement the kit cannot meet itself, and the kit declares
+it.** A checkout must leave the log files with unchanged line endings. Otherwise a checkout
+on one platform rewrites the log in place.
 
-**The kit may not import the engine.** A pre-commit hook enforces the one-way boundary, and the redaction
-function is **injected into the kit** rather than imported by it.
+**The kit may not import the engine.** A pre-commit hook enforces the one-way boundary. The
+engine **injects** the redaction function into the kit. The kit never imports it.
 
 ### The seam
 
-One module spawns the external binary. Everything else calls through it, which is what makes the
-replacement a change in one place.
+One module spawns the external binary. Everything else calls through that module. That is
+what makes the replacement a change in one place.
 
-**Behind the seam already:** ranking is owned in-process, and the loop's own comment marker families are
-written and read as ledger events with no external process spawned at all.
+**Behind the seam already:** the engine owns ranking in-process, and it writes and reads the
+loop's own comment marker families as ledger events, with no external process spawned at all.
 
-**Ranking is a pure function of the graph**: unblocked only, then priority, then descending count of
-still-live blocking dependents, then id. **Creation time is deliberately dropped**, because age-based
-ordering makes dispatch order clock-dependent for an unchanged graph. It emits its own schema name rather
-than the external tool's, so a consumer parsing it is not parsing a foreign contract.
+**Ranking is a pure function of the graph.** It takes unblocked issues only, then priority,
+then the descending count of still-live blocking dependents, then the id. **It deliberately
+drops creation time.** An age-based order makes dispatch order clock-dependent for an
+unchanged graph. Ranking emits its own schema name, never the external tool's, so a consumer
+that parses it does not parse a foreign contract.
 
-**Still in front of the seam** [measured 2026-08-16]: about 29 spawn sites across 12 engine modules,
-concentrated in decompose, the loop, policy, the supervisor and merge, plus one in the improvement
-controller. Re-derive it rather than trusting the number — the count is a moving target, and a naive search
-for the wrapper's name undercounts, because most call sites import it under an alias and a second wrapper
-exists for tolerated failures.
+**Still in front of the seam** [measured 2026-08-16]: about 29 spawn sites across 12 engine
+modules, concentrated in decompose, the loop, policy, the supervisor and merge, plus one in
+the improvement controller. Re-derive the count rather than trust it. It is a moving target,
+and a naive search for the wrapper's name undercounts. Most call sites import the wrapper
+under an alias, and a second wrapper exists for tolerated failures.
 
 ### Dual write, and where it leaks
 
@@ -2653,8 +2581,8 @@ The repository runs in **dual** mode. Every accepted write also lands in the own
 | 4 · flip the source of truth | not dispatchable | waits on the remaining bypasses, and on five unported operations |
 | 5 · harness markers native to the owned store | landed, ahead of steps 2 to 4 | this is why the differential must run on dual |
 
-**One tracker write, drawn in order.** The order is the design, and it was arrived at by
-fixing two real defects that were one mistake.
+**One tracker write, drawn in order.** The order is the design. Two real defects, which were
+one mistake, produced it.
 
 ```mermaid
 sequenceDiagram
@@ -2682,82 +2610,90 @@ sequenceDiagram
 ```
 
 **Decide, then spawn, then mirror.** The mirror used to raise *after* the write had already
-run. A plural close that the binary accepts and the translator refused therefore diverged the
-stores before the guard fired.
+run. A plural close that the binary accepts, and that the translator refused, therefore
+diverged the stores before the guard fired.
 
-**Six write surfaces are mirrored**: close, comment, create, dependency add, gate report and
-update. Two store-management surfaces deliberately are not. Anything classified as a read
-produces no draft. **Anything else raises.** A write surface with no translator must stop the
-work rather than diverge the stores.
+**The mirror covers six write surfaces**: close, comment, create, dependency add, gate report
+and update. It deliberately does not cover two store-management surfaces. Anything classified
+as a read produces no draft. **Anything else raises.** A write surface with no translator must
+stop the work rather than diverge the stores.
 
-**The seam is the only place both stores move together.** A write surface must therefore
-route through it rather than around it. That is a design invariant, and it is why a human's
-tracker write has its own command instead of being left to the raw binary.
+**The seam is the only place where both stores move together.** A write surface must
+therefore route through it, never around it. That is a design invariant, and it is why a
+human's tracker write has its own command instead of a call to the raw binary.
 
-A directly spawned binary never enters the mirror. It moves one store and not the other, and
-the differential then reports a divergence it cannot tell from a mirror failure. `basicly
-tracker write` is a thin passthrough on purpose. The two refusals a write can meet, an
-unknown mode and an untranslatable argument vector, belong to the seam. They should be the
-same refusals the engine's own writes meet.
+A directly spawned binary never enters the mirror. It moves one store and not the other. The
+differential then reports a divergence it cannot tell from a mirror failure. `basicly tracker
+write` is a thin passthrough on purpose. The two refusals a write can meet, an unknown mode
+and an untranslatable argument vector, belong to the seam. A human's write should meet the
+same two refusals the engine's own writes meet.
 
 ### The shadow differential, and what would license the flip
 
-**The reference is a live read of the external binary, never the JSONL export.** An upsert-only export
-cannot express a deletion, so two derivatives of one snapshot agree with each other and prove nothing. The
-comparison covers three queries — records and derived phase, the ready set, and gate status — and the gate
-side has no export field at all, so live is the only witness.
+**The reference is a live read of the external binary, never the JSONL export.** An
+upsert-only export cannot express a deletion, so two derivatives of one snapshot agree with
+each other and prove nothing. The comparison covers three queries: records with their derived
+phase, the ready set, and gate status. The gate side has no export field at all, so a live
+read is the only witness.
 
-**The kit audits its own reference**: it calls the views function a second time with a synthetic event
-appended and refuses a source whose answers move with it. **It deliberately does not cache**, because a
-memoised answer would clear that probe by being the same answer rather than an independent one.
+**The kit audits its own reference.** It calls the views function a second time, with a
+synthetic event appended, and refuses a source whose answers move with that event. **It
+deliberately does not cache.** A memoised answer would clear the probe by being the same
+answer, not by being an independent one.
 
-**Two verdicts, and the exit code needs both.** *Clean* means no in-scope disagreement, nothing undeclared,
-and no refused reference. *Conclusive* means the in-scope population is non-empty: a comparison over zero
-records discriminated nothing, so **an empty scope is inconclusive, never clean**. Without that, scoping
-would license the flip on a comparison that measured nothing.
+**Two verdicts, and the exit code needs both.** *Clean* means no in-scope disagreement,
+nothing undeclared, and no refused reference. *Conclusive* means the in-scope population is
+not empty. A comparison over zero records discriminated nothing, so **an empty scope is
+inconclusive, never clean**. Without that rule, a scope could license the flip on a
+comparison that measured nothing.
 
-**Two exclusion populations, keyed on two different things, and this is the part most likely to be got
-wrong.** A record the *ledger* holds from the import is excused as history, keyed on a marker the import's
-own producer writes. A record the *reference* holds and the ledger does not is excused only by an
-explicitly declared baseline sidecar. This repository's declared baseline is **empty**, so nothing on the
-reference side is excused — a summary reading "zero declared" beside a large "excused as history" count is
-not a contradiction.
+**Two exclusion populations exist, keyed on two different things. A reader gets this part
+wrong most often.** A record the *ledger* holds from the import is excused as history, keyed
+on a marker the import's own producer writes. A record the *reference* holds and the ledger
+does not is excused only by an explicitly declared baseline sidecar. This repository's
+declared baseline is **empty**, so nothing on the reference side is excused. A summary that
+reads "zero declared" beside a large "excused as history" count is not a contradiction.
 
-**The declared baseline may be written once and may only shrink.** Re-declaring after the dual write
-started would absorb a genuine failure into history, so widening it is never a repair. Symmetrically, the
-import refuses a ledger that already holds a post-flip record.
+**A declared baseline may be written once, and may only shrink.** A re-declaration after the
+dual write started would absorb a genuine failure into history, so a widening is never a
+repair. The import refuses a ledger that already holds a post-flip record, for the same
+reason.
 
-**What the run says today** [measured 2026-08-16, `uv run basicly tracker shadow`]: not clean, and
-conclusive. The failures are a small number of records that exist on the external tracker and are absent
-from the ledger, and **every one of them is a hand-write that bypassed the seam** rather than a mirror
-defect. An earlier reading of hundreds of gate disagreements is stale: those carry the import marker and
-are now correctly excused as history.
+**What the run says today** [measured 2026-08-16, `uv run basicly tracker shadow`]: not
+clean, and conclusive. The failures are a small number of records that exist on the external
+tracker and are absent from the ledger. **Every one of them is a hand-write that bypassed the
+seam**, not a mirror defect. An earlier reading of hundreds of gate disagreements is stale.
+Those records carry the import marker, and the run now excuses them as history.
 
-**So the flip no longer waits on a one-shot gate dump.** It waits on the bypass route being closed and on
-the five operations that have no owned equivalent at all — the definition-of-ready lint, which means owning
-the validation rules; dependency-cycle detection; a label query; id minting; and the gate listing. Each is
-a design question rather than a port.
+**The flip therefore no longer waits on a one-shot gate dump.** It waits on a closed bypass
+route, and on the five operations that have no owned equivalent at all: the
+definition-of-ready lint, which means owning the validation rules; dependency-cycle
+detection; a label query; id minting; and the gate listing. Each one is a design question,
+not a port.
 
-**Two kit modules are built and reached by nothing.** A consistency checker and an edge-provenance labeller
-exist with tests and no engine caller — verified with a positive control that found the callers of the kit
-modules that *are* loaded. Both are advertised on consumer surfaces as shipped capability. **This is the
-closed-blocker-is-not-a-working-gate case in its purest form: the code exists, and nothing binds it.**
+**Two kit modules are built and reached by nothing.** A consistency checker and an
+edge-provenance labeller exist, with tests and no engine caller. A positive control verified
+that finding: it found the callers of the kit modules that *are* loaded. Consumer surfaces
+advertise both modules as shipped capability. **This is the closed-blocker-is-not-a-working-gate
+case in its purest form. The code exists, and nothing binds it.**
 
-The design they encode is worth keeping even though nothing runs it. The checker's contract is that it
-**repairs only by appending** a corrective event, so a broken log is reported and never rewritten in place,
-and a derived file that disagrees with the log it summarises is a separate severity with a separate exit
-code. The labeller's contract is that every graph edge carries how it got there — extracted from a human or
-repository fact, inferred by an agent, or ambiguous — and that disposition decides what it may do:
-extracted **may gate** a landing, inferred is **shown as a proposal**, ambiguous **routes a decision**. The
-label rides the event rather than the edge, the strongest label wins, promotion is monotone with **no
-demotion**, and an unknown label fails **closed** into the least-trusted disposition, because the tolerant
-direction for a gate is the restrictive one.
+The design in those two modules is worth keeping, even though nothing runs it. The checker's
+contract is that it **repairs only by an append** of a corrective event. It reports a broken
+log, and never rewrites one in place. A derived file that disagrees with the log it
+summarises is a separate severity with a separate exit code. The labeller's contract is that
+every graph edge carries how it got there: extracted from a human or repository fact,
+inferred by an agent, or ambiguous. That disposition decides what the edge may do. An
+extracted edge **may gate** a landing. An inferred edge **is shown as a proposal**. An
+ambiguous edge **routes a decision**. The label rides the event, not the edge. The strongest
+label wins. Promotion is monotone, with **no demotion**. An unknown label fails **closed**,
+into the least-trusted disposition, because the tolerant direction for a gate is the
+restrictive one.
 
-**The kit as a whole is outside the scope of any architectural audit until its own promotion runs.** Its
-modules landed against reasoning that was never promoted to a design, so there is no frozen surface, no
-declared schema and no cache decision to judge them against — and an audit needs a specification. That
-condition was written as prose, nothing read it, and it was discharged by an issue closing somewhere else.
-**A gate written as prose is not a gate.**
+**The whole kit sits outside the scope of any architectural audit until its own promotion
+runs.** Its modules landed against reasoning nobody promoted to a design. No frozen surface,
+no declared schema and no cache decision exists to judge them against, and an audit needs a
+specification. That condition was written as prose. Nothing read it, and an issue that closed
+somewhere else discharged it. **A gate written as prose is not a gate.**
 
 ### Redaction
 
@@ -2770,19 +2706,20 @@ sets enforce it.
 | machine path shapes | pattern |
 | the running user's own name | built per run, not pattern-matched, because a username is not a shape. Ignored when it is short enough to shred ordinary prose |
 
-**The composition order is load-bearing, and it is documented in the code.** Paths run first,
-identity second. The path placeholder contains characters the path rules' tail class
-excludes, so the reverse order would strand the directory layout unredacted.
+**The composition order is load-bearing, and the code documents it.** The path rules run
+first. The identity rule runs second. The path placeholder contains characters the path
+rules' tail class excludes, so the reverse order would leave the directory layout
+unredacted.
 
-**The whole path is redacted, not only the user-identifying head.** The leak that motivated
-the Windows rule was a directory layout with no username in it at all.
+**Redaction covers the whole path, not only the user-identifying head.** The leak that
+produced the Windows rule was a directory layout with no username in it at all.
 
 **Redaction binds in two distinct places.** Every owned-ledger append is redacted at the
-write. And the engine's only tracker-commit path scrubs both stores immediately after the
-flush, before staging.
+write. The engine's only tracker-commit path also scrubs both stores immediately after the
+flush, and before it stages them.
 
 **The deterministic floor is two pre-commit hooks.** They are standalone standard-library
-scripts copied to consumers, so they **cannot import** the engine's rule sets. The mirror is
+scripts, copied to consumers, so they **cannot import** the engine's rule sets. The mirror is
 real duplication.
 
 | Mirror | Kept in step by |
@@ -2794,29 +2731,31 @@ That asymmetry is a gap, not a design.
 
 ### The external binary pin
 
-The tracker binary is an external CLI, not a package dependency. The engine declares a **floor** on major
-and minor, and an **exact pinned version** that is warned about in **both** directions.
+The tracker binary is an external CLI, not a package dependency. The engine declares a
+**floor** on major and minor, and an **exact pinned version**. It warns in **both**
+directions from that pin.
 
-**The exact pin has a ceiling for a reason.** A floor alone once let a silent upgrade break a gate command
-on one machine while CI stayed green. Upgrading past the pin is not a fix either: the upstream trunk targets
-a newer database schema and its migration accepts only a narrow range, so a newer binary has no supported
-forward path from the schema in use here.
+**The exact pin has a ceiling for a reason.** A floor alone once let a silent upgrade break a
+gate command on one machine while CI stayed green. An upgrade past the pin is not a fix
+either. The upstream trunk targets a newer database schema, and its migration accepts only a
+narrow range, so a newer binary has no supported forward path from the schema in use here.
 
-**The pin string is duplicated by hand in about ten places** — user-facing messages, comments, consumer
-documentation — with no gate keeping them in step, and **the consumer-facing documents call it a floor while
-the code treats it as an exact pin**. That is a live contradiction between this repository's documentation
-and its code, recorded here rather than resolved, because resolving it is a change to those files. The
-single authoritative statement is the constant in the seam module; the installer imports it rather than
-copying it, which is the one duplicate that cannot drift.
+**About ten places carry the pin string by hand**: user-facing messages, comments and
+consumer documentation. No gate keeps them in step. **The consumer-facing documents call the
+pin a floor, and the code treats it as an exact pin.** That is a live contradiction between
+this repository's documentation and its code. It is recorded here rather than resolved,
+because a resolution is a change to those files. The single authoritative statement is the
+constant in the seam module. The installer imports that constant rather than a copy of it,
+and that is the one duplicate which cannot drift.
 
 ## Status: built, partial, designed
 
-One status view, grouped by the four things the system is. It is **derived**: a shipped row is described
-above, and every other row names what is missing. There are **no dates** — the project does not run to a
-schedule, so status is the only honest axis. The **order** the unshipped rows get built in lives in the
-implementation plan.
+One status view, grouped by the four things the system is. The view is **derived**. A section
+above describes every shipped row, and every other row names what is missing. The view
+carries **no date**. The project does not run to a schedule, so status is the only honest
+axis. The implementation plan holds the **order** in which the unshipped rows get built.
 
-**Five states, each defined by the evidence it requires**, so a row cannot be promoted by optimism.
+**Five states, and the evidence each one requires.** Optimism cannot promote a row.
 
 | Status | Means | Evidence required to claim it |
 | --- | --- | --- |
@@ -2899,145 +2838,156 @@ implementation plan.
 | Provenance on every edge: extracted, inferred, ambiguous | partial | Same: built, no caller, advertised |
 | Cross-repo work offers as self-writes in each repository's own ledger | deferred | |
 
-**How this stays current.** A row changes state in the change that lands the behaviour, not in a later
-cleanup pass, and the same change updates the two rendered copies on the README and the landing page.
-**Nothing gates that**, so the honest consequence is that a stale row here is possible, and the sections
-above remain the place a shipped claim has to be true.
+**How the view stays current.** A row changes state in the change that lands the behaviour,
+never in a later cleanup pass. The same change updates the two rendered copies, on the README
+and on the landing page. **Nothing gates that rule.** A stale row here is therefore possible,
+and the sections above stay the place where a shipped claim has to be true.
 
 ## Decisions and their reasoning
 
-Every decision the design rests on, with the reason rather than the conclusion alone. Each is argued
-where it applies above; this is the index, and the link goes to the argument.
+Every decision the design rests on, with its reason and not the conclusion alone. Each one is
+argued where it applies above. This section is the index, and each link goes to the argument.
 
-**Authority is asymmetric: the engine disposes and agents propose.** No model holds authority over
-the tracker, the schedule or a required gate, at any level. This is the single decision the rest of
-the design hangs from — every other refusal below is a consequence of it.
+**Authority is asymmetric. The engine disposes and agents propose.** No model holds authority
+over the tracker, the schedule or a required gate, at any level. The rest of the design hangs
+from this one decision. Every other refusal below is a consequence of it.
 [Core invariants](#core-invariants).
 
-**Phase is derived from tracker state, and the phases are engine code rather than configuration.**
-Two rungs of the derivation encode invariants found by real incidents; in a declarative form they
-become a boolean expression language living where the type checker, the test suite and code review
-cannot reach. The general rule: every rule that moves from code to data leaves all three.
+**Phase is derived from tracker state, and the phases are engine code, not configuration.**
+Two rungs of the derivation encode invariants that real incidents found. In a declarative
+form those rungs become a boolean expression language, and that language lives where the type
+checker, the test suite and code review cannot reach. The general rule: a rule that moves
+from code to data leaves all three.
 [Phase is derived, not stored](#phase-is-derived-not-stored).
 
-**The tracker is an append-only event log and a record's state is a fold over its events**, so
-history lives in the data rather than depending on git history surviving a squash or a shallow
-clone, and the truth has one shape a checker can verify. [The target shape](#the-target-shape).
+**The tracker is an append-only event log, and a record's state is a fold over its events.**
+History therefore lives in the data. It does not depend on git history surviving a squash or
+a shallow clone, and the truth has one shape a checker can verify.
+[The target shape](#the-target-shape).
 
-**Deterministic first, judged second: a judged verdict is never a green light.** Enforced by
-counting only the engine's own gate provider on a required gate, rather than by asking agents to
-behave. [Gate results and who may write them](#gate-results-and-who-may-write-them).
+**Deterministic first, judged second. A judged verdict is never a green light.** A required
+gate counts only the engine's own gate provider. That enforces the rule, and it does not ask
+an agent to behave. [Gate results and who may write them](#gate-results-and-who-may-write-them).
 
-**Verification and validation are two states run sequentially.** They are distinct technical
-processes in the standards this borrows from, and running them in parallel spends judged tokens
-validating builds that verification will reject.
+**Verification and validation are two states, run in sequence.** They are distinct technical
+processes in the standards this design borrows from. A parallel run spends judged tokens on
+builds that verification will reject.
 
-**A persona is admitted by a test, not a preference**: genuine judgment, a checkable success
-criterion, *and* a materially different tool policy or tier than its neighbours. Otherwise it is a
-prompt section or a deterministic engine step. Repair fails the test — it differs only in prompt —
-so it is the implementer's second mode. [Roles at dispatch](#roles-at-dispatch).
+**A test admits a persona, not a preference.** A persona needs genuine judgment, a checkable
+success criterion, *and* a tool policy or tier materially different from its neighbours.
+Anything else is a prompt section or a deterministic engine step. Repair fails the test,
+because it differs only in prompt, so repair is the implementer's second mode.
+[Roles at dispatch](#roles-at-dispatch).
 
-**A retrospective fires on a computed special cause and is not a phase.** A state exists to hold an
-entry predicate, an exit gate and a persona, and a conditional process over a ledger needs none of
-the three. Acting on a single failure inside the control limits is tampering.
+**A retrospective fires on a computed special cause, and it is not a phase.** A state exists
+to hold an entry predicate, an exit gate and a persona. A conditional process over a ledger
+needs none of the three. An action on a single failure inside the control limits is
+tampering.
 [In full](#retrospective-fires-on-a-special-cause-and-is-deliberately-not-a-phase).
 
-**A tier is chosen by reliability and priced per landed package** — total tokens, wall clock and
-human interventions per landed *correct* unit, never the price of one dispatch. The predicate for
-"cheap is safe" is **specification completeness**, not the work's nominal category: a brief carrying
-the literal code is transcription, which is mechanically checkable. A dispatch with no resolved tier
-is a bug, not a default, because an omitted model silently inherits the session's.
+**Reliability chooses a tier, and the price is per landed package.** The price counts total
+tokens, wall clock and human interventions per landed *correct* unit. It never counts the
+price of one dispatch. The predicate for "cheap is safe" is **specification completeness**,
+not the work's nominal category. A brief that carries the literal code is transcription, and
+transcription is mechanically checkable. A dispatch with no resolved tier is a defect, not a
+default, because an omitted model silently inherits the session's model.
 
-**A provider model id never appears in an agent file, generated or not.** Not style: the injection
-mechanism leaves a definition that pins its own model alone, so a projected line would *disable*
-injection rather than implement it. [In full](#subagent-definitions).
+**A provider model id never appears in an agent file, generated or not.** This is not style.
+The injection mechanism leaves a definition that pins its own model alone, so a projected
+line would *disable* injection rather than implement it. [In full](#subagent-definitions).
 
-**The catalog defines and the host executes.** Both installed runtimes already ship the dispatch
-mechanism an earlier design assumed had to be built; reimplementing a shipped mechanism inverts the
-reuse-before-reinventing rule. The engine supervises lanes and owns the tracker, the gates and the
-landing.
+**The catalog defines and the host executes.** Both installed runtimes already ship the
+dispatch mechanism an earlier design assumed it had to build. A reimplementation of a shipped
+mechanism inverts the reuse-before-reinvention rule. The engine supervises lanes, and owns
+the tracker, the gates and the landing.
 
-**An agent may spawn only a role the engine authored.** The original form, "no agent spawns agents",
-is unenforceable prose that both runtimes contradict by construction. The amended form is
-*stronger*, because a host hook can intercept a subagent finishing before its results return to the
-parent — a runtime gate rather than a process boundary we hope holds.
+**An agent may spawn only a role the engine authored.** The original form, "no agent spawns
+agents", is unenforceable prose, and both runtimes contradict it by construction. The amended
+form is *stronger*. A host hook can intercept a subagent as it finishes, before its results
+return to the parent. That is a runtime gate, not a process boundary nobody can check.
 
-**Agent-authored guidance never reaches the shared catalog without a human**, at any grant level: a
-decision class no autonomy level auto-disposes, rather than a rung in the ladder. The argument is
-asymmetry, not the risk of a bad suggestion — a wrong implementation bounces off a gate, while a
-wrong fragment is **absorbed** and silently degrades every later lane, and an agent that can amend
-the catalog under a grant widens its own constraints.
+**Agent-authored guidance never reaches the shared catalog without a human**, at any grant
+level. It is a decision class no autonomy level disposes of on its own, not a rung in the
+ladder. The argument is asymmetry, not the risk of a bad suggestion. A wrong implementation
+bounces off a gate. A wrong fragment is **absorbed**, and it degrades every later lane in
+silence. An agent that can amend the catalog under a grant widens its own constraints.
 
-**Kill always requires a human, at every integrity level.** It is the only verb that removes a
-requirement rather than routing work, and an agent that can kill what it finds hard has an exit from
-every difficulty.
+**A kill always needs a human, at every integrity level.** It is the only verb that removes a
+requirement instead of routing work. An agent that can kill what it finds hard has an exit
+from every difficulty.
 
-**Integrity level is assigned by a deterministic rule over touched paths.** Scope globs are already
-declared and gated, so a rule over them is not judgeable, therefore not gameable, and costs zero
-tokens. [In full](#integrity-levels).
+**A deterministic rule over the touched paths assigns the integrity level.** Scope globs are
+already declared and gated. A rule over them is not judgeable, so it is not gameable, and it
+costs zero tokens. [In full](#integrity-levels).
 
-**Every acceptance criterion names its own check at plan time, and every child names how it is
-demonstrated end to end.** This moves judgment to the earliest, cheapest point and makes it
-gateable; a child with no consumer-visible behaviour has no check to derive, which is the
-horizontal-slice failure a scope-glob decomposer produces by default.
+**Every acceptance criterion names its own check at plan time, and every child names how it
+is demonstrated end to end.** That moves judgment to the earliest and cheapest point, and
+makes it gateable. A child with no consumer-visible behaviour has no check to derive, and
+that is the horizontal-slice failure a scope-glob decomposer produces by default.
 [The gap that remains](#the-plan-gate-and-the-hole-in-it).
 
-**Acceptance criteria use a notation distinguishing trigger, state, condition, feature-gate and
-ubiquitous requirement**, ratcheted rather than bulk-transformed, because that distinction is what
-makes a check derivable.
+**An acceptance criterion uses a notation that separates a trigger, a state, a condition, a
+feature gate and a ubiquitous requirement.** The notation arrives by ratchet, never by bulk
+transformation. That separation is what makes a check derivable.
 
-**The rework allowance is per gate, with a lane-wide ceiling.** It matches what the counters already
-record, and the ceiling stops a lane grinding by alternating gates.
+**The rework allowance is per gate, with a lane-wide ceiling.** It matches what the counters
+already record. The ceiling stops a lane that grinds through alternating gates.
 
-**Diff size is a plan-time signal, not a review-time discovery**, and deliberately not a human-review
-requirement: a very large lane is hard to review whether the reader is a human or the next agent.
+**Diff size is a plan-time signal, not a review-time discovery.** It is deliberately not a
+human-review requirement. A very large lane is hard to review whether the reader is a human
+or the next agent.
 
-**A sizing control with no recorded correct firing becomes observability; one that has earned a
-firing keeps its teeth.** A prediction that blocks must be right; a prediction that reports costs
-nothing when it is wrong. [In full](#ratchets).
+**A sizing control with no recorded correct firing becomes observability. A control that has
+earned a firing keeps its teeth.** A prediction that blocks must be right. A prediction that
+reports costs nothing when it is wrong. [In full](#ratchets).
 
-**Spend caps compose**: the grant ceiling is the outer bound and the host's own cap the inner one.
-The grant ceiling cannot stop a subagent mid-flight, only refuse the next dispatch — and at least one
-host's cap is explicitly soft, so it bounds rather than guarantees.
+**Spend caps compose.** The grant ceiling is the outer bound. The host's own cap is the inner
+one. The grant ceiling cannot stop a subagent mid-flight. It can only refuse the next
+dispatch. At least one host's cap is explicitly soft, so it bounds and does not guarantee.
 
-**Context control is field selection, not encoding.** Project tracker payloads to the fields a phase
-needs; encode only what remains, and only where a bijective codec is safe. Measured on this
-repository's own data, selection beats serialisation by orders of magnitude.
+**Context control is field selection, not encoding.** Project a tracker payload to the fields
+a phase needs. Encode only what remains, and only where a bijective codec is safe. Measured
+on this repository's own data, selection beats serialisation by orders of magnitude.
 
-**Anything built against the tracker uses our own record vocabulary, never the external tool's
-payload shape.** A field list naming a foreign tool's keys would have to be rewritten at the flip;
-one naming our own survives it, and only the adapter changes.
+**Anything built against the tracker uses this project's own record vocabulary, never the
+external tool's payload shape.** A field list that names a foreign tool's keys would need a
+rewrite at the flip. A field list that names our own keys survives the flip, and only the
+adapter changes.
 
-**The seam is the only place both stores move together**, so a write surface routes through it
-rather than around it — which is why a human's tracker write has its own command.
-[In full](#dual-write-and-where-it-leaks).
+**The seam is the only place where both stores move together.** A write surface therefore
+routes through it, never around it, and that is why a human's tracker write has its own
+command. [In full](#dual-write-and-where-it-leaks).
 
-**A skill keeps its path glob rather than being demoted to an always-on fragment.** The glob buys
-always-loads-on-a-matching-file behaviour at zero always-on characters. The gap it does not close is
-the family with no glob scoping, where a fragment remains the only mechanism.
+**A skill keeps its path glob. It is not demoted to an always-on fragment.** The glob buys
+always-loads-on-a-matching-file behaviour, at zero always-on characters. It does not close
+the gap on the family with no glob scoping. There a fragment stays the only mechanism.
 
-**A comment that contradicts the code is a defect, and the code is what ships. Deleting the
-comment is not the fix.** The strong form of that rule, "comments that describe the code must
-not exist", is **rejected** on four independent grounds. Any one of them is sufficient.
+**A comment that contradicts the code is a defect, and the code is what ships. A deletion of
+the comment is not the fix.** The strong form of that rule, "a comment that describes the
+code must not exist", is **rejected** on four independent grounds. Any one of them is enough.
 
-1. It targets an empty set here, on measurement.
+1. Measurement shows it targets an empty set here.
 2. It contradicts the style guide this repository already pins.
-3. It arms a live gaming path. Stripping comments returns a large fraction of the size
-   ratchet's budget.
-4. There is no always-on character budget for it.
+3. It arms a live gaming path. A comment strip returns a large share of the size ratchet's
+   budget.
+4. No always-on character budget covers it.
 
-It is also not agent-actionable, where a divergence is checkable against an observation.
+An agent cannot act on the strong form either. It can act on a divergence, because an
+observation checks one.
 
-**`docs/` carries only architecture, tutorial, how-to and a contributor guide.** No new requirement
-or plan document is ever created as a file; a new requirement enters as a design artifact on a
-branch. A path gate makes the rule a free deterministic check instead of a disciplinary one.
+**`docs/` carries only architecture, tutorial, how-to and a contributor guide.** Nobody
+creates a new requirement document or plan document as a file. A new requirement enters as a
+design artifact on a branch. A path gate makes the rule a free deterministic check, instead
+of a disciplinary one.
 
-**Everything is plain, git-tracked files.** No daemon, no hidden state, no network at build time.
+**Everything is a plain, git-tracked file.** No daemon, no hidden state, and no network at
+build time.
 
 ## Non-goals
 
-Each refusal has a reason stronger than taste, and several were reached independently by comparable
-projects. These are permanent rather than unscheduled, so absence is not an oversight.
+Each refusal has a reason stronger than taste, and comparable projects reached several of
+them independently. Each one is permanent, not unscheduled, so an absence here is not an
+oversight.
 
 | Refused | Because |
 | --- | --- |
@@ -3056,7 +3006,7 @@ projects. These are permanent rather than unscheduled, so absence is not an over
 
 ### Asserted, not yet earned
 
-Recorded explicitly, so none of it is mistaken for established fact.
+Recorded here in the open, so no reader mistakes any of it for established fact.
 
 **Three structural leads are real.**
 
@@ -3072,29 +3022,30 @@ Recorded explicitly, so none of it is mistaken for established fact.
 | the always-on baseline is effective at its current size | a measurement of which rules bind while an agent works | not built. Recall under a direct cue is measured, and it is only an upper bound |
 | an individual catalog entry changes behaviour | behavioural efficacy evals with control arms | not built |
 
-**A fourth claim was removed rather than softened** [checked 2026-08-16]. An earlier revision
-said the field had converged on "harness engineering" as the name for what this repository
-is, and asked only whether *this* harness is better than the others. Two problems.
+**A fourth claim was removed rather than softened** [checked 2026-08-16]. It said the field
+had converged on "harness engineering" as the name for this repository, and asked only
+whether *this* harness is better than the others. Two problems.
 
 1. The claim's own source graded itself "practitioner synthesis" and cited no definition.
-2. Under the definitions in [What to call this thing](#what-to-call-this-thing), this
-   repository is not a harness. It fails two of the four conditions.
+2. Against the published definitions listed under
+   [External references](#external-references), this repository is not a harness. It fails
+   two of the four conditions those definitions set.
 
 The honest open question is narrower and harder: **nothing here has measured whether the
 factory pays for itself against a competent human running the same three coding tools by
 hand.**
 
-## Backlog this document emits
+## Backlog
 
-An architectural document that finds a defect and files nothing has spent the reader's
-attention for free. Three items, in dependency order.
+A defect found here and filed nowhere spends the reader's attention for free. Three items,
+in dependency order.
 
 ### Backlog: rename the two ladders in code
 
-**Why.** [Two ladders and the names for their levels](#two-ladders-and-the-names-for-their-levels)
-gives every level a name that says what it means. The code still writes `L0` to `L3` for
-autonomy and `L1` to `L3` for integrity. Two names for one thing is the defect this document
-exists to catch, and it now holds one deliberately.
+**Why.** [Autonomy and integrity](#autonomy-and-integrity) gives every level a name that
+says what it means. The code still writes `L0` to `L3` for autonomy and `L1` to `L3` for
+integrity. Two names for one thing is the defect this file exists to catch, and it now
+holds one deliberately.
 
 | Item | Value |
 | --- | --- |
@@ -3108,15 +3059,17 @@ exists to catch, and it now holds one deliberately.
 
 ### Backlog: validate every mermaid block
 
-**Why.** This document carries 13 mermaid blocks and the README carries 1. **Nothing checks
-that any of them parses** [measured 2026-08-16: `rg -i mermaid` over `.scripts/`, `src/` and
-`.pre-commit-config.yaml` returns nothing, against a positive control that returns matches for
-`basicly` in the same files]. A block with a syntax error renders as a red error box on the
-hosting site, and no gate here would stop it landing.
+**Why.** This file carries 11 mermaid blocks and the README carries 1 [measured 2026-08-16,
+by a count of the opening mermaid fences in both files]. **Nothing checks that any of them
+parses** [measured 2026-08-16:
+`rg -i mermaid` over `.scripts/`, `src/` and `.pre-commit-config.yaml` returns nothing,
+against a positive control that returns matches for `basicly` in the same files]. A block
+with a syntax error renders as a red error box on the hosting site, and no gate here would
+stop it landing.
 
-This is not hypothetical. Writing this revision introduced exactly that defect: a
-`sequenceDiagram` participant named `Loop`, which collides with mermaid's `loop` keyword. It
-was caught by running a parser, not by review.
+The defect is not hypothetical. One revision of this file named a `sequenceDiagram`
+participant `Loop`, which collides with mermaid's `loop` keyword. A parser caught it. Review
+did not.
 
 | Item | Value |
 | --- | --- |
@@ -3124,7 +3077,7 @@ was caught by running a parser, not by review.
 | Integrity | `engine` |
 | Depends on | nothing |
 | Acceptance | WHEN a tracked markdown file holds an unparseable mermaid block, THE CHECK SHALL exit non-zero and name the file, the line and the parser message. WHEN every block parses, THE CHECK SHALL exit zero and print the block count |
-| Demonstrated by | a check that reports 14 blocks and 0 failures on the current tree, and 1 failure after a deliberate typo |
+| Demonstrated by | a check that reports 12 blocks and 0 failures on the current tree, and 1 failure after a deliberate typo |
 | Cost | **a dependency addition**, and therefore a human decision. It needs node plus `mermaid` and `jsdom`. Measured on this machine: 102 packages, 181 MB, and 426 ms to validate all blocks in two files. `@mermaid-js/mermaid-cli` is not the answer — it declares a `puppeteer` peer dependency, which means a browser download |
 | Buys | the only defect class in this document that is invisible to every existing gate and visible to every reader |
 
@@ -3146,11 +3099,11 @@ A reader concludes the long form is the command.
 | Cost | five files of prose |
 | Buys | it removes the reading that `uvx` is part of the command's name |
 
-## The rest of the documentation
+## The documentation set
 
-This file is the **reference** quadrant and nothing else. A reference answers "what is it, and
-how is it specified". It cannot also be the page that takes a new consumer from install to a
-first shipped unit. Trying to make it both is what left that path missing.
+This file is the **reference** quadrant and nothing else. A reference answers "what is it,
+and how is it specified". It cannot also take a new consumer from install to a first shipped
+unit. An attempt to make it both is what left that path missing.
 
 | Quadrant | Where | Job | Written for |
 | --- | --- | --- | --- |
@@ -3160,16 +3113,18 @@ first shipped unit. Trying to make it both is what left that path missing.
 | Explanation | `docs/requirements/`, `docs/research/` | why one question was settled the way it was | anyone changing a decision |
 | Order | `docs/plan/` | which unshipped rows get built next, and why in that order | whoever is planning the next release |
 
-**Three rules keep the layer from rotting into a second, competing account of the system.**
+**Three rules keep the layer from decaying into a second, competing account of the system.**
 
-1. **A tutorial command is executed before it is written.** Every command and every quoted output in the
-   tutorial was run against a fresh repository. A walkthrough is the one surface where an untested step costs
-   the reader the whole session, because they have no model yet to notice it is wrong.
-2. **A how-to states the operation and its failure text, not the design.** Where it needs a reason it links
-   here. Duplicated rationale goes stale first.
-3. **Where they disagree with this file, this file wins.** The tutorial, the how-tos, the README and the
-   landing page are consumer-facing renderings, not independent sources. The requirements documents are the
-   arguments behind a decision recorded here, and each is archived once absorbed.
+1. **Someone runs a tutorial command before they write it.** Every command and every quoted
+   output in the tutorial ran against a fresh repository. A walkthrough is the one surface
+   where an untested step costs the reader the whole session. The reader has no model yet, so
+   they cannot notice the step is wrong.
+2. **A how-to states the operation and its failure text, not the design.** Where it needs a
+   reason, it links here. A duplicated rationale goes stale first.
+3. **Where any of them disagrees with this file, this file wins.** The tutorial, the how-to
+   pages, the README and the landing page are consumer-facing renderings, not independent
+   sources. The requirements documents are the arguments behind a decision recorded here, and
+   each one is archived once absorbed.
 
 ### External references
 
@@ -3182,8 +3137,9 @@ first shipped unit. Trying to make it both is what left that path missing.
 - OpenAI SDKs and CLI: <https://developers.openai.com/api/docs/libraries>
 - Codex agent configuration: <https://learn.chatgpt.com/docs/agent-configuration/agents-md>
 
-**Definitions cited in [What to call this thing](#what-to-call-this-thing).** Each was
-fetched on 2026-08-16.
+**Published definitions of "harness" and of "software factory".** Each was fetched on
+2026-08-16. They are the sources behind
+[Asserted, not yet earned](#asserted-not-yet-earned).
 
 - Claude Code glossary, for "harness": <https://code.claude.com/docs/en/glossary>
 - Macedo, *What makes a harness a harness*, arXiv 2606.10106, dated 2026-06-10
