@@ -1,0 +1,23 @@
+# The shadow differential's independence probe refused the live tracker itself: it charged
+# *any* movement between its two reads of the reference to the perturbation, so a `br` write
+# landing during the 47-second run read as "the reference is a function of the owned ledger"
+# (basicly-vkh0.35). The fix is a control read — movement counts only when a re-read without
+# the perturbation reproduces the baseline — and it is 158 tokens of branch, message and
+# corrected docstring in a module frozen at 10792 with 3 tokens of headroom.
+#
+# Declared here rather than absorbed, because neither way of absorbing it is honest. The
+# module's only cut that does not import back is the reference audit — `ReferenceSource`,
+# the probe, `audit_reference` and `run_differential`, which must move together because
+# `DifferentialReport` owns `Refusal` and `Inconclusive` — and moving it retargets
+# `kit(repo_root)` in `br.py` (3 tokens of headroom), `owned_store`'s module name, the kit
+# README's table and ~30 call sites in a test module frozen at exactly its own size. That is
+# a decomposition track several times this bug fix, run against the instrument that licenses
+# the cutover, and taking it half-way is worse than recording the debt. Deleting the prose
+# instead would have paid for the fix out of the comment budget the other ratchet exists to
+# protect; the module's share fell to 59.3 from 59.6 here, and that fall is left unbanked so
+# the split can spend it.
+[ratchet.module_size]
+rebaseline_reason = "the independence probe's control read; the module's only non-circular cut is the reference audit, whose move is a decomposition track of its own"
+
+[ratchet.module_size.rebaselined]
+".basicly/core/kit/tracker/differential.py" = 158

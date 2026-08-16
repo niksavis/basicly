@@ -1279,14 +1279,14 @@ def _live_reference(repo_root: Path) -> Any:
     kit_module = kit(repo_root)
 
     def views(_ledger_events: object) -> dict[str, Any]:
-        # The argument is ignored, and that is the contract rather than an oversight.
-        # `audit_reference` calls this a second time with one synthetic event appended
-        # to the owned ledger, and a source whose answers move with it is a derivative
-        # and is refused. Nothing is cached between the two calls either: a memoised
-        # answer would clear the probe by being the *same* answer rather than by being
-        # an independent one, which is the one hole the kit says its audit cannot
-        # close. The cost is one extra live read per run, and it is the price of the
-        # probe meaning anything.
+        # The argument is ignored, and that is the contract rather than an oversight:
+        # `audit_reference` calls this again with the owned ledger perturbed, and reads
+        # it once more unperturbed when the answers moved (basicly-vkh0.35). Nothing is
+        # cached between those calls: a memoised answer would clear the probe by being
+        # the *same* answer rather than by being an independent one, which is the one
+        # hole the kit says its audit cannot close. The cost is one extra live read per
+        # run, two when something moved, and it is the price of the probe meaning
+        # anything.
         return _live_views(repo_root)
 
     return kit_module.ReferenceSource(views=views)
