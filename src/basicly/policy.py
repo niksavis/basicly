@@ -1927,6 +1927,18 @@ class SpendMeter:
     unmetered_dispatches: int
 
 
+def tokens_under_grant(spent_tokens: int, grant: Grant) -> int:
+    """The part of *spent_tokens* this grant authorized — the only figure its budget bounds.
+
+    Lifetime spend and a budget cover different windows, so dividing one by the other
+    reports a ceiling the session never reached: basicly-kjc5 read 177970761/4000000
+    with nothing spent under that grant (basicly-e2mz.13). Clamped, because pruned or
+    lost run records can drop the total below the baseline and negative spend must
+    never buy extra budget.
+    """
+    return max(0, spent_tokens - grant.spent_at_issue)
+
+
 @dataclass(frozen=True)
 class SpendStatus:
     """The session's standing against its grant's D3 token ceiling."""
@@ -1954,8 +1966,7 @@ class SpendStatus:
 
         The same subtraction :func:`spend_status` halts on, exposed as the quantity
         a *forward*-looking gate needs (basicly-jr0l.22). Clamped at both ends for
-        the same reason that one is: spend is metered against what this grant
-        authorized, and pruned or lost run records must never buy extra budget.
+        the same reason :func:`tokens_under_grant` is.
 
         Zero once a dispatch under this grant went unmetered: with an unknown amount
         already spent there is no remainder that can honestly be offered to a forward
@@ -1967,8 +1978,7 @@ class SpendStatus:
             return None
         if self.unmetered_dispatches:
             return 0
-        under_grant = max(0, self.spent_tokens - self.grant.spent_at_issue)
-        return max(0, self.grant.token_budget - under_grant)
+        return max(0, self.grant.token_budget - tokens_under_grant(self.spent_tokens, self.grant))
 
 
 def check_pass_spend(forecast_tokens: int, status: SpendStatus) -> str | None:
@@ -2048,13 +2058,10 @@ def spend_status(
     if grant is None or grant.token_budget is None:
         return SpendStatus(grant=grant, spent_tokens=spent, halted=False)
     budget = grant.token_budget
-    # What *this grant* authorized, not what the session has ever cost. Clock-free
-    # by construction: two readings of one monotonically-growing counter, never a
-    # timestamp comparison — a spend gate that branched on wall-clock would be the
-    # same defect class the tracker's own clock bug keeps demonstrating.
-    # Clamped, because pruned or lost run records can drop the total below the
-    # baseline and negative spend must never buy extra budget.
-    under_grant = max(0, spent - grant.spent_at_issue)
+    # Clock-free by construction: two readings of one monotonically-growing counter,
+    # never a timestamp comparison — a spend gate that branched on wall-clock would be
+    # the same defect class the tracker's own clock bug keeps demonstrating.
+    under_grant = tokens_under_grant(spent, grant)
     # Both counters are metered against the grant the same way, for the same reason:
     # a session that took an unmeasurable dispatch before this grant was issued has
     # already been answered for by the human who issued it.
