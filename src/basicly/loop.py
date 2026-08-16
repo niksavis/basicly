@@ -56,6 +56,7 @@ from . import (
     curate,
     decisions,
     decompose,
+    demonstration_proof,
     dispatch_brief,
     handoff,
     landing_gate,
@@ -337,7 +338,11 @@ def _on_classify(ctx: _Ctx) -> AdvanceResult:
         # report is a surface nobody reads on that path (basicly-jr0l.45).
         f"created {len(result.children)} children in {result.parallel_groups} group(s)"
         + attributed
-        + decompose.collapse_note(result.collapsing),
+        + decompose.collapse_note(result.collapsing)
+        # Reported, never refused: at plan time a demonstration naming a test the child
+        # has not written yet is the honest case, and D19 puts that call on the author
+        # while re-cutting is still cheap. The refusal is at ship (basicly-u2hl.58).
+        + demonstration_proof.plan_notice(ctx.repo_root, children),
     )
 
 
@@ -610,7 +615,16 @@ def _on_ship(ctx: _Ctx) -> AdvanceResult:
     the derived phase jumped straight to verify — the code is stranded on the
     harness branch. Block with no side effects (no close, teardown, or tracker
     commit) instead of closing a bead whose work never merged.
+
+    A second guard of the same shape runs before it: the demonstration the bead recorded
+    has to select something now the work claims to be done. Five beads were closed in one
+    session against a selector matching nothing, every one of whose real regressions existed
+    under another name (basicly-u2hl.58) — this is the rung where that is a defect
+    rather than a promise, and it is the last one a close passes through.
     """
+    unrun = demonstration_proof.unrun_reason(ctx.repo_root, ctx.issue_id)
+    if unrun:
+        return _blocked(ctx, unrun, needs_input="demonstration")
     binding = ctx.state.worktree
     if binding is not None:
         if not _worktree_landed(ctx.repo_root, binding):

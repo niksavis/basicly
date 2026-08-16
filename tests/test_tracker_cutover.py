@@ -18,7 +18,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from basicly import br, cli
+from basicly import br, cli, tracker_cutover
 
 if TYPE_CHECKING:
     import pytest
@@ -146,6 +146,33 @@ def test_a_ledger_holding_a_post_flip_record_refuses_the_import(
     assert cli.main(["tracker", "import"]) == 1
 
     assert "refused" in capsys.readouterr().out
+
+
+def test_the_adopt_command_reports_what_it_repaired_and_what_it_could_not(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The entry point `basicly-vkh0.24`'s repair would be a one-shot without.
+
+    Driven through `cli.main` because the wiring is the subject — `br.adopt_hand_writes`
+    itself is pinned in `test_tracker_adoption.py`. The report is stubbed here for the same
+    reason: reaching the real one needs a live br, which this module never spawns.
+    """
+    repo = _repo(tmp_path, [_record("basicly-a")])
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(
+        tracker_cutover.br,
+        "adopt_hand_writes",
+        lambda _root: br.AdoptionReport(
+            adopted=("basicly-a",), diverged=("basicly-c",), unadoptable=("basicly-b",)
+        ),
+    )
+
+    assert cli.main(["tracker", "adopt"]) == 1
+
+    out = capsys.readouterr().out
+    assert "basicly-a" in out
+    assert "basicly-c has a hand-edited field" in out
+    assert "basicly-b is in br and not in the export" in out
 
 
 def test_the_dry_run_reports_the_refusal_the_real_run_would(

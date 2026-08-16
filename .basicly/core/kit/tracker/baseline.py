@@ -5,17 +5,18 @@ history agrees. `basicly-c357` records why both open beads about the same gap we
 a consumer needs a re-runnable import (`vkh0.23`), and closing this repo's historical gap
 by re-importing would leave the owned side tracking the external one (`u4xu`).
 
-Two populations, two discriminators. A record the **ledger** holds is classified by the
-marker its own producer wrote: ``migrate.py`` stamps every extracted event with
-:data:`IMPORT_MARKER`, so a ``created`` event carrying it is history by construction, with
-no flip point to keep in step with the tree. A record the **reference** holds and the
-ledger does not has no ledger event to classify, so it needs the declared baseline below.
-That set can only shrink — a dual write puts every new record on both sides — so an
-unknown id outside it is a real failure rather than more history.
+A record the **ledger** holds is classified by the marker its own producer wrote, so no
+flip point has to be kept in step with the tree: ``migrate.py`` stamps every extracted
+event with :data:`IMPORT_MARKER`, and the repair for a record created by running `br` **by
+hand** (`basicly-vkh0.24`) stamps :data:`ADOPTION_SOURCE` — in scope and judged, but
+evidence for nothing, because the dual write never touched it. A record the **reference**
+holds and the ledger does not has no ledger event to classify, so it needs the declared
+baseline below. That set can only shrink — a dual write puts every new record on both
+sides — so an unknown id outside it is a real failure rather than more history.
 
-An empty in-scope population is **inconclusive, never clean**: scoping leaves it empty
-until the flip happens, and reporting that as clean would license the next rung on a
-comparison that discriminated nothing.
+An in-scope population with nothing the dual write put there is **inconclusive, never
+clean**: scoping leaves it empty until the flip happens, and reporting that as clean would
+license the next rung on a comparison that discriminated nothing.
 
 Nothing here reads a clock. The declaration stamp is caller-supplied evidence (§9.5).
 """
@@ -31,6 +32,10 @@ from typing import Any
 # `migrate.SOURCE_KEY`, spelled rather than imported so this module stays a leaf: it is a
 # wire format both sides already agreed on.
 IMPORT_MARKER = "imported_from"
+
+# The one :data:`IMPORT_MARKER` value that does not mean history (basicly-vkh0.24): a label
+# rather than a second key, so the classifier stays one read of one marker.
+ADOPTION_SOURCE = "hand-write-adoption"
 
 # The created-event kind, likewise spelled rather than imported (`events.KIND_CREATED`).
 KIND_CREATED = "created"
@@ -79,7 +84,10 @@ class ScopedReport:
 
     Attributes:
         in_scope: Records created after the flip; the verdict is computed over these.
-        history: Ledger records carrying the import marker.
+        history: Ledger records extracted from the export at the flip.
+        adopted: In-scope records the repair brought in rather than the dual write. Judged
+            like the rest, evidence for nothing: a reconciled record agrees because it was
+            reconciled.
         baseline: Declared ids the reference holds and the ledger does not.
         undeclared: Unknown ids outside the baseline — a real dual-write failure.
         refusals: Reasons the reference is not the live tracker, carried through
@@ -92,6 +100,7 @@ class ScopedReport:
 
     in_scope: tuple[str, ...] = ()
     history: tuple[str, ...] = ()
+    adopted: tuple[str, ...] = ()
     baseline: Baseline = field(default_factory=Baseline)
     undeclared: tuple[str, ...] = ()
     refusals: tuple[Any, ...] = ()
@@ -112,7 +121,7 @@ class ScopedReport:
     def summary(self) -> str:
         """One line per finding class, for a caller reporting the run to a human."""
         lines = [
-            f"{len(self.in_scope)} record(s) in scope; "
+            f"{len(self.in_scope)} record(s) in scope, {len(self.adopted)} of them adopted; "
             f"{len(self.history)} imported, {len(self.baseline.records)} declared "
             f"({self.baseline.declared_at})"
         ]
@@ -126,17 +135,32 @@ class ScopedReport:
         return "\n".join(lines)
 
 
-def imported_records(ledger_events: Iterable[Any]) -> frozenset[str]:
-    """Every record whose ``created`` event carries the import marker.
+def origins(ledger_events: Iterable[Any]) -> dict[str, str]:
+    """Each record's import label, for the records whose ``created`` event carries one.
 
     Keyed on that event alone, because a record's origin is a fact about how it began.
     """
-    found: set[str] = set()
+    found: dict[str, str] = {}
     for event in ledger_events:
         payload = _mapping(_attr(event, "payload"))
-        if _attr(event, "kind") == KIND_CREATED and payload.get(IMPORT_MARKER):
-            found.add(str(_attr(event, "record")))
-    return frozenset(found)
+        marker = payload.get(IMPORT_MARKER)
+        if _attr(event, "kind") == KIND_CREATED and marker:
+            found[str(_attr(event, "record"))] = str(marker)
+    return found
+
+
+def imported_records(ledger_events: Iterable[Any]) -> frozenset[str]:
+    """Every record extracted from the export at the flip — the history population."""
+    return frozenset(
+        record for record, source in origins(ledger_events).items() if source != ADOPTION_SOURCE
+    )
+
+
+def adopted_records(ledger_events: Iterable[Any]) -> frozenset[str]:
+    """Every record the hand-write repair brought in, which is history to nobody."""
+    return frozenset(
+        record for record, source in origins(ledger_events).items() if source == ADOPTION_SOURCE
+    )
 
 
 def read_baseline(directory: Path | str) -> Baseline:
@@ -186,8 +210,12 @@ def scope(report: Any, ledger_events: Sequence[Any], baseline: Baseline) -> Scop
     reason those 375 rows differ is that no export carries a gate field for the import to
     have read — an absence of evidence rather than a dual-write disagreement, and one no
     amount of re-importing would fix.
+
+    An **adopted** record is excused from nothing; it is subtracted only from the
+    population conclusiveness is asked of.
     """
     history = imported_records(ledger_events)
+    adopted = adopted_records(ledger_events)
     in_scope = sorted(_ledger_records(ledger_events) - history)
     excused = tuple(item for item in report.disagreements if str(_attr(item, "record")) in history)
     live = tuple(item for item in report.disagreements if str(_attr(item, "record")) not in history)
@@ -195,21 +223,22 @@ def scope(report: Any, ledger_events: Sequence[Any], baseline: Baseline) -> Scop
     return ScopedReport(
         in_scope=tuple(in_scope),
         history=tuple(sorted(history)),
+        adopted=tuple(sorted(adopted)),
         baseline=baseline,
         undeclared=undeclared,
         refusals=tuple(getattr(report, "refusals", ()) or ()),
         disagreements=live,
         excused=excused,
-        inconclusive=_unproven(in_scope),
+        inconclusive=_unproven([record for record in in_scope if record not in adopted]),
     )
 
 
-def _unproven(in_scope: Sequence[str]) -> tuple[str, ...]:
+def _unproven(dual_written: Sequence[str]) -> tuple[str, ...]:
     """Why a clean verdict would not be evidence, empty when it would be."""
-    if not in_scope:
+    if not dual_written:
         return (
-            f"{SCOPE_SUBJECT}: 0 post-flip record(s) compared, so agreement is the "
-            "absence of evidence rather than evidence",
+            f"{SCOPE_SUBJECT}: 0 post-flip record(s) reached the ledger through the dual "
+            "write, so agreement is the absence of evidence rather than evidence",
         )
     return ()
 

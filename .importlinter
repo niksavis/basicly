@@ -23,7 +23,7 @@ layers =
     cli
     supervise | usage_report
     loop | release
-    catalog_lint | contention | cost_rollup | curate | health | landing_gate
+    catalog_lint | contention | cost_rollup | curate | health | landing_gate | tracker_cutover
     commit | merge
     rebase | repair_brief | wip | working_set
     classify | decompose | loop_state | plan_entry | retrospective | rubrics
@@ -44,12 +44,14 @@ layers =
     corpus_drift | decision_marker
     artifact_record | lens_review | run_record | skill_source | surface_report
     spend_calibration
+    demonstration_proof
     br
     mirror
     owned_store
     br_argv
     dispatch_phase
     runner_envelope
+    board_schema
     catalog | catalog_routing | catalog_source | checkout | copilot_tools | dropin | integrity | needs_input | plan_record | precommit_config | projection | read_cost | redact | review | roles | scaffolds | schema | session | tracker_surface | tracker_usage | tree_schema | ui | usage | verify_artifact
     tracker_invocation
     tracker_paths

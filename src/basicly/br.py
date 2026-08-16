@@ -26,7 +26,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -1401,6 +1401,83 @@ def _export_snapshot(repo_root: Path) -> Any:
     """The committed export, parsed and labelled with the one import source name."""
     return kit(repo_root).migrate.read_snapshot(
         beads_dir(repo_root) / EXPORT_NAME, name=IMPORT_SOURCE
+    )
+
+
+@dataclass(frozen=True)
+class AdoptionReport:
+    """What one run of :func:`adopt_hand_writes` reconciled, and what it could not.
+
+    Attributes:
+        adopted: Records whose ``created`` event landed in this run.
+        diverged: Already-adopted records whose export **fields** have since changed. Not
+            repaired and not repairable here: a second ``created`` event would fold over
+            the first and make the import a sync (§5.1), so this is the one hand edit the
+            run reports instead of reconciling.
+        unadoptable: Records br holds that the ledger and the **committed export** both
+            miss, so there is nothing to adopt them from. Reported rather than raised: the
+            other records are still repaired, and this one needs a re-export first.
+    """
+
+    adopted: tuple[str, ...] = ()
+    diverged: tuple[str, ...] = ()
+    unadoptable: tuple[str, ...] = ()
+
+
+def adopt_hand_writes(repo_root: Path) -> AdoptionReport:
+    """Bring the records a hand-run ``br`` created into the owned ledger (`basicly-vkh0.24`).
+
+    A write made by spawning the binary never enters :func:`_mirror_write`, so the record
+    lands on one store only and the differential reports it as ``undeclared``. Neither
+    existing route repairs that: :func:`import_export` refuses once the ledger holds a
+    post-flip record, and :func:`declare_differential_baseline` refuses a second
+    declaration — both deliberately, because either would absorb a genuine dual-write
+    failure into history.
+
+    So the record is imported from the committed export under
+    ``baseline.ADOPTION_SOURCE``, which puts the same marker its own producer writes on its
+    ``created`` event: the boundary then keeps it **in scope** and out of the population
+    conclusiveness is judged on.
+
+    Re-runnable rather than a one-shot, which is the defect `basicly-vkh0.23` paid for: it
+    re-reads every record it has already adopted, so a later status change, comment or edge
+    on one of them is reconciled by running it again. A changed **field** is the exception
+    and is reported as ``diverged`` instead.
+
+    The export and not the live tracker, and that is what keeps the later differential
+    worth running: an adoption that copied the reference would agree with it by
+    construction, while one that copies the committed export leaves a stale export visible
+    as a real in-scope disagreement.
+
+    No vocabulary argument, because none of the kit's names can move the answer: the
+    undeclared set is ``reference ids - ledger ids - declared``, and
+    ``differential.Vocabulary`` only ever feeds the three *verdicts*.
+
+    Raises:
+        TrackerDivergenceError: the kit is not installed or will not load.
+        RuntimeError: br is absent or its reply was not usable JSON.
+    """
+    boundary = kit(repo_root, BASELINE_MODULE)
+    directory = ledger_dir(repo_root)
+    ledger_events = kit(repo_root).read_ledger(directory)
+    held = boundary.adopted_records(ledger_events)
+    undeclared = (
+        {str(record) for record in _live_ids(repo_root)}
+        - {str(event.record) for event in ledger_events}
+        - boundary.read_baseline(directory).records
+    )
+    snapshot = _export_snapshot(repo_root)
+    wanted = undeclared | held
+    records = tuple(record for record in snapshot.records if str(record.get("id")) in wanted)
+    report = kit(repo_root).migrate.import_snapshot(
+        directory,
+        replace(snapshot, name=boundary.ADOPTION_SOURCE, records=records),
+        redact=redact.redact_committed,
+    )
+    return AdoptionReport(
+        adopted=tuple(sorted(report.imported)),
+        diverged=tuple(sorted(report.diverged)),
+        unadoptable=tuple(sorted(undeclared - {str(record.get("id")) for record in records})),
     )
 
 

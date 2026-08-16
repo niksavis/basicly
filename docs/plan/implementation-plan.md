@@ -11,8 +11,8 @@ incidents; this file is the ladder and nothing else.
 This file plus [`architecture.md`](../architecture/architecture.md),
 [`requirements/factory-loop.md`](../requirements/factory-loop.md) and
 [`requirements/work-tracker.md`](../requirements/work-tracker.md) are the whole picture.
-Architecture is the status quo; the two requirements documents are the target; this file is the
-order.
+Architecture is the **specification** and wins over all three of the others; the two requirements
+documents are the arguments behind the decisions it records; this file is the order.
 
 ## 1. How to work from this file
 
@@ -36,7 +36,7 @@ order.
 ## 2. Destination
 
 `basicly` is a harness for coding agents that ships its own development process. Four pillars
-(architecture §0), each done only when it is true, enforced *and* measured:
+(architecture — *System overview*), each done only when it is true, enforced *and* measured:
 
 | Pillar | Done means |
 | --- | --- |
@@ -56,7 +56,7 @@ Three invariants constrain *how* any of it may be built:
 
 **`v1.0.0` means three things**, all required (owner, 2026-07-30):
 
-1. Every agreed design is implemented — architecture §14's target state is running code, and every
+1. Every agreed design is implemented — every row of architecture's status table reads *shipped*, and every
    requirements document is absorbed and deleted (§9).
 2. The consumer criterion is *demonstrated* (`basicly-ctdz`): a fresh repo with only git and a
    uv-provisioned Python interpreter installs basicly, runs every gate and drives the loop end to
@@ -68,7 +68,7 @@ Three invariants constrain *how* any of it may be built:
 
 **Non-goals**, so the plan cannot quietly grow: an LLM orchestrator; personas spawning personas;
 an agent-writable catalog; a general-purpose issue tracker; a maintained TUI; an external database
-or daemon; agent-to-agent messaging. Reasons are in architecture §14.7.
+or daemon; agent-to-agent messaging. Reasons are in architecture — *Non-goals*.
 
 ## 3. Current state
 
@@ -79,37 +79,37 @@ hand-written copy of them was stale within days:
 
 | Measure | Value |
 | --- | --- |
-| Engine modules (`src/basicly/*.py`) | 95 |
-| Test files | 182 |
-| `[[verify.checks]]` declared | 26 |
-| …of which run in `--mode fast` | 21 |
-| …of which run in `--mode full` | 25 |
+| Engine modules (`src/basicly/*.py`) | 98 |
+| Test files | 185 |
+| `[[verify.checks]]` declared | 27 |
+| …of which run in `--mode fast` | 22 |
+| …of which run in `--mode full` | 26 |
 | …of which run in `--mode staged` | 3 |
 
 <!-- docs-claims:end plan-current-state -->
 
-**Not built**, re-verified against `src/` on 2026-08-13 rather than by counting closed beads:
-**no EARS validation** anywhere; **REPAIR and RETROSPECTIVE are not phases** (VALIDATE now is,
-`basicly-u2hl.54`); and `policy.rework_recorded` reports a cross-gate total that nothing
-enforces.
+**Not built**, re-verified against `src/` rather than by counting closed beads: **no EARS
+validation** anywhere, and `policy.rework_recorded` reports a cross-gate total that nothing
+enforces. REPAIR and RETROSPECTIVE were on this list until the architecture settled them the
+other way: neither is a phase **by decision** — repair is the implementer's second mode and a
+retrospective is a conditional process over a ledger — and both are dispatched. A decided
+non-phase is not a gap.
 
 **Two entries left this list on 2026-08-13 and the reason matters more than the fact.** VALIDATE
 is a phase, gated at the recorded L3 level, with the validator dispatched from it and priced as a
 read rather than a write. And the handoff schemas are written: seven of the eight named kinds now
-have one, so the four unreachable roles are no longer blocked *by their contract*. **Do not read
-"schemas written" as "roles reachable".**
+have one, so no role is blocked *by its contract*. **Do not read "schemas written" as "roles
+reachable".**
 
-**This paragraph named the wrong roles and the wrong reasons, twice, and both were checkable**
-[re-measured 2026-08-15 against `roles.py` and `loop.py`]. It said four roles resolved and could
-never be invoked; it said `reviewer` has no `ROLE_BY_PHASE` entry *at all*, and it said
-`retrospector` is unreachable because RETROSPECTIVE has no state. `reviewer` resolves through
-`roles.LENS_ROLE_BY_PHASE`, a second table added for exactly the phase that dispatches two roles,
-and is dispatched once per lens at VALIDATE (`basicly-feje`); `retrospector` is dispatched from
-`loop._retrospective` (`basicly-xmhc`), which is correct about the state — it is not a phase and
-no unit sits in it — and wrong that this makes the role unreachable. **`curator` is the only
-unreachable role**, and its reason is the one this paragraph already had: `loop._on_ship` is a
-live handler that never calls `_run_agent`. A role's reachability is a fact about the dispatch
-sites, not about the phase ladder.
+**All seven loop roles are reachable** [M 2026-08-16 against `roles.py` and `loop.py`].
+`curator` was the last: `loop._on_ship` was a live handler that closed the unit without
+dispatching anything, and `loop._dispatch_curation` now runs it, priced and bounded exactly as
+the validator's judges are. This paragraph named the wrong roles for the wrong reasons three
+times before that — `reviewer` resolves through `roles.LENS_ROLE_BY_PHASE` rather than
+`ROLE_BY_PHASE`, and `retrospector` is dispatched from `loop._retrospective` even though
+RETROSPECTIVE is deliberately not a phase. **A role's reachability is a fact about the dispatch
+sites, not about the phase ladder**, and `rg -n 'resolve_role\(|_run_agent\(' src/basicly/`
+re-establishes it in one command.
 
 **One item on this list was never a defect, and it sat here for two days.**
 `loop_state.PHASES` and `config.LOOP_PHASES` were recorded as disagreeing tuples. They
@@ -139,8 +139,8 @@ roles.resolve_role      loop.py:869        _run_agent           → validate · 
                         loop.py:1119       _run_proposer        → classify · decompose
                         supervise.py:2651  _dispatch_lane       → lane build
 _run_agent call sites   loop.py:507        _dispatch_validation
-                        loop.py:545        _dispatch_reviews    (once per lens)
-                        loop.py:721        _dispatch_runner     (build)
+                        loop.py            _dispatch_reviews    (once per lens)
+                        loop.py            _dispatch_runner     (build)
                         loop.py:1655       _repair_in_place
                         loop.py:1813       _run_subtask
                         loop.py:2231       _retrospective
@@ -156,9 +156,8 @@ and a bead status together, or the correction becomes the stale claim.
 
 ```text
 agents   12 sources · 7 loop + 5 ad-hoc · projected to both families · vendored
-         6 of 7 loop roles reachable   decider, decomposer, implementer, validator,
-                                       reviewer, retrospector
-         1 unreachable — curator (`_on_ship` never dispatches)  [M 2026-08-15]
+         7 of 7 loop roles reachable   decider, decomposer, implementer, validator,
+                                       reviewer, retrospector, curator  [M 2026-08-16]
          observed on an argv: implementer only — every supervised lane dispatch
          since 2026-08-15 carries `--agent`; the decision queue passes no role
          12 of 12 declare a tier; catalog lint refuses one that does not (plhx)
@@ -176,11 +175,9 @@ tree     175 → 313 tracked modules and +279,788 tokens in the 7 days to
          2026-08-14, with every per-file gate green throughout   (5p49)
 ```
 
-**The roster's remaining one fails for a reason that is not the roster's.** `curator` maps to
-`ship`, which is a live phase with a live handler that never calls `_run_agent`. This paragraph
-named two until 2026-08-15: `basicly-xmhc` closed the second by dispatching `retrospector` from
-`loop._retrospective` without making RETROSPECTIVE a phase, which is why "not in `loop._HANDLERS`"
-was never the reason it was unreachable.
+**What the roster still owes is not reachability but observation.** Every role resolves and every
+role has a dispatch site; only `implementer` has been seen on a real argv, so "reachable" and
+"exercised" are still two different claims and the second is unmade.
 
 **The tree row is the finding this section did not have an instrument for until 2026-08-14.** A
 ratchet bounds a file. Nothing bounded the tree, so 138 modules arrived in a week under six green
@@ -474,25 +471,20 @@ keys rather than prose** (`r343`), which unmasked one real finding. **Tree growt
 
 Open, in the order the dependencies allow: `u2hl.6` skill descriptions · `u2hl.21` diff size
 reported at plan time · `u2hl.22` `change-shape` derived from an AST · D10's criterion-derived
-checks · EARS · REPAIR as a state · **`xmhc` RETROSPECTIVE as a state fired by a special-cause
-signal**, which is the one that makes `retrospector` reachable and is pass-2 work under §5A.
+checks · EARS. **`REPAIR as a state` left this list on a decision, not a landing**: architecture
+records repair as the implementer's second mode and a dispatch label rather than a phase, so
+building the state would undo a decision rather than close a gap.
 
-**Two rows left this list because the work landed and the bead did not close** [M 2026-08-14].
-`u2hl.17` is closed — `python-guidelines` carries its `paths:` glob. `u2hl.40` is open and the
-`root-cause` skill is authored and projected. `u2hl.54` is open with `.1`, `.2` and `.3` all
-closed and VALIDATE live in `loop._HANDLERS`. A bead that outlives its landing is the same defect
-as a document that does, one layer down, and the tracker is the layer a scheduler reads.
+**A bead that outlives its landing is the same defect as a document that does**, one layer down,
+and the tracker is the layer a scheduler reads. Three rows sat on this list after their work had
+landed, `u2hl.17`, `u2hl.40` and `u2hl.54` among them; all are closed now. Re-check a bead's
+status and its cited code together, or the correction becomes the stale claim.
 
-**The roster's blocker moved twice, and each move was smaller than it looked.** Artifacts held four
-roles unreachable and that is fixed. Reachable went **1 → 4** on 2026-08-09, then **4 → 5** on
-2026-08-14 when `reviewer` got a phase. Each remaining failure has its own cause and its own size:
-
-```text
-curator        maps to `ship`, a live phase with a live handler that never calls
-               `_run_agent`.  One wiring.
-retrospector   maps to `retrospective`, which is not in `loop._HANDLERS` at all.
-               Blocked on the state — basicly-xmhc builds it.
-```
+**The roster's blocker moved three times, and each move was smaller than it looked.** Artifacts
+held four roles unreachable and that is fixed; the remaining failures were each one wiring, and
+each has been done — `reviewer` through `LENS_ROLE_BY_PHASE`, `retrospector` through
+`loop._retrospective` without making RETROSPECTIVE a phase, and `curator` through
+`loop._dispatch_curation`. All seven resolve and all seven have a dispatch site.
 
 **`reviewer` was the one that read smallest and was not.** The bead said map a role to a phase.
 `ROLE_BY_PHASE` is one-to-one, and the design gives VALIDATE two roles with one dispatched once per
@@ -547,44 +539,42 @@ nobody re-examined, which is the shape §3's roster paragraph took for five days
 Tracked by `basicly-vkh0`; specified by
 [`requirements/work-tracker.md`](../requirements/work-tracker.md).
 
-The migration is five steps. **Three have now run, and still not in order**
-[M 2026-08-15]:
+The migration is five steps. **Three have run, and still not in order**:
 
 ```text
-1 import          RAN, and re-runnable - `basicly tracker import` (vkh0.23). The ledger
-                  holds 5,081 events over 873 records against an 876-record export
-2 shadow          RAN on `dual`. Baseline declared EMPTY, so nothing is excused by
-                  construction and every disagreement from here is a real finding
+1 import          RAN, and re-runnable - `basicly tracker import` (vkh0.23).
+                  `--dry-run` reports the current gap; do not copy a count here
+2 shadow          RAN on `dual`. Pre-cutover records are excused against the import's
+                  own watermark; the declared-history sidecar is empty
 3 dual-write      RAN - basicly.toml says mode = "dual"  (basicly-u4xu)
 4 flip            waits on a differential that is clean AND conclusive over a non-empty
-                  scope, which needs post-flip records to exist. Not dispatchable
+                  scope, which needs post-cutover records to exist. Not dispatchable
 5 native markers  LANDED 2026-08-07, before steps 2-4
 ```
 
-**The differential is `conclusive` and not `clean`, and the whole of the gap is one
-query** [M 2026-08-15, `basicly tracker shadow`]: **372 disagreements, every one
-`query='gates'`**, and **zero** on records, phase or ready. The owned side has no gate
-verdicts because gate history was never imported — which is exactly what decision 1a
-(one-shot `br gate list --robot` into an import event) exists to close, so step 4's
-remaining distance is that decision plus post-flip records, not a defect hunt.
+**`basicly tracker shadow` is the instrument; read it rather than a number written here.**
+The verdict shape that matters is that the run is `conclusive` and not yet `clean`, and that
+what it finds in scope is **write surfaces that bypassed the seam** — records `br` holds
+because a human ran it directly, which `basicly tracker write` and `basicly-vkh0.24` exist to
+close. The disagreements it prints against pre-cutover records are excused as import history
+and are not the gap. Step 4's remaining distance is therefore those bypass routes plus
+post-cutover records, not a defect hunt.
 
-**28 spawn sites across 12 modules** behind the one seam in `br.py` [M 2026-08-15,
-`rg 'run_br\(' src/basicly/*.py` less `br.py` itself: `decompose` 6, `loop` 4, `policy` 4,
-`supervise` 4, `merge` 3, then one each in `classify`, `loop_state`, `cli`, `rubrics`,
-`worktree`, `verify`, `validate_gate`]. Down from 32 on 2026-08-14, all four in `supervise`.
-Only `show`, `scheduler` and comments have owned equivalents. **Five operations have none at
-all**, and each is a design question rather than a port: `lint` (which means owning the
-validation rules — requirement R3, and decision 4a deletes it instead), `dep cycles`,
-`list --label`, id minting (`ids.mint_root_id` exists and only tests call it), and
-`gate list`.
+**The engine's remaining `br` spawn sites sit behind the one seam in `br.py`** — count them
+with `rg -c '_run_br\(' src/basicly/` and discount `br.py` itself. Only `show`, `scheduler`
+and comments have owned equivalents. **Five operations have none at all**, and each is a
+design question rather than a port: `lint` (which means owning the validation rules —
+requirement R3, and decision 4a deletes it instead), `dep cycles`, `list --label`, id minting
+(`ids.mint_root_id` exists and only tests call it), and `gate list`.
 
-**This is also the largest single dead-code event left on the ladder**, which is why it bounds the
-scope of any architectural audit run before it: 28 call sites, the `br.py` seam and its parsers all
-leave the tree at step 4. Auditing them is auditing a scheduled deletion.
+**This is also the largest single dead-code event left on the ladder**, which is why it bounds
+the scope of any architectural audit run before it: every one of those call sites, the `br.py`
+seam and its parsers all leave the tree at step 4. Auditing them is auditing a scheduled
+deletion.
 
-**Two defects in the dual write are open and both were found by using it** [M 2026-08-15].
+**Two defects in the dual write are open and both were found by using it.**
 `basicly-e2mz.23` (P0): `owned_store.tracker_mode` reads a process-global reader that only
-`config.py:822` registers and returns `external` when nothing did, so a caller importing
+`config` registers and returns `external` when nothing did, so a caller importing
 `basicly.br` without `basicly.config` writes to br and **silently skips the mirror** — the
 one failure `_mirror_write` does not raise on. `basicly-e2mz.24`: `mirror._close_drafts`
 refuses a multi-id `br close` that br accepts, and `_create_drafts` refuses a `br create`
@@ -712,7 +702,7 @@ weeks reading as pending, which is the shape §3's roster paragraph took for fiv
 
 - **Losing the github.com Copilot surface for a scoped fragment is accepted.** Not a new
   trade-off — `.basicly/core/targets/copilot.yaml` has carried it inline since the
-  `.github/instructions/` twin was retired on 2026-07-16 (architecture §858): VS Code loads
+  `.github/instructions/` twin was retired on 2026-07-16 (architecture — *Targets*): VS Code loads
   `.claude/rules/` and `.github/instructions/` with no dedup, so a twin double-loads. The
   planner already supports a scoped output (`has_scope`, which `claude.yaml` declares and
   `copilot.yaml` does not), so this is a choice rather than a vendor limit. **Four** fragments

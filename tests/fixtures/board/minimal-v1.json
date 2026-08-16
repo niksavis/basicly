@@ -1,0 +1,9 @@
+{
+  "schema": "harness-board/v1",
+  "generated_at": "2026-08-14T16:42:52Z",
+  "freshness": {
+    "source": "one-shot",
+    "cadence_s": null,
+    "stale_after_s": 60
+  }
+}

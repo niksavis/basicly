@@ -42,9 +42,10 @@ run record; the engine deliberately keeps no side-state. Two consequences follow
   tracker is a behavior change in the harness.
 - **The dependency is unowned.** `beads_rust` and `bv` are MIT-licensed and excellent today.
   Licenses change, maintainers move on, release cadences diverge, and a breaking change upstream
-  lands in *our* critical path. We already carry version-floor knowledge (`.beads/redirect`
-  needs ≥ 0.2.16) and version-specific workarounds. That is the shape of a dependency that will
-  eventually cost more than it saves.
+  lands in *our* critical path. We already carry an **exact version pin** rather than a floor —
+  `br.PINNED_VERSION` warns on any other version in *either* direction, because an upgrade past
+  it broke `gate report` here while the floor check waved it through — plus version-specific
+  workarounds. That is the shape of a dependency that will eventually cost more than it saves.
 
 Owning it is therefore a strategic requirement, not a preference. The counter-argument —
 "don't rebuild a working tool" — is answered by scope: we do not need a general-purpose issue
@@ -665,25 +666,26 @@ cannot give it.
 A cutover must never be a big bang, because the harness's own development depends on the tracker
 working the whole time.
 
-1. **Import** the existing beads JSONL — it is already the format we would read. **Ran once,
-   2026-08-07 (`b97a653`): 643 records as 3,775 events, every one carrying provenance
-   `EXTRACTED`.** `migrate.import_snapshot` had no caller, no `main()` and no CLI surface, so it
-   was a **one-shot that could not be repeated** — it had drifted 24 records behind the export by
-   the following day and 200 behind by 2026-08-14.
+1. **Import** the existing beads JSONL — it is already the format we would read. Every extracted
+   event carries provenance `EXTRACTED` and the export's digest. **Ran; the ledger is level with
+   the export and a further import is now refused**, because post-cutover records exist and
+   re-importing would close the gap the differential is judged against.
+   `basicly tracker import --dry-run` prints that state — read it rather than a count written
+   here, which is stale by the next landing.
 
-   **Fixed 2026-08-14 (`basicly-vkh0.23`): `basicly tracker import [--dry-run]`.** The dry run
-   reports how far behind the ledger is and writes nothing; the real run brings it up to the
-   export and reports what it added. It **refuses a ledger that already holds a post-flip
-   record**, and the dry run reports that same refusal rather than a count, because a preview
-   saying "would add 200" for a run that will refuse is worse than no preview. No `actor` is
-   recorded — and `basicly-r166` is **closed**: the OS username is out of both committed stores
-   (R6 below).
+   The first version was a **one-shot that could not be repeated**: `migrate.import_snapshot` had
+   no caller, no `main()` and no CLI surface, so the ledger drifted behind the export from the
+   day after it ran and no fresh consumer could build one at all. `basicly-vkh0.23` fixed that
+   with `basicly tracker import [--dry-run]`. The dry run reports how far behind the ledger is
+   and writes nothing; the real run brings it up to the export and reports what it added. It
+   **refuses a ledger that already holds a post-cutover record**, and the dry run reports that
+   same refusal rather than a count, because a preview saying "would add 200" for a run that will
+   refuse is worse than no preview. No `actor` is recorded — and `basicly-r166` is **closed**: the
+   OS username is out of both committed stores (R6 below).
 
-   **Run 2026-08-15 (`basicly-u4xu`), in the order that bead's do-not-re-import rule requires**:
-   import while still `external`, declare the residual baseline, then flip. The ledger holds
-   **5,081 events over 873 records** against an 876-record export; the residual 3 are beads filed
-   by hand through `br` directly, which `basicly-vkh0.24` covers and which are deliberately left
-   as that bead's own demonstration.
+   **The order matters and is not negotiable** (`basicly-u4xu`): import while still `external`,
+   declare the residual baseline, then move to `dual`. Importing after the dual write has begun
+   would let the owned side track the external one instead of being compared against it.
 
    The entry point is the CLI rather than a kit `main()`, on a measurement rather than a
    preference — `migrate.py` has three tokens of size headroom and none on density. So §4's
@@ -702,26 +704,28 @@ working the whole time.
 
    - A record the **ledger** holds is classified by the marker its own producer wrote —
      `migrate.py` stamps every extracted event with `imported_from`, so no flip point has to
-     be kept in step with the tree. All 643 carry it [M 2026-08-14].
+     be kept in step with the tree, and every imported record carries it.
    - A record the **reference** holds and the ledger does not has no ledger event to
      classify, so `basicly tracker shadow --declare-history` captures that set once, at the
-     flip, into a committed sidecar. A **second declaration is refused**: re-declaring after
+     cutover, into a committed sidecar. A **second declaration is refused**: re-declaring after
      the dual write has begun would absorb a genuine failure into history, which is the same
      shape `u4xu` refuses re-importing for, one artifact over.
-   - **An empty in-scope population is inconclusive, never clean.** Scoping leaves it empty
-     until the flip happens, so the run still refuses to license step 3 — measured today at
-     0 in scope, 643 imported, 375 disagreements excused as history and 200 undeclared.
+   - **An empty in-scope population is inconclusive, never clean.** Until post-cutover records
+     exist the run refuses to license the flip, and that refusal is correct rather than a
+     defect in the instrument.
    - A **refused reference voids the run whatever the scoping says.** The boundary decides
      which records are judged, never whether the reference was the live tracker.
 
-   **Ran 2026-08-15 on `dual`, with an empty declared baseline** — so nothing is excused by
-   construction and every disagreement from here is a real finding rather than an argument
-   about what predates the rule. Current verdict: `clean: no`, `conclusive: yes`, and **the
-   whole of the gap is one query** — **372 disagreements, every one `query='gates'`**, zero on
-   records, phase or ready. The owned side reports `missing` for every gate because gate
-   *history* was never imported; that is what the one-shot `br gate list --robot` dump exists
-   to close, and until it runs the differential cannot license step 4 however healthy the
-   record comparison is.
+   **`basicly tracker shadow` is the current verdict** — read it, do not read a number here.
+   The shape of the answer is what this document owns: `clean` and `conclusive` are printed as
+   two separate lines, the in-scope population is small and grows with each landing, and the
+   gate disagreements the run prints against pre-cutover records are excused against the
+   import's own watermark rather than being findings.
+
+   **The in-scope gap the run does find is the write surfaces that bypass the seam**, not a
+   query the ledger models badly. Each one is a record `br` holds and the ledger never saw
+   because a human ran `br` directly instead of routing through the engine — which is exactly
+   what `basicly-vkh0.24` is filed for and what `basicly tracker write` exists to close.
 3. **Dual-write** for one release, with the old tracker still authoritative. **Active since
    2026-08-15**: every accepted write also lands in the owned ledger through `br._mirror_write`,
    which **raises** on any failure rather than logging, so a write surface with no translator
@@ -729,18 +733,20 @@ working the whole time.
    by using it — `basicly-e2mz.23`, the mirror failing **open** when the tracker-mode reader is
    unregistered, and `basicly-e2mz.24`, a translator that refuses *after* br has taken the write.
 4. **Flip** the source of truth once the differential test is clean and the telemetry (§6) shows
-   no unimplemented surface in use. Not dispatchable: it needs post-flip records to exist plus
-   the gate-history import above, and neither can be brought forward by dispatching anything.
+   no unimplemented surface in use. Not dispatchable: it needs post-cutover records to exist and
+   the remaining bypass routes closed, and neither can be brought forward by dispatching
+   anything.
 5. **Carry the harness markers natively**, which is the step that actually removes `br` from
    the engine rather than merely making it non-authoritative. Landed 2026-08-07
-   (`basicly-s5li`): `comments` was 26 of the engine's 55 `_run_br` call sites and 45% of all
-   recorded tracker traffic (§3.0), and 1646 of the live tracker's 1834 comments — **89%** —
-   are `[harness-*]` markers using a beads comment purely as transport. In `owned` those
-   families are written and read as `comment` events through `br.add_comment` /
-   `br.read_comments` / `br.all_comment_texts`, and no `br` is spawned for them at all. The
-   188 human comments are deliberately untouched: a human writing prose runs `br` directly and
-   the engine never spawns that, so removing the engine's dependency does not require removing
-   theirs (§15). Two `comments list` spawns remain at their own call site — `decompose`'s
+   (`basicly-s5li`) on the measurement that `comments` was then 45% of all recorded tracker
+   traffic (§3.0) and the large majority of the live tracker's comments were `[harness-*]`
+   markers using a beads comment purely as transport. `rg -c '_run_br\(' src/basicly/` counts
+   the engine's remaining spawn sites; a figure written here goes stale on the next
+   retirement. In `owned` those families are written and read as `comment` events through
+   `br.add_comment` / `br.read_comments` / `br.all_comment_texts`, and no `br` is spawned for
+   them at all. Human comments are deliberately untouched: a human writing prose runs `br`
+   directly and the engine never spawns that, so removing the engine's dependency does not
+   require removing theirs (§15). Two `comments list` spawns remain at their own call site — `decompose`'s
    sizing markers and `supervise`'s found-info records — each internally consistent, and
    retiring them is `basicly-wpc8`'s.
 
@@ -749,13 +755,14 @@ working the whole time.
    the step-2 differential's comment comparison diverges by construction. Step 2 is therefore
    run on `dual`, before this — which is the order §5 already gives.
 
-   **The order was not followed** [M, 2026-08-08]. Step 5 landed on 2026-08-07 while the repo
-   was — and still is — `mode = "external"`, with steps 2, 3 and 4 unrun. It does not bite yet,
-   precisely because `external` still routes the markers to `br`: the divergence this paragraph
-   warns about only appears at `owned`. What it costs is an ordering constraint that is now
-   binding rather than advisory — **the step-2 differential must be run on `dual` and never on
-   `owned`**, and a run that finds comment divergence at `owned` is measuring this, not a
-   defect.
+   **The order was not followed.** Step 5 landed on 2026-08-07, while the repo was still
+   `mode = "external"` with steps 2, 3 and 4 unrun. It never bit, because `external` and `dual`
+   both still route the markers to `br` and the divergence this paragraph warns about only
+   appears at `owned`. What it cost is an ordering constraint that is now binding rather than
+   advisory — **the step-2 differential must be run on `dual` and never on `owned`**, and a run
+   that finds comment divergence at `owned` is measuring this, not a defect. Steps 1 to 3 have
+   since run and `[tracker] mode` is `dual`, so that constraint is satisfied; step 4 is the only
+   one outstanding.
 
 ### 5.1 Three risks the 2026-07-26 review found in step 1
 
@@ -1359,8 +1366,8 @@ availability is somebody else's operational decision. It also contradicts the ki
 states that the kit never calls the network or an LLM (§4). And it is nondeterministic where every
 other part of this design is deterministic: a monitor whose verdict on the *same* log can differ
 between two runs cannot be a thing a gate reads. Finally the condition it exists to catch — a lane
-that has stopped making progress — is **already covered deterministically** by `StallWatchdog`
-(`src/basicly/runner.py:2546`), on a monotonic clock as §9.5 requires. A cheaper deterministic check
+that has stopped making progress — is **already covered deterministically** by
+`runner.StallWatchdog`, on a monotonic clock as §9.5 requires. A cheaper deterministic check
 that already exists beats a paid probabilistic one that does not.
 
 ## 16. The rejected alternative: a versioned database

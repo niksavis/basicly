@@ -388,19 +388,15 @@ waiver_count = 2
 # the code that a planner reads as fact, and until this gate nothing checked one: four such
 # claims planned a P0 against a remedy the tree had already replaced.
 #
-# **The list is closed** — a document absent from it may not carry a single stale citation. Each
-# remaining entry is a citation whose correct target is not derivable from the gate's own output,
-# so shaving it is document work rather than a line-number fix:
-#   work-tracker.md ×1  — `runner.py:2546` is past end-of-file.
-#
-# architecture.md graduated at 0: the rewrite replaced every `file:line` with a symbol name or the
-# command that re-derives the claim, which is what the gate's second rule wants anyway.
+# **The list is closed and now empty** — no document may carry a single stale citation. The last
+# entry was `work-tracker.md ×1`, `runner.py:2546` past end-of-file; it graduated at 0 the same way
+# architecture.md did, by replacing the `file:line` with the symbol name (`runner.StallWatchdog`),
+# which is what the gate's second rule wants anyway.
 #
 # A count that falls has to be banked in the same diff and an entry that reaches zero is
 # deleted, for the reason [tool.module_size.frozen] states: leaving the higher number licenses
 # regrowth back to it for free.
 [tool.docs_citations.frozen]
-"docs/requirements/work-tracker.md" = 1
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/basicly"]

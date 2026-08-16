@@ -1,0 +1,110 @@
+{
+  "schema": "harness-board/v1",
+  "generated_at": "2026-08-14T16:42:52Z",
+  "freshness": {
+    "source": "supervisor-tick",
+    "cadence_s": 15,
+    "stale_after_s": 60
+  },
+  "generator": { "tool": "basicly", "version": "0.9.0" },
+  "repo": { "name": "basicly", "branch": "main", "head": "256f8d0", "dirty": false },
+  "session": {
+    "root": "basicly-kjc5",
+    "root_status": "open",
+    "supervised": true,
+    "holder": { "id": "bc7cc925", "heartbeat_age_s": 6, "stale": false },
+    "grant_level": "L3",
+    "token_budget": 4000000,
+    "spent_tokens": 177970761,
+    "human_wait_s": 30856,
+    "delegated_wait_s": 237,
+    "dispatch_s": 16074.8
+  },
+  "lanes": [
+    {
+      "id": "basicly-kjc5.57",
+      "phase": "build",
+      "status": "in_progress",
+      "agent": "claude",
+      "model": "claude-opus-5",
+      "live": true,
+      "started_at": "2026-08-14T16:18:00Z",
+      "elapsed_s": 1440,
+      "tokens": 18794333,
+      "cost_usd": 13.13,
+      "context_used": 209041,
+      "context_window": 1000000,
+      "rework_attempt": 0,
+      "rework_allowance": 2,
+      "branch": "harness/basicly-kjc5.57",
+      "note": null
+    }
+  ],
+  "asks": [
+    {
+      "wait_id": "basicly-1th1#wait-classify",
+      "issue": "basicly-1th1",
+      "kind": "checkpoint",
+      "subject": "classify",
+      "requested_at": "2026-08-14T16:38:41Z",
+      "waiting_s": 251,
+      "question": "approve the plan?",
+      "actions": ["checkpoint-approve"]
+    }
+  ],
+  "gates": {
+    "mode": "fast",
+    "recorded_at": "2026-08-14T16:42:52Z",
+    "passed": true,
+    "checks": [
+      { "name": "ruff", "status": "pass" },
+      { "name": "docs-claims", "status": "not_run", "detail": "not run this pass" }
+    ]
+  },
+  "spend": {
+    "scope": "machine-local",
+    "lifetime_usd": 953.82,
+    "largest_dispatch_usd": 24.64,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "health": [
+    { "agent": "claude", "runs": 163, "score": 0.825, "failure_rate": 0.178, "drift": -0.04 }
+  ],
+  "backlog": {
+    "total": 821,
+    "active": 171,
+    "ready": 122,
+    "blocked": 2,
+    "in_progress": 3,
+    "closed": 650,
+    "by_priority": { "P0": 4, "P1": 96, "P2": 58, "P3": 13 }
+  },
+  "units": [
+    {
+      "id": "basicly-rn0o.2",
+      "title": "build the snapshot from files only with no subprocess",
+      "status": "open",
+      "priority": "P1",
+      "type": "task",
+      "phase": "intake",
+      "ready": false
+    }
+  ],
+  "graph": {
+    "edges": [
+      { "from": "basicly-rn0o.2", "to": "basicly-rn0o.1", "kind": "blocks" },
+      { "from": "basicly-rn0o.1", "to": "basicly-rn0o", "kind": "parent-child" }
+    ]
+  },
+  "events": [
+    {
+      "at": "2026-08-14T16:41:02Z",
+      "issue": "basicly-kjc5.57",
+      "kind": "dispatched",
+      "text": "build claude-opus-5"
+    }
+  ]
+}

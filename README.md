@@ -128,8 +128,11 @@ basicly-managed repo needs [uv](https://docs.astral.sh/uv/) on `PATH` and
 Python 3.14+ — not just the person who ran install. `basicly hooks-check`
 diagnoses a missing uv before it bites at commit time. Using the harness loop
 (`basicly loop`, shared worktree tracker) additionally needs a
-redirect-capable [beads (`br`)](https://github.com/Dicklesworthstone/beads_rust) CLI —
-0.2.16 is the known-good floor, and worktree provisioning verifies it.
+redirect-capable [beads (`br`)](https://github.com/Dicklesworthstone/beads_rust) CLI
+at **exactly 0.2.16**. That is a pin, not a floor: the harness warns on any other
+version in either direction, because upgrading past it has broken tracker calls
+here as surely as running below it. `.scripts/install_br.py` installs the pin by
+digest.
 
 ## How it works
 
@@ -211,27 +214,30 @@ capability sits under the pillar it belongs to, grouped by what it currently is:
   own development.
 - `▶` **building** — sequenced into a phase being worked now, with an open work
   package and written exit criteria.
+- `◐` **partial** — code exists and nothing reaches it, or it covers only part of
+  what it claims. A closed work item proves the code was written; it is not evidence
+  that anything calls it.
 - `◇` **designed** — settled in a design document but sequenced behind a later
   phase, and **nothing is built**; a recorded decision is not evidence that anything
   enforces it.
 - `?` **researching** — the deliverable is a number, not a capability: a measurement
   whose result is allowed to cancel the work.
 
-| Pillar | `✓` shipped | `▶` building | `◇` designed · `?` researching |
+| Pillar | `✓` shipped | `▶` building | `◐` partial · `◇` designed · `?` researching |
 | --- | --- | --- | --- |
-| **01 · guidance** | one catalog → 3 agent families<br>drift gate in CI<br>path-scoped rules tier<br>invocation axis per entry<br>model tiers · committed model map<br>tutorial and how-to layer | lexical routing evals<br>an eval case per entry<br>always-on baseline relief | `?` do entries change behaviour |
-| **02 · gates** | git hooks · commit · push<br>agent hooks · Claude · Copilot<br>verify pipeline · 3 modes | gate taxonomy by type<br>severity on judged output<br>rework convergence check<br>install reports its tier | — |
-| **03 · the loop** | single-track loop<br>worktree isolation<br>parallel lanes · merge queue<br>autonomy grants · spend cap<br>release automation<br>scope sized by what a lane reads<br>measured context per dispatch | per-model spend forecast<br>unattended multi-lane run | `◇` a named role per judgment step<br>`?` cost per landed package<br>`?` deterministic AST localisation |
-| **04 · the work graph** | issues · deps · gates<br>phase derived from state<br>atomic shared-export publish | dispatch score recorded | `◇` owned in-process event log<br>`◇` provenance on every edge<br>`◇` fsck and rebuild |
+| **01 · guidance** | one catalog → 3 agent families<br>drift gate in CI<br>path-scoped rules tier<br>invocation axis per entry<br>model tiers · committed model map<br>lexical routing evals · rank-1 floor<br>tutorial and how-to layer | an eval case per entry<br>always-on baseline relief | `?` do entries change behaviour |
+| **02 · gates** | git hooks · commit · push<br>agent hooks · Claude · Copilot<br>verify pipeline · 3 modes<br>severity on judged output<br>rework convergence check | gate taxonomy by type<br>install reports its tier | `◇` enforcement at the tool-call boundary<br>`◇` a plan gate that runs its demonstration |
+| **03 · the loop** | single-track loop<br>worktree isolation<br>parallel lanes · merge queue<br>autonomy grants · spend cap<br>release automation<br>scope sized by what a lane reads<br>measured context per dispatch<br>a named role per judgment step | per-model spend forecast<br>unattended multi-lane run | `◇` the judged-output contract<br>`?` cost per landed package<br>`?` deterministic AST localisation |
+| **04 · the work graph** | issues · deps · gates<br>phase derived from state<br>atomic shared-export publish<br>dispatch score and rank recorded | owned in-process event log | `◐` provenance on every edge<br>`◐` fsck and rebuild |
 
 Some things are **not planned**, so absence here is not an oversight: an LLM
 orchestrator in control of the tracker, an agent-writable catalog, a maintained TUI,
 an external database or daemon, and agent-to-agent messaging. The reasons are in
-architecture §14.7.
+[architecture — non-goals](docs/architecture/architecture.md#non-goals).
 
 The authoritative copy of this table — with the evidence each status requires and a
 pointer per row — is
-[architecture §15](docs/architecture/architecture.md#15-roadmap--status-per-capability).
+[architecture — status](docs/architecture/architecture.md#status-built-partial-designed).
 The order the unbuilt rows get built in, with dependencies and exit criteria, is
 [`docs/plan/implementation-plan.md`](docs/plan/implementation-plan.md). Both are
 updated as features land.

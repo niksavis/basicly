@@ -12,9 +12,12 @@ end.
 Done looks like one sentence: **a requirement goes in, and a verified, validated, shipped change
 comes out, with zero human interventions attributable to a harness defect.**
 
-Today that sentence is false in eight places. The loop has seven phase names and one enforcing
-boundary; decompose cannot express a dependency; validation cannot fail anything; a failed lane is
-re-dispatched blind instead of repaired; and none of the seven designed personas exist.
+That sentence was false in eight places when this document was written — one enforcing boundary,
+no dependency in decompose, a validation that could fail nothing, blind re-dispatch instead of
+repair, and not one of the seven personas in the tree. Most of that has since landed. **This
+document does not track which**: architecture's status table is the one place a row's state is
+recorded, and a second copy here would go stale inside a week. What lives here is the target and
+the argument for it.
 
 ### The shape
 
@@ -56,16 +59,16 @@ different, smaller thing. This document states the target so the delta can be de
 | Intended | Implemented | Evidence |
 | --- | --- | --- |
 | States with entry/exit conditions | Phases re-derived from tracker evidence; no transition table | `loop_state.py:143-189` |
-| INTAKE outputs a solution design | Records one enum value | `loop.py:234-262` |
+| INTAKE outputs a solution design | Records one enum value | `loop._on_intake` |
 | CLASSIFY outputs a technical design | Same enum plus a section lint | `classify.py:43-56` |
-| DECOMPOSE emits a dependency graph | Plan schema has no dependency field; ordering derived from scope overlap only | `loop.py:923-925`, `decompose.py:370-376` |
+| DECOMPOSE emits a dependency graph | Plan schema has no dependency field; ordering derived from scope overlap only | `loop._on_decompose`, `decompose.parse_children` |
 | VERIFY and VALIDATE distinct | Validate runs on one path only, never for leaves; its sole deterministic check is re-running verify | `loop._dispatch_validation` vs `loop._verify_and_land`; `task.rubric.yaml:25-28` |
 | Repair in place | Supervised rework dispatches a fresh agent | `supervise.py:3036` |
 | Findings reach the repair | Dispatch prompt is fixed text every attempt | `loop.py:811-823` |
 | Gates at every boundary | Gates at one boundary (build→verify) | `loop._on_intake`, `loop._on_classify` |
 | Seven personas | Zero implemented; one default runner serves every phase | `loop.py:678` |
 | Retrospective | Does not exist in the engine | `harness-loop/skill.yaml:337-346` |
-| End-of-loop housekeeping | Per-track teardown plus a pre-run preflight | `loop.py:409-449` |
+| End-of-loop housekeeping | Per-track teardown plus a pre-run preflight | `loop._on_ship`, `loop preflight` |
 
 Read plainly: **the loop is a two-state machine wearing seven labels.** Real enforcement happens
 at build→verify; everything else is checkpoints and lints.
@@ -80,7 +83,7 @@ at build→verify; everything else is checkpoints and lints.
 | D8 [D] | **EARS for acceptance criteria**, ratcheted — required for new criteria, existing beads transform when touched | EARS distinguishes trigger / state / condition / feature-gated / ubiquitous; GWT collapses all five, and that distinction is what makes a check derivable (OQ-2). **Do not bulk-transform** the 600+ existing beads |
 | D9 [D] | **Integrity level assigned by a deterministic rule over touched paths** | Scope globs are already declared and already gated. Not judgeable, therefore not gameable, and costs zero tokens |
 | D2 [D] | **Three integrity levels, keyed on blast radius** | Observable at classify time. IEEE 1012's consequence×likelihood grid needs a likelihood axis we cannot measure |
-| D3 [D] | **Four gate verbs: Go / Kill / Hold / Recycle** | Cooper's Stage-Gate [S]. As written, `park` was a word every escalation offered and no answer carried out; the original rationale mis-cited that as a status fail-open at `cli.py:3922` — corrected 2026-08-08, see §5 |
+| D3 [D] | **Four gate verbs: Go / Kill / Hold / Recycle** | Cooper's Stage-Gate [S]. As written, `park` was a word every escalation offered and no answer carried out; the original rationale mis-cited that as a status fail-open in the rework-hold path — corrected 2026-08-08 |
 | D4 [D] | **A machine-checked handoff artifact at every state boundary** | ETVX (IBM Systems Journal 24(2), 1985) [S]: exit criteria are verifiable conditions *on work products*, which requires work products to have schemas |
 | D5 [D] | **Repair is a mode of the implementer, not a new persona** | Roster R3 admits a persona only if it differs in tier, tools, or artifact. Repair differs in none — only in prompt |
 | D6 [D] | **Light factory / dark factory as an explicit mode split** | Capacity, not preference: one shared context window cannot hold many lanes [S] |
@@ -97,7 +100,7 @@ at build→verify; everything else is checkpoints and lints.
 | D21 [D] | **Context control is field selection, not encoding.** Project tracker payloads to the fields a phase needs; encode only what remains, and only where a bijective codec is safe | Measured 2026-08-08 (§14). Selection beats serialisation by ~500x on this repo's own data |
 | D22 [D] | **Anything built against the tracker is written to our own record vocabulary, never to `br`'s payload shape** | `br` and `bv` are being removed (`work-tracker.md`). A field allowlist naming `br`'s JSON keys would have to be rewritten at the flip; one naming our own fields survives it, and only the adapter changes |
 | D23 [D] | **A sizing control with no recorded correct firing becomes observability; a control that has earned one keeps its teeth** | §15.7. Measured 2026-08-08: the grant spend ceiling fired correctly 5 times and the rework cap 78, while the runner timeout, the working-set band and the context ceiling have **zero** between them — and all three of those predict how large a unit of work will be, which this repo has never predicted well. A prediction that blocks must be right; a prediction that reports costs nothing when it is wrong. Demotion is not deletion: the number stays recorded, surfaced and falsifiable, because §15.6's gate was wrong for months *with the telemetry already contradicting it* |
-| D24 [D] | **`factory-design.md` is no longer the tiebreaker.** Authority runs: measured evidence in this repo → this document → `factory-design.md` | Owner, 2026-08-08. That document's §9 — "the honest answer to *is the design real?*" — contradicts itself on `kjc5.8`/`kjc5.11`; it keeps a context ceiling §15.6 demoted for never firing correctly; and its D6 rests on light mode having "one window shared by everything", which architecture §5 records as **isolated** context (the citation also had the wrong section: it is §1 of that document, now absorbed). A factory-design decision no measurement contradicts still stands — this removes tiebreaker status, not content |
+| D24 [D] | **`factory-design.md` is no longer the tiebreaker.** Authority runs: measured evidence in this repo → this document → `factory-design.md` | Owner, 2026-08-08. That document's §9 — "the honest answer to *is the design real?*" — contradicts itself on `kjc5.8`/`kjc5.11`; it keeps a context ceiling §15.6 demoted for never firing correctly; and its D6 rests on light mode having "one window shared by everything", which architecture records as **isolated** context (the citation also had the wrong section: it is §1 of that document, now absorbed). A factory-design decision no measurement contradicts still stands — this removes tiebreaker status, not content |
 | D25 [D] | **Agent-authored guidance never reaches the shared catalog without a human, at any grant level** — a decision class no autonomy level auto-disposes, an exception to the L0-L3 ladder rather than a rung in it | Roster R9, absorbed 2026-08-08. The argument is asymmetry, not the risk of a bad suggestion: a wrong implementation bounces off a gate, while a wrong fragment is **absorbed** and silently degrades every later lane with nothing mechanical to detect it. An agent that can amend the catalog under a grant widens its own constraints, and the next session inherits the widening as ground truth. Not in code [M]: `supervise.DELEGABLE_KINDS` is `("escalation", "needs-input")` (`supervise.py:1740`), so a never-auto-dispose class does not exist. Corollary: a retrospective's output is a **diff against catalog YAML**, never prose advice, so `catalog lint` and the projection checks bound what the human is asked to approve |
 | D26 [D] | **Route each role to the cheapest tier that can be relied on, priced per landed package** — total tokens, wall clock and human interventions per landed *correct* package, never the price of one dispatch. The predicate for "cheap is safe" is **specification completeness, not work category** | Roster R5 and its 2026-07-26 amendment, absorbed 2026-08-08. A brief carrying the literal code and the literal test cases is transcription and is mechanically verifiable; a brief that is a prose description is not. A cheap dispatch returns as rework, extra review cycles, bounced merges and human attention, all charged to the same package. **Operationally a dispatch with no resolved tier is a bug, not a default** — an omitted model inherits the session's, usually the most expensive, which defeats the rule silently. The four-tier ladder is already shipped (`.basicly/core/models/anchors.yaml`, `schema.MODEL_TIERS`); only this routing rule was unrecorded |
 | D20 [D] | **`change-shape` — the shape of the whole change, derived not authored, emitted by CLASSIFY** | See §8.2. It is the structure `decompose` needs to cut end-to-end instead of by directory, and `basicly-agzx.2` already proposes deriving it from an AST at zero token cost. **Derived, so it is not a state**: states exist to hold a gate and a persona, and a derivation needs neither — DECOMPOSE's entry predicate gains it, nothing else moves |
@@ -109,7 +112,7 @@ at build→verify; everything else is checkpoints and lints.
 | D31 [D] | **A tier resolves by declared vendor order, verified at install.** `anchors.yaml` gains a `vendor_order` per tier; resolution walks it and takes the first the map marks available for the surface in effect; `basicly install`/`upgrade` probes each chosen model once and records a rejection | `model-map.json` already resolves tier→vendor→surface and already refuses to substitute another tier's model. Two gaps closed: nothing ranked vendors *within* a tier, and `status: available` is a claim from the generator rather than this consumer's entitlement. Neither host lists its models non-interactively (verified: claude has no `models` subcommand; copilot has `--model`/`auto` and BYOK env vars only), so entitlement must be probed once, not queried per dispatch — which keeps the dispatch path offline and deterministic |
 | D32 [D] | **A handoff artifact is a file on the work's own `harness/<issue>` branch, deleted at teardown; the ledger keeps its kind, digest and gate verdict** | Owner, 2026-08-09, superseding §8's marker-only mechanism. Git is the only transport this design has, so an artifact that must survive a machine hop has to be committed — which rules out a gitignored directory. Committed on the branch it is not dirt, so `merge.foreign_dirt` (`merge.py:509`) is unaffected; deleting the branch is the delete, so `main` never carried it. **Consequence: the harness branch must be created at INTAKE**, not at worktree provisioning (`loop.py:327`), because INTAKE, CLASSIFY and DECOMPOSE all emit artifacts before any worktree exists |
 | D34 [D] | **The comments rule is the divergence rule, and it lives in `python-guidelines`, not in the always-on layer.** A comment that contradicts the code is a defect and the code is what ships; deleting the comment is not the fix. The proposed strong form — "comments that describe the code must not exist" — is **rejected** | Owner, 2026-08-09, choosing against their own initial framing on the measurement. Four independent grounds, any one sufficient. (1) **It targets an empty set here**: a 120-block hand sample over `src/basicly/` and `.basicly/core/` classifies 41% contract, 40% why, 16% navigation, 3% directive, **0% narration**, and two whole-population probes each validated against synthetic narration return 0 narration-opener hits and 9 code-echoing blocks of 1,139, every one a cross-reference [M]. (2) **Its strong form contradicts PEP 8**, which *mandates* a describe-what comment for non-public methods; Google's "never describe the code" — which `.ruff.toml` already pins via `convention = "google"` — is stated immediately after a *requirement* to comment complicated operations. (3) **It arms a live gaming path**: stripping standalone comments returns 36.3% of `config.py`'s §9.3 ratchet tokens, 17.0% of `merge.py`'s and 11.6% of `loop.py`'s [M], and `python-guidelines/skill.yaml:72` already names comment deletion as the way to game that gate — an always-on rule licensing it authorises it on every lane. (4) **No budget**: `AGENTS.md` is 13,135 characters against `codex.yaml`'s 12,000 cap, and the parent epic `basicly-a3ab` exists to *relieve* the always-on layer. Also **not agent-actionable**: "outside of best practices" is an undefined exemption and "if you need to read the comments" is a counterfactual about a reader the agent cannot query — neither is falsifiable, while divergence is checkable against an observation. The literature does not settle it either way: "comments are always failures" traces to *Clean Code* ch.4, a trade book with no cited study, and the measured work is mixed — Nielebock et al. 2018 (n=277) "the real effect of comments on software development remains uncertain", and a 2026 eye-tracking study (n=20) spans a 30% decrease to a 34% increase [S] |
-| D35 [D] | **`python-guidelines` stays a skill and gains `paths: ["**/*.py"]`; it is not demoted to an always-on fragment** | Owner, 2026-08-09, re-taking §7.2's demotion plan because the premise under it is false. That plan rested on "as a model-invoked skill it loads only when an agent thinks to ask" — refuted at claude 2.1.226, where a skill's frontmatter takes a `paths:` glob that limits *and triggers* automatic activation [S, vendor doc, fetched 2026-08-09]. The glob buys the same always-loads-on-`.py` behaviour at **zero** always-on characters, and it unblocks the work from `basicly-a3ab.1`'s eviction, which the fragment plan was waiting on. **The gap it does not close is codex**: it has no glob-based instruction scoping and never loads a nested `AGENTS.md` below the cwd (architecture §7.4), so the fragment remains the only mechanism there — deferred until codex has headroom, rather than paid for now on all three families |
+| D35 [D] | **`python-guidelines` stays a skill and gains `paths: ["**/*.py"]`; it is not demoted to an always-on fragment** | Owner, 2026-08-09, re-taking §7.2's demotion plan because the premise under it is false. That plan rested on "as a model-invoked skill it loads only when an agent thinks to ask" — refuted at claude 2.1.226, where a skill's frontmatter takes a `paths:` glob that limits *and triggers* automatic activation [S, vendor doc, fetched 2026-08-09]. The glob buys the same always-loads-on-`.py` behaviour at **zero** always-on characters, and it unblocks the work from `basicly-a3ab.1`'s eviction, which the fragment plan was waiting on. **The gap it does not close is codex**: it has no glob-based instruction scoping and never loads a nested `AGENTS.md` below the cwd (architecture — *Targets*), so the fragment remains the only mechanism there — deferred until codex has headroom, rather than paid for now on all three families |
 | D36 [D] | **Skill frontmatter gains a per-target vendor fence; the portable six stay portable.** An unportable key is declared once under its target and emitted only into the roots that understand it | Owner, 2026-08-09, resolving D35's mechanism. `skill.schema.json` carries exactly the Agent Skills portable subset — `name`, `description`, `license`, `compatibility`, `metadata`, `allowed-tools` — with `additionalProperties: false`, and `paths:` is outside it [M, vendor doc, 2026-08-09]. Putting `paths:` at top level would make every projected `SKILL.md` unportable to buy one behaviour; refusing it leaves `python-guidelines` with no trigger, which is the gap D35 exists to close. The fence takes neither cost, and `agent.schema.json` already establishes the shape so this is a second use of an existing pattern rather than a new mechanism. **The general rule it settles**: a host-specific capability is expressible without the portable artifact absorbing it, so the next such key does not re-open this decision. `.agents/` gets the six; `.claude/` gets the six plus its fenced keys |
 | D37 [D] | **The agent-hook event vocabulary widens to the events we can name a consumer for, and a stage lands with the catalog source that uses it** | Owner, 2026-08-09. `claude_settings.py:51` maps **2 of the 31** documented host events, which is why no catalog source can name a `stop` stage and why §11 item 8 has no engine to bind to. Widening to all 31 was refused on the argument this document already makes about dead definitions — 29 stages with no consumer is the 8-of-34-skills problem in a second place, and each is a surface to keep true against a vendor that moves. The pairing rule is what stops that: a stage is added by the change that consumes it. Two consumers exist today — §11 item 2's in-dispatch termination gate (`Stop` + `decision: block`, probed reachable under our own `claude -p`, capped at 8 consecutive blocks, OQ-16) and `basicly-0p8n`'s tool-call-boundary enforcement. **Claude-only**: copilot accepts `preToolUse`/`postToolUse` and nothing else (`hooks.py:55`), so a widened stage projects to one family and the parity gap is declared rather than silently uneven |
 | D33 [D] | **`docs/` carries only architecture, tutorial, how-to and a contributor guide.** No new requirement or plan document is ever created as a file; a new requirement enters as `01-solution-design.md` on a branch | Owner, 2026-08-09, making §9's register mechanical instead of disciplinary. The four existing requirement/plan documents exit on the triggers already recorded there; the review's Appendix A moves to architecture rather than being deleted, because a licence and provenance register is a decision record. A `docs/` path gate makes the rule a free deterministic check, which the standing constraints already prefer over a judged one |
@@ -245,7 +248,7 @@ variance [S]. Level decides whether a unit of work earns the factory at all.
 
 **Correction, 2026-08-08** [M]. This table and D3 first recorded Hold as a
 fail-open — "the word exists and does the opposite", re-admitting a parked lane to
-dispatch, cited at `cli.py:3922`. **That diagnosis was wrong, and it aimed the fix
+dispatch, cited in the rework-hold path. **That diagnosis was wrong, and it aimed the fix
 at the wrong layer.** The status vocabulary was never the problem: `deferred` is
 excluded from `DISPATCHABLE_STATUSES` (`loop_state.py:65`, with the exclusion
 argued in the comment above it), `loop_state.is_dispatchable` refuses it,
@@ -364,20 +367,20 @@ a role and dispatch it, which is what makes the roster real rather than projecte
 | Role | State | Source [M 2026-08-09] | Engine |
 | --- | --- | --- | --- |
 | `decomposer` | DECOMPOSE | **authored**, loads `decompose-plan` | **dispatched** with `phase="decompose"` (`loop._run_proposer`, `loop.py:1119`) |
-| `implementer` (+ **repair mode** [D5]) | BUILD, REPAIR | **authored**, loads `python-guidelines` + `repair-in-place` | **both dispatched** — build at `loop._dispatch_runner` (`loop.py:721`), repair at `loop._repair_in_place` (`loop.py:1655`) with `phase="repair"` and a brief carrying the gate evidence that rejected the work (`repair_brief`, `basicly-u2hl.4`). This row read "repair mode does not" until 2026-08-14 |
+| `implementer` (+ **repair mode** [D5]) | BUILD, REPAIR | **authored**, loads `python-guidelines` + `repair-in-place` | **both dispatched** — build at `loop._dispatch_runner`, repair at `loop._repair_in_place` with `phase="repair"` and a brief carrying the gate evidence that rejected the work (`repair_brief`, `basicly-u2hl.4`). This row read "repair mode does not" until 2026-08-14 |
 | `validator` | VALIDATE | **authored**, loads `validate-as-consumer` | **dispatched** (`loop._dispatch_validation`, `loop.py:507`, `u2hl.54.3`) |
 | `reviewer` (by lens) | VALIDATE | **authored** | **dispatched once per lens** (`loop._dispatch_reviews`, `roles.LENS_ROLE_BY_PHASE`, `basicly-feje`) |
 | `decider` | CLASSIFY, escalations | **authored** | **dispatched** with `phase="classify"` through the same `loop._run_proposer`; `decisions.py` is the escalation queue, not the dispatch |
 | `retrospector` | RETROSPECTIVE | **authored**, loads `root-cause` | **dispatched** (`loop._retrospective`, `loop.py:2231`, `basicly-xmhc`) — not a phase and no unit sits in it; the signal is evaluated where the gate-failure ledger changes |
-| `curator` | SHIP | **authored** | nothing — `loop._on_ship` never calls `_run_agent` |
+| `curator` | SHIP | **authored** | **dispatched** (`loop._dispatch_curation`, called from `loop._on_ship`), priced and bounded exactly as the validator's judges are, and skipped under the supervisor's landing pass |
 
-**All seven are authored, and six are reachable in code.** The gap this section had
+**All seven are authored and all seven are reachable in code.** The gap this section had
 measured since 2026-08-08 — "the projection works and nothing consumes it" — is closed in
 the wiring: `roles.resolve_role` maps a phase to a role by table lookup from three call
 sites and the runner puts `--agent <role>` on the argv, verified against claude 2.1.226 and
-copilot 1.0.78 rather than recalled. `curator` is the seventh and maps to `ship`, a live
-phase whose handler never calls `_run_agent`. The `Engine` column above now means "does an
-equivalent already run at that state", not "can a role reach it".
+copilot 1.0.78 rather than recalled. The `Engine` column above now means "does an
+equivalent already run at that state", not "can a role reach it" — and **reachable is still
+not exercised**: only `implementer` has been observed on a real argv.
 
 **This paragraph read "authored and dispatched" for five days and the ledger refuted it**
 [M 2026-08-14, `basicly-jn1x`]. **0 of 357 dispatch records carried `--agent`**, against a
@@ -454,11 +457,12 @@ hand; a fresh install never writes one. Pruning a projection whose source is gon
 agent-projection work this change does not carry.
 
 **Admission is staged, not wholesale** [D5]. A role is authored only when it differs in tier, tools
-or artifact. `decomposer` and `implementer` now qualify — `basicly-u2hl.18` shipped
-`implementation-plan` and `change-summary`, so each has an artifact of its own. `validator`,
-`reviewer`, `retrospector` and `curator` do not yet: their artifacts (`validation-transcript`,
-`release-record`) are unbuilt, so they are recorded as blocked on the artifact rather than authored
-speculatively. Authoring all seven at once is the accretion the admission test exists to prevent.
+or artifact. The staging is spent: `validation-transcript` and `release-record` both have schemas
+under `.basicly/core/schemas/` alongside `implementation-plan` and `change-summary`, so no role is
+blocked on its artifact any more. The rule stands for the *next* role anyone proposes — authoring
+all seven at once is the accretion the admission test exists to prevent — and the outstanding gap
+moved one step downstream: a schema exists for a kind, but only some kinds have both a producer
+and a consumer, and the rest refuse nothing.
 
 A role is a **dispatch contract**: role prompt, tool policy, model tier, gate authority, output
 contract. Each judged role additionally carries an explicit adversarial stance and a role-specific
@@ -488,15 +492,26 @@ above. Two consequences for §6.1's schema, neither of them a rewrite:
   root -> none" can be closed without teaching the engine to read one. Engine work under D27, not a
   catalog change.
 
-**Agent definitions hot-reload; they are not read once at process start** [M, refuted 2026-08-09].
-Claude Code watches `~/.claude/agents/` and `.claude/agents/` and picks up an added or edited file
-within seconds, with two exceptions — the *first* agent file in a newly created `agents/` directory,
-and `--disable-slash-commands`. Hook config in settings files is watched too, and a `ConfigChange`
-event exists for exactly this. The first exception is the first-install case, which is why three
-committed places assert the strong form and all three need the narrow rule instead:
-`.basicly/core/kit/tier/install_hook.py:115`, `.basicly/core/kit/tier/README.md:72`,
-`.basicly/core/skills/tier-injection/skill.yaml:50`. The original claim (`basicly-wbsz.3`) pinned no
-version, which is why it cannot be adjudicated as wrong-then or stale-now — and that is the finding.
+**A projected agent definition does not reach a running session's registry** [M 2026-08-16,
+`basicly-e2mz.25`]. This paragraph asserted the opposite for a week — that agent definitions
+hot-reload and are not read once at process start, on a 2026-08-09 reading of Claude Code
+watching `~/.claude/agents/` and `.claude/agents/`. **The probe that mattered was never run
+until now, and it refutes the claim on the path the engine and an operator actually use**:
+`.basicly/core/agents/architect/agent.yaml` gained `Write` and `Edit`, `basicly agents-build`
+wrote both projected files with `tools: Read, Grep, Glob, Bash, Write, Edit` in the
+frontmatter, and a dispatch immediately afterwards reported its live tool list as
+`Read, Bash` and refused the task.
+
+Two consequences. First, **a roster change is invisible until a restart nobody schedules**, so
+the catalog-is-the-source claim holds only across a process boundary. Second, three committed
+places still assert the strong hot-reload form and all three are now suspect:
+`.basicly/core/kit/tier/install_hook.py`, `.basicly/core/kit/tier/README.md`,
+`.basicly/core/skills/tier-injection/skill.yaml`.
+
+What is **not** established is whether the stale registry is the host's or this harness's, and
+whether the 2026-08-09 reading was wrong then or is stale now — it pinned no version, which is
+the same defect `basicly-wbsz.3` was filed for and the reason it cannot be adjudicated. That is
+the finding: an unpinned capability claim cannot be re-checked, only re-measured.
 
 **A competing harness ships the contract half we lack, from a worse source model** [M, 2026-08-09,
 `Chachamaru127/claude-code-harness` v5.6.0, MIT]. Its four agents are hand-written `.md` with no
@@ -694,7 +709,7 @@ is stated at the same site: the cap also stood proxy for the vendor's claim that
 with length, which this repo has never measured (`basicly-agzx.1`).
 
 **What survives of the plan is the codex gap.** Codex has no glob-based instruction scoping and
-never loads a nested `AGENTS.md` below the cwd (architecture §7.4), so a fragment remains the only
+never loads a nested `AGENTS.md` below the cwd (architecture — *Targets*), so a fragment remains the only
 mechanism there. It is deferred rather than dropped: paying ~1,500 characters on all three families
 to reach one, on a file already over its cap, is the wrong order.
 
@@ -814,10 +829,11 @@ presence-only — "the engine never opens it" [M] `verify.py:243-249` — and un
 as a `[harness-artifact]` marker, not by appending to `.basicly/ledger/` directly. Two reasons,
 the second decisive:
 
-- A new `events.py` kind would have **no writer on this rung**: the repo runs
-  `[tracker] mode = "external"`. The marker seam writes on every rung and *becomes* a ledger
-  `comment` event at the flip, so `u4xu` and `vkh0.23` are no longer prerequisites of §8 —
-  which retires D13's stated consequence.
+- A new `events.py` kind would have **no writer below `owned`**. The repo runs
+  `[tracker] mode = "dual"`, where the ledger is written only as a mirror of what goes through
+  the `br` seam, so a native kind nothing translates into still has no producer. The marker
+  seam writes on every rung and *becomes* a ledger `comment` event at the flip, so `u4xu` and
+  `vkh0.23` are no longer prerequisites of §8 — which retires D13's stated consequence.
 - A direct ledger append **would refuse the landing it precedes** [M]: the advance sweeps
   base-checkout dirt only under `.beads/` (`merge.commit_tracker_state`), and anything else
   blocks the merge (`merge.foreign_dirt`). An artifact written into the committed ledger on

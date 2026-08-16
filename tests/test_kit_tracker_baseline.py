@@ -54,10 +54,15 @@ class _Disagreement:
     record: str
 
 
-def _created(record: str, *, imported: bool) -> dict:
+def _created(record: str, *, imported: bool, source: str = "beads-export") -> dict:
     """A created event, carrying the import marker only when it was extracted."""
-    payload = {baseline.IMPORT_MARKER: "beads-export"} if imported else {"title": record}
+    payload = {baseline.IMPORT_MARKER: source} if imported else {"title": record}
     return {"record": record, "kind": baseline.KIND_CREATED, "payload": payload}
+
+
+def _adopted(record: str) -> dict:
+    """A created event as the hand-write repair writes it."""
+    return _created(record, imported=True, source=baseline.ADOPTION_SOURCE)
 
 
 def _report(disagreements: tuple[_Disagreement, ...] = (), unknown: tuple[str, ...] = ()):
@@ -127,6 +132,41 @@ def test_a_record_is_classified_by_the_marker_its_producer_wrote(tmp_path: Path)
 
     assert baseline.imported_records(events) == frozenset({"old"})
     assert baseline.read_baseline(tmp_path) == baseline.Baseline()
+
+
+def test_an_adopted_hand_write_is_judged_but_never_counted_as_evidence() -> None:
+    """basicly-vkh0.24's marker: in scope, so a disagreement on it is still a finding.
+
+    The pair with the test below. A repair that classified an adopted record as history
+    would excuse it, and a differential that excused every hand-written record is the
+    "declare the divergence acceptable" option this one was chosen over.
+    """
+    events = [_created("old", imported=True), _adopted("byhand"), _created("new", imported=False)]
+
+    scoped = baseline.scope(_report((_Disagreement("byhand"),)), events, baseline.Baseline())
+
+    assert baseline.adopted_records(events) == frozenset({"byhand"})
+    assert baseline.imported_records(events) == frozenset({"old"})
+    assert scoped.adopted == ("byhand",)
+    assert set(scoped.in_scope) == {"byhand", "new"}
+    assert scoped.disagreements == (_Disagreement("byhand"),)
+    assert not scoped.clean
+
+
+def test_a_scope_of_nothing_but_adopted_records_is_inconclusive() -> None:
+    """A reconciled record agrees because it was reconciled, so it evidences nothing.
+
+    Without this the repair would be a way to make the run conclusive by running it:
+    adopt every undeclared record and the population is full of records that agree by
+    construction. It is the empty-scope rule with the population it should always have
+    been asked about.
+    """
+    scoped = baseline.scope(_report(), [_adopted("byhand")], baseline.Baseline())
+
+    assert scoped.in_scope == ("byhand",)
+    assert scoped.clean  # nothing in scope disagreed...
+    assert not scoped.conclusive  # ...and nothing in scope got there by the dual write
+    assert "0 post-flip record(s)" in scoped.summary()
 
 
 def test_a_second_declaration_is_refused(tmp_path: Path) -> None:

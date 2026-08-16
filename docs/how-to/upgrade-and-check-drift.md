@@ -83,13 +83,15 @@ basicly hooks-check
 ```
 
 Anyone using the harness loop additionally needs a redirect-capable
-[`br`](https://github.com/Dicklesworthstone/beads_rust); 0.2.16 is the
-known-good floor, and worktree provisioning verifies it.
+[`br`](https://github.com/Dicklesworthstone/beads_rust) at **exactly 0.2.16**. That
+is a pin, not a floor: the harness warns on any other version in either direction,
+because a newer `br` has broken tracker calls here as surely as an older one. Install
+it by digest with `python .scripts/install_br.py --bin-dir <dir-on-PATH>`.
 
 ## Uninstall
 
 ```sh
-uvx --from git+https://github.com/niksavis/basicly@v0.8.0 basicly uninstall
+uvx --from git+https://github.com/niksavis/basicly@v0.9.0 basicly uninstall
 ```
 
 This removes everything basicly manages — the managed core, install state,

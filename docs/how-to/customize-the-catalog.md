@@ -115,7 +115,7 @@ Technology-tagged sources (the `tool-*` skills, shell and platform fragments)
 are skipped at projection time when they fall outside your stack:
 
 ```sh
-uvx --from git+https://github.com/niksavis/basicly@v0.8.0 basicly install --technologies python,zsh
+uvx --from git+https://github.com/niksavis/basicly@v0.9.0 basicly install --technologies python,zsh
 ```
 
 The selection is recorded in `basicly.toml` under `[catalog] technologies`, so

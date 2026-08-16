@@ -41,6 +41,7 @@ technologies = ["python", "node"]
 rank1_floor = 0.85
 rank1_floor_high_water = 0.85
 
+[tracker]
 # Which step of the work-tracker cutover this repo is on (basicly-vkh0.19,
 # docs/requirements/work-tracker.md §5). Three values, and each is a rung:
 #
@@ -55,39 +56,39 @@ rank1_floor_high_water = 0.85
 #             the ledger; br is *still written*, because the other ten subcommands
 #             the engine spawns still read out of it.
 #
-# **This repo is on `external`, and the rung above it is not a config edit.** Step 1
-# of §5 is the import: it ran on 2026-08-07 and `.basicly/ledger/events-0001.jsonl`
-# holds 3775 events over 643 records, every one carrying the export's digest. It is
-# re-runnable as `basicly tracker import` since basicly-vkh0.23 — before that it was a
-# hand-run one-shot, so the ledger drifted and no fresh consumer could build one at all.
-# `--dry-run` reports how far behind the ledger is and writes nothing.
+# **Steps 1 to 3 have run, which is why the value below is `dual`**, and the rung
+# above it is not a config edit.
+#
+# Step 1 is the import, `basicly tracker import`: it replays the committed export
+# into `.basicly/ledger/`, every event carrying the export's digest, and `--dry-run`
+# reports how far behind the ledger is without writing anything. It is re-runnable
+# (basicly-vkh0.23) — before that it was a hand-run one-shot, so the ledger drifted
+# and no fresh consumer could build one at all.
 #
 # Step 2 is the shadow differential, `basicly tracker shadow` — it reads the owned
 # ledger against the **live** br, writes to neither, and answers `clean` and
 # `conclusive` as two separate verdicts. Live and not a re-import, because an import
 # cannot express a deletion and two derivatives of one lossy snapshot agree with each
-# other and prove nothing (§5.1).
+# other and prove nothing (§5.1). It is judged on records created after the cutover
+# began (basicly-c357); anything older is excused against the import's own watermark,
+# and any residual pre-cutover delta is **declared** once by
+# `shadow --declare-history`. A second declaration is refused, and the import refuses
+# a ledger already holding a post-cutover record — both because closing that gap after
+# the dual write starts would make the agreement prove nothing. Run the command for
+# today's verdict rather than reading a count here; the scope grows with every landing.
 #
-# **The run is judged on records created after the flip** (basicly-c357). History is
-# excused: 331 of 643 compared records carry a passing `verify` gate row on the live
-# tracker and none on the ledger, because no export carries a gate field for the import
-# to have read. The pre-flip delta the ledger never received is **declared** once, at
-# the flip, by `basicly tracker shadow --declare-history`; a second declaration is
-# refused, and the import refuses a ledger that already holds a post-flip record — both
-# because closing that gap after the dual write starts would make the agreement prove
-# nothing. Today the run reads 0 in scope and is therefore **inconclusive**, which is
-# the correct refusal: what is left is `dual`, then a run that is clean **and**
-# conclusive over a non-empty scope, then `owned`.
-[tracker]
-# Steps 1 and 2 ran on 2026-08-15 (basicly-u4xu). The import brought the ledger level
-# at 866 records from 223 behind, and `shadow --declare-history` wrote an **empty**
-# baseline — nothing needs excusing, so every disagreement from here is a real finding
-# rather than an argument about what predates the rule. `dual` is step 3: every accepted
-# write now also lands in the owned ledger through `br._mirror_write`, which **raises**
-# on any failure rather than logging, so a write surface with no translator stops the
-# work instead of silently diverging. Step 4 (`owned`) waits on a differential that is
-# clean *and* conclusive over a non-empty scope, which needs post-flip work to exist and
-# cannot be brought forward by dispatching anything.
+# Step 3 is `dual` itself: every accepted write also lands in the owned ledger through
+# `br._mirror_write`, which **raises** on any failure rather than logging, so a write
+# surface with no translator stops the work instead of silently diverging. A write made
+# by spawning `br` by hand never reaches that seam: route one through
+# `basicly tracker write` instead, and repair a bypass that has already happened with
+# `basicly tracker adopt` (basicly-vkh0.24). The repair is re-runnable and marks what it
+# adopted, so the differential judges those records without ever counting their agreement
+# as evidence that the dual write works.
+#
+# Step 4 (`owned`) waits on a differential that is clean *and* conclusive over a
+# non-empty scope, which needs post-cutover work to exist and cannot be brought
+# forward by dispatching anything.
 mode = "dual"
 
 # Sibling git-worktree isolation for harness tracks.
@@ -408,6 +409,16 @@ modes = ["fast", "full"]
 # already uses (quality-gates.yml, release.yml).
 # `tests/test_verify.py::test_no_verify_check_invokes_a_bare_python_interpreter` holds
 # the rule for the next check, and fails on POSIX too rather than waiting for CI.
+# The published board contract still accepts its own conforming example. Narrow on
+# purpose, and the narrowness is the honest part: it proves the schema and the validator
+# have not drifted apart, and it proves nothing about a snapshot the engine produced,
+# because no producer exists yet (basicly-rn0o.2). When one does, this check gains the
+# real artifact and keeps the fixture as its control.
+[[verify.checks]]
+name = "board-schema"
+command = ["uv", "run", "basicly", "board", "validate", "tests/fixtures/board/minimal-v1.json"]
+modes = ["fast", "full"]
+
 [[verify.checks]]
 name = "docs-claims"
 command = ["uv", "run", "python", ".scripts/docs_claims.py", "--check"]

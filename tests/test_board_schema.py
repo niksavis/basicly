@@ -1,0 +1,296 @@
+"""The `harness-board/v1` contract: what it requires, what it tolerates, and what it refuses.
+
+The claim under test is not "the schema parses". A contract meant to be implemented by
+producers that are not this harness fails in two opposite directions, and both are here:
+too strict and a foreign harness cannot adopt it, too loose and it admits anything while
+looking built. So every tolerance has a paired refusal - unknown keys pass *and* a
+missing required field fails, an absent section reports absent *and* a wrong major
+refuses.
+
+`test_handoff_schemas` owns the opposite discipline for the strict artifacts beside this
+one; the boundary is that this schema deliberately sets no `additionalProperties: false`,
+so the assertions there would be wrong here.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from basicly import board_schema
+
+REPO_ROOT = Path(__file__).parent.parent
+FIXTURES = REPO_ROOT / "tests" / "fixtures" / "board"
+SCHEMA_PATH = REPO_ROOT / ".basicly" / "core" / "schemas" / board_schema.SCHEMA_FILE
+
+# Prose the field-selection rule keeps off the wire: the whole tracker export is 3,336,549 B
+# against 33,745 B for the active rows at six selected fields (measured 2026-08-14).
+FORBIDDEN_PROPERTIES = ("description", "acceptance_criteria", "body", "comments", "notes")
+
+
+def _schema() -> dict[str, Any]:
+    return json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+
+
+def _minimal() -> dict[str, Any]:
+    return json.loads((FIXTURES / "minimal-v1.json").read_text(encoding="utf-8"))
+
+
+def _subschemas(node: object) -> list[dict[str, Any]]:
+    """Every subschema in the tree, so an assertion holds at depth and not only at the top."""
+    if not isinstance(node, dict):
+        return []
+    found = [node]
+    for key in ("properties", "$defs"):
+        for child in node.get(key, {}).values():
+            found.extend(_subschemas(child))
+    for key in ("items", "additionalProperties"):
+        found.extend(_subschemas(node.get(key)))
+    return found
+
+
+# --- The shape the contract fixes -------------------------------------------
+
+
+def test_exactly_three_top_level_keys_are_required() -> None:
+    """The adoption barrier: a foreign harness conforms with a four-line file."""
+    schema = _schema()
+
+    assert set(schema["required"]) == {"schema", "generated_at", "freshness"}
+    assert set(schema["required"]) <= set(schema["properties"])
+
+
+def test_every_section_beyond_the_three_is_optional() -> None:
+    """A section is a panel; making one required would make the contract un-adoptable."""
+    schema = _schema()
+    optional = set(schema["properties"]) - set(schema["required"])
+
+    assert optional == {
+        "generator",
+        "repo",
+        "session",
+        "lanes",
+        "asks",
+        "gates",
+        "spend",
+        "health",
+        "backlog",
+        "units",
+        "graph",
+        "events",
+    }
+
+
+def test_the_installed_schema_admits_the_version_this_module_speaks() -> None:
+    """The consumer's major lives in code and the schema in a file; only this binds them."""
+    assert re.fullmatch(_schema()["properties"]["schema"]["pattern"], board_schema.VERSION)
+
+
+def test_freshness_requires_all_three_of_its_fields() -> None:
+    """Age alone says how old the document is; these say how old it may get."""
+    assert set(_schema()["properties"]["freshness"]["required"]) == {
+        "source",
+        "cadence_s",
+        "stale_after_s",
+    }
+
+
+def test_no_object_in_the_schema_closes_itself_to_unknown_keys() -> None:
+    """`additionalProperties: false` anywhere would turn an added key into a refusal."""
+    closed = [node for node in _subschemas(_schema()) if node.get("additionalProperties") is False]
+
+    assert closed == []
+
+
+def test_no_property_admits_a_description_a_criterion_or_a_comment_body() -> None:
+    """The 98.9x field-selection rule, enforced on the schema rather than on the producer."""
+    named = {
+        name
+        for node in _subschemas(_schema())
+        for name in node.get("properties", {})
+        if name in FORBIDDEN_PROPERTIES
+    }
+
+    assert named == set()
+
+
+def test_every_string_property_is_bounded() -> None:
+    """An unbounded string is where a bead body re-enters the wire one release later."""
+    unbounded = [
+        node
+        for node in _subschemas(_schema())
+        if "string" in _types(node)
+        and not {"maxLength", "enum", "pattern"} & set(node)
+        and "properties" not in node
+    ]
+
+    assert unbounded == []
+
+
+def _types(node: dict[str, Any]) -> set[str]:
+    declared = node.get("type")
+    if isinstance(declared, str):
+        return {declared}
+    return set(declared) if isinstance(declared, list) else set()
+
+
+# --- The verdict ------------------------------------------------------------
+
+
+def test_the_minimal_fixture_is_readable_and_exits_zero() -> None:
+    """The bead's demonstration, through the function the command will call."""
+    result = board_schema.validate_file(REPO_ROOT, FIXTURES / "minimal-v1.json")
+
+    assert result.readable
+    assert result.exit_code == 0
+    assert result.summary.splitlines()[0] == "harness-board/v1, ok"
+
+
+def test_the_full_fixture_reports_every_section_present() -> None:
+    """The positive control: an inventory that reported nothing would pass the test below."""
+    result = board_schema.validate_file(REPO_ROOT, FIXTURES / "full-v1.json")
+
+    assert result.violations == ()
+    assert result.absent == ()
+    assert set(result.present) == set(_schema()["properties"]) - set(_schema()["required"])
+
+
+def test_an_absent_section_is_reported_absent_and_is_not_an_error() -> None:
+    """A panel nobody emits is a supported state, and the inventory is how it is named."""
+    result = board_schema.validate_file(REPO_ROOT, FIXTURES / "minimal-v1.json")
+
+    assert result.present == ()
+    assert "session" in result.absent
+    assert "absent    " in result.summary
+    assert result.violations == ()
+
+
+def test_a_differing_major_exits_two_and_names_both_versions() -> None:
+    """Naming both is the difference between a refusal and an unexplained failure."""
+    result = board_schema.validate_file(REPO_ROOT, FIXTURES / "wrong-major.json")
+
+    assert result.outcome == board_schema.WRONG_MAJOR
+    assert result.exit_code == 2
+    assert "harness-board/v2" in result.summary
+    assert "harness-board/v1" in result.summary
+
+
+def test_a_differing_major_is_refused_before_its_body_is_judged() -> None:
+    """A v2 document may validate field for field and still mean something else."""
+    document = _minimal() | {"schema": "harness-board/v2", "freshness": "not an object"}
+
+    result = board_schema.verdict(REPO_ROOT, document)
+
+    assert result.exit_code == 2
+    assert result.violations == ()
+
+
+def test_unknown_keys_exit_zero_and_are_counted_at_every_depth() -> None:
+    """The tolerance direction, and the count is what keeps it from being a silent drop."""
+    document = _minimal() | {
+        "invented": 1,
+        "freshness": _minimal()["freshness"] | {"jitter_s": 2},
+        "lanes": [{"id": "x", "phase": "build", "temperature": 0.4}],
+    }
+
+    result = board_schema.verdict(REPO_ROOT, document)
+
+    assert result.exit_code == 0
+    assert set(result.unknown) == {"$.invented", "$.freshness.jitter_s", "$.lanes[0].temperature"}
+    assert "unknown   3 key(s)" in result.summary
+
+
+def test_a_priority_map_key_is_not_an_unknown_key() -> None:
+    """`by_priority` declares its values through `additionalProperties`, so its keys count."""
+    document = _minimal() | {"backlog": {"by_priority": {"P0": 4, "P7": 1}}}
+
+    result = board_schema.verdict(REPO_ROOT, document)
+
+    assert result.unknown == ()
+    assert result.exit_code == 0
+
+
+# --- What it refuses --------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected"),
+    [
+        ({"generated_at": "14 Aug 2026"}, "$.generated_at"),
+        ({"freshness": {"source": "one-shot", "cadence_s": None}}, "$.freshness"),
+        ({"freshness": {"source": "push", "cadence_s": None, "stale_after_s": 60}}, "$.freshness"),
+        ({"asks": [{"wait_id": "w", "kind": "checkpoint"}]}, "$.asks[0]"),
+        ({"spend": {"lifetime_usd": 1.0}}, "$.spend"),
+        ({"lanes": [{"id": "x", "phase": "build", "context_used": 5}]}, "$.lanes[0]"),
+        ({"gates": {"checks": [{"name": "ruff", "status": "green"}]}}, "$.gates"),
+        (
+            {
+                "asks": [
+                    {
+                        "wait_id": "w",
+                        "kind": "c",
+                        "requested_at": _minimal()["generated_at"],
+                        "actions": ["rm-rf"],
+                    }
+                ]
+            },
+            "$.asks[0].actions[0]",
+        ),
+    ],
+)
+def test_the_schema_refuses_a_malformed_section(mutation: dict[str, Any], expected: str) -> None:
+    """Each case is a rule the prose states; a schema that accepted them would state nothing."""
+    result = board_schema.verdict(REPO_ROOT, _minimal() | mutation)
+
+    assert result.outcome == board_schema.INVALID
+    assert result.exit_code == 1
+    assert any(line.startswith(expected) for line in result.violations), result.violations
+
+
+def test_a_repo_without_the_contract_installed_cannot_report_a_pass(tmp_path: Path) -> None:
+    """An explicit ask that cannot be answered must not answer yes - that is a fail-open gate."""
+    result = board_schema.verdict(tmp_path, _minimal())
+
+    assert not board_schema.adopted(tmp_path)
+    assert result.outcome == board_schema.NOT_INSTALLED
+    assert result.exit_code == 1
+    # The path it names is repo-relative: an absolute one carries a username off-machine.
+    assert board_schema.SCHEMA_FILE in result.summary
+    assert str(tmp_path) not in result.summary
+
+
+def test_this_repo_carries_the_contract() -> None:
+    """Positive control for the case above: it must be absence that produced it."""
+    assert board_schema.adopted(REPO_ROOT)
+
+
+def test_a_file_that_will_not_decode_is_unreadable_rather_than_invalid(tmp_path: Path) -> None:
+    """A truncated write is not a contract violation, and must not be reported as one."""
+    path = tmp_path / "snapshot.json"
+    path.write_text("{ not json", encoding="utf-8")
+
+    result = board_schema.validate_file(REPO_ROOT, path)
+
+    assert result.outcome == board_schema.UNREADABLE
+    assert result.exit_code == 1
+
+
+def test_a_missing_file_is_unreadable_rather_than_a_traceback(tmp_path: Path) -> None:
+    """The path a caller mistyped is the one thing the message has to carry."""
+    result = board_schema.validate_file(REPO_ROOT, tmp_path / "absent.json")
+
+    assert result.outcome == board_schema.UNREADABLE
+    assert result.exit_code == 1
+
+
+@pytest.mark.parametrize(
+    ("declared", "major"),
+    [("harness-board/v1", 1), ("harness-board/v12", 12), ("board/v1", None), ("", None)],
+)
+def test_the_declared_major_is_read_off_the_document(declared: str, major: int | None) -> None:
+    """Read, not validated: a document about to be refused still has to be named."""
+    assert board_schema.declared_major({"schema": declared}) == major

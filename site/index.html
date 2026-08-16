@@ -469,8 +469,11 @@
       /* ---------- status: per-pillar shipped chips ---------- */
       /* The shipped list is one state — running code — so its marker is a tick
          rather than a word repeated down the column. The roadmap below it carries
-         three unbuilt states, and those must never render in the shipped colour:
-         a green marker on this page means working code and nothing else. */
+         four not-yet-working states, and those must never render in the shipped
+         colour: a green marker on this page means working code and nothing else.
+         `partial` shares amber with `todo` on purpose — both are mid-flight — and
+         is told apart by its glyph and its card, not by a fifth hue nobody can
+         name. */
       .st {
         flex: 0 0 auto;
         font-family: var(--mono);
@@ -483,6 +486,9 @@
         margin-top: 2.75rem;
       }
       .st.todo {
+        color: var(--amber);
+      }
+      .st.partial {
         color: var(--amber);
       }
       .st.later {
@@ -995,6 +1001,17 @@
                   output</span
                 >
               </li>
+              <li>
+                <span class="st" aria-hidden="true">&#10003;</span>
+                <span
+                  >A named role per judgment step — decider, decomposer,
+                  implementer, validator, reviewer, retrospector, curator — each
+                  with its own instructions, tool policy and output contract,
+                  and every one of the seven reached by the phase that
+                  dispatches it. The tier a role declares is still inert at
+                  spawn</span
+                >
+              </li>
             </ul>
           </div>
 
@@ -1038,11 +1055,14 @@
 
         <h2>What is coming</h2>
         <p class="lead">
-          Sequenced, not promised, and deliberately without dates. These are
-          <strong>not built</strong> — nothing below is running code, and a
-          settled design is not evidence that anything enforces it. The order
-          lives in the implementation plan; the evidence each status requires is
-          in the architecture reference.
+          Sequenced, not promised, and deliberately without dates. Nothing below
+          is a working capability yet, and each card says why: a
+          <strong>designed</strong> row has no code at all and a settled design
+          is not evidence that anything enforces it, while a
+          <strong>partial</strong> row has code that nothing reaches — a closed
+          work item proves the code was written, never that it is called. The
+          order lives in the implementation plan; the evidence each status
+          requires is in the architecture reference.
         </p>
 
         <div class="grid one">
@@ -1090,6 +1110,40 @@
                   actually delivered</span
                 >
               </li>
+              <li>
+                <span class="st todo" aria-hidden="true">&#9654;</span>
+                <span
+                  >An owned in-process append-only event log, removing the
+                  external tracker binary from the critical path. This
+                  repository already writes both stores on every engine write
+                  and compares them read-only; the flip to reading out of the
+                  owned log waits on that comparison coming back clean over work
+                  created after the cutover began</span
+                >
+              </li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <h3>Built, and reached by nothing</h3>
+            <ul class="chips">
+              <li>
+                <span class="st partial" aria-hidden="true">&#9680;</span>
+                <span
+                  >An <code>fsck</code> and rebuild that would make "the log is
+                  the truth" a checkable claim. The module and its unit tests are
+                  in the tree; no command and no engine path calls either, so
+                  nothing has ever checked a real ledger</span
+                >
+              </li>
+              <li>
+                <span class="st partial" aria-hidden="true">&#9680;</span>
+                <span
+                  >Provenance on every edge — extracted, inferred, ambiguous —
+                  so an inferred dependency never silently gates a lane. Same
+                  shape: written, tested, and called from nowhere</span
+                >
+              </li>
             </ul>
           </div>
 
@@ -1099,17 +1153,15 @@
               <li>
                 <span class="st later" aria-hidden="true">&#9671;</span>
                 <span
-                  >A named role per judgment step, each with its own
-                  instructions, tool policy, tier and output contract</span
+                  >Enforcement at the tool-call boundary rather than only at the
+                  commit boundary</span
                 >
               </li>
               <li>
                 <span class="st later" aria-hidden="true">&#9671;</span>
                 <span
-                  >An owned in-process append-only event log, removing the
-                  external tracker binary from the critical path — with
-                  provenance on every edge and an <code>fsck</code> that makes
-                  "the log is the truth" checkable</span
+                  >A plan gate that runs the demonstration it admits, instead of
+                  checking that the field has the right shape</span
                 >
               </li>
             </ul>

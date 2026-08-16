@@ -170,8 +170,19 @@ def test_a_recorded_document_may_only_fall() -> None:
 
 
 def test_the_baseline_is_read_from_pyproject_and_refuses_a_missing_table(tmp_path: Path) -> None:
-    """A gate that defaults to a permissive baseline passes everything, which is worse."""
-    assert "docs/requirements/work-tracker.md" in gate.load_frozen(REPO_ROOT)
+    """A gate that defaults to a permissive baseline passes everything, which is worse.
+
+    The real table is asserted to *load*, never to hold a particular document. It named
+    one until 2026-08-16, when the last debt was banked to zero and the table emptied —
+    so the assertion failed on the tree reaching the state the ratchet exists to produce.
+    A test that only passes while some document is still in debt is a test against
+    success.
+    """
+    assert gate.load_frozen(REPO_ROOT) is not None
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.docs_citations.frozen]\n"a.md" = 3\n', encoding="utf-8"
+    )
+    assert gate.load_frozen(tmp_path) == {"a.md": 3}
     (tmp_path / "pyproject.toml").write_text("[tool.other]\n", encoding="utf-8")
     with pytest.raises(gate.RatchetError, match="docs_citations"):
         gate.load_frozen(tmp_path)

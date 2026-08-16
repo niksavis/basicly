@@ -1,0 +1,14 @@
+# The demonstration collector (basicly-u2hl.58) spawns pytest as an argv list rebuilt from
+# an allow-list, with no shell — the reason S603 is suppressed on that line in
+# `src/basicly/demonstration_proof.py` rather than the call being shell-free by accident.
+# Banked so the debt table keeps matching the tree.
+[ratchet.noqa_debt.frozen]
+S603 = 1
+
+# `src/basicly/demonstration_proof.py` lands at 57.4% prose in 1,940 tokens: four small
+# functions whose content is why the same zero-selection result reports at plan time and
+# refuses at close. Cutting to 50% means deleting that argument, and the argument is what
+# stops the two rungs being "simplified" back into the one rule this replaced. The waiver
+# expires with the module, as `landing_gate`'s does.
+[ratchet.comment_density]
+count_delta = 1

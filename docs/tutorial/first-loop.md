@@ -23,7 +23,7 @@ use the [how-to guides](../how-to/) instead; the authoritative reference is
 | --- | --- | --- |
 | A git repo with at least one commit | The loop branches from a base commit | `git log --oneline` |
 | [uv](https://docs.astral.sh/uv/) on `PATH`, Python 3.14+ | The CLI and every projected git hook run through it | `uv --version` |
-| [`br`](https://github.com/Dicklesworthstone/beads_rust) 0.2.16+ | The work graph the loop derives every phase from | `br --version` |
+| [`br`](https://github.com/Dicklesworthstone/beads_rust) at exactly 0.2.16 | The work graph the loop derives every phase from. A pin, not a floor — the harness warns on any other version, newer included | `br --version` |
 
 Do this on a throwaway repo the first time. The loop rewrites hooks, adds
 generated files, and makes commits; you want to see all of that somewhere you

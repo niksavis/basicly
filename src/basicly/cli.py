@@ -21,6 +21,7 @@ from typing import Any
 from . import (
     __version__,
     agents,
+    board_schema,
     br,
     catalog_lint,
     catalog_verify,
@@ -49,6 +50,7 @@ from . import (
     state,
     supervise,
     surface_report,
+    tracker_cutover,
     ui,
     usage_report,
     validate_gate,
@@ -63,7 +65,6 @@ from .config import (
     CHECKPOINTS,
     CONFIG_FILE,
     DEFAULT_CONFIG_TOML,
-    ENGINE_GATE_PROVIDERS,
     LOCAL_CONFIG_FILE,
     VERIFY_MODES,
     WORK_TYPES,
@@ -1697,125 +1698,29 @@ def cmd_usage(args: argparse.Namespace) -> int:
     return _dispatch(args, "usage_command", handlers, group="usage")
 
 
-def _differential_vocabulary(repo_root: Path) -> dict[str, Any]:
-    """The engine's own names for the things the differential's three queries read.
+def _cmd_board_validate(args: argparse.Namespace) -> int:
+    """Report whether one snapshot is readable by this consumer, and exit on the answer.
 
-    The kit's defaults mirror these constants and name each one, so passing them is
-    not ceremony: the run that licenses a rung of the cutover has to compare on the
-    gates this repo *configured*, and a repo that set ``[policy] required_gates``
-    would otherwise be measured against the kit's default of ``verify`` alone.
-
-    A plain mapping, because the seam takes one — this module never reaches into the
-    kit, which ``test_no_module_outside_the_seam_reads_the_owned_store`` holds it to.
-
-    Three of the kit's fields are left at its defaults, because the engine has no
-    constant to pass: ``closed_statuses``, ``blocking_types`` (`merge` spells
-    ``blocks`` inline) and ``parent_child_type``.
+    The whole verb, because the judgement is `board_schema`'s: a major-version mismatch
+    is a different contract and refuses, an unknown key is reported and admitted.
     """
-    return {
-        "marker": policy.MARKER,
-        "checkpoints": tuple(CHECKPOINTS),
-        "required_gates": tuple(load_policy_config(repo_root).required_gates),
-        "engine_gate_providers": frozenset(ENGINE_GATE_PROVIDERS),
-        "worktree_ref_prefix": loop_state.WORKTREE_REF_PREFIX,
-        "known_statuses": frozenset(loop_state.KNOWN_STATUSES),
-        "dispatchable_statuses": frozenset(loop_state.DISPATCHABLE_STATUSES),
-    }
+    verdict = board_schema.validate_file(Path.cwd(), args.path)
+    ui.say(verdict.summary)
+    return verdict.exit_code
 
 
-def _cmd_tracker_shadow(args: argparse.Namespace) -> int:
-    """Run the shadow differential and report ``clean`` and ``conclusive`` separately.
-
-    Step 2 of the cutover (`docs/requirements/work-tracker.md` §5). The two verdicts are
-    printed as two lines and the exit code needs both, because a single answer would
-    let the weaker question stand in for the stronger one: a comparison where every
-    record gave one query the same answer agreed about nothing, and reporting that as
-    a pass is the failure mode this whole design keeps paying for.
-
-    A refused reference is reported in the same breath as the agreement it voids —
-    ``summary()`` carries the refusal — so a run that proves nothing cannot read as a
-    run that proved something.
-
-    The run is judged on records created after the flip (basicly-c357). ``--declare-history``
-    records today's delta as that boundary and writes nothing else; it is a one-time
-    declaration made at the flip, so it prints the count it captured rather than a verdict.
-    """
-    repo_root = _repo_root()
-    vocabulary = _differential_vocabulary(repo_root)
-    if args.declare_history:
-        stamp = datetime.now(UTC).date().isoformat()
-        declared = br.declare_differential_baseline(repo_root, stamp, vocabulary)
-        ui.say(f"declared {len(declared.records)} historical record(s) on {stamp}", style="ok")
-        return 0
-    report = br.scoped_differential(repo_root, vocabulary)
-    ui.say(report.summary())
-    ui.say(f"clean:      {'yes' if report.clean else 'no'}")
-    ui.say(f"conclusive: {'yes' if report.conclusive else 'no'}")
-    if report.clean and report.conclusive:
-        ui.say(
-            "The owned ledger agrees with the live tracker, and the agreement means something.",
-            style="ok",
-        )
-        return 0
-    ui.say("The next rung of the cutover is not licensed by this run.", style="warn")
-    return 1
-
-
-def _cmd_tracker_import(args: argparse.Namespace) -> int:
-    """Bring the owned ledger up to the committed export (§5 step 1).
-
-    The entry point the import never had (`basicly-vkh0.23`): it was run once by hand in a
-    python one-liner, so the ledger drifted 24 records behind within a day and nothing a
-    fresh consumer runs could build one at all.
-
-    ``--dry-run`` reports the same refusal the write would, rather than only the counts: a
-    preview that says "would add 200" for a run that will refuse is worse than no preview.
-    """
-    repo_root = _repo_root()
-    preview = br.import_preview(repo_root)
-    ui.say(f"ledger {preview.ledger} records, export {preview.export}")
-    if preview.native:
-        ui.say(
-            f"refused: the ledger holds {len(preview.native)} record(s) created after the "
-            "flip, so re-importing would close the gap the differential is judged against",
-            style="warn",
-        )
-        return 1
-    if args.dry_run:
-        ui.say(f"would add {len(preview.adds)} records, 0 tombstones")
-        return 0
-    # No actor: `basicly-r166` is open on the ledger committing a username in every event,
-    # so this entry point does not add a second producer of the same defect.
-    report = br.import_export(repo_root)
-    ui.say(f"added {len(report.imported)} records, {len(report.tombstoned)} tombstones")
-    for record in report.diverged:
-        ui.say(f"  diverged, left as it stands: {record}")
-    return 0
-
-
-def _cmd_tracker_write(args: argparse.Namespace) -> int:
-    """Run one br write through the engine seam, so the owned ledger gets it too.
-
-    Spawning ``br`` directly never enters ``br._mirror_write``, so a hand-run write
-    moves one store and not the other. Three records arrived that way and are the whole
-    of what still fails the differential (basicly-vkh0.24).
-    """
-    argv = [arg for arg in (args.argv or []) if arg != "--"]
-    if not argv:
-        ui.say("tracker write: name a br subcommand, e.g. `-- close b-1`")
-        return 2
-    proc = br.run_br(_repo_root(), argv)
-    if proc.stdout:
-        ui.say(proc.stdout.rstrip())
-    return 0
+def cmd_board(args: argparse.Namespace) -> int:
+    """Dispatch the harness board's subcommands."""
+    return _dispatch(args, "board_command", {"validate": _cmd_board_validate}, group="board")
 
 
 def cmd_tracker(args: argparse.Namespace) -> int:
-    """Dispatch the owned tracker's cutover subcommands (import, shadow, write)."""
+    """Dispatch the owned tracker's cutover subcommands (adopt, import, shadow, write)."""
     handlers = {
-        "import": _cmd_tracker_import,
-        "shadow": _cmd_tracker_shadow,
-        "write": _cmd_tracker_write,
+        "adopt": tracker_cutover.cmd_adopt,
+        "import": tracker_cutover.cmd_import,
+        "shadow": tracker_cutover.cmd_shadow,
+        "write": tracker_cutover.cmd_write,
     }
     return _dispatch(args, "tracker_command", handlers, group="tracker")
 
@@ -4980,6 +4885,18 @@ def _add_usage_parser(subparsers: argparse._SubParsersAction) -> None:
     )
 
 
+def _add_board_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Register `basicly board` — the harness board's snapshot surface."""
+    board_parser = subparsers.add_parser(
+        "board", help="The harness board: the factory and the tracker, on one page"
+    )
+    board_sub = board_parser.add_subparsers(dest="board_command", required=True)
+    b_validate = board_sub.add_parser(
+        "validate", help="Check a board snapshot against the schema this consumer reads"
+    )
+    b_validate.add_argument("path", type=Path, help="The snapshot file to read")
+
+
 def _add_tracker_parser(subparsers: argparse._SubParsersAction) -> None:
     """Register the `basicly tracker` command group — the owned tracker's cutover."""
     tracker_parser = subparsers.add_parser(
@@ -5009,6 +4926,9 @@ def _add_tracker_parser(subparsers: argparse._SubParsersAction) -> None:
         "write", help="Make a tracker write through the engine seam, so both stores get it"
     )
     t_write.add_argument("argv", nargs=argparse.REMAINDER, help="The br subcommand, after `--`")
+    tracker_sub.add_parser(
+        "adopt", help="Reconcile the records a hand-run br created (basicly-vkh0.24)"
+    )
 
 
 def _tolerate_narrow_consoles() -> None:
@@ -5086,6 +5006,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     brief_parser.add_argument("issue_id", help="The tracked issue to brief")
 
+    _add_board_parser(subparsers)
     _add_tracker_parser(subparsers)
 
     skills_build_parser = subparsers.add_parser(
@@ -5173,6 +5094,7 @@ def _handlers() -> dict[str, Callable[[argparse.Namespace], int]]:
         "rubric": cmd_rubric,
         "usage": cmd_usage,
         "brief": cmd_brief,
+        "board": cmd_board,
         "tracker": cmd_tracker,
     }
 
