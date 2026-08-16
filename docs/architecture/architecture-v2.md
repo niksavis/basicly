@@ -165,10 +165,20 @@ nothing tracks.
 
 ## 3. Section numbers are a cited surface
 
-**The numbers on the headings in this document are a contract with the code.** Sixteen
-comments in twelve modules under `src/` and `tests/`, and nine more in the catalog and
-the sibling documents, cite a section of this document by number
-[measured 2026-08-16, `grep -rn 'architecture[^,]\{0,40\}§[0-9]' src/ .scripts/ tests/ docs/ .basicly/`].
+**The numbers on the headings in this document are a contract with the code.** Comments
+under `src/` and `tests/`, catalog sources and the sibling documents all cite a section of
+this document by number. The population moves with every citation added or corrected, so
+this document gives the probe and not a frozen count:
+
+```sh
+grep -rn 'architecture[^,]\{0,40\}§[0-9]' src/ tests/ .scripts/ .basicly/ docs/ \
+  | grep -v '^\.basicly/ledger/'
+```
+
+**The second filter is not optional.** The ledger stores prose about this work, the same
+pattern matches that prose, and it dominates the raw count. A reader who drops the filter
+gets a number that is mostly narration.
+
 A number that moves without the citation moving breaks a claim that resolves to the
 wrong text and still reads as correct.
 
@@ -180,8 +190,10 @@ Two terms of that contract.
 
 `[TARGET]` **A check should hold the second term.** `.scripts/check_docs_citations.py`
 walks `docs/**/*.md` for `file:line` references into code, and exits non-zero on a stale
-one. Nothing walks code for `§N` references into a document. That asymmetry is why
-twenty-five stale citations sit in the tree today with every gate green.
+one. Nothing walks code for `§N` references into a document. That asymmetry is why a
+stale `§` citation sits in the tree with every gate green, and why every citation the
+probe above returns has to move in the same change that moves a heading number.
+[`backlog.md`](backlog.md) B2 is the item that closes it.
 
 ## 4. System context
 
@@ -1239,8 +1251,11 @@ is the offline staleness gate.
 `[TARGET]` **This section belongs in a CLI reference, not in an architecture document.**
 It is the largest single section here, it is a per-command behaviour table, and it goes
 stale on every landing. It stays only because two `docs_claims` assertions
-(`cli-commands`, `cli-subcommands`) and two tests in `tests/test_docs_drift.py` bind on
-this file. Moving the section means retargeting all four in the same change. Until that
+(`cli-commands`, `cli-subcommands`) and two of the four `tests/test_docs_drift.py`
+tripwires bind on this section. Moving the section means retargeting all four in the same
+change. The other two tripwires bind on the fragment field table in
+[13. The fragment model](#13-the-fragment-model), and
+[`conventions.md`](conventions.md) §7 records which gate binds where. Until the move
 lands, this section is a reference the gates keep true, in the wrong document.
 
 **28 top-level commands. Nine of them are subcommand groups** [measured 2026-08-16, count
@@ -1912,24 +1927,46 @@ is agent-neutral. Only the adapter differs.
 
 ### 29.1 The adapter contract
 
-An adapter is one `RunnerSpec` record. A consumer adding a fourth agent family implements
-exactly this, from configuration, without a code change.
+An adapter is one `RunnerSpec` record. The table below is the whole contract. The three
+built-in adapters are constructed in code and carry every field.
 
-| Field | Required | What it declares |
-| --- | --- | --- |
-| `name` | yes | the adapter's own name, and the binary looked up on `PATH` |
-| `kind` | yes | `headless` or `handoff` |
-| `command` | for `headless` | the argv template. With `prompt_via: arg` it holds exactly one prompt placeholder |
-| `prompt_via` | yes | `arg` or stdin |
-| `model` | no | a pinned provider id. A `{model}` placeholder is substituted, otherwise the flag is injected after the binary |
-| `tier`, `vendor`, `tier_source` | no | the portable tier, which vendor it resolves against, and what decided it. An explicit `model` wins over a tier |
-| `deny_tools`, `deny_style` | no | invocation-time tool denials, in this family's wire form. `None` means the family has no tool-deny flag |
-| `agent_style` | no | how this family selects a projected role, or `None` when it cannot |
-| `sandbox`, `approval` | no | invocation-time guardrails, for a family that forbids them at repository scope |
-| `git_name`, `git_email` | no | an opt-in bot identity. **Both keys or neither**; the parser rejects a lone half |
-| `usage_format` | no | which envelope carries token telemetry. `None` falls back to a transcript estimate |
-| `session_store` | no | the base directory of a family's own per-session usage store |
-| `context_window`, `window_source` | yes | the model's window in tokens, and which input decided it. A window nobody chose is the defect the second field exists to make visible |
+`[TARGET]` **A consumer adds a fourth agent family from configuration alone, without a
+code change.** Configuration does not reach that yet. A `[[runner.agents]]` entry accepts
+thirteen of these keys, and [20. Configuration](#20-configuration) refuses an
+unrecognised key outright, so a consumer who copies a field the entry does not accept
+loses the whole file. The **From** column says which is which
+[verified 2026-08-16, `config._RUNNER_AGENT_TABLE` and `config._parse_runner_agent`].
+**Required** means an entry must declare it.
+
+| Field | Required | From | What it declares |
+| --- | --- | --- | --- |
+| `name` | yes | an entry | the adapter's own name, and the binary looked up on `PATH` |
+| `kind` | — | code only | `headless` or `handoff`. The parser sets `headless` unconditionally, so a configured family is never a handoff |
+| `command` | yes | an entry | the argv template. With `prompt_via: arg` it holds exactly one prompt placeholder. Required unconditionally, because a configured family is always headless |
+| `prompt_via` | no | an entry | `arg` or stdin. It defaults to `arg` |
+| `model` | no | an entry | a pinned provider id. A `{model}` placeholder is substituted, otherwise the flag is injected after the binary |
+| `tier`, `vendor` | no | an entry | the portable tier, and which vendor it resolves against. An explicit `model` wins over a tier |
+| `tier_source` | — | derived | what decided the tier. The parser sets it when the entry declares one, and never reads it |
+| `deny_style` | no | an entry | this family's tool-deny wire form. `None` means the family has no tool-deny flag |
+| `deny_tools` | — | code only | the denials themselves. The loader injects them into the built-in Copilot adapter from the catalog deny-list |
+| `agent_style` | — | code only | how this family selects a projected role, or `None` when it cannot |
+| `sandbox`, `approval` | no | an entry | invocation-time guardrails, for a family that forbids them at repository scope |
+| `git_name`, `git_email` | no | an entry | an opt-in bot identity. **Both keys or neither**; the parser rejects a lone half |
+| `usage_format` | no | an entry | which envelope carries token telemetry. `None` falls back to a transcript estimate |
+| `session_store` | — | code only | the base directory of a family's own per-session usage store. `[runner] copilot_session_store` sets it, in a different section, on the built-in Copilot adapter only |
+| `context_window` | no | an entry | the model's window in tokens |
+| `context_window_source` | — | derived | which input decided the window. A window nobody chose is the defect this field exists to make visible |
+
+**What a consumer can do today.** They declare a headless family with its own command,
+prompt style, model or tier, guardrails, deny wire form, bot identity, usage format and
+context window. They cannot declare a handoff. They cannot declare `agent_style`, and
+that one costs the most. `agent_style` is the field the role resolver reads first, and it
+returns nothing for a family that has none. **A family added from configuration is
+therefore dispatched with a bare prompt and never with a projected role**, whatever
+[30. Roles at dispatch](#30-roles-at-dispatch) grades for the three built-ins. The
+asymmetry is visible in the parser itself: it carries `deny_style` as an explicit escape
+hatch for a custom agent wrapping one of the three, and carries no such hatch beside it
+for `agent_style`.
 
 `deny_style` and `agent_style` are independent on purpose. Codex denies tools and cannot
 select a role.
@@ -1947,8 +1984,8 @@ binary is capable, so a flaky probe never skips a working agent, and it never ga
 command.** When nothing matches, selection falls back to a **manual handoff runner**. That
 runner shells out to nothing. It prints the exact prompt and the worktree path. It defers to
 two things: the loop's block-and-resume contract, and the projected guidance, which is the
-one thing every agent family does standardize. Configuration supports any other agent
-through the explicit `RunnerSpec` above.
+one thing every agent family does standardize. Configuration supports any other headless
+agent through the explicit entry in [29.1](#291-the-adapter-contract).
 
 **Model resolution takes the most specific source first**: a pinned id, then a declared
 tier, then a default tier. It **refuses before it spawns** when a tier resolves to nothing,
@@ -2208,7 +2245,7 @@ stateDiagram-v2
 ```
 
 The four levels and their coverage are in
-[8.1 Autonomy](#91-autonomy-how-much-the-engine-may-approve-alone).
+[9.1 Autonomy](#91-autonomy-how-much-the-engine-may-approve-alone).
 
 **What no grant can delegate.** Each is enforced by code, not by policy prose.
 
@@ -2497,13 +2534,23 @@ this project's own, never a foreign tool's payload shape. See
 
 **One kind carries prose. Every other kind is machine state the fold reads by name.**
 
-**Why this is a specification and not a description.** Today one kind carries both.
-Measured on this repository's own ledger [measured 2026-08-16,
-`python3` over `.basicly/ledger/events-*.jsonl`]: of **5,196** events, **2,458 are
-`comment`** — 47.3% of the log. That single kind carries the prose a human wrote *and*
-every machine marker the loop derives state from: checkpoints, gate results, handoff
-artifacts, decision items, scope violations, telemetry and worktree bindings. The
-remaining kinds are `edge` 923, `status` 918, `created` 882, `field` 12 and `gate` 3.
+**Why this is a specification and not a description.** Today one kind carries both. The
+log is append-only and grows on every session, so this document gives the census and not a
+figure:
+
+```sh
+python3 -c "import collections, json, pathlib; \
+k = collections.Counter(json.loads(l)['kind'] \
+for p in sorted(pathlib.Path('.basicly/ledger').glob('events-*.jsonl')) for l in p.open()); \
+print(sum(k.values()), k.most_common())"
+```
+
+Two facts in its output carry the argument, and neither is a magnitude. **`comment` is the
+largest kind and holds close to half of the whole log.** That single kind carries the prose
+a human wrote *and* every machine marker the loop derives state from: checkpoints, gate
+results, handoff artifacts, decision items, scope violations, telemetry and worktree
+bindings. **`gate` is the smallest kind in the log**, even though a gate verdict is the
+state the phase derivation reads the word "landed" from.
 
 Three consequences, and the third is the one that costs.
 
@@ -2511,16 +2558,17 @@ Three consequences, and the third is the one that costs.
    marker prefix out of a free-text body.
 2. **The fold cannot refuse a malformed marker**, because at the kind level it is a
    well-formed comment.
-3. **`gate` counts 3.** Gate verdicts are real state the phase derivation reads, and they
-   are almost entirely inside `comment` bodies rather than in the kind built for them.
+3. **The `gate` kind is nearly empty.** Gate verdicts are real state the phase derivation
+   reads, and they are almost entirely inside `comment` bodies rather than in the kind
+   built for them.
 
 The overload is inherited. It is the shape of a foreign tool where a comment was the only
 extensible field, and [D-22](#d-22--the-tracker-vocabulary-is-this-projects-own) already
 says a foreign payload shape may not govern our own record.
 
 **The migration constraint is the hard part, and it is not optional.** An append-only log
-is never rewritten, so the 2,458 existing `comment` events stay on disk exactly as they
-are. **The reader therefore needs an alias, not the unknown-kind skip path.** A `comment`
+is never rewritten, so every `comment` event already on disk stays there exactly as it is,
+and the census above counts them. **The reader therefore needs an alias, not the unknown-kind skip path.** A `comment`
 event must resolve to the kind its body already announces, and a `comment` with no marker
 must resolve to `note`.
 
@@ -2671,7 +2719,7 @@ and never opens it. The two are different things with adjacent names.
 **A written schema is not a reachable role, and it is not a written artifact either.** Three
 kinds have a producer. Two of those three have a consumer that can refuse. Four have a
 schema on disk and neither a producer nor a consumer, so their contract can refuse nothing.
-**Five of the seven roles therefore carry a contract that nobody can exercise until its
+**Five of the eight kinds therefore carry a contract that nobody can exercise until its
 artifact has run on real work.** That debt is named here rather than hidden.
 
 **Every claim in a release record carries its evidence**, typed as a test, a command or a
@@ -2713,7 +2761,7 @@ missing-fact sentinel, and the one-time checkpoint confirmation codes.
 
 ---
 
-**Part VI — Development and deployment view.** How the code is layered, what runs where, and what refuses.
+**Part VI — Development and deployment view.** How the code is layered, what runs where, what refuses, and the one dependency being removed.
 
 ## 34. Module structure and the layering contract
 
@@ -2763,6 +2811,15 @@ Two facts in this section are the two most frequently re-learned facts in this r
 every whole-tree gate.** Both are topology facts, and neither is recoverable from a prose
 search.
 
+`[TARGET]` **The store drawn below is the owned event log, and it is not the whole store
+today.** A second store sits beside it: the external tracker binary's, which is
+authoritative for a work item's fields and for the gate ledger while the tracker mode is
+`dual`. Every engine write reaches both.
+[37. The external tracker binary, and its removal](#37-the-external-tracker-binary-and-its-removal)
+is the whole account of it, and it is the only section that names it. A reader debugging a
+live run needs both stores, and the process and file placement below is the same for
+either one.
+
 ```mermaid
 flowchart TB
   base["base checkout<br/>the repository root, on the base branch"]
@@ -2793,7 +2850,7 @@ flowchart TB
 | --- | --- | --- |
 | base checkout | the repository root | every advance that writes the base branch, and every landing |
 | sibling worktrees | `<repo>.worktrees/<name>`, outside the repository | one lane each, on `harness/<name>` |
-| the work tracker | one event log, in the base checkout only | every checkout. A lane worktree never holds a store of its own. Today a redirect file carries that, and §37.2 names it |
+| the work tracker | one store, in the base checkout only | every checkout. A lane worktree never holds a store of its own. Today a redirect file carries that, and §37.2 names it. Today the store is two stores written together, and §37.3 draws the write |
 | the log files | `.basicly/ledger/` in the base checkout only | one append at a time, behind a file whose existence is the lock |
 | the supervisor lock | `.basicly/usage/supervisor.lock` | one supervisor process, refreshed by a heartbeat thread |
 | agent processes | subprocesses of the worker pool | one per lane. Nothing interrupts a running one |
@@ -2833,12 +2890,13 @@ argument this design makes against a dead definition everywhere else. Dozens of 
 consumer are a second instance of the same defect, and each stage is one more surface to
 keep true against a vendor that moves.
 
-Three further gates hang off layer 3 rather than sitting in the stack.
+The gates below hang off layer 3 rather than sitting in the stack.
 
 | Gate | Where it binds | Status |
 | --- | --- | --- |
-| plan gate | entry to BUILD. Refuses a child with no criteria, scope, dependencies, budget, integrity level or demonstration | partial. It judges the demonstration field and never runs it |
-| demonstration proof | entry to BUILD, advisory; and the **ship advance, blocking** | shipped. See [36.4](#364-the-plan-gate-and-the-demonstration) |
+| plan gate | the decompose advance, inside `decompose`, before any child is written. Refuses a child with no criteria, scope, dependencies, budget, integrity level or demonstration | partial. It judges the demonstration field and never runs it |
+| plan-entry ratchet | entry to BUILD. Re-reads the recorded plan section and refuses a dispatch missing one of the **five** fields | partial. It never judges the demonstration field, and it is inert without a grant. See [36.4](#364-the-plan-gate-and-the-demonstration) |
+| demonstration proof | the **decompose advance, advisory**; and the **ship advance, blocking** | shipped. See [36.4](#364-the-plan-gate-and-the-demonstration) |
 | validate gate | `consumer-surface` integrity only. A consumer-level verdict, recorded by the engine and never by the agent | shipped |
 | ratchets | a frozen baseline that may only fall | shipped |
 
@@ -2898,7 +2956,9 @@ exist.
 
 ### 36.4 The plan gate and the demonstration
 
-The plan gate is the entry condition on build. It reports every violation from one run.
+The plan gate runs on the **decompose advance**, inside `decompose`, before a single child
+is written. It reports every violation from one run, because a per-child raise would
+surface them one dispatch at a time.
 
 | It refuses | Note |
 | --- | --- |
@@ -2913,6 +2973,18 @@ The plan gate is the entry condition on build. It reports every violation from o
 **An empty dependency list passes. An absent one does not.** Declaring "nothing blocks this"
 is a statement. Omitting the field is not.
 
+**A second, narrower gate re-reads the plan at entry to BUILD.** `plan_entry` reads the
+recorded body and refuses the dispatch when the plan section is missing one of the five
+fields. It sits there because inspection belongs before the expensive stage, and BUILD is
+where nearly all the tokens go. Three things separate it from the plan gate above, and
+each is deliberate. It
+ratchets on the `## Plan` heading, so a body written before the gate existed is admitted
+rather than refused. It never judges the sixth field, because on that population an
+absent demonstration is ambiguous between a defect and a record predating the rule. And
+it is inert when the caller named no grant, because it fails closed on an unreadable
+record, and running it on the interactive path would turn a tracker that did not answer
+into a refusal on a path that never read the tracker.
+
 **Every planned child must also name how it is demonstrated end to end.** That is what makes
 "every acceptance criterion names its own check at plan time" satisfiable by construction. A
 child with no consumer-visible behaviour has no check to derive, and that is the
@@ -2925,8 +2997,8 @@ the design wrong.
 
 | Rung | Mechanism | What it does with a demonstration that selects nothing |
 | --- | --- | --- |
-| plan gate, at entry to BUILD | `plan_gate` | never runs it. Refuses an empty value, a multi-line value, and a value naming nothing runnable, detected as the absence of a backticked span |
-| decompose advance | `demonstration_proof.plan_notice` | runs it and **reports**. At plan time a demonstration naming a test the child has not written yet is the honest case |
+| decompose advance, before the children exist | `plan_gate` | never runs it. Refuses an empty value, a multi-line value, and a value naming nothing runnable, detected as the absence of a backticked span |
+| decompose advance, once the children exist | `demonstration_proof.plan_notice` | runs it and **reports**. At plan time a demonstration naming a test the child has not written yet is the honest case |
 | **ship advance** | `demonstration_proof.unrun_reason` | runs it and **blocks the close**. At close, a demonstration is a claim of completion |
 
 **The ship-rung gate is built, wired and blocking** [verified 2026-08-16,
@@ -2949,7 +3021,7 @@ remedy is a wider allowlist of bounded, no-side-effect probes, not an unrestrict
 
 ### 36.5 Integrity assignment
 
-[8.2 Integrity](#92-integrity-how-far-a-defect-reaches) gives the three levels, their names
+[9.2 Integrity](#92-integrity-how-far-a-defect-reaches) gives the three levels, their names
 and what each one buys. This section covers the rule that assigns a level, and how much of
 that assignment anything reads back.
 
@@ -3063,8 +3135,8 @@ document may carry one stale citation.
 
 **The gate runs document to code, and nothing runs code to document.**
 [3. Section numbers are a cited surface](#3-section-numbers-are-a-cited-surface) carries the
-target for the missing direction, and the twenty-five stale citations that asymmetry
-allows.
+target for the missing direction, the probe that counts the citations, and the stale ones
+that asymmetry allows.
 
 ### 36.8 CI
 
@@ -3078,10 +3150,6 @@ allows.
 
 **CI ignores a tracker-only push.** The commit-message hooks are the deterministic floor for
 that case.
-
----
-
-**Part VII — Decisions.** One record per decision, each the sole home of its argument.
 
 ## 37. The external tracker binary, and its removal
 
@@ -3239,13 +3307,27 @@ repair. The import refuses a ledger that already holds a post-flip record, for t
 reason.
 
 **What the run says today** [measured 2026-08-16, `uv run basicly tracker shadow`]: not
-clean, and conclusive. The failures are a small number of records that exist on the external
-store and are absent from the ledger. **Every one of them is a hand-write that bypassed the
-seam**, not a mirror defect. An earlier reading of hundreds of gate disagreements is stale.
-Those records carry the import marker, and the run now excuses them as history.
+clean, and conclusive. Re-run it rather than trusting a count here; the population moves
+with every tracker write. It reports **two kinds of failure**, and they need different
+answers.
+
+1. **Records the external store holds and the ledger does not.** Each is a hand-write that
+   bypassed the seam, not a mirror defect. This is the class the closed bypass route
+   removes.
+2. **Records both stores hold, where the two disagree on the `ready` query.** The owned
+   fold calls the record ready and the reference does not. **This document does not know
+   the cause**, and the two candidates need different fixes: a dependency edge added by a
+   direct spawn never reached the mirror, or the mirror dropped it. What would settle it is
+   whether the ledger holds an `edge` event for the disagreeing record's blocker
+   [measured 2026-08-16, `grep -h '<the record id>' .basicly/ledger/events-*.jsonl`: one
+   `field` event and no `edge`, which fits either candidate].
+
+An earlier reading of hundreds of gate disagreements is stale. Those records carry the
+import marker, and the run now excuses them as history.
 
 **The flip therefore no longer waits on a one-shot gate dump.** It waits on a closed bypass
-route, and on the five unported operations in [37.2](#372-what-still-depends-on-it).
+route, on the `ready` disagreement above, and on the five unported operations in
+[37.2](#372-what-still-depends-on-it).
 
 ### 37.4 Two defects that make the removal urgent
 
@@ -3260,13 +3342,15 @@ path **explicitly skips** `sqlite3.integrity_check` among its slow detectors. A 
 reads the cheap answer therefore learns that the process can open the file, not that the
 file is sound.
 
-*What I could and could not verify.* I could not reproduce the malformed image: both
-`.beads/beads.db` and `.beads/beads.db.recovered` return `ok` on `PRAGMA integrity_check`
-and `PRAGMA quick_check` today [measured 2026-08-16, read-only SQLite connection].
-Corroborating evidence that a corruption and a recovery happened is on disk — a recovered
-image written at 17:26 and a rebuilt database at 18:09 on the same day. **Treat the
-disagreement as reported and corroborated, not as reproduced.** What is independently
-established is the mechanism above, which is read off the vendor's own documentation.
+*What can and cannot be verified.* The malformed image does not reproduce: `.beads/beads.db`
+returns `ok` on `PRAGMA integrity_check` and on `PRAGMA quick_check`
+[measured 2026-08-16, read-only SQLite connection]. **The corroborating evidence is gone.**
+The recovered image the corruption left behind was a 7.6 MB stray copy, and commit `c351ce0`
+deleted it, so the pair of file timestamps that showed a recovery and a rebuild can no
+longer be read by anyone. **Treat the disagreement as reported and not reproduced.** The
+word "corroborated" was true when it was written and is not checkable now. What is
+independently established is the mechanism above, which is read off the vendor's own
+documentation.
 
 **Defect 2 — the vendor's repair path destroys the gate ledger.** The binary's repair flag
 is documented, in its own help text, as: *"Attempt to repair detected issues (rebuilds DB
@@ -3274,13 +3358,25 @@ from JSONL)."* The JSONL export carries no gate results at all.
 
 | Source | Gate results |
 | --- | --- |
-| the database, `gate_results` table | **386** |
-| the JSONL export, across 893 records | **0** |
+| the database, `gate_results` table | hundreds, and it grows on every landing |
+| the JSONL export, every record | **0** |
 
-[measured 2026-08-16: `select count(*) from gate_results` on a read-only connection to both
-the live and the recovered image, each returning 386; and a parse of every export record
-finding **no key whose name contains "gate"**, against a positive control showing eight
-keys present on all 893 records.]
+**Zero is the load-bearing figure, and it is the one that cannot drift upward in silence.**
+The other side of the table is a moving count, so this document gives the probe:
+
+```sh
+python3 -c "import json, pathlib, sqlite3; \
+db = sqlite3.connect('file:.beads/beads.db?mode=ro', uri=True); \
+r = [json.loads(l) for l in pathlib.Path('.beads/issues.jsonl').open()]; \
+k = set().union(*(x.keys() for x in r)); \
+print(db.execute('select count(*) from gate_results').fetchone()[0], len(r), \
+sorted(x for x in k if 'gate' in x), len(k))"
+```
+
+It prints the database count, the export's record count, every export key whose name
+contains "gate", and the number of distinct keys. The third value is empty and the fourth
+is the positive control that says the parse read something. The recovered image the earlier
+measurement also read is gone, so this count now has one derivation path and not two.
 
 **So the documented recovery path for a corrupted store silently erases every gate verdict
 in it.** That is not a peripheral loss. A green required gate is the discriminator the
@@ -3323,6 +3419,10 @@ directed a reader at five files of which four were already correct.
 
 **Every one of these paragraphs disappears at the flip.** That is the point of confining
 them to one section.
+
+---
+
+**Part VII — Decisions.** One record per decision, each the sole home of its argument.
 
 ## 38. Decision records
 
@@ -3793,10 +3893,6 @@ performing another. A gitignored overlay has no diff to review and no other gate
 engine, whose configuration carries a newer key, fails until it upgrades or removes the key.
 The message names the engine's version and says that an upgrade is one of the two fixes.
 
----
-
-**Part VIII — Appendices.** Vocabulary, the documentation set, and the sources this design builds on.
-
 ### D-34 · One kind for prose, and typed kinds for machine state
 
 **Status: proposed.** `[TARGET]` **This decision is not implemented.** Filed as
@@ -3806,13 +3902,15 @@ The message names the engine's version and says that an upgrade is one of the tw
 `note`, and a first-class typed kind for every machine marker the fold reads by name. The
 rendered chronology that interleaves the two is called the **work log**.
 
-**Because.** One kind carries both today. Measured on this repository's own ledger
-[measured 2026-08-16]: **2,458 of 5,196 events are `comment`**, 47.3% of the log, and that
-kind holds checkpoints, gate results, handoff artifacts, decision items, scope violations,
-telemetry and worktree bindings alongside human prose. Three costs follow. A reader cannot
-select machine state without parsing prose. The fold cannot refuse a malformed marker,
-because at the kind level it is a well-formed comment. And the kind built for gate verdicts
-holds **3** events while the verdicts themselves sit inside comment bodies.
+**Because.** One kind carries both today. `comment` is the largest kind in this
+repository's own ledger and holds close to half of it, and that kind holds checkpoints,
+gate results, handoff artifacts, decision items, scope violations, telemetry and worktree
+bindings alongside human prose.
+[32.3](#323-the-event-vocabulary) carries the census command; the figures move on every
+session, so they are not copied here. Three costs follow. A reader cannot select machine
+state without parsing prose. The fold cannot refuse a malformed marker, because at the kind
+level it is a well-formed comment. And the kind built for gate verdicts is the smallest one
+in the log while the verdicts themselves sit inside comment bodies.
 
 The overload is inherited, not chosen. It is the shape of an external tool where a comment
 was the only extensible field, and
@@ -3859,13 +3957,17 @@ happened.
 **Two defects found on 2026-08-16 moved this from a plan to a priority**, and
 [37.4](#374-two-defects-that-make-the-removal-urgent) carries both with their evidence. The
 severe one is reproducible: the vendor's documented repair path rebuilds the database from
-a JSONL export that carries **zero** gate results against **386** in the database, so the
+a JSONL export that carries **zero** gate results against hundreds in the database, so the
 recovery path for a corrupted store erases the ledger the phase derivation reads the word
 "landed" from.
 
 **Consequence.** Sections that describe behaviour the binary currently provides are marked
 `[TARGET]` and specify the owned form. A reader who needs to know what runs today reads
 §37. Nothing else in this document owes them that.
+
+---
+
+**Part VIII — Appendices.** Vocabulary, and the sources this design builds on.
 
 ## 39. Glossary
 

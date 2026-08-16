@@ -50,12 +50,12 @@ a seventh word.
 | Rework convergence detection from the open-finding set rather than the count | shipped | |
 | A release gate refusing to ship a declared capability nothing has exercised | shipped | Derives the inventory from the configured checks, and fails closed with no ledger at all |
 | A gate that runs the demonstration a unit declared | shipped | `demonstration_proof` runs it: advisory at the decompose advance, **blocking at the ship advance**. It rebuilds a pytest argv from an allowlist; a non-pytest demonstration is still admitted |
-| The plan gate running the demonstration it admits | designed | The plan gate judges the field's form only, by design. The running of it lives at the two rungs above, not in the gate |
+| The plan gate running the demonstration it admits | deferred | Not `designed`: this is a deliberate separation, not sequenced work. The plan gate judges the field's form and `demonstration_proof` runs the command, at the decompose advance and at the ship advance. Architecture §36.4 holds the reason. No open work item proposes moving the run into the gate [measured 2026-08-16, a `plan[_ ]gate` search over every tracker record: 12 open matches, none of them proposing it, against a positive control of 11 closed matches] |
 | Every gate classified by type | building | The gates the engine names by constant are typed; the rest are classified in prose because they have nothing to key on |
 | Enforcement at the tool-call boundary, not only at the commit boundary | designed | Engine work before it is catalog work: the host event vocabulary is barely mapped |
 | `basicly install` reporting the capability tier it actually delivered | building | On a host with no plugin tier the projection degrades to advice, and we say so nowhere |
-| A check that code citations of `architecture §N` resolve | designed | The citation ratchet runs document to code. Nothing runs code to document, which is why 25 stale `§` citations sit in the tree with every gate green |
-| A typed event vocabulary: `note` for prose, first-class kinds for machine state | designed | One kind carries both today: 2,458 of 5,196 events are `comment`, and the `gate` kind holds 3. Architecture §32.3 and D-34 |
+| A check that code citations of `architecture §N` resolve | designed | The citation ratchet runs document to code. Nothing runs code to document, which is why a stale `§` citation sits in the tree with every gate green. Architecture §3 carries the probe that counts them |
+| A typed event vocabulary: `note` for prose, first-class kinds for machine state | designed | One kind carries both today: `comment` is the largest kind and holds close to half the log, while the `gate` kind is the smallest. Architecture §32.3 carries the census command, and D-34 the decision |
 | The owned tracker as the only store | building | Architecture §32 specifies it; §37 is the account of the external binary still carrying part of it |
 | A mermaid parse check on every committed block | designed | See [`backlog.md`](backlog.md) |
 

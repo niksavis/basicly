@@ -49,7 +49,7 @@ The mapping is mechanical and is recorded in the rewrite changelog.
 
 | Item | Value |
 | --- | --- |
-| Scope | `docs/architecture/architecture.md`, `src/basicly/*.py`, `tests/test_skill_source.py`, `.basicly/README.md`, `.basicly/core/hooks/**`, `.basicly/core/targets/codex.yaml`, `docs/requirements/factory-loop.md`, `.scripts/check_docs_citations.py`, `basicly.toml` |
+| Scope | `docs/architecture/architecture.md`, `src/basicly/*.py`, `tests/test_skill_source.py`, `tests/test_docs_drift.py`, `.basicly/README.md`, `.basicly/core/hooks/**`, `.basicly/core/targets/codex.yaml`, `docs/requirements/factory-loop.md`, `.scripts/check_docs_citations.py`, `.scripts/docs_claims.py`, `basicly.toml` |
 | Integrity | `engine` |
 | Depends on | the architecture rewrite landing |
 | Acceptance | WHEN code cites the architecture document, IT SHALL cite a section number the document currently defines. WHEN a cited number names no heading, THE CHECK SHALL exit non-zero and name the file, the line and the missing number. WHEN every citation resolves, THE CHECK SHALL exit zero and print the citation count |
@@ -178,13 +178,14 @@ goes stale on every landing. It stays only because four gates bind on it.
 ## B8 — Split the event vocabulary: `note` for prose, typed kinds for machine state
 
 **Why.** Architecture §32.3 and **D-34** specify it. Filed upstream as `basicly-vkh0.30`.
-Measured on this repository's ledger [2026-08-16]: **2,458 of 5,196 events are `comment`**
-(47.3%), carrying human prose *and* checkpoints, gate results, handoff artifacts, decision
-items, scope violations, telemetry and worktree bindings. The `gate` kind, built for gate
-verdicts, holds **3**.
+Measured on this repository's ledger [2026-08-16, the census command in architecture §32.3]:
+**2,495 of 5,236 events are `comment`** (47.7%), carrying human prose *and* checkpoints,
+gate results, handoff artifacts, decision items, scope violations, telemetry and worktree
+bindings. The `gate` kind, built for gate verdicts, holds **6**. The log grows on every
+session, so re-run the census rather than quoting these figures.
 
 **The migration constraint is the whole risk.** An append-only log is never rewritten, so
-the 2,458 existing `comment` events stay. The reader needs an **alias**, not the
+every existing `comment` event stays. The reader needs an **alias**, not the
 unknown-kind skip path: a `comment` resolves to the kind its body announces, and a
 `comment` with no marker resolves to `note`. A skipped `comment` would silently drop
 checkpoint and gate state for every work item older than the change, and the phase
@@ -207,8 +208,10 @@ derivation would read those items as never classified, never approved and never 
 **Why.** Architecture §37 is the whole account. Two defects found on 2026-08-16 moved this
 from a plan to a priority, and the second is reproducible on this checkout: the vendor's
 documented repair path *"rebuilds DB from JSONL"*, and the JSONL export carries **0** gate
-results against **386** in the database. Running the documented recovery for a corrupted
-store therefore erases the gate ledger the phase derivation reads the word "landed" from.
+results against hundreds in the database [measured 2026-08-16, the probe in architecture
+§37.4: 389 in the database, 0 in the export, against a positive control of 24 distinct
+export keys]. Running the documented recovery for a corrupted store therefore erases the
+gate ledger the phase derivation reads the word "landed" from.
 
 This is a parent, not a leaf. Its children are the five unported operations in §37.2 and
 the remaining bypass routes.
