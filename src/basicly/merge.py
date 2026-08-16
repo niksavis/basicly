@@ -785,7 +785,7 @@ def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing inp
     replayed = rebase.replay(repo_root, worktree_path, base, branch)
     if not replayed.ok:
         return MergeResult(name, replayed.status, replayed.detail, conflicts=replayed.conflicts)
-    regenerated = replayed.regenerated
+    regenerated = replayed.regenerated + rebase.refresh_generated(repo_root, worktree_path, bead)
 
     # 2. Re-verify in the worktree after the rebase.
     if not override_gate:

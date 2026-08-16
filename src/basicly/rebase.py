@@ -168,6 +168,32 @@ def _rebuilt_clean(
     return not any(unresolved(worktree_path / path) for path in conflicts)
 
 
+def refresh_generated(repo_root: Path, worktree_path: Path, bead: str) -> tuple[str, ...]:
+    """Rebuild every declared generated path against the tree the rebase produced.
+
+    :func:`rebuild_generated_conflicts` fires on a *conflict*. Staleness needs no
+    conflict: a lane that merely adds a module leaves ``plan-current-state`` counting a
+    tree that no longer exists, and that path is outside every lane's scope, so the lane
+    is refused for a defect it is not permitted to repair and spends its whole rework
+    budget finding out (basicly-e2mz.35).
+
+    Committed rather than left in the tree, because the landing merges the *branch*: an
+    uncommitted rebuild would pass the verify below and then never reach the base.
+    """
+    rebuilt = []
+    for path, command in sorted(load_worktree_config(repo_root).regenerate_commands.items()):
+        if run(list(command), cwd=worktree_path, check=False).returncode != 0:
+            continue
+        if git(["diff", "--quiet", "--", path], cwd=worktree_path, check=False).returncode != 0:
+            rebuilt.append(path)
+    if not rebuilt or git(["add", "--", *rebuilt], cwd=worktree_path, check=False).returncode != 0:
+        return ()
+    message = f"chore(regen): rebuild the artifacts the rebase left stale ({bead})"
+    if git(["commit", "-m", message], cwd=worktree_path, check=False).returncode != 0:
+        return ()
+    return tuple(rebuilt)
+
+
 def rebuild_generated_conflicts(repo_root: Path, worktree_path: Path) -> tuple[str, ...] | None:
     """Finish a stopped rebase whose conflicts are all declared generated (basicly-lyro).
 
