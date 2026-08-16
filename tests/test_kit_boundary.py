@@ -61,6 +61,16 @@ def test_the_kit_tree_this_gate_guards_actually_exists() -> None:
     assert {module.name for module in modules} >= {"tier_resolver.py", "claude_tier_hook.py"}
 
 
+def test_the_tracker_kits_entry_point_is_in_the_gated_population() -> None:
+    """The standalone entry point is what a consumer runs (basicly-vkh0.28).
+
+    Named rather than left to the count above: a module the gate does not scan is a module
+    that may import the engine, and the entry point is the one with the most reason to.
+    """
+    scanned = {path.relative_to(KIT_ROOT).as_posix() for path in gate.kit_modules(KIT_ROOT)}
+    assert "tracker/cli.py" in scanned
+
+
 def test_the_unchanged_kit_tree_passes() -> None:
     """The shipped kit honours its own boundary."""
     assert gate.scan(KIT_ROOT, REPO_ROOT) == []
