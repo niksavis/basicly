@@ -37,7 +37,10 @@ Three findings, each catching a different route to a self-agreeing comparison:
     snapshot at all. Caught by **perturbation**, which is the only route that does not rely
     on the reference describing itself: :func:`probe_events` appends one synthetic status
     event to the event set the reference is handed, and a source whose answers move with it
-    is a derivative. A genuinely live source ignores the argument, so it cannot false-fire.
+    is a derivative. A live source ignores that argument but not its own store, which
+    anything writing the tracker mid-run moves under it — so movement is charged to the
+    probe only when a re-read *without* it reproduces the baseline (basicly-vkh0.35, where
+    the missing control refused the live tracker itself).
 
 Where that stops, stated so the report is not read as more than it is: a reference that
 reads a snapshot **from disk** while declaring none, or that memoises its answers, defeats
@@ -741,9 +744,9 @@ def audit_reference(
     derivative that declares nothing.
 
     *baseline* is the reference's answers about the unperturbed ledger, passed in rather than
-    fetched here so the probe costs the reference **one** extra call and not two. Reading the
-    live tracker is a `br` spawn on the engine's side of the seam, and a probe that tripled
-    the cost of the thing it is auditing would be an argument for switching it off.
+    fetched here: an unmoved reference then costs **one** extra call, and only one that moved
+    pays for the control read. Reading the live tracker is a `br` spawn on the engine's side
+    of the seam, and a probe that tripled its cost every run would argue for switching it off.
     """
     refusals: list[Refusal] = []
     unproven: list[Inconclusive] = []
@@ -775,16 +778,25 @@ def audit_reference(
             )
         )
         return refusals, unproven
-    moved = dict(source.views(perturbed))
-    if moved != dict(baseline):
-        refusals.append(
-            Refusal(
+    if dict(source.views(perturbed)) == dict(baseline):
+        return refusals, unproven
+    if dict(source.views(ledger_events)) != dict(baseline):
+        unproven.append(
+            Inconclusive(
                 RULE_DERIVED_FROM_LEDGER,
-                f"the reference's answers moved when one synthetic event was added to the "
-                f"owned ledger, so it is a function of that ledger rather than an "
-                f"independent source: {LOSSY_SNAPSHOT_REASON}",
+                "the reference answered two reads of the *unperturbed* ledger differently, "
+                "so it moved on its own and the probe could not attribute the movement",
             )
         )
+        return refusals, unproven
+    refusals.append(
+        Refusal(
+            RULE_DERIVED_FROM_LEDGER,
+            f"the reference's answers moved when one synthetic event was added to the "
+            f"owned ledger and held still without it, so it is a function of that ledger "
+            f"rather than an independent source: {LOSSY_SNAPSHOT_REASON}",
+        )
+    )
     return refusals, unproven
 
 
