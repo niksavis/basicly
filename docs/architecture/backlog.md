@@ -16,7 +16,7 @@ demonstration.
 
 ## B1 — Rename the two ladders in code
 
-**Why.** Architecture §8 gives every autonomy and integrity level a name that says what it
+**Why.** Architecture §9 gives every autonomy and integrity level a name that says what it
 means. The code still writes `L0` to `L3` for autonomy and `L1` to `L3` for integrity
 (`integrity.LEVELS`). Two names for one thing is the defect the architecture document exists
 to catch, and it now holds one deliberately.
@@ -35,7 +35,7 @@ to catch, and it now holds one deliberately.
 
 ## B2 — Correct every `architecture §N` citation in code, and gate the direction
 
-**Why.** Architecture §2.6 states that section numbers are a cited surface. The rewritten
+**Why.** Architecture §3 states that section numbers are a cited surface. The rewritten
 document renumbered every section, so every existing citation in the tree is stale.
 `.scripts/check_docs_citations.py` walks `docs/**/*.md` for `file:line` references into
 code. Nothing walks code for `§N` references into a document, which is why the stale
@@ -96,7 +96,7 @@ count belongs in the check's output, not in the acceptance criterion.
 
 ## B4 — The install fact is missing from the consumer surfaces
 
-**Why.** Architecture §20 states that `install` and `uninstall` are ordinary verbs, and that
+**Why.** Architecture §21 states that `install` and `uninstall` are ordinary verbs, and that
 `uvx` is only how you reach an executable your machine does not have. **The README, both
 how-to pages and the tutorial teach only the `uvx` form** [measured 2026-08-16,
 `rg 'uvx|basicly install' README.md docs/how-to/ docs/tutorial/`]. A reader concludes the
@@ -120,7 +120,7 @@ was satisfied before the work started. The demonstration above replaces it.
 
 ## B5 — Default both skill roots
 
-**Why.** Architecture §13 marks this as a target. `skills.resolve_skill_roots` writes
+**Why.** Architecture §14 marks this as a target. `skills.resolve_skill_roots` writes
 `DEFAULT_SKILL_ROOTS[0]` alone unless the caller passes `--all-default-roots` or an explicit
 `--root`. `basicly install` passes it and is correct; a bare `basicly skills-check` is not.
 This repository's own `CLAUDE.md` compensates with guidance, which is a prose gate standing
@@ -141,7 +141,7 @@ flag and always writes both.
 
 ## B6 — Say "pin" in `CONTRIBUTING.md`
 
-**Why.** Architecture §31.7 records that the README, both how-to pages and the tutorial now
+**Why.** Architecture §37.5 records that the README, both how-to pages and the tutorial now
 say "a pin, not a floor". `CONTRIBUTING.md:37` still calls `0.2.16` "the known-good floor",
 and the code warns in both directions from an exact pin.
 
@@ -159,7 +159,7 @@ and the code warns in both directions from an exact pin.
 
 ## B7 — Move the CLI reference out of the architecture document
 
-**Why.** Architecture §21 is marked as a target and says so in its first line. It is a
+**Why.** Architecture §22 is marked as a target and says so in its first line. It is a
 per-command behaviour table in a specification, it is the largest single section, and it
 goes stale on every landing. It stays only because four gates bind on it.
 
@@ -172,3 +172,53 @@ goes stale on every landing. It stays only because four gates bind on it.
 | Demonstrated by | `uv run python .scripts/docs_claims.py --check` green after the target move, plus `uv run pytest tests/test_docs_drift.py -q` |
 | Cost | a new document, four gate retargets, and one more file in the documentation set |
 | Buys | the architecture document stops carrying a class of fact that goes stale on every landing |
+
+---
+
+## B8 — Split the event vocabulary: `note` for prose, typed kinds for machine state
+
+**Why.** Architecture §32.3 and **D-34** specify it. Filed upstream as `basicly-vkh0.30`.
+Measured on this repository's ledger [2026-08-16]: **2,458 of 5,196 events are `comment`**
+(47.3%), carrying human prose *and* checkpoints, gate results, handoff artifacts, decision
+items, scope violations, telemetry and worktree bindings. The `gate` kind, built for gate
+verdicts, holds **3**.
+
+**The migration constraint is the whole risk.** An append-only log is never rewritten, so
+the 2,458 existing `comment` events stay. The reader needs an **alias**, not the
+unknown-kind skip path: a `comment` resolves to the kind its body announces, and a
+`comment` with no marker resolves to `note`. A skipped `comment` would silently drop
+checkpoint and gate state for every work item older than the change, and the phase
+derivation would read those items as never classified, never approved and never landed.
+
+| Item | Value |
+| --- | --- |
+| Scope | `.basicly/core/kit/tracker/events.py`, `.basicly/core/kit/tracker/snapshot.py`, `src/basicly/owned_store.py`, `src/basicly/mirror.py`, `src/basicly/loop_state.py`, `tests/test_owned_store.py`, `tests/test_loop_state.py` |
+| Integrity | `consumer-surface`. The owned ledger format is a frozen surface |
+| Depends on | nothing |
+| Acceptance | WHEN a new prose event is written, THE WRITER SHALL use the `note` kind. WHEN a machine marker is written, THE WRITER SHALL use the typed kind for it. WHEN the fold reads a pre-existing `comment` event carrying a marker, IT SHALL resolve it to that marker's typed kind. WHEN the fold reads a `comment` event carrying no marker, IT SHALL resolve it to `note`. WHERE a `comment` event exists, THE FOLD SHALL NOT take the unknown-kind skip path |
+| Demonstrated by | `uv run pytest tests/test_owned_store.py -k alias -q`, plus a fold over the committed ledger reporting the same derived phase for every issue before and after the change |
+| Cost | a frozen surface changes. The alias is permanent, not a migration window |
+| Buys | a reader selects machine state by kind instead of grepping prose, and the fold can refuse a malformed marker |
+
+---
+
+## B9 — Remove the external tracker binary
+
+**Why.** Architecture §37 is the whole account. Two defects found on 2026-08-16 moved this
+from a plan to a priority, and the second is reproducible on this checkout: the vendor's
+documented repair path *"rebuilds DB from JSONL"*, and the JSONL export carries **0** gate
+results against **386** in the database. Running the documented recovery for a corrupted
+store therefore erases the gate ledger the phase derivation reads the word "landed" from.
+
+This is a parent, not a leaf. Its children are the five unported operations in §37.2 and
+the remaining bypass routes.
+
+| Item | Value |
+| --- | --- |
+| Scope | `src/basicly/br.py`, `src/basicly/mirror.py`, `src/basicly/owned_store.py`, `.basicly/core/kit/tracker/**`, `src/basicly/loop*.py`, `src/basicly/policy.py`, `src/basicly/decompose.py`, `src/basicly/supervise.py`, `src/basicly/merge.py` |
+| Integrity | `consumer-surface` |
+| Depends on | B8 |
+| Acceptance | WHEN the engine reads a work item, IT SHALL read the owned fold. WHEN the engine writes a work item, IT SHALL append to the owned log and SHALL NOT spawn an external binary. WHEN the shadow differential runs before the flip, IT SHALL report clean and conclusive. WHERE an operation has no owned equivalent, THE FLIP SHALL NOT proceed until it does |
+| Demonstrated by | `uv run basicly tracker shadow` reporting clean and conclusive, then `rg -c 'run_br\|try_run_br' src/basicly -g '!br.py'` returning 0, plus `uv run pytest -q` |
+| Cost | the largest remaining item in the tree. Five unported operations, each a design question |
+| Buys | the loop's state stops depending on unowned code whose documented repair path destroys the gate ledger |

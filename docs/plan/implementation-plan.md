@@ -593,6 +593,7 @@ exist.
 | `architecture/architecture-v2.md` | **Temporary** | The rewrite draft, not in force. Deleted the moment its content replaces `architecture.md`; the `-v2` name must never survive that swap. |
 | `architecture/status.md` | **Live** | The capability status view, extracted from the architecture reference so the reference holds specification only. Deleted when a status view is generated from the tracker rather than written by hand. |
 | `architecture/backlog.md` | **Live** | Plan-gate-shaped items the architecture review emitted. Deleted when the last item is filed as a tracked issue. |
+| `architecture/conventions.md` | **Live** | How the architecture reference is produced — the diagram renderer, the types used and declined, the reading order and the authority order. Extracted so the reference describes the system and never itself. Deleted only if the reference stops carrying diagrams. |
 | `requirements/factory-loop.md` | **Live** | The target loop and the measured delta from it, with 26 decisions. Drives `basicly-u2hl`. Absorbed into architecture and deleted when that epic closes. |
 | `requirements/work-tracker.md` | **Live** | Survives until `br` leaves the runtime path (§6). The only record of what the replacement must be, including nine requirements carried forward from `br` defects already paid for. |
 | `plan/implementation-plan.md` | **Authoritative** | This file. Deleted when `v1.0.0` ships and the ladder is spent. |

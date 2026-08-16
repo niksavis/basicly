@@ -9,7 +9,7 @@ The view is **derived**. A functional section of the architecture document descr
 project does not run to a schedule, so status is the only honest axis. `docs/plan/` holds
 the **order** in which the unshipped rows get built.
 
-**The vocabulary is the one closed set defined in architecture §2.4.** Nothing here may use
+**The vocabulary is the one closed set defined in architecture §2.** Nothing here may use
 a seventh word.
 
 | Status | Means | Evidence required to claim it |
@@ -30,7 +30,7 @@ a seventh word.
 | Path-scoped rules tier | shipped | Engine built; four fragments and one skill glob use it. Cost falls for two families and rises for the one that inlines |
 | Invocation axis per entry | shipped | Declared on skill sources; not yet on fragments |
 | Deterministic lexical routing evals with a ratcheting rank-1 floor | shipped | |
-| Both skill roots written by every skills command | partial | `basicly install` writes both. A bare `skills-build` or `skills-check` writes one, and needs `--all-default-roots` for the second. Architecture §13 marks the fix as a target |
+| Both skill roots written by every skills command | partial | `basicly install` writes both. A bare `skills-build` or `skills-check` writes one, and needs `--all-default-roots` for the second. Architecture §14 marks the fix as a target |
 | An eval case file per catalog entry, enforced as a structural failure | building | Model-invoked skills carry one by convention; fragments carry none |
 | Relieve the always-on baseline by scoping what is conditional | building | Authoring work, not engine work |
 | Tutorial and how-to layer | shipped | The tutorial was executed end to end on a fresh repository before it was written |
@@ -55,6 +55,8 @@ a seventh word.
 | Enforcement at the tool-call boundary, not only at the commit boundary | designed | Engine work before it is catalog work: the host event vocabulary is barely mapped |
 | `basicly install` reporting the capability tier it actually delivered | building | On a host with no plugin tier the projection degrades to advice, and we say so nowhere |
 | A check that code citations of `architecture §N` resolve | designed | The citation ratchet runs document to code. Nothing runs code to document, which is why 25 stale `§` citations sit in the tree with every gate green |
+| A typed event vocabulary: `note` for prose, first-class kinds for machine state | designed | One kind carries both today: 2,458 of 5,196 events are `comment`, and the `gate` kind holds 3. Architecture §32.3 and D-34 |
+| The owned tracker as the only store | building | Architecture §32 specifies it; §37 is the account of the external binary still carrying part of it |
 | A mermaid parse check on every committed block | designed | See [`backlog.md`](backlog.md) |
 
 ## The loop
@@ -93,7 +95,7 @@ a seventh word.
 | A repeatable ledger import a fresh consumer can run | shipped | Refuses a post-flip ledger |
 | A seam-routed surface for a human tracker write, so both stores move together | shipped | Closes the last bypass route the differential can see |
 | No committed artifact carries a host path, username or hostname | shipped | Redaction at both write seams; the secret-rule mirror is kept in step by convention only |
-| Owned in-process append-only event log, removing the external binary from the critical path | building | Steps 1 to 3 have run; the flip waits on the remaining bypasses and on five unported operations |
+| The owned append-only event log as the source of truth | building | Steps 1 to 3 of the cutover have run; the flip waits on the remaining bypasses and on five unported operations. Architecture §37.3 |
 | A consistency check and rebuild, so "the log is the truth" is checkable | partial | **Built with tests and reached by nothing**, while advertised as shipped on two consumer surfaces |
 | Provenance on every edge: extracted, inferred, ambiguous | partial | Same: built, no caller, advertised |
 | Cross-repo work offers as self-writes in each repository's own ledger | deferred | |
