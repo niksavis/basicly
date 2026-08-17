@@ -194,96 +194,14 @@ goes stale on every landing. It stays only because four gates bind on it.
 
 ---
 
-## B8.1 — Give the closed event-kind set one definition
+## B8.1, B8.2 and B8.3 — landed 2026-08-17
 
-**Why.** The vocabulary is declared in four modules and they disagree about whether a live
-kind is known. `events.py` declares six `KIND_*` constants; `migrate.py` declares
-`KIND_EDGE`; `gates.py` and `differential.py` each declare `KIND_GATE`, a duplication
-`gates.py` documents at its own top. `events.KNOWN_KINDS` is the name a reader reaches for
-when they want the closed set: it is missing two of the six kinds actually in the log, and it
-has **no consumer anywhere, including the suite**
-[measured 2026-08-17, `git grep -n KNOWN_KINDS -- '*.py'` returns its definition and nothing
-else, against a positive control of `KIND_COMMENT` which returns six files].
-
-**This is first because B8 adds five kinds.** Adding five entries to a vocabulary with four
-partial definitions is how the sixth and seventh spellings appear. Architecture §32.8 carries
-the table. The `KIND_GATE` duplication is already owned by `basicly-vkh0.27`; this item is the
-single definition the rest of the kinds need, not a re-file of that one.
-
-| Item | Value |
-| --- | --- |
-| Scope | `.basicly/core/kit/tracker/events.py`, `.basicly/core/kit/tracker/migrate.py`, `.basicly/core/kit/tracker/gates.py`, `tests/test_kit_tracker_events.py` |
-| Integrity | `engine`. No consumer surface carries a kind constant |
-| Depends on | nothing |
-| Acceptance | WHEN a module needs the closed set of event kinds, IT SHALL read one declaration in `events.py`. WHEN a kind is folded by a sibling module rather than by `events.fold`, THE CLOSED SET SHALL still contain it. WHEN the closed set omits a kind present in a log the suite folds, THE SUITE SHALL fail and name the kind. WHERE a second module declares a kind constant, IT SHALL import it rather than spell it |
-| Demonstrated by | `uv run pytest tests/test_kit_tracker_events.py -q`, plus `uv run python -c "import importlib.util,sys;from pathlib import Path;s=importlib.util.spec_from_file_location('ev',Path('.basicly/core/kit/tracker/events.py'));m=importlib.util.module_from_spec(s);sys.modules['ev']=m;s.loader.exec_module(m);print(sorted(m.KNOWN_KINDS))"` listing every kind the ledger holds |
-| Cost | one constant gains consumers, which means it gains a contract |
-| Buys | the closed set becomes checkable, so B8's five additions can be refused if they diverge |
-
----
-
-## B8.2 — Separate a delegated kind from an unknown one in the fold
-
-**Why.** `events.fold` reports `FoldResult.unknown_kinds` for any kind it has no handler for.
-Folding this repository's log reports `{'edge': 951, 'gate': 8}` — **959 events, 17.9% of the
-log** — and neither is unknown [measured 2026-08-17 at `fb19039`, `events.read_log` then
-`events.fold`, reading `FoldResult.unknown_kinds`]. Both are deliberately folded by a sibling
-module, and `fsck._unfolded_kind_findings` admits the ambiguity in its own warning text:
-"either a newer writer's, or one a sibling module derives from the events directly".
-
-**This is second because it is B8's safety net.** D-34's stated catastrophe is a `comment`
-event taking the skip path and silently dropping checkpoint and gate state. The signal that
-would catch it currently cannot tell a deliberate delegation from an unreadable event, and B8
-adds five more delegating kinds to the same bucket. A net with 959 false entries in it does
-not catch the 960th.
-
-| Item | Value |
-| --- | --- |
-| Scope | `.basicly/core/kit/tracker/events.py`, `.basicly/core/kit/tracker/fsck.py`, `tests/test_kit_tracker_events.py`, `tests/test_kit_tracker_fsck.py` |
-| Integrity | `engine`. `fsck` exit codes are a surface; the finding set is not |
-| Depends on | B8.1 |
-| Acceptance | WHEN the fold reads a kind a sibling module folds, IT SHALL report it as delegated and SHALL NOT report it as unknown. WHEN the fold reads a kind no module folds, IT SHALL report it as unknown. WHEN `fsck` runs on a log holding only delegated kinds, IT SHALL emit no unfolded-kind warning. WHEN `fsck` runs on a log holding a genuinely unrecognised kind, IT SHALL warn and name it |
-| Demonstrated by | `uv run pytest tests/test_kit_tracker_events.py tests/test_kit_tracker_fsck.py -q`, plus `uv run python .basicly/core/kit/tracker/fsck.py .basicly/ledger` reporting no unfolded-kind warning for `edge` or `gate` |
-| Cost | one field on `FoldResult` becomes two, and `fsck`'s finding set changes shape |
-| Buys | the skip-path refusal B8 depends on becomes a signal instead of noise |
-
----
-
-## B8.3 — Bind the marker-family list to a gate
-
-**Why.** The alias table B8 needs has the **marker family list as its domain**, and nothing
-binds that list. It has now drifted three times.
-[`docs/requirements/work-tracker.md`](../requirements/work-tracker.md) records the first two —
-a count that read eight while four families had shipped, then a correction to ten that was
-itself wrong — and the list standing at twelve is wrong in **both** directions. It names
-`[harness-side]`, which is not a marker family but a phrase from a sentence in
-`src/basicly/commit.py` reading "the rescue is harness-side because it has to be", and it
-omits `[harness-retro]`, declared in `src/basicly/retrospective.py`. The count from the
-declarations is **eleven**
-[measured 2026-08-17, `git grep -ohn '"\[harness-[a-z-]*\]"' -- 'src/basicly/*.py' | sort -u`].
-
-**The list is not the same set as the alias table's domain, and that is the trap.**
-`[harness-overrun]` carries **12 rows** in the ledger and has no producer in the tree: the
-string survives only in two *negative* assertions, `tests/test_loop.py` and
-`tests/test_supervise.py`, each asserting the marker is never written. So a table derived from
-the live declarations omits it and loses those rows. The gate must therefore count two
-populations and compare them: the families declared in code, and the families present in the
-log.
-
-**This is the same defect class as a dead-code gate that counted English prose in a schema as
-a field reference.** A list of wire formats counted by eye is the instrument fault.
-
-| Item | Value |
-| --- | --- |
-| Scope | `.scripts/check_marker_families.py`, `basicly.toml`, `docs/requirements/work-tracker.md`, `tests/test_marker_families.py` |
-| Integrity | `engine`. A new advisory-then-blocking check |
-| Depends on | nothing |
-| Acceptance | WHEN the check runs, IT SHALL derive the declared family set from the marker constants in `src/basicly/` and SHALL NOT count a family named only in prose. WHEN a family appears in the ledger but not in the declarations, THE CHECK SHALL report it as retired and SHALL NOT treat it as absent. WHEN a declared family is missing from the frozen list, THE CHECK SHALL fail and name it. WHERE a document states a family count, THE CHECK SHALL compare that count against the derived set |
-| Demonstrated by | `uv run python .scripts/check_marker_families.py` reporting eleven declared and one retired, and exiting non-zero when a marker constant is added without updating the frozen list, plus `uv run pytest tests/test_marker_families.py -q` |
-| Cost | one more check in the verify set, and a frozen list to maintain |
-| Buys | B8's alias table gets a checked domain instead of a hand-counted one, so a retired family cannot silently lose its rows |
-
----
+The three preconditions of the split are done and their entries are deleted rather than
+marked, on this file's own rule that a backlog entry describing shipped work is noise.
+One definition of the closed kind set (`basicly-vkh0.36`, `basicly-vkh0.43`), the fold's
+three-way distinction between applied, delegated and unknown (`basicly-vkh0.38`), and the
+marker-family list bound to a gate (`basicly-vkh0.37`). Architecture §32.8 describes what
+each one left behind. **B8 itself is now unblocked.**
 
 ## B8 — Split the event vocabulary: `note` for prose, typed kinds for machine state
 

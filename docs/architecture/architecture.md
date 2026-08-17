@@ -2933,20 +2933,28 @@ which is the whole argument of
 be installed **before** the writer switches, not with it. A writer that switches first
 produces typed events an unaliased reader drops.
 
-**`unknown_kinds` already conflates two populations, and the split makes that worse.** Folding
-the log at `fb19039` reports `{'edge': 951, 'gate': 8}` — 959 events, 17.9% of the log
-[measured 2026-08-17, `events.read_log` then `events.fold` over the pinned log, reading
-`FoldResult.unknown_kinds`]. Neither is unknown. Both are deliberately folded by a sibling
-module, `provenance.py` for `edge` and `gates.py` for `gate`, and `fsck` says so in the
-warning it emits: "either a newer writer's, or one a sibling module derives from the events
-directly". **A signal that cannot tell a deliberate delegation from an unreadable event cannot
-be the migration's safety net.** Five more delegating kinds arrive with this change, so the
-field must be split into a delegated set and a genuinely-unknown set before it is relied on.
-That ordering is why the backlog puts it first.
+**`unknown_kinds` conflated two populations, and no longer does** (`basicly-vkh0.38`).
+`events.classify_kind` answers with one of three: a kind the fold **applies** state for, one it
+**delegates** to a sibling, and one nothing folds. `DELEGATED_KINDS` names the folding function
+per kind — `provenance.fold_edges` for `edge`, `gates.fold_gates` for `gate` — and `fsck` warns
+only on the third case. That moved 1,015 events, 18.09% of the log, out of a population that
+had been reported as unknown [measured 2026-08-17 over 5,611 events]. The closed set is checked
+to be exactly the applied set plus the delegated set, and the two disjoint, so the five kinds
+this change adds cannot arrive with nobody to fold them. **A signal that cannot tell a
+deliberate delegation from an unreadable event cannot be the migration's safety net**, which is
+why this item came first.
 
-**The closed set of kinds has no single definition today, and that is the precondition for
-everything else here.** Four modules each declare part of the vocabulary, and they disagree
-about whether a live kind is known.
+**The closed set of kinds has one definition, and that was the precondition for everything
+else here** (`basicly-vkh0.36`, `basicly-vkh0.43`). It was **six** partial definitions rather
+than the four the table below recorded: `baseline.py` and `provenance.py` were both missing
+from it. What stands now is `events.KNOWN_KINDS`, an explicit eight-member frozenset in the
+vocabulary block, with every sibling taking its kind from it rather than respelling one.
+`baseline.py` still spells its own `created` kind, deliberately and with the reason at the
+declaration — it loads no sibling at all. Two tests bind the arrangement: one folds this
+repository's own log and asserts every kind in it is a member, with an event-count floor as the
+positive control, and one walks every sibling's AST and requires each alias to be exactly
+`events.<same name>`. Both were proven against five mutations. The table below is what it
+replaced.
 
 | Where | Declares | Consequence |
 | --- | --- | --- |
