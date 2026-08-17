@@ -2552,6 +2552,33 @@ def test_ship_records_the_rollup_before_the_tracker_commit(
     assert order == ["rollup", "close", "commit"]
 
 
+def test_ship_rolls_up_after_the_curation_it_has_to_count(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The curator is a dispatch, so a rollup taken before it under-counts the package.
+
+    Measured on basicly-wpc8.1's landing: the rollup recorded ``dispatches: 1`` while
+    the unit's own ledger held two ship-phase run records (basicly-agzx.4). Asserted
+    as an order rather than a count, because the count is what the order decides.
+    """
+    at(_state("ship"))
+    order: list[str] = []
+    monkeypatch.setattr(loop, "_write", lambda *_a, **_k: order.append("close"))
+    monkeypatch.setattr(
+        loop.merge, "commit_tracker_state", lambda *_a, **_k: bool(order.append("commit")) or True
+    )
+    monkeypatch.setattr(loop, "_dispatch_curation", lambda _ctx: bool(order.append("curate")) or "")
+    monkeypatch.setattr(run_record, "dispatch_history", lambda _repo: {"i": [{"tokens": 10}]})
+    monkeypatch.setattr(policy, "rework_recorded", lambda *_a: 0)
+    monkeypatch.setattr(decompose, "bead_class_and_scope", lambda *_a: None)
+    monkeypatch.setattr(
+        run_record, "record_cost_marker", lambda *_a, **_k: order.append("rollup") or "i#cost"
+    )
+
+    _advance(tmp_path)
+    assert order == ["curate", "rollup", "close", "commit"]
+
+
 def test_ship_writes_no_rollup_for_a_node_that_was_never_dispatched(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

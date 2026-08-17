@@ -121,9 +121,9 @@ days.** As written on 2026-08-09 it said `resolve_role` was called from one site
 two the row said never ask now do.
 
 ```text
-roles.resolve_role      loop.py:869        _run_agent           → validate · reviews · build ·
+roles.resolve_role      loop.py            _run_agent           → validate · reviews · build ·
                                                                   repair · sub-task · retrospective
-                        loop.py:1119       _run_proposer        → classify · decompose
+                        loop.py            _run_proposer        → classify · decompose
                         supervise.py:2651  _dispatch_lane       → lane build
 _run_agent call sites   loop.py:507        _dispatch_validation
                         loop.py            _dispatch_reviews    (once per lens)

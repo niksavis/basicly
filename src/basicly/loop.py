@@ -635,11 +635,11 @@ def _on_ship(ctx: _Ctx) -> AdvanceResult:
                 "recorded out-of-band?); re-run the build->verify advance to land it first",
             )
         worktree.cleanup(binding.name, force=False, repo_root=ctx.repo_root, missing_ok=True)
-    # Before the close, and before the tracker commit that flushes it: a rollup
-    # written after that commit would sit in the local db only, and the whole point
-    # of it is to travel with the clone (basicly-kjc5.50).
-    rolled = cost_rollup.record(ctx.repo_root, ctx.issue_id)
+    # After the curation, before the commit that flushes it. Before, because a rollup
+    # written after would sit in the local db only (basicly-kjc5.50); after, because
+    # the curator is a dispatch and rolling up first under-counted it (basicly-agzx.4).
     curated = _dispatch_curation(ctx)
+    rolled = cost_rollup.record(ctx.repo_root, ctx.issue_id)
     _write(ctx.repo_root, ["close", ctx.issue_id, "--reason", "shipped by the harness loop"])
     committed = merge.commit_tracker_state(
         ctx.repo_root, ctx.issue_id, action="close the shipped track"

@@ -1,0 +1,20 @@
+# The ship-ordering regression test's cost (basicly-agzx.4).
+#
+# `tests/test_loop.py` was frozen at 38745 tokens and a module over the 4000-token cap may
+# only shrink, so the module that holds every other ship-advance ordering test could not
+# take one more. The test belongs beside its siblings: it asserts the same order list the
+# rollup-before-the-tracker-commit test asserts, one entry longer, and moving it to a file
+# of its own would separate two assertions about one sequence.
+#
+# The tokens are test code, not narration: the module's prose share is unchanged at its
+# frozen figure, which is the check that separates a real addition from a comment budget
+# spent on a baseline.
+#
+# 311 tokens, measured, no slack. The general defect behind this — a test module frozen at
+# exactly its own size admits no further test — is worth its own decision rather than a
+# fragment per lane, and is not this change's obligation.
+[ratchet.module_size]
+rebaseline_reason = "one ship-ordering regression test, in the module holding every other ordering test, frozen at exactly its own size"
+
+[ratchet.module_size.rebaselined]
+"tests/test_loop.py" = 311
