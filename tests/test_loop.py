@@ -219,7 +219,7 @@ def _ready_leaf(at, monkeypatch: pytest.MonkeyPatch) -> dict:
 
     monkeypatch.setattr(worktree, "create", _create)
     monkeypatch.setattr(worktree, "list_sessions", lambda *_a, **_k: [])
-    monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: None)
+    monkeypatch.setattr(loop, "_write", lambda *_a, **_k: None)
 
     # Serve `show` a body with no `## Plan` heading: the pre-gate population, which the
     # plan gate's ratchet admits. Stubbed because that gate fails closed on an unreadable
@@ -583,7 +583,7 @@ def test_dispatch_blocks_on_needs_input_sentinel(
     at(_state("classify", issue_type="task"))
     monkeypatch.setattr(policy, "definition_of_ready", lambda *_a: DoRResult(True, ()))
     monkeypatch.setattr(worktree, "list_sessions", lambda *_a, **_k: [])
-    monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: None)
+    monkeypatch.setattr(loop, "_write", lambda *_a, **_k: None)
 
     def _create(name: str, **_k) -> Session:
         return Session(
@@ -2121,7 +2121,7 @@ def test_a_refused_validation_advance_has_no_side_effects(
     """No merge, no teardown, no close, no tracker commit while the gate is outstanding."""
     at(_state("validate", gates=_validate_gates(), worktree=WorktreeBinding("n", "b")))
     calls: list[list[str]] = []
-    monkeypatch.setattr(loop, "_run_br", lambda _r, args, **_k: calls.append(args))
+    monkeypatch.setattr(loop, "_write", lambda _r, args, **_k: calls.append(args))
     monkeypatch.setattr(
         loop.worktree, "cleanup", lambda *_a, **_k: pytest.fail("tore down a live worktree")
     )
@@ -2234,7 +2234,7 @@ def test_a_repair_after_a_failed_verify_is_briefed_as_it_always_was(
     monkeypatch.setattr(loop.loop_state, "blocked_ids", lambda *_a: ())
     monkeypatch.setattr(loop.decisions, "has_pending", lambda *_a, **_k: False)
     monkeypatch.setattr(loop, "_subtask_committed", lambda *_a: True)
-    monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: SimpleNamespace(stdout="{}"))
+    monkeypatch.setattr(loop, "_write", lambda *_a, **_k: SimpleNamespace(stdout="{}"))
     monkeypatch.setattr(
         verify,
         "run_verify",
@@ -2371,7 +2371,7 @@ def test_ship_tears_down_and_closes(at, monkeypatch: pytest.MonkeyPatch, tmp_pat
     torn = {}
     monkeypatch.setattr(worktree, "cleanup", lambda name, **_k: torn.setdefault("n", name))
     closed = {}
-    monkeypatch.setattr(loop, "_run_br", lambda _r, args, **_k: closed.setdefault("args", args))
+    monkeypatch.setattr(loop, "_write", lambda _r, args, **_k: closed.setdefault("args", args))
     committed = {}
     monkeypatch.setattr(
         loop.merge,
@@ -2402,7 +2402,7 @@ def test_ship_refuses_an_unmerged_worktree(
         raise AssertionError("a stranded node must not be closed, torn down, or committed")
 
     monkeypatch.setattr(worktree, "cleanup", _boom)
-    monkeypatch.setattr(loop, "_run_br", _boom)
+    monkeypatch.setattr(loop, "_write", _boom)
     monkeypatch.setattr(loop.merge, "commit_tracker_state", _boom)
 
     result = _advance(tmp_path)
@@ -2449,7 +2449,7 @@ def test_advance_refuses_to_close_a_leaf_that_never_built(
         raise AssertionError("a leaf that never built must not be closed or torn down")
 
     monkeypatch.setattr(worktree, "cleanup", _boom)
-    monkeypatch.setattr(loop, "_run_br", _boom)
+    monkeypatch.setattr(loop, "_write", _boom)
     monkeypatch.setattr(loop.merge, "commit_tracker_state", _boom)
 
     result = _advance(tmp_path)
@@ -2465,7 +2465,7 @@ def test_ship_proceeds_when_the_worktree_landed(
     monkeypatch.setattr(loop, "_worktree_landed", lambda *_a, **_k: True)
     torn = {}
     monkeypatch.setattr(worktree, "cleanup", lambda name, **_k: torn.setdefault("n", name))
-    monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: None)
+    monkeypatch.setattr(loop, "_write", lambda *_a, **_k: None)
     monkeypatch.setattr(loop.merge, "commit_tracker_state", lambda *_a, **_k: True)
     result = _advance(tmp_path)
     assert torn["n"] == "i"
@@ -2486,7 +2486,7 @@ def test_ship_records_the_forecast_and_the_whole_packages_actual_cost(
     at(_state("ship", worktree=WorktreeBinding("i", "harness/i")))
     monkeypatch.setattr(loop, "_worktree_landed", lambda *_a, **_k: True)
     monkeypatch.setattr(worktree, "cleanup", lambda *_a, **_k: None)
-    monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: None)
+    monkeypatch.setattr(loop, "_write", lambda *_a, **_k: None)
     monkeypatch.setattr(
         run_record,
         "dispatch_history",
@@ -2537,7 +2537,7 @@ def test_ship_records_the_rollup_before_the_tracker_commit(
     """The rollup has to be flushed by the closing commit, or it never leaves the machine."""
     at(_state("ship"))
     order: list[str] = []
-    monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: order.append("close"))
+    monkeypatch.setattr(loop, "_write", lambda *_a, **_k: order.append("close"))
     monkeypatch.setattr(
         loop.merge, "commit_tracker_state", lambda *_a, **_k: bool(order.append("commit")) or True
     )
@@ -2561,7 +2561,7 @@ def test_ship_writes_no_rollup_for_a_node_that_was_never_dispatched(
     dilute cost-per-landed-package with a null.
     """
     at(_state("ship", issue_type="feature", has_children=True))
-    monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: None)
+    monkeypatch.setattr(loop, "_write", lambda *_a, **_k: None)
     monkeypatch.setattr(run_record, "dispatch_history", lambda _repo: {})
     monkeypatch.setattr(
         run_record, "record_cost_marker", lambda *_a, **_k: pytest.fail("no rollup is due")
@@ -2576,7 +2576,7 @@ def test_ship_proceeds_when_the_cost_rollup_cannot_be_written(
 ) -> None:
     """Evidence is never worth failing a landing for: the ship reports no rollup and goes on."""
     at(_state("ship"))
-    monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: None)
+    monkeypatch.setattr(loop, "_write", lambda *_a, **_k: None)
 
     def _boom(*_a, **_k):
         raise RuntimeError("br is unavailable")
@@ -2601,7 +2601,7 @@ def test_ship_dispatches_the_curator_only_where_the_contract_is_installed(
     """Asserted against the dispatch: `ROLE_BY_PHASE` named `ship` all along."""
     at(_state("ship"))
     seen: list[str] = []
-    monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: None)
+    monkeypatch.setattr(loop, "_write", lambda *_a, **_k: None)
     monkeypatch.setattr(run_record, "dispatch_history", lambda _repo: {})
     monkeypatch.setattr(loop.handoff, "adopted", lambda *_a: adopted)
     monkeypatch.setattr(
@@ -2938,7 +2938,7 @@ def _pin_provisioning(
     )
     monkeypatch.setattr(worktree, "create", _create)
     monkeypatch.setattr(worktree, "list_sessions", lambda *_a, **_k: [])
-    monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: None)
+    monkeypatch.setattr(loop, "_write", lambda *_a, **_k: None)
     monkeypatch.setattr(
         loop.loop_state,
         "ready_ranked",
@@ -3087,7 +3087,7 @@ def test_ship_warns_and_names_the_paths_when_the_tracker_commit_is_skipped(
     at(_state("ship", worktree=WorktreeBinding("i", "harness/i")))
     monkeypatch.setattr(loop, "_worktree_landed", lambda *_a, **_k: True)
     monkeypatch.setattr(worktree, "cleanup", lambda *_a, **_k: None)
-    monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: None)
+    monkeypatch.setattr(loop, "_write", lambda *_a, **_k: None)
     monkeypatch.setattr(loop.merge, "commit_tracker_state", lambda *_a, **_k: False)
     monkeypatch.setattr(loop.merge, "foreign_dirt", lambda _r: (".gitignore", "src/x.py"))
 
@@ -3107,7 +3107,7 @@ def test_ship_stays_quiet_when_there_was_simply_nothing_to_commit(
     at(_state("ship", worktree=WorktreeBinding("i", "harness/i")))
     monkeypatch.setattr(loop, "_worktree_landed", lambda *_a, **_k: True)
     monkeypatch.setattr(worktree, "cleanup", lambda *_a, **_k: None)
-    monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: None)
+    monkeypatch.setattr(loop, "_write", lambda *_a, **_k: None)
     monkeypatch.setattr(loop.merge, "commit_tracker_state", lambda *_a, **_k: False)
     monkeypatch.setattr(loop.merge, "foreign_dirt", lambda _r: ())
 
@@ -3224,7 +3224,7 @@ def test_the_evidence_marker_is_written_before_ship_commits_the_tracker(
     monkeypatch.setattr(
         policy, "record_evidence", lambda *_a: bool(events.append("evidence")) or True
     )
-    monkeypatch.setattr(loop, "_run_br", lambda _r, args, **_k: events.append(args[0]))
+    monkeypatch.setattr(loop, "_write", lambda _r, args, **_k: events.append(args[0]))
     monkeypatch.setattr(
         loop.merge, "commit_tracker_state", lambda *_a, **_k: bool(events.append("commit")) or True
     )
@@ -3308,7 +3308,7 @@ def _pin_lane(
             calls["closed"].append(args[1])
         return SimpleNamespace(stdout="{}")
 
-    monkeypatch.setattr(loop, "_run_br", _br)
+    monkeypatch.setattr(loop, "_write", _br)
 
     def _run_verify(_root, mode, *_a, **_k):
         calls["verify"].append(mode)

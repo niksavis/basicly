@@ -392,16 +392,16 @@ def report_gate(
     *,
     actor: str | None = None,
 ) -> tuple[bool, str]:
-    """Record the verdict on *issue_id* via ``br gate report``.
+    """Record the verdict on *issue_id* as a ``gate report`` write.
 
     When the dispatched runner is known (basicly-140a), *actor* is recorded as the
     gate's audit-trail actor, so a gate result ties to the agent that produced it.
     It is optional — a gate reported outside a dispatch records no actor. (Model
     provenance rides the landing commit trailer, not the gate's free-text note.)
 
-    Returns ``(ok, message)``; degrades gracefully (returns ``False`` with
-    guidance) when ``br`` is not on PATH or the command fails, rather than
-    raising, so a missing tracker never masks the verify result itself.
+    Returns ``(ok, message)`` and never raises: a store that will not take the write must
+    not mask the verify result, and it carries its own reason out, because a cause-less
+    "gate not recorded" strands the next landing.
     """
     status = "pass" if report.passed else "fail"
     detail = ", ".join(f"{r.name}={r.status}" for r in report.results) or "no checks"
@@ -421,9 +421,8 @@ def report_gate(
     if actor:
         args += ["--actor", actor]
     args.append(issue_id)
-    proc = br.try_run_br(repo_root, args)
-    if proc is None:
-        return False, "br not on PATH; gate not recorded"
-    if proc.returncode != 0:
-        return False, f"br gate report failed: {(proc.stderr or proc.stdout).strip()}"
+    try:
+        br.write(repo_root, args)
+    except RuntimeError as exc:
+        return False, f"gate {gate} NOT recorded on {issue_id}: {exc}"
     return True, f"recorded gate {gate}={status} on {issue_id}"

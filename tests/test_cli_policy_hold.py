@@ -25,7 +25,7 @@ from tests.test_cli_policy import _escalate, _FakeBr, _install_decisions_fake
 def _isolate(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.chdir(tmp_path)
     fake = _FakeBr()
-    monkeypatch.setattr(policy, "_run_br", fake)
+    monkeypatch.setattr(policy, "_write", fake)
     monkeypatch.setattr(br, "run_br", fake)
 
 

@@ -184,7 +184,7 @@ def _dor_verdict(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, body: str) -> 
     record = {"id": "feat.1", "description": body, "labels": []}
     _install(monkeypatch, FakeBr(records={"feat.1": record}))
     lint = Proc(json.dumps({"results": [{"missing": []}]}))
-    monkeypatch.setattr(policy, "_run_br", lambda _root, _args, **_kw: lint)
+    monkeypatch.setattr(policy, "_write", lambda _root, _args, **_kw: lint)
     return policy.definition_of_ready(tmp_path, "feat.1")
 
 

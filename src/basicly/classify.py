@@ -1,10 +1,9 @@
 """Classify step: record an agent-proposed br work type (onb.6.2).
 
 Thin engine, same shape as the decomposer: the *agent* proposes the work class,
-this module VALIDATES it against the fixed br set and RECORDS it with
-``br update -t``. ``br`` itself is permissive about the type string, so the
-allow-list guard lives here — an unknown class is a loud error, never silently
-written.
+this module VALIDATES it against the fixed br set and RECORDS it as ``update -t``.
+``br`` itself is permissive about the type string, so the allow-list guard lives
+here — an unknown class is a loud error, never silently written.
 
 Definition-of-Ready is reported, not enforced here: per architecture §23.3 the
 loop runs Classify (agent proposes, engine records the type) → _[human
@@ -34,7 +33,7 @@ from pathlib import Path
 from . import integrity, policy
 from .br import add_comment as _add_comment
 from .br import read_comments as _read_comments
-from .br import run_br as _run_br
+from .br import write as _write
 from .config import WORK_TYPES
 
 CLASSIFICATION_MARKER = integrity.CLASSIFICATION_MARKER
@@ -63,14 +62,14 @@ def classify(
     """Record the agent-proposed *work_type* on *issue_id* and report its DoR verdict.
 
     Rejects a type outside the fixed br set (:data:`WORK_TYPES`) with a loud
-    ``ValueError`` before touching the tracker. The recorded type is written with
-    ``br update -t``; the returned :class:`ClassifyResult` carries the
+    ``ValueError`` before touching the tracker. The type goes through
+    :func:`basicly.br.write`; the returned :class:`ClassifyResult` carries the
     Definition-of-Ready verdict so the state machine can gate the exit from
     classify, and the integrity level assigned from *scope*.
     """
     if work_type not in WORK_TYPES:
         raise ValueError(f"unknown work type {work_type!r}; expected one of {list(WORK_TYPES)}")
-    _run_br(repo_root, ["update", issue_id, "-t", work_type])
+    _write(repo_root, ["update", issue_id, "-t", work_type])
     assignment = integrity.assign(scope)
     _record_classification(repo_root, issue_id, assignment)
     dor = policy.definition_of_ready(repo_root, issue_id)

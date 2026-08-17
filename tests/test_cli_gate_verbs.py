@@ -70,7 +70,7 @@ def fake_br(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> _FakeBr:
     """A faked tracker, with the process rooted at an empty tmp repo."""
     monkeypatch.chdir(tmp_path)
     fake = _FakeBr()
-    monkeypatch.setattr(policy, "_run_br", fake)
+    monkeypatch.setattr(policy, "_write", fake)
     # Three seams, one stand-in: markers go through br.run_br (basicly-s5li),
     # `br show` through try_run_br behind br.read_record, and policy keeps its own
     # alias. Patching all three means no path can reach a real br.

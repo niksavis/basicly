@@ -69,7 +69,7 @@ class _FakeBr:
 def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
     # invoke_decider consults D3's spend ceiling (basicly-kjc5.23), and policy still
     # reads br through its own alias for the subcommands it spawns directly.
-    monkeypatch.setattr(policy, "_run_br", fake)
+    monkeypatch.setattr(policy, "_write", fake)
     # Neither the record read nor the marker traffic is one of those: they go through
     # `br.read_record` and `br.add_comment`/`br.read_comments`, the seams every consumer
     # in the package shares (basicly-tcmy.14, basicly-s5li). `decisions` has no alias of

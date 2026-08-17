@@ -277,7 +277,7 @@ def test_ship_refuses_to_close_against_an_unrun_demonstration(
     monkeypatch.setattr(loop.loop_state, "read_node_state", lambda *_a, **_k: _node("ship"))
     calls: list[object] = []
     monkeypatch.setattr(worktree, "cleanup", lambda *a, **_k: calls.append(a))
-    monkeypatch.setattr(loop, "_run_br", lambda *a, **_k: calls.append(a))
+    monkeypatch.setattr(loop, "_write", lambda *a, **_k: calls.append(a))
     monkeypatch.setattr(loop.merge, "commit_tracker_state", lambda *a, **_k: calls.append(a))
 
     result = _advance(tmp_path)

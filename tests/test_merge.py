@@ -12,6 +12,7 @@ import pytest
 from basicly import merge, policy, rebase, run_record, verify
 from basicly.config import PolicyConfig
 from basicly.worktree import Session
+from tests import flipped_tracker
 
 
 class _Proc:
@@ -126,7 +127,6 @@ def base_ready(monkeypatch: pytest.MonkeyPatch) -> None:
     """Make load_session/current_branch resolve a clean base checkout on 'main'."""
     monkeypatch.setattr(merge, "load_session", lambda _n, _r: _session())
     monkeypatch.setattr(merge, "current_branch", lambda _r: "main")
-    monkeypatch.setattr(merge, "reconcile_beads", lambda _r: None)
 
 
 def test_probe_merge_safe_and_conflicts(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -246,11 +246,10 @@ def test_commit_tracker_state_commits_beads_only_dirt(
         "commit": _Proc(0),
     })
     _patch_git(monkeypatch, fake)
-    flushed: list[list[str]] = []
-    monkeypatch.setattr(merge.br, "try_run_br", lambda _r, args: flushed.append(args) or _Proc(0))
+    # Nothing is flushed first, so a spawn here is a caller that grew back.
+    flipped_tracker.refuse_spawn(monkeypatch)
 
     assert merge.commit_tracker_state(tmp_path, "basicly-x") is True
-    assert flushed == [["sync", "--flush-only"]]
     assert ["add", ".beads"] in fake.calls
     commit = next(call for call in fake.calls if call[0] == "commit")
     assert "(basicly-x)" in commit[-1] and commit[-1].startswith("chore(beads):")
@@ -271,26 +270,24 @@ def test_commit_tracker_state_refuses_mixed_dirt(
     assert merge.commit_tracker_state(tmp_path, "basicly-x") is False
 
 
-def test_commit_tracker_state_refuses_an_unflushed_export(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A refused ``br sync`` is surfaced, never laundered into a chore(beads) commit."""
-    stale = "Refusing to export stale database that would lose issues."
-    fake = _FakeGit({"status": _Proc(0, " M .beads/issues.jsonl\n")})
-    _patch_git(monkeypatch, fake)
-    monkeypatch.setattr(merge.br, "try_run_br", lambda _r, _a: _Proc(7, stderr=stale))
+def test_no_engine_module_builds_a_tracker_sync() -> None:
+    """The two ``sync`` surfaces are deleted rather than replaced (basicly-wpc8.1).
 
-    with pytest.raises(RuntimeError, match="NOT committed") as caught:
-        merge.commit_tracker_state(Path(), "basicly-x")
-    assert stale in str(caught.value)
-    assert not fake.ran("add") and not fake.ran("commit")
+    They reconciled br's database with br's own export; the owned ledger *is* its
+    artifact, so there is nothing to reconcile and no owned equivalent to route to.
+    A tree probe, because the criterion is an absence — with a positive control on a
+    surface the engine does still build, so an empty answer cannot be a broken search.
+    """
 
+    def argv_sites(surface: str) -> list[str]:
+        return sorted(
+            path.name
+            for path in sorted(Path(merge.__file__).parent.glob("*.py"))
+            if f'["{surface}"' in path.read_text(encoding="utf-8")
+        )
 
-def test_reconcile_beads_reports_a_refused_sync(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The git merge has landed by then, so a refused reconcile warns, never raises."""
-    monkeypatch.setattr(merge.br, "try_run_br", lambda _r, _a: _Proc(0))
-    assert merge.reconcile_beads(Path()) == ""
-
-    monkeypatch.setattr(merge.br, "try_run_br", lambda _r, _a: _Proc(2, stderr="conflict"))
-    assert "NOT reconciled" in merge.reconcile_beads(Path())
+    assert argv_sites("close") != []
+    assert argv_sites("sync") == []
 
 
 @pytest.mark.usefixtures("base_ready")
@@ -1768,7 +1765,6 @@ def test_two_lanes_that_rebuild_one_manifest_land_without_bouncing(
     """Against real git: the landing rebuilds the manifest and the pass does not serialise."""
     repo, session = diverged_lane
     monkeypatch.setattr(merge, "load_session", lambda _n, _r: session)
-    monkeypatch.setattr(merge, "reconcile_beads", lambda _r: None)
     monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
 
     result = merge.merge_worktree(repo, "feat", bead="basicly-lyro")
@@ -1791,7 +1787,6 @@ def test_a_partly_generated_doc_is_rebuilt_while_the_lane_prose_edit_survives(
     repo, session = diverged_lane
     _edit_prose(Path(session.path), "lane")
     monkeypatch.setattr(merge, "load_session", lambda _n, _r: session)
-    monkeypatch.setattr(merge, "reconcile_beads", lambda _r: None)
     monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
     monkeypatch.setattr(
         merge.policy, "record_rework", lambda *_a: pytest.fail("the landing spent rework")
@@ -1817,7 +1812,6 @@ def test_a_conflict_in_the_hand_authored_half_still_bounces_to_the_lane(
     _edit_prose(Path(session.path), "lane")
     _edit_prose(repo, "base")
     monkeypatch.setattr(merge, "load_session", lambda _n, _r: session)
-    monkeypatch.setattr(merge, "reconcile_beads", lambda _r: None)
     monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
 
     result = merge.merge_worktree(repo, "feat", bead="basicly-3w51")
@@ -1838,7 +1832,6 @@ def test_the_same_pass_still_bounces_when_a_source_really_conflicts(
         _git_here(tree, "add", "-A")
         _git_here(tree, "commit", "-m", "touch the shared source")
     monkeypatch.setattr(merge, "load_session", lambda _n, _r: session)
-    monkeypatch.setattr(merge, "reconcile_beads", lambda _r: None)
     monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
 
     result = merge.merge_worktree(repo, "feat", bead="basicly-lyro")

@@ -83,7 +83,7 @@ class _FakeBr:
 
 def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
     monkeypatch.setattr(loop_state, "_run_br", fake)
-    monkeypatch.setattr(policy, "_run_br", fake)
+    monkeypatch.setattr(policy, "_write", fake)
     # The record read goes through `br.read_record`, the one seam every consumer
     # shares (basicly-tcmy.14), so the fake is installed on the spawn *it* uses
     # rather than on each module's alias. `_Proc` already carries a returncode,
