@@ -12,6 +12,47 @@ from pathlib import Path
 
 from . import decompose, policy, run_record
 
+# The forecast was computed by this module, after the fact, rather than at dispatch.
+ROLLUP_FORECAST = "rollup"
+
+
+def _forecast(
+    repo_root: Path, issue_id: str
+) -> tuple[str | None, decompose.CostEstimate | None, str | None]:
+    """*issue_id*'s task class, forecast and that forecast's provenance.
+
+    The dispatch resolution answers first: an estimate is keyed by the working
+    set, this asked with the ownership scope, and the two differ on any bead
+    declaring one — 185 of 202 nulls (basicly-agzx.4). The absence reason takes
+    the source's place when neither lookup answers.
+    """
+    lookup = decompose.resolve_dispatch_sizing(repo_root, issue_id)
+    if lookup.sizing is not None:
+        return (
+            lookup.sizing.task_class,
+            lookup.sizing.estimate,
+            _rollup_source(lookup.sizing.source),
+        )
+
+    info = decompose.bead_class_and_scope(repo_root, issue_id)
+    task_class, scope = info if info is not None else (None, ())
+    estimate = (
+        decompose.forecast_for(repo_root, task_class, scope) if task_class is not None else None
+    )
+    if estimate is not None:
+        return task_class, estimate, decompose.FROZEN_FORECAST
+    return task_class, None, lookup.absence or None
+
+
+def _rollup_source(source: str) -> str:
+    """*source*, renamed when computed here rather than at dispatch.
+
+    An unfrozen resolution prices with today's factors and this runs after the
+    merge, so the dispatch label would pair a past actual with a present
+    estimator.
+    """
+    return ROLLUP_FORECAST if source == decompose.DISPATCH_FORECAST else source
+
 
 def record(repo_root: Path, issue_id: str) -> bool:
     """Write *issue_id*'s forecast-vs-actual cost onto its bead (kjc5.50).
@@ -35,14 +76,12 @@ def record(repo_root: Path, issue_id: str) -> bool:
         rework: int | None = None
         with contextlib.suppress(RuntimeError, ValueError, OSError):
             rework = policy.rework_recorded(repo_root, issue_id)
-        info = decompose.bead_class_and_scope(repo_root, issue_id)
-        task_class, scope = info if info is not None else (None, ())
-        # Money is never recomputed — the forecast carries tokens only, from the
-        # estimate the governor froze when it accepted this package's plan.
-        estimate = (
-            decompose.forecast_for(repo_root, task_class, scope) if task_class is not None else None
+        task_class, estimate, source = _forecast(repo_root, issue_id)
+        # Money is never recomputed — the forecast carries tokens only.
+        forecast = run_record.CostForecast(
+            tokens=estimate.total if estimate else None,
+            source=source,
         )
-        forecast = run_record.CostForecast(tokens=estimate.total if estimate else None)
         ident = run_record.record_cost_marker(
             repo_root,
             issue_id,

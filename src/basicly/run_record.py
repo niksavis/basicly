@@ -650,6 +650,8 @@ class CostForecast:
     tokens: int | None = None
     cost: float | None = None
     wall_clock_s: float | None = None
+    # Provenance, or the absence explaining a null (basicly-agzx.4).
+    source: str | None = None
 
 
 def _numbers(entries: Iterable[Mapping[str, object]], key: str) -> list[float]:

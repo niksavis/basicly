@@ -5,7 +5,7 @@ and that is not what a run costs. Measured on the basicly-u6jq.1 proof run, the
 working-set number under-shot actual context by 2.8-4.8x, and because an agentic
 loop re-sends its context every turn, total spend is context times turn count
 with nothing in the engine modelling the turn count at all. Spend landed 160-420x
-the forecast. Every `forecast` field on the shipped cost rollups is null.
+the forecast. These ratios come from dispatch records, not cost rollups.
 
 So this turns a working-set estimate into predicted spend with three ratios:
 tokens per working-set token (the whole turn multiplier, empirically), USD per
