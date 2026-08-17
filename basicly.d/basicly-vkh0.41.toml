@@ -1,0 +1,24 @@
+# Body coverage in the owned ledger (basicly-vkh0.41).
+#
+# A record's `created` event is the only carrier of its title, description, type, priority
+# and acceptance criteria. Nine records had none — their status, comments, edges and gate
+# rows were in the ledger and nothing that said what the work was — so deleting the
+# external store would have destroyed the only copy. The differential could not see it:
+# its three queries read status, comments, edges and gate rows, and none of them reads a
+# body, so it printed `clean: yes` throughout.
+#
+# Wired only now, and that ordering is the point. A gate that refuses is worth nothing
+# while the condition it refuses is the repository's own state: with nine records bodyless
+# this entry would have failed every commit here. The backfill landed first, in the same
+# change, so the gate arrives already passing and any future regression is a real one.
+#
+# `uv run python`, not a bare `python`: a bare interpreter has neither this project's
+# dependencies nor `basicly` importable on Windows.
+#
+# No `fix_command`. The repair is `basicly tracker adopt`, which appends corrective
+# `created` events to a committed append-only log — a deliberate data migration, never
+# something a pre-commit hook should perform on somebody's behalf.
+[[verify.checks]]
+name = "ledger-bodies"
+command = ["uv", "run", "python", ".scripts/ledger_bodies.py"]
+modes = ["fast", "full"]
