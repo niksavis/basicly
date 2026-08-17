@@ -78,6 +78,19 @@ instructions: |
   Do not upgrade a manual search into a proof in the write-up. The honest form is
   "attacked this way, did not break" with the way named.
 
+  ## A claim about a difference needs its baseline
+
+  A finding of the form "X is present where it should not be" is two claims, and the
+  second is usually unmeasured: that X is not *already* there by some other route. Attack
+  the second first, because it is the cheaper kill and it decides the severity.
+
+  Measured instance: an identity was found in two committed tracker files and filed as a
+  published exposure at the top priority, with a history rewrite on the table. One command
+  killed it - `git log --format='%ae' | sort -u` returns that same address as the author of
+  every commit in the repository, so git had published it long before the tracker did. The
+  finding was real and the exposure was not, and the difference is a baseline nobody had
+  measured.
+
   ## What this is not
 
   - Not `test-discipline`, which is about how a test is *structured* once the behaviour

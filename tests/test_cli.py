@@ -1820,6 +1820,42 @@ def test_the_write_seam_refuses_a_create_by_name_rather_than_failing_in_the_mirr
         cli.br.write(tmp_path, ["create", "a thing", "--parent", "b-1"])
 
 
+def test_tracker_write_honours_the_json_the_caller_asked_for(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Prose to a caller that passed ``--json`` is how a duplicate record got minted.
+
+    The id was piped through `jq`, vanished, and the create was re-run
+    (`basicly-vkh0.42.10` duplicates `.42.9`).
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli.br, "create_record", lambda _root, _argv: "b-minted")
+
+    assert cli.main(["tracker", "write", "--", "create", "a thing", "-p", "b-1", "--json"]) == 0
+
+    assert json.loads(capsys.readouterr().out.strip()) == {"id": "b-minted"}
+
+
+def test_a_hand_close_prints_what_the_record_asked_for(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Not a refusal — the closer seeing the list (basicly-agzx.4 was closed with one unmet).
+
+    A human may close a record for reasons its criteria never covered, so a gate guessing
+    which would be wrong more often than useful.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli.br, "write", lambda *_a: None)
+    monkeypatch.setattr(
+        cli.br, "read_record", lambda _root, _id: {"acceptance_criteria": "Given a thing\nthen it"}
+    )
+
+    assert cli.main(["tracker", "write", "--", "close", "b-1", "--reason", "done"]) == 0
+
+    out = capsys.readouterr().out
+    assert "closing b-1, which asked for:" in out and "Given a thing" in out
+
+
 def test_tracker_write_with_no_subcommand_says_so_rather_than_spawning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

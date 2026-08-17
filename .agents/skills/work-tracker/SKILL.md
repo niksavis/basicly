@@ -147,6 +147,12 @@ and "the filter names the wrong key", and the second is the common case here.
 
 ## Output Interpretation
 
+- **Check a command's output shape before parsing it.** Four false conclusions in one
+  session came from reading an answer as data: `show` on an absent record returns
+  `{"found": false}`, whose `.fields.title` is null and reads exactly like a record whose
+  body was lost; and `tracker write -- create` prints prose unless the argv carries
+  `--json`, so piping it through `jq -r '.id'` yields nothing and looks like a create that
+  never ran. That one minted a duplicate record.
 - Statuses are `open`, `in_progress`, `blocked`, `deferred`, `closed` — there is **no**
   `rework` status. A rework cycle stays `in_progress` and is tracked by a failing gate
   result plus a comment, not by a status change.

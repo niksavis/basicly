@@ -18,6 +18,8 @@ from .config import CHECKPOINTS, ENGINE_GATE_PROVIDERS, load_policy_config
 
 if TYPE_CHECKING:
     import argparse
+import contextlib
+import json
 
 # Printed beside the two verdicts: `clean` is narrower than the sentence a reader takes from
 # it (basicly-vkh0.41) — nine records reached the ledger with a status, comments, edges and
@@ -138,12 +140,35 @@ def cmd_write(args: argparse.Namespace) -> int:
         ui.say("tracker write: name a br subcommand, e.g. `-- close b-1`")
         return 2
     # The one write whose output the caller needs: the id the store minted (vkh0.29).
+    # `--json` is honoured because the caller asked for it: printing prose to a caller
+    # that passed `--json` is how a duplicate record got minted here — the id was piped
+    # through `jq`, vanished, and the create was re-run (basicly-vkh0.42.10).
     if argv[0] == "create":
-        ui.say(f"created: {br.create_record(Path.cwd(), argv)}")
+        record = br.create_record(Path.cwd(), argv)
+        ui.say(json.dumps({"id": record}) if "--json" in argv else f"created: {record}")
         return 0
+    if argv[0] == "close" and len(argv) > 1:
+        _say_criteria(argv[1])
     br.write(Path.cwd(), argv)
     ui.say(f"recorded: {' '.join(argv)}")
     return 0
+
+
+def _say_criteria(record: str) -> None:
+    """Print what *record* asked for, before a hand close claims it was delivered.
+
+    Not a refusal: a human may close a record for reasons its criteria never covered, and
+    a gate that guessed which would be wrong more often than useful. It is the closer
+    seeing the list — `basicly-agzx.4` was closed here with three of four criteria met and
+    the fourth needing a file another lane held, and nothing said so.
+    """
+    with contextlib.suppress(RuntimeError, ValueError, OSError):
+        held = br.read_record(Path.cwd(), record) or {}
+        criteria = str(held.get("acceptance_criteria") or "").strip()
+        if criteria:
+            ui.say(f"closing {record}, which asked for:")
+            for line in criteria.splitlines():
+                ui.say(f"  {line}")
 
 
 def cmd_adopt(_args: argparse.Namespace) -> int:
