@@ -13,7 +13,7 @@ Owns the end-of-session ritual: report what the session actually used
 retro, and leave the repo pickup-clean with a handoff summary.
 
 It is **not** for shipping the work itself — commits, gates, and issue
-closure belong to the loop and its skills (`harness-loop`, `tool-br`,
+closure belong to the loop and its skills (`harness-loop`, `work-tracker`,
 `conventional-commits`). Run this after the work has landed.
 
 ## 1) Usage statistics
@@ -101,8 +101,9 @@ Follow the repo's retro rules:
 - `git status` must be clean: no partial edits, stray debug output, or
   unexplained files. Anything intentional left behind gets named in the
   summary; anything unintentional gets removed before finishing.
-- Confirm the tracker matches reality (`br ready`; claimed issues either
-  closed or annotated with their true state).
+- Confirm the tracker matches reality (`basicly loop status <id>` for each
+  track touched; claimed records either closed or annotated with their true
+  state).
 - **No background process may outlive the session.** A watcher left spinning keeps
   burning CPU and, worse, reports stale state — an `until`-loop waiting on a job that
   had already succeeded claimed it was still running for 30 minutes. List what is
@@ -121,5 +122,5 @@ Follow the repo's retro rules:
 
 - Should trigger: "wrap up the session" / "finish for today".
 - Should trigger: "what did this session actually use and change?"
-- Should not trigger: "close this issue" (that is `tool-br`).
+- Should not trigger: "close this issue" (that is `work-tracker`).
 - Should not trigger: mid-task status updates while work is still open.

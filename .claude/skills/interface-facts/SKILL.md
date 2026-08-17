@@ -50,8 +50,8 @@ repeated to the owner as fact.
 ## Pin the version and the date
 
 Record what you verified against; the answer has a shelf life. This repo already does
-it where it does it at all — `copilot 1.0.77`, `codex 0.146.0`, `br 0.2.16`,
-"re-probed 1.0.75". An unpinned capability claim cannot be re-checked, only re-argued.
+it where it does it at all — `copilot 1.0.77`, `codex 0.146.0`, "re-probed 1.0.75".
+An unpinned capability claim cannot be re-checked, only re-argued.
 
 ## How to fetch
 
@@ -81,7 +81,8 @@ the invocation-time injection it justifies.
 ## Record it where the next reader will hit it
 
 A fact established and not written down gets re-derived or re-guessed. Put it on the
-bead (`br comments add <id> "verified <date> against <url>: ..."`), and **correct the
+bead (`basicly tracker write -- comments add <id> "verified <date> against <url>:
+..."`), and **correct the
 document that carried the stale version** rather than adding the new claim beside it —
 two claims that disagree cost more than one that is wrong.
 

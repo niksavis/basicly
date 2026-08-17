@@ -9,6 +9,6 @@ trigger:
     - prompt: "set up a sibling checkout on a harness branch"
   negative:
     - prompt: "what work is ready to pick up"
-      owner: tool-br
+      owner: work-tracker
     - prompt: "advance this issue past its checkpoint"
       owner: harness-loop

@@ -11,4 +11,4 @@ trigger:
     - prompt: "keep this change out of my main checkout"
       owner: worktree-isolation
     - prompt: "which issues are ready to be claimed"
-      owner: tool-br
+      owner: work-tracker

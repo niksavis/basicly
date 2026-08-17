@@ -288,7 +288,7 @@ def test_fix_cannot_repair_a_missing_subcommand_and_says_so(work_repo: Path) -> 
 # ------------------------------------------------------- skill work types (tcmy.9)
 
 
-def test_the_tool_br_skill_states_the_engines_own_work_types() -> None:
+def test_the_work_tracker_skill_states_the_engines_own_work_types() -> None:
     """The positive control: both lists in the shipped skill match the engine."""
     assert claims._skill_work_types(REPO) == []
 
@@ -308,7 +308,7 @@ def test_check_fails_when_the_skill_states_a_type_the_engine_rejects(
     work_repo: Path, capsys: pytest.CaptureFixture[str], old: str, new: str, expected: str
 ) -> None:
     """Each list is checked against its own source of truth, and named on failure."""
-    path = work_repo / ".basicly/core/skills/tool-br/skill.yaml"
+    path = work_repo / ".basicly/core/skills/work-tracker/skill.yaml"
     text = path.read_text(encoding="utf-8")
     assert old in text, "the fixture no longer matches the skill it mutates"
     path.write_text(text.replace(old, new, 1), encoding="utf-8")
@@ -327,7 +327,7 @@ def test_prose_reworded_past_the_anchor_fails_loudly_rather_than_asserting_nothi
     This is the failure mode that makes a checker worse than none: reword the
     sentence, the anchor stops matching, and the gate reports a clean tree forever.
     """
-    path = work_repo / ".basicly/core/skills/tool-br/skill.yaml"
+    path = work_repo / ".basicly/core/skills/work-tracker/skill.yaml"
     text = path.read_text(encoding="utf-8")
     path.write_text(text.replace("the leaf types", "the buildable kinds", 1), encoding="utf-8")
 

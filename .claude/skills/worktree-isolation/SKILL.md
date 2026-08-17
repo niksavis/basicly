@@ -18,7 +18,7 @@ It is not for:
   below), but a conflict is never settled here: it means the declared scopes missed a
   coupling, so the merge bounces the lane back to re-apply its intent on the new base.
   There is no hand-edited conflict marker and no merge-time AI resolution.
-- Creating or claiming the beads issue the work tracks (see `tool-br`).
+- Creating or claiming the tracker record the work tracks (see `work-tracker`).
 - Git staging, diffing, or commit-message formatting (see `tool-git`, `conventional-commits`).
 
 ## When to isolate

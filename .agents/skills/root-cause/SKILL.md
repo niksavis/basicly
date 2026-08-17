@@ -18,9 +18,14 @@ limits (NIST/SEMATECH e-Handbook §pmc31). In this repo the practical test is ch
 **has this shape happened before?** Query the ledger before you analyse.
 
 ```sh
-br list --json | jq -r '.issues[].title' | rg -i '<the shape>'
+jq -r 'select(.kind=="created")|.payload.title // empty' .basicly/ledger/events-*.jsonl \
+  | rg -i '<the shape>'
 rg -c '<the marker>' .basicly/usage/run-records.json
 ```
+
+A record's title is on its `created` event and nowhere else, so a query over every
+event returns nothing — and nothing reads as "no prior", which is the answer that ends
+the analysis. Confirm the pipeline's first stage prints titles before believing a zero.
 
 One occurrence with no prior: record it and stop. Filing a bead off a single event is
 how twelve beads came to name one truncation while none asked why the trigger fired.
