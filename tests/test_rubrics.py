@@ -328,9 +328,9 @@ def test_a_severity_less_finding_cannot_be_constructed_or_recorded() -> None:
 def test_the_gate_record_carries_the_severity(monkeypatch: pytest.MonkeyPatch) -> None:
     """A note reading only 'j=no' cannot tell a MINOR from a BLOCKER."""
     calls: list[list[str]] = []
-    monkeypatch.setattr(
-        rubrics.br, "run_br", lambda _r, args: (calls.append(args), _proc("", 0))[1]
-    )
+    # ``br.write``, not ``br.run_br``: at mode owned the seam stops spawning, so a
+    # fake under it records nothing (basicly-vkh0.29).
+    monkeypatch.setattr(rubrics.br, "write", lambda _r, args: calls.append(args))
 
     rubrics.report_gate(
         Path(), "i", [rubrics.CheckVerdict("j", JUDGED, NO, "unmet", rubrics.BLOCKER)]
@@ -543,11 +543,10 @@ def test_report_gate_records_both_halves_separately(monkeypatch: pytest.MonkeyPa
     """
     calls: list[list[str]] = []
 
-    def fake(_repo_root: Path, args: list[str]) -> SimpleNamespace:
+    def fake(_repo_root: Path, args: list[str]) -> None:
         calls.append(args)
-        return _proc("", 0)
 
-    monkeypatch.setattr(rubrics.br, "run_br", fake)
+    monkeypatch.setattr(rubrics.br, "write", fake)
 
     ok, message = rubrics.report_gate(
         Path(),
@@ -575,9 +574,7 @@ def test_report_gate_records_both_halves_even_when_one_has_no_checks(
     existed" and "the judged half never ran".
     """
     calls: list[list[str]] = []
-    monkeypatch.setattr(
-        rubrics.br, "run_br", lambda _r, args: (calls.append(args), _proc("", 0))[1]
-    )
+    monkeypatch.setattr(rubrics.br, "write", lambda _r, args: calls.append(args))
 
     rubrics.report_gate(Path(), "i", [rubrics.CheckVerdict("d", DETERMINISTIC, YES)])
 

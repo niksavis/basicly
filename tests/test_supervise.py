@@ -525,12 +525,18 @@ def _install_br(monkeypatch: pytest.MonkeyPatch, fake: object) -> None:
     ``br.read_comments``, ``br.add_comment``, ``br.try_write``, ``label_source.labelled``
     — and each reaches the external store through one of these two funnels. Leaving one
     out lets a read spawn a real br mid-test.
+
+    **Those funnels are the external rung's**, so a caller must hand a repo root whose
+    mode resolves to :data:`owned_store.MODE_EXTERNAL` — a bare ``tmp_path`` does, being
+    the default when no ``basicly.toml`` declares one. A root of ``Path()`` reads *this*
+    checkout's config, which has declared ``owned`` since basicly-vkh0.29: every seam
+    above then goes to the ledger instead, and the write half goes to the real one.
     """
     monkeypatch.setattr(br, "run_br", fake)
     monkeypatch.setattr(br, "try_run_br", fake)
 
 
-def test_parse_found_info_round_trips_the_marker() -> None:
+def test_parse_found_info_round_trips_the_marker(tmp_path: Path) -> None:
     """A marker comment written by record_found_info parses back identically."""
     br = _FakeBr({})
     info = supervise.FoundInfo(
@@ -541,8 +547,8 @@ def test_parse_found_info_round_trips_the_marker() -> None:
     )
     with pytest.MonkeyPatch.context() as mp:
         _install_br(mp, br)
-        supervise.record_found_info(Path(), "epic.1", info)
-        records = supervise.found_info_records(Path(), ["epic.1"])
+        supervise.record_found_info(tmp_path, "epic.1", info)
+        records = supervise.found_info_records(tmp_path, ["epic.1"])
     assert records == (
         supervise.FoundInfo(
             kind="coupling",
@@ -603,14 +609,15 @@ def _propose(
     monkeypatch: pytest.MonkeyPatch,
     fake: _FakeBr,
     session: supervise.SessionState,
+    repo_root: Path,
 ) -> tuple[tuple[str, str, str], ...]:
     """Run the proposal with every br seam this path uses pointed at *fake*."""
     _install_br(monkeypatch, fake)
-    return supervise.propose_coupling_edges(Path(), session)
+    return supervise.propose_coupling_edges(repo_root, session)
 
 
 def test_a_coupling_record_gates_a_bead_that_has_not_started(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Nothing is lost by making unstarted work wait, and the collision is prevented."""
     fake = _FakeBr(
@@ -618,14 +625,14 @@ def test_a_coupling_record_gates_a_bead_that_has_not_started(
         comments={"epic.1": [_fold_marker("coupling", "both read the loader", ["epic.2"])]},
     )
 
-    recorded = _propose(monkeypatch, fake, _coupling_session(in_flight=("epic.1",)))
+    recorded = _propose(monkeypatch, fake, _coupling_session(in_flight=("epic.1",)), tmp_path)
 
     assert recorded == (("epic.2", "epic.1", "blocks"),)
     assert ("epic.2", "epic.1", "-t", "blocks") in fake.deps
 
 
 def test_a_coupling_record_teaches_an_in_flight_lane_without_gating_it(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A lane with committed work must not be stranded by what it just learned.
 
@@ -638,14 +645,16 @@ def test_a_coupling_record_teaches_an_in_flight_lane_without_gating_it(
         comments={"epic.1": [_fold_marker("coupling", "both read the loader", ["epic.2"])]},
     )
 
-    recorded = _propose(monkeypatch, fake, _coupling_session(in_flight=("epic.1", "epic.2")))
+    recorded = _propose(
+        monkeypatch, fake, _coupling_session(in_flight=("epic.1", "epic.2")), tmp_path
+    )
 
     assert recorded == (("epic.2", "epic.1", supervise.merge.COUPLING_DEP_TYPE),)
     assert not any(dep[-1] == "blocks" for dep in fake.deps)
 
 
 def test_a_coupling_record_reaches_a_bead_by_scope_overlap(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A record naming paths, not ids, still finds whoever declared those paths."""
     fake = _FakeBr(
@@ -655,12 +664,14 @@ def test_a_coupling_record_reaches_a_bead_by_scope_overlap(
         },
     )
 
-    recorded = _propose(monkeypatch, fake, _coupling_session(in_flight=("epic.1",)))
+    recorded = _propose(monkeypatch, fake, _coupling_session(in_flight=("epic.1",)), tmp_path)
 
     assert recorded == (("epic.2", "epic.1", "blocks"),)
 
 
-def test_only_a_coupling_record_proposes_an_edge(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_only_a_coupling_record_proposes_an_edge(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """The other kinds are advisory context; only `coupling` implies an ordering."""
     fake = _FakeBr(
         _coupling_issues(),
@@ -673,11 +684,11 @@ def test_only_a_coupling_record_proposes_an_edge(monkeypatch: pytest.MonkeyPatch
         },
     )
 
-    assert _propose(monkeypatch, fake, _coupling_session(in_flight=("epic.1",))) == ()
+    assert _propose(monkeypatch, fake, _coupling_session(in_flight=("epic.1",)), tmp_path) == ()
     assert fake.deps == []
 
 
-def test_a_coupling_edge_is_recorded_once(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_coupling_edge_is_recorded_once(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Re-reading the record every pass must not re-issue the edge."""
     existing = ({"id": "epic.1", "dependency_type": "blocks"},)
     fake = _FakeBr(
@@ -685,12 +696,12 @@ def test_a_coupling_edge_is_recorded_once(monkeypatch: pytest.MonkeyPatch) -> No
         comments={"epic.1": [_fold_marker("coupling", "both read the loader", ["epic.2"])]},
     )
 
-    assert _propose(monkeypatch, fake, _coupling_session(in_flight=("epic.1",))) == ()
+    assert _propose(monkeypatch, fake, _coupling_session(in_flight=("epic.1",)), tmp_path) == ()
     assert fake.deps == []
 
 
 def test_a_coupling_record_never_couples_its_source_to_itself(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A lane naming its own bead (or its own scope) proposes nothing."""
     fake = _FakeBr(
@@ -698,7 +709,7 @@ def test_a_coupling_record_never_couples_its_source_to_itself(
         comments={"epic.1": [_fold_marker("coupling", "note to self", ["epic.1"])]},
     )
 
-    assert _propose(monkeypatch, fake, _coupling_session(in_flight=("epic.1",))) == ()
+    assert _propose(monkeypatch, fake, _coupling_session(in_flight=("epic.1",)), tmp_path) == ()
     assert fake.deps == []
 
 
@@ -723,7 +734,7 @@ def _fold_marker(kind: str, summary: str, affects: list[str]) -> str:
 
 
 def test_build_bundle_folds_records_by_id_and_scope_overlap(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Records naming the lane or overlapping its declared scope fold into the prompt."""
     br = _FakeBr(
@@ -738,7 +749,7 @@ def test_build_bundle_folds_records_by_id_and_scope_overlap(
     )
     _install_br(monkeypatch, br)
 
-    bundle = supervise.build_bundle(Path(), "epic.1", known_ids=frozenset({"epic", "epic.2"}))
+    bundle = supervise.build_bundle(tmp_path, "epic.1", known_ids=frozenset({"epic", "epic.2"}))
 
     assert [info.summary for info in bundle.folded] == [
         "keep the loader split",
@@ -750,7 +761,7 @@ def test_build_bundle_folds_records_by_id_and_scope_overlap(
 
 
 def test_build_bundle_treats_session_bead_ids_as_ids_not_globs(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A session-bead id in affects is never glob-tested.
 
@@ -765,13 +776,13 @@ def test_build_bundle_treats_session_bead_ids_as_ids_not_globs(
     )
     _install_br(monkeypatch, br)
 
-    bundle = supervise.build_bundle(Path(), "epic.1", known_ids=frozenset({"epic", "epic.2"}))
+    bundle = supervise.build_bundle(tmp_path, "epic.1", known_ids=frozenset({"epic", "epic.2"}))
 
     assert bundle.folded == ()
 
 
 def test_build_bundle_sees_records_published_after_planning(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Assembly reads br at call time (fresh at boundaries, never mid-flight — D6).
 
@@ -781,9 +792,9 @@ def test_build_bundle_sees_records_published_after_planning(
     _install_br(monkeypatch, br)
     known = frozenset({"epic", "epic.2"})
 
-    before = supervise.build_bundle(Path(), "epic.1", known_ids=known)
+    before = supervise.build_bundle(tmp_path, "epic.1", known_ids=known)
     br.comments["epic"] = [_fold_marker("constraint", "landed meanwhile", ["epic.1"])]
-    after = supervise.build_bundle(Path(), "epic.1", known_ids=known)
+    after = supervise.build_bundle(tmp_path, "epic.1", known_ids=known)
 
     assert before.folded == ()
     assert [info.summary for info in after.folded] == ["landed meanwhile"]
@@ -3067,15 +3078,17 @@ def test_ready_lanes_skip_a_lane_with_subtask_beads(monkeypatch: pytest.MonkeyPa
     assert [lane.issue_id for lane in ready] == ["epic.2"]
 
 
-def test_has_subtasks_counts_closed_subtasks_too(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_has_subtasks_counts_closed_subtasks_too(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """A lane whose sub-tasks all closed is waiting to integrate, not to be re-run."""
     issues = {
         "epic.1": _issue("epic.1", children=(("epic.1.1", "closed"),)),
         "epic.2": _issue("epic.2"),
     }
     _install_br(monkeypatch, _FakeBrShow(issues))
-    assert supervise._has_subtasks(Path(), "epic.1") is True
-    assert supervise._has_subtasks(Path(), "epic.2") is False
+    assert supervise._has_subtasks(tmp_path, "epic.1") is True
+    assert supervise._has_subtasks(tmp_path, "epic.2") is False
 
 
 def test_advance_parked_drives_a_mini_loop_lane(
@@ -3644,7 +3657,7 @@ def test_delegate_decisions_beats_the_lock_between_invocations(
 
 
 def test_build_bundle_folds_the_lanes_answered_questions(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """An answer that never reaches the prompt is an answer nobody acts on.
 
@@ -3655,11 +3668,11 @@ def test_build_bundle_folds_the_lanes_answered_questions(
     br = _FakeBr({"epic.1": _issue("epic.1")})
     _install_br(monkeypatch, br)
     monkeypatch.setattr(decisions, "_notify", lambda *_a, **_k: None)
-    item = decisions.enqueue(Path(), "epic.1", "needs-input", "which db?")
-    decisions.answer(Path(), item.decision_id, "postgres", by="human")
-    still_open = decisions.enqueue(Path(), "epic.1", "escalation", "retry or park?")
+    item = decisions.enqueue(tmp_path, "epic.1", "needs-input", "which db?")
+    decisions.answer(tmp_path, item.decision_id, "postgres", by="human")
+    still_open = decisions.enqueue(tmp_path, "epic.1", "escalation", "retry or park?")
 
-    bundle = supervise.build_bundle(Path(), "epic.1")
+    bundle = supervise.build_bundle(tmp_path, "epic.1")
 
     assert [i.decision_id for i in bundle.answers] == [item.decision_id]
     assert "which db? → postgres (answered by human)" in bundle.prompt
@@ -3669,13 +3682,13 @@ def test_build_bundle_folds_the_lanes_answered_questions(
 
 
 def test_build_bundle_omits_the_answers_section_when_there_are_none(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A lane that never blocked gets the plain dispatch prompt, unchanged."""
     br = _FakeBr({"epic.1": _issue("epic.1")})
     _install_br(monkeypatch, br)
 
-    bundle = supervise.build_bundle(Path(), "epic.1")
+    bundle = supervise.build_bundle(tmp_path, "epic.1")
 
     assert bundle.answers == ()
     assert bundle.prompt == loop.dispatch_prompt("epic.1")

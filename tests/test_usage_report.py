@@ -12,6 +12,7 @@ import json
 import shutil
 from pathlib import Path
 
+from basicly import owned_store
 from tests.test_cli import run_basicly
 
 
@@ -73,14 +74,24 @@ def test_cli_usage_report_notes_missing_data(work_repo: Path) -> None:
 def _run_records(work_repo: Path, records: dict) -> None:
     """Seed the whole dispatch history the report reads, and nothing else.
 
-    Both halves are replaced: `dispatch_history` unions the local log with the
-    committed tracker markers (D11), and the fixture copies this repo's real export,
-    so leaving it in place would mix ~90 live dispatches into the counts.
+    Every half is replaced: `dispatch_history` unions the local log with the committed
+    tracker markers (D11), and the fixture copies this repo's real export, so leaving
+    one in place would mix live dispatches into the counts.
+
+    **The emptiness is asked for here rather than inherited.** It used to come for free:
+    the external binary kept its data in a gitignored SQLite database, so `work_repo` —
+    which copies tracked files by design — never carried it. Since `[tracker] mode`
+    became `owned` the ledger is tracked and arrives with the copy, handing these tests
+    every record this repository has; `usage forecast` then reported a real error ratio
+    over real beads where the test asserts none is computable. `br.all_comment_texts`
+    folds `events-*.jsonl` on this rung, so those are what a blank tracker means.
     """
     usage_dir = work_repo / ".basicly" / "usage"
     shutil.rmtree(usage_dir, ignore_errors=True)
     usage_dir.mkdir(parents=True)
     (usage_dir / "run-records.json").write_text(json.dumps(records), encoding="utf-8")
+    for log in owned_store.ledger_dir(work_repo).glob("events-*.jsonl"):
+        log.write_text("", encoding="utf-8")
     beads = work_repo / ".beads"
     # The redirect is why blanking the export alone is not enough: `br` follows it to
     # the base checkout's tracker, so a fixture copied out of a harness worktree reads

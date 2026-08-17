@@ -118,22 +118,26 @@ def test_r2_a_row_that_is_not_an_edge_is_rejected_rather_than_guessed() -> None:
     assert br.dependency_edge({"id": "", "type": "blocks"}) is None
 
 
-def test_r2_blocking_dependencies_reads_the_echo_spelling(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The landing order is the consumer that silently broke, so pin it end to end."""
-    payload = json.dumps([
-        {"id": "basicly-x", "dependencies": [{"depends_on_id": "basicly-a", "type": "blocks"}]}
-    ])
-    monkeypatch.setattr(
-        merge.br, "try_run_br", lambda *_a, **_k: SimpleNamespace(returncode=0, stdout=payload)
-    )
-    assert merge.blocking_dependencies(Path(), "basicly-x") == frozenset({"basicly-a"})
+def test_r2_blocking_dependencies_reads_the_echo_spelling(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The landing order is the consumer that silently broke, so pin it end to end.
+
+    Injected at ``br.read_record`` — the one reader every consumer shares — rather than
+    at the spawn under it: since ``[tracker] mode`` became ``owned`` that reader answers
+    from the ledger, so a fake on ``try_run_br`` reached nothing and the assertion below
+    was comparing two empty sets.
+    """
+    record = {"id": "basicly-x", "dependencies": [{"depends_on_id": "basicly-a", "type": "blocks"}]}
+    monkeypatch.setattr(br, "read_record", lambda *_a, **_k: record)
+    assert merge.blocking_dependencies(tmp_path, "basicly-x") == frozenset({"basicly-a"})
 
 
 # --- R3: validation rules are configurable, not compiled in -------------------
 
 
 def test_r3_acceptance_criteria_are_required_for_a_work_type_lint_never_asks_about(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """R3: the replacement's validation templates must be configurable per type.
 
@@ -142,21 +146,19 @@ def test_r3_acceptance_criteria_are_required_for_a_work_type_lint_never_asks_abo
     template never asked. The harness had to move the rule into its own gate
     (basicly-kjc5.36). This asserts the gate still catches the case br is quiet
     about.
+
+    The ``chore`` carrying neither carrier is the whole input, because
+    ``definition_of_ready`` no longer consults ``lint`` at all: basicly-wpc8.1 deleted
+    that half and owns the rule in :func:`policy.required_sections`.
     """
-
-    def fake_br(_repo, args, **_kw):
-        if args[:1] == ["lint"]:
-            # A chore: br reports nothing missing, because its template asks for nothing.
-            return SimpleNamespace(returncode=0, stdout=json.dumps({"results": [{"missing": []}]}))
-        return SimpleNamespace(
-            returncode=0,
-            stdout=json.dumps([
-                {"id": "basicly-x", "acceptance_criteria": None, "description": ""}
-            ]),
-        )
-
-    monkeypatch.setattr(policy, "_write", fake_br)
-    result = policy.definition_of_ready(Path(), "basicly-x")
+    record = {
+        "id": "basicly-x",
+        "issue_type": "chore",
+        "acceptance_criteria": None,
+        "description": "",
+    }
+    monkeypatch.setattr(br, "read_record", lambda *_a, **_k: record)
+    result = policy.definition_of_ready(tmp_path, "basicly-x")
 
     assert result.ready is False
     assert policy._ACCEPTANCE_CRITERIA_SECTION in result.missing
@@ -166,7 +168,7 @@ def test_r3_acceptance_criteria_are_required_for_a_work_type_lint_never_asks_abo
 
 
 def test_r4_multi_line_acceptance_criteria_satisfy_the_gate_from_the_body(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """R4: the replacement's acceptance-criteria field must accept multiple lines.
 
@@ -178,29 +180,12 @@ def test_r4_multi_line_acceptance_criteria_satisfy_the_gate_from_the_body(
     it, multi-line criteria have nowhere to live.
     """
     body = "## Acceptance Criteria\n\n- given a thing\n- when it happens\n- then a result\n"
-
-    def fake_br(_repo, args, **_kw):
-        if args[:1] == ["lint"]:
-            return SimpleNamespace(
-                returncode=0,
-                stdout=json.dumps({
-                    "results": [{"missing": [policy._ACCEPTANCE_CRITERIA_SECTION]}]
-                }),
-            )
-        # The structured field is empty precisely because it cannot hold this.
-        return SimpleNamespace(
-            returncode=0,
-            stdout=json.dumps([
-                {"id": "basicly-x", "acceptance_criteria": "", "description": body}
-            ]),
-        )
-
-    monkeypatch.setattr(policy, "_write", fake_br)
+    # The structured field is empty precisely because it cannot hold this.
+    record = {"id": "basicly-x", "acceptance_criteria": "", "description": body}
     # The criteria read goes through `br.read_record`, the one reader every consumer in
-    # the package shares (basicly-tcmy.14), so the fake is installed there too — the
-    # module alias still serves `lint`.
-    monkeypatch.setattr(br, "try_run_br", fake_br)
-    result = policy.definition_of_ready(Path(), "basicly-x")
+    # the package shares (basicly-tcmy.14), and it is the *only* read this gate makes.
+    monkeypatch.setattr(br, "read_record", lambda *_a, **_k: record)
+    result = policy.definition_of_ready(tmp_path, "basicly-x")
 
     assert result.ready is True
     assert result.missing == ()
