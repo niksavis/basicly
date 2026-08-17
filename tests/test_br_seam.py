@@ -493,11 +493,10 @@ def test_the_flip_still_writes_the_external_tracker(tmp_path: Path, fake_br: _Fa
     """`owned` flips the *record read* and the markers, and nothing else.
 
     The subcommands still read at their own call site with their own payload shape —
-    ``gate list``, ``blocked``, ``list``, ``lint``, ``dep cycles``, and the two
-    ``comments list`` spawns basicly-s5li left behind in `decompose` and `supervise` —
-    still answer out of br. Stopping the writes would break every one of them.
-    (``scheduler`` was on that list until basicly-vkh0.20 put it behind
-    ``br.read_ranking``.)
+    ``blocked``, ``list``, ``lint``, ``dep cycles``, and the two ``comments list``
+    spawns basicly-s5li left behind in `decompose` and `supervise` — still answer out
+    of br. Stopping the writes would break every one of them. (``scheduler`` left that
+    list at basicly-vkh0.20 and ``gate list`` at basicly-vkh0.27, each for a seam.)
 
     A raw ``comments add`` through the funnel is deliberately still both-stores: the
     seam is what stops spawning, not the funnel underneath it, which is what keeps

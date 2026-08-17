@@ -69,6 +69,10 @@ DEFAULT_KIT_MODULE = "differential"
 # The kit module that owns the ranking (basicly-vkh0.20).
 SCHEDULER_KIT_MODULE = "scheduler"
 
+# The kit module that owns the gate fold (basicly-vkh0.26). Named for the same reason the
+# scheduler is: it sits beside the differential rather than under it.
+GATES_KIT_MODULE = "gates"
+
 
 class TrackerDivergenceError(RuntimeError):
     """The owned ledger did not record a write the external tracker accepted.

@@ -45,6 +45,7 @@ layers =
     artifact_record | lens_review | run_record | skill_source | surface_report
     spend_calibration
     demonstration_proof
+    gate_source
     br
     edge_adoption | mirror
     owned_store
