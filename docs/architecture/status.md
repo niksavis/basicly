@@ -98,8 +98,8 @@ a seventh word.
 | A seam-routed surface for a human tracker write, so both stores move together | shipped | Closes the last bypass route the differential can see |
 | No committed artifact carries a host path, username or hostname | shipped | Redaction at both write seams; the secret-rule mirror is kept in step by convention only |
 | The owned append-only event log as the source of truth | building | Steps 1 to 3 of the cutover have run; the flip waits on the remaining bypasses and on five unported operations. Architecture §37.3 |
-| A consistency check and rebuild, so "the log is the truth" is checkable | partial | **Built with tests and reached by nothing**, while advertised as shipped on two consumer surfaces |
-| Provenance on every edge: extracted, inferred, ambiguous | partial | Same: built, no caller, advertised |
+| A consistency check and rebuild, so "the log is the truth" is checkable | partial | **Built with tests and reached by nothing** [re-measured 2026-08-17: no engine module and no `[[verify.checks]]` entry reaches the kit's `fsck` or `rebuild`, against a positive control of five engine modules reaching the kit's `events`]. The over-advertising half of this note was **false and is withdrawn**: `README.md` and `site/index.html` both mark it `◐ partial` against a legend matching this table |
+| Provenance on every edge: extracted, inferred, ambiguous | partial | **It has a caller and the earlier "no caller" note was false** [measured 2026-08-17 over the ledger: 962 of 962 edge events carry a `provenance` label — 924 `EXTRACTED` from the import and 38 `dual-write` written live by the mirror, which `edge_adoption` promotes to `EXTRACTED`]. What makes it partial is the vocabulary, not the wiring: `INFERRED` and `AMBIGUOUS` have never been written, and `dual-write` is a fourth label absent from `provenance.LABELS`, so by design it ranks below every known label and can never gate |
 | Cross-repo work offers as self-writes in each repository's own ledger | deferred | |
 
 ## How this view stays current
