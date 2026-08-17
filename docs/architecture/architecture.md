@@ -2542,23 +2542,42 @@ this project's own, never a foreign tool's payload shape. See
 
 `[TARGET]` **The vocabulary below is the specification. The tree does not have it yet.**
 
-| Kind | Carries | Read by |
-| --- | --- | --- |
-| `created` | a new work item and its authored fields | the fold, for existence and type |
-| `field` | one field change | the fold |
-| `status` | a status change | the fold, and the phase derivation |
-| `edge` | one dependency edge, with its provenance label | the graph, readiness, ranking |
-| `dispatch` | one agent dispatch and its telemetry | cost, calibration, health |
-| `gate` | one gate verdict, its provider and its actor | the phase derivation, and every required-gate refusal |
-| `checkpoint` | one approval marker and who approved it | the phase derivation |
-| `artifact` | one handoff artifact body | the producer and the consumer that can refuse |
-| `decision` | one decision-queue item and its kind | the supervisor, and the decider |
-| `scope` | one declared or violated scope | the landing, and the plan evidence |
-| `binding` | the worktree an item is bound to | readiness, and the landing |
-| `tombstone` | a deletion | the fold |
-| `note` | prose a human or an agent wrote | nothing. It is read by people |
+**One kind per consumer that selects on it.** That is the rule which closes the set, and it
+is the rule that decides every argument about whether two markers are one kind. Two markers
+read by the same consumer, which refuses on the same contract, are one kind with a typed
+field inside it. Two markers read by different consumers are two kinds, however similar
+their payloads look. Applying the rule to the measured population in
+[32.3.1](#3231-the-measured-partition-of-the-comment-kind) yields eighteen kinds, and the
+five beyond the thirteen this table first carried are the ones the measurement forced.
+
+| Kind | Carries | Read by | Prose or machine state |
+| --- | --- | --- | --- |
+| `created` | a new work item and its authored fields | the fold, for existence and type | machine |
+| `field` | one field change | the fold | machine |
+| `status` | a status change | the fold, and the phase derivation | machine |
+| `edge` | one dependency edge, with its provenance label | the graph, readiness, ranking | machine |
+| `dispatch` | one agent dispatch and its telemetry | cost, calibration, health | machine |
+| `gate` | one gate verdict, its provider, its actor and any finding set | the phase derivation, and every required-gate refusal | machine |
+| `checkpoint` | one approval marker and who approved it | the phase derivation | machine |
+| `artifact` | one handoff artifact body, typed by artifact kind | the producer and the consumer that can refuse | machine |
+| `decision` | one decision-queue item and its kind | the supervisor, and the decider | machine |
+| `scope` | one declared or violated scope | the landing, and the plan evidence | machine |
+| `binding` | the worktree an item is bound to | readiness, and the landing | machine |
+| `tombstone` | a deletion | the fold | machine |
+| `wait` | one wait interval, requested then answered, and by whom | the wait accounting behind `human_wait_s` and `delegated_wait_s` | machine |
+| `grant` | one autonomy grant or hold, its level and its budget | the policy layer's autonomy and spend bound | machine |
+| `rework` | one rework allowance, spend or convergence refund | the rework bound | machine |
+| `sizing` | one working-set estimate, keyed for reuse | the decomposer | machine |
+| `classification` | one integrity level and the rule that chose it | the integrity layer, and gate selection | machine |
+| `note` | prose a human or an agent wrote | nothing. It is read by people | prose |
 
 **One kind carries prose. Every other kind is machine state the fold reads by name.**
+
+**The five added kinds are not a widening of the design; they are the residue the first
+draft of this table could not hold.** Routing the measured population through the original
+thirteen leaves 585 of 2,540 rows with nowhere to go — 23% — and a closed set with a 23%
+residue is not closed. [32.3.1](#3231-the-measured-partition-of-the-comment-kind) carries
+the routing, the counts and the command.
 
 **Why this is a specification and not a description.** Today one kind carries both. The
 log is append-only and grows on every session, so this document gives the census and not a
@@ -2610,6 +2629,111 @@ silent, and it reads as data loss rather than as a reader defect.** See
 on this item" wants the prose and the machine events interleaved in time. `note` is the
 kind; the **work log** is the view that folds `note` together with every typed event into
 one chronology.
+
+#### 32.3.1 The measured partition of the `comment` kind
+
+**Every `comment` row on disk resolves to exactly one target kind, and the partition is
+measured rather than estimated.** The figures below are pinned to a commit, because the log
+grows on every session and an unpinned count cannot be checked twice
+[measured 2026-08-17 at `fb19039`, the script in the block below].
+
+```sh
+git show fb19039:.basicly/ledger/events-0001.jsonl | python3 -c "
+import collections, json, re, sys
+POLICY = {'checkpoint': 'checkpoint', 'scope-violation': 'scope', 'needs-input': 'decision',
+          'gate-unreliable': 'gate', 'finding-set': 'gate', 'rework': 'rework',
+          'rework-allowance': 'rework', 'convergence-refund': 'rework', 'grant': 'grant',
+          'hold': 'grant'}
+FAMILY = {'harness-run': 'dispatch', 'harness-cost': 'dispatch', 'harness-overrun': 'dispatch',
+          'harness-decision': 'decision', 'harness-artifact': 'artifact',
+          'harness-review': 'artifact', 'harness-retro': 'artifact', 'harness-wait': 'wait',
+          'harness-sizing': 'sizing', 'harness-classification': 'classification',
+          'harness-info': 'note', 'scope': 'scope', 'decision': 'decision'}
+kinds, residue, comments = collections.Counter(), collections.Counter(), 0
+for line in sys.stdin:
+    e = json.loads(line)
+    if e['kind'] != 'comment':
+        continue
+    comments += 1
+    text = e.get('payload', {}).get('text')
+    m = re.match(r'\[([a-z0-9_-]+)\]\s*(.*)', text.lstrip(), re.S) if isinstance(text, str) else None
+    if m is None:
+        kinds['note'] += 1
+    elif m.group(1) == 'harness-policy':
+        head = re.split(r'[=\s:]', m.group(2), maxsplit=1)[0]
+        (kinds if head in POLICY else residue)[POLICY.get(head, head)] += 1
+    elif m.group(1) in FAMILY:
+        kinds[FAMILY[m.group(1)]] += 1
+    else:
+        residue[m.group(1)] += 1
+print(comments, sorted(kinds.items(), key=lambda kv: -kv[1]), dict(residue))
+print('closes:', sum(kinds.values()) + sum(residue.values()) == comments)"
+```
+
+| Target kind | Rows | The markers that route to it |
+| --- | --- | --- |
+| `checkpoint` | 710 | `[harness-policy] checkpoint=` |
+| `dispatch` | 567 | `[harness-run]`, `[harness-cost]`, `[harness-overrun]` |
+| `note` | 350 | `[harness-info]`, unmarked prose, and five hand-written `[harness-policy]` lines |
+| `wait` | 340 | `[harness-wait]` |
+| `decision` | 169 | `[harness-decision]`, `[harness-policy] needs-input` |
+| `scope` | 110 | `[harness-policy] scope-violation=` |
+| `rework` | 101 | `[harness-policy] rework`, `rework-allowance`, `convergence-refund` |
+| `grant` | 67 | `[harness-policy] grant`, `hold` |
+| `artifact` | 44 | `[harness-artifact]` |
+| `sizing` | 35 | `[harness-sizing]` |
+| `gate` | 25 | `[harness-policy] finding-set`, `gate-unreliable` |
+| `classification` | 17 | `[harness-classification]` |
+
+**The residue is five rows, and every one of them is prose.** They open with
+`[harness-policy]` followed by a capitalised word — `CORRECTION`, `RELEASE`, `SCOPE`,
+`NARROWED`, `Owner` — which is a human writing a heading, not a marker a producer emits. The
+rule that a `comment` with no recognised marker resolves to `note` covers all five, so the
+partition is total. **There is no unclassifiable remainder.**
+
+**Two figures in this partition are larger than the kind the target set already had.** `wait`
+at 340 rows and `rework` at 101 both exceed `field` at 25 and `gate` at 8. A kind carrying
+more of the log than four of the original thirteen is not an edge case, and that is the
+evidence for adding it rather than folding it into a neighbour.
+
+#### 32.3.2 The reader's alias table, and the marker family it must not derive
+
+**The alias is permanent and its domain is the log, not the code.** A `comment` event
+resolves to the kind its body announces, by the table in
+[32.3.1](#3231-the-measured-partition-of-the-comment-kind), and a `comment` with no
+recognised marker resolves to `note`.
+
+**The alias table may never be derived from the marker constants the engine currently
+declares.** This is the one implementation choice in the migration that looks obviously
+right and is wrong, and the log proves it. `[harness-overrun]` carries 12 rows in this
+repository's ledger, and no producer for it exists in the tree: the two places the string
+survives are *negative* assertions in the suite, `tests/test_loop.py` asserting
+`not any(text.startswith("[harness-overrun]") ...)` and `tests/test_supervise.py` asserting
+`no [harness-overrun] marker either`. A table derived from the live constants would therefore
+omit the family, and those 12 rows would resolve to nothing
+[measured 2026-08-17, `git grep -n 'harness-overrun' -- . ':!.beads' ':!.basicly/ledger'`
+against the row count in 32.3.1].
+
+**A retired marker family is the normal case, not the exception.** A producer is deleted when
+its feature changes; its rows stay on disk for the life of the log, because the log is never
+rewritten. So the alias table is a **frozen literal covering every family that has ever been
+written**, and adding a family to it is append-only in exactly the way the log is.
+
+**The family list is unbound today, and it has drifted three times.**
+[The work-tracker requirements](../requirements/work-tracker.md) record two earlier
+corrections — a count that read eight while four families had shipped, then a correction to
+ten that was itself wrong — and the list standing at twelve is wrong in both directions. It
+names `[harness-side]`, which is not a marker family at all but a phrase from a sentence in
+`src/basicly/commit.py` reading "the rescue is harness-side because it has to be", and it
+omits `[harness-retro]`, which `src/basicly/retrospective.py` declares. The count from the
+declarations is **eleven**
+[measured 2026-08-17, `git grep -ohn '"\[harness-[a-z-]*\]"' -- 'src/basicly/*.py' | sort -u`].
+
+**This is a prose-read-as-a-declaration defect, and the same class has already cost this
+repository once**, in a dead-code gate that counted English in a schema as a field reference
+and then advised deleting the baseline entry. A list of wire formats counted by eye is the
+instrument fault; a gate that counts the declarations and refuses a disagreement is the fix,
+and [`backlog.md`](backlog.md) carries it.
 
 ### 32.4 Derived views: phase, the ready set, gate status
 
@@ -2716,6 +2840,114 @@ sets. The mirror is real duplication.
 | the secret rules | **convention only** |
 
 That asymmetry is a gap, not a design.
+
+### 32.8 How a kind rename lands on a log nothing may rewrite
+
+`[TARGET]` **This subsection specifies the migration. The tree has none of it.**
+
+**A rename of an event kind is not a rename.** The log is append-only, it is committed to
+git, and a repair is a corrective append
+([32.5](#325-the-write-path-the-lock-and-rotation)). So the old spelling is permanent and the
+migration is entirely a **reader** change plus a **writer** switch, with no edit to any line
+that exists. The log is 5,300,416 bytes over 5,353 lines at `fb19039`, and every byte of it
+stays exactly where it is.
+
+**The five moving parts, and the order they must move in.**
+
+| Part | What changes | What must not change |
+| --- | --- | --- |
+| the writer | `mirror` and every marker producer emit a typed kind instead of `comment` | no existing line is touched |
+| the reader | the fold gains the alias of [32.3.2](#3232-the-readers-alias-table-and-the-marker-family-it-must-not-derive) and a handler per new kind | the fold stays a function of the event **set** |
+| the derived files | `snapshot.jsonl` and the rotation checkpoints are regenerated | they are derived and ignored, so they carry no migration |
+| the JSON surface | the folded record's `comments` key gains a `notes` sibling | the old key keeps answering for a deprecation window |
+| the mirror seam | unchanged until the flip | `br`'s own word survives here on purpose |
+
+**The reader change is the one that carries the risk, and the risk is the skip path.**
+`events.fold` counts a kind it has no handler for in `FoldResult.unknown_kinds` and applies no
+state. That is correct for a *newer* writer's event and catastrophic for an *older* writer's,
+which is the whole argument of
+[D-34](#d-34--one-kind-for-prose-and-typed-kinds-for-machine-state). The alias must therefore
+be installed **before** the writer switches, not with it. A writer that switches first
+produces typed events an unaliased reader drops.
+
+**`unknown_kinds` already conflates two populations, and the split makes that worse.** Folding
+the log at `fb19039` reports `{'edge': 951, 'gate': 8}` — 959 events, 17.9% of the log
+[measured 2026-08-17, `events.read_log` then `events.fold` over the pinned log, reading
+`FoldResult.unknown_kinds`]. Neither is unknown. Both are deliberately folded by a sibling
+module, `provenance.py` for `edge` and `gates.py` for `gate`, and `fsck` says so in the
+warning it emits: "either a newer writer's, or one a sibling module derives from the events
+directly". **A signal that cannot tell a deliberate delegation from an unreadable event cannot
+be the migration's safety net.** Five more delegating kinds arrive with this change, so the
+field must be split into a delegated set and a genuinely-unknown set before it is relied on.
+That ordering is why the backlog puts it first.
+
+**The closed set of kinds has no single definition today, and that is the precondition for
+everything else here.** Four modules each declare part of the vocabulary, and they disagree
+about whether a live kind is known.
+
+| Where | Declares | Consequence |
+| --- | --- | --- |
+| `events.py`, `KIND_*` | `created`, `field`, `status`, `comment`, `dispatch`, `tombstone` | the fold's authority, and it omits two live kinds |
+| `events.py`, `KNOWN_KINDS` | those six | **nothing reads it** |
+| `migrate.py`, `KIND_EDGE` | `edge` | 951 rows the fold calls unknown |
+| `gates.py` and `differential.py`, `KIND_GATE` | `gate`, twice | a duplication the module documents at its own top |
+
+`KNOWN_KINDS` is the name a reader reaches for when they want the closed set. It exists, it is
+missing two of the six kinds actually in the log, and it has no consumer anywhere including
+the suite [measured 2026-08-17, `git grep -n KNOWN_KINDS -- '*.py'` returns its definition and
+nothing else, against a positive control of `KIND_COMMENT` which returns six files].
+**Adding five kinds to a vocabulary with no single definition is how the sixth and seventh
+spellings appear.** The duplication of `KIND_GATE` is already owned by `basicly-vkh0.27` and
+is not re-filed here.
+
+**Rotation is the wrong migration boundary, and `rotate()` should not become one.** It is
+tempting: `snapshot.rotate` exists, it closes a period and publishes a checkpoint, and no
+caller reaches it — nothing in `src/`, and no CLI exposes it, which is why this repository's
+log is still at its initial name
+[measured 2026-08-17, `snapshot.rotate(` appears only in `tests/`, against a positive control
+that the same probe finds `rebuild` called from `fsck`'s own command-line entry point].
+Three reasons it must not carry the rename.
+
+1. **A full-history fold is a requirement.** Rotation archives and never prunes, so the alias
+   is needed for the archive regardless. A rotation boundary would not remove one reader
+   obligation.
+2. **It would make the alias look temporary.** The events it covers are permanent, so an alias
+   presented as a migration window is a false promise a later reader will act on.
+3. **Giving a never-called function its first caller inside a data migration is two untested
+   changes in one.** `rotate()` wants a caller for its own reasons — a rotation policy — and
+   that is separate work with its own demonstration.
+
+**The `LOG_GLOB` contract is untouched by all of this, and that is worth stating because it
+looks like it should change.** `events.LOG_GLOB` is the one spelling `rebuild` and `fsck`
+share, `snapshot.py` derives its period and checkpoint names from it rather than from a
+literal, and a test asserts the value. A kind rename changes what is *inside* a line and
+never the name of the file holding it, so the glob, the archive set and the shared contract
+all stay exactly as they are. **A migration that renames the log files would be a second,
+unrelated change**, and it would strand every rotated archive.
+
+**The deprecation window belongs to the folded record's `comments` key, not to a loop
+surface.** The key is emitted by `snapshot.record_to_dict` as `"comments": list(...)`,
+validated on the way back in by `record_from_dict`, persisted into the derived
+`snapshot.jsonl`, and surfaced by the kit tracker CLI's `show` and `list`. `loop session
+--json` carries no comment-shaped key at all
+[measured 2026-08-17, `basicly loop session <root> --json | jq -r 'paths(scalars)'` filtered
+for comment, note and log returns nothing, against a positive control of its 21 top-level
+keys]. The window is therefore narrow and local: emit `notes` beside `comments`, accept either
+on read back, and drop `comments` one release after the flip. Because `snapshot.jsonl` is
+derived and ignored, nothing on disk needs to survive the drop.
+
+**`basicly tracker shadow` stays `clean` and `conclusive` by construction, and the reason is
+uncomfortable.** The differential already excuses every imported record's `gates` query as
+history: the owned fold reports `missing=('verify',)` where `br` reports `passed=('verify',)`,
+on record after record, and the baseline excuses all of them. So the shadow's `clean: yes`
+today is a statement about the baseline's coverage and not about agreement on gate state.
+**A kind split cannot make that verdict worse, and it must not be read as making it better.**
+The mirror keeps translating `br comments add` into a `comment` event until the flip
+(`basicly-vkh0.27`, `basicly-vkh0.29`), so `br`'s word survives on the seam by design; the
+alias makes the owned side derive the same state from those events, which is precisely the
+condition for the verdict to stay unchanged. **The check that the split preserved the fold is
+a differential against a snapshot taken before it**, not the `clean` line, which the baseline
+can hold green through a regression.
 
 ## 33. Handoff artifacts and their contracts
 
@@ -3965,8 +4197,32 @@ many events rather than as one event, and every other kind here is a singular no
 thing that happened. `note` is the kind; **work log** is the name of the rendered view, and
 that is the split recorded here.
 
+**Rejected — `record` as the kind name.** The owner proposed it later, and it is
+**unavailable**, not merely less good. `record` already names the *work item* throughout the
+kit: it is the field on every event (`"record": "basicly-vkh0.21"` on all 5,353 lines), the
+key of the fold's output map, the subject of `snapshot.record_to_dict` and
+`record_from_dict`, the first field of `Disagreement`, and the noun `basicly tracker shadow`
+counts when it prints `37 record(s) in scope`. Adopting it for an event kind would make
+`record` mean both the item and one event about the item, in the same payload, one key apart.
+That is the exact failure [39. Glossary](#39-glossary) exists to prevent, and the glossary's
+rule is one word, one meaning.
+
+**The set is eighteen kinds, not thirteen, and the measurement decided that.** The first draft
+of [32.3](#323-the-event-vocabulary) listed thirteen. Routing the measured population through
+those thirteen leaves 585 of 2,540 `comment` rows unplaceable, so `wait`, `grant`, `rework`,
+`sizing` and `classification` are first-class kinds.
+[32.3.1](#3231-the-measured-partition-of-the-comment-kind) carries the counts and the command.
+**A closed set proposed without partitioning the data it must hold is a guess**, and this one
+was wrong by 23%.
+
 **Consequence.** Every consumer that greps a marker prefix out of a free-text body becomes
 a lookup by kind. The alias is the price, and it is paid once in the reader.
+
+**Consequence, and it is the one that costs.** The alias table is a frozen literal covering
+every marker family ever written, including families whose producer has been deleted — the log
+holds 12 rows of one such family already. It may not be derived from the constants the engine
+declares, and [32.3.2](#3232-the-readers-alias-table-and-the-marker-family-it-must-not-derive)
+holds the evidence.
 
 ### D-35 · The external tracker binary is transitional, not a component
 
@@ -4014,6 +4270,9 @@ appear in a definition, a table header or a schema field.
 | **gate** | a computed verdict the engine refuses on | never a checkpoint |
 | **checkpoint** | an approval marker a human or a covering grant writes. Nothing is computed | never a gate |
 | **grant** | an autonomy marker on a session's root issue | — |
+| **event kind** | one entry in the closed vocabulary of [32.3](#323-the-event-vocabulary). Eighteen of them | never `event type`, and never `record`, which names the work item |
+| **note** | the one event kind carrying prose a human or an agent wrote | never `comment`, which is the external binary's word. See the retirement below |
+| **work log** | the rendered chronology that interleaves `note` with every typed event on one item | it is a **view**, never a kind. Never `history`, which names git's |
 | **the seam** | the one module that spawns the external tracker binary | — |
 | **the kit** | the portable, dependency-free modules deployed into a consumer under `.basicly/core/kit/` | — |
 | **target** | one agent family's projection destination: claude, codex, copilot | never `vendor`, which names a model provider |
@@ -4024,6 +4283,18 @@ also naming a diagram element and a JavaScript runtime. Use `issue` or `lane`.
 
 **Retired.** `package` as a synonym for a landed lane. It collided with a Python package.
 Use `lane`, or `unit` where the count is what matters.
+
+**Retired.** `comment` as an event kind. It is the external tracker binary's word, adopted
+because a comment was the only extensible field that binary offered, and it came to carry both
+human prose and every machine marker the loop derives state from. Use `note` for the prose and
+the typed kind for the state. **The word remains correct in exactly two places**, and neither
+is a definition: the `br comments add` command the mirror translates, until the flip removes
+it, and the `comment` events already on disk, which are permanent and which the reader's alias
+resolves. See [32.3](#323-the-event-vocabulary) and
+[D-34](#d-34--one-kind-for-prose-and-typed-kinds-for-machine-state).
+
+**Retired.** `record` as a candidate name for an event or an event kind. It names the **work
+item** and nothing else. D-34 records the rejection.
 
 ## 40. External references
 

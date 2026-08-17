@@ -12,6 +12,11 @@ Entries are in dependency order. Each is shaped for the plan gate: EARS acceptan
 criteria, scope globs, declared dependencies, an integrity level, and a runnable
 demonstration.
 
+**An entry label is stable and is never renumbered**, for the same reason an architecture
+section number is not: other documents cite it. A later item that must run *before* an
+existing one takes a decimal under it and sits in its dependency position, so `B8.1` precedes
+`B8` in the file. Read the `Depends on` row, not the ordinal.
+
 ---
 
 ## B1 — Rename the two ladders in code
@@ -189,14 +194,115 @@ goes stale on every landing. It stays only because four gates bind on it.
 
 ---
 
+## B8.1 — Give the closed event-kind set one definition
+
+**Why.** The vocabulary is declared in four modules and they disagree about whether a live
+kind is known. `events.py` declares six `KIND_*` constants; `migrate.py` declares
+`KIND_EDGE`; `gates.py` and `differential.py` each declare `KIND_GATE`, a duplication
+`gates.py` documents at its own top. `events.KNOWN_KINDS` is the name a reader reaches for
+when they want the closed set: it is missing two of the six kinds actually in the log, and it
+has **no consumer anywhere, including the suite**
+[measured 2026-08-17, `git grep -n KNOWN_KINDS -- '*.py'` returns its definition and nothing
+else, against a positive control of `KIND_COMMENT` which returns six files].
+
+**This is first because B8 adds five kinds.** Adding five entries to a vocabulary with four
+partial definitions is how the sixth and seventh spellings appear. Architecture §32.8 carries
+the table. The `KIND_GATE` duplication is already owned by `basicly-vkh0.27`; this item is the
+single definition the rest of the kinds need, not a re-file of that one.
+
+| Item | Value |
+| --- | --- |
+| Scope | `.basicly/core/kit/tracker/events.py`, `.basicly/core/kit/tracker/migrate.py`, `.basicly/core/kit/tracker/gates.py`, `tests/test_kit_tracker_events.py` |
+| Integrity | `engine`. No consumer surface carries a kind constant |
+| Depends on | nothing |
+| Acceptance | WHEN a module needs the closed set of event kinds, IT SHALL read one declaration in `events.py`. WHEN a kind is folded by a sibling module rather than by `events.fold`, THE CLOSED SET SHALL still contain it. WHEN the closed set omits a kind present in a log the suite folds, THE SUITE SHALL fail and name the kind. WHERE a second module declares a kind constant, IT SHALL import it rather than spell it |
+| Demonstrated by | `uv run pytest tests/test_kit_tracker_events.py -q`, plus `uv run python -c "import importlib.util,sys;from pathlib import Path;s=importlib.util.spec_from_file_location('ev',Path('.basicly/core/kit/tracker/events.py'));m=importlib.util.module_from_spec(s);sys.modules['ev']=m;s.loader.exec_module(m);print(sorted(m.KNOWN_KINDS))"` listing every kind the ledger holds |
+| Cost | one constant gains consumers, which means it gains a contract |
+| Buys | the closed set becomes checkable, so B8's five additions can be refused if they diverge |
+
+---
+
+## B8.2 — Separate a delegated kind from an unknown one in the fold
+
+**Why.** `events.fold` reports `FoldResult.unknown_kinds` for any kind it has no handler for.
+Folding this repository's log reports `{'edge': 951, 'gate': 8}` — **959 events, 17.9% of the
+log** — and neither is unknown [measured 2026-08-17 at `fb19039`, `events.read_log` then
+`events.fold`, reading `FoldResult.unknown_kinds`]. Both are deliberately folded by a sibling
+module, and `fsck._unfolded_kind_findings` admits the ambiguity in its own warning text:
+"either a newer writer's, or one a sibling module derives from the events directly".
+
+**This is second because it is B8's safety net.** D-34's stated catastrophe is a `comment`
+event taking the skip path and silently dropping checkpoint and gate state. The signal that
+would catch it currently cannot tell a deliberate delegation from an unreadable event, and B8
+adds five more delegating kinds to the same bucket. A net with 959 false entries in it does
+not catch the 960th.
+
+| Item | Value |
+| --- | --- |
+| Scope | `.basicly/core/kit/tracker/events.py`, `.basicly/core/kit/tracker/fsck.py`, `tests/test_kit_tracker_events.py`, `tests/test_kit_tracker_fsck.py` |
+| Integrity | `engine`. `fsck` exit codes are a surface; the finding set is not |
+| Depends on | B8.1 |
+| Acceptance | WHEN the fold reads a kind a sibling module folds, IT SHALL report it as delegated and SHALL NOT report it as unknown. WHEN the fold reads a kind no module folds, IT SHALL report it as unknown. WHEN `fsck` runs on a log holding only delegated kinds, IT SHALL emit no unfolded-kind warning. WHEN `fsck` runs on a log holding a genuinely unrecognised kind, IT SHALL warn and name it |
+| Demonstrated by | `uv run pytest tests/test_kit_tracker_events.py tests/test_kit_tracker_fsck.py -q`, plus `uv run python .basicly/core/kit/tracker/fsck.py .basicly/ledger` reporting no unfolded-kind warning for `edge` or `gate` |
+| Cost | one field on `FoldResult` becomes two, and `fsck`'s finding set changes shape |
+| Buys | the skip-path refusal B8 depends on becomes a signal instead of noise |
+
+---
+
+## B8.3 — Bind the marker-family list to a gate
+
+**Why.** The alias table B8 needs has the **marker family list as its domain**, and nothing
+binds that list. It has now drifted three times.
+[`docs/requirements/work-tracker.md`](../requirements/work-tracker.md) records the first two —
+a count that read eight while four families had shipped, then a correction to ten that was
+itself wrong — and the list standing at twelve is wrong in **both** directions. It names
+`[harness-side]`, which is not a marker family but a phrase from a sentence in
+`src/basicly/commit.py` reading "the rescue is harness-side because it has to be", and it
+omits `[harness-retro]`, declared in `src/basicly/retrospective.py`. The count from the
+declarations is **eleven**
+[measured 2026-08-17, `git grep -ohn '"\[harness-[a-z-]*\]"' -- 'src/basicly/*.py' | sort -u`].
+
+**The list is not the same set as the alias table's domain, and that is the trap.**
+`[harness-overrun]` carries **12 rows** in the ledger and has no producer in the tree: the
+string survives only in two *negative* assertions, `tests/test_loop.py` and
+`tests/test_supervise.py`, each asserting the marker is never written. So a table derived from
+the live declarations omits it and loses those rows. The gate must therefore count two
+populations and compare them: the families declared in code, and the families present in the
+log.
+
+**This is the same defect class as a dead-code gate that counted English prose in a schema as
+a field reference.** A list of wire formats counted by eye is the instrument fault.
+
+| Item | Value |
+| --- | --- |
+| Scope | `.scripts/check_marker_families.py`, `basicly.toml`, `docs/requirements/work-tracker.md`, `tests/test_marker_families.py` |
+| Integrity | `engine`. A new advisory-then-blocking check |
+| Depends on | nothing |
+| Acceptance | WHEN the check runs, IT SHALL derive the declared family set from the marker constants in `src/basicly/` and SHALL NOT count a family named only in prose. WHEN a family appears in the ledger but not in the declarations, THE CHECK SHALL report it as retired and SHALL NOT treat it as absent. WHEN a declared family is missing from the frozen list, THE CHECK SHALL fail and name it. WHERE a document states a family count, THE CHECK SHALL compare that count against the derived set |
+| Demonstrated by | `uv run python .scripts/check_marker_families.py` reporting eleven declared and one retired, and exiting non-zero when a marker constant is added without updating the frozen list, plus `uv run pytest tests/test_marker_families.py -q` |
+| Cost | one more check in the verify set, and a frozen list to maintain |
+| Buys | B8's alias table gets a checked domain instead of a hand-counted one, so a retired family cannot silently lose its rows |
+
+---
+
 ## B8 — Split the event vocabulary: `note` for prose, typed kinds for machine state
 
 **Why.** Architecture §32.3 and **D-34** specify it. Filed upstream as `basicly-vkh0.30`.
-Measured on this repository's ledger [2026-08-16, the census command in architecture §32.3]:
-**2,495 of 5,236 events are `comment`** (47.7%), carrying human prose *and* checkpoints,
-gate results, handoff artifacts, decision items, scope violations, telemetry and worktree
-bindings. The `gate` kind, built for gate verdicts, holds **6**. The log grows on every
-session, so re-run the census rather than quoting these figures.
+Measured on this repository's ledger [2026-08-17 at `fb19039`, the census command in
+architecture §32.3]: **2,540 of 5,353 events are `comment`** (47.4%), holding 2,216,283 of the
+log's 5,300,416 bytes, and carrying human prose *and* checkpoints, gate results, handoff
+artifacts, decision items, scope violations, telemetry and worktree bindings. The `gate` kind,
+built for gate verdicts, holds **8**. The log grows on every session, so re-run the census
+rather than quoting these figures.
+
+**The target set is eighteen kinds, and the partition decided that.** Routing the 2,540
+`comment` rows through the thirteen kinds §32.3 first listed leaves **585 rows, 23%**, with
+nowhere to go, so `wait` (340 rows), `rework` (101), `grant` (67), `sizing` (35) and
+`classification` (17) are first-class kinds. `wait` and `rework` each carry more rows than
+`field` at 25 and `gate` at 8, which the set already had, so neither is an edge case.
+Architecture §32.3.1 holds the routing table, the counts and the
+runnable partition script; the residue is five hand-written prose lines that resolve to `note`,
+so the partition is total.
 
 **The migration constraint is the whole risk.** An append-only log is never rewritten, so
 every existing `comment` event stays. The reader needs an **alias**, not the
@@ -205,15 +311,45 @@ unknown-kind skip path: a `comment` resolves to the kind its body announces, and
 checkpoint and gate state for every work item older than the change, and the phase
 derivation would read those items as never classified, never approved and never landed.
 
+**Install the alias before switching the writer**, never together. A writer that switches
+first emits typed events an unaliased reader drops. Architecture §32.8 carries the ordering,
+why `snapshot.rotate()` must not become the migration boundary, and why the `LOG_GLOB`
+contract does not change.
+
 | Item | Value |
 | --- | --- |
-| Scope | `.basicly/core/kit/tracker/events.py`, `.basicly/core/kit/tracker/snapshot.py`, `src/basicly/owned_store.py`, `src/basicly/mirror.py`, `src/basicly/loop_state.py`, `tests/test_owned_store.py`, `tests/test_loop_state.py` |
+| Scope | `.basicly/core/kit/tracker/events.py`, `.basicly/core/kit/tracker/snapshot.py`, `src/basicly/owned_store.py`, `src/basicly/mirror.py`, `src/basicly/loop_state.py`, `tests/test_owned_store.py`, `tests/test_loop_state.py`, `tests/test_kit_tracker_snapshot.py` |
 | Integrity | `consumer-surface`. The owned ledger format is a frozen surface |
-| Depends on | nothing |
-| Acceptance | WHEN a new prose event is written, THE WRITER SHALL use the `note` kind. WHEN a machine marker is written, THE WRITER SHALL use the typed kind for it. WHEN the fold reads a pre-existing `comment` event carrying a marker, IT SHALL resolve it to that marker's typed kind. WHEN the fold reads a `comment` event carrying no marker, IT SHALL resolve it to `note`. WHERE a `comment` event exists, THE FOLD SHALL NOT take the unknown-kind skip path |
-| Demonstrated by | `uv run pytest tests/test_owned_store.py -k alias -q`, plus a fold over the committed ledger reporting the same derived phase for every issue before and after the change |
+| Depends on | B8.1, B8.2, B8.3 |
+| Acceptance | WHEN a new prose event is written, THE WRITER SHALL use the `note` kind. WHEN a machine marker is written, THE WRITER SHALL use the typed kind for it. WHEN the fold reads a pre-existing `comment` event carrying a marker, IT SHALL resolve it to that marker's typed kind. WHEN the fold reads a `comment` event carrying no marker, IT SHALL resolve it to `note`. WHERE a `comment` event exists, THE FOLD SHALL NOT take the unknown-kind skip path. WHEN the alias resolves a marker family whose producer no longer exists, IT SHALL still resolve it |
+| Demonstrated by | `uv run pytest tests/test_owned_store.py -k alias -q`, plus a fold over the committed ledger reporting the same derived phase for every issue before and after the change, compared against a snapshot taken before the change rather than against `basicly tracker shadow`'s `clean` line |
 | Cost | a frozen surface changes. The alias is permanent, not a migration window |
 | Buys | a reader selects machine state by kind instead of grepping prose, and the fold can refuse a malformed marker |
+
+---
+
+## B8.4 — Deprecate the folded record's `comments` key
+
+**Why.** The folded record is emitted by `snapshot.record_to_dict` with a `"comments"` key,
+validated on read back by `record_from_dict`, persisted into the derived `snapshot.jsonl`, and
+surfaced by the kit tracker CLI's `show` and `list`. After B8 the key names a kind that no
+longer exists.
+
+**The key is not on `loop session --json`.** That surface carries no comment-shaped key at all
+[measured 2026-08-17, `uv run basicly loop session <root> --json | jq -r 'paths(scalars)'`
+filtered for comment, note and log returns nothing, against a positive control of its 21
+top-level keys]. So the deprecation window is narrow and local to the kit CLI, and this item
+is separable from B8 rather than part of it.
+
+| Item | Value |
+| --- | --- |
+| Scope | `.basicly/core/kit/tracker/snapshot.py`, `.basicly/core/kit/tracker/cli.py`, `tests/test_kit_tracker_snapshot.py` |
+| Integrity | `consumer-surface`. The kit CLI's JSON is a consumer surface |
+| Depends on | B8 |
+| Acceptance | WHEN a folded record is emitted, IT SHALL carry a `notes` key. WHEN a folded record is emitted during the deprecation window, IT SHALL also carry `comments` with the same value. WHEN a snapshot carrying only `comments` is read back, `record_from_dict` SHALL accept it. WHEN the window closes, THE EMITTER SHALL NOT carry `comments` |
+| Demonstrated by | `uv run python .basicly/core/kit/tracker/cli.py show .basicly/ledger <record-id>` printing both keys during the window, plus `uv run pytest tests/test_kit_tracker_snapshot.py -q` |
+| Cost | two keys for one value for one release |
+| Buys | the last place `comment` appears as a definition on a consumer surface goes away |
 
 ---
 

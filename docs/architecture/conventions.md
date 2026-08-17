@@ -231,6 +231,14 @@ Four rules, and none of them is a house style preference.
 4. **One word, one meaning.** The architecture document's glossary is the closed vocabulary,
    and it names each retired alias.
 
+**A name for a new concept is checked against the code before it is adopted, not after.** A
+word already bound to a referent in the kit is **unavailable**, however well it reads. Search
+for it first; a proposal that survives the search is a candidate, and one that does not is a
+collision the glossary would have to carry forever. `record` was proposed for an event kind
+and is unavailable, because it already names the work item on every event, in the fold's output
+map, in `snapshot.record_to_dict` and in what `basicly tracker shadow` counts. D-34 records
+that rejection, and it is the worked example of this rule.
+
 **Verdict first, evidence marked, no filler.** A paragraph opens with the claim in bold and
 then supports it. A measurement carries its bracket. A limit is stated rather than covered by
 an implied guarantee.
